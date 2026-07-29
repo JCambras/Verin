@@ -408,6 +408,7 @@ function repositoryFixture(
     `,
     "/src/contracts/principal.ts": `
       import type { TenantContext } from "./tenant";
+      export interface Principal { tenant: TenantContext; userId: string }
       export interface WriteActor { tenant: TenantContext; actorUserId: string }
       export function assertWriteActor(value: unknown): asserts value is WriteActor {
         void value;
@@ -540,7 +541,8 @@ describe("tenant-context-required fence", () => {
         `
         import type { SqlDb } from "../store/db";
         import { assertSameTenant, assertTenantContext, type TenantContext } from "../../contracts/tenant";
-        import { assertActionGrant, type ActionGrant } from "../../contracts/authz";
+        import { assertActionGrant, type ActionGrant, type ActorRef } from "../../contracts/authz";
+        import type { Principal, WriteActor } from "../../contracts/principal";
         ${prelude}
         export function listPeople<A extends string = never>(${params}
         ): unknown {
@@ -550,10 +552,11 @@ ${body}
         {
           "/src/contracts/authz.ts": `
             import type { TenantContext } from "./tenant";
-            export interface ActionGrant<A extends string> { action: A; tenant: TenantContext }
-            export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> {
-              void value; void action;
-            }
+          export interface ActionGrant<A extends string> { action: A; tenant: TenantContext }
+          export interface ActorRef { tenant: TenantContext; actorId: string }
+          export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> {
+            void value; void action;
+          }
           `,
         },
       );
@@ -868,6 +871,63 @@ ${body}
           assertActionGrant(executionGrant, "execution.initiate");
           return db.query("SELECT 1");
       `, params)).toHaveLength(1);
+    });
+
+    it.each([
+      `provider: (accept: (grant: ActionGrant<"pii.view">) => void) => void`,
+      `provider: { withGrant(accept: (grant: ActionGrant<"pii.view">) => void): void }`,
+      `provider: (accept: (tenant: TenantContext) => void) => void`,
+      `provider: (accept: (actor: ActorRef) => void) => void`,
+      `provider: (accept: (principal: Principal) => void) => void`,
+      `provider: (accept: (actor: WriteActor) => void) => void`,
+      `provider: (accept: (nested: (grant: ActionGrant<"pii.view">) => void) => void) => void`,
+    ])("rejects an authority supplied through a callback parameter: %s", (provider) => {
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          ${provider},`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          return db.query("SELECT 1");
+      `, params)).toHaveLength(1);
+    });
+
+    it.each([
+      `grant = replacementGrant;`,
+      `({ grant } = { grant: replacementGrant });`,
+      `for (grant of [replacementGrant]) { void grant; }`,
+    ])("rejects reassignment of a direct authority after its prologue assertion", (write) => {
+      const prelude = `declare const replacementGrant: ActionGrant<"pii.view">;`;
+      const params = `db: SqlDb,
+          grant: ActionGrant<"pii.view">,`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(grant, "pii.view");
+          ${write}
+          return db.query("SELECT 1");
+      `, params, prelude)).toHaveLength(1);
+    });
+
+    it("rejects reassignment of an authority from a destructured parameter", () => {
+      const prelude = `declare const replacementGrant: ActionGrant<"pii.view">;`;
+      const params = `db: SqlDb,
+          { grant }: { grant: ActionGrant<"pii.view"> },`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(grant, "pii.view");
+          grant = replacementGrant;
+          return db.query("SELECT 1");
+      `, params, prelude)).toHaveLength(1);
+    });
+
+    it("allows writes to a nested shadow that is not the asserted authority binding", () => {
+      const params = `db: SqlDb,
+          grant: ActionGrant<"pii.view">,`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(grant, "pii.view");
+          function normalize(grant: string): string {
+            grant = grant.trim();
+            return grant;
+          }
+          return db.query(normalize("value"));
+      `, params)).toEqual([]);
     });
 
     it("accepts a closed union only when every arm has the same authority inventory", () => {

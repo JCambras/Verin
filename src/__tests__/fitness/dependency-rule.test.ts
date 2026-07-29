@@ -211,7 +211,11 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nconst reflection = globalThis.Reflect;\nconst { get } = reflection;\nconst load = get(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nlet read: typeof Reflect.get;\n({ get: read } = Reflect);\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nlet read = Object.getOwnPropertyDescriptor;\n({ get: read } = Reflect);\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
-    ])("createRequire loaders fail closed", (source) => {
+      `import * as nodeModule from "node:module";\nconst read = Reflect.get.bind(Reflect);\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Reflect.get.call(Reflect, nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst load = Reflect.get.apply(Reflect, [nodeModule, "createRequire"])(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst args = Math.random() ? [nodeModule, "createRequire"] : [];\nconst load = Reflect.get.apply(Reflect, args)(import.meta.url);\nexport const value = load("@infra/store");`,
+    ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
       );

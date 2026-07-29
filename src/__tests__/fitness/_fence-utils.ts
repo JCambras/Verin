@@ -550,6 +550,44 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     }
     return false;
   };
+  const reflectedGetArguments = (
+    call: CallExpression,
+  ): readonly [Node | undefined, Node | undefined, boolean] | null => {
+    const direct = call.getArguments();
+    if (isReflectGet(call.getExpression())) return [direct[0], direct[1], false];
+    const callee = expressionProvenance(call.getExpression());
+    if (
+      Node.isPropertyAccessExpression(callee) ||
+      Node.isElementAccessExpression(callee)
+    ) {
+      const member = Node.isPropertyAccessExpression(callee)
+        ? callee.getName()
+        : literalPropertyKey(callee.getArgumentExpression());
+      const receiver = callee.getExpression();
+      if (member === "call" && isReflectGet(receiver)) {
+        return [direct[1], direct[2], false];
+      }
+      if (member === "apply" && isReflectGet(receiver)) {
+        const applied = expressionProvenance(direct[1]);
+        if (!Node.isArrayLiteralExpression(applied)) {
+          return [undefined, undefined, true];
+        }
+        return [applied.getElements()[0], applied.getElements()[1], false];
+      }
+    }
+    if (!Node.isCallExpression(callee)) return null;
+    const binder = expressionProvenance(callee.getExpression());
+    if (
+      !Node.isPropertyAccessExpression(binder) &&
+      !Node.isElementAccessExpression(binder)
+    ) return null;
+    const member = Node.isPropertyAccessExpression(binder)
+      ? binder.getName()
+      : literalPropertyKey(binder.getArgumentExpression());
+    if (member !== "bind" || !isReflectGet(binder.getExpression())) return null;
+    const effective = [...callee.getArguments().slice(1), ...direct];
+    return [effective[0], effective[1], false];
+  };
   for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
     const initializer = declaration.getInitializer();
     const expression = unwrapExpression(initializer);
@@ -586,12 +624,14 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     }
   }
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (!isReflectGet(call.getExpression())) continue;
-    const [receiver, key] = call.getArguments();
+    const reflected = reflectedGetArguments(call);
+    if (!reflected) continue;
+    const [receiver, key, unresolved] = reflected;
     const memberName = literalPropertyKey(key);
     if (
-      isCreateRequireNamespace(receiver) &&
-      (memberName === null || memberName === "createRequire")
+      unresolved ||
+      (isCreateRequireNamespace(receiver) &&
+        (memberName === null || memberName === "createRequire"))
     ) {
       refs.push({
         specifier: null,
@@ -1609,6 +1649,16 @@ const SEALED_AUTHORITY_KINDS = [
   },
 ] as const;
 
+const DYNAMIC_AUTHORITY_TYPES = [
+  ...SEALED_AUTHORITY_KINDS.map(({ typeName, declaration }) => ({
+    typeName,
+    declaration,
+  })),
+  { typeName: "ActorRef", declaration: "src/contracts/authz.ts" },
+  { typeName: "Principal", declaration: "src/contracts/principal.ts" },
+  { typeName: "AuthenticatedUser", declaration: "src/contracts/principal.ts" },
+] as const;
+
 export interface SealedAuthorityParameter {
   readonly kind: (typeof SEALED_AUTHORITY_KINDS)[number]["kind"];
   /** The expression that NAMES the authority: `grant`, or `ctx.tenant` when wrapped. */
@@ -1632,67 +1682,91 @@ function authorityInventory(signature: Signature): AuthorityInventory {
     `${authority.kind}:${authority.argument}:${
       authority.kind === "grant" ? grantAction(authority) ?? "<dynamic>" : ""
     }`;
-  const containsAuthority = (
-    type: Type,
-    seen = new Set<object>(),
-  ): boolean => {
+  const authorityMemo = new Map<object, boolean>();
+  const authorityVisiting = new Set<object>();
+  const containsAuthority = (type: Type): boolean => {
     const key = type.compilerType as unknown as object;
-    if (seen.has(key)) return false;
-    const nested = new Set(seen).add(key);
-    const unions = type.getUnionTypes();
-    if (unions.length > 0) {
-      return unions.some((arm) => containsAuthority(arm, nested));
-    }
-    if (
-      [...type.getAliasTypeArguments(), ...type.getTypeArguments()].some((argument) =>
-        containsAuthority(argument, nested)
-      )
-    ) return true;
+    const memoized = authorityMemo.get(key);
+    if (memoized !== undefined) return memoized;
+    if (authorityVisiting.has(key)) return false;
+    authorityVisiting.add(key);
     const symbol = type.getAliasSymbol() ?? type.getSymbol();
-    if (
-      symbol &&
-      !symbol.getDeclarations().some((declaration) =>
+    const projectOwned = !symbol ||
+      symbol.getDeclarations().some((declaration) =>
         Node.isTypeLiteral(declaration) ||
         normalizedPath(declaration.getSourceFile().getFilePath()).startsWith("src/")
-      )
-    ) return false;
-    if (SEALED_AUTHORITY_KINDS.some((candidate) =>
-      declaredAsType(type, candidate.declaration, candidate.typeName)
-    )) return true;
-    if (
-      [...type.getCallSignatures(), ...type.getConstructSignatures()].some((signature) =>
-        containsAuthority(signature.getReturnType(), nested)
-      )
-    ) return true;
-    if (type.isTuple()) {
-      return type.getTupleElements().some((element) =>
-        containsAuthority(element, nested)
       );
-    }
-    if (type.isArray()) {
-      const element = type.getArrayElementType();
-      return element ? containsAuthority(element, nested) : false;
-    }
-    if (
-      [type.getStringIndexType(), type.getNumberIndexType()].some((indexed) =>
-        indexed ? containsAuthority(indexed, nested) : false
-      )
-    ) return true;
-    return type.getProperties().some((member) => {
-      const declaration = member.getValueDeclaration() ?? member.getDeclarations()[0];
-      if (!declaration) return false;
-      const memberType = member.getTypeAtLocation(declaration);
-      const signatures = [
-        ...memberType.getCallSignatures(),
-        ...memberType.getConstructSignatures(),
-      ];
-      return signatures.length > 0
-        ? signatures.some((signature) =>
-          containsAuthority(signature.getReturnType(), nested)
-        )
-        : containsAuthority(memberType, nested);
-    });
+    const nested = [
+      ...type.getUnionTypes(),
+      ...type.getIntersectionTypes(),
+      ...type.getBaseTypes(),
+      ...type.getAliasTypeArguments(),
+      ...type.getTypeArguments(),
+      ...type.getTupleElements(),
+      ...[type.getArrayElementType()].filter((item): item is Type => Boolean(item)),
+      ...[type.getStringIndexType(), type.getNumberIndexType()]
+        .filter((item): item is Type => Boolean(item)),
+      ...(projectOwned
+        ? [
+          ...type.getProperties().flatMap((member) => {
+            const declaration = member.getValueDeclaration() ??
+              member.getDeclarations()[0];
+            return declaration ? [member.getTypeAtLocation(declaration)] : [];
+          }),
+          ...[...type.getCallSignatures(), ...type.getConstructSignatures()]
+            .map((candidate) => candidate.getReturnType()),
+        ]
+        : []),
+    ];
+    const found = DYNAMIC_AUTHORITY_TYPES.some((candidate) =>
+      declaredAsType(type, candidate.declaration, candidate.typeName)
+    ) || nested.some(containsAuthority);
+    authorityVisiting.delete(key);
+    authorityMemo.set(key, found);
+    return found;
   };
+  const callbackMemo = new Map<object, boolean>();
+  const callbackVisiting = new Set<object>();
+  const callbackCanSupplyAuthority = (type: Type): boolean => {
+    const key = type.compilerType as unknown as object;
+    const memoized = callbackMemo.get(key);
+    if (memoized !== undefined) return memoized;
+    if (callbackVisiting.has(key)) return false;
+    callbackVisiting.add(key);
+    const nested = [
+      ...type.getUnionTypes(),
+      ...type.getIntersectionTypes(),
+      ...type.getAliasTypeArguments(),
+      ...type.getTypeArguments(),
+    ];
+    const signatures = [
+      ...type.getCallSignatures(),
+      ...type.getConstructSignatures(),
+    ];
+    const found = nested.some(callbackCanSupplyAuthority) ||
+      signatures.some((candidate) =>
+        containsAuthority(candidate.getReturnType()) ||
+        candidate.getParameters().some((parameter) => {
+          const declaration = parameter.getValueDeclaration() ??
+            parameter.getDeclarations()[0];
+          if (!declaration) return false;
+          const parameterType = parameter.getTypeAtLocation(declaration);
+          return containsAuthority(parameterType) ||
+            callbackCanSupplyAuthority(parameterType);
+        })
+      );
+    callbackVisiting.delete(key);
+    callbackMemo.set(key, found);
+    return found;
+  };
+  const signatureContainsAuthority = (candidate: Signature): boolean =>
+    containsAuthority(candidate.getReturnType()) ||
+    candidate.getParameters().some((parameter) => {
+      const declaration = parameter.getValueDeclaration() ??
+        parameter.getDeclarations()[0];
+      return Boolean(declaration &&
+        callbackCanSupplyAuthority(parameter.getTypeAtLocation(declaration)));
+    });
   const collect = (
     type: Type,
     argument: string,
@@ -1743,9 +1817,7 @@ function authorityInventory(signature: Signature): AuthorityInventory {
       ...type.getConstructSignatures(),
     ];
     if (
-      dynamicSignatures.some((signature) =>
-        containsAuthority(signature.getReturnType())
-      )
+      dynamicSignatures.some(signatureContainsAuthority)
     ) {
       return {
         authorities: [],
@@ -1804,9 +1876,7 @@ function authorityInventory(signature: Signature): AuthorityInventory {
         ...memberType.getConstructSignatures(),
       ];
       if (
-        signatures.some((signature) =>
-          containsAuthority(signature.getReturnType())
-        )
+        signatures.some(signatureContainsAuthority)
       ) {
         return {
           authorities: inventory.authorities,
@@ -2267,6 +2337,76 @@ function repeatedAuthorityEvaluations(
     const base = resolvedText(assignment.getRight());
     if (base) collectAssignmentReads(left, base);
   }
+  const stableSymbols = new Map<object, string>();
+  const stableDeclarations = [
+    ...declaration.getDescendantsOfKind(SyntaxKind.Parameter)
+      .filter((parameter) =>
+        parameter.getFirstAncestor((ancestor) =>
+          Node.isFunctionLikeDeclaration(ancestor)
+        ) === declaration
+      ),
+    ...body.getStatements().flatMap((statement) =>
+      Node.isVariableStatement(statement) ? statement.getDeclarations() : []
+    ),
+  ];
+  for (const stableDeclaration of stableDeclarations) {
+    const root = stableDeclaration.getNameNode();
+    const names = Node.isIdentifier(root)
+      ? [root]
+      : root.getDescendantsOfKind(SyntaxKind.BindingElement).flatMap((element) => {
+        const name = element.getNameNode();
+        return Node.isIdentifier(name) ? [name] : [];
+      });
+    for (const name of names) {
+      if (!stableBindings.has(name.getText())) continue;
+      const symbol = name.getSymbol();
+      if (symbol) stableSymbols.set(symbol as unknown as object, name.getText());
+    }
+  }
+  const writes: string[] = [];
+  const recordWrites = (target: Node): void => {
+    for (const identifier of [
+      ...(Node.isIdentifier(target) ? [target] : []),
+      ...target.getDescendantsOfKind(SyntaxKind.Identifier),
+    ]) {
+      const parent = identifier.getParent();
+      const bindings = [
+        identifier.getSymbol(),
+        Node.isShorthandPropertyAssignment(parent)
+          ? parent.getValueSymbol()
+          : undefined,
+      ];
+      const name = bindings.flatMap((binding) =>
+        binding ? [stableSymbols.get(binding as unknown as object)] : []
+      ).find((candidate) => candidate !== undefined);
+      if (name) writes.push(name);
+    }
+  };
+  for (const assignment of body.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    const operator = assignment.getOperatorToken().getKind();
+    if (
+      operator < ts.SyntaxKind.FirstAssignment ||
+      operator > ts.SyntaxKind.LastAssignment
+    ) continue;
+    recordWrites(assignment.getLeft());
+  }
+  for (const update of [
+    ...body.getDescendantsOfKind(SyntaxKind.PrefixUnaryExpression),
+    ...body.getDescendantsOfKind(SyntaxKind.PostfixUnaryExpression),
+  ]) {
+    if (
+      update.getOperatorToken() !== SyntaxKind.PlusPlusToken &&
+      update.getOperatorToken() !== SyntaxKind.MinusMinusToken
+    ) continue;
+    recordWrites(update.getOperand());
+  }
+  for (const loop of [
+    ...body.getDescendantsOfKind(SyntaxKind.ForInStatement),
+    ...body.getDescendantsOfKind(SyntaxKind.ForOfStatement),
+  ]) {
+    const initializer = loop.getInitializer();
+    if (!Node.isVariableDeclarationList(initializer)) recordWrites(initializer);
+  }
   return captures.flatMap((capture) => {
     const source = canonicalAuthorityText(capture.source);
     const initializer = initializers.get(source);
@@ -2283,7 +2423,11 @@ function repeatedAuthorityEvaluations(
         `wrapped authority '${capture.source}' must be evaluated exactly once into its const prologue binding`,
       ]
       : [];
-  });
+  }).concat(
+    [...new Set(writes)].map((binding) =>
+      `sealed authority binding '${binding}' must not be reassigned after its prologue assertion`
+    ),
+  );
 }
 
 /** One message per required assertion that is missing from the prologue. */

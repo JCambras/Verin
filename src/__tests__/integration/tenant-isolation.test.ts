@@ -19,7 +19,7 @@ import {
   authorizeGovernedAction,
 } from "@contracts/authz";
 import { makeExecutionStore } from "@infra/store/execution-store";
-import { resumeFlow, type FlowDefinition } from "@domain/workflow/engine";
+import { resumeFlow, retryFlow, type FlowDefinition } from "@domain/workflow/engine";
 import { auditedWrite } from "@infra/audit/audited-write";
 import {
   verifyAndListOrgChain,
@@ -178,6 +178,42 @@ describe("tenant isolation (integration)", () => {
     expect(crossed.status).toBe("not-found");
     const legit = await resumeFlow(noop, store, {}, "tok-a", {}, tenantA);
     expect(legit.status).toBe("completed");
+  });
+
+  it("a failed execution cannot be retried under another tenant before step work", async () => {
+    const store = makeExecutionStore(db);
+    const state = {
+      id: "exec-retry-crossed",
+      orgId: ORG_A,
+      flowId: "retry-write",
+      status: "failed" as const,
+      resumeToken: null,
+      cursor: 0,
+      data: {},
+    };
+    await store.create(state, tenantA);
+    let stepRuns = 0;
+    const flow: FlowDefinition<Record<string, never>> = {
+      id: "retry-write",
+      name: "retry-write",
+      steps: [{
+        id: "write",
+        name: "write",
+        execute: async () => {
+          stepRuns += 1;
+          unwrap(await createHousehold(db, systemWriteActor("seed", ORG_B), {
+            name: "Crossed Retry Household",
+          }));
+          return { kind: "continue" };
+        },
+      }],
+    };
+    const result = await retryFlow(flow, store, {}, state, tenantB);
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("AUTH_FAILED");
+    expect(stepRuns).toBe(0);
+    const rows = await listHouseholds(db, grantB);
+    expect(rows.map((row) => row.name)).not.toContain("Crossed Retry Household");
   });
 
   it("audit chains are per-tenant through the repository API", async () => {

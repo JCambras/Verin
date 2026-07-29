@@ -4371,3 +4371,109 @@ pnpm test:e2e                                                # 17 tests passed
 ```
 
 **Date:** 2026-07-28 (twenty-third review-fix round on v3 build-sequence prompt 6).
+
+### PF-128 wrapped reflection cannot hide a module loader
+
+The module-reference walker recognized direct `Reflect.get` but not its `bind`,
+`call`, or `apply` wrappers. Those forms could obtain `node:module.createRequire`
+without leaving a reference for any consuming security fence.
+
+**Adversarial proof:** test-first companions acquired `createRequire` through
+`Reflect.get.bind(Reflect)`, `Reflect.get.call(...)`, literal
+`Reflect.get.apply(...)`, and an unresolved `apply` argument list. Before the
+walker change, the dependency companion reported no layer violation and the LLM
+PII, sealed-factory, and secret-containment companions reported no unresolved
+load. All forms now produce the shared fail-closed module reference.
+
+### PF-129 sealed positions are complete and overload-specific
+
+Sealed-position discovery silently stopped at a recursive cycle or depth limit and
+used one unindexed return step for every call and construct overload. A checked
+shallow value or first overload could therefore hide an unchecked sealed position.
+
+**Adversarial proof:** test-first casts covered a recursive target, a sealed target
+beyond the depth limit, and a two-overload callable whose second source overload
+returned `unknown`. All three initially produced no cast finding. The inventory
+now records incomplete traversal as a refusal and indexes every call and construct
+return, so all three casts fail while complete union and intersection reshapes
+remain clean.
+
+### PF-130 nested unchecked values fail every sealed assignment boundary
+
+Annotation enforcement checked whether the whole source was `any` or `unknown`.
+An object such as `{ tenant: any }` could initialize, assign, return, default, or
+flow into a parameter typed `{ tenant: TenantContext }`.
+
+**Adversarial proof:** one test-first fixture exercised variable initialization,
+later assignment, function return, parameter default, and call arguments using
+both nested `any` and nested `unknown`. Every boundary initially produced no
+unchecked-value finding. The shared sealed-position source-versus-target check now
+reports all six sites, while checked composite propagation remains accepted.
+
+### PF-131 asserted authority bindings cannot be reassigned
+
+Direct authority parameters were treated as stable even though JavaScript
+parameters are mutable. Repository work could receive a replacement grant or
+tenant after the original value passed its prologue assertion.
+
+**Adversarial proof:** direct assignment, destructuring assignment, a `for-of`
+loop target, and reassignment of a destructured authority parameter each replaced
+an asserted `ActionGrant<"pii.view">` before SQL work. All forms initially produced
+zero violations. Symbol-resolved write detection now reports each replacement. A
+nested function that assigns its unrelated shadow parameter remains clean.
+
+### PF-132 callback-supplied authorities are dynamic carriers
+
+Authority inventory inspected callable returns but ignored authorities delivered
+through callback parameters. A provider could invoke a callback with a second
+tenant, grant, actor, or principal after the prologue.
+
+**Adversarial proof:** test-first provider signatures supplied `ActionGrant`,
+`TenantContext`, `ActorRef`, `Principal`, and `WriteActor` through callback
+parameters, including method and nested-callback forms. Every form initially
+produced zero violations. The memoized callable-parameter traversal now marks each
+provider unfenceable without expanding ordinary project callback containers such
+as workflow definitions.
+
+### PF-133 governed classification follows nested authority paths
+
+Governed-sink derivation and reviewed pre-auth PII escapes classified only direct
+parameter types. Wrapping a tenant or PII grant in an object could make a governed
+read appear unbounded and eligible for a pre-auth escape.
+
+**Adversarial proof:** test-first PII reads accepted either
+`{ tenant: TenantContext }` or
+`{ grant: ActionGrant<"pii.view"> }`. Both were initially retained as reviewed
+pre-auth reads. Shared recursive classification now makes both escapes stale and
+derives `pii.view` governed sinks. Dynamic authority carriers are also treated as
+boundaries and cannot regain the escape.
+
+### PF-134 retry ownership is proven before step work
+
+`retryFlow` entered `drive` without checking that the failed execution belonged to
+the supplied tenant. A step could write under the supplied tenant before the
+execution store rejected the mismatched state on save.
+
+**Adversarial proof:** a real PGlite integration test persisted a failed
+organization-A execution, retried it with organization B's sealed tenant, and
+gave the step a real organization-B household write. Before the ownership check,
+the step ran and the household was committed before the execution save failed.
+The retry now returns `AUTH_FAILED`, the step counter remains zero, and no
+household row is written.
+
+### PF-128 - PF-134 verification
+
+```
+pnpm exec vitest run --maxWorkers=1 --fileParallelism=false # 56 files, 1,044 tests passed
+pnpm lint                                                    # clean
+pnpm typecheck                                               # clean
+pnpm knip                                                    # clean
+pnpm v3:invariants                                           # 6 active-pass, 0 active-fail
+pnpm golden:validate                                         # all 16 signed cases passed
+pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # contracts 3,998; domain 1,250; infrastructure 3,382
+APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```
+
+**Date:** 2026-07-29 (twenty-fourth review-fix round on v3 build-sequence prompt 6).

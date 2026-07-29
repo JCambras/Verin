@@ -2343,3 +2343,67 @@ unrelated stable authority).
 **Revert path:** revert this changeset to restore repeated-sibling suppression,
 object-accessor omission, type-only carrier reread detection, and dynamic authority
 provider acceptance.
+
+## D-085 - Complete semantic security paths and pre-work retry ownership
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-079, D-080, D-083,
+D-084, ADR-0034, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13
+
+Seven review findings were legitimate symptoms of shared semantic-analysis and
+workflow-ownership gaps.
+
+The shared module-reference walker now resolves direct, destructured, bound,
+`call`-wrapped, and `apply`-wrapped `Reflect.get` access. A statically unresolved
+`apply` argument list fails closed, so reflective `createRequire` construction
+cannot disappear from the layer, LLM PII, sealed-factory, or secret-containment
+scans.
+
+Sealed-position discovery now reports whether its complete structural inventory
+was proven. Recursive cycles and paths beyond the reviewed depth are refusals
+rather than silent truncations, and every call and construct overload has its own
+indexed return position. The same source-versus-target comparison now protects
+annotations, assignments, returns, parameter defaults, contextual literals, and
+call arguments when `any`, `unknown`, or `never` appears at a sealed position.
+
+Every direct or captured sealed authority binding is immutable after its prologue
+assertion. Assignment, destructuring assignment, update, and loop-target writes
+are resolved by symbol, without confusing nested shadow bindings. Callable
+parameters that can return or receive `TenantContext`, `ActionGrant`, `ActorRef`,
+`Principal`, `AuthenticatedUser`, or `WriteActor` are runtime-dynamic authority
+carriers and cannot claim a fixed prologue inventory.
+
+Governed-sink and reviewed pre-auth PII classification now reuse the shared
+recursive authority inventory. Nested tenant or grant parameters therefore derive
+the same boundary as direct parameters, and unfenceable dynamic carriers cannot
+retain a pre-auth escape.
+
+`retryFlow` validates the runtime tenant seal and compares execution ownership
+before calling `drive`. A cross-tenant failed execution returns `AUTH_FAILED`
+without running a step or writing through a dependency. The duplicate failed-resume
+explanation now points to `retryFlow` as the single saved-cursor contract owner.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 3,998 | 4,000 | 2 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,382 | 3,400 | 18 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. Domain remains at its ratified ceiling. One duplicated
+failed-resume explanation was consolidated under the adjacent `retryFlow`
+contract, preserving the operational guidance while making ownership explicit.
+
+**Alternatives rejected:** enumerate only the reported reflection spellings
+(another wrapper reopens loader construction); keep the first overload or truncate
+deep sealed paths (unexamined runtime values can mint authority); reject only
+whole-value `any` and `unknown` (nested unchecked members remain mints); trust a
+mutable parameter after its assertion (rebinding creates a time-of-check/time-of-use
+gap); and rely on the execution store's eventual ownership refusal (a step can
+write before the save).
+
+**Revert path:** revert this changeset to restore wrapped reflection gaps,
+incomplete sealed inventories, nested unchecked mints, mutable authority bindings,
+callback authority carriers, direct-only governed classification, and post-step
+retry ownership checks.

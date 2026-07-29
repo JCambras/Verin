@@ -469,12 +469,18 @@ type PositionStep =
   | { readonly kind: "property"; readonly name: string }
   | { readonly kind: "element" }
   | { readonly kind: "argument"; readonly index: number }
-  | { readonly kind: "return" };
+  | { readonly kind: "call-return"; readonly index: number }
+  | { readonly kind: "construct-return"; readonly index: number };
 
 interface SealedPosition {
   readonly steps: readonly PositionStep[];
   /** The sealed type living there, WITH its type arguments. */
   readonly sealed: string;
+}
+
+interface SealedPositionInventory {
+  readonly positions: readonly SealedPosition[];
+  readonly complete: boolean;
 }
 
 /**
@@ -534,43 +540,73 @@ function projectOwned(type: Type): boolean {
  */
 function sealedPositionsOf(
   type: Type,
-  steps: readonly PositionStep[] = [],
-  out: SealedPosition[] = [],
-  ancestors: ReadonlySet<object> = new Set(),
-): SealedPosition[] {
-  if (steps.length > POSITION_DEPTH) return out;
-  const sealed = sealedKeyOf(type);
-  if (sealed) {
-    out.push({ steps, sealed });
-    return out;
-  }
-  const key = type.compilerType as unknown as object;
-  if (ancestors.has(key)) return out;
-  const nested = new Set(ancestors).add(key);
-  for (const member of [...type.getUnionTypes(), ...type.getIntersectionTypes(), ...type.getBaseTypes()]) {
-    sealedPositionsOf(member, steps, out, nested);
-  }
-  const element = type.getArrayElementType();
-  if (element) sealedPositionsOf(element, [...steps, { kind: "element" }], out, nested);
-  [...type.getAliasTypeArguments(), ...type.getTypeArguments()].forEach((argument, index) =>
-    sealedPositionsOf(argument, [...steps, { kind: "argument", index }], out, nested)
-  );
-  if (!projectOwned(type)) return out;
-  for (const property of type.getProperties()) {
-    const declaration = property.getValueDeclaration() ?? property.getDeclarations()[0];
-    if (declaration) {
-      sealedPositionsOf(
-        property.getTypeAtLocation(declaration),
-        [...steps, { kind: "property", name: property.getName() }],
-        out,
-        nested,
-      );
+): SealedPositionInventory {
+  const positions: SealedPosition[] = [];
+  const visit = (
+    current: Type,
+    steps: readonly PositionStep[],
+    ancestors: ReadonlySet<object>,
+  ): boolean => {
+    const sealed = sealedKeyOf(current);
+    if (!sealed && !sealedType(current)) return true;
+    if (steps.length > POSITION_DEPTH) return false;
+    if (sealed) {
+      positions.push({ steps, sealed });
+      return true;
     }
-  }
-  for (const signature of [...type.getCallSignatures(), ...type.getConstructSignatures()]) {
-    sealedPositionsOf(signature.getReturnType(), [...steps, { kind: "return" }], out, nested);
-  }
-  return out;
+    const key = current.compilerType as unknown as object;
+    if (ancestors.has(key)) return false;
+    const nested = new Set(ancestors).add(key);
+    let complete = true;
+    for (const member of [
+      ...current.getUnionTypes(),
+      ...current.getIntersectionTypes(),
+      ...current.getBaseTypes(),
+    ]) {
+      complete = visit(member, steps, nested) && complete;
+    }
+    const element = current.getArrayElementType();
+    if (element) {
+      complete = visit(element, [...steps, { kind: "element" }], nested) &&
+        complete;
+    }
+    [...current.getAliasTypeArguments(), ...current.getTypeArguments()]
+      .forEach((argument, index) => {
+        complete = visit(
+          argument,
+          [...steps, { kind: "argument", index }],
+          nested,
+        ) && complete;
+      });
+    if (!projectOwned(current)) return complete;
+    for (const property of current.getProperties()) {
+      const declaration = property.getValueDeclaration() ??
+        property.getDeclarations()[0];
+      if (declaration) {
+        complete = visit(
+          property.getTypeAtLocation(declaration),
+          [...steps, { kind: "property", name: property.getName() }],
+          nested,
+        ) && complete;
+      }
+    }
+    current.getCallSignatures().forEach((signature, index) => {
+      complete = visit(
+        signature.getReturnType(),
+        [...steps, { kind: "call-return", index }],
+        nested,
+      ) && complete;
+    });
+    current.getConstructSignatures().forEach((signature, index) => {
+      complete = visit(
+        signature.getReturnType(),
+        [...steps, { kind: "construct-return", index }],
+        nested,
+      ) && complete;
+    });
+    return complete;
+  };
+  return { positions, complete: visit(type, [], new Set()) };
 }
 
 /**
@@ -590,8 +626,9 @@ function nextTypeAtPosition(type: Type, step: PositionStep): Type | null {
   if (step.kind === "argument") {
     return [...type.getAliasTypeArguments(), ...type.getTypeArguments()][step.index] ?? null;
   }
-  return type.getCallSignatures()[0]?.getReturnType() ??
-    type.getConstructSignatures()[0]?.getReturnType() ?? null;
+  return step.kind === "call-return"
+    ? type.getCallSignatures()[step.index]?.getReturnType() ?? null
+    : type.getConstructSignatures()[step.index]?.getReturnType() ?? null;
 }
 
 function sealedKeyAtPosition(type: Type, steps: readonly PositionStep[]): string | null {
@@ -639,8 +676,8 @@ function uncheckedAtPosition(type: Type, steps: readonly PositionStep[]): boolea
  */
 function isSealedReshape(source: Type, target: Type): boolean {
   const wanted = sealedPositionsOf(target);
-  if (wanted.length === 0) return false;
-  return wanted.every(({ steps, sealed }) =>
+  if (!wanted.complete || wanted.positions.length === 0) return false;
+  return wanted.positions.every(({ steps, sealed }) =>
     sealedKeyAtPosition(source, steps) === sealed
   );
 }
@@ -656,17 +693,12 @@ function isSealedReshape(source: Type, target: Type): boolean {
  * `tenant?: TenantContext` stays buildable.
  */
 /** Does this literal's own inferred type hold an `any`/`unknown` anywhere shallow? */
-function carriesUncheckedMember(type: Type): boolean {
-  const element = type.getArrayElementType();
-  if (element && isUncheckedSource(awaited(element))) return true;
-  return type.getProperties().some((property) => {
-    const declaration = property.getValueDeclaration() ?? property.getDeclarations()[0];
-    return Boolean(declaration && isUncheckedSource(awaited(property.getTypeAtLocation(declaration))));
-  });
-}
-
 function uncheckedAtSealedPosition(value: Type, expected: Type): boolean {
-  return sealedPositionsOf(expected).some(({ steps }) =>
+  const inventory = sealedPositionsOf(expected);
+  if (!inventory.complete) return true;
+  if (inventory.positions.length === 0) return false;
+  if (isUncheckedSource(awaited(value))) return true;
+  return inventory.positions.some(({ steps }) =>
     uncheckedAtPosition(value, steps)
   );
 }
@@ -697,7 +729,12 @@ function detectSealedAnnotationMints(sf: SourceFile, normalized: string): string
     if (!annotation || !source) return;
     const sealed = sealedType(annotation);
     if (!sealed || normalized === sealed.factory) return;
-    if (!isUncheckedSource(awaited(source.getType()))) return;
+    if (
+      !uncheckedAtSealedPosition(
+        awaited(source.getType()),
+        awaited(annotation),
+      )
+    ) return;
     out.push(
       `${normalized}:${line} - sealed type '${sealed.typeName}' annotated onto an unchecked value produced outside its factory`,
     );
@@ -909,7 +946,6 @@ export function detectSealedTypeConstruction(project: Project): string[] {
         ...sf.getDescendantsOfKind(SyntaxKind.ArrayLiteralExpression),
       ]
     ) {
-      if (!carriesUncheckedMember(literal.getType())) continue;
       const contextual = literal.getContextualType();
       const nested = contextual ? sealedType(contextual) : null;
       if (
@@ -999,10 +1035,16 @@ export function detectSealedTypeConstruction(project: Project): string[] {
         // argument the checker has already stopped reasoning about.
         for (const argument of call.getArguments()) {
           if (!Node.isExpression(argument)) continue;
-          if (!isUncheckedSource(awaited(argument.getType()))) continue;
           const parameter = argument.getContextualType();
           const filled = parameter ? sealedType(parameter) : null;
-          if (!filled || normalized === filled.factory) continue;
+          if (
+            !filled ||
+            normalized === filled.factory ||
+            !uncheckedAtSealedPosition(
+              awaited(argument.getType()),
+              awaited(parameter!),
+            )
+          ) continue;
           out.push(
             `${normalized}:${argument.getStartLineNumber()} - sealed type '${filled.typeName}' minted from an unchecked call argument outside its factory`,
           );
@@ -1756,6 +1798,77 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       )).toBe(true);
     });
 
+    it("rejects incomplete recursive, over-depth, and overloaded sealed-position inventories", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          interface RecursiveTarget { tenant: TenantContext; next?: RecursiveTarget }
+          interface RecursiveSource { tenant: TenantContext; next?: { tenant: unknown } }
+          interface OverloadedTarget {
+            (): TenantContext;
+            (key: string): TenantContext;
+          }
+          interface OverloadedSource {
+            (): TenantContext;
+            (key: string): unknown;
+          }
+          declare const recursive: RecursiveSource;
+          declare const deep: {
+            shallow: TenantContext;
+            nested: { a: { b: { c: { d: { e: { f: { g: { tenant: unknown } } } } } } } };
+          };
+          declare const overloaded: OverloadedSource;
+          export const forgedRecursive = recursive as RecursiveTarget;
+          export const forgedDeep = deep as {
+            shallow: TenantContext;
+            nested: { a: { b: { c: { d: { e: { f: { g: { tenant: TenantContext } } } } } } } };
+          };
+          export const forgedOverload = overloaded as OverloadedTarget;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/app/evil.ts") && hit.includes("cast")
+      );
+      for (const line of [19, 20, 24]) {
+        expect(
+          hits.some((hit) => hit.startsWith(`src/app/evil.ts:${line} `)),
+          `line ${line} not reported: ${hits.join(" | ")}`,
+        ).toBe(true);
+      }
+    });
+
+    it("rejects nested unchecked sources at every sealed assignment boundary", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          interface Scope { tenant: TenantContext }
+          declare const raw: { tenant: any };
+          declare const unknownRaw: { tenant: unknown };
+          const initialized: Scope = raw;
+          let assigned: Scope;
+          assigned = raw;
+          export function revived(): Scope { return raw; }
+          export function defaulted(scope: Scope = raw): Scope { return scope; }
+          declare function consume(scope: Scope): void;
+          consume(raw);
+          consume(unknownRaw);
+          void initialized;
+          void assigned;
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/app/evil.ts") && hit.includes("unchecked")
+      );
+      for (const line of [6, 8, 9, 10, 12, 13]) {
+        expect(
+          hits.some((hit) => hit.startsWith(`src/app/evil.ts:${line} `)),
+          `line ${line} not reported: ${hits.join(" | ")}`,
+        ).toBe(true);
+      }
+    });
+
     it("accepts union and intersection reshapes that retain sealed identity in every runtime value", () => {
       const project = sealedFixture(
         "/src/app/fine.ts",
@@ -2111,6 +2224,21 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
         `
           import * as nodeModule from "node:module";
           const { get: read } = Reflect;
+          const created = read(nodeModule, "createRequire")(import.meta.url);
+          created("../contracts/tenant");
+        `,
+      );
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts:4") && hit.includes("unverifiable module load")
+      )).toBe(true);
+    });
+
+    it("catches createRequire through a bound Reflect.get wrapper", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import * as nodeModule from "node:module";
+          const read = Reflect.get.bind(Reflect);
           const created = read(nodeModule, "createRequire")(import.meta.url);
           created("../contracts/tenant");
         `,

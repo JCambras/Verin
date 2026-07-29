@@ -17,8 +17,10 @@ import {
   isSqlExecutorCall,
   normalizedPath,
   REPO_ROOT,
+  grantAction,
   requiredAuthorityPrologue,
   returnedCallableMembers,
+  sealedAuthorityParameters,
   structuralPiiExposures,
   typeKey,
 } from "./_fence-utils";
@@ -288,31 +290,18 @@ function actionGrantParameterIndex(
 }
 
 function actionGrantAction(signature: Signature): string | null {
-  for (const parameter of signature.getParameters()) {
-    const declaration = parameter.getValueDeclaration() ??
-      parameter.getDeclarations()[0];
-    if (!declaration) continue;
-    for (const action of V3_15_3_ACTIONS) {
-      if (
-        actionGrantParameter(parameter.getTypeAtLocation(declaration), action)
-      ) {
-        return action;
-      }
-    }
-  }
-  return null;
+  const actions = sealedAuthorityParameters(signature)
+    .filter((authority) => authority.kind === "grant")
+    .map(grantAction)
+    .filter((action): action is string =>
+      action !== null && V3_15_3_ACTIONS.includes(action as never)
+    );
+  return actions[0] ?? null;
 }
 
 function hasTenantBoundaryParameter(signature: Signature): boolean {
-  return signature.getParameters().some((parameter) => {
-    const declaration = parameter.getValueDeclaration() ??
-      parameter.getDeclarations()[0];
-    if (!declaration) return false;
-    const type = parameter.getTypeAtLocation(declaration);
-    return declaredAs(type, "src/contracts/tenant.ts", "TenantContext") ||
-      declaredAs(type, "src/contracts/principal.ts", "WriteActor") ||
-      declaredAs(type, "src/contracts/authz.ts", "ActionGrant");
-  });
+  return sealedAuthorityParameters(signature).length > 0 ||
+    requiredAuthorityPrologue(signature).unfenceable.length > 0;
 }
 
 // A DML head, matched against a statement whose row-LOCK clause has been removed
@@ -785,15 +774,9 @@ export function detectUnreviewedPreAuthPiiReads(
 export function detectUnguardedGovernedSinks(project: Project): string[] {
   const out: string[] = [];
   for (const sink of deriveGovernedSinks(project)) {
-    const grant = sink.signature.getParameters().find((parameter) => {
-      const declaration = parameter.getValueDeclaration() ??
-        parameter.getDeclarations()[0];
-      return Boolean(declaration &&
-        actionGrantParameter(
-          parameter.getTypeAtLocation(declaration),
-          sink.action,
-        ));
-    });
+    const grant = sealedAuthorityParameters(sink.signature).find((authority) =>
+      authority.kind === "grant" && grantAction(authority) === sink.action
+    );
     if (!grant) {
       out.push(
         `${sink.file} :: ${sink.name}: boundary must require ActionGrant<"${sink.action}">`,
@@ -2194,6 +2177,39 @@ ${body}
       ])).toEqual([
         `src/infrastructure/identity/directory.ts :: findUserByPhone: pre-auth PII escape must carry a reason`,
       ]);
+    });
+
+    it("does not let nested tenant or grant authority retain a pre-auth PII escape", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+          export function assertTenantContext(value: unknown): asserts value is TenantContext { void value; }
+        `,
+        "/src/contracts/authz.ts": `
+          import type { TenantContext } from "./tenant";
+          export interface ActionGrant<A extends string> { action: A; tenant: TenantContext }
+          export function assertActionGrant<A extends string>(value: unknown, action: A): asserts value is ActionGrant<A> { void value; void action; }
+        `,
+        "/src/infrastructure/identity/directory.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          import type { ActionGrant } from "../../contracts/authz";
+          interface UserRow extends PIIBearing { email: string; displayName: string }
+          export function byTenant(scope: { tenant: TenantContext }): UserRow[] { void scope; return []; }
+          export function byGrant(scope: { grant: ActionGrant<"pii.view"> }): UserRow[] { void scope; return []; }
+        `,
+      });
+      const reviewed = [
+        { callable: "src/infrastructure/identity/directory.ts :: byTenant", why: "pretend escape" },
+        { callable: "src/infrastructure/identity/directory.ts :: byGrant", why: "pretend escape" },
+      ];
+      expect(unboundedPiiReads(project)).toEqual([]);
+      const stale = detectUnreviewedPreAuthPiiReads(project, reviewed);
+      expect(stale).toHaveLength(2);
+      expect(stale.every((hit) => hit.includes("stale pre-auth PII escape"))).toBe(true);
+      expect(deriveGovernedSinks(project).map((sink) => `${sink.name}:${sink.action}`).sort())
+        .toEqual(["byGrant:pii.view", "byTenant:pii.view"]);
     });
 
     it("catches a STALE pre-auth escape, and never swallows a tenant-scoped read", () => {

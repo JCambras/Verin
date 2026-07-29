@@ -9,7 +9,7 @@
 import { isAppError, type AppError } from "@contracts/errors";
 import type { ActionGrant } from "@contracts/authz";
 import type { PIIBearing } from "@contracts/pii";
-import type { TenantContext } from "@contracts/tenant";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
 export type FlowData = Record<string, unknown> & PIIBearing;
 
@@ -143,9 +143,10 @@ export async function retryFlow<D>(
   state: ExecutionState,
   tenant: TenantContext,
 ): Promise<FlowRunResult> {
+  assertTenantContext(tenant);
+  if (state.orgId !== tenant.orgId) return { executionId: state.id, status: "failed", error: { code: "AUTH_FAILED", message: "Execution does not belong to this tenant" }, data: state.data };
   return drive(def, store, deps, { ...state, status: "running" }, tenant);
 }
-
 export async function resumeFlow<D>(
   def: FlowDefinition<D>,
   store: ExecutionStore,
@@ -167,9 +168,8 @@ export async function resumeFlow<D>(
   if (state.status !== "suspended" && state.status !== "failed") {
     return { executionId: state.id, status: state.status, data: state.data };
   }
-  // A "failed" execution is RETRIED from its saved cursor (Vale V7): the per-write
-  // idempotency keys make the already-committed writes replay safely, so a transient
-  // mid-finalize error is recoverable instead of permanently wedged.
+  // Failed resumes share retryFlow's saved-cursor, idempotent-write contract
+  // (D-027), so transient mid-finalize errors remain recoverable.
   // Trusted flow context takes precedence over the (HMAC-token-authed but
   // unsigned) webhook payload, so a payload cannot override accountType/actor (Vale V18).
   const resumed: ExecutionState = { ...state, status: "running", data: { ...payload, ...state.data } };
