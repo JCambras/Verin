@@ -2913,3 +2913,31 @@ corrections into documentation deletion.
 **Revert path:** revert this changeset to restore open-ended app-error reasons,
 shape-authorized request identifiers, and false cycle rejection for shared
 evidence DAGs.
+
+## D-094 - Keyed record correlation proves normalized input ownership
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-093, ADR-0013,
+ADR-0038, v3 §15.4, charter #1/#4/#7/#14
+
+The observability provenance fence now traces the receiver of the emitted
+hex digest back to the imported `node:crypto` HMAC. That same receiver must
+consume a canonical JSON tuple containing the digest version, tenant
+organization, observability field, and lowercase record value. A nested or
+unrelated HMAC call no longer proves the emitted digest.
+
+The runtime companion compares two distinct canonical record identifiers in
+the same tenant and field. It keeps the existing stability, tenant-separation,
+field-separation, non-recovery, and redaction assertions, so removing any
+scoping component has a direct behavioral failure.
+
+Only fitness, integration, decision, and proof evidence changed. Platform line
+measurements and their ADR ceilings remain unchanged.
+
+**Alternatives rejected:** search the digest initializer for any HMAC call
+(the record value can be omitted while the fence stays green); inspect only for
+a `value.toLowerCase()` descendant (an unrelated expression can satisfy it);
+and rely only on tenant and field separation (every record in one tenant and
+field can still collapse to one correlation value).
+
+**Revert path:** revert this changeset to restore descendant-only HMAC
+detection and omit the same-tenant, same-field distinct-value companion.

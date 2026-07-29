@@ -4,6 +4,7 @@ import {
   Node,
   SyntaxKind,
   type CallExpression,
+  type FunctionDeclaration,
   type Project,
   type Type,
 } from "ts-morph";
@@ -218,40 +219,129 @@ function importedRandomUuid(call: CallExpression): boolean {
   }));
 }
 
-function hmacDigestInitializer(node: Node): boolean {
+function importedCreateHmac(call: CallExpression): boolean {
+  const symbol = call.getExpression().getSymbol();
+  return Boolean(symbol?.getDeclarations().some((declaration) =>
+    Node.isImportSpecifier(declaration) &&
+    declaration.getName() === "createHmac" &&
+    declaration.getImportDeclaration().getModuleSpecifierValue() === "node:crypto"
+  ));
+}
+
+function resolvesToDeclaration(node: Node, declaration: Node): boolean {
+  const symbol = node.getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  return Boolean(target?.getDeclarations().includes(declaration));
+}
+
+function isGlobalJsonStringify(node: Node): boolean {
+  if (
+    !Node.isPropertyAccessExpression(node) ||
+    node.getName() !== "stringify"
+  ) {
+    return false;
+  }
+  const declarations = node.getExpression().getSymbol()?.getDeclarations() ?? [];
+  return declarations.length > 0 && declarations.every((declaration) =>
+    declaration.getSourceFile().getFilePath().includes("/typescript/lib/lib")
+  );
+}
+
+function isNormalizedRecordDigestInput(
+  node: Node,
+  owner: FunctionDeclaration,
+): boolean {
+  if (!Node.isCallExpression(node)) return false;
+  const stringify = node.getExpression();
+  const [input] = node.getArguments();
+  if (
+    !isGlobalJsonStringify(stringify) ||
+    node.getArguments().length !== 1 ||
+    !input ||
+    !Node.isArrayLiteralExpression(input)
+  ) {
+    return false;
+  }
+  const [fieldParameter, tenantParameter, valueParameter] = owner.getParameters();
+  const [version, orgId, field, normalizedValue] = input.getElements();
+  if (
+    !fieldParameter ||
+    !tenantParameter ||
+    !valueParameter ||
+    input.getElements().length !== 4 ||
+    literalText(version) !== "v1" ||
+    !orgId ||
+    !Node.isPropertyAccessExpression(orgId) ||
+    orgId.getName() !== "orgId" ||
+    !resolvesToDeclaration(orgId.getExpression(), tenantParameter) ||
+    !field ||
+    !resolvesToDeclaration(field, fieldParameter) ||
+    !normalizedValue ||
+    !Node.isCallExpression(normalizedValue) ||
+    normalizedValue.getArguments().length !== 0
+  ) {
+    return false;
+  }
+  const lowerCase = normalizedValue.getExpression();
+  return Node.isPropertyAccessExpression(lowerCase) &&
+    lowerCase.getName() === "toLowerCase" &&
+    resolvesToDeclaration(lowerCase.getExpression(), valueParameter);
+}
+
+function hmacUpdateInputs(node: CallExpression): readonly Node[] | null {
+  const digest = node.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(digest) ||
+    digest.getName() !== "digest" ||
+    literalText(node.getArguments()[0]) !== "hex"
+  ) {
+    return null;
+  }
+  const inputs: Node[] = [];
+  let receiver: Node = digest.getExpression();
+  for (;;) {
+    if (!Node.isCallExpression(receiver)) return null;
+    if (importedCreateHmac(receiver)) {
+      return literalText(receiver.getArguments()[0]) === "sha256" ? inputs : null;
+    }
+    const update = receiver.getExpression();
+    const [input] = receiver.getArguments();
+    if (
+      !Node.isPropertyAccessExpression(update) ||
+      update.getName() !== "update" ||
+      !input
+    ) {
+      return null;
+    }
+    inputs.push(input);
+    receiver = update.getExpression();
+  }
+}
+
+function hmacDigestInitializer(node: Node, owner: FunctionDeclaration): boolean {
   if (!Node.isIdentifier(node)) return false;
   return node.getDefinitionNodes().some((definition) => {
     if (!Node.isVariableDeclaration(definition)) return false;
     const initializer = definition.getInitializer();
     if (!initializer || !Node.isCallExpression(initializer)) return false;
-    const expression = initializer.getExpression();
-    if (
-      !Node.isPropertyAccessExpression(expression) ||
-      expression.getName() !== "digest" ||
-      literalText(initializer.getArguments()[0]) !== "hex"
-    ) {
-      return false;
-    }
-    return initializer.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
-      const callee = call.getExpression();
-      const symbol = callee.getSymbol();
-      return Boolean(symbol?.getDeclarations().some((declaration) =>
-        Node.isImportSpecifier(declaration) &&
-        declaration.getName() === "createHmac" &&
-        declaration.getImportDeclaration().getModuleSpecifierValue() === "node:crypto"
-      ));
-    });
+    const inputs = hmacUpdateInputs(initializer);
+    return Boolean(inputs?.some((input) =>
+      isNormalizedRecordDigestInput(input, owner)
+    ));
   });
 }
 
-function isHmacDigestValue(node: Node | undefined): boolean {
+function isHmacDigestValue(
+  node: Node | undefined,
+  owner: FunctionDeclaration,
+): boolean {
   if (!node || !Node.isTemplateExpression(node) || node.getHead().getLiteralText() !== "h1:") {
     return false;
   }
   const spans = node.getTemplateSpans();
   return spans.length === 1 &&
     spans[0]!.getLiteral().getLiteralText() === "" &&
-    hmacDigestInitializer(spans[0]!.getExpression());
+    hmacDigestInitializer(spans[0]!.getExpression(), owner);
 }
 
 function directFactoryInvocation(
@@ -319,9 +409,10 @@ export function detectUntrustedObservabilityRecordMints(project: Project): strin
       if (resolvesTo(call.getExpression(), SAFE_VALUES, "keyedDigestObservabilityId")) {
         const owner = call.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration);
         if (
+          !owner ||
           file !== RECORD_ID ||
-          owner?.getName() !== "keyedObservabilityId" ||
-          !isHmacDigestValue(call.getArguments()[1])
+          owner.getName() !== "keyedObservabilityId" ||
+          !isHmacDigestValue(call.getArguments()[1], owner)
         ) {
           out.push(`${where}: keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary`);
         }
@@ -855,6 +946,31 @@ describe("observability-vocabulary fence (charter #14)", () => {
       expect(detectUntrustedObservabilityRecordMints(project)).toEqual([
         "src/infrastructure/observability/record-id.ts:4: keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary",
       ]);
+    });
+
+    it("rejects a keyed record digest that omits the normalized record value", () => {
+      const project = inMemoryProject({
+        "/src/domain/observability/safe-values.ts": `
+          export function keyedDigestObservabilityId(field: string, value: string): unknown {
+            return { field, value };
+          }
+        `,
+        "/src/infrastructure/observability/record-id.ts": `
+          import { createHmac } from "node:crypto";
+          import { keyedDigestObservabilityId } from "@domain/observability/safe-values";
+          export function keyedObservabilityId(field: string, tenant: { orgId: string }, value: string): unknown {
+            const digest = createHmac("sha256", "secret")
+              .update(JSON.stringify(["v1", tenant.orgId, field]))
+              .digest("hex");
+            return keyedDigestObservabilityId(field, \`h1:\${digest}\`);
+          }
+        `,
+      });
+      const violations = detectUntrustedObservabilityRecordMints(project);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain(
+        "keyed observability record ids must come from the reviewed tenant-scoped HMAC boundary",
+      );
     });
 
     it("rejects generated record factories invoked through call wrappers", () => {

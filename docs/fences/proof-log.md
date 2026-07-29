@@ -5236,3 +5236,33 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # 17 tests passed
 ```
+
+### PF-185 keyed observability digests include the normalized record value
+
+The keyed-record provenance fence searched a digest initializer for any
+`createHmac` call. Removing the normalized record value from the HMAC input
+therefore collapsed every record in one tenant and field to one digest while
+the 36-test fitness file remained green.
+
+**Adversarial proof:** before the correction, the live record-id implementation
+was changed from `["v1", tenant.orgId, field, value.toLowerCase()]` to
+`["v1", tenant.orgId, field]`. The observability-vocabulary fitness file still
+passed all 36 tests. After the correction, the same injection failed at
+`src/infrastructure/observability/record-id.ts:33`, naming the untrusted keyed
+mint. The integration companion also failed because two distinct canonical
+record identifiers in the same tenant and field produced the same digest. The
+injection was reverted.
+
+### PF-185 verification
+
+```
+corepack pnpm test                                           # 56 files, 1,209 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm knip                                           # clean
+corepack pnpm v3:invariants                                  # 6 active-pass, 0 active-fail
+corepack pnpm golden:validate                                # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 5 tests passed
+corepack pnpm test:e2e                                       # production build and 17 tests passed
+```

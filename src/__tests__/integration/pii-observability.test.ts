@@ -220,6 +220,7 @@ describe("logs never carry raw names or account numbers", () => {
     const crafted = "00000000-0000-0000-0000-941000517334";
     const first = keyedObservabilityId("entityId", advisor.tenant, crafted);
     const repeated = keyedObservabilityId("entityId", advisor.tenant, crafted);
+    const distinctValue = keyedObservabilityId("entityId", advisor.tenant, ENTITY_ID);
     const otherTenant = tenantOf(principalFromIdentity({
       userId: "u-other",
       orgId: "org-other",
@@ -231,6 +232,7 @@ describe("logs never carry raw names or account numbers", () => {
     const execution = keyedObservabilityId("executionId", advisor.tenant, crafted);
     expect(first.value).toMatch(/^h1:[0-9a-f]{64}$/);
     expect(repeated.value).toBe(first.value);
+    expect(distinctValue.value).not.toBe(first.value);
     expect(other.value).not.toBe(first.value);
     expect(execution.value).not.toBe(first.value);
     expect(first.value).not.toContain("941000517334");
