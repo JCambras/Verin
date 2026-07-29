@@ -155,6 +155,7 @@ export async function resumeFlow<D>(
   payload: FlowData,
   tenant: TenantContext,
 ): Promise<FlowRunResult | { status: "not-found" }> {
+  assertTenantContext(tenant);
   const state = await store.loadByToken(token);
   if (!state) return { status: "not-found" };
   // The token is the capability, but the caller's tenant (derived from the

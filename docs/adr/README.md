@@ -52,6 +52,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0034](./0034-line-budget-infrastructure-headroom.md) | Infrastructure ceiling 3,300→3,400 on a re-measured baseline; the fence's own headroom comment corrected | Accepted (amends ADR-0033) |
 | [0035](./0035-line-budget-contracts-error-snapshots.md) | Contracts ceiling 4,000 to 4,050 for normalized error snapshots | Accepted (amends ADR-0033) |
 | [0036](./0036-line-budget-infrastructure-provenance-snapshots.md) | Infrastructure ceiling 3,400 to 3,450 for provenance and failure snapshots | Accepted (amends ADR-0034) |
+| [0037](./0037-line-budget-domain-resume-seal.md) | Domain ceiling 1,250 to 1,300 for pre-load resume validation | Accepted (amends ADR-0033) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

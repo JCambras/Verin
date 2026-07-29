@@ -58,7 +58,7 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey)
   plus axe, green on a non-UTC clock; `pnpm test:e2e` reports the live count.
 
-**Governance:** 32 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 37 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
@@ -73,7 +73,7 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-107; every PF id names exactly one
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-164; every PF id names exactly one
 proof — the prompt-6 entries were renumbered on rebase, see the numbering note in the log).
 
 | Fence | Enforces (charter) | Proof |
@@ -112,6 +112,13 @@ proof — the prompt-6 entries were renumbered on rebase, see the numbering note
 | `llm-pii-boundary` (import-reachability: no `PIIBearing`-marked type reachable from `src/infrastructure/llm/`) | no PII-bearing type reaches a model surface (#3, #13, v3 invariant 1, ADR-0031) | PF-032 + companions |
 | `governed-actions` (AST: per-action `ActionGrant` bound at each governed request surface) | governed human actions authorized per-action, never by a bare role check (#12, v3 §15.3) | PF-033 + companions |
 | `observability-vocabulary` (AST: span/log/action/attribute values drawn from a sealed vocabulary) | un-listed telemetry values degrade to `[REDACTED]`, never leak PII (#14) | PF-035 + companions |
+
+**Current prompt-6 line-budget PR evidence:** contracts 4,017/4,050 (33
+headroom), domain 1,251/1,300 (49), infrastructure 3,437/3,450 (13), and
+presentation 918/6,000 (5,082). ADR-0037 raises only domain from 1,250 because
+the pre-load runtime tenant-seal assertion adds one required domain line to a
+layer with zero headroom. No useful implementation or documentation was removed
+or compressed, and the other measured ceilings remain unchanged.
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is

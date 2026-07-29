@@ -185,6 +185,71 @@ describe("tenant isolation (integration)", () => {
     expect(legit.status).toBe("completed");
   });
 
+  it("a forged matching-org context is refused before loading or exposing a continuation", async () => {
+    const store = makeExecutionStore(db);
+    await store.create({
+      id: "exec-forged-resume",
+      orgId: ORG_A,
+      flowId: "resume-write",
+      status: "suspended",
+      resumeToken: "tok-forged-resume",
+      cursor: 0,
+      data: { foreignName: "Sentinel Foreign Client" },
+    }, tenantA);
+    let loads = 0;
+    let saves = 0;
+    let stepRuns = 0;
+    const trackingStore: ExecutionStore = {
+      create: (next, tenant) => store.create(next, tenant),
+      save: (next, tenant) => {
+        saves += 1;
+        return store.save(next, tenant);
+      },
+      loadById: (id, grant) => store.loadById(id, grant),
+      loadByToken: (token) => {
+        loads += 1;
+        return store.loadByToken(token);
+      },
+    };
+    const flow: FlowDefinition<Record<string, never>> = {
+      id: "resume-write",
+      name: "resume-write",
+      steps: [{
+        id: "write",
+        name: "write",
+        execute: async () => {
+          stepRuns += 1;
+          unwrap(await createHousehold(db, systemWriteActor("seed", ORG_A), {
+            name: "Forged Resume Household",
+          }));
+          return { kind: "continue" };
+        },
+      }],
+    };
+    const forged = {
+      orgId: ORG_A,
+      actor: tenantA.actor,
+    } as unknown as TenantContext;
+    await expect(
+      resumeFlow(
+        flow,
+        trackingStore,
+        {},
+        "tok-forged-resume",
+        { signed: true },
+        forged,
+      ),
+    ).rejects.toMatchObject({
+      code: "INTERNAL",
+      message: expect.not.stringContaining("Sentinel Foreign Client"),
+    });
+    expect(loads).toBe(0);
+    expect(saves).toBe(0);
+    expect(stepRuns).toBe(0);
+    const rows = await listHouseholds(db, grantA);
+    expect(rows.map((row) => row.name)).not.toContain("Forged Resume Household");
+  });
+
   it("a failed execution cannot be retried under another tenant before step work", async () => {
     const store = makeExecutionStore(db);
     const state = {

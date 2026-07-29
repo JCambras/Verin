@@ -2655,3 +2655,62 @@ disappears).
 **Revert path:** revert this changeset to restore unowned SQL execution, ambient
 builtin and namespace-member provenance gaps, repeated reflective authority
 reads, and incomplete governed-callee traversal.
+
+## D-090 - Resume and semantic provenance boundaries fail before work
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-089,
+ADR-0037, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#3/#4/#7/#12
+
+All six review findings were legitimate. The resume finding was a local
+validation-order defect at an intentionally unscoped capability load. The other
+five findings shared incomplete ownership or provenance traversal in security
+fitness analyzers.
+
+`resumeFlow` now validates the runtime `TenantContext` seal before
+`loadByToken`. A forged context with a matching organization can no longer load
+or expose PII-bearing state, start a workflow step, or perform a write. The
+integration companion runs against PGlite and asserts zero loads, saves, step
+runs, and durable household writes while sentinel foreign data stays absent from
+the typed failure.
+
+Module-reference provenance now follows fixed array and tuple members, exact
+element access, and array destructuring. Unresolved indexes expand
+conservatively. Ambient builtin accessor aliases retain every potentially
+reaching source after the latest guaranteed assignment, so a conditional safe
+replacement cannot erase a reachable `Reflect.get`.
+
+Sealed construction analyzes every structural position independently. A
+factory-owned `Tokenized<T>` position no longer exempts a sibling
+`TenantContext` or other foreign seal in casts, contextual literals,
+annotations, assignments, returns, parameter defaults, or call arguments.
+Incomplete inventories emit every foreign sealed owner instead of selecting one.
+
+Governed call resolution follows later local assignments and values returned by
+statically resolved helpers. Both wired and missing-authorization companions
+prove that the exact sink action remains attached to the route. SQL normalization
+resolves `Reflect.apply` through fixed-array destructuring and exact array member
+aliases, and the normalized call is shared by app-layer refusal, repository,
+tenant, and governed-action analysis.
+
+The runtime seal check added one domain line to a layer that had no headroom.
+ADR-0037 raises only domain to the smallest rounded envelope. No useful code or
+documentation was removed or compressed:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,251 | 1,300 | 49 |
+| infrastructure | 3,437 | 3,450 | 13 |
+| presentation | 918 | 6,000 | 5,082 |
+
+**Alternatives rejected:** validate the runtime seal after the capability load
+(foreign state can already escape); enumerate only the reported array spellings
+(equivalent aliases remain open); select the latest textual alias assignment
+(conditional writes are not guaranteed); exempt a whole composite by its first
+sealed position (foreign sibling seals disappear); and inspect only declaration
+initializers for governed callees (later assignments and helper returns remain
+unowned).
+
+**Revert path:** revert this changeset to restore pre-validation continuation
+loads, array and conditional provenance gaps, whole-composite factory
+exemptions, and incomplete governed sink ownership.

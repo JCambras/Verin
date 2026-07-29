@@ -14,8 +14,9 @@ import { relative } from "node:path";
  * foundation close. Raising any ceiling is an ADR amendment, not a code change.
  */
 // ADR-0033 amended these to the smallest rounded envelopes that leave BOUNDED room
-// for correction; ADR-0034 and ADR-0036 raised infrastructure alone, and
-// ADR-0035 raised contracts alone for normalized failure snapshots. Before
+// for correction; ADR-0034 and ADR-0036 raised infrastructure alone,
+// ADR-0035 raised contracts alone for normalized failure snapshots, and
+// ADR-0037 raised domain alone for pre-load runtime tenant validation. Before
 // ADR-0033, domain and infrastructure sat at exactly ZERO headroom, so one added
 // line in either failed `pnpm test` on an unrelated ceiling and the only remedy was
 // an ADR amendment rather than a code change - which is what compressed doc comments
@@ -24,13 +25,13 @@ import { relative } from "node:path";
 // absorb a correction buys no discipline; it just converts review findings into
 // documentation deletions.
 //
-// MEASURED at the ADR-0036 amendment, with this file's own algorithm: contracts
-// 4017/4050 (33), domain 1250/1250 (0), infrastructure 3437/3450 (13). These are
+// MEASURED at the ADR-0037 amendment, with this file's own algorithm: contracts
+// 4017/4050 (33), domain 1251/1300 (49), infrastructure 3437/3450 (13). These are
 // the real figures, not a stale decision-table row. Any FURTHER increase is still a
 // measured ADR amendment, never a code change.
 const CEILINGS = {
   contracts: 4050, // ADR-0035, on a re-measured 4,017 baseline
-  domain: 1250,
+  domain: 1300, // ADR-0037, on a re-measured 1,251 baseline
   infrastructure: 3450, // ADR-0036, on a re-measured 3,437 baseline
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;

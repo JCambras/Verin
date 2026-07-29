@@ -221,6 +221,9 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nconst copy = Object.fromEntries(Object.entries(nodeModule));\nconst load = copy.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst holder = { mod: nodeModule };\nconst load = holder.mod.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst holder = { nested: { mod: nodeModule } };\nconst load = holder.nested.mod.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder = [nodeModule] as const;\nconst load = holder[0].createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst [held] = [nodeModule] as const;\nconst load = held.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder = [{}, nodeModule] as const;\nlet index = 0;\nif (Math.random()) index = 1;\nconst load = (holder[index] as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst holder: Record<string, unknown> = {};\nholder.mod = nodeModule;\nconst load = (holder.mod as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst holder = { mod: nodeModule, safe: {} };\nlet key = "mod";\nif (Math.random()) key = "safe";\nconst load = (holder[key as keyof typeof holder] as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst load = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);\nexport const value = load("@infra/store");`,
@@ -255,6 +258,22 @@ describe("dependency-rule fence", () => {
       expect(moduleReferences(source).filter((reference) =>
         reference.kind === "create-require"
       )).toEqual([]);
+    });
+
+    it("fails closed when a reflected accessor has a conditionally reaching safe replacement", () => {
+      const project = inMemoryProject({
+        "src/domain/evil.ts": `
+          import * as nodeModule from "node:module";
+          let read: Function = Reflect.get;
+          if (Math.random()) read = Object.getPrototypeOf;
+          const load = read(nodeModule, "createRequire")(import.meta.url);
+          export const value = load("@infra/store");
+        `,
+      });
+      const source = project.getSourceFileOrThrow("src/domain/evil.ts");
+      expect(moduleReferences(source).some((reference) =>
+        reference.kind === "create-require"
+      )).toBe(true);
     });
 
     it("does not classify a statically different node:module property as createRequire", () => {

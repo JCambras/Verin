@@ -672,41 +672,6 @@ function uncheckedAtPosition(type: Type, steps: readonly PositionStep[]): boolea
 }
 
 /**
- * Does the source already deliver every sealed type the target names, at the same
- * position and with the same type arguments? Fail-closed at both edges: a target
- * whose sealed reach this walk cannot place yields no positions and is NOT a
- * re-shape, and an `any`/`unknown` source resolves to nothing at every position.
- */
-function isSealedReshape(source: Type, target: Type): boolean {
-  const wanted = sealedPositionsOf(target);
-  if (!wanted.complete || wanted.positions.length === 0) return false;
-  return wanted.positions.every(({ steps, sealed }) =>
-    sealedKeyAtPosition(source, steps) === sealed
-  );
-}
-
-/**
- * Is a composite literal unchecked EXACTLY where its annotation expects a sealed
- * type? `consume({ tenant: JSON.parse(x) })` is the same mint as `consume(JSON.parse
- * (x))` with the annotation one property further in, and it leaves no cast, no
- * literal flag and no type argument for any other rule here to see: the sealed-value
- * rule below reads the contextual type with the NARROW walk, and `{ tenant:
- * TenantContext }` is not itself a sealed value. Keyed on "unchecked at a sealed
- * position" rather than "not sealed", so `undefined` against an optional
- * `tenant?: TenantContext` stays buildable.
- */
-/** Does this literal's own inferred type hold an `any`/`unknown` anywhere shallow? */
-function uncheckedAtSealedPosition(value: Type, expected: Type): boolean {
-  const inventory = sealedPositionsOf(expected);
-  if (!inventory.complete) return true;
-  if (inventory.positions.length === 0) return false;
-  if (isUncheckedSource(awaited(value))) return true;
-  return inventory.positions.some(({ steps }) =>
-    uncheckedAtPosition(value, steps)
-  );
-}
-
-/**
  * A sealed ANNOTATION filled from a value the checker never verified.
  *
  * Every sealed interface carries a `unique symbol` brand, so the only compile-legal
@@ -734,13 +699,13 @@ function detectSealedAnnotationMints(sf: SourceFile, normalized: string): string
     const value = awaited(source.getType());
     const inventory = sealedPositionsOf(expected);
     if (!inventory.complete) {
-      const unresolved = SEALED.find((candidate) =>
+      const unresolved = SEALED.filter((candidate) =>
         normalized !== candidate.factory &&
         sealedType(expected, true, [candidate]) !== null
       );
-      if (unresolved) {
+      for (const owner of unresolved) {
         out.push(
-          `${normalized}:${line} - sealed type '${unresolved.typeName}' annotated onto an unchecked value produced outside its factory`,
+          `${normalized}:${line} - sealed type '${owner.typeName}' annotated onto an unchecked value produced outside its factory`,
         );
       }
       return;
@@ -936,20 +901,30 @@ export function detectSealedTypeConstruction(project: Project): string[] {
         // let that shape through entirely, which left this fence WEAKER than the
         // ESLint mirror it is asserted to be a superset of - the mirror's descendant
         // selector matches the name wherever it appears inside the cast.
-        const sealed = type ? sealedType(type) : null;
-        if (!sealed || normalized === sealed.factory) continue;
+        if (!type || !sealedType(type)) continue;
+        const inventory = sealedPositionsOf(type);
+        const source = awaited(unwrapAssertions(node.getExpression()).getType());
+        const foreign = inventory.complete
+          ? inventory.positions.filter(({ steps, sealed, owner }) =>
+            normalized !== owner.factory &&
+            sealedKeyAtPosition(source, steps) !== sealed
+          ).map(({ owner }) => owner)
+          : SEALED.filter((candidate) =>
+            normalized !== candidate.factory &&
+            sealedType(type, true, [candidate]) !== null
+          );
+        if (foreign.length === 0) continue;
         // ...and the SOURCE is what tells minting apart from re-shaping, compared at
         // the SAME structural position. "The source mentions this sealed type
         // somewhere" is not enough: `ActionGrant` carries a `TenantContext` and a
         // `WriteActor`, so a reachable-anywhere test exempts `grant as unknown as
         // TenantContext` - the mainline laundering shape, since a `unique symbol`
         // brand leaves `as unknown as X` the only compile-legal cast form.
-        if (
-          isSealedReshape(awaited(unwrapAssertions(node.getExpression()).getType()), type!)
-        ) continue;
-        out.push(
-          `${normalized}:${node.getStartLineNumber()} - cast to sealed type '${sealed.typeName}' outside its factory`,
-        );
+        for (const sealed of new Set(foreign)) {
+          out.push(
+            `${normalized}:${node.getStartLineNumber()} - cast to sealed type '${sealed.typeName}' outside its factory`,
+          );
+        }
       }
     }
 
@@ -965,11 +940,19 @@ export function detectSealedTypeConstruction(project: Project): string[] {
       ]
     ) {
       const contextual = literal.getContextualType();
-      const nested = contextual ? sealedType(contextual) : null;
-      if (
-        nested && normalized !== nested.factory &&
-        uncheckedAtSealedPosition(literal.getType(), contextual!)
-      ) {
+      if (!contextual || !sealedType(contextual)) continue;
+      const value = awaited(literal.getType());
+      const inventory = sealedPositionsOf(awaited(contextual));
+      const foreign = inventory.complete
+        ? inventory.positions.filter(({ steps, owner }) =>
+          normalized !== owner.factory &&
+          (isUncheckedSource(value) || uncheckedAtPosition(value, steps))
+        ).map(({ owner }) => owner)
+        : SEALED.filter((candidate) =>
+          normalized !== candidate.factory &&
+          sealedType(contextual, true, [candidate]) !== null
+        );
+      for (const nested of new Set(foreign)) {
         out.push(
           `${normalized}:${literal.getStartLineNumber()} - sealed type '${nested.typeName}' minted from an unchecked call argument outside its factory`,
         );
@@ -1019,8 +1002,18 @@ export function detectSealedTypeConstruction(project: Project): string[] {
     // (no TSTypePredicate selector) sees it.
     for (const predicate of sf.getDescendantsOfKind(SyntaxKind.TypePredicate)) {
       const typeNode = predicate.getTypeNode();
-      const sealed = typeNode ? sealedType(typeNode.getType()) : null;
-      if (sealed && normalized !== sealed.factory) {
+      const type = typeNode?.getType();
+      if (!type) continue;
+      const inventory = sealedPositionsOf(type);
+      const foreign = inventory.complete
+        ? inventory.positions
+          .map(({ owner }) => owner)
+          .filter((owner) => normalized !== owner.factory)
+        : SEALED.filter((candidate) =>
+          normalized !== candidate.factory &&
+          sealedType(type, true, [candidate]) !== null
+        );
+      for (const sealed of new Set(foreign)) {
         out.push(
           `${normalized}:${predicate.getStartLineNumber()} - type predicate narrows to sealed type '${sealed.typeName}' outside its factory`,
         );
@@ -1054,18 +1047,23 @@ export function detectSealedTypeConstruction(project: Project): string[] {
         for (const argument of call.getArguments()) {
           if (!Node.isExpression(argument)) continue;
           const parameter = argument.getContextualType();
-          const filled = parameter ? sealedType(parameter) : null;
-          if (
-            !filled ||
-            normalized === filled.factory ||
-            !uncheckedAtSealedPosition(
-              awaited(argument.getType()),
-              awaited(parameter!),
-            )
-          ) continue;
-          out.push(
-            `${normalized}:${argument.getStartLineNumber()} - sealed type '${filled.typeName}' minted from an unchecked call argument outside its factory`,
-          );
+          if (!parameter || !sealedType(parameter)) continue;
+          const value = awaited(argument.getType());
+          const inventory = sealedPositionsOf(awaited(parameter));
+          const foreign = inventory.complete
+            ? inventory.positions.filter(({ steps, owner }) =>
+              normalized !== owner.factory &&
+              (isUncheckedSource(value) || uncheckedAtPosition(value, steps))
+            ).map(({ owner }) => owner)
+            : SEALED.filter((candidate) =>
+              normalized !== candidate.factory &&
+              sealedType(parameter, true, [candidate]) !== null
+            );
+          for (const filled of new Set(foreign)) {
+            out.push(
+              `${normalized}:${argument.getStartLineNumber()} - sealed type '${filled.typeName}' minted from an unchecked call argument outside its factory`,
+            );
+          }
         }
       }
     }
@@ -1837,6 +1835,52 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       )).toBe(true);
     });
 
+    it("does not let an owned Tokenized position hide foreign sealed siblings", () => {
+      const project = sealedFixture(
+        "/src/infrastructure/pii/tokenize.ts",
+        `
+          import type { Tokenized } from "../../contracts/tokenized";
+          import type { TenantContext } from "../../contracts/tenant";
+          declare const raw: any;
+          declare function consume(value: {
+            token: Tokenized<string>;
+            tenant: TenantContext;
+          }): void;
+          interface Composite {
+            token: Tokenized<string>;
+            tenant: TenantContext;
+          }
+          export const cast = raw as {
+            token: Tokenized<string>;
+            tenant: TenantContext;
+          };
+          export const initialized: Composite = raw;
+          export let assigned: Composite;
+          assigned = raw;
+          export function returned(): Composite {
+            return raw;
+          }
+          export function defaulted(value: Composite = raw): Composite {
+            return value;
+          }
+          consume(raw);
+          consume({
+            token: raw,
+            tenant: raw,
+          });
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/infrastructure/pii/tokenize.ts") &&
+        hit.includes("TenantContext")
+      );
+      expect(hits.some((hit) => hit.includes("cast to sealed type"))).toBe(true);
+      expect(hits.some((hit) => hit.includes("unchecked call argument"))).toBe(true);
+      expect(hits.filter((hit) =>
+        hit.includes("annotated onto an unchecked value")
+      ).length).toBeGreaterThanOrEqual(4);
+    });
+
     it("rejects incomplete recursive, over-depth, and overloaded sealed-position inventories", () => {
       const project = sealedFixture(
         "/src/app/evil.ts",
@@ -2311,6 +2355,17 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
           const created = copy.createRequire(import.meta.url);`,
       `const holder = { mod: nodeModule };
           const created = holder.mod.createRequire(import.meta.url);`,
+      `const holder = [nodeModule] as const;
+          const created = holder[0].createRequire(import.meta.url);`,
+      `const [held] = [nodeModule] as const;
+          const created = held.createRequire(import.meta.url);`,
+      `const holder = [{}, nodeModule] as const;
+          let index = 0;
+          if (Date.now() > 0) index = 1;
+          const created = (holder[index] as typeof nodeModule).createRequire(import.meta.url);`,
+      `let read: Function = Reflect.get;
+          if (Date.now() > 0) read = Object.getPrototypeOf;
+          const created = read(nodeModule, "createRequire")(import.meta.url);`,
       `const created = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);`,
     ])("catches copied or applied node:module provenance before factory access", (loader) => {
       const project = sealedFixture(

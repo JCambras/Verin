@@ -99,6 +99,89 @@ function nodeKey(node: Node): string {
   ].join(":");
 }
 
+function assignedValueSources(expression: Node): Node[] {
+  const symbol = expression.getSymbol();
+  const sources = Node.isIdentifier(expression)
+    ? (symbol?.getDeclarations() ?? []).flatMap((declaration) =>
+      Node.isVariableDeclaration(declaration) && declaration.getInitializer()
+        ? [declaration.getInitializerOrThrow()]
+        : []
+    )
+    : [];
+  const member = (node: Node): { receiver: Node; name: string | null } | null => {
+    if (Node.isPropertyAccessExpression(node)) {
+      return { receiver: node.getExpression(), name: node.getName() };
+    }
+    if (!Node.isElementAccessExpression(node)) return null;
+    const argument = node.getArgumentExpression();
+    return {
+      receiver: node.getExpression(),
+      name: argument &&
+          (Node.isStringLiteral(argument) ||
+            Node.isNoSubstitutionTemplateLiteral(argument) ||
+            Node.isNumericLiteral(argument))
+        ? argument.getLiteralText()
+        : null,
+    };
+  };
+  const sameTarget = (left: Node): boolean => {
+    if (
+      Node.isIdentifier(left) &&
+      Node.isIdentifier(expression)
+    ) return left.getSymbol() === symbol;
+    const leftMember = member(left);
+    const expected = member(expression);
+    if (!leftMember || !expected) return false;
+    const sameReceiver =
+      leftMember.receiver.getSymbol() &&
+        expected.receiver.getSymbol()
+        ? leftMember.receiver.getSymbol() === expected.receiver.getSymbol()
+        : leftMember.receiver.getText() === expected.receiver.getText();
+    return sameReceiver &&
+      (leftMember.name === null ||
+        expected.name === null ||
+        leftMember.name === expected.name);
+  };
+  sources.push(
+    ...expression.getSourceFile()
+      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      .filter((candidate) =>
+        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        candidate.getStart() < expression.getStart() &&
+        sameTarget(candidate.getLeft())
+      )
+      .map((candidate) => candidate.getRight()),
+  );
+  return sources;
+}
+
+function returnedValues(declaration: Node): Node[] {
+  const callable =
+    Node.isFunctionDeclaration(declaration) ||
+      Node.isFunctionExpression(declaration) ||
+      Node.isArrowFunction(declaration) ||
+      Node.isMethodDeclaration(declaration)
+      ? declaration
+      : null;
+  if (!callable) return [];
+  const body = callable.getBody();
+  if (!body) return [];
+  if (!Node.isBlock(body)) return [body];
+  return body.getDescendantsOfKind(SyntaxKind.ReturnStatement)
+    .filter((statement) =>
+      statement.getFirstAncestor((ancestor) =>
+        Node.isFunctionDeclaration(ancestor) ||
+        Node.isFunctionExpression(ancestor) ||
+        Node.isArrowFunction(ancestor) ||
+        Node.isMethodDeclaration(ancestor)
+      ) === callable
+    )
+    .flatMap((statement) => {
+      const value = statement.getExpression();
+      return value ? [value] : [];
+    });
+}
+
 /**
  * Every declaration a callee expression can reach. getAliasedSymbol() unwraps
  * import/export aliases only, so a governed sink held as a VALUE would otherwise
@@ -157,10 +240,21 @@ function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] 
       );
     }
   }
+  if (Node.isCallExpression(expression)) {
+    const providers = resolveCallTargets(expression.getExpression(), seen);
+    const values = providers.flatMap(returnedValues);
+    if (values.length > 0) {
+      return values.flatMap((value) => resolveCallTargets(value, seen));
+    }
+  }
   const symbol = expression.getSymbol();
   const target = symbol?.getAliasedSymbol() ?? symbol;
   const declarations = target?.getDeclarations() ?? [];
   const out = [...declarations];
+  out.push(
+    ...assignedValueSources(expression)
+      .flatMap((source) => resolveCallTargets(source, seen)),
+  );
   for (const declaration of declarations) {
     if (
       Node.isVariableDeclaration(declaration) ||
@@ -217,6 +311,12 @@ function callTargetResolutionComplete(
       );
     }
   }
+  if (Node.isCallExpression(expression)) {
+    const providers = resolveCallTargets(expression.getExpression());
+    const values = providers.flatMap(returnedValues);
+    return providers.length > 0 && values.length > 0 &&
+      values.every((value) => callTargetResolutionComplete(value, seen));
+  }
   if (
     Node.isFunctionExpression(expression) ||
     Node.isArrowFunction(expression)
@@ -235,11 +335,17 @@ function callTargetResolutionComplete(
     ) return true;
     if (
       Node.isVariableDeclaration(declaration) ||
-      Node.isPropertyAssignment(declaration)
+      Node.isPropertyAssignment(declaration) ||
+      Node.isPropertySignature(declaration)
     ) {
-      const initializer = declaration.getInitializer();
-      return initializer !== undefined &&
-        callTargetResolutionComplete(initializer, seen);
+      const assigned = assignedValueSources(expression);
+      const sources = assigned.length > 0
+        ? assigned
+        : "getInitializer" in declaration && declaration.getInitializer()
+        ? [declaration.getInitializerOrThrow()]
+        : [];
+      return sources.length > 0 &&
+        sources.every((source) => callTargetResolutionComplete(source, seen));
     }
     if (Node.isShorthandPropertyAssignment(declaration)) {
       return callTargetResolutionComplete(declaration.getNameNode(), seen);
@@ -1148,8 +1254,38 @@ function detectEscapedGovernedSinks(
   sinks: readonly GovernedSink[],
 ): string[] {
   const out: string[] = [];
+  const valueTargets = (
+    value: Node,
+    seen = new Set<string>(),
+  ): Node[] => {
+    const direct = resolveCallTargets(value);
+    return direct.flatMap((declaration) => {
+      const key = nodeKey(declaration);
+      if (seen.has(key)) return [];
+      const nested = new Set(seen).add(key);
+      return [
+        declaration,
+        ...returnedValues(declaration).flatMap((returned) =>
+          valueTargets(returned, nested)
+        ),
+      ];
+    });
+  };
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     for (const argument of call.getArguments()) {
+      const supplied = sinks.find((candidate) =>
+        valueTargets(argument).some((declaration) =>
+          candidate.anchors.some((anchor) =>
+            nodeKey(declaration) === nodeKey(anchor)
+          )
+        )
+      );
+      if (supplied) {
+        out.push(
+          `${file}:${argument.getStartLineNumber()}: governed sink '${supplied.name}' is passed as a VALUE — it has no call site this fence can authorize`,
+        );
+        continue;
+      }
       for (const node of [argument, ...argument.getDescendants()]) {
         if (!Node.isIdentifier(node) && !Node.isPropertyAccessExpression(node)) continue;
         const parent = node.getParent();
@@ -2527,6 +2663,28 @@ ${body}
       expect(detectUnguardedGovernedSinks(project)).toEqual([]);
     });
 
+    it("keeps mutation classification through fixed-array builtin aliases", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/crm/contacts.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Contact extends PIIBearing { fullName: string }
+          declare const db: { query(sql: string, params?: unknown[]): Promise<void> };
+          export async function renameContact(tenant: TenantContext): Promise<Contact> {
+            const methods = [Reflect.apply] as const;
+            const selected = methods;
+            const [apply] = selected;
+            await apply(db.query, db, ["UPDATE contacts SET full_name = $1"]);
+            await selected[0](db.query, db, ["UPDATE contacts SET full_name = $1"]);
+            return { fullName: tenant.orgId };
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([]);
+    });
+
     it.each([
       `db.query.call(db, "UPDATE contacts SET full_name = $1")`,
       `db.query.apply(db, ["UPDATE contacts SET full_name = $1"])`,
@@ -2808,6 +2966,29 @@ ${body}
       for (const line of [6, 9, 16, 19]) {
         expect(hits.some((hit) => hit.includes(`route.ts:${line}`)), `line ${line}`).toBe(true);
       }
+    });
+
+    it("catches SQL through fixed-array builtin aliases and element access", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/store/db.ts": `
+          export interface SqlDb { query<T>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> }
+          export function getDb(): Promise<SqlDb> { throw new Error(); }
+        `,
+        "/src/app/api/audit/route.ts": `
+          import { getDb } from "@infra/store/db";
+          export async function GET() {
+            const db = await getDb();
+            const methods = [Reflect.apply] as const;
+            const selected = methods;
+            const [apply] = selected;
+            await apply(db.query, db, ["SELECT email FROM users"]);
+            await selected[0](db.query, db, ["SELECT email FROM users"]);
+            return null;
+          }
+        `,
+      });
+      const hits = detectAppLayerSqlAccess(project);
+      expect(hits, hits.join("\n")).toHaveLength(2);
     });
 
     it("does not mistake a same-named non-SQL method for persistence", () => {
@@ -3684,6 +3865,91 @@ ${body}
       // Ordinary decomposition, not a new surface: the sink belongs to GET.
       expect(violations).toEqual([]);
       expect(entries.map((entry) => entry.handler)).toEqual(["GET"]);
+    });
+
+    it.each([
+      `
+        let load: typeof verifyAndListOrgChain;
+        load = verifyAndListOrgChain;
+        return load({}, auth.value);
+      `,
+      `
+        let load: typeof verifyAndListOrgChain;
+        load = verifyAndListOrgChain;
+        function selected() {
+          return load;
+        }
+        return selected()({}, auth.value);
+      `,
+      `
+        const reader = {} as { load: typeof verifyAndListOrgChain };
+        reader.load = verifyAndListOrgChain;
+        return reader.load({}, auth.value);
+      `,
+    ])("attributes sinks reached through later assignments and helper returns", (work) => {
+      const project = governedDiscoveryProject(`
+        import { requireActionGrant, errorResponse } from "@app/_server/context";
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        export async function GET(req: Request) {
+          const auth = await requireActionGrant(req, "audit.export");
+          if (!auth.ok) return errorResponse(auth.error);
+          ${work}
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries.map((entry) => entry.handler)).toEqual(["GET"]);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toEqual([]);
+    });
+
+    it.each([
+      `
+        let load: typeof verifyAndListOrgChain;
+        load = verifyAndListOrgChain;
+        return load({}, {} as never);
+      `,
+      `
+        let load: typeof verifyAndListOrgChain;
+        load = verifyAndListOrgChain;
+        function selected() {
+          return load;
+        }
+        return selected()({}, {} as never);
+      `,
+      `
+        const reader = {} as { load: typeof verifyAndListOrgChain };
+        reader.load = verifyAndListOrgChain;
+        return reader.load({}, {} as never);
+      `,
+    ])("rejects unwired sinks reached through later assignments and helper returns", (work) => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        export async function GET(req: Request) {
+          void req;
+          ${work}
+        }
+      `);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.violations).toEqual([]);
+      expect(discovered.entries.map((entry) => entry.handler)).toEqual(["GET"]);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toHaveLength(1);
+    });
+
+    it("rejects a helper-returned governed sink passed beyond its visible call site", () => {
+      const project = governedDiscoveryProject(`
+        import { verifyAndListOrgChain } from "@infra/audit/audit-store";
+        declare function invoke(value: unknown): unknown;
+        function selected() {
+          return verifyAndListOrgChain;
+        }
+        export async function GET(req: Request) {
+          void req;
+          return invoke(selected());
+        }
+      `);
+      expect(discoverGovernedRoutes(project).violations.some((violation) =>
+        violation.includes("passed as a VALUE")
+      )).toBe(true);
     });
 
     it("does not call a sink INVOKED inside a callback argument an escaped value", () => {

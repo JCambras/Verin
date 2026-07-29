@@ -390,20 +390,95 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     const key = (symbol ?? expression) as unknown as object;
     if (seen.has(key)) return [expression];
     const nested = new Set(seen).add(key);
+    const bindingSources = (declaration: Node): Node[] => {
+      if (!Node.isBindingElement(declaration)) return [];
+      const pattern = declaration.getParent();
+      const owner = pattern.getParent();
+      const receiver =
+        Node.isVariableDeclaration(owner) ||
+        Node.isParameterDeclaration(owner)
+          ? owner.getInitializer()
+          : undefined;
+      if (!receiver) return [];
+      if (Node.isArrayBindingPattern(pattern)) {
+        const index = pattern.getElements().findIndex((element) =>
+          element === declaration
+        );
+        if (index < 0) return [];
+        return expressionSources(receiver, nested).flatMap((source) => {
+          const value = unwrapExpression(source);
+          if (!Node.isArrayLiteralExpression(value)) return [];
+          const element = value.getElements()[index];
+          return element && !Node.isOmittedExpression(element) ? [element] : [];
+        });
+      }
+      if (!Node.isObjectBindingPattern(pattern)) return [];
+      const name = propertyName(
+        declaration.getPropertyNameNode(),
+        declaration.getName(),
+      );
+      return expressionSources(receiver, nested).flatMap((source) => {
+        const value = unwrapExpression(source);
+        if (!Node.isObjectLiteralExpression(value)) return [];
+        return value.getProperties().flatMap((property) => {
+          if (
+            !Node.isPropertyAssignment(property) &&
+            !Node.isShorthandPropertyAssignment(property)
+          ) return [];
+          const candidate = propertyName(
+            property.getNameNode(),
+            property.getName(),
+          );
+          if (name !== null && candidate !== null && name !== candidate) {
+            return [];
+          }
+          return [
+            Node.isPropertyAssignment(property)
+              ? property.getInitializerOrThrow()
+              : property.getNameNode(),
+          ];
+        });
+      });
+    };
+    const assignmentSources = sf
+      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      .filter((candidate) =>
+        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        candidate.getStart() < expression.getStart()
+      )
+      .flatMap((candidate) => {
+        const left = unwrapExpression(candidate.getLeft());
+        if (
+          Node.isIdentifier(left) &&
+          left.getSymbol() === symbol
+        ) return [candidate.getRight()];
+        if (Node.isArrayLiteralExpression(left)) {
+          const index = left.getElements().findIndex((element) =>
+            Node.isIdentifier(element) && element.getSymbol() === symbol
+          );
+          if (index < 0) return [];
+          return expressionSources(candidate.getRight(), nested).flatMap(
+            (source) => {
+              const value = unwrapExpression(source);
+              if (!Node.isArrayLiteralExpression(value)) return [];
+              const element = value.getElements()[index];
+              return element && !Node.isOmittedExpression(element)
+                ? [element]
+                : [];
+            },
+          );
+        }
+        return [];
+      });
     const sources = [
-      ...(symbol?.getDeclarations() ?? []).flatMap((declaration) =>
-        Node.isVariableDeclaration(declaration) && declaration.getInitializer()
-          ? [declaration.getInitializerOrThrow()]
-          : []
-      ),
-      ...sf.getDescendantsOfKind(SyntaxKind.BinaryExpression)
-        .filter((candidate) =>
-          candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
-          candidate.getStart() < expression.getStart() &&
-          Node.isIdentifier(unwrapExpression(candidate.getLeft())) &&
-          unwrapExpression(candidate.getLeft())?.getSymbol() === symbol
-        )
-        .map((candidate) => candidate.getRight()),
+      ...(symbol?.getDeclarations() ?? []).flatMap((declaration) => {
+        if (
+          Node.isVariableDeclaration(declaration) &&
+          declaration.getInitializer()
+        ) return [declaration.getInitializerOrThrow()];
+        return bindingSources(declaration);
+      }),
+      ...assignmentSources,
     ];
     return sources.length > 0
       ? sources.flatMap((source) => expressionSources(source, nested))
@@ -421,9 +496,12 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         keys.push(expression.getLiteralText());
         continue;
       }
+      if (Node.isNumericLiteral(expression)) {
+        keys.push(expression.getLiteralText());
+        continue;
+      }
       const type = expression.getType();
       if (
-        Node.isNumericLiteral(expression) ||
         type.isNumber() ||
         type.isNumberLiteral() ||
         (type.getFlags() & ts.TypeFlags.ESSymbolLike) !== 0
@@ -557,6 +635,27 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
               }
               continue;
             }
+            if (Node.isArrayLiteralExpression(source)) {
+              const index = requested === null
+                ? null
+                : Number.parseInt(requested, 10);
+              if (
+                index !== null &&
+                String(index) === requested
+              ) {
+                const element = source.getElements()[index];
+                if (element && !Node.isOmittedExpression(element)) {
+                  sources.push(element);
+                }
+              } else if (requested === null) {
+                sources.push(
+                  ...source.getElements().filter((element) =>
+                    !Node.isOmittedExpression(element)
+                  ),
+                );
+              }
+              continue;
+            }
             if (!Node.isObjectLiteralExpression(source)) continue;
             for (const property of source.getProperties()) {
               if (
@@ -617,6 +716,12 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           isCreateRequireNamespace(property.getExpression(), visited)
         );
       }
+      if (Node.isArrayLiteralExpression(expression)) {
+        return expression.getElements().some((element) =>
+          !Node.isOmittedExpression(element) &&
+          isCreateRequireNamespace(element, visited)
+        );
+      }
       if (Node.isCallExpression(expression)) {
         if (isAmbientBuiltinMethod(expression.getExpression(), "Object", "assign")) {
           return expression.getArguments().slice(1).some((argument) =>
@@ -662,19 +767,79 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     node: Node | undefined,
     builtin: "Object" | "Reflect",
     method: string,
+    seen: ReadonlySet<object> = new Set(),
   ): boolean => {
     const raw = unwrapExpression(node);
     if (Node.isIdentifier(raw)) {
       const symbol = raw.getSymbol();
-      const latestSimpleAssignment = sf
+      const key = (symbol ?? raw) as unknown as object;
+      if (seen.has(key)) return false;
+      const nested = new Set(seen).add(key);
+      const container = raw.getFirstAncestor((ancestor) =>
+        Node.isBlock(ancestor) || Node.isSourceFile(ancestor)
+      );
+      const isGuaranteed = (write: Node): boolean => {
+        const statement = write.getFirstAncestorByKind(
+          SyntaxKind.ExpressionStatement,
+        );
+        if (statement) return statement.getParent() === container;
+        const variable = write.getFirstAncestorByKind(
+          SyntaxKind.VariableStatement,
+        );
+        return variable?.getParent() === container;
+      };
+      const writes: Array<{
+        readonly start: number;
+        readonly guaranteed: boolean;
+        readonly source?: Node;
+        readonly receiver?: Node;
+        readonly member?: string | null;
+      }> = [];
+      for (const declaration of symbol?.getDeclarations() ?? []) {
+        if (
+          Node.isVariableDeclaration(declaration) &&
+          declaration.getInitializer()
+        ) {
+          writes.push({
+            start: declaration.getStart(),
+            guaranteed: isGuaranteed(declaration),
+            source: declaration.getInitializerOrThrow(),
+          });
+          continue;
+        }
+        if (!Node.isBindingElement(declaration)) continue;
+        const pattern = declaration.getParent();
+        const owner = pattern.getParent();
+        const receiver =
+          Node.isObjectBindingPattern(pattern) &&
+          (Node.isVariableDeclaration(owner) ||
+            Node.isParameterDeclaration(owner))
+            ? owner.getInitializer()
+            : undefined;
+        if (!receiver) continue;
+        writes.push({
+          start: declaration.getStart(),
+          guaranteed: isGuaranteed(declaration),
+          receiver,
+          member: propertyName(
+            declaration.getPropertyNameNode(),
+            declaration.getName(),
+          ),
+        });
+      }
+      const simpleAssignments = sf
         .getDescendantsOfKind(SyntaxKind.BinaryExpression)
         .filter((candidate) =>
           candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
           candidate.getStart() < raw.getStart() &&
           Node.isIdentifier(unwrapExpression(candidate.getLeft())) &&
           unwrapExpression(candidate.getLeft())?.getSymbol() === symbol
-        )
-        .sort((left, right) => right.getStart() - left.getStart())[0];
+        );
+      writes.push(...simpleAssignments.map((assignment) => ({
+        start: assignment.getStart(),
+        guaranteed: isGuaranteed(assignment),
+        source: assignment.getRight(),
+      })));
       const destructuredAssignments = sf
         .getDescendantsOfKind(SyntaxKind.BinaryExpression)
         .filter((candidate) =>
@@ -682,7 +847,6 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           candidate.getStart() < raw.getStart() &&
           Node.isObjectLiteralExpression(unwrapExpression(candidate.getLeft()))
         )
-        .sort((left, right) => right.getStart() - left.getStart())
         .flatMap((assignment) => {
           const object = unwrapExpression(assignment.getLeft());
           if (!Node.isObjectLiteralExpression(object)) return [];
@@ -697,45 +861,34 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           });
           return property ? [{ assignment, property }] : [];
         });
-      const latestDestructured = destructuredAssignments[0];
-      if (
-        latestDestructured &&
-        latestDestructured.assignment.getStart() >
-          (latestSimpleAssignment?.getStart() ?? -1)
-      ) {
-        const { assignment, property } = latestDestructured;
-        return (
-          (Node.isPropertyAssignment(property) ||
-            Node.isShorthandPropertyAssignment(property)) &&
-          (propertyName(property.getNameNode(), property.getName()) === null ||
-            propertyName(property.getNameNode(), property.getName()) === method) &&
-          isAmbientBuiltinReference(assignment.getRight(), builtin)
-        );
-      }
-      if (!latestSimpleAssignment) {
-        const target = symbol?.getAliasedSymbol() ?? symbol;
-        const binding = target?.getDeclarations().find(Node.isBindingElement);
-        if (binding) {
-          const pattern = binding.getParent();
-          const owner = pattern.getParent();
-          const receiver =
-            Node.isObjectBindingPattern(pattern) &&
-            (Node.isVariableDeclaration(owner) || Node.isParameterDeclaration(owner))
-              ? owner.getInitializer()
-              : undefined;
-          const name = propertyName(
-            binding.getPropertyNameNode(),
-            binding.getName(),
-          );
-          if (
-            receiver &&
-            (name === null || name === method) &&
-            isAmbientBuiltinReference(receiver, builtin)
-          ) {
-            return true;
-          }
-        }
-      }
+      writes.push(...destructuredAssignments.flatMap(({ assignment, property }) =>
+        Node.isPropertyAssignment(property) ||
+          Node.isShorthandPropertyAssignment(property)
+          ? [{
+            start: assignment.getStart(),
+            guaranteed: isGuaranteed(assignment),
+            receiver: assignment.getRight(),
+            member: propertyName(property.getNameNode(), property.getName()),
+          }]
+          : []
+      ));
+      const baseline = writes
+        .filter((write) => write.guaranteed)
+        .sort((left, right) => right.start - left.start)[0];
+      const reaching = writes.filter((write) =>
+        !baseline || write.start >= baseline.start
+      );
+      return reaching.some((write) =>
+        write.source
+          ? isAmbientBuiltinMethod(
+            write.source,
+            builtin,
+            method,
+            nested,
+          )
+          : (write.member === null || write.member === method) &&
+            isAmbientBuiltinReference(write.receiver, builtin)
+      );
     }
     let expression = expressionProvenance(node);
     if (
@@ -3043,10 +3196,24 @@ function bindingSources(
   const nested = new Set(seen).add(key);
   const direct: Node[] = [];
   for (const declaration of symbol?.getDeclarations() ?? []) {
-    if (!Node.isVariableDeclaration(declaration)) continue;
-    const initializer = declaration.getInitializer();
-    if (!initializer) continue;
-    direct.push(initializer);
+    if (Node.isVariableDeclaration(declaration)) {
+      const initializer = declaration.getInitializer();
+      if (initializer) direct.push(initializer);
+      continue;
+    }
+    if (!Node.isBindingElement(declaration)) continue;
+    const pattern = declaration.getParent();
+    const owner = pattern.getParent();
+    if (!Node.isArrayBindingPattern(pattern) ||
+      !Node.isVariableDeclaration(owner)) continue;
+    const initializer = owner.getInitializer();
+    const elements = staticArrayElements(initializer, nested);
+    const index = pattern.getElements().findIndex((element) =>
+      element === declaration
+    );
+    if (!elements || index < 0) continue;
+    const element = elements[index];
+    if (element && !Node.isOmittedExpression(element)) direct.push(element);
   }
   direct.push(
     ...expression.getSourceFile()
@@ -3059,6 +3226,22 @@ function bindingSources(
       )
       .map((candidate) => candidate.getRight()),
   );
+  for (const assignment of expression.getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    if (
+      assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken ||
+      assignment.getStart() >= expression.getStart()
+    ) continue;
+    const left = unwrapSqlExpression(assignment.getLeft());
+    if (!Node.isArrayLiteralExpression(left)) continue;
+    const index = left.getElements().findIndex((element) =>
+      Node.isIdentifier(element) && element.getSymbol() === symbol
+    );
+    const elements = staticArrayElements(assignment.getRight(), nested);
+    if (!elements || index < 0) continue;
+    const element = elements[index];
+    if (element && !Node.isOmittedExpression(element)) direct.push(element);
+  }
   const expand = (node: Node): Node[] => {
     const source = unwrapSqlExpression(node);
     if (Node.isConditionalExpression(source)) {
@@ -3212,7 +3395,10 @@ function sqlMember(node: Node): string | undefined {
   return undefined;
 }
 
-function staticArrayElements(node: Node | undefined): readonly Node[] | null {
+function staticArrayElements(
+  node: Node | undefined,
+  seen: ReadonlySet<object> = new Set(),
+): readonly Node[] | null {
   if (!node) return null;
   const expression = unwrapSqlExpression(node);
   if (Node.isArrayLiteralExpression(expression)) {
@@ -3221,8 +3407,12 @@ function staticArrayElements(node: Node | undefined): readonly Node[] | null {
       : expression.getElements();
   }
   if (Node.isIdentifier(expression)) {
-    for (const source of bindingSources(expression)) {
-      const elements = staticArrayElements(source);
+    const symbol = expression.getSymbol();
+    const key = (symbol ?? expression) as unknown as object;
+    if (seen.has(key)) return null;
+    const nested = new Set(seen).add(key);
+    for (const source of bindingSources(expression, seen)) {
+      const elements = staticArrayElements(source, nested);
       if (elements) return elements;
     }
   }
@@ -3295,6 +3485,21 @@ function ambientBuiltinMethodName(
       : null;
   }
   if (Node.isElementAccessExpression(expression)) {
+    const argument = unwrapSqlExpression(
+      expression.getArgumentExpression() ?? expression,
+    );
+    if (Node.isNumericLiteral(argument)) {
+      const elements = staticArrayElements(expression.getExpression());
+      const element = elements?.[Number.parseInt(argument.getLiteralText(), 10)];
+      if (element) {
+        return ambientBuiltinMethodName(
+          element,
+          builtin,
+          methods,
+          nested,
+        );
+      }
+    }
     const member = sqlMember(expression);
     return member &&
       methods.includes(member) &&

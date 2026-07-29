@@ -690,6 +690,25 @@ describe("tenant-context-required fence", () => {
       ]);
     });
 
+    it("discovers SQL repositories through fixed-array builtin aliases", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export async function listAll(db: SqlDb) {
+          const methods = [Reflect.apply] as const;
+          const selected = methods;
+          const [apply] = selected;
+          await apply(db.query, db, ["SELECT email FROM users"]);
+          return selected[0](db.query, db, ["SELECT email FROM users"]);
+        }
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
     it.each([
       `const R = Reflect;
           return R.apply(db.query, db, ["SELECT email FROM users"]);`,

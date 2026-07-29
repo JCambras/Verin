@@ -4836,3 +4836,103 @@ pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
 APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
 pnpm test:e2e                                                # 17 tests passed
 ```
+
+### PF-158 resume validates the runtime tenant seal before capability load
+
+`resumeFlow` loaded a continuation by signed token before validating the runtime
+`TenantContext` seal. A forged matching-organization object could therefore
+expose PII-bearing state or start work before persistence rejected it.
+
+**Adversarial proof:** a test-first PGlite regression stores sentinel foreign
+state behind a continuation token and calls `resumeFlow` with a forged context.
+It initially loaded the continuation and started the step. The runtime seal is
+now asserted first, and the regression proves zero loads, saves, step runs, and
+durable writes while the sentinel remains absent from the failure.
+
+### PF-159 node module provenance survives fixed arrays and tuples
+
+Module-reference discovery followed named object members but not fixed array or
+tuple members. A namespace stored at index zero could expose `createRequire`
+without appearing in any module-consuming fence.
+
+**Adversarial proof:** test-first fixtures use direct array indexing and array
+destructuring to reach `node:module.createRequire`. Both initially produced no
+module reference. Shared namespace provenance now resolves exact fixed elements
+and expands unresolved indexes conservatively. Dependency, LLM PII,
+sealed-factory, and secret-containment companions all reject both loaders.
+
+### PF-160 builtin aliases retain conditional reaching sources
+
+Builtin accessor resolution selected the latest textual assignment. A
+conditionally executed safe replacement could therefore erase the reachable
+initial `Reflect.get` source.
+
+**Adversarial proof:** test-first fixtures initialize an accessor from
+`Reflect.get`, conditionally replace it with a safe function, and then obtain
+`createRequire`. Every loader-consuming fence initially accepted the fixture.
+Resolution now starts at the latest guaranteed write and retains every later
+potential source, so each planted loader fails.
+
+### PF-161 factory ownership is checked at every sealed position
+
+Cast and contextual construction treated the first reachable sealed type as the
+owner of a whole composite. Inside the Tokenized factory, a valid
+`Tokenized<T>` position could therefore hide a forged sibling `TenantContext`.
+
+**Adversarial proof:** a test-first factory fixture places owned Tokenized and
+foreign TenantContext positions together in casts, contextual literals,
+initializers, assignments, returns, parameter defaults, and call arguments.
+The foreign sibling initially disappeared. Every sealed position now receives
+its own factory-ownership and source check, and each planted TenantContext mint
+fails while the owned Tokenized position remains permitted.
+
+### PF-162 governed sink values retain later and returned sources
+
+Governed target discovery followed declaration initializers but not later
+assignments or helper return values. A route could invoke the same sink through
+either form without acquiring a governed route entry.
+
+**Adversarial proof:** test-first routes assign `verifyAndListOrgChain` after
+declaration and return that alias from a local selector. Both initially produced
+no route entry. Target and completeness analysis now retain those reaching
+sources. Correctly authorized routes pass, while matching routes with no
+authorization produce one exact `audit.export` failure.
+
+### PF-163 SQL builtin aliases survive fixed arrays
+
+SQL normalization resolved object destructuring but not fixed-array binding or
+member aliases. A destructured `Reflect.apply` could execute raw SQL without
+reaching app-layer, repository, tenant, or governed-action analysis.
+
+**Adversarial proof:** test-first app and repository fixtures invoke SQL through
+`const [apply] = [Reflect.apply]` and `methods[0]`. The app calls initially
+produced no raw-SQL finding. Shared SQL provenance now resolves both exact
+elements. App-layer refusal reports both calls, repository discovery requires
+tenant scope, and mutation classification remains intact for governed analysis.
+
+### PF-164 domain line-budget growth is measured and bounded
+
+The runtime seal correction added one domain line to a layer at its 1,250-line
+ceiling. Removing documentation or compressing the assertion into another
+statement would manufacture room without simplifying ownership.
+
+**Adversarial proof:** the unchanged ceiling failed both the authoritative real
+check and its companion at 1,251 lines. ADR-0037 raises only domain to the
+smallest rounded envelope, 1,300. Final measurements are contracts
+4,017/4,050, domain 1,251/1,300, infrastructure 3,437/3,450, and presentation
+918/6,000.
+
+### PF-158 - PF-164 verification
+
+```
+pnpm exec vitest run --maxWorkers=1 --fileParallelism=false  # 56 files, 1,166 tests passed
+pnpm typecheck                                               # clean
+pnpm lint                                                    # clean
+pnpm knip                                                    # clean
+pnpm v3:invariants                                           # 6 active-pass, 0 active-fail
+pnpm golden:validate                                         # all 16 signed cases passed
+pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # contracts 4,017/4,050; domain 1,251/1,300; infrastructure 3,437/3,450
+APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```
