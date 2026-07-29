@@ -257,7 +257,6 @@ const realDerivedCase = (
     freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0",
   },
   subjects: [
-    FIRM_REF,
     REQUEST_REF,
     HOUSEHOLD_REF,
     ACCOUNT_REF,
@@ -270,7 +269,7 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.4.0",
+    schemaVersion: "verin-real-derived-replay/1.5.0",
     request: {
       firmRef: FIRM_REF,
       requestRef: REQUEST_REF,
@@ -998,8 +997,8 @@ describe("corpus-provenance-split fence", () => {
     });
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
-      "verin-real-derived-case/1.2.0",
-      "verin-real-derived-replay/1.4.0",
+      "verin-real-derived-case/1.3.0",
+      "verin-real-derived-replay/1.5.0",
     ]);
     expect(
       corpusDigest(
@@ -1640,7 +1639,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.4.0",
+      "verin-real-derived-semantics/1.5.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -1672,6 +1671,9 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/synthetic-semantics.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/synthetic-identity.ts",
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/case-spec.ts",
@@ -2056,7 +2058,6 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     (
       mismatchedRequest.replayPayload as Record<string, any>
     ).request.firmRef = FIRM_REF_ALT;
-    (mismatchedRequest.subjects as string[]).push(FIRM_REF_ALT);
     expect(
       realDerivedCaseProblems(
         mismatchedRequest,
@@ -2076,6 +2077,90 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "real-derived/RD-cross-firm-reservation.json",
       ).join("\n"),
     ).toContain("every reservation firmRef must equal the case firmRef");
+
+    const impactedSubject = realDerivedDefectCase(
+      "instruction-conflict-unresolved",
+    );
+    (
+      impactedSubject.replayPayload as Record<string, any>
+    ).instructionConflict.impactedSubjectRefs = [FIRM_REF_ALT];
+    expect(
+      realDerivedCaseProblems(
+        impactedSubject,
+        classes,
+        "real-derived/RD-firm-impacted-subject.json",
+      ).join("\n"),
+    ).toContain("schema validation failed");
+
+    const subjectInventory = realDerivedCase();
+    (subjectInventory.subjects as string[]).push(FIRM_REF_ALT);
+    expect(
+      realDerivedCaseProblems(
+        subjectInventory,
+        classes,
+        "real-derived/RD-firm-subject-inventory.json",
+      ).join("\n"),
+    ).toContain("schema validation failed");
+  });
+
+  it("real-derived funding aggregates preserve exact minor-unit arithmetic", () => {
+    const precision = realDerivedCase();
+    const payload = precision.replayPayload as Record<string, any>;
+    payload.request.amountMinor = Number.MAX_SAFE_INTEGER;
+    payload.liquidity.reserveRequiredMinor = 2;
+    payload.liquidity.withdrawalSegmentsMinor = [2];
+    payload.liquidity.sources[0].availableMinor =
+      Number.MAX_SAFE_INTEGER;
+    payload.liquidity.sources.push({
+      ...payload.liquidity.sources[0],
+      accountRef: ACCOUNT_REF_ALT,
+      availableMinor: 1,
+    });
+    payload.liquidity.selectedFundingRefs.push(ACCOUNT_REF_ALT);
+    (precision.subjects as string[]).push(ACCOUNT_REF_ALT);
+    (precision.evidence as Array<Record<string, unknown>>).push(
+      observedEvidence("balance", ACCOUNT_REF_ALT, EVIDENCE_SOURCE_REF, TOKEN_ALT),
+    );
+    payload.evidenceRefs = (
+      precision.evidence as Array<Record<string, unknown>>
+    ).map((entry) => entry.id);
+    expect(
+      realDerivedCaseProblems(
+        precision,
+        classes,
+        "real-derived/RD-exact-funding.json",
+      ).join("\n"),
+    ).toContain(
+      "selected funding aggregate does not cover request, reserve, and pending reductions",
+    );
+
+    const expectUnsafe = (
+      mutate: (payload: Record<string, any>) => void,
+    ): void => {
+      const unsafe = realDerivedCase();
+      mutate(unsafe.replayPayload as Record<string, any>);
+      expect(
+        realDerivedCaseProblems(
+          unsafe,
+          classes,
+          "real-derived/RD-unsafe-funding.json",
+        ).join("\n"),
+      ).toContain("schema validation failed");
+    };
+    const unsafeMinor = Number.MAX_SAFE_INTEGER + 1;
+    expectUnsafe((item) => { item.request.amountMinor = unsafeMinor; });
+    expectUnsafe((item) => {
+      item.liquidity.sources[0].availableMinor = unsafeMinor;
+    });
+    expectUnsafe((item) => {
+      item.liquidity.reserveRequiredMinor = unsafeMinor;
+    });
+    expectUnsafe((item) => {
+      item.liquidity.withdrawalSegmentsMinor = [unsafeMinor];
+    });
+    expectUnsafe((item) => {
+      item.liquidity.pendingAction.amountMinor = unsafeMinor;
+    });
   });
 
   it("every semantic evidence plane has an explicit observation-state authority", () => {
@@ -2179,6 +2264,80 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         crossHousehold as any,
       ).join("\n"),
     ).toContain("selected funding account belongs to household");
+  });
+
+  it("synthetic identity context derives from exact emitted inputs and bindings", () => {
+    const ambiguous = structuredClone(
+      real.cases.find(
+        (item) =>
+          item.caseId === "CS-identity-trust-name-collision",
+      )!,
+    ) as any;
+    expect(ambiguous.identityInput.candidates).toHaveLength(2);
+    expect(
+      ambiguous.records.referencedHouseholds,
+    ).toContainEqual({
+      id: "subject:smith-mira",
+      relationshipReasons: ["identity-candidate"],
+    });
+    expect(syntheticSemanticProblems([ambiguous])).toEqual([]);
+
+    const assumptionOnly = structuredClone(ambiguous);
+    delete assumptionOnly.identityInput;
+    expect(
+      syntheticSemanticProblems([assumptionOnly]).join("\n"),
+    ).toContain("identity context requires typed identity input");
+
+    const singleCandidate = structuredClone(ambiguous);
+    singleCandidate.identityInput.candidates.pop();
+    expect(
+      syntheticSemanticProblems([singleCandidate]).join("\n"),
+    ).toContain("must resolve to multiple exact candidates");
+
+    const unboundCandidate = structuredClone(ambiguous);
+    unboundCandidate.identityInput.candidates[1].householdRef =
+      "subject:unknown-household";
+    expect(
+      syntheticSemanticProblems([unboundCandidate]).join("\n"),
+    ).toContain("resolve to its bound household entity");
+
+    const mismatchedSpec = structuredClone(real.spec.cases) as any;
+    const identityCase = mismatchedSpec.cases.find(
+      (item: Record<string, unknown>) =>
+        item.key === "identity-trust-name-collision",
+    );
+    identityCase.identityInput.candidates[1] = {
+      entityKind: "party",
+      entityRef: "mira-smith",
+      householdRef: "smiths",
+      rawUtf8Hex: "536d697468",
+    };
+    expect(
+      specReferenceProblems(
+        real.spec.world,
+        mismatchedSpec,
+      ).join("\n"),
+    ).toContain("party candidate is not a member");
+
+    const canonical = structuredClone(
+      real.cases.find(
+        (item) =>
+          item.caseId === "CS-non-ascii-roster-identity",
+      )!,
+    ) as any;
+    expect(canonical.identityInput.unresolvedRawUtf8Hex).not.toBe(
+      canonical.identityInput.candidates[0].rawUtf8Hex,
+    );
+    expect(canonical.identityInput.canonicalValue).toBe(
+      canonical.identityInput.candidates[0].canonicalValue,
+    );
+    expect(syntheticSemanticProblems([canonical])).toEqual([]);
+
+    canonical.identityInput.candidates[0].rawUtf8Hex =
+      canonical.identityInput.unresolvedRawUtf8Hex;
+    expect(
+      syntheticSemanticProblems([canonical]).join("\n"),
+    ).toContain("do not reproduce a canonical collision");
   });
 
   it("synthetic pending semantics use only the exact selected funding set", () => {

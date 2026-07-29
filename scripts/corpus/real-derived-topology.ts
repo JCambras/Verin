@@ -15,7 +15,7 @@ type EvidenceRequirement = {
 };
 
 const ENTITY_REF =
-  /^(firm|request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$/;
+  /^(request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$/;
 
 const requirement = (
   item: RealDerivedCase,
@@ -258,15 +258,28 @@ function fundingProblems(item: RealDerivedCase): string[] {
     );
   }
   const action = payload.liquidity.pendingAction;
-  const required =
-    payload.request.amountMinor +
-    (payload.liquidity.reserveRequiredMinor ?? 0) +
-    (action.reducesEffectiveLiquidity ? action.amountMinor ?? 0 : 0);
-  const available = selected.reduce(
-    (total, source) => total + source.availableMinor,
-    0,
-  );
-  if (available < required) {
+  const requiredParts = [
+    payload.request.amountMinor,
+    payload.liquidity.reserveRequiredMinor ?? 0,
+    action.reducesEffectiveLiquidity ? action.amountMinor ?? 0 : 0,
+  ];
+  const availableParts = selected.map((source) => source.availableMinor);
+  if (
+    [...requiredParts, ...availableParts].some(
+      (value) => !Number.isSafeInteger(value) || value < 0,
+    )
+  ) {
+    problems.push("funding amounts must be safe integer minor units");
+  } else if (
+    availableParts.reduce(
+      (total, value) => total + BigInt(value),
+      0n,
+    ) <
+      requiredParts.reduce(
+        (total, value) => total + BigInt(value),
+        0n,
+      )
+  ) {
     problems.push(
       "selected funding aggregate does not cover request, reserve, and pending reductions",
     );

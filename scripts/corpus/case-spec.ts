@@ -6,6 +6,7 @@ const Slug = z.string().regex(
   "lowercase hyphenated slug",
 );
 const Money = z.int().nonnegative();
+const RawUtf8Hex = z.string().regex(/^(?:[0-9a-f]{2})+$/);
 
 const LabelSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("defect"), defectClassId: Slug }),
@@ -20,6 +21,16 @@ const TreatmentOutcomeSchema = z.strictObject({
   defectClassId: Slug,
   expectedTreatment: Slug,
   observedTreatment: Slug,
+});
+
+const IdentityInputSchema = z.strictObject({
+  unresolvedRawUtf8Hex: RawUtf8Hex,
+  candidates: z.array(z.strictObject({
+    entityKind: z.enum(["household", "party"]),
+    entityRef: Slug,
+    householdRef: Slug,
+    rawUtf8Hex: RawUtf8Hex,
+  })).min(1),
 });
 
 const CaseSchema = z.strictObject({
@@ -47,6 +58,7 @@ const CaseSchema = z.strictObject({
     "completed",
     "unavailable",
   ]).optional(),
+  identityInput: IdentityInputSchema.optional(),
   outcomes: z.array(TreatmentOutcomeSchema).min(1),
   evidence: z.array(
     z.string().regex(/^[a-z-]+\/[a-z0-9-]+$/),

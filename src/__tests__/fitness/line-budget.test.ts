@@ -58,14 +58,13 @@ const CEILINGS = {
   // replay-intake review. D-085 raises it to 5900 against 5747 measured lines.
   // D-086 raises it to 6200 against 5996 measured lines for outcome-based
   // semantics, request-bound conflict topology, schema-driven uniqueness, and
-  // assignment-aware determinism enforcement. D-089 raises it to 7000 against
-  // 6878 measured lines for tenant-scoped replay, observation-state evidence,
-  // selected-funding authority, and exact synthetic ownership topology.
+  // assignment-aware determinism enforcement. Current amendment history and
+  // measurements are recorded in ADR-0034.
   // The ratchet-down after
   // the corpus generator's first
   // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,
   // never averaged into a platform layer.
-  tooling: 7000,
+  tooling: 7300,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

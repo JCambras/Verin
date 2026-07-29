@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-case/1.2.0",
+  "$id": "verin-real-derived-case/1.3.0",
   "title": "Verin scrubbed real-derived replay case",
   "type": "object",
   "additionalProperties": false,
@@ -219,7 +219,7 @@
     },
     "entityRef": {
       "type": "string",
-      "pattern": "^(firm|request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$"
+      "pattern": "^(request|household|account|instruction|owner|actor|grant|policy|policy-version|restriction|legal-hold|pending-action|time-zone-rule):tok:[0-9a-f]{16}$"
     },
     "evidenceSourceRef": {
       "type": "string",

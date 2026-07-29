@@ -4816,3 +4816,26 @@ captain signoff remain unchanged.
 **Why:** signed replay truth cannot accept unsupported concrete values, tenant-ambiguous reservations,
 funding semantics from unselected accounts, or contradictory ownership edges.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-090 · 2026-07-29 · captain-decision · Identity, tenant, and funding truth is reproducible and exact
+
+The `verin-corpus/1.10.0` preimage binds `verin-real-derived-case/1.3.0`,
+`verin-real-derived-replay/1.5.0`, and `verin-real-derived-semantics/1.5.0`. Synthetic identity context
+now comes from typed unresolved UTF-8 bytes, canonical values, exact candidate references, candidate raw
+bytes, and household bindings in the emitted case. Ambiguity requires at least two resolving candidates,
+and canonical collision requires distinct raw bytes that normalize to one value. Assumption ids alone
+cannot substantiate either label.
+
+Generic real-derived subject references exclude firm ids. Case, request, and reservations remain the only
+firm-scoped fields and must share one exact `firmRef`, so an impacted subject or subject inventory cannot
+introduce a second tenant. Every money field rejects values outside the safe integer boundary, and
+aggregate funding sufficiency uses `bigint` throughout.
+
+The tooling ceiling rises from 7000 to 7300 against 7129 measured lines, leaving 171 lines of explicit
+headroom across separate identity, topology, and funding owners. Only the two identity synthetic cases
+change; path-keyed determinism, the empty deferred real-derived partition, generated-file ownership,
+pending captain signoff, and the 500-line file ceiling remain unchanged.
+
+**Why:** signed defect context must be replayable from emitted inputs, tenant scope cannot enter a generic
+subject collection, and one-cent funding differences must survive aggregation.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

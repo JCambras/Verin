@@ -330,6 +330,44 @@ export function specReferenceProblems(
       corpusCase.request.destinationRef,
       `cases[${corpusCase.key}].request.destinationRef`,
     );
+    const identityInput = corpusCase.identityInput;
+    if (identityInput !== undefined) {
+      for (const duplicate of duplicates(
+        identityInput.candidates.map(
+          (candidate) =>
+            `${candidate.entityKind}:${candidate.entityRef}`,
+        ),
+      )) {
+        problems.push(
+          `cases[${corpusCase.key}].identityInput.candidates: duplicate candidate "${duplicate}"`,
+        );
+      }
+      for (const candidate of identityInput.candidates) {
+        const where = `cases[${corpusCase.key}].identityInput.candidates`;
+        need(households, candidate.householdRef, `${where}.householdRef`);
+        if (candidate.entityKind === "household") {
+          need(households, candidate.entityRef, `${where}.entityRef`);
+          if (candidate.entityRef !== candidate.householdRef) {
+            problems.push(
+              `${where}: household candidate must bind to its own household`,
+            );
+          }
+        } else {
+          need(parties, candidate.entityRef, `${where}.entityRef`);
+          const candidateHousehold = world.households.find(
+            (row) => row.key === candidate.householdRef,
+          );
+          if (
+            candidateHousehold !== undefined &&
+            !candidateHousehold.memberRefs.includes(candidate.entityRef)
+          ) {
+            problems.push(
+              `${where}: party candidate is not a member of its bound household`,
+            );
+          }
+        }
+      }
+    }
     for (const id of corpusCase.assumptionIds) {
       need(
         assumptions,

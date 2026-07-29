@@ -48,10 +48,11 @@ bytes and labels, schemas, taxonomy, freshness, and declarative plus executable 
 Both partitions require typed expected-versus-observed treatment, and a defect without a context-bound
 mismatch fails closed. Defect labels and detector attributions are exact singletons. Both partitions use
 explicit selected funding, with synthetic pending semantics bound to that exact request-household set.
-Real-derived replay uses entity-kind-scoped references, exact kind/subject/source
-evidence, explicit aggregate selected funding, pending actions bound to the request and selected account,
-and threshold treatment selected by signed comparator policy. Regeneration invalidates signoff, and
-agents never sign.
+Synthetic identity context carries raw UTF-8 bytes, exact candidates, and household bindings instead of
+assumption-only proof. Real-derived replay uses entity-kind-scoped references with firm ids excluded from
+generic subjects, exact kind/subject/source evidence, exact-integer aggregate selected funding, pending
+actions bound to the request and selected account, and threshold treatment selected by signed comparator
+policy. Regeneration invalidates signoff, and agents never sign.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,

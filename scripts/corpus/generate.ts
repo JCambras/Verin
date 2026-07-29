@@ -54,6 +54,11 @@ export interface GeneratedFile {
 
 /** NFC everywhere: two spellings of one name must not be two subjects. */
 const nfc = (value: string): string => value.normalize("NFC");
+const canonicalIdentityValue = (rawUtf8Hex: string): string =>
+  Buffer.from(rawUtf8Hex, "hex")
+    .toString("utf8")
+    .normalize("NFC")
+    .toLowerCase();
 
 const byKey = <T extends { key: string }>(rows: readonly T[]): Map<string, T> =>
   new Map(rows.map((row) => [row.key, row]));
@@ -323,6 +328,30 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
         corpusCase.request.discriminator,
       ),
     },
+    ...(corpusCase.identityInput === undefined
+      ? {}
+      : {
+          identityInput: {
+            unresolvedRawUtf8Hex:
+              corpusCase.identityInput.unresolvedRawUtf8Hex,
+            canonicalValue: canonicalIdentityValue(
+              corpusCase.identityInput.unresolvedRawUtf8Hex,
+            ),
+            candidates: sortedBy(
+              corpusCase.identityInput.candidates,
+              (candidate) =>
+                `${candidate.entityKind}:${candidate.entityRef}`,
+            ).map((candidate) => ({
+              entityKind: candidate.entityKind,
+              entityRef: subjectId(candidate.entityRef),
+              householdRef: subjectId(candidate.householdRef),
+              rawUtf8Hex: candidate.rawUtf8Hex,
+              canonicalValue: canonicalIdentityValue(
+                candidate.rawUtf8Hex,
+              ),
+            })),
+          },
+        }),
     thresholdPolicy: corpusCase.thresholdPolicy ?? null,
     taxReviewState:
       corpusCase.taxReviewState ??

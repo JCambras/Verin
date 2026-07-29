@@ -126,7 +126,7 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.4.0 closed payload
+replayPayload   verin-real-derived-replay/1.5.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{firmRef, family, conflictKey}]
 ```
@@ -162,7 +162,11 @@ destination instruction.
 
 The top-level case, replay request, and every reservation carry one exact opaque `firmRef`. A missing or
 mismatched scope fails intake, and reservation identity is the pair `(firmRef, conflictKey)`. Household
-and display values never supply tenant scope.
+and display values never supply tenant scope. Generic subjects, evidence subjects, and impacted-subject
+inventories reject firm references.
+
+Every money field is a safe integer minor-unit value. Aggregate funding sufficiency uses exact integer
+arithmetic and rejects an unsafe conversion boundary before summation.
 
 Observed evidence uses `observationState: "observed"`, a canonical `observedAt`, and a derived
 `fresh | stale` value. Missing source observation uses `observationState: "missing"`,

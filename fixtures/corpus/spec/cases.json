@@ -1,5 +1,5 @@
 {
-  "specVersion": "1.3.0",
+  "specVersion": "1.4.0",
   "note": "HAND-OWNED. Twenty-one deliberately awkward structures, each stating the assumption it falsifies, plus the cases that attack them and the labeled clean controls that make a false-positive rate reportable. Every case is SYNTHETIC and author-invented: it proves a structure exists that a naive engine mishandles, never that the mishandling has occurred in production. Typed outcomes separate awkward context from observed system treatment. A defect requires one context-backed expected-versus-observed mismatch. A clean control may carry awkward context only when every active semantic treatment is correct.",
   "assumptions": [
     { "id": "AS-01", "structure": "Two households share the surname Smith and a trust name contains it.", "falsifies": "Name resolution is unique." },
@@ -27,6 +27,10 @@
   "cases": [
     { "key": "identity-trust-name-collision", "title": "Distribution request naming 'Smith' with two Smith households and a Smith trust in scope", "firmId": "firm-a", "householdRef": "smiths", "assumptionIds": ["AS-01"], "label": { "kind": "defect", "defectClassId": "identity-resolution-ambiguity" },
       "request": { "sourceAccountRef": "smiths-joint-taxable", "selectedFundingRefs": ["smiths-joint-taxable"], "destinationRef": "smiths-primary", "amountMinor": 7500000, "discriminator": "75000-2026-08-15", "deadline": "2026-08-15T13:00:00.000Z" },
+      "identityInput": { "unresolvedRawUtf8Hex": "536d697468", "candidates": [
+        { "entityKind": "household", "entityRef": "smiths", "householdRef": "smiths", "rawUtf8Hex": "536d697468" },
+        { "entityKind": "household", "entityRef": "smith-mira", "householdRef": "smith-mira", "rawUtf8Hex": "536d697468" }
+      ] },
       "outcomes": [{ "defectClassId": "identity-resolution-ambiguity", "expectedTreatment": "require-human-selection", "observedTreatment": "auto-bind-ambiguous-identity" }],
       "evidence": ["balance/smiths-joint-taxable", "bank-instruction/smiths-primary"], "conflictFamilies": ["liquidity"] },
     { "key": "cross-household-signer", "title": "Clean control: explicit account authority for a signer whose own household is different", "firmId": "firm-a", "householdRef": "smiths", "assumptionIds": ["AS-02"], "label": { "kind": "clean-control", "controlRationale": "Household membership is irrelevant because the effective distribution grant binds the signer to the exact source account." },
@@ -97,6 +101,9 @@
       "evidence": ["recent-change/smiths-review-edt", "recent-change/smiths-review-est", "balance/smiths-joint-taxable"], "conflictFamilies": ["liquidity"] },
     { "key": "non-ascii-roster-identity", "title": "Household display name carries a composed non-ASCII character", "firmId": "firm-a", "householdRef": "smiths", "assumptionIds": ["AS-17"], "label": { "kind": "defect", "defectClassId": "canonical-identity-defect" },
       "request": { "sourceAccountRef": "smiths-ira", "selectedFundingRefs": ["smiths-ira"], "destinationRef": "smiths-primary", "amountMinor": 2200000, "discriminator": "22000-2026-08-26", "deadline": "2026-08-26T13:00:00.000Z" },
+      "identityInput": { "unresolvedRawUtf8Hex": "416ecc836120536d697468", "candidates": [
+        { "entityKind": "party", "entityRef": "ana-smith", "householdRef": "smiths", "rawUtf8Hex": "41c3b16120536d697468" }
+      ] },
       "outcomes": [{ "defectClassId": "canonical-identity-defect", "expectedTreatment": "compare-canonical-identities", "observedTreatment": "compare-raw-identities" }],
       "evidence": ["balance/smiths-ira", "bank-instruction/smiths-primary"], "conflictFamilies": ["liquidity"] },
     { "key": "threshold-exact-lower", "title": "Request at exactly the 25,000 USD authority threshold", "firmId": "firm-a", "householdRef": "okonkwo", "assumptionIds": ["AS-18"], "label": { "kind": "defect", "defectClassId": "threshold-boundary-error" },

@@ -1,5 +1,5 @@
 {
-  "contractVersion": "verin-real-derived-semantics/1.4.0",
+  "contractVersion": "verin-real-derived-semantics/1.5.0",
   "defectRules": [
     { "id": "authority-scope-error", "contextRule": "authority-boundary", "treatmentSelector": "authority-state", "treatments": [
       { "selectorValue": "effective", "expectedTreatment": "accept-effective-authority", "defectTreatment": "reject-effective-authority-by-membership" },
@@ -74,11 +74,14 @@
   "funding": {
     "selection": "explicit-account-reference-set-in-both-partitions",
     "sufficiency": "selected-aggregate-covers-request-reserve-and-reducing-pending",
-    "taxRisk": "any-selected-retirement-source-requires-completed-review"
+    "taxRisk": "any-selected-retirement-source-requires-completed-review",
+    "arithmetic": "exact-safe-integer-minor-units"
   },
   "topology": {
     "referenceIdentity": "entity-kind-scoped",
     "tenantScope": "case-request-reservations-share-one-firm-reference",
+    "genericSubjects": "exclude-firm-references",
+    "syntheticIdentity": "typed-raw-bytes-candidates-and-household-bindings",
     "sourceAccount": "must-resolve-in-liquidity-sources",
     "selectedFunding": "must-resolve-once-to-request-household",
     "realDerivedSelectedFundingOwner": "must-share-owner-with-request-source",

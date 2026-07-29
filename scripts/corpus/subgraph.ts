@@ -30,7 +30,11 @@ const evidenceKeys = (corpusCase: CaseSpec, kind: string): Set<string> =>
     }),
   );
 
-export const REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS = ["owns-account", "owns-bank-instruction"] as const;
+export const REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS = [
+  "identity-candidate",
+  "owns-account",
+  "owns-bank-instruction",
+] as const;
 
 export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue {
   const householdKey = corpusCase.householdRef;
@@ -80,6 +84,9 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
   };
   for (const account of referencedAccounts) addReferencedHousehold(account.householdRef, "owns-account");
   for (const instruction of referencedBankInstructions) addReferencedHousehold(instruction.householdRef, "owns-bank-instruction");
+  for (const candidate of corpusCase.identityInput?.candidates ?? []) {
+    addReferencedHousehold(candidate.householdRef, "identity-candidate");
+  }
   const beneficiaries = sortedBy(
     world.beneficiaries.filter((row) => householdAccountKeys.has(row.accountRef)),
     (row) => `${row.accountRef}/${row.partyRef}`,

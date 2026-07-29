@@ -6,6 +6,10 @@ import {
   type SemanticDefectRule,
 } from "./semantic-contract";
 import { selectedFundingHasTaxClass } from "./selected-funding";
+import {
+  syntheticIdentityContext,
+  type SyntheticIdentityInput,
+} from "./synthetic-identity";
 
 export interface EmittedEvidence {
   id: string;
@@ -116,6 +120,7 @@ export interface EmittedCase {
     deadlineFeasible: boolean;
     idempotencyKey: string;
   };
+  identityInput?: SyntheticIdentityInput;
   thresholdPolicy: {
     thresholdMinor: number;
     comparator: "strict" | "inclusive";
@@ -259,7 +264,8 @@ const selectedFundingProblems = (item: EmittedCase): string[] => {
 const CONTEXT_RULES: Readonly<
   Record<string, (item: EmittedCase) => boolean>
 > = {
-  "identity-ambiguous": (item) => assumption(item, "AS-01"),
+  "identity-ambiguous": (item) =>
+    syntheticIdentityContext(item).ambiguous,
   "authority-boundary": (item) =>
     evidenceSubjects(item, "authority").size > 0,
   "destination-not-integral": (item) => {
@@ -313,7 +319,8 @@ const CONTEXT_RULES: Readonly<
   },
   "nonreducing-pending-action-present": pendingContext,
   "time-zone-boundary": (item) => assumption(item, "AS-16"),
-  "canonical-identity-collision": (item) => assumption(item, "AS-17"),
+  "canonical-identity-collision": (item) =>
+    syntheticIdentityContext(item).canonicalCollision,
   "threshold-equality": (item) =>
     item.thresholdPolicy !== null &&
     item.request.amountMinor === item.thresholdPolicy.thresholdMinor,
@@ -355,6 +362,18 @@ export function syntheticSemanticProblems(
   const problems: string[] = [];
   for (const item of cases) {
     problems.push(...selectedFundingProblems(item));
+    problems.push(
+      ...syntheticIdentityContext(item, {
+        ambiguous: item.outcomes.some(
+          (outcome) =>
+            outcome.defectClassId === "identity-resolution-ambiguity",
+        ),
+        canonicalCollision: item.outcomes.some(
+          (outcome) =>
+            outcome.defectClassId === "canonical-identity-defect",
+        ),
+      }).problems,
+    );
     if (
       assumption(item, "AS-12") &&
       item.records.plannedWithdrawals.length > 0

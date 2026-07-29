@@ -19,6 +19,7 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/real-derived-semantics.ts",
   "scripts/corpus/evidence-observation.ts",
   "scripts/corpus/synthetic-semantics.ts",
+  "scripts/corpus/synthetic-identity.ts",
   "scripts/corpus/case-spec.ts",
   "scripts/corpus/world.ts",
   "scripts/corpus/world-topology.ts",
@@ -46,7 +47,7 @@ const TreatmentSelectorSchema = z.enum([
 ]);
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.4.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.5.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -71,11 +72,16 @@ const SemanticContractSchema = z.strictObject({
     taxRisk: z.literal(
       "any-selected-retirement-source-requires-completed-review",
     ),
+    arithmetic: z.literal("exact-safe-integer-minor-units"),
   }),
   topology: z.strictObject({
     referenceIdentity: z.literal("entity-kind-scoped"),
     tenantScope: z.literal(
       "case-request-reservations-share-one-firm-reference",
+    ),
+    genericSubjects: z.literal("exclude-firm-references"),
+    syntheticIdentity: z.literal(
+      "typed-raw-bytes-candidates-and-household-bindings",
     ),
     sourceAccount: z.literal("must-resolve-in-liquidity-sources"),
     selectedFunding: z.literal(

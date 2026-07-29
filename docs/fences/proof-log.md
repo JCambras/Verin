@@ -7628,3 +7628,53 @@ The real-derived partition remains empty, signoff remains pending, only the thre
 files changed, and all 174 focused corpus, determinism, budget, and file-size tests passed.
 
 **Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 11).
+
+---
+
+## PF-106 · typed identity, tenant subjects, and exact funding · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-090, ADR-0034):** synthetic identity context is derived from typed raw bytes, exact
+candidates, and household bindings; real-derived generic subject references exclude firm scope; and
+funding aggregates preserve exact safe-integer minor units.
+
+**Injection 1 - assumption-only identity accepted.** Disabled the typed identity-input requirement while
+retaining the ambiguity assumption.
+
+**Observed failure:**
+```
+synthetic identity context derives from exact emitted inputs and bindings
+src/__tests__/fitness/corpus-provenance-split.test.ts:2274
+expected problems to contain 'identity context requires typed identity input'
+```
+
+**Injection 2 - firm admitted as a generic subject.** Added `firmRef` to the replay schema's generic
+`entityRef` union and supplied it as an instruction-conflict impacted subject.
+
+**Observed failure:**
+```
+real-derived cases require one exact firm scope across case, request, and reservations
+src/__tests__/fitness/corpus-provenance-split.test.ts:2093
+expected problems to contain 'schema validation failed'
+```
+
+**Injection 3 - floating-point aggregate accepted.** Replaced exact integer aggregation with JavaScript
+number addition for a one-cent shortfall above the safe aggregate boundary.
+
+**Observed failure:**
+```
+real-derived funding aggregates preserve exact minor-unit arithmetic
+src/__tests__/fitness/corpus-provenance-split.test.ts:2133
+expected problems to contain 'selected funding aggregate does not cover request, reserve, and pending reductions'
+```
+
+**Standing companions:** assumption IDs without typed identity inputs fail; one-candidate ambiguity,
+invalid raw-byte relationships, and incorrect household bindings fail; firm references fail in impacted
+subjects and the generic subject inventory; unsafe individual amounts fail schema validation; and a
+one-cent aggregate shortfall is detected with exact arithmetic.
+
+**Revert:** all three injections were reverted. Canonical generation restored `corpusDigest`
+`e1f5dec83c44a807b26eb2c5a812ec41177f29bba8a222cb74c7a106498a17de`. The real-derived partition
+remains empty, signoff remains pending, path-keyed isolation passes, and all 195 focused corpus,
+determinism, timestamp, budget, and file-size tests passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 12).

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.4.0",
+  "$id": "verin-real-derived-replay/1.5.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,7 @@
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.4.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.5.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
@@ -171,7 +171,8 @@
         },
         "reserveRequiredMinor": {
           "type": ["integer", "null"],
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "reserveEvidenceSourceRef": {
           "$ref": "#/$defs/evidenceSourceRef"
@@ -780,7 +781,6 @@
     },
     "entityRef": {
       "oneOf": [
-        { "$ref": "#/$defs/firmRef" },
         { "$ref": "#/$defs/requestRef" },
         { "$ref": "#/$defs/householdRef" },
         { "$ref": "#/$defs/accountRef" },
@@ -808,7 +808,8 @@
     },
     "money": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "evidenceId": {
       "type": "string",
@@ -936,7 +937,8 @@
         },
         "amountMinor": {
           "type": ["integer", "null"],
-          "minimum": 0
+          "minimum": 0,
+          "maximum": 9007199254740991
         },
         "evidenceSourceRef": {
           "$ref": "#/$defs/nullableEvidenceSourceRef"

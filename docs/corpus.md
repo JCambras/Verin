@@ -110,6 +110,15 @@ pending action. A pending action carries entity-kind-scoped household and accoun
 selected account in the request household, and has exact action evidence. Tax risk is evaluated over
 exactly the selected funding set, and any selected retirement source requires a completed tax review.
 
+Synthetic identity context is emitted as typed unresolved UTF-8 bytes, canonical value, exact candidate
+references, candidate raw bytes, and household bindings. Ambiguity requires at least two distinct
+resolving candidates with the same derived canonical value. A canonical collision requires distinct raw
+bytes that normalize to the same value. Assumption ids never prove either context.
+
+Real-derived funding arithmetic converts only safe integer minor-unit inputs to `bigint` and performs
+every aggregate without a `number` sum. Unsafe inputs are rejected at the schema and executable
+boundaries.
+
 ---
 
 ## 4. The twenty-one awkward structures
@@ -234,6 +243,8 @@ case carries one opaque `firmRef`, and its request and every reservation must ca
 Tenant scope is never inferred from household or display data. The demo runs one household under two
 firms, so a string-keyed lookup could otherwise let Firm A's reservation block Firm B's request.
 Reservations land at prompt 23; prompt 11 records and fences the requirement.
+Firm references are excluded from generic replay subjects, evidence subjects, and impacted-subject
+inventories, so those collections cannot introduce a second tenant scope.
 
 **Idempotency stays separate.** Seven of the eight signed idempotency literals share the facts
 `smiths-75000-2026-08-15`, so a facts-only key collapses seven distinct decisions onto one. The shipped
@@ -278,10 +289,10 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.9.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.10.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.4.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.5.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
 its exact bytes, and exact digests for the executable cross-field authorities. Each schema binding covers
