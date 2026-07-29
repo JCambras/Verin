@@ -46,7 +46,9 @@ partition ships EMPTY behind a fail-closed intake contract ([`docs/corpus-scrub-
 is `syntheticDefectCoverage`. Signoff is per corpus version bound to `corpusDigest`, including exact case
 bytes and labels, schemas, taxonomy, freshness, and declarative plus executable replay semantics.
 Both partitions require typed expected-versus-observed treatment, and a defect without a context-bound
-mismatch fails closed. Real-derived replay uses entity-kind-scoped references, exact kind/subject/source
+mismatch fails closed. Defect labels and detector attributions are exact singletons. Both partitions use
+explicit selected funding, with synthetic pending semantics bound to that exact request-household set.
+Real-derived replay uses entity-kind-scoped references, exact kind/subject/source
 evidence, explicit aggregate selected funding, pending actions bound to the request and selected account,
 and threshold treatment selected by signed comparator policy. Regeneration invalidates signoff, and
 agents never sign.

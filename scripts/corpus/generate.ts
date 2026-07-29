@@ -307,6 +307,10 @@ function generateCase(spec: LoadedSpec, corpusCase: CaseSpec, seed: string): Gen
     request: {
       householdRef: subjectId(household.key),
       sourceAccountRef: subjectId(corpusCase.request.sourceAccountRef),
+      selectedFundingRefs: sortedBy(
+        corpusCase.request.selectedFundingRefs,
+        (ref) => ref,
+      ).map(subjectId),
       destinationRef: bankInstructionId(corpusCase.request.destinationRef),
       amountMinor: corpusCase.request.amountMinor,
       currency: "USD",

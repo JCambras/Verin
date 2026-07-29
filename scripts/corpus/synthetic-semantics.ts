@@ -107,6 +107,7 @@ export interface EmittedCase {
   request: {
     householdRef: string;
     sourceAccountRef: string;
+    selectedFundingRefs: string[];
     destinationRef: string;
     amountMinor: number;
     settlementEarliest: string;
@@ -153,7 +154,7 @@ const assumption = (item: EmittedCase, id: string): boolean =>
 const reserveState = (
   item: EmittedCase,
 ): "modeled-scalar" | "modeled-segmented" | "missing" => {
-  if (assumption(item, "AS-12")) return "missing";
+  if (item.records.plannedWithdrawals.length === 0) return "missing";
   const cited = evidenceSubjects(item, "planned-withdrawals");
   const schedules = item.records.plannedWithdrawals.filter((row) =>
     cited.has(row.id)
@@ -177,16 +178,85 @@ const authorityEffective = (item: EmittedCase): boolean => {
 const pendingContext = (item: EmittedCase): boolean => {
   const pending = evidenceSubjects(item, "pending-actions");
   const models = evidenceSubjects(item, "model-assignment");
+  const selected = new Set(item.request.selectedFundingRefs);
+  const selectedAccount = (accountRef: string): boolean =>
+    selected.has(accountRef) &&
+    item.records.accounts.filter(
+      (account) =>
+        account.id === accountRef &&
+        account.householdRef === item.request.householdRef,
+    ).length === 1;
   return item.records.pendingActions.some((row) =>
     pending.has(row.id) &&
+    row.householdRef === item.request.householdRef &&
+    selectedAccount(row.accountRef) &&
     !pendingActionLiquidityTreatment(
       row.kind,
       row.state,
     ).reducesEffectiveLiquidity
   ) ||
     item.records.modelAssignments.some(
-      (row) => models.has(row.id) && row.pendingRebalance,
+      (row) =>
+        models.has(row.id) &&
+        row.pendingRebalance &&
+        selectedAccount(row.accountRef),
     );
+};
+
+const selectedFundingProblems = (item: EmittedCase): string[] => {
+  const selected = item.request.selectedFundingRefs;
+  const selectedSet = new Set(selected);
+  const problems = [
+    ...(selected.length === 0
+      ? [`${item.caseId}: selected funding must not be empty`]
+      : []),
+    ...(selectedSet.size !== selected.length
+      ? [`${item.caseId}: selected funding must be duplicate-free`]
+      : []),
+  ];
+  for (const ref of selectedSet) {
+    const matches = item.records.accounts.filter(
+      (account) =>
+        account.id === ref &&
+        account.householdRef === item.request.householdRef,
+    );
+    if (matches.length !== 1) {
+      problems.push(
+        `${item.caseId}: selected funding "${ref}" must resolve once to the request household`,
+      );
+    }
+  }
+  const citedPending = evidenceSubjects(item, "pending-actions");
+  for (const row of item.records.pendingActions) {
+    if (
+      citedPending.has(row.id) &&
+      !pendingActionLiquidityTreatment(
+        row.kind,
+        row.state,
+      ).reducesEffectiveLiquidity &&
+      (
+        row.householdRef !== item.request.householdRef ||
+        !selectedSet.has(row.accountRef)
+      )
+    ) {
+      problems.push(
+        `${item.caseId}: pending action semantics must bind to the request household and selected funding`,
+      );
+    }
+  }
+  const citedModels = evidenceSubjects(item, "model-assignment");
+  for (const row of item.records.modelAssignments) {
+    if (
+      citedModels.has(row.id) &&
+      row.pendingRebalance &&
+      !selectedSet.has(row.accountRef)
+    ) {
+      problems.push(
+        `${item.caseId}: pending model semantics must bind to selected funding`,
+      );
+    }
+  }
+  return problems;
 };
 
 const CONTEXT_RULES: Readonly<
@@ -286,6 +356,15 @@ export function syntheticSemanticProblems(
 ): string[] {
   const problems: string[] = [];
   for (const item of cases) {
+    problems.push(...selectedFundingProblems(item));
+    if (
+      assumption(item, "AS-12") &&
+      item.records.plannedWithdrawals.length > 0
+    ) {
+      problems.push(
+        `${item.caseId}: AS-12 contradicts emitted withdrawal schedules`,
+      );
+    }
     const outcomes = new Map(
       item.outcomes.map((outcome) => [outcome.defectClassId, outcome]),
     );

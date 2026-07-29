@@ -499,6 +499,7 @@ function specWithInsertedHousehold(spec: LoadedSpec): LoadedSpec {
         label: { kind: "clean-control", controlRationale: "Inserted to prove order independence." },
         request: {
           sourceAccountRef: "smiths-west-taxable",
+          selectedFundingRefs: ["smiths-west-taxable"],
           destinationRef: "smiths-west-primary",
           amountMinor: 100_000,
           discriminator: "1000-2026-09-10",

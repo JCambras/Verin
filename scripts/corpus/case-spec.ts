@@ -31,6 +31,7 @@ const CaseSchema = z.strictObject({
   label: LabelSchema,
   request: z.strictObject({
     sourceAccountRef: Slug,
+    selectedFundingRefs: z.array(Slug).min(1),
     destinationRef: Slug,
     amountMinor: z.int().positive(),
     discriminator: Slug,

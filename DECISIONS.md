@@ -4765,3 +4765,26 @@ and captain signoff stays pending.
 **Why:** context alone cannot define signed defect truth, and disconnected pending actions or unsigned
 policy comparison cannot alter replay funding or threshold treatment.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-088 · 2026-07-29 · captain-decision · Corpus labels, attribution, and synthetic funding are exact
+
+The `verin-corpus/1.8.0` preimage binds `verin-real-derived-semantics/1.3.0`. A real-derived defect label
+must equal the exact singleton semantic mismatch. A detector result for a defect case is valid only as an
+empty miss or the exact signed-label singleton, so unrelated extra classes cannot earn coverage without
+penalty.
+
+Every synthetic case carries an explicit duplicate-free `selectedFundingRefs` set in its hand-owned
+request and emitted bytes. Each selected account resolves exactly once to the request household. Pending
+actions and pending model assignments used by synthetic semantics must bind to an account in that exact
+set. Missing reserve state derives from emitted schedule absence, and an `AS-12` assertion with a schedule
+is contradictory.
+
+The signed executable authority inventory now includes the synthetic input schema, spec topology,
+emitted-graph topology, and detector report boundary alongside the existing semantic validators. The
+tooling ceiling rises from 6500 to 6700 against 6552 measured lines, leaving 148 lines of explicit
+headroom. The post-prompt-19 ratchet-down point is unchanged. The real-derived partition stays empty and
+deferred, and captain signoff stays pending.
+
+**Why:** one signed label cannot hide multiple replay defects, one detector result cannot smuggle extra
+classes into coverage, and pending liquidity semantics cannot infer funding from unrelated accounts.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

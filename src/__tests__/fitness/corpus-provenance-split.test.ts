@@ -1314,6 +1314,24 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(() => renderCorpusReport(reportInput(unknown))).toThrow(
       "attributes unknown defect class",
     );
+
+    const extraAttribution = outcomes(2, 1, false);
+    extraAttribution[0] = {
+      ...extraAttribution[0]!,
+      attributedDefectClassIds: ["test-defect", "other-defect"],
+    };
+    const extraInventory = inventoryOf(extraAttribution).map((entry) =>
+      entry.caseId === "d1"
+        ? { ...entry, labelId: "other-defect" }
+        : entry,
+    );
+    expect(() =>
+      renderCorpusReport(
+        reportInput(extraAttribution, [], {
+          inventory: extraInventory,
+        }),
+      ),
+    ).toThrow("must be empty or the exact signed defect singleton");
   });
 
   it("an unsigned corpus and an unevaluated corpus both withhold every figure with a reason code", () => {
@@ -1477,6 +1495,30 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
   });
 
+  it("a real-derived defect label must equal the only semantic defect", () => {
+    const item = realDerivedDefectCase("destination-integrity-defect");
+    const payload = item.replayPayload as Record<string, any>;
+    payload.request.amountMinor = payload.policy.thresholdMinor;
+    payload.policy.thresholdComparison = "equal";
+    const thresholdRule = semanticContract.defectRules.find(
+      (rule) => rule.id === "threshold-boundary-error",
+    )!;
+    const thresholdTreatment = semanticTreatment(thresholdRule, "strict");
+    const thresholdOutcome = payload.outcomes.find(
+      (outcome: Record<string, string>) =>
+        outcome.defectClassId === "threshold-boundary-error",
+    );
+    thresholdOutcome.observedTreatment =
+      thresholdTreatment.defectTreatment;
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-extra-semantic-defect.json",
+      ).join("\n"),
+    ).toContain("exactly one replay semantic defect");
+  });
+
   it("awkward context is clean when the recorded treatment is correct", () => {
     const control = realDerivedCase({
       label: {
@@ -1547,7 +1589,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.2.0",
+      "verin-real-derived-semantics/1.3.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -1570,6 +1612,18 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/synthetic-semantics.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/case-spec.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/world.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/graph.ts",
+    );
+    expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
+      "scripts/corpus/report.ts",
     );
   });
 
@@ -1943,6 +1997,95 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         ).join("\n"),
       ).toMatch(/pending action|pending-action evidence/);
     }
+  });
+
+  it("synthetic selected funding is explicit, unique, and owned by the request household", () => {
+    for (const item of real.cases) {
+      const selected = (item.request as Record<string, unknown>)
+        .selectedFundingRefs;
+      expect(Array.isArray(selected)).toBe(true);
+      expect((selected as string[]).length).toBeGreaterThan(0);
+      expect(new Set(selected as string[]).size).toBe(
+        (selected as string[]).length,
+      );
+      for (const accountRef of selected as string[]) {
+        expect(
+          item.records.accounts.filter(
+            (account) =>
+              account.id === accountRef &&
+              account.householdRef === item.request.householdRef,
+          ),
+        ).toHaveLength(1);
+      }
+    }
+
+    const duplicate = structuredClone(real.spec.cases) as Record<
+      string,
+      any
+    >;
+    duplicate.cases[0].request.selectedFundingRefs = [
+      "smiths-joint-taxable",
+      "smiths-joint-taxable",
+    ];
+    expect(
+      specReferenceProblems(real.spec.world, duplicate as any).join("\n"),
+    ).toContain("selectedFundingRefs: duplicate reference");
+
+    const crossHousehold = structuredClone(real.spec.cases) as Record<
+      string,
+      any
+    >;
+    crossHousehold.cases[0].request.selectedFundingRefs = ["mira-roth"];
+    expect(
+      specReferenceProblems(
+        real.spec.world,
+        crossHousehold as any,
+      ).join("\n"),
+    ).toContain("selected funding account belongs to household");
+  });
+
+  it("synthetic pending semantics use only the exact selected funding set", () => {
+    const pendingAction = structuredClone(
+      real.cases.find(
+        (item) => item.caseId === "CS-blocked-pending-action",
+      )!,
+    );
+    pendingAction.records.pendingActions.find(
+      (row) => row.id === "pending:smiths-blocked-transfer",
+    )!.accountRef = "subject:smiths-ira";
+    expect(
+      syntheticSemanticProblems([pendingAction]).join("\n"),
+    ).toContain("selected funding");
+
+    const pendingModel = structuredClone(
+      real.cases.find(
+        (item) =>
+          item.caseId === "CS-pending-rebalance-during-evaluation",
+      )!,
+    );
+    pendingModel.records.modelAssignments.find(
+      (row) => row.pendingRebalance,
+    )!.accountRef = "subject:smiths-ira";
+    expect(
+      syntheticSemanticProblems([pendingModel]).join("\n"),
+    ).toContain("selected funding");
+  });
+
+  it("synthetic missing reserve state comes from emitted schedule absence", () => {
+    const item = structuredClone(
+      real.cases.find(
+        (candidate) =>
+          candidate.caseId === "CS-absent-withdrawal-schedule",
+      )!,
+    );
+    item.records.plannedWithdrawals.push({
+      id: "withdrawal:contradiction",
+      householdRef: item.request.householdRef,
+      segments: [{ monthlyMinor: 1 }],
+    });
+    expect(
+      syntheticSemanticProblems([item]).join("\n"),
+    ).toContain("AS-12 contradicts emitted withdrawal schedules");
   });
 
   it("a settling incoming transfer uses the shared nonreducing pending authority", () => {

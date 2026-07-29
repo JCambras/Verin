@@ -380,8 +380,9 @@ export function realDerivedCaseProblems(
   const semanticDefects = realDerivedSemanticDefects(parsed.data);
   if (parsed.data.label.kind === "defect") {
     reject(
-      !semanticDefects.includes(parsed.data.label.defectClassId),
-      "label.defectClassId does not match replay expected-versus-observed semantics",
+      semanticDefects.length !== 1 ||
+        semanticDefects[0] !== parsed.data.label.defectClassId,
+      "label.defectClassId does not match replay expected-versus-observed semantics: expected exactly one replay semantic defect",
     );
   } else {
     reject(

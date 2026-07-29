@@ -96,11 +96,14 @@ function measurePartition(
     if (
       entry.labelKind === "defect" &&
       attributions !== null &&
-      attributions.length > 0 &&
-      !attributions.includes(entry.labelId)
+      !(
+        attributions.length === 0 ||
+        (attributions.length === 1 &&
+          attributions[0] === entry.labelId)
+      )
     ) {
       throw new Error(
-        `corpus report: ${provenance} outcome "${outcome.caseId}" contradicts its signed defect label`,
+        `corpus report: ${provenance} outcome "${outcome.caseId}" contradicts its signed defect label; attribution must be empty or the exact signed defect singleton`,
       );
     }
     outcomeByCase.set(outcome.caseId, outcome);

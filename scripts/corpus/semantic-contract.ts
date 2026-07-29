@@ -18,6 +18,10 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/semantic-contract.ts",
   "scripts/corpus/real-derived-semantics.ts",
   "scripts/corpus/synthetic-semantics.ts",
+  "scripts/corpus/case-spec.ts",
+  "scripts/corpus/world.ts",
+  "scripts/corpus/graph.ts",
+  "scripts/corpus/report.ts",
   "scripts/corpus/real-derived-topology.ts",
   "scripts/corpus/scrub-contract.ts",
   "scripts/corpus/pending-actions.ts",
@@ -39,7 +43,7 @@ const TreatmentSelectorSchema = z.enum([
 ]);
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.2.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.3.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -55,7 +59,9 @@ const SemanticContractSchema = z.strictObject({
     evidenceKind: z.enum(REAL_DERIVED_EVIDENCE_KINDS),
   })).min(1),
   funding: z.strictObject({
-    selection: z.literal("explicit-account-reference-set"),
+    selection: z.literal(
+      "explicit-account-reference-set-in-both-partitions",
+    ),
     sufficiency: z.literal(
       "selected-aggregate-covers-request-reserve-and-reducing-pending",
     ),
@@ -67,7 +73,10 @@ const SemanticContractSchema = z.strictObject({
     referenceIdentity: z.literal("entity-kind-scoped"),
     sourceAccount: z.literal("must-resolve-in-liquidity-sources"),
     selectedFunding: z.literal(
-      "must-resolve-once-to-request-household-and-source-owner",
+      "must-resolve-once-to-request-household",
+    ),
+    realDerivedSelectedFundingOwner: z.literal(
+      "must-share-owner-with-request-source",
     ),
     materialEvidence: z.literal("kind-subject-source-exactly-once"),
     instructionConflict: z.literal(
@@ -76,14 +85,22 @@ const SemanticContractSchema = z.strictObject({
     pendingAction: z.literal(
       "must-resolve-to-request-household-and-selected-funding",
     ),
+    pendingModel: z.literal(
+      "must-resolve-to-request-household-and-selected-funding",
+    ),
   }),
   outcomes: z.strictObject({
     completeness: z.literal(
       "one-expected-observed-treatment-per-defect-class",
     ),
-    defect: z.literal("context-and-mismatched-treatment"),
+    defect: z.literal(
+      "exactly-one-context-bound-mismatched-treatment",
+    ),
     control: z.literal("all-observed-treatments-match-expected"),
     synthetic: z.literal("context-requires-typed-treatment"),
+    attribution: z.literal(
+      "defect-empty-or-exact-label-singleton",
+    ),
   }),
 });
 

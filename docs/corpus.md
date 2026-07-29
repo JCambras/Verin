@@ -98,8 +98,11 @@ outgoing distributions or debits reduce effective liquidity; blocked, cancelled,
 credit, unknown, and unclassified actions do not, and incoming value cannot increase availability before
 settlement.
 
-Real-derived funding is never inferred from every available account. The payload names an explicit,
-duplicate-free `selectedFundingRefs` set. Each selected account resolves exactly once, belongs to the
+Funding is never inferred from available accounts in either partition. Every synthetic request and
+real-derived payload names an explicit, duplicate-free `selectedFundingRefs` set. Synthetic selections
+resolve exactly once to the request household, and every pending action or pending model assignment used
+by synthetic semantics names an account in that exact set. Each real-derived selected account resolves
+exactly once, belongs to the
 request household, shares an owner with the request source account, carries a supported tax class, and
 contributes to one aggregate sufficiency check over the request amount, required reserve, and any reducing
 pending action. A pending action carries entity-kind-scoped household and account references, names a
@@ -155,8 +158,9 @@ checked against the mechanical signature of every taxonomy class over their emit
 In both corpus partitions, an awkward fact or boundary is context, not a defect. Each supported class
 records a typed expected treatment and observed treatment. A defect exists only when the relevant
 context is present, the expected treatment matches the signed class rule, and the observed treatment is
-that class's closed defective treatment. A synthetic defect lacking exactly one matching treatment
-mismatch fails closed. A clean control records expected treatment for every active class, including
+that class's closed defective treatment. A defect label must be the exact singleton semantic mismatch,
+and detector attribution for a defect must be either an empty miss or the exact signed-label singleton.
+A clean control records expected treatment for every active class, including
 effective cross-household authority, correctly treated owner-beneficiary context, segmented or missing
 reserves, valid holds, exact thresholds, and time-zone boundaries. Missing, duplicate, unknown, or
 context-free treatment assertions fail closed.
@@ -241,9 +245,9 @@ derivation keys on the DECISION: `idem:<caseId>:<scope>-<discriminator>`. The fe
   partition figures.
 - Outcome inputs carry a required provenance literal. Supplying a real-derived outcome to synthetic
   measurement, or the reverse, fails at the measurement boundary.
-- Each evaluated outcome carries a closed list of attributed defect-class ids. A defect case receives
-  coverage credit only when that list contains its exact signed label. Any attributed class on a clean
-  control is a false positive. Null attribution is unevaluated; duplicate, unknown, or contradictory
+- Each evaluated outcome carries a closed list of attributed defect-class ids. A defect case accepts
+  only an empty miss or the exact signed-label singleton. Any attributed class on a clean control is a
+  false positive. Null attribution is unevaluated; duplicate, unknown, extra, or contradictory
   attribution is rejected.
 - With an empty real-derived partition, `detectionRate` is `null` with
   `reasonCode: "real-derived-corpus-absent"`, and the synthetic figure is never substituted.
@@ -268,10 +272,10 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.7.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.8.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.2.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.3.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
 its exact bytes, and exact digests for the executable cross-field authorities. Each schema binding covers

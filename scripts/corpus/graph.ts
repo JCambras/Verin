@@ -70,6 +70,9 @@ export function evidenceResolutionProblems(cases: readonly EmittedCase[]): strin
     };
     requireOne(item.request.householdRef, "request.householdRef");
     requireOne(item.request.sourceAccountRef, "request.sourceAccountRef");
+    for (const ref of item.request.selectedFundingRefs) {
+      requireOne(ref, "request.selectedFundingRefs");
+    }
     requireOne(item.request.destinationRef, "request.destinationRef");
     requireOne(item.records.household?.advisorRef, "records.household.advisorRef");
     for (const ref of item.records.household?.memberRefs ?? []) {

@@ -7504,3 +7504,74 @@ semantic authority changes the signed digest.
 and all 151 focused corpus companions passed.
 
 **Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 9).
+
+---
+
+## PF-104 · exact corpus outcomes and synthetic funding topology · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-088, ADR-0034):** a real-derived defect label equals the only semantic mismatch; detector
+attribution for a defect is empty or the exact signed-label singleton; synthetic funding is explicit,
+unique, and request-household-owned; pending action and model semantics use only that exact set; and
+missing reserve state comes from emitted schedule absence.
+
+**Injection 1 - extra replay defect accepted.** Added a threshold mismatch beside the signed destination
+mismatch while keeping the destination label.
+
+**Observed failure:**
+```
+a real-derived defect label must equal the only semantic defect
+src/__tests__/fitness/corpus-provenance-split.test.ts:1519
+expected '' to contain 'exactly one replay semantic defect'
+```
+
+**Injection 2 - extra detector class accepted.** Attributed both the signed defect and another known class
+to one defect case.
+
+**Observed failure:**
+```
+coverage credits only the exact signed defect class attribution
+src/__tests__/fitness/corpus-provenance-split.test.ts:1334
+expected function to throw an error
+```
+
+**Injection 3 - selected funding absent.** Required every generated synthetic request to carry a
+non-empty selected set.
+
+**Observed failure:**
+```
+synthetic selected funding is explicit, unique, and owned by the request household
+src/__tests__/fitness/corpus-provenance-split.test.ts:2006
+expected false to be true
+```
+
+**Injection 4 - pending semantics crossed accounts.** Moved the cited blocked action and pending model
+assignment to another same-household account outside the selected set.
+
+**Observed failure:**
+```
+synthetic pending semantics use only the exact selected funding set
+src/__tests__/fitness/corpus-provenance-split.test.ts:2058
+expected '' to contain 'selected funding'
+```
+
+**Injection 5 - missing-schedule assumption contradicted bytes.** Added an emitted schedule while retaining
+`AS-12`.
+
+**Observed failure:**
+```
+synthetic missing reserve state comes from emitted schedule absence
+src/__tests__/fitness/corpus-provenance-split.test.ts:2088
+expected '' to contain 'AS-12 contradicts emitted withdrawal schedules'
+```
+
+**Standing companions:** unrelated extra semantic defects and detector classes fail; selected funding is
+present on every synthetic case and rejects duplicates or cross-household accounts; cited pending actions
+and model assignments reject unselected accounts; and an asserted missing schedule rejects emitted
+schedule bytes.
+
+**Revert:** all five injected states remain only in companions. The production authorities reject each,
+and canonical validation restored `corpusDigest`
+`fe921fcd64c77e5b10dbff05d8a382eb0fdd2a0b57776586ec582f796ef194de`. All 199 focused companions
+passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 10).

@@ -14,10 +14,10 @@ ADR-0034). Two legal states exist and nothing in between:
 **Regeneration that changes `corpusDigest` invalidates the signature.** `pnpm corpus:validate` fails with
 `signed-but-regenerated` rather than carrying a stale attestation forward. Narrative wording outside the
 signed corpus - this document's prose, `docs/corpus.md`, the ADR - does not invalidate a signature. The
-`verin-corpus/1.7.0` digest covers each inventory entry's partition, case id, bytes, label kind, and label
+`verin-corpus/1.8.0` digest covers each inventory entry's partition, case id, bytes, label kind, and label
 id. It also covers the versioned semantic digests of the defect taxonomy, the real-derived per-kind
 freshness policy, and both real-derived JSON Schemas, including each schema's identifier, exact bytes, and
-canonical semantic projection. It binds `verin-real-derived-semantics/1.2.0`, including the closed
+canonical semantic projection. It binds `verin-real-derived-semantics/1.3.0`, including the closed
 context, expected-treatment, defective-treatment, topology, and outcome rules, plus the exact executable
 authorities that enforce them.
 

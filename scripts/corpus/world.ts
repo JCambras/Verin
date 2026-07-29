@@ -44,7 +44,6 @@ const duplicates = (values: readonly string[]): string[] => [
  * always did, and staleness becomes a deliberate per-record property.
  */
 const ObservedAt = Instant;
-
 const TimingSchema = z.strictObject({
   minRetrievalLagSeconds: z.int().positive(),
   maxRetrievalLagSeconds: z.int().positive(),
@@ -299,6 +298,20 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
   const need = (set: Set<string>, ref: string, where: string): void => {
     if (!set.has(ref)) problems.push(`${where} -> "${ref}" does not resolve`);
   };
+  const needOwnedAccount = (
+    ref: string,
+    householdRef: string,
+    where: string,
+    noun: string,
+  ): void => {
+    need(accounts, ref, where);
+    const account = world.accounts.find((row) => row.key === ref);
+    if (account !== undefined && account.householdRef !== householdRef) {
+      problems.push(
+        `${where}: ${noun} belongs to household "${account.householdRef}", not request household "${householdRef}"`,
+      );
+    }
+  };
 
   for (const household of world.households) {
     for (const member of household.memberRefs) need(parties, member, `households[${household.key}].memberRefs`);
@@ -408,16 +421,21 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
   };
   for (const corpusCase of cases.cases) {
     need(households, corpusCase.householdRef, `cases[${corpusCase.key}].householdRef`);
-    need(accounts, corpusCase.request.sourceAccountRef, `cases[${corpusCase.key}].request.sourceAccountRef`);
-    const sourceAccount = world.accounts.find(
-      (account) => account.key === corpusCase.request.sourceAccountRef,
+    needOwnedAccount(
+      corpusCase.request.sourceAccountRef,
+      corpusCase.householdRef,
+      `cases[${corpusCase.key}].request.sourceAccountRef`,
+      "request source account",
     );
-    if (
-      sourceAccount !== undefined &&
-      sourceAccount.householdRef !== corpusCase.householdRef
-    ) {
+    for (const ref of corpusCase.request.selectedFundingRefs) {
+      needOwnedAccount(ref, corpusCase.householdRef,
+        `cases[${corpusCase.key}].request.selectedFundingRefs`, "selected funding account");
+    }
+    for (const dup of duplicates(
+      corpusCase.request.selectedFundingRefs,
+    )) {
       problems.push(
-        `cases[${corpusCase.key}].request.sourceAccountRef belongs to household "${sourceAccount.householdRef}", not request household "${corpusCase.householdRef}"`,
+        `cases[${corpusCase.key}].request.selectedFundingRefs: duplicate reference "${dup}"`,
       );
     }
     need(instructions, corpusCase.request.destinationRef, `cases[${corpusCase.key}].request.destinationRef`);

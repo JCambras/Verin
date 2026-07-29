@@ -155,9 +155,10 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.2.0` registry separates awkward context from outcome in both
-corpus partitions. A defect case is accepted only when the relevant context is present and its typed
-expected treatment differs from the observed closed defective treatment. A clean control records the
+The closed `verin-real-derived-semantics/1.3.0` registry separates awkward context from outcome in both
+corpus partitions. A defect case is accepted only when its label is the exact singleton context-bound
+treatment mismatch. Detector attribution for a defect is either an empty miss or the exact signed-label
+singleton. A clean control records the
 expected treatment for every active class, so effective cross-household authority, correctly treated
 owner-beneficiary context, segmented or missing reserves, valid holds, exact thresholds, and time-zone
 boundaries remain clean when treated correctly. Missing, duplicate, unknown, contradictory, or
@@ -167,7 +168,10 @@ signed taxonomy, so an unsupported class cannot enter either denominator by rela
 valid case. Its declarative bytes and exact executable-authority source digests are part of
 `corpusDigest`, so changing a predicate or cross-field rule invalidates signoff.
 
-Replay references are entity-kind-scoped. Request, household, account, instruction, owner, actor, grant,
+Replay references are entity-kind-scoped. Synthetic requests and real-derived payloads both carry an
+explicit duplicate-free selected funding set. Synthetic pending actions and pending model assignments
+used by semantics must name an account in that exact set and the request household. Request, household,
+account, instruction, owner, actor, grant,
 policy, restriction, hold, pending-action, and time-zone identities cannot be satisfied by one generic
 token. Every material plane has exactly one evidence tuple matching kind, subject, and source. The
 request source account resolves in the liquidity collection, and the explicit selected funding set is
@@ -197,7 +201,7 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.7.0` preimage covers every inventory entry's partition,
+figure the corpus can report. The `verin-corpus/1.8.0` preimage covers every inventory entry's partition,
 case id, byte digest, label kind, and label id, plus versioned semantic digests of the taxonomy definitions
 and citations, the real-derived freshness policy, both versioned real-derived JSON Schemas, and the
 declarative plus executable semantic contract. Schema bindings include identifiers, exact-byte digests,
@@ -244,7 +248,9 @@ nondeterminism-flow enforcement. The 204-line buffer keeps these authorities sep
 D-087 raises the ceiling to 6500 against 6426 measured lines for shared synthetic and real-derived
 treatment semantics, selector-driven authority, reserve, and threshold policy identity, exact
 pending-action topology, and request source ownership. The 74-line buffer keeps the new semantic owner
-separate from generation and validation.
+separate from generation and validation. D-088 raises the ceiling to 6700 against 6552 measured lines
+for exact label and attribution identity, explicit synthetic funding topology, and schedule-derived
+reserve state. The 148-line buffer keeps those validation owners separate.
 
 ## What this PR explicitly does NOT claim
 
