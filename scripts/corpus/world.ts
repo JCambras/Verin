@@ -302,16 +302,31 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
   const schedules = keys(world.plannedWithdrawals);
   const assumptions = new Set(cases.assumptions.map((a) => a.id));
 
-  for (const [label, values] of [
+  const keyedCollections = [
     ["parties", world.parties.map((p) => p.key)],
     ["households", world.households.map((h) => h.key)],
     ["households.scopeSlug", world.households.map((h) => h.scopeSlug)],
     ["accounts", world.accounts.map((a) => a.key)],
+    ["authorizedSigners", world.authorizedSigners.map((s) => s.key)],
     ["bankInstructions", world.bankInstructions.map((b) => b.key)],
+    ["plannedWithdrawals", world.plannedWithdrawals.map((w) => w.key)],
+    ["restrictions", world.restrictions.map((r) => r.key)],
+    ["recentChanges", world.recentChanges.map((c) => c.key)],
+    ["modelAssignments", world.modelAssignments.map((m) => m.key)],
+    ["pendingActions", world.pendingActions.map((a) => a.key)],
+    ["legalHolds", world.legalHolds.map((h) => h.key)],
     ["cases", cases.cases.map((c) => c.key)],
     ["assumptions", cases.assumptions.map((a) => a.id)],
-  ] as const) {
+  ] as const;
+  for (const [label, values] of keyedCollections) {
     for (const dup of duplicates(values)) problems.push(`${label}: duplicate key "${dup}"`);
+  }
+  for (const dup of duplicates([
+    ...world.parties.map((row) => row.key),
+    ...world.households.map((row) => row.key),
+    ...world.accounts.map((row) => row.key),
+  ])) {
+    problems.push(`subject namespace: duplicate key "${dup}" across parties, households, or accounts`);
   }
 
   const need = (set: Set<string>, ref: string, where: string): void => {
@@ -350,6 +365,24 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
   }
   for (const assignment of world.modelAssignments) {
     need(accounts, assignment.accountRef, `modelAssignments[${assignment.key}].accountRef`);
+  }
+  for (const change of world.recentChanges) {
+    const [prefix, key, ...extra] = change.subjectRef.split(":");
+    const where = `recentChanges[${change.key}].subjectRef`;
+    if (extra.length > 0 || key === undefined || key === "") {
+      problems.push(`${where} -> "${change.subjectRef}" is not a supported structured subject`);
+    } else if (prefix === "bank-instruction") {
+      need(instructions, key, where);
+    } else if (prefix === "subject") {
+      need(accounts, key, where);
+    } else {
+      problems.push(`${where} -> "${change.subjectRef}" uses unsupported subject kind "${prefix}"`);
+    }
+    if (!change.priorValueRef.startsWith(`${change.subjectRef}@`) || change.priorValueRef.length === change.subjectRef.length + 1) {
+      problems.push(
+        `recentChanges[${change.key}].priorValueRef -> "${change.priorValueRef}" is not a prior version of "${change.subjectRef}"`,
+      );
+    }
   }
   const householdMembers = new Set(world.households.flatMap((household) => household.memberRefs));
   for (const restriction of world.restrictions) {
@@ -412,6 +445,15 @@ export function specReferenceProblems(world: WorldSpec, cases: CasesSpec): strin
     need(instructions, corpusCase.request.destinationRef, `cases[${corpusCase.key}].request.destinationRef`);
     for (const id of corpusCase.assumptionIds) {
       need(assumptions, id, `cases[${corpusCase.key}].assumptionIds`);
+    }
+    for (const dup of duplicates(corpusCase.assumptionIds)) {
+      problems.push(`cases[${corpusCase.key}].assumptionIds: duplicate reference "${dup}"`);
+    }
+    for (const dup of duplicates(corpusCase.evidence)) {
+      problems.push(`cases[${corpusCase.key}].evidence: duplicate reference "${dup}"`);
+    }
+    for (const dup of duplicates(corpusCase.conflictFamilies)) {
+      problems.push(`cases[${corpusCase.key}].conflictFamilies: duplicate family "${dup}"`);
     }
     for (const ref of corpusCase.evidence) {
       const [kind = "", recordKey = ""] = ref.split("/");

@@ -4583,3 +4583,32 @@ an unmodeled position-scoped RESTRICTION is refused rather than silently dropped
 **Why:** "adding a household changes only that household's bytes" is the property the whole corpus rests
 on; substring matching and input-order sensitivity both break it invisibly.
 **Revert path:** none worth taking - both replaced strictly weaker checks.
+
+### D-081 · 2026-07-28 · captain-decision · Corpus graph, intake, signoff, and measurement boundaries fail closed
+
+The prompt-11a corpus now validates every evidence and request reference against the complete emitted
+case graph with exactly-one semantics. Evidence-producing collections are required; every keyed spec
+collection rejects duplicates; planned withdrawals, authority grants, and model assignments carry
+distinct prefixed ids; recent changes are emitted; restriction subjects are preserved; and explicitly
+referenced cross-household destinations remain in the case graph.
+
+The real-derived deferral rejects any delivered file while active. Once explicitly lifted, valid
+real-derived cases are inventoried in the generated manifest, included in `corpusDigest`, and supplied to
+the real-derived report path. Intake ids admit only opaque token components and closed suffix vocabularies;
+attestations name an opaque extractor and enforce occurrence, extraction, scrubbing, and review chronology.
+
+The `verin-corpus/1.1.0` signed preimage includes both partition inventories and the versioned semantic
+digest of the defect taxonomy. Signed records accept only `signedBy: "captain"` and a canonical UTC
+`signedAt`. A partially evaluated detector run withholds both figures with
+`detector-outcomes-incomplete`, and provenance-specific outcome types plus runtime checks reject
+cross-partition inputs. The no-blending fence scans both `src/` and `scripts/` and follows local and
+imported aliases through arithmetic, calls, reducers, arrays, and concatenation.
+
+ADR-0034's tooling ceiling rises from 4000 to 4300 against a measured 4254 lines. The explicit
+46-line buffer preserves the existing design documentation and keeps every new script under the
+separate 500-line file ceiling.
+
+**Why:** labels, their meaning, and every referenced evidence entity are the signed measurement
+substrate. A favorable evaluated subset, a hidden real-derived case, or an id-shaped PII leak would make
+the resulting claim indefensible.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

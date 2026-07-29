@@ -1,17 +1,3 @@
-/**
- * CORPUS SIGNOFF (v3 prompt 11, ADR-0034; captain ruling `corpus-signoff-and-measurement`,
- * 2026-07-28).
- *
- * Signoff is PER CORPUS VERSION and bound to the canonical `corpusDigest`. Any
- * regeneration that changes the digest invalidates the signature and requires
- * re-signing; narrative wording outside the signed projection does not.
- *
- * Two legal shapes only - `pending-captain` (all three signature fields null) and
- * `signed` (all three populated, with `signedDigest` equal to the recomputed
- * `corpusDigest`). An agent-invented in-between state cannot pass, and AGENTS
- * NEVER SIGN: no generator writes this file, and the `corpus-provenance-split`
- * fence proves no code path under `scripts/corpus/` can originate a `signedBy`.
- */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseDocument } from "yaml";
@@ -20,6 +6,13 @@ import { SPEC_DIR } from "./world";
 export const SIGNOFF_PENDING = "pending-captain";
 export const SIGNOFF_SIGNED = "signed";
 export const SIGNOFF_FILE = "SIGNOFF.md";
+export const CAPTAIN_SIGNING_AUTHORITY = "captain";
+const CANONICAL_SIGNED_AT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const isCanonicalSignedAt = (value: string): boolean => {
+  if (!CANONICAL_SIGNED_AT.test(value)) return false;
+  const instant = new Date(value);
+  return !Number.isNaN(instant.valueOf()) && instant.toISOString() === value;
+};
 
 export interface CorpusSignoff {
   readonly corpusVersion: string | null;
@@ -34,8 +27,6 @@ const FENCE = /```ya?ml\r?\n([\s\S]*?)```/;
 const asStringOrNull = (value: unknown): string | null =>
   typeof value === "string" && value.length > 0 ? value : null;
 
-/** Parse the single fenced YAML block. A file with no block is a malformed
- * signoff, reported as such rather than defaulted to "pending". */
 export function parseSignoff(text: string): CorpusSignoff {
   const block = FENCE.exec(text);
   if (block === null) {
@@ -51,10 +42,6 @@ export function parseSignoff(text: string): CorpusSignoff {
   };
 }
 
-/**
- * Signoff honesty. Injected digest/version so the companion can drive every
- * branch without touching the committed file (charter #4).
- */
 export function signoffProblems(
   signoff: CorpusSignoff,
   corpusVersion: string,
@@ -86,6 +73,14 @@ export function signoffProblems(
     problems.push(`${where}: status is "${SIGNOFF_SIGNED}" but signedBy/signedAt/signedDigest are not all populated`);
     return problems;
   }
+  if (signoff.signedBy !== CAPTAIN_SIGNING_AUTHORITY) {
+    problems.push(
+      `${where}: signedBy "${signoff.signedBy}" is not the closed captain authority "${CAPTAIN_SIGNING_AUTHORITY}"`,
+    );
+  }
+  if (signoff.signedAt === null || !isCanonicalSignedAt(signoff.signedAt)) {
+    problems.push(`${where}: signedAt "${signoff.signedAt}" is not a canonical ISO-8601 UTC instant`);
+  }
   if (signoff.signedDigest !== digest) {
     problems.push(
       `${where}: signed-but-regenerated - signedDigest ${signoff.signedDigest} does not match the current corpusDigest ${digest}; regeneration invalidates the signature and requires re-signing`,
@@ -95,7 +90,11 @@ export function signoffProblems(
 }
 
 export const isSigned = (signoff: CorpusSignoff, digest: string): boolean =>
-  signoff.status === SIGNOFF_SIGNED && signoff.signedDigest === digest;
+  signoff.status === SIGNOFF_SIGNED &&
+  signoff.signedBy === CAPTAIN_SIGNING_AUTHORITY &&
+  signoff.signedAt !== null &&
+  isCanonicalSignedAt(signoff.signedAt) &&
+  signoff.signedDigest === digest;
 
 export const loadSignoff = (dir: string = SPEC_DIR): CorpusSignoff =>
   parseSignoff(readFileSync(join(dir, SIGNOFF_FILE), "utf8"));

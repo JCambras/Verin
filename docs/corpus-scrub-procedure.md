@@ -64,6 +64,7 @@ Every case carries a complete `scrubAttestation`:
 {
   "sourceSystemClass": "custodian-exception-feed | crm-case-history | operations-exception-log",
   "extractedAt":  "<canonical UTC instant>",
+  "extractedBy":  "tok:<16 hex>",
   "scrubbedBy":   "tok:<16 hex>",
   "scrubbedAt":   "<canonical UTC instant>",
   "reviewedBy":   "tok:<16 hex>",
@@ -76,22 +77,25 @@ Every case carries a complete `scrubAttestation`:
 
 Mechanically enforced: attestation present and complete; `reviewedBy ≠ scrubbedBy`;
 `recordsAfter ≤ recordsBefore` (scrubbing cannot add records); the source-system class and method drawn
-from the closed vocabulary. **Source system is recorded as a CLASS, never a named institution** - the
-institution is itself identifying.
+from the closed vocabulary; and `occurredAt ≤ extractedAt ≤ scrubbedAt ≤ reviewedAt`. **Source system is
+recorded as a CLASS, never a named institution** - the institution is itself identifying.
 
 ---
 
 ## 4. Fail-closed, by construction
 
 The validator walks every string in a delivered case and requires it to be a canonical instant, an opaque
-token, a derived id built from tokens, a `RD-<16 hex>` case id, or a member of a declared closed
-vocabulary for its key. **Anything else is rejected**, including a field nobody anticipated. A scrubbing
-miss therefore has nowhere to live: it cannot arrive in a new key, because a new key with a string value
-fails by default.
+token, a derived id whose variable components are opaque tokens and whose suffix is a member of the
+appropriate closed vocabulary, a `RD-<16 hex>` case id, or a member of a declared closed vocabulary for
+its key. **Anything else is rejected**, including a field nobody anticipated. A scrubbing miss therefore
+has nowhere to live: it cannot arrive in a new key, because a new key with a string value fails by default.
+Every evidence subject resolves to exactly one opaque subject, and evidence and conflict-key suffixes
+must match their declared kind or family.
 
 Adversarially proven in `corpus-provenance-split.test.ts`: a valid case is accepted; a free-text subject,
 a free-text field under an unanticipated key, a missing attestation, a self-reviewed scrub, an inflated
-record count, and a mislabeled provenance are each rejected.
+record count, a dangling evidence subject, a mismatched derived-id suffix, and a mislabeled provenance
+are each rejected.
 
 ---
 
@@ -120,10 +124,12 @@ computable, and a coverage figure without one is reported `interpretable: false`
 
 1. Extractor and scrubber produce candidate cases per §2 and §3.
 2. Reviewer independently re-reads every field of every case and attests.
-3. Files are hand-placed in `fixtures/corpus/real-derived/`. **`pnpm corpus:generate` never writes
-   there** - the generator can emit only into `synthetic/`, and a fence asserts it.
+3. Lift the recorded deferral, then hand-place files in `fixtures/corpus/real-derived/`.
+   **`pnpm corpus:generate` never writes there** - the generator can emit only into `synthetic/`, and a
+   fence asserts it. Files delivered while the deferral is active fail validation.
 4. `pnpm corpus:validate` must pass. It runs the whole contract over the delivered files.
-5. The captain re-signs the corpus version: the digest changes, which invalidates the prior signature by
+5. The generated manifest inventories every real-derived case and binds its bytes into `corpusDigest`.
+   The captain re-signs the corpus version: the digest changes, which invalidates the prior signature by
    design (see [`docs/corpus.md`](./corpus.md) §9).
 6. Update `fixtures/corpus/real-derived/README.md`, the `corpus_deferral` record in
    `config/demo/scenarios.yaml`, and ADR-0034's status to record that the deferral has been lifted.

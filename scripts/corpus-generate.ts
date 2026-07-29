@@ -12,17 +12,43 @@
  */
 import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { loadTaxonomy } from "./corpus/defects";
 import { generateSyntheticCases } from "./corpus/generate";
-import { buildInventory, buildManifest, corpusDigest } from "./corpus/manifest";
+import { REAL_DERIVED_DEFERRAL, buildInventory, buildManifest } from "./corpus/manifest";
+import {
+  readRealDerivedFiles,
+  realDerivedCaseProblems,
+} from "./corpus/scrub-contract";
 import { CORPUS_SEED } from "./corpus/seed";
 import { CORPUS_DIR, SYNTHETIC_DIR, loadSpec } from "./corpus/world";
 
 const printDigestOnly = process.argv.includes("--print-digest");
 
 const spec = loadSpec();
+const taxonomy = loadTaxonomy();
 const files = generateSyntheticCases(spec, CORPUS_SEED);
-const manifest = buildManifest(spec, files, CORPUS_SEED);
-const digest = corpusDigest(spec.world.corpusVersion, CORPUS_SEED, buildInventory(files));
+const realDerivedFiles = readRealDerivedFiles();
+if (REAL_DERIVED_DEFERRAL !== null && realDerivedFiles.length > 0) {
+  throw new Error(
+    `corpus generate: real-derived files are forbidden while ${REAL_DERIVED_DEFERRAL.status} remains active`,
+  );
+}
+const realDerivedProblems = realDerivedFiles.flatMap((file) =>
+  realDerivedCaseProblems(
+    file.value,
+    new Set(taxonomy.defectClasses.map((entry) => entry.id)),
+    file.relPath,
+  ),
+);
+if (realDerivedProblems.length > 0) {
+  throw new Error(`corpus generate: invalid real-derived partition\n${realDerivedProblems.join("\n")}`);
+}
+const inventory = [
+  ...buildInventory(files),
+  ...buildInventory(realDerivedFiles, "real-derived"),
+];
+const manifest = buildManifest(spec, taxonomy, files, CORPUS_SEED, inventory);
+const digest = String((manifest.value as Record<string, unknown>).corpusDigest);
 
 if (printDigestOnly) {
   process.stdout.write(`${digest}\n`);

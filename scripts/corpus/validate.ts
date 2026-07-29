@@ -23,9 +23,21 @@ import {
   type Taxonomy,
 } from "./defects";
 import { generateSyntheticCases, type GeneratedFile } from "./generate";
-import { buildInventory, corpusDigest, buildManifest, generatorDigest } from "./manifest";
+import { evidenceResolutionProblems } from "./graph";
+import {
+  REAL_DERIVED_DEFERRAL,
+  buildInventory,
+  corpusDigest,
+  buildManifest,
+  generatorDigest,
+  taxonomySemanticDigest,
+} from "./manifest";
 import { CORPUS_SEED } from "./seed";
-import { realDerivedCaseProblems } from "./scrub-contract";
+import {
+  RealDerivedCaseSchema,
+  readRealDerivedFiles,
+  realDerivedCaseProblems,
+} from "./scrub-contract";
 import { loadSignoff, signoffProblems, type CorpusSignoff } from "./signoff";
 import { CORPUS_DIR, REAL_DERIVED_DIR, SYNTHETIC_DIR, loadSpec, type LoadedSpec } from "./world";
 
@@ -97,19 +109,49 @@ interface EmittedEvidence {
 
 /** Only the subgraph rows the clean-control rules interrogate. */
 interface EmittedRecords {
-  authorizedSigners: Array<{ id: string; effectiveFrom: string; effectiveTo: string | null }>;
-  restrictions: Array<{ id: string; inForceAtAsOf: boolean }>;
-  bankInstructions: Array<{ id: string; bank: string; lastFour: string; verifiedAt: string | null }>;
+  household: { id: string; advisorRef: string; memberRefs: string[] };
+  parties: Array<{ id: string }>;
+  accounts: Array<{ id: string; ownerRefs: string[] }>;
+  beneficiaries: Array<{ accountRef: string; partyRef: string }>;
+  authorizedSigners: Array<{
+    id: string;
+    accountRef: string;
+    partyRef: string;
+    effectiveFrom: string;
+    effectiveTo: string | null;
+  }>;
+  bankInstructions: Array<{
+    id: string;
+    titledTo: string;
+    accountRefs: string[];
+    bank: string;
+    lastFour: string;
+    verifiedAt: string | null;
+  }>;
+  plannedWithdrawals: Array<{ id: string; householdRef: string }>;
+  restrictions: Array<{ id: string; subjectRef: string; inForceAtAsOf: boolean }>;
+  modelAssignments: Array<{ id: string; accountRef: string }>;
+  pendingActions: Array<{ id: string; accountRef: string }>;
+  legalHolds: Array<{ id: string; subjectRef: string; scope: "account" | "position" }>;
+  recentChanges: Array<{ id: string; subjectRef: string }>;
 }
 
-interface EmittedCase {
+export interface EmittedCase {
   caseId: string;
   provenance: string;
   partition: string;
   label: { kind: string; defectClassId?: string };
   assumptions: Array<{ id: string }>;
   trigger: { asOf: string; timeZone: string; timeZoneDataVersion: string; asOfLocal: string };
-  request: { settlementEarliest: string; deadline: string; deadlineFeasible: boolean; idempotencyKey: string };
+  request: {
+    householdRef: string;
+    sourceAccountRef: string;
+    destinationRef: string;
+    settlementEarliest: string;
+    deadline: string;
+    deadlineFeasible: boolean;
+    idempotencyKey: string;
+  };
   reservations: Array<{ family: string; conflictKey: string; firmId: string; reservationId: string }>;
   records: EmittedRecords;
   evidence: EmittedEvidence[];
@@ -334,16 +376,37 @@ export function nfcProblems(files: readonly CommittedFile[]): string[] {
 }
 
 /** (5) The honestly empty real-derived partition and its fail-closed intake. */
-export function realDerivedProblems(taxonomy: Taxonomy, dir: string = REAL_DERIVED_DIR): string[] {
+export function realDerivedProblems(
+  taxonomy: Taxonomy,
+  dir: string = REAL_DERIVED_DIR,
+  files: readonly GeneratedFile[] = readRealDerivedFiles(dir),
+): string[] {
   const problems: string[] = [];
   if (!existsSync(join(dir, "README.md"))) {
     problems.push("real-derived/README.md is missing - the intake contract must ship with the empty partition");
   }
+  const delivered = existsSync(dir)
+    ? readdirSync(dir).filter((name) => name !== "README.md" && !name.startsWith(".")).sort()
+    : [];
+  problems.push(...realDerivedDeferralProblems(delivered));
+  for (const name of delivered.filter((name) => !name.endsWith(".json"))) {
+    problems.push(`real-derived/${name}: only JSON case files are permitted`);
+  }
   const classes = defectClassIds(taxonomy);
-  for (const file of readJsonFiles(dir, "real-derived")) {
-    problems.push(...realDerivedCaseProblems(JSON.parse(file.bytes), classes, file.relPath));
+  for (const file of files) {
+    problems.push(...realDerivedCaseProblems(file.value, classes, file.relPath));
   }
   return problems;
+}
+
+export function realDerivedDeferralProblems(
+  delivered: readonly string[],
+  deferral: typeof REAL_DERIVED_DEFERRAL = REAL_DERIVED_DEFERRAL,
+): string[] {
+  if (deferral === null || delivered.length === 0) return [];
+  return [
+    `real-derived/: ${delivered.length} delivered file(s) present while ${deferral.status} remains active`,
+  ];
 }
 
 export interface CorpusValidation {
@@ -352,6 +415,8 @@ export interface CorpusValidation {
   readonly generated: readonly GeneratedFile[];
   readonly manifest: GeneratedFile;
   readonly cases: readonly EmittedCase[];
+  readonly realDerivedCases: readonly Record<string, unknown>[];
+  readonly realDerivedFiles: readonly GeneratedFile[];
   readonly signoff: CorpusSignoff;
   readonly corpusDigest: string;
   readonly problems: readonly string[];
@@ -362,30 +427,57 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
   const spec = loadSpec(join(root, "spec"));
   const taxonomy = loadTaxonomy(join(root, "spec"));
   const generated = generateSyntheticCases(spec, seed);
+  const realDerivedFiles = readRealDerivedFiles(join(root, "real-derived"));
+  const validRealDerivedFiles = realDerivedFiles.filter(
+    (file) => RealDerivedCaseSchema.safeParse(file.value).success,
+  );
   // ONE inventory: the manifest's corpusDigest and the digest recomputed here are
   // then provably over the same object, not two equal-by-coincidence rebuilds.
-  const inventory = buildInventory(generated);
-  const manifest = buildManifest(spec, generated, seed, inventory);
+  const inventory = [
+    ...buildInventory(generated),
+    ...buildInventory(validRealDerivedFiles, "real-derived"),
+  ];
+  const manifest = buildManifest(spec, taxonomy, generated, seed, inventory);
   const committed = readCommittedCorpus(root);
   const cases = generated.map((file) => file.value as unknown as EmittedCase);
+  const realDerivedCases = validRealDerivedFiles.map(
+    (file) => file.value as unknown as Record<string, unknown>,
+  );
   const refs = loadScenarioRefs();
   const goldenCaseIds = new Set(
     loadGoldenCases().map((entry) => String((entry.data as Record<string, unknown>).caseId)),
   );
-  const digest = corpusDigest(spec.world.corpusVersion, seed, inventory);
+  const digest = corpusDigest(
+    spec.world.corpusVersion,
+    seed,
+    taxonomySemanticDigest(taxonomy),
+    inventory,
+  );
   const signoff = loadSignoff(join(root, "spec"));
   const problems = [
     ...committedBytesProblems([...generated, manifest], committed),
     ...labelProblems(cases, taxonomy, refs.provenanceLabels, goldenCaseIds),
     ...taxonomyExerciseProblems(taxonomy, spec.cases),
     ...timestampProblems(cases, spec),
+    ...evidenceResolutionProblems(cases),
     ...cleanControlProblems(cases),
-    ...nfcProblems(committed),
-    ...realDerivedProblems(taxonomy, join(root, "real-derived")),
+    ...nfcProblems([...committed, ...realDerivedFiles]),
+    ...realDerivedProblems(taxonomy, join(root, "real-derived"), realDerivedFiles),
     ...signoffProblems(signoff, spec.world.corpusVersion, digest),
     ...(generatorDigest(seed, spec.rawBytes).length === 64 ? [] : ["generatorDigest is malformed"]),
   ];
-  return { spec, taxonomy, generated, manifest, cases, signoff, corpusDigest: digest, problems };
+  return {
+    spec,
+    taxonomy,
+    generated,
+    manifest,
+    cases,
+    realDerivedCases,
+    realDerivedFiles,
+    signoff,
+    corpusDigest: digest,
+    problems,
+  };
 }
 
 export { SYNTHETIC_DIR };

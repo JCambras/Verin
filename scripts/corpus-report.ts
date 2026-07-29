@@ -12,7 +12,11 @@
  * ruling, 2026-07-28): a detector that blocks everything scores perfect coverage
  * and must be caught by its false positives.
  */
-import { buildCorpusReport, type CaseOutcome } from "./corpus/report";
+import {
+  buildCorpusReport,
+  type RealDerivedCaseOutcome,
+  type SyntheticCaseOutcome,
+} from "./corpus/report";
 import { isSigned } from "./corpus/signoff";
 import { validateCorpus } from "./corpus/validate";
 
@@ -31,11 +35,21 @@ if (result.problems.length > 0) {
 // No detector exists at prompt 11, so no case is evaluated. `flagged: null` is
 // the honest input, and the reporter turns it into a withheld figure with a
 // reason code rather than a zero.
-const syntheticOutcomes: CaseOutcome[] = result.cases.map((item) => ({
+const syntheticOutcomes: SyntheticCaseOutcome[] = result.cases.map((item) => ({
   caseId: item.caseId,
   labelKind: item.label.kind === "defect" ? "defect" : "clean-control",
   flagged: null,
+  provenance: "synthetic-fixture",
 }));
+const realDerivedOutcomes: RealDerivedCaseOutcome[] = result.realDerivedCases.map((item) => {
+  const label = item.label as { kind: string };
+  return {
+    caseId: String(item.caseId),
+    labelKind: label.kind === "defect" ? "defect" : "clean-control",
+    flagged: null,
+    provenance: "real-derived-fixture",
+  };
+});
 
 const report = buildCorpusReport({
   corpusVersion: result.spec.world.corpusVersion,
@@ -43,7 +57,7 @@ const report = buildCorpusReport({
   signoffStatus: result.signoff.status ?? "(missing)",
   signed: isSigned(result.signoff, result.corpusDigest),
   syntheticOutcomes,
-  realDerivedOutcomes: [],
+  realDerivedOutcomes,
 });
 
 const show = (measured: { value: number | null; reasonCode: string | null }): string =>

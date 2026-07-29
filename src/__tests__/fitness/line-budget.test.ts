@@ -51,13 +51,13 @@ const CEILINGS = {
   // corpus generator out of src/ would have been evasion rather than
   // discipline. Measured 3636 at introduction; 3818 after the PR-11a review
   // round (D-078/D-080 split observation from business instants and replaced
-  // substring resolution with structured parses, net of ~140 dead entity
-  // declarations deleted). The ceiling is UNCHANGED at 4000 - raising it is an
-  // ADR amendment, not a code change - so the remaining headroom is ~5% and the
-  // ratchet-down after the corpus generator's first post-prompt-19
-  // simplification pass now has real work to do. Tooling is REPORTED
-  // SEPARATELY, never averaged into a platform layer.
-  tooling: 4000,
+  // substring resolution with structured parses), then 4254 after D-081 closed
+  // the graph, intake, signoff, and measurement review findings. ADR-0034 raises
+  // the ceiling from 4000 to 4300 with 46 lines of explicit headroom. The
+  // ratchet-down after the corpus generator's first post-prompt-19 simplification
+  // pass now has real work to do. Tooling is REPORTED SEPARATELY, never averaged
+  // into a platform layer.
+  tooling: 4300,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

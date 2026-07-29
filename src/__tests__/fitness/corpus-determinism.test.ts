@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
 import { REPO_ROOT, walk } from "./_fence-utils";
 import { inMemoryProject } from "./_fence-utils";
+import { loadTaxonomy } from "../../../scripts/corpus/defects";
 import { generateSyntheticCases } from "../../../scripts/corpus/generate";
-import { buildInventory, corpusDigest } from "../../../scripts/corpus/manifest";
+import { buildInventory, corpusDigest, taxonomySemanticDigest } from "../../../scripts/corpus/manifest";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import { loadSpec, type LoadedSpec } from "../../../scripts/corpus/world";
 import { committedBytesProblems, readCommittedCorpus } from "../../../scripts/corpus/validate";
@@ -202,6 +203,7 @@ function specWithInsertedHousehold(spec: LoadedSpec): LoadedSpec {
 }
 
 const realSpec = loadSpec();
+const realTaxonomy = loadTaxonomy();
 
 describe("corpus-determinism fence", () => {
   it("(a) enforces: two generations of the same spec + seed are byte-identical", () => {
@@ -258,6 +260,7 @@ describe("corpus-determinism fence", () => {
       const inProcess = corpusDigest(
         realSpec.world.corpusVersion,
         CORPUS_SEED,
+        taxonomySemanticDigest(realTaxonomy),
         buildInventory(generateSyntheticCases(realSpec, CORPUS_SEED)),
       );
       expect(digestUnder("UTC")).toBe(inProcess);

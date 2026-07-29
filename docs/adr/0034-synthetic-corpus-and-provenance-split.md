@@ -63,6 +63,12 @@ keyed `smiths-west` must not leak a legal hold into `smiths`, and the determinis
 household is keyed for exactly that collision. Anything read positionally out of the hand-owned spec is
 sorted first, so a semantically neutral reorder in `cases.json` cannot move a conflict key or a digest.
 
+Every evidence and request reference resolves to exactly one emitted record in its own case subgraph.
+Every evidence-producing collection is present, keyed collections reject duplicates, planned withdrawals
+and model assignments carry distinct prefixed derived ids, recent changes are emitted, restriction
+subjects are preserved, and an explicitly named cross-household destination is included with its linked
+account and party records rather than filtered away.
+
 ### 2b. Evidence carries three instants, not one (D-078)
 
 `recordChangedAt` is when the underlying FACT changed or was recorded; `observedAt` is when the evidence
@@ -78,13 +84,18 @@ property.
 ### 3. The provenance split is structural, not editorial
 
 - **No aggregate type exists.** There is no `overall`, no index signature, no accessor that reduces
-  across provenance classes, and an AST rule fails the build on any expression that combines the two
-  partitions arithmetically.
+  across provenance classes, and an AST rule scans `src/` and `scripts/` for arithmetic, calls, reducers,
+  arrays, spreads, and concatenations that combine both partition measurements through local or imported
+  aliases.
+- **Measurement inputs are provenance-specific.** Every outcome carries a required partition literal,
+  and the measurement boundary rejects an outcome supplied to the wrong partition.
 - **The labels are different words.** `syntheticDefectCoverage` for the synthetic partition;
   `detectionRate` may name only the real-derived one. Enforced by structural key identity.
 - **Honest empty.** With `realDerived.total === 0` the reporter emits `detectionRate: null` with
   `reasonCode: "real-derived-corpus-absent"` and refuses to substitute the synthetic figure. The
   companion populates the partition and a number appears, so the `null` is a real branch, not a stub.
+- **No favorable subsets.** If any required detector outcome is missing, both figures for that partition
+  are withheld with `reasonCode: "detector-outcomes-incomplete"`.
 
 ### 4. The real-derived partition ships EMPTY, with its intake pipeline (captain ruling)
 
@@ -97,13 +108,21 @@ trigger, cross-checked against `fixtures/corpus/manifest.json` by the fence.
 Until the partition is populated and reviewed: **Phase 1 is not complete, no investor-facing
 detection-rate claim is permitted, and synthetic coverage stays labeled synthetic.**
 
-What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, who extracted,
-scrubbed and reviewed, when, records before and after, method, with review by a second party) and a
+The deferral is fail-closed: any delivered file fails validation while it remains active. After the
+deferral is explicitly lifted, each valid real-derived case is inventoried in the generated manifest,
+bound into `corpusDigest`, and fed to the real-derived reporting path.
+
+What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
+for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
+before and after, method, with review by a second party) and a
 **closed-vocabulary-only** rule - a real-derived case may contain no free text at all, so a scrubbing
 miss has nowhere to live. The contract is **fail-closed**: an unanticipated string is rejected rather
 than waved through. It runs over the empty partition in the blocking `corpus` CI job, and its
 companions drive it with unattested, free-text-bearing, self-reviewed and mislabeled cases, which is
 what makes a shipped-but-unpopulated capability charter-#5-legal.
+
+Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
+cannot hide inside an id-shaped string.
 
 **This ADR invents no defect history.** Every defect class in the taxonomy cites a requirement or a
 signed case that already exists in this repository, and the cited file's existence is validated.
@@ -114,7 +133,13 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 `corpusDigest`. Any regeneration that changes the digest invalidates the signature and requires
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
-signed is the **labels**, because they are the denominator of every figure the corpus can report.
+signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
+figure the corpus can report. The `verin-corpus/1.1.0` preimage covers both partition inventories and a
+versioned semantic digest of the taxonomy definitions and citations. Redefining a class invalidates the
+prior signoff even if no case bytes change.
+
+A signed record accepts only the closed authority `signedBy: "captain"` and a canonical millisecond UTC
+`signedAt` instant.
 
 **Agents never sign.** No generated file carries a signature: the manifest holds a `signoffRef`
 pointer, not a signature block, and a fence proves no code path under `scripts/` originates a
@@ -132,8 +157,11 @@ validation.
 `scripts/**` was invisible to both budget fences. This PR adds a measured `tooling` bucket with its
 own ceiling and extends the per-file 500-line ceiling to walk `scripts/**`. The bucket carries the
 same zero-total staleness guard as every other, so a renamed path fails loudly instead of silently
-dropping its envelope. **Ratchet-down point:** after the corpus generator's first post-prompt-19
-simplification pass, once replay has shown which generator surface is actually load-bearing.
+dropping its envelope. D-081 raises the tooling ceiling from 4000 to 4300 for the fail-closed graph,
+intake, signoff, and measurement boundaries, with 46 lines of measured headroom rather than deleting
+existing design documentation to conceal the growth. **Ratchet-down point:** after the corpus
+generator's first post-prompt-19 simplification pass, once replay has shown which generator surface
+is actually load-bearing.
 
 ## What this PR explicitly does NOT claim
 

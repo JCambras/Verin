@@ -32,7 +32,13 @@ console.log(`  corpusVersion   ${result.spec.world.corpusVersion}`);
 console.log(`  corpusDigest    ${result.corpusDigest}`);
 console.log(`  signoff         ${result.signoff.status ?? "(missing)"}`);
 console.log(`  synthetic       ${defects} defect case(s) + ${controls} labeled clean control(s)`);
-console.log(`  real-derived    0 case(s) ${dim("- deferred pending an authorized scrubbed source (ADR-0034)")}\n`);
+console.log(
+  `  real-derived    ${result.realDerivedCases.length} case(s) ${
+    result.realDerivedCases.length === 0
+      ? dim("- deferred pending an authorized scrubbed source (ADR-0034)")
+      : ""
+  }\n`,
+);
 
 for (const problem of result.problems) console.log(red(`  ✗ ${problem}`));
 

@@ -9,12 +9,12 @@ ADR-0034). Two legal states exist and nothing in between:
 | state | `signedBy` | `signedAt` | `signedDigest` |
 |---|---|---|---|
 | `pending-captain` | `null` | `null` | `null` |
-| `signed` | captain attribution | ISO date | the exact `corpusDigest` signed |
+| `signed` | exactly `captain` | canonical `YYYY-MM-DDTHH:MM:SS.mmmZ` | the exact `corpusDigest` signed |
 
 **Regeneration that changes `corpusDigest` invalidates the signature.** `pnpm corpus:validate` fails with
 `signed-but-regenerated` rather than carrying a stale attestation forward. Narrative wording outside the
-signed corpus - this document's prose, `docs/corpus.md`, the ADR - does not invalidate a signature, because
-the digest covers the generated case bytes only.
+signed corpus - this document's prose, `docs/corpus.md`, the ADR - does not invalidate a signature. The
+digest covers both partition inventories and the versioned semantic digest of the defect taxonomy.
 
 **What signing means here.** The captain signs the corpus version's **labels**: that each defect case's
 `defectClassId` and each clean control's control status are correct product truth. The labels are the

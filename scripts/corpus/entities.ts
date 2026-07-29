@@ -32,6 +32,9 @@ export const restrictionId = (slug: string): string => `restriction:${slug}`;
 export const legalHoldId = (slug: string): string => `hold:${slug}`;
 export const pendingActionId = (slug: string): string => `pending:${slug}`;
 export const recentChangeId = (slug: string): string => `change:${slug}`;
+export const authorityId = (slug: string): string => `authority:${slug}`;
+export const plannedWithdrawalId = (slug: string): string => `planned-withdrawal:${slug}`;
+export const modelAssignmentId = (slug: string): string => `model-assignment:${slug}`;
 export const evidenceSnapshotId = (caseId: string, slot: string): string => `evs:${caseId}:${slot}`;
 
 /** Corpus case ids are `CS-` prefixed and derived from the spec's stable key, so

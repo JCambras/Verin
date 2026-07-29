@@ -6925,3 +6925,71 @@ byte-neutral, which is the property itself rather than the absence of a symptom.
 byte-compared; fence green.
 
 **Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 1).
+
+---
+
+## PF-096 · corpus-provenance-split (graph, intake, signoff, and measurement boundaries) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-081, ADR-0034):** every evidence and request reference resolves to exactly one emitted
+record; the active real-derived deferral admits no delivered file; the signed preimage covers taxonomy
+semantics; partial detector runs emit no figure; scrub ids and signoff use closed authority vocabularies;
+and no `src/` or `scripts/` path blends provenance partitions.
+
+**Injection 1 - dangling evidence.** Changed model-assignment evidence back to the generic `subject:` id
+while emitted model records retained the distinct `model-assignment:` id.
+
+**Observed failure (verbatim):**
+```
+CS-pending-rebalance-during-evaluation/...subjectRef: reference "subject:smiths-joint-model" resolves to 0 emitted records, expected exactly one
+CS-stale-model-assignment-evidence/...subjectRef: reference "subject:smiths-ira-model" resolves to 0 emitted records, expected exactly one
+```
+
+**Injection 2 - deferral and taxonomy bypasses.** Made the active-deferral check accept every delivered
+file and removed `taxonomyDigest` from the signed corpus preimage.
+
+**Observed failures (verbatim):**
+```
+AssertionError: expected +0 to be 1
+AssertionError: expected '4bfd918d...' not to be '4bfd918d...'
+```
+
+**Injection 3 - favorable subset.** Replaced the incomplete-outcomes guard with an unreachable condition.
+
+**Observed failure (verbatim):**
+```
+Expected: {"reasonCode":"detector-outcomes-incomplete","value":null}
+Received: {"reasonCode":null,"value":1}
+```
+
+**Injection 4 - bypassable provenance split.** Removed call expressions from the repository-wide AST
+detector.
+
+**Observed failures (verbatim):**
+```
+the blending detector catches helper aliases in product source
+the blending detector catches array concatenation in product source
+AssertionError: expected 0 to be greater than 0
+```
+
+**Injection 5 - open scrub and signoff vocabularies.** Broadened evidence ids to any id-shaped string and
+disabled the closed captain-authority check.
+
+**Observed failures (verbatim):**
+```
+a real-derived derived id cannot hide a name or use an open suffix
+AssertionError: expected 0 to be greater than 0
+
+signed signoff requires the closed captain authority and canonical signedAt instant
+AssertionError: expected '...signedAt "not-a-date"...' to contain 'closed captain authority'
+```
+
+**Standing companions:** missing collection, dangling reference, multi-resolving reference, duplicate
+spec key, cross-household destination, real-derived inventory after un-deferral, extractor absence,
+reversed custody chronology, dangling real-derived evidence, mismatched derived-id suffixes, partial
+detector outcomes, wrong-partition outcomes, division, reducers, helper calls, concatenation, imported
+alias laundering, opaque-id suffixes, captain authority, and canonical `signedAt`.
+
+**Revert:** all seven injected changes reverted with patch edits; focused fence green
+(`Tests 48 passed (48)`).
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 2).

@@ -6,14 +6,32 @@ import { Node, Project, SyntaxKind } from "ts-morph";
 import { REPO_ROOT, inMemoryProject, walk } from "./_fence-utils";
 import { loadGoldenCases, loadScenarioRefs } from "../../../scripts/golden-cases.lib";
 import { defectClassIds, taxonomyExerciseProblems } from "../../../scripts/corpus/defects";
-import { buildCorpusReport, type CaseOutcome } from "../../../scripts/corpus/report";
+import { evidenceResolutionProblems } from "../../../scripts/corpus/graph";
+import {
+  buildInventory,
+  buildManifest,
+  corpusDigest,
+  taxonomySemanticDigest,
+} from "../../../scripts/corpus/manifest";
+import {
+  buildCorpusReport,
+  type SyntheticCaseOutcome,
+} from "../../../scripts/corpus/report";
 import { realDerivedCaseProblems } from "../../../scripts/corpus/scrub-contract";
+import {
+  CAPTAIN_SIGNING_AUTHORITY,
+  signoffProblems,
+  type CorpusSignoff,
+} from "../../../scripts/corpus/signoff";
+import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import {
   cleanControlProblems,
   labelProblems,
+  realDerivedDeferralProblems,
   realDerivedProblems,
   validateCorpus,
 } from "../../../scripts/corpus/validate";
+import { specReferenceProblems } from "../../../scripts/corpus/world";
 
 /**
  * CORPUS-PROVENANCE-SPLIT FENCE (v3 prompt 11, ADR-0034; charter #3/#4;
@@ -55,29 +73,81 @@ const SCENARIOS = join(REPO_ROOT, "config/demo/scenarios.yaml");
 
 const PARTITION_ACCESSORS = ["synthetic", "realDerived"] as const;
 
-/**
- * AST: any `+`/`-` expression, or any array/spread, that reads BOTH partitions.
- * Combining the provenance classes into one number is the failure mode
- * architecture §2.4 forbids, so it is refused structurally rather than by
- * convention.
- */
 export function blendingViolations(project: Project, root = ""): string[] {
   const violations: string[] = [];
-  const readsPartition = (text: string, accessor: string): boolean =>
-    new RegExp(`\\.${accessor}\\b`).test(text) || new RegExp(`\\b${accessor}(Outcomes|PartitionReport)?\\s*[.:]`).test(text);
+  type TrackedSymbol = NonNullable<ReturnType<Node["getSymbol"]>>;
+  const directReads = (text: string): Set<string> =>
+    new Set(
+      PARTITION_ACCESSORS.filter(
+        (accessor) =>
+          new RegExp(`\\.${accessor}\\b`).test(text) ||
+          new RegExp(`\\b${accessor}(Outcomes|PartitionReport)\\b`).test(text),
+      ),
+    );
+  const symbolReads = (symbol: TrackedSymbol): Set<string> => {
+    try {
+      const aliased = symbol.getAliasedSymbol();
+      if (aliased !== undefined) {
+        return directReads(
+          aliased.getDeclarations().map((declaration) => declaration.getText()).join("\n"),
+        );
+      }
+    } catch {
+      return new Set();
+    }
+    return new Set();
+  };
   for (const sf of project.getSourceFiles()) {
-    for (const expression of sf.getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
-      const operator = expression.getOperatorToken().getKind();
-      if (operator !== SyntaxKind.PlusToken && operator !== SyntaxKind.MinusToken) continue;
-      const left = expression.getLeft().getText();
-      const right = expression.getRight().getText();
-      const combines = PARTITION_ACCESSORS.every((accessor) =>
-        readsPartition(left, accessor) || readsPartition(right, accessor),
-      );
-      const separated =
-        PARTITION_ACCESSORS.some((accessor) => readsPartition(left, accessor)) &&
-        PARTITION_ACCESSORS.some((accessor) => readsPartition(right, accessor));
-      if (combines && separated) {
+    const taints = new Map<TrackedSymbol, Set<string>>();
+    for (let pass = 0; pass < 8; pass += 1) {
+      let changed = false;
+      for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+        const symbol = declaration.getNameNode().getSymbol();
+        const initializer = declaration.getInitializer();
+        if (initializer === undefined || symbol === undefined) continue;
+        if (
+          Node.isCallExpression(initializer) &&
+          initializer.getExpression().getText() === "buildCorpusReport"
+        ) {
+          continue;
+        }
+        const reads = directReads(initializer.getText());
+        for (const identifier of initializer.getDescendantsOfKind(SyntaxKind.Identifier)) {
+          const referenced = identifier.getSymbol();
+          if (referenced === undefined) continue;
+          for (const accessor of symbolReads(referenced)) reads.add(accessor);
+          for (const accessor of taints.get(referenced) ?? []) reads.add(accessor);
+        }
+        const before = taints.get(symbol);
+        if (reads.size > 0 && (before === undefined || [...reads].some((entry) => !before.has(entry)))) {
+          taints.set(symbol, new Set([...(before ?? []), ...reads]));
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    const candidates: Node[] = [
+      ...sf.getDescendantsOfKind(SyntaxKind.BinaryExpression),
+      ...sf.getDescendantsOfKind(SyntaxKind.ArrayLiteralExpression),
+      ...sf.getDescendantsOfKind(SyntaxKind.CallExpression),
+      ...sf.getDescendantsOfKind(SyntaxKind.NewExpression),
+      ...sf.getDescendantsOfKind(SyntaxKind.TemplateExpression),
+    ];
+    for (const expression of candidates) {
+      if (
+        Node.isCallExpression(expression) &&
+        expression.getExpression().getText() === "buildCorpusReport"
+      ) {
+        continue;
+      }
+      const reads = directReads(expression.getText());
+      for (const identifier of expression.getDescendantsOfKind(SyntaxKind.Identifier)) {
+        const referenced = identifier.getSymbol();
+        if (referenced === undefined) continue;
+        for (const accessor of symbolReads(referenced)) reads.add(accessor);
+        for (const accessor of taints.get(referenced) ?? []) reads.add(accessor);
+      }
+      if (PARTITION_ACCESSORS.every((accessor) => reads.has(accessor))) {
         violations.push(
           `${sf.getFilePath().replace(root, "")}:${expression.getStartLineNumber()}: combines the synthetic and real-derived partitions into one figure`,
         );
@@ -125,8 +195,18 @@ const projectOf = (filter: (file: string) => boolean): Project => {
   return project;
 };
 
-/** All build-time tooling - the blending rule is repo-wide. */
-const toolingProject = (): Project => projectOf(() => true);
+const measuredCodeProject = (): Project => {
+  const project = projectOf(() => true);
+  for (const file of walk(
+    join(REPO_ROOT, "src"),
+    (candidate) =>
+      /\.(?:ts|tsx)$/.test(candidate) &&
+      !candidate.includes(`${join("src", "__tests__")}`),
+  )) {
+    project.addSourceFileAtPath(file);
+  }
+  return project;
+};
 
 /** Corpus-owning code only. `signedAt` is a generic field name (the e-sign load
  * harness uses it too), so the signature rule is scoped to the code that owns
@@ -147,6 +227,7 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
   scrubAttestation: {
     sourceSystemClass: "custodian-exception-feed",
     extractedAt: "2026-05-01T13:00:00.000Z",
+    extractedBy: "tok:0011223344556677",
     scrubbedBy: OPAQUE,
     scrubbedAt: "2026-05-02T13:00:00.000Z",
     reviewedBy: OPAQUE_REVIEWER,
@@ -160,7 +241,7 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
   subjects: [OPAQUE],
   evidence: [
     {
-      id: "evs:tok-0123456789abcdef:balance",
+      id: "evs:tok:0123456789abcdef:balance",
       evidenceKind: "balance",
       subjectRef: OPAQUE,
       observedAt: "2026-04-28T05:00:00.000Z",
@@ -168,13 +249,23 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
       freshness: "fresh",
     },
   ],
-  reservations: [{ family: "liquidity", conflictKey: "conflict:tok-0123456789abcdef-liquidity" }],
+  reservations: [{ family: "liquidity", conflictKey: "conflict:tok:0123456789abcdef:liquidity" }],
   ...overrides,
 });
 
-const outcomes = (defects: number, controls: number, flagged: boolean | null): CaseOutcome[] => [
-  ...Array.from({ length: defects }, (_, i) => ({ caseId: `d${i}`, labelKind: "defect" as const, flagged })),
-  ...Array.from({ length: controls }, (_, i) => ({ caseId: `c${i}`, labelKind: "clean-control" as const, flagged })),
+const outcomes = (defects: number, controls: number, flagged: boolean | null): SyntheticCaseOutcome[] => [
+  ...Array.from({ length: defects }, (_, i) => ({
+    caseId: `d${i}`,
+    labelKind: "defect" as const,
+    flagged,
+    provenance: "synthetic-fixture" as const,
+  })),
+  ...Array.from({ length: controls }, (_, i) => ({
+    caseId: `c${i}`,
+    labelKind: "clean-control" as const,
+    flagged,
+    provenance: "synthetic-fixture" as const,
+  })),
 ];
 
 const real = validateCorpus();
@@ -190,8 +281,8 @@ describe("corpus-provenance-split fence", () => {
     expect(goldenIds.size).toBe(16);
   });
 
-  it("(c) enforces: no code in scripts/ blends the two provenance partitions", () => {
-    const violations = blendingViolations(toolingProject(), REPO_ROOT);
+  it("(c) enforces: no code in src/ or scripts/ blends the two provenance partitions", () => {
+    const violations = blendingViolations(measuredCodeProject(), REPO_ROOT);
     expect(violations, `blended provenance figures:\n${violations.join("\n")}`).toEqual([]);
   });
 
@@ -235,6 +326,80 @@ describe("corpus-provenance-split fence", () => {
     expect(String(manifest.partitions.realDerived.deferral.unDeferTrigger).length).toBeGreaterThan(40);
     expect(existsSync(join(REPO_ROOT, manifest.partitions.realDerived.deferral.adr))).toBe(true);
     expect(realDerivedProblems(real.taxonomy)).toEqual([]);
+  });
+
+  it("(d) enforces: every evidence and request reference resolves exactly once in its emitted case graph", () => {
+    expect(evidenceResolutionProblems(real.cases)).toEqual([]);
+    const crossHousehold = real.cases.find(
+      (item) => item.caseId === "CS-beneficiary-versus-destination-restriction",
+    )!;
+    expect(crossHousehold.records.bankInstructions.map((row) => row.id)).toContain(
+      "bank-instruction:mira-primary",
+    );
+    expect(crossHousehold.records.accounts.map((row) => row.id)).toContain(
+      "subject:mira-roth",
+    );
+    expect(crossHousehold.records.parties.map((row) => row.id)).toContain(
+      "subject:mira-smith",
+    );
+    const modelCase = real.cases.find(
+      (item) => item.caseId === "CS-pending-rebalance-during-evaluation",
+    )!;
+    expect(modelCase.records.modelAssignments.map((row) => row.id)).toContain(
+      "model-assignment:smiths-joint-model",
+    );
+    const scheduleCase = real.cases.find(
+      (item) => item.caseId === "CS-segmented-withdrawal-schedule",
+    )!;
+    expect(scheduleCase.records.plannedWithdrawals[0]?.id).toBe(
+      "planned-withdrawal:smiths",
+    );
+    const changeCase = real.cases.find(
+      (item) => item.caseId === "CS-shared-instruction-change-blast-radius",
+    )!;
+    expect(changeCase.records.recentChanges[0]?.id).toBe("change:smiths-bank-change");
+    expect(changeCase.records.restrictions.every((row) => row.subjectRef.length > 0)).toBe(true);
+  });
+
+  it("(d) enforces: real-derived files are rejected while deferred and inventory-ready after un-deferral", () => {
+    expect(realDerivedDeferralProblems(["RD-00112233445566aa.json"]).length).toBe(1);
+    expect(realDerivedDeferralProblems(["RD-00112233445566aa.json"], null)).toEqual([]);
+    const value = realDerivedCase();
+    const file = {
+      relPath: "real-derived/RD-00112233445566aa.json",
+      bytes: `${JSON.stringify(value)}\n`,
+      value: value as any,
+    };
+    const syntheticInventory = buildInventory(real.generated);
+    const realInventory = buildInventory([file], "real-derived");
+    const manifest = buildManifest(
+      real.spec,
+      real.taxonomy,
+      real.generated,
+      CORPUS_SEED,
+      [...syntheticInventory, ...realInventory],
+    );
+    const partition = (manifest.value as any).partitions.realDerived;
+    expect(partition.total).toBe(1);
+    expect(partition.cases[0].caseId).toBe("RD-00112233445566aa");
+    expect((manifest.value as any).corpusDigest).not.toBe(real.corpusDigest);
+  });
+
+  it("(d) enforces: the signed digest covers versioned defect-taxonomy semantics", () => {
+    const changed = structuredClone(real.taxonomy);
+    changed.defectClasses[0]!.description = `${changed.defectClasses[0]!.description} changed`;
+    const originalTaxonomyDigest = taxonomySemanticDigest(real.taxonomy);
+    const changedTaxonomyDigest = taxonomySemanticDigest(changed);
+    expect(changedTaxonomyDigest).not.toBe(originalTaxonomyDigest);
+    const inventory = buildInventory(real.generated);
+    expect(
+      corpusDigest(
+        real.spec.world.corpusVersion,
+        CORPUS_SEED,
+        changedTaxonomyDigest,
+        inventory,
+      ),
+    ).not.toBe(real.corpusDigest);
   });
 
   it("(d) enforces: the scenario matrix records the same deferral, with the same trigger", () => {
@@ -346,6 +511,56 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ).toBe(true);
   });
 
+  it("a missing evidence collection, dangling subject, multi-resolving subject, and duplicate spec key are rejected", () => {
+    const changeCase = structuredClone(
+      real.cases.find((item) => item.caseId === "CS-shared-instruction-change-blast-radius")!,
+    );
+    (changeCase.records as any).recentChanges = undefined;
+    expect(
+      evidenceResolutionProblems([changeCase]).some((problem) =>
+        problem.includes("records.recentChanges: required emitted collection is missing"),
+      ),
+    ).toBe(true);
+
+    const modelCase = structuredClone(
+      real.cases.find((item) => item.caseId === "CS-pending-rebalance-during-evaluation")!,
+    );
+    modelCase.records.modelAssignments.push(
+      structuredClone(
+        modelCase.records.modelAssignments.find(
+          (row) => row.id === "model-assignment:smiths-joint-model",
+        )!,
+      ),
+    );
+    expect(
+      evidenceResolutionProblems([modelCase]).some((problem) =>
+        problem.includes("resolves to 2 emitted records"),
+      ),
+    ).toBe(true);
+
+    const destinationCase = structuredClone(
+      real.cases.find(
+        (item) => item.caseId === "CS-beneficiary-versus-destination-restriction",
+      )!,
+    );
+    destinationCase.records.accounts = destinationCase.records.accounts.filter(
+      (row) => row.id !== "subject:mira-roth",
+    );
+    expect(
+      evidenceResolutionProblems([destinationCase]).some((problem) =>
+        problem.includes("records.bankInstructions.bank-instruction:mira-primary.accountRefs"),
+      ),
+    ).toBe(true);
+
+    const world = structuredClone(real.spec.world);
+    world.modelAssignments.push(structuredClone(world.modelAssignments[0]!));
+    expect(
+      specReferenceProblems(world, real.spec.cases).some((problem) =>
+        problem.includes('modelAssignments: duplicate key "smiths-joint-model"'),
+      ),
+    ).toBe(true);
+  });
+
   it("a defect class carried by NO case is flagged (an unexercised class is decoration)", () => {
     const orphaned = real.taxonomy.defectClasses[0]!.id;
     const withoutIt = {
@@ -373,9 +588,9 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       signed: true,
       syntheticOutcomes: outcomes(2, 1, true),
       realDerivedOutcomes: [
-        { caseId: "RD-a", labelKind: "defect", flagged: true },
-        { caseId: "RD-b", labelKind: "defect", flagged: false },
-        { caseId: "RD-c", labelKind: "clean-control", flagged: false },
+        { caseId: "RD-a", labelKind: "defect", flagged: true, provenance: "real-derived-fixture" },
+        { caseId: "RD-b", labelKind: "defect", flagged: false, provenance: "real-derived-fixture" },
+        { caseId: "RD-c", labelKind: "clean-control", flagged: false, provenance: "real-derived-fixture" },
       ],
     });
     expect(report.realDerived.detectionRate).toEqual({ value: 0.5, reasonCode: null });
@@ -409,6 +624,29 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(unevaluated.synthetic.syntheticDefectCoverage).toEqual({ value: null, reasonCode: "detector-outcomes-absent" });
   });
 
+  it("a partially evaluated corpus withholds both figures instead of reporting the favorable subset", () => {
+    const partial = outcomes(2, 2, null);
+    partial[0] = { ...partial[0]!, flagged: true };
+    partial[2] = { ...partial[2]!, flagged: false };
+    const report = buildCorpusReport({
+      corpusVersion: "x",
+      corpusDigest: "y",
+      signoffStatus: "signed",
+      signed: true,
+      syntheticOutcomes: partial,
+      realDerivedOutcomes: [],
+    });
+    expect(report.synthetic.syntheticDefectCoverage).toEqual({
+      value: null,
+      reasonCode: "detector-outcomes-incomplete",
+    });
+    expect(report.synthetic.falsePositiveRate).toEqual({
+      value: null,
+      reasonCode: "detector-outcomes-incomplete",
+    });
+    expect(report.synthetic.interpretable).toBe(false);
+  });
+
   it("coverage measured with NO clean controls is marked uninterpretable", () => {
     const report = buildCorpusReport({
       corpusVersion: "x", corpusDigest: "y", signoffStatus: "signed", signed: true,
@@ -428,6 +666,59 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(violations.length).toBe(1);
     expect(violations[0]).toContain("combines the synthetic and real-derived partitions");
+  });
+
+  it.each([
+    [
+      "division",
+      "declare const r: any;\nexport const overall = r.synthetic.defectCases / r.realDerived.defectCases;\n",
+    ],
+    [
+      "reducer",
+      "declare const r: any;\nexport const overall = [r.synthetic.defectCases, r.realDerived.defectCases].reduce((a, b) => a + b, 0);\n",
+    ],
+    [
+      "helper aliases",
+      "declare const r: any; declare const combine: (...n: number[]) => number;\nconst s = r.synthetic.defectCases; const d = r.realDerived.defectCases;\nexport const overall = combine(s, d);\n",
+    ],
+    [
+      "array concatenation",
+      "declare const r: any;\nexport const overall = [r.synthetic.defectCases].concat([r.realDerived.defectCases]);\n",
+    ],
+  ])("the blending detector catches %s in product source", (_name, source) => {
+    expect(blendingViolations(inMemoryProject({ "/src/domain/blend.ts": source })).length).toBeGreaterThan(0);
+  });
+
+  it("the blending detector follows partition values through imported aliases", () => {
+    const project = inMemoryProject({
+      "/src/domain/synthetic.ts":
+        "declare const r: any;\nexport const value = r.synthetic.defectCases;\n",
+      "/src/domain/real.ts":
+        "declare const r: any;\nexport const value = r.realDerived.defectCases;\n",
+      "/src/domain/blend.ts":
+        'import { value as left } from "./synthetic";\nimport { value as right } from "./real";\nexport const total = left + right;\n',
+    });
+    expect(blendingViolations(project).length).toBeGreaterThan(0);
+  });
+
+  it("the measurement boundary rejects outcomes from the wrong provenance partition", () => {
+    expect(() =>
+      buildCorpusReport({
+        corpusVersion: "x",
+        corpusDigest: "y",
+        signoffStatus: "signed",
+        signed: true,
+        syntheticOutcomes: [
+          {
+            caseId: "RD-wrong",
+            labelKind: "defect",
+            flagged: true,
+            provenance: "real-derived-fixture",
+          },
+        ] as any,
+        realDerivedOutcomes: [],
+      }),
+    ).toThrow("received 1 outcome(s) from another provenance partition");
   });
 
   it("the blending rule does NOT flag arithmetic inside one partition", () => {
@@ -461,6 +752,61 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
 
   it("a VALID real-derived case is accepted (the intake contract is not a blanket reject)", () => {
     expect(realDerivedCaseProblems(realDerivedCase(), classes, "real-derived/RD-ok.json")).toEqual([]);
+  });
+
+  it("a real-derived derived id cannot hide a name or use an open suffix", () => {
+    const named = realDerivedCase();
+    (named.evidence as Array<Record<string, unknown>>)[0]!.id =
+      "conflict:robert-smith-liquidity";
+    expect(
+      realDerivedCaseProblems(named, classes, "real-derived/RD-named-id.json").length,
+    ).toBeGreaterThan(0);
+    const openSuffix = realDerivedCase();
+    (openSuffix.evidence as Array<Record<string, unknown>>)[0]!.id =
+      "evs:tok:0123456789abcdef:advisor-note";
+    expect(
+      realDerivedCaseProblems(openSuffix, classes, "real-derived/RD-open-suffix.json").length,
+    ).toBeGreaterThan(0);
+    const mismatched = realDerivedCase();
+    (mismatched.evidence as Array<Record<string, unknown>>)[0]!.evidenceKind =
+      "authority";
+    expect(
+      realDerivedCaseProblems(mismatched, classes, "real-derived/RD-mismatch.json").some(
+        (problem) => problem.includes("does not match evidenceKind"),
+      ),
+    ).toBe(true);
+    const dangling = realDerivedCase({ subjects: ["tok:1111222233334444"] });
+    expect(
+      realDerivedCaseProblems(dangling, classes, "real-derived/RD-dangling.json").some(
+        (problem) => problem.includes("resolves to 0 subjects"),
+      ),
+    ).toBe(true);
+  });
+
+  it("the scrub attestation requires an extractor identity and chronological custody", () => {
+    const missingExtractor = realDerivedCase();
+    delete (missingExtractor.scrubAttestation as Record<string, unknown>).extractedBy;
+    expect(
+      realDerivedCaseProblems(
+        missingExtractor,
+        classes,
+        "real-derived/RD-no-extractor.json",
+      ).some((problem) => problem.includes("extractedBy")),
+    ).toBe(true);
+
+    const reversed = realDerivedCase({
+      scrubAttestation: {
+        ...(realDerivedCase().scrubAttestation as object),
+        extractedAt: "2026-05-04T13:00:00.000Z",
+      },
+    });
+    expect(
+      realDerivedCaseProblems(
+        reversed,
+        classes,
+        "real-derived/RD-reversed.json",
+      ).some((problem) => problem.includes("must not postdate")),
+    ).toBe(true);
   });
 
   it("a real-derived case with FREE TEXT is rejected", () => {
@@ -515,5 +861,39 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       "real-derived/RD-mislabeled.json",
     );
     expect(problems.length).toBeGreaterThan(0);
+  });
+
+  it("signed signoff requires the closed captain authority and canonical signedAt instant", () => {
+    const base: CorpusSignoff = {
+      corpusVersion: real.spec.world.corpusVersion,
+      status: "signed",
+      signedBy: CAPTAIN_SIGNING_AUTHORITY,
+      signedAt: "2026-07-28T12:00:00.000Z",
+      signedDigest: real.corpusDigest,
+    };
+    expect(
+      signoffProblems(base, real.spec.world.corpusVersion, real.corpusDigest),
+    ).toEqual([]);
+    expect(
+      signoffProblems(
+        { ...base, signedBy: "agent", signedAt: "not-a-date" },
+        real.spec.world.corpusVersion,
+        real.corpusDigest,
+      ).join("\n"),
+    ).toContain("closed captain authority");
+    expect(
+      signoffProblems(
+        { ...base, signedAt: "2026-07-28" },
+        real.spec.world.corpusVersion,
+        real.corpusDigest,
+      ).join("\n"),
+    ).toContain("canonical ISO-8601 UTC instant");
+    expect(
+      signoffProblems(
+        { ...base, signedAt: "2026-13-40T12:00:00.000Z" },
+        real.spec.world.corpusVersion,
+        real.corpusDigest,
+      ).join("\n"),
+    ).toContain("canonical ISO-8601 UTC instant");
   });
 });

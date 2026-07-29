@@ -1,32 +1,9 @@
-/**
- * CORPUS MEASUREMENT - SPLIT BY PROVENANCE, NEVER BLENDED (v3 prompt 11,
- * ADR-0034; architecture v3 §2.4, demo contract §7).
- *
- * Four structural rules make blending impossible rather than merely discouraged:
- *
- *  1. NO AGGREGATE TYPE EXISTS. There is no `overall`, no index signature, and no
- *     accessor that reduces across provenance classes. The `no-blending` rule in
- *     `corpus-provenance-split` fails the build on any expression that combines
- *     the two partitions arithmetically.
- *  2. THE LABELS ARE DIFFERENT WORDS. The synthetic partition's figure is
- *     `syntheticDefectCoverage`; only the real-derived partition's figure may be
- *     called `detectionRate`. A rate measured on author-invented defects is
- *     synthetic-defect coverage, not detection.
- *  3. HONEST EMPTY. With no real-derived cases the report emits
- *     `detectionRate: null` with `reasonCode: "real-derived-corpus-absent"` and
- *     refuses to substitute the synthetic figure. `null` is a real branch: the
- *     companion feeds a populated real-derived partition and a number appears.
- *  4. FALSE POSITIVES BESIDE COVERAGE (captain ruling, 2026-07-28). Every
- *     coverage figure ships with a false-positive rate computed from LABELED
- *     CLEAN CONTROLS, and a coverage figure without one is marked
- *     `interpretable: false` - so a detector that blocks everything scores 1.0
- *     coverage AND 1.0 false positives and cannot claim success.
- */
 export type ReasonCode =
   | "corpus-signoff-pending"
   | "real-derived-corpus-absent"
   | "synthetic-corpus-absent"
   | "detector-outcomes-absent"
+  | "detector-outcomes-incomplete"
   | "no-labeled-defects"
   | "no-clean-controls";
 
@@ -36,12 +13,21 @@ export interface Measured {
 }
 
 /** One case's label and, if a detector ran, whether that detector flagged it. */
-export interface CaseOutcome {
+interface CaseOutcomeBase {
   readonly caseId: string;
   readonly labelKind: "defect" | "clean-control";
-  /** `null` when no detector has been run over this case. */
   readonly flagged: boolean | null;
 }
+
+export interface SyntheticCaseOutcome extends CaseOutcomeBase {
+  readonly provenance: "synthetic-fixture";
+}
+
+export interface RealDerivedCaseOutcome extends CaseOutcomeBase {
+  readonly provenance: "real-derived-fixture";
+}
+
+export type CaseOutcome = SyntheticCaseOutcome | RealDerivedCaseOutcome;
 
 interface PartitionCounts {
   readonly totalCases: number;
@@ -91,12 +77,18 @@ interface PartitionFigures {
   readonly falsePositiveRate: Measured;
 }
 
-/** The shared arithmetic, run INDEPENDENTLY per partition - never across them. */
 function measurePartition(
   outcomes: readonly CaseOutcome[],
   signed: boolean,
   emptyReason: ReasonCode,
+  provenance: CaseOutcome["provenance"],
 ): PartitionFigures {
+  const mismatched = outcomes.filter((outcome) => outcome.provenance !== provenance);
+  if (mismatched.length > 0) {
+    throw new Error(
+      `corpus report: ${provenance} measurement received ${mismatched.length} outcome(s) from another provenance partition`,
+    );
+  }
   const counts = countsOf(outcomes);
   if (!signed) {
     return {
@@ -113,6 +105,13 @@ function measurePartition(
       counts,
       coverage: withheld("detector-outcomes-absent"),
       falsePositiveRate: withheld("detector-outcomes-absent"),
+    };
+  }
+  if (counts.evaluatedCases !== counts.totalCases) {
+    return {
+      counts,
+      coverage: withheld("detector-outcomes-incomplete"),
+      falsePositiveRate: withheld("detector-outcomes-incomplete"),
     };
   }
   const evaluatedDefects = outcomes.filter((o) => o.labelKind === "defect" && o.flagged !== null);
@@ -141,13 +140,23 @@ export interface ReportInput {
   readonly corpusDigest: string;
   readonly signoffStatus: string;
   readonly signed: boolean;
-  readonly syntheticOutcomes: readonly CaseOutcome[];
-  readonly realDerivedOutcomes: readonly CaseOutcome[];
+  readonly syntheticOutcomes: readonly SyntheticCaseOutcome[];
+  readonly realDerivedOutcomes: readonly RealDerivedCaseOutcome[];
 }
 
 export function buildCorpusReport(input: ReportInput): CorpusReport {
-  const synthetic = measurePartition(input.syntheticOutcomes, input.signed, "synthetic-corpus-absent");
-  const realDerived = measurePartition(input.realDerivedOutcomes, input.signed, "real-derived-corpus-absent");
+  const synthetic = measurePartition(
+    input.syntheticOutcomes,
+    input.signed,
+    "synthetic-corpus-absent",
+    "synthetic-fixture",
+  );
+  const realDerived = measurePartition(
+    input.realDerivedOutcomes,
+    input.signed,
+    "real-derived-corpus-absent",
+    "real-derived-fixture",
+  );
   return {
     corpusVersion: input.corpusVersion,
     corpusDigest: input.corpusDigest,

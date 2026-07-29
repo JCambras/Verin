@@ -36,12 +36,16 @@ fixtures/corpus/
   spec/SIGNOFF.md            hand-owned  captain-only; agents never write it
   manifest.json              GENERATED   version, seed, digests, per-partition counts
   synthetic/CS-*.json        GENERATED   provenance: synthetic-fixture
-  real-derived/              captain-gated intake - SHIPS EMPTY
+  real-derived/              hand-delivered, manifest-inventoried intake - SHIPS EMPTY
 ```
 
 Generated-file ownership is enforced by **regenerate-and-byte-compare** in the blocking `corpus` CI job,
 not by a comment. `.gitattributes` marks the generated trees `linguist-generated` and pins them to LF;
 each directory's README names its owning command.
+
+While the ADR-0034 deferral is active, any delivered file under `real-derived/` fails validation. Once
+the deferral is explicitly lifted, every valid real-derived JSON case is inventoried in the generated
+manifest, included in `corpusDigest`, and supplied to the provenance-specific reporter.
 
 ---
 
@@ -59,7 +63,7 @@ each directory's README names its owning command.
 | 8 | Every emitted string equals its NFC form. |
 | 9 | No sparse arrays, `undefined`, non-finite numbers, or class instances (`canonicalJson` refuses all four). |
 | 10 | LF line endings, pinned by `.gitattributes`. |
-| 11 | Ids are derived, never typed: `conflict:`, `res:`, `idem:`, `subject:`, `bank-instruction:` all come from derivation functions. |
+| 11 | Ids are derived, never typed: `conflict:`, `res:`, `idem:`, `subject:`, `bank-instruction:`, `authority:`, `planned-withdrawal:`, `model-assignment:`, and `change:` all come from derivation functions. |
 
 **Derivation is path-keyed**, `SHA-256(seed ‖ path ‖ field)` - not a stream PRNG. Adding a household
 therefore changes **only that household's cases**, which the determinism fence asserts by inserting one
@@ -72,6 +76,12 @@ key, a case's bytes, or `corpusDigest`.
 
 Seed: `verin-corpus/2026.07.0`. World clock: `2026-07-26T13:30:00.000Z`, `America/New_York`,
 `iana-tzdb/2026b`.
+
+Every evidence and request reference resolves to exactly one emitted record in its case subgraph. Every
+evidence-producing collection is required even when empty, collection keys are unique, cross-household
+destinations named by a case are emitted with their linked accounts and parties, and relationship fields
+such as restriction subjects are preserved. Missing, dangling, or multi-resolving references fail
+validation for defect cases and controls alike.
 
 ---
 
@@ -180,9 +190,15 @@ derivation keys on the DECISION: `idem:<caseId>:<scope>-<discriminator>`. The fe
 - Synthetic partition's figure: **`syntheticDefectCoverage`**.
 - Real-derived partition's figure: **`detectionRate`**. Different words, deliberately.
 - **No aggregate exists** - no `overall`, no index signature, and an AST rule fails the build on any
-  expression combining the two partitions arithmetically.
+  arithmetic, call, reducer, array, spread, or concatenation that combines both partition measurements,
+  including values laundered through local or imported aliases.
+- Outcome inputs carry a required provenance literal. Supplying a real-derived outcome to synthetic
+  measurement, or the reverse, fails at the measurement boundary.
 - With an empty real-derived partition, `detectionRate` is `null` with
   `reasonCode: "real-derived-corpus-absent"`, and the synthetic figure is never substituted.
+- A partially evaluated partition reports both figures as `null` with
+  `reasonCode: "detector-outcomes-incomplete"`. Missing outcomes are neither counted as detector failures
+  nor omitted to produce a favorable subset.
 
 See [`fixtures/corpus/real-derived/README.md`](../fixtures/corpus/real-derived/README.md) and
 [`docs/corpus-scrub-procedure.md`](./corpus-scrub-procedure.md).
@@ -193,9 +209,14 @@ See [`fixtures/corpus/real-derived/README.md`](../fixtures/corpus/real-derived/R
 
 Per **corpus version**, bound to `corpusDigest` (captain ruling, 2026-07-28). Two legal states:
 `pending-captain` (all signature fields null) and `signed` (all populated, `signedDigest` equal to the
-current `corpusDigest`). **Regeneration that changes the digest invalidates the signature**
+current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-precision UTC `signedAt`).
+**Regeneration that changes the digest invalidates the signature**
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
+
+`corpusDigest` uses the versioned `verin-corpus/1.1.0` preimage. It covers both partition inventories and
+the versioned semantic digest of defect-taxonomy ids, titles, descriptions, and source citations. Changing
+what a defect class means therefore invalidates the prior captain signoff even when no case bytes change.
 
 **Agents never sign.** No generated file contains a signature: the manifest holds a `signoffRef` pointer,
 a fence proves no corpus code path originates a `signedBy`/`signedAt`/`signedDigest` literal, and the

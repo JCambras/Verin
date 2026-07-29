@@ -6,6 +6,10 @@ This directory holds **anonymized real defect history**: NIGO returns, custodian
 operational exceptions that actually happened, scrubbed of PII before entering fixtures. It contains **zero
 cases today, and that is the honest state**, not an oversight.
 
+Any delivered file fails validation while this deferral remains active. After the deferral is explicitly
+lifted, every valid case is inventoried in `manifest.json`, included in `corpusDigest`, and supplied to the
+real-derived measurement path.
+
 ## Why it is empty
 
 There is no authorized scrubbed source of real defect history in this repository, no accountable owner for
@@ -38,8 +42,9 @@ The intake pipeline is already shipped and already runs over this (empty) direct
 see `docs/corpus-scrub-procedure.md` for the procedure and `scripts/corpus/scrub-contract.ts` for the
 enforced contract. In short, every case must carry:
 
-- a complete **`scrubAttestation`** (source-system class, who extracted/scrubbed/reviewed and when, records
-  before and after, scrubbing method), with review by someone other than the scrubber;
+- a complete **`scrubAttestation`** (source-system class, opaque extractor/scrubber/reviewer identities
+  and their chronological instants, records before and after, scrubbing method), with review by someone
+  other than the scrubber;
 - **closed-vocabulary values only**. No free text at all: every string is a canonical instant, an opaque
   `tok:<16 hex>` token, a derived id built from tokens, or a member of a declared vocabulary. An
   unanticipated string is REJECTED, so a scrubbing miss has nowhere to live;
