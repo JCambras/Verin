@@ -6490,6 +6490,17 @@ collections, including tagged tables, while empty, spread-derived, and unresolve
 non-evidence. PF-001 and PF-031 record the real red injections, focused companions, and restored green
 proofs.
 
+The captain-approved reachability, reflective-write, screenshot, and CI-environment review (2026-07-29)
+amended ADR-0030 in place a twenty-eighth time: **(1)** fitness registrations must be direct reachable
+module-scope statements or direct statements inside an enabled reachable module-scope suite callback,
+so dead control flow and uncalled registration helpers cannot preserve a false-green file; **(2)**
+Playwright hook provenance follows `Object.defineProperty` and `Reflect.set` through aliases and
+`bind` / `call` / `apply` wrappers, while unresolved reflective property writes fail closed; **(3)**
+canonical screenshot options contain exactly the sanctioned `path` and `fullPage: true` fields, so
+content masking is non-evidence; and **(4)** governed CI commands reject non-literal inherited
+environment maps and execution-affecting workflow, job, or step overrides. PF-001, PF-030, PF-031, and
+PF-032 record the real red injections, focused companions, and restored green proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

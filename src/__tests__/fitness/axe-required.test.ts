@@ -1016,19 +1016,161 @@ function isObjectAssignCallable(
   node: Node,
   seen = new Set<Node>(),
 ): boolean {
+  return isGlobalStaticCallable(node, "Object", "assign", seen);
+}
+
+function isGlobalStaticCallable(
+  node: Node,
+  globalName: string,
+  memberName: string,
+  seen = new Set<Node>(),
+): boolean {
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
   const access = memberAccess(normalized);
   if (
-    access?.name === "assign" &&
-    isUnshadowedGlobal(access.receiver, "Object")
+    access?.name === memberName &&
+    isUnshadowedGlobal(access.receiver, globalName)
+  ) {
+    return true;
+  }
+  const boundTarget = indirectCallableTarget(normalized);
+  if (
+    boundTarget !== undefined &&
+    isGlobalStaticCallable(
+      boundTarget,
+      globalName,
+      memberName,
+      new Set(seen),
+    )
   ) {
     return true;
   }
   if (!Node.isIdentifier(normalized)) return false;
+  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
+  if (
+    declarations.some((declaration) => {
+      if (!Node.isBindingElement(declaration)) return false;
+      const property =
+        declaration.getPropertyNameNode() ?? declaration.getNameNode();
+      if (staticPropertyName(property) !== memberName) return false;
+      const variable = declaration.getFirstAncestorByKind(
+        SyntaxKind.VariableDeclaration,
+      );
+      const initializer = variable?.getInitializer();
+      return (
+        initializer !== undefined &&
+        isUnshadowedGlobal(initializer, globalName)
+      );
+    })
+  ) {
+    return true;
+  }
   return objectAliasSources(normalized).some((source) =>
-    isObjectAssignCallable(source, new Set(seen)),
+    isGlobalStaticCallable(
+      source,
+      globalName,
+      memberName,
+      new Set(seen),
+    ),
+  );
+}
+
+function staticNodeArray(
+  node: Node | undefined,
+  seen = new Set<Node>(),
+): Node[] | undefined {
+  if (node === undefined) return undefined;
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return undefined;
+  seen.add(normalized);
+  if (Node.isArrayLiteralExpression(normalized)) {
+    const elements = normalized.getElements();
+    return elements.every(Node.isExpression) ? elements : undefined;
+  }
+  if (!Node.isIdentifier(normalized)) return undefined;
+  const sources = objectAliasSources(normalized);
+  if (sources.length !== 1) return undefined;
+  return staticNodeArray(sources[0], new Set(seen));
+}
+
+function invokedCallable(
+  call: CallExpression,
+): { callable: Node; arguments?: Node[] } {
+  const direct = unwrapExpression(call.getExpression());
+  const directArguments = call.getArguments();
+  if (isGlobalStaticCallable(direct, "Reflect", "apply")) {
+    return {
+      callable: directArguments[0] ?? direct,
+      arguments: staticNodeArray(directArguments[2]),
+    };
+  }
+  const access = memberAccess(direct);
+  if (access?.name === "call") {
+    return {
+      callable: access.receiver,
+      arguments: directArguments.slice(1),
+    };
+  }
+  if (access?.name === "apply") {
+    return {
+      callable: access.receiver,
+      arguments: staticNodeArray(directArguments[1]),
+    };
+  }
+  return { callable: direct, arguments: directArguments };
+}
+
+function staticMutationPropertyName(
+  node: Node | undefined,
+  seen = new Set<Node>(),
+): string | undefined {
+  if (node === undefined) return undefined;
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return undefined;
+  seen.add(normalized);
+  if (
+    Node.isStringLiteral(normalized) ||
+    Node.isNoSubstitutionTemplateLiteral(normalized)
+  ) {
+    return normalized.getLiteralText();
+  }
+  if (!Node.isIdentifier(normalized)) return undefined;
+  const sources = objectAliasSources(normalized);
+  const values = sources.map((source) =>
+    staticMutationPropertyName(source, new Set(seen)),
+  );
+  return values.length > 0 &&
+    values.every((value) => value === values[0])
+    ? values[0]
+    : undefined;
+}
+
+function descriptorValue(
+  node: Node | undefined,
+): Node | undefined {
+  if (node === undefined) return undefined;
+  const properties = normalizedObjectProperties(unwrapExpression(node));
+  const value = properties?.get("value");
+  if (Node.isPropertyAssignment(value)) {
+    return value.getInitializer();
+  }
+  return Node.isShorthandPropertyAssignment(value)
+    ? value.getNameNode()
+    : undefined;
+}
+
+function dependsOnFunctionParameter(node: Node): boolean {
+  const identifiers = [
+    ...(Node.isIdentifier(node) ? [node] : []),
+    ...node.getDescendantsOfKind(SyntaxKind.Identifier),
+  ];
+  return identifiers.some((identifier) =>
+    identifier
+      .getSymbol()
+      ?.getDeclarations()
+      .some(Node.isParameterDeclaration),
   );
 }
 
@@ -1044,6 +1186,7 @@ interface ObjectPropertyMutationIndex {
     target: Node;
     sources: Node[];
   }>;
+  unresolvedReflectiveWrite: boolean;
 }
 
 const OBJECT_PROPERTY_MUTATION_CACHE = new WeakMap<
@@ -1077,6 +1220,7 @@ function objectPropertyMutationIndex(
   const index: ObjectPropertyMutationIndex = {
     assignments,
     merges: [],
+    unresolvedReflectiveWrite: false,
   };
   OBJECT_PROPERTY_MUTATION_CACHE.set(sourceFile, index);
   index.merges.push(...sourceFile
@@ -1092,6 +1236,44 @@ function objectPropertyMutationIndex(
             sources,
           }];
     }));
+  for (const call of sourceFile.getDescendantsOfKind(
+    SyntaxKind.CallExpression,
+  )) {
+    const invocation = invokedCallable(call);
+    const definesProperty = isGlobalStaticCallable(
+      invocation.callable,
+      "Object",
+      "defineProperty",
+    );
+    const setsProperty = isGlobalStaticCallable(
+      invocation.callable,
+      "Reflect",
+      "set",
+    );
+    if (!definesProperty && !setsProperty) continue;
+    const args = invocation.arguments;
+    const receiver = args?.[0];
+    const name = staticMutationPropertyName(args?.[1]);
+    const value = setsProperty
+      ? args?.[2]
+      : descriptorValue(args?.[2]);
+    if (
+      receiver === undefined ||
+      name === undefined ||
+      value === undefined ||
+      dependsOnFunctionParameter(receiver) ||
+      dependsOnFunctionParameter(value)
+    ) {
+      index.unresolvedReflectiveWrite = true;
+      continue;
+    }
+    index.assignments.push({
+      before: call.getStart(),
+      receiver,
+      name,
+      value,
+    });
+  }
   return index;
 }
 
@@ -1444,6 +1626,11 @@ const PLAYWRIGHT_HOOK_MEMBERS = [
 function hasRegisteredPlaywrightHook(
   sourceFile: SourceFile,
 ): boolean {
+  if (
+    objectPropertyMutationIndex(sourceFile).unresolvedReflectiveWrite
+  ) {
+    return true;
+  }
   return sourceFile
     .getDescendantsOfKind(SyntaxKind.CallExpression)
     .some((call) =>
@@ -3115,6 +3302,54 @@ const assign = Object.assign;
 assign(hooks, { install: test.beforeEach });
 const alias = hooks;
 alias.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+Object.defineProperty(hooks, "install", { value: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const define = Object.defineProperty.bind(Object);
+define(hooks, "install", { value: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const define = Object.defineProperty;
+define.call(Object, hooks, "install", { value: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const { defineProperty: define } = Object;
+define(hooks, "install", { value: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+Reflect.set(hooks, "install", test.beforeEach);
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+Reflect.set.apply(Reflect, [hooks, "install", test.beforeEach]);
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+Reflect.apply(Reflect.set, Reflect, [hooks, "install", test.beforeEach]);
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const { set } = Reflect;
+set(hooks, "install", test.beforeEach);
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const property = Math.random() > 0.5 ? "install" : "other";
+Object.defineProperty(hooks, property, { value: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+function install(
+  target: Record<string, unknown>,
+  value: unknown,
+) {
+  Object.defineProperty(target, "install", { value });
+}
+install(hooks, test.beforeEach);
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const install = (
+  target: Record<string, unknown>,
+  value: unknown,
+) => Reflect.set(target, "install", value);
+install(hooks, test.beforeEach);
+hooks.install(() => undefined);`,
       ];
       for (const wrapper of wrappers) {
         const wrappedHook = completeSources();

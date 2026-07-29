@@ -11765,3 +11765,93 @@ non-empty literal and frozen collections, and empty versus non-empty tagged tabl
 **Revert:** removed both real injections. The restored focused charter-drift fence passed.
 
 **Date:** 2026-07-29.
+
+### PF-001 (continued) · fitness registration reachability
+
+**Invariant (charter operating model / ADR-0030):** a fitness registration must execute during module
+collection. A registration hidden in dead control flow or an uncalled helper cannot preserve a green file
+through an unrelated live companion.
+
+**Injection:** added a `describe` and nested `it` inside `if (false)` in the real charter-drift fence.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/charter-drift.test.ts:899 unreachable Vitest registration describe
+src/__tests__/fitness/charter-drift.test.ts:900 unreachable Vitest registration it
+```
+
+The pre-fix companion returned no problem for both this dead branch and an uncalled registration
+function. The shared analyzer now accepts direct module-scope registrations and direct registrations
+inside enabled reachable module-scope suite callbacks, and rejects every unresolved invocation scope.
+
+**Revert:** removed the injected branch. The restored four-fence focused run passed all 108 tests.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · reflective Playwright hook writes
+
+**Invariant (charter #9 / ADR-0030):** no module in the complete Axe evidence graph can install a
+Playwright hook through reflective property mutation.
+
+**Injection:** imported `test` in `e2e/helpers.ts`, wrote `test.beforeEach` into an object with
+`Object.defineProperty`, and invoked the installed member.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+The pre-fix companion accepted the same write. Continuous companions now cover direct and aliased
+`Object.defineProperty`, `Reflect.set`, `bind`, `call`, `apply`, `Reflect.apply`, parameterized local
+wrappers, and unresolved reflective keys. Unresolved reflective writes fail closed.
+
+**Revert:** restored `e2e/helpers.ts`. The restored four-fence focused run passed all 108 tests.
+
+**Date:** 2026-07-29.
+
+### PF-032 (continued) · exact canonical screenshot options
+
+**Invariant (Gate 0 / ADR-0030):** canonical screenshot evidence captures the rendered product with
+exactly the governed output path and `fullPage: true`; masking or other content-altering options are
+non-evidence.
+
+**Injection:** added `mask: [page.locator("body")]` to the real launcher screenshot in
+`e2e/demo-journey.spec.ts`.
+
+**Observed failure (verbatim):**
+```text
+e2e/demo-journey.spec.ts:1 canonical launcher capture must screenshot the loaded launcher route into 00-launcher.png
+```
+
+The pre-fix companion accepted the masked capture. Continuous companions now inject the masking option
+into both launcher and station helpers.
+
+**Revert:** restored the exact two-field screenshot options. The restored four-fence focused run passed
+all 108 tests.
+
+**Date:** 2026-07-29.
+
+### PF-030 (continued) · inherited CI execution environment
+
+**Invariant (ADR-0030):** an exact command is blocking evidence only when inherited workflow, job, and
+step environment configuration cannot redirect or instrument its shell, loader, package manager, or
+runtime.
+
+**Injection:** added `NODE_OPTIONS: --require=./injected-runtime.js` to the real workflow-level `env`
+mapping.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci job 'golden-cases' command 'pnpm exec tsx scripts/golden-cases-validate.ts' uses execution-affecting environment variable 'NODE_OPTIONS' is overridden
+gate 0: ci job 'e2e' command 'pnpm exec playwright test' uses execution-affecting environment variable 'NODE_OPTIONS' is overridden
+```
+
+Charter drift independently named every affected enforced command. The pre-fix companion reported
+`proven` for the same inherited override. Continuous companions cover workflow, job, and step scope,
+non-literal maps, shell startup variables, executable search paths, loader preloads, Node, Python, Java,
+TypeScript runners, package managers, and safe application variables.
+
+**Revert:** removed the workflow override. The restored four-fence focused run passed all 108 tests.
+
+**Date:** 2026-07-29.

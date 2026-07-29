@@ -550,6 +550,7 @@ export interface CiStep {
   unsupportedRunner?: string;
   unsupportedShell?: string;
   unsupportedWorkingDirectory?: string;
+  unsafeEnvironment?: string;
   commands: string[];
   blockingCommand?: string;
   blockingTokens?: string[];
@@ -609,6 +610,83 @@ function configuredRunWorkingDirectory(node: unknown): unknown {
   const defaults = (node as { defaults?: unknown } | null)?.defaults;
   const run = (defaults as { run?: unknown } | null)?.run;
   return (run as { "working-directory"?: unknown } | null)?.["working-directory"];
+}
+
+const EXECUTION_AFFECTING_ENVIRONMENT = new Set([
+  "BASH_ENV",
+  "BASHOPTS",
+  "CDPATH",
+  "COREPACK_HOME",
+  "COREPACK_NPM_REGISTRY",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "ENV",
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_EXEC_PATH",
+  "GIT_SSH",
+  "GIT_SSH_COMMAND",
+  "HOME",
+  "IFS",
+  "JAVA_TOOL_OPTIONS",
+  "JDK_JAVA_OPTIONS",
+  "LD_LIBRARY_PATH",
+  "LD_PRELOAD",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "NPM_CONFIG_SCRIPT_SHELL",
+  "NPM_CONFIG_USERCONFIG",
+  "PATH",
+  "PERL5OPT",
+  "PNPM_HOME",
+  "PYTHONHOME",
+  "PYTHONPATH",
+  "PYTHONSTARTUP",
+  "RUBYOPT",
+  "SHELLOPTS",
+  "TS_NODE_COMPILER",
+  "TS_NODE_PROJECT",
+  "TSX_TSCONFIG_PATH",
+  "XDG_CONFIG_HOME",
+  "_JAVA_OPTIONS",
+]);
+
+const EXECUTION_AFFECTING_ENVIRONMENT_PREFIXES = [
+  "COREPACK_",
+  "NODE_",
+  "NPM_CONFIG_",
+  "PNPM_",
+  "TS_NODE_",
+];
+
+function executionAffectingEnvironmentVariable(
+  name: string,
+): boolean {
+  return (
+    EXECUTION_AFFECTING_ENVIRONMENT.has(name) ||
+    EXECUTION_AFFECTING_ENVIRONMENT_PREFIXES.some((prefix) =>
+      name.startsWith(prefix),
+    )
+  );
+}
+
+function environmentProblem(
+  ...scopes: unknown[]
+): string | undefined {
+  for (const scope of scopes) {
+    const value = (scope as { env?: unknown } | null)?.env;
+    if (value === undefined) continue;
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return "environment configuration is not a literal mapping";
+    }
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      const normalized = key.toUpperCase();
+      if (executionAffectingEnvironmentVariable(normalized)) {
+        return `execution-affecting environment variable '${key}' is overridden`;
+      }
+    }
+  }
+  return undefined;
 }
 
 function workflowTriggerProblem(doc: unknown): string | undefined {
@@ -796,10 +874,12 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
       const stepDirectory = (step as { "working-directory"?: unknown } | null)?.["working-directory"];
       const effectiveDirectory = stepDirectory === undefined ? defaultDirectory : stepDirectory;
       const unsupportedWorkingDirectory = workingDirectoryProblem(effectiveDirectory);
+      const unsafeEnvironment = environmentProblem(doc, job, step);
       const simple =
         unsupportedRunner === undefined &&
         unsupportedShell === undefined &&
-        unsupportedWorkingDirectory === undefined
+        unsupportedWorkingDirectory === undefined &&
+        unsafeEnvironment === undefined
           ? simpleShellCommand(run)
           : undefined;
       return [
@@ -808,6 +888,7 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
           ...(unsupportedRunner === undefined ? {} : { unsupportedRunner }),
           ...(unsupportedShell === undefined ? {} : { unsupportedShell }),
           ...(unsupportedWorkingDirectory === undefined ? {} : { unsupportedWorkingDirectory }),
+          ...(unsafeEnvironment === undefined ? {} : { unsafeEnvironment }),
           commands: shellCommandLines(run),
           ...(simple === undefined ? {} : { blockingCommand: simple.text, blockingTokens: simple.tokens }),
         },
@@ -841,6 +922,7 @@ export function ciJobBlocks(jobs: Map<string, CiJob>, ref: string): boolean {
         step.unsupportedRunner === undefined &&
         step.unsupportedShell === undefined &&
         step.unsupportedWorkingDirectory === undefined &&
+        step.unsafeEnvironment === undefined &&
         step.blockingCommand !== undefined,
     )
   );
@@ -855,6 +937,7 @@ export type CiCommandStatus =
   | { state: "unsafe-runner"; reason: string }
   | { state: "unsafe-shell"; reason?: string }
   | { state: "unsafe-working-directory"; reason: string }
+  | { state: "unsafe-environment"; reason: string }
   | { state: "missing-command" };
 
 export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, command: string): CiCommandStatus {
@@ -892,6 +975,10 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
   if (wrongDirectory?.unsupportedWorkingDirectory !== undefined) {
     return { state: "unsafe-working-directory", reason: wrongDirectory.unsupportedWorkingDirectory };
   }
+  const unsafeEnvironment = relevant.find((step) => step.unsafeEnvironment !== undefined);
+  if (unsafeEnvironment?.unsafeEnvironment !== undefined) {
+    return { state: "unsafe-environment", reason: unsafeEnvironment.unsafeEnvironment };
+  }
   if (relevant.length > 0) return { state: "unsafe-shell" };
   return { state: "missing-command" };
 }
@@ -916,6 +1003,8 @@ export function ciJobRunProblem(jobs: Map<string, CiJob>, ref: string, command: 
         ? `ci job '${ref}' mentions '${command}' only in a compound or multi-command run step`
         : `ci job '${ref}' command '${command}' uses ${status.reason}`;
     case "unsafe-working-directory":
+      return `ci job '${ref}' command '${command}' uses ${status.reason}`;
+    case "unsafe-environment":
       return `ci job '${ref}' command '${command}' uses ${status.reason}`;
     default:
       return `ci job '${ref}' does not run '${command}' in a dedicated blocking step`;

@@ -95,6 +95,8 @@ complete proof metadata is ratcheted, so matching prose cannot fabricate an earl
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too, and every enforced charter mapping is bound to its exact command.
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
+Effective workflow, job, and step environments are resolved together; non-literal environment maps and
+overrides of execution-affecting shell, loader, package-manager, or runtime variables are non-evidence.
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
 The blocking test job invokes a direct runner once for the complete unit, integration, and fitness suite.
@@ -130,7 +132,9 @@ controls, rejects registered Playwright hooks, and restricts its complete top-le
 against DOM mutation, injected controls, screenshot replacement, and alternate navigation before
 directly awaiting all twelve screenshots in order.
 The launcher and every station capture verify their URL and loaded marker, write to `demo-screens`, and
-assert the result is non-empty. Both screenshot helpers must remain unreassigned, and every supported URL
+assert the result is non-empty. Screenshot options are exactly the sanctioned `path` and
+`fullPage: true` fields, so masking or other content-altering capture options are non-evidence. Both
+screenshot helpers must remain unreassigned, and every supported URL
 scenario and firm resolver must preserve the supplied identity. CI separately verifies that every canonical artifact exists and is
 non-empty, then configures upload-artifact to fail when the directory is missing or the upload is
 conditionally disabled or failure-neutralized. The runner fails on
@@ -162,7 +166,9 @@ re-exports, configured aliases, literal dynamic imports, and direct CommonJS imp
 module may not register Playwright hooks or import the Axe runtime outside the sanctioned helper, and
 unresolved, non-literal, indirect, or computed ambient CommonJS loader provenance is non-evidence.
 Playwright hook provenance follows callable values stored in object properties, member assignments, and
-direct or aliased `Object.assign` mutations through object aliases. Bare runtime dependencies
+direct or aliased `Object.assign` mutations through object aliases. Reflective property writes through
+`Object.defineProperty` and `Reflect.set`, including stable aliases and invocation wrappers, are followed,
+and unresolved reflective writes fail closed. Bare runtime dependencies
 are restricted to configured local paths and the exact Playwright/Axe allowlist. The
 sanctioned helper admits no module-scope executable statement that could replace its analysis method,
 requires exactly two plain parameters, and admits only the side-effect-free `{ page }` builder
@@ -174,7 +180,9 @@ disabled or focused Vitest fences through symbol-aware AST registration analysis
 members, aliases, the `suite` registration alias, unshadowed Vitest globals, `globalThis`, and Node
 `global` paths, neutralizing registration options, `todo`, `fails`, `skipIf`, and `runIf`, while
 preserving locally shadowed application callables. Parameterized `.each` and `.for` registrations must
-carry statically non-empty case collections.
+carry statically non-empty case collections. Fitness registrations must also be direct reachable
+module-scope statements or direct statements inside an enabled reachable module-scope `describe` /
+`suite` callback; dead control flow and uncalled registration helpers are non-evidence.
 Per
 **ADR-0030**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

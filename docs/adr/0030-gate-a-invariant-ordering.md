@@ -437,6 +437,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   paths are rejected; so is a job or step carrying `continue-on-error`, any `if:`, an unsupported
   effective shell, any missing, dynamic, invalid, or unsupported runner regardless of an explicit
   shell, a job carrying a non-empty `needs` dependency, or an evidence job using `strategy.matrix`.
+  Workflow, job, and step environment maps are resolved together. Non-literal maps and overrides of
+  execution-affecting shell, loader, package-manager, or runtime variables are non-evidence, including
+  `BASH_ENV`, `ENV`, `PATH`, `NODE_OPTIONS`, loader preload paths, and equivalent language-tool options.
   An unparseable
   workflow yields no jobs, so every `ci-gate` reads unmet rather than passing on a file nothing could read.
 - `parseCiJobs` is the repo's one structured CI authority, read by three call sites - the gate
@@ -466,7 +469,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   through the complete runtime local import graph of required specifications and sanctioned helpers.
   No reachable module may import the Axe runtime outside `e2e/axe.ts`, register a Playwright hook, hide
   behind a side-effect import, or depend on an unresolved, unclassified, non-literal, or indirect
-  CommonJS runtime import.
+  CommonJS runtime import. Hook provenance includes object-member assignments, `Object.assign`,
+  `Object.defineProperty`, and `Reflect.set` through stable aliases and `bind` / `call` / `apply`
+  wrappers. Unresolved reflective property writes fail closed.
   Direct, aliased, and reflective `Reflect.apply` invocations are resolved through the same callable
   provenance, so neither a neutralizer nor a registered hook can hide behind reflective dispatch.
   Optional assertion messages must be structurally side-effect-free. The
@@ -487,7 +492,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   neutralizing values that are not statically false are non-evidence. Unknown conditional state is
   non-evidence. Parameterized `.each` and `.for` registrations require a statically non-empty collection;
   empty, spread-derived, or unresolved collections are non-evidence, while tagged tables require a
-  header and at least one static row. The Axe helper admits no
+  header and at least one static row. Registrations must be direct reachable module-scope statements or
+  direct statements inside an enabled reachable module-scope `describe` / `suite` callback. Registrations
+  hidden in uncalled functions, unresolved control flow, or non-registration callbacks are non-evidence.
+  The Axe helper admits no
   module-scope executable statement that could replace its analysis method, and required specifications
   cannot import the Axe runtime directly.
 - Reflective callable resolution composes direct or bound `Reflect.apply`, `Function.call`, and
@@ -508,8 +516,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   clickable-control route graph, and direct awaited ordered screenshots with no `page.goto` substitute.
   The canonical specification cannot register hooks that inject controls or replace screenshots. Both
   the launcher and station screenshot helpers verify
-  their corresponding URL and loaded marker, write only to the pinned artifact directory, and reject an
-  empty capture. A dedicated post-Playwright command validates every canonical artifact,
+  their corresponding URL and loaded marker, use exactly the sanctioned `path` and `fullPage: true`
+  screenshot options, write only to the pinned artifact directory, and reject an empty capture. A
+  dedicated post-Playwright command validates every canonical artifact,
   and upload-artifact fails when the directory is missing or its execution or failure is neutralized.
   Gates A through I remain non-green against
   their own unmet requirements.

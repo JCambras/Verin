@@ -24,6 +24,7 @@ import {
   isVitestTestFile,
   VITEST_TEST_INCLUDE,
 } from "../../../scripts/fitness-tests.lib";
+import { isProvablyReachable } from "./_ast-control-flow";
 
 /**
  * CHARTER-DRIFT FENCE (charter operating model: "the constitution enforces its
@@ -766,43 +767,121 @@ function registrationOptionsAreUnsafe(call: Node): boolean {
   return state === "unsafe" || state === "unknown";
 }
 
+function isVitestRegistrationPath(path: VitestCallablePath): boolean {
+  const [base] = path.members;
+  if (base === undefined) return false;
+  if (["xit", "xtest", "xdescribe"].includes(base)) return true;
+  if (!VITEST_REGISTRATION_BASES.has(base) && base !== "*") return false;
+  if (path.members.length === 1) return true;
+  return (
+    path.conditions.length > 0 ||
+    path.caseCollections.length > 0 ||
+    path.members
+      .slice(1)
+      .some((member) => NEUTRALIZING_VITEST_OPTIONS.has(member))
+  );
+}
+
+function vitestRegistrationPathIsDisabled(
+  call: Node,
+  path: VitestCallablePath,
+): boolean {
+  const conditionallyDisabled = path.conditions.some(
+    ({ modifier, value }) =>
+      (modifier === "skipIf" && value !== false) ||
+      (modifier === "runIf" && value !== true),
+  );
+  const emptyOrUnresolvedCases = path.caseCollections.some(
+    (nonEmpty) => nonEmpty !== true,
+  );
+  return (
+    ["xit", "xtest", "xdescribe"].includes(path.members[0] ?? "") ||
+    path.members
+      .slice(1)
+      .some((member) => NEUTRALIZING_VITEST_OPTIONS.has(member)) ||
+    path.members.slice(1).includes("*") ||
+    conditionallyDisabled ||
+    emptyOrUnresolvedCases ||
+    registrationOptionsAreUnsafe(call)
+  );
+}
+
+function directRegistrationContainer(call: Node): Node | undefined {
+  if (!Node.isCallExpression(call)) return undefined;
+  const statement = call.getFirstAncestorByKind(
+    SyntaxKind.ExpressionStatement,
+  );
+  return statement?.getExpression() === call
+    ? statement.getParent()
+    : undefined;
+}
+
+function registrationCallbackOwner(
+  callback: Node,
+): Node | undefined {
+  const owner = callback.getParent();
+  return Node.isCallExpression(owner) &&
+    owner.getArguments().includes(callback)
+    ? owner
+    : undefined;
+}
+
+function vitestRegistrationIsReachable(
+  call: Node,
+  file: SourceFile,
+  seen = new Set<Node>(),
+): boolean {
+  if (!Node.isCallExpression(call) || seen.has(call)) return false;
+  seen.add(call);
+  const container = directRegistrationContainer(call);
+  if (container === file) {
+    return isProvablyReachable(call, file);
+  }
+  if (!Node.isBlock(container)) return false;
+  const callback = container.getParent();
+  if (
+    !Node.isArrowFunction(callback) &&
+    !Node.isFunctionExpression(callback)
+  ) {
+    return false;
+  }
+  const owner = registrationCallbackOwner(callback);
+  if (!Node.isCallExpression(owner)) return false;
+  const ownerPaths = vitestCallablePaths(owner.getExpression()).filter(
+    (path) =>
+      isVitestRegistrationPath(path) &&
+      ["describe", "suite"].includes(path.members[0] ?? "") &&
+      !vitestRegistrationPathIsDisabled(owner, path),
+  );
+  return (
+    ownerPaths.length > 0 &&
+    isProvablyReachable(call, callback) &&
+    vitestRegistrationIsReachable(owner, file, seen)
+  );
+}
+
 function disabledVitestRegistrationProblemsInFile(
   file: SourceFile,
   fileName: string,
 ): string[] {
-  const xPrefixed = new Set(["xit", "xtest", "xdescribe"]);
   return file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
     .flatMap((call) =>
-      vitestCallablePaths(call.getExpression()).flatMap((path) => {
-        const members = path.members;
-        const conditionallyDisabled = path.conditions.some(
-          ({ modifier, value }) =>
-            (modifier === "skipIf" && value !== false) ||
-            (modifier === "runIf" && value !== true),
-        );
-        const emptyOrUnresolvedCases = path.caseCollections.some(
-          (nonEmpty) => nonEmpty !== true,
-        );
-        const isDisabled =
-          (members.length === 1 && xPrefixed.has(members[0]!)) ||
-          ((VITEST_REGISTRATION_BASES.has(members[0]!) ||
-            members[0] === "*") &&
-            (members
-              .slice(1)
-              .some((member) =>
-                NEUTRALIZING_VITEST_OPTIONS.has(member),
-              ) ||
-              members.slice(1).includes("*") ||
-              conditionallyDisabled ||
-              emptyOrUnresolvedCases ||
-              registrationOptionsAreUnsafe(call)));
-        return isDisabled
-          ? [
+      vitestCallablePaths(call.getExpression())
+        .filter(isVitestRegistrationPath)
+        .flatMap((path) => {
+          const members = path.members;
+          if (vitestRegistrationPathIsDisabled(call, path)) {
+            return [
               `${fileName}:${call.getStartLineNumber()} disabled/focused Vitest registration ${members.join(".")}`,
-            ]
-          : [];
-      }),
+            ];
+          }
+          return vitestRegistrationIsReachable(call, file)
+            ? []
+            : [
+                `${fileName}:${call.getStartLineNumber()} unreachable Vitest registration ${members.join(".")}`,
+              ];
+        }),
     );
 }
 
@@ -953,6 +1032,16 @@ it.each([...cases])("spread cases", () => {});`,
       `const cases = Math.random() > 0.5 ? [1] : [];
 test.for(cases)("dynamic parameterized test", () => {});`,
       "describe.each``(\"empty tagged suite\", () => {});",
+      `if (false) {
+  describe("dead suite", () => {
+    it("never registers", () => {});
+  });
+}`,
+      `function registerFence() {
+  describe("uncalled suite", () => {
+    it("never registers", () => {});
+  });
+}`,
     ];
     for (const source of disabled) {
       expect(

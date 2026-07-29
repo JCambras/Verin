@@ -281,9 +281,11 @@ or exclude configuration drifts.
   aliased, namespace, global, `suite`, x-prefixed, todo, fails, skipIf, and runIf neutralizers while
   preserving locally shadowed application callables. Registration option objects and unshadowed
   `globalThis` and Node `global` paths are included, and `.each`/`.for` case collections must be
-  statically non-empty. Axe route collections are non-empty declarative frozen literals;
+  statically non-empty. Fitness registrations must be reachable at module scope or directly inside an
+  enabled reachable module-scope suite callback. Axe route collections are non-empty declarative frozen literals;
   page coverage is credited only to the winning Next route. Hook provenance follows object-property
-  callables, member writes, and direct or aliased `Object.assign` mutations, and unresolved computed
+  callables, member writes, direct or aliased `Object.assign`, `Object.defineProperty`, and `Reflect.set`
+  mutations, and unresolved reflective or computed
   ambient CommonJS loaders are non-evidence.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the

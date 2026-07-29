@@ -1125,7 +1125,10 @@ function isRealScreenshotDeclaration(
   const options = call.getArguments()[0];
   if (
     !Node.isObjectLiteralExpression(options) ||
-    options.getProperties().some(Node.isSpreadAssignment)
+    options.getProperties().length !== 2 ||
+    options.getProperties().some(
+      (property) => !Node.isPropertyAssignment(property),
+    )
   ) {
     return false;
   }
@@ -1718,6 +1721,13 @@ ${workspaceControl}`,
           ),
         ),
         e2e.replace(
+          launcherScreenshotLine,
+          launcherScreenshotLine.replace(
+            "fullPage: true",
+            'fullPage: true, mask: [page.locator("body")]',
+          ),
+        ),
+        e2e.replace(
           '  await expect(page).toHaveURL(/\\/app\\/demo(?:\\?|$)/);',
           "  await expect(page).toHaveURL(/.*/);",
         ),
@@ -1748,6 +1758,13 @@ ${workspaceControl}`,
         e2e.replace(
           screenshotLine,
           screenshotLine.replace("page.screenshot", "other.screenshot"),
+        ),
+        e2e.replace(
+          screenshotLine,
+          screenshotLine.replace(
+            "fullPage: true",
+            'fullPage: true, mask: [page.locator("body")]',
+          ),
         ),
         e2e.replace(
           screenshotLine,

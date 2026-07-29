@@ -777,6 +777,105 @@ describe("v3 gate-ordering fence", () => {
       expect(proves("", "", "packages/stub")).toBe(false);
     });
 
+    it("rejects execution-affecting environment overrides at every inherited scope", () => {
+      const workflow = (
+        workflowEnv: string,
+        jobEnv: string,
+        stepEnv: string,
+      ) =>
+        parseCiJobs(
+          [
+            "name: ci",
+            "on:",
+            "  push:",
+            "  pull_request:",
+            ...(workflowEnv === ""
+              ? []
+              : ["env:", `  ${workflowEnv}: injected`]),
+            "jobs:",
+            "  audit-chain-verify:",
+            "    runs-on: ubuntu-latest",
+            ...(jobEnv === ""
+              ? []
+              : ["    env:", `      ${jobEnv}: injected`]),
+            "    steps:",
+            ...(stepEnv === ""
+              ? ["      - run: pnpm audit:chain"]
+              : [
+                  "      - env:",
+                  `          ${stepEnv}: injected`,
+                  "        run: pnpm audit:chain",
+                ]),
+            "",
+          ].join("\n"),
+        );
+      for (const variable of [
+        "BASH_ENV",
+        "ENV",
+        "PATH",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "LD_PRELOAD",
+        "DYLD_INSERT_LIBRARIES",
+        "TSX_TSCONFIG_PATH",
+        "PYTHONPATH",
+        "JAVA_TOOL_OPTIONS",
+        "HOME",
+        "NODE_ENV",
+        "NPM_CONFIG_PREFIX",
+        "PNPM_CONFIG_SCRIPT_SHELL",
+      ]) {
+        for (const scopes of [
+          [variable, "", ""],
+          ["", variable, ""],
+          ["", "", variable],
+        ] as const) {
+          expect(
+            ciJobCommandStatus(
+              workflow(scopes[0], scopes[1], scopes[2]),
+              "audit-chain-verify",
+              "pnpm audit:chain",
+            ),
+            `${variable} at ${scopes.findIndex((value) => value !== "")}`,
+          ).toEqual({
+            state: "unsafe-environment",
+            reason: `execution-affecting environment variable '${variable}' is overridden`,
+          });
+        }
+      }
+      expect(
+        ciJobCommandStatus(
+          workflow("TZ", "APP_ENV", "LOG_LEVEL"),
+          "audit-chain-verify",
+          "pnpm audit:chain",
+        ),
+      ).toEqual({ state: "proven" });
+      const dynamicEnvironment = parseCiJobs(
+        [
+          "on:",
+          "  push:",
+          "  pull_request:",
+          "env: ${{ fromJSON(secrets.RUNTIME_ENV) }}",
+          "jobs:",
+          "  audit-chain-verify:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm audit:chain",
+          "",
+        ].join("\n"),
+      );
+      expect(
+        ciJobCommandStatus(
+          dynamicEnvironment,
+          "audit-chain-verify",
+          "pnpm audit:chain",
+        ),
+      ).toEqual({
+        state: "unsafe-environment",
+        reason: "environment configuration is not a literal mapping",
+      });
+    });
+
     it("requires a dedicated command step and still reads a folded simple command", () => {
       const jobs = parseCiFixture(
         [
