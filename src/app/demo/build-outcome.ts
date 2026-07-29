@@ -13,7 +13,6 @@ import { fact, fixtureMetric } from "./provenance";
 import { buildSpine } from "./spine";
 import {
   CAST,
-  RETRIEVED_AT,
   executionEligibilityFor,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
@@ -51,21 +50,44 @@ export function buildSafety(
   firm: FirmData,
   pass: JourneyPass = "initial",
 ): SafetyVM {
-  const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
   const eligibility = executionEligibilityFor(scenario, firm.id);
+  const sourceCase = sourceCaseFor(scenario, firm.id);
   const invalidationAuthority = hasSignedInvalidationAuthority(
     scenario,
     firm.id,
   );
   const initial = authority.kind === "signed" ? authority.initialDecision : null;
   const refreshed = authority.kind === "signed" ? authority.preExecutionRevalidation : undefined;
+  const initialAccount = sourceCase?.evidence.find(
+    (entry) =>
+      entry.evidenceKind === "account-balance" &&
+      entry.liquidityPhase !== "pre-execution-revalidation",
+  );
+  const initialPending = sourceCase?.evidence.find(
+    (entry) =>
+      entry.evidenceKind === "pending-actions" &&
+      entry.liquidityPhase !== "pre-execution-revalidation",
+  );
+  const refreshedAccount = sourceCase?.evidence.find(
+    (entry) =>
+      entry.evidenceKind === "account-balance" &&
+      entry.liquidityPhase === "pre-execution-revalidation",
+  );
+  const refreshedPending = sourceCase?.evidence.find(
+    (entry) =>
+      entry.evidenceKind === "pending-actions" &&
+      entry.liquidityPhase === "pre-execution-revalidation",
+  );
+  const bankInstruction = sourceCase?.evidence.find(
+    (entry) => entry.evidenceKind === "bank-instruction",
+  );
   const invalidatedPass = invalidationAuthority && pass === "initial";
   const executionEligible =
     authority.kind === "signed" &&
     eligibility?.eligible === true &&
-    (!spec.invalidation ||
+    (!invalidationAuthority ||
       (invalidationAuthority && pass === "revalidated"));
   const checks: SafetyCheckVM[] = authority.kind === "missing"
     ? [
@@ -82,13 +104,15 @@ export function buildSafety(
             label: "Liquidity snapshot changed after approval",
             status: "voided",
             statusLabel: "Evidence changed",
-            detail: `The refreshed bundle records ${refreshed.pendingNote}.`,
+            detail:
+              refreshedPending?.summary ??
+              `The refreshed bundle records ${refreshed.pendingNote}.`,
           },
           {
             label: "Pending actions re-checked against this household",
             status: "voided",
             statusLabel: "New activity found",
-            detail: "The initial decision observed no pending activity. Pre-execution revalidation found the new distribution.",
+            detail: `${initialPending?.summary ?? "Initial pending evidence unavailable"} ${refreshedPending?.summary ?? "Refreshed pending evidence unavailable"}`,
           },
         ]
       : invalidationAuthority && pass === "revalidated" && refreshed
@@ -97,23 +121,28 @@ export function buildSafety(
               label: "Liquidity matches the refreshed derived decision",
               status: "done",
               statusLabel: "Verified",
-              detail: "Effective liquidity remains $285,000 on the refreshed bundle.",
+              detail: `${refreshedAccount?.summary ?? "Refreshed account evidence unavailable"} ${refreshedPending?.summary ?? "Refreshed pending evidence unavailable"}`,
             },
             {
               label: "Pending distribution re-checked and counted",
               status: "done",
               statusLabel: "Verified",
-              detail: refreshed.pendingNote,
+              detail: refreshedPending?.summary ?? refreshed.pendingNote,
             },
           ]
       : [
-          { label: "Liquidity unchanged since the decision", status: "done", statusLabel: "Verified" },
+          {
+            label: "Liquidity unchanged since the decision",
+            status: "done",
+            statusLabel: "Verified",
+            detail: initialAccount?.summary,
+          },
           initial && initial.pendingActivityMinor > 0
             ? {
                 label: "Pending actions re-checked against this household",
                 status: "done",
                 statusLabel: "Re-read",
-                detail: `${initial.pendingNote}. It was counted against the decision's liquidity.`,
+                detail: `${initialPending?.summary ?? initial.pendingNote} It was counted against the decision's liquidity.`,
               }
             : { label: "No new pending actions against this household", status: "done", statusLabel: "Verified" },
         ];
@@ -124,7 +153,12 @@ export function buildSafety(
       statusLabel: "Approval invalidated",
     } as (typeof checks)[number]);
   } else {
-    checks.push({ label: "Bank instruction unchanged since the decision", status: "done", statusLabel: "Verified" });
+    checks.push({
+      label: "Bank instruction unchanged since the decision",
+      status: "done",
+      statusLabel: "Verified",
+      detail: bankInstruction?.summary,
+    });
   }
   if (invalidationAuthority && pass === "revalidated") {
     checks.push({
@@ -134,31 +168,29 @@ export function buildSafety(
       detail: "Both distinct operations approvers approved the derived decision and refreshed input-bundle hashes.",
     });
   }
-  if (spec.competing) {
-    const related = authority.kind === "signed" ? authority.relatedDecisions?.[0] : undefined;
-    checks.push(
-      related
-        ? {
-            label: "Concurrent request detected against the same liquidity",
-            status: "done",
-            statusLabel: "Reservation held",
-            detail: `Signed case ${related.sourceCaseId} records the sibling request at ${formatDemoInstant(related.requestAt, undefined, true)} as ${related.disposition} at ${formatDemoInstant(relatedDecisionAt(related.requestAt), undefined, true)}, after this request's reservation committed.`,
-            relatedDecision: {
-              sourceCaseId: related.sourceCaseId,
-              disposition: related.disposition,
-              requestAtIso: related.requestAt,
-              decidedAtIso: relatedDecisionAt(related.requestAt),
-              requestAt: formatDemoInstant(related.requestAt, undefined, true),
-              decidedAt: formatDemoInstant(relatedDecisionAt(related.requestAt), undefined, true),
-            },
-          }
-        : {
-            label: "Competing request outcome authority unavailable",
-            status: "pending",
-            statusLabel: "Evidence missing",
-            detail: "The demo cannot state the sibling outcome without its own signed case binding.",
-          },
-    );
+  const related =
+    authority.kind === "signed"
+      ? authority.relatedDecisions?.[0]
+      : undefined;
+  if (related) {
+    checks.push({
+      label: "Concurrent request detected against the same liquidity",
+      status: "done",
+      statusLabel: "Reservation held",
+      detail: `Signed case ${related.sourceCaseId} records the sibling request at ${formatDemoInstant(related.requestAt, undefined, true)} as ${related.disposition} at ${formatDemoInstant(relatedDecisionAt(related.requestAt), undefined, true)}, after this request's reservation committed.`,
+      relatedDecision: {
+        sourceCaseId: related.sourceCaseId,
+        disposition: related.disposition,
+        requestAtIso: related.requestAt,
+        decidedAtIso: relatedDecisionAt(related.requestAt),
+        requestAt: formatDemoInstant(related.requestAt, undefined, true),
+        decidedAt: formatDemoInstant(
+          relatedDecisionAt(related.requestAt),
+          undefined,
+          true,
+        ),
+      },
+    });
   }
   return {
     spine: buildSpine("Safety", invalidatedPass ? { status: "voided", label: "Approval voided" } : undefined),
@@ -203,20 +235,46 @@ export function buildSafety(
               timestampIso: timeline.approvalTwoAt,
             },
           ],
-          deltaSentence: "A new $15,000 pending distribution appeared after this approval was given.",
+          deltaSentence:
+            refreshedPending?.summary ??
+            "Exact signed refreshed pending evidence unavailable.",
           before: {
             label: "Initial decision · pending activity",
-            metric: fixtureMetric(initial.pendingActivityMinor, "currency-minor", "synthetic-fixture", "2026-07-26"),
-            retrievedAt: RETRIEVED_AT,
+            metric: fixtureMetric(
+              initialPending?.displayValue?.valueMinor ??
+                initial.pendingActivityMinor,
+              "currency-minor",
+              "synthetic-fixture",
+              initialPending?.observedAt ?? sourceCase?.trigger.requestAt ?? timeline.sourceRequestAt,
+            ),
+            retrievedAt: initialPending
+              ? formatDemoInstant(
+                  initialPending.retrievedAt,
+                  undefined,
+                  true,
+                )
+              : formatDemoInstant(timeline.initialEvidenceSnapshotAt),
           },
           after: {
             label: "Pre-execution revalidation · pending distribution",
-            metric: fixtureMetric(refreshed.pendingActivityMinor, "currency-minor", "synthetic-fixture", "2026-07-26"),
-            retrievedAt: formatDemoInstant(timeline.revalidatedAt),
+            metric: fixtureMetric(
+              refreshedPending?.displayValue?.valueMinor ??
+                refreshed.pendingActivityMinor,
+              "currency-minor",
+              "synthetic-fixture",
+              refreshedPending?.observedAt ?? timeline.revalidatedAt,
+            ),
+            retrievedAt: refreshedPending
+              ? formatDemoInstant(
+                  refreshedPending.retrievedAt,
+                  undefined,
+                  true,
+                )
+              : formatDemoInstant(timeline.revalidatedAt),
           },
           why: {
             reason:
-              "Approval binds to the decision hash and the input-bundle hash. Revalidation changed effective liquidity from $300,000 to $285,000, so the refreshed bundle requires a new decision and fresh approvals even though the reserve still holds.",
+              `${initialAccount?.summary ?? "Initial account evidence unavailable"} ${initialPending?.summary ?? "Initial pending evidence unavailable"} ${refreshedAccount?.summary ?? "Refreshed account evidence unavailable"} ${refreshedPending?.summary ?? "Refreshed pending evidence unavailable"} Approval binds to the decision and input-bundle hashes, so the changed bundle requires a new decision and fresh approvals.`,
           },
           primaryLabel: "Re-evaluate with current evidence",
         }
@@ -230,28 +288,37 @@ export function buildExecution(
   firm: FirmData,
   pass: JourneyPass = "initial",
 ): ExecutionVM | null {
-  const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
   const eligibility = executionEligibilityFor(scenario, firm.id);
+  const verification = sourceCaseFor(scenario, firm.id)?.verification;
+  const invalidation = hasSignedInvalidationAuthority(
+    scenario,
+    firm.id,
+  );
+  const duplicateRetry =
+    sourceCaseFor(scenario, firm.id)?.explanations.some(
+      (entry) => entry.code === "duplicate-suppressed",
+    ) ?? false;
   if (
     authority.kind === "missing" ||
     eligibility?.eligible !== true ||
-    (spec.invalidation && pass !== "revalidated")
+    (invalidation && pass !== "revalidated") ||
+    verification?.reached !== true
   ) {
     return null;
   }
   const rows: ExecutionRowVM[] = [];
   const identifiers = executionIdentifiers(scenario, firm);
-  if (spec.partial) {
+  if (verification.observedStatus === "unknown") {
     rows.push(
       {
         step: "instruction-created",
         target: "Salesforce managed capability",
         status: "completed",
         statusLabel: "Completed part",
-        timestamp: formatDemoInstant(timeline.executionAt),
-        timestampIso: timeline.executionAt,
+        timestamp: formatDemoInstant(timeline.executionSucceededAt),
+        timestampIso: timeline.executionSucceededAt,
         honestyLine: "The external receipt confirms only that the instruction record was created.",
         identifiers,
         fakeClass: "fake-adapter-response",
@@ -261,9 +328,9 @@ export function buildExecution(
         target: "Salesforce managed capability",
         status: "unknown",
         statusLabel: "Unconfirmed",
-        timestamp: formatDemoInstant(timeline.executionAt),
-        timestampIso: timeline.executionAt,
-        honestyLine: "The external receipt does not confirm this part; the movement remains unknown and unconfirmed.",
+        timestamp: formatDemoInstant(verification.observedAt),
+        timestampIso: verification.observedAt,
+        honestyLine: verification.currentReason,
         affordanceLabel: "Review the exception",
         identifiers,
         fakeClass: "fake-adapter-response",
@@ -275,14 +342,14 @@ export function buildExecution(
       target: "Salesforce managed capability",
       status: "submitted",
       statusLabel: "Submitted",
-      timestamp: formatDemoInstant(timeline.executionAt),
-      timestampIso: timeline.executionAt,
+      timestamp: formatDemoInstant(timeline.statusObservedAt),
+      timestampIso: timeline.statusObservedAt,
       honestyLine: "Accepted for processing - settlement not yet confirmed.",
       identifiers,
       fakeClass: "fake-adapter-response",
     });
   }
-  if (spec.duplicateRetry) {
+  if (duplicateRetry) {
     rows.push({
       step: "Retry after timeout",
       target: "Salesforce managed capability",
@@ -311,7 +378,6 @@ export function buildVerification(
   firm: FirmData,
   pass: JourneyPass = "initial",
 ): VerificationVM | null {
-  const spec = scenario.spec;
   const timeline = timelineFor(scenario, firm);
   const authority = liquidityAuthorityFor(scenario, firm.id);
   const eligibility = executionEligibilityFor(scenario, firm.id);
@@ -319,96 +385,74 @@ export function buildVerification(
   if (
     authority.kind === "missing" ||
     eligibility?.eligible !== true ||
-    (spec.invalidation && pass !== "revalidated")
+    (hasSignedInvalidationAuthority(scenario, firm.id) &&
+      pass !== "revalidated") ||
+    sourceCase?.verification.reached !== true
   ) {
     return null;
   }
-  const proves = [
+  const verification = sourceCase.verification;
+  const proves = verification.proves.map((display) =>
     fact(
-      "Submission accepted by the capability",
+      display,
       "fake-adapter-response",
-      timeline.executionAt,
-      formatDemoInstant(timeline.executionAt),
+      verification.observedAt,
+      formatDemoInstant(verification.observedAt, undefined, true),
     ),
-  ];
-  if (spec.partial) {
-    proves.push(
-      fact(
-        "Completed part: instruction-created",
-        "fake-adapter-response",
-        timeline.completionVerifiedAt,
-        formatDemoInstant(timeline.completionVerifiedAt),
-      ),
-    );
-  }
+  );
   const appended: ExecutionRowVM[] = [];
   const identifiers = executionIdentifiers(scenario, firm);
-  const nigoReason = sourceCase?.explanations
-    .find((entry) => entry.code === "delayed-nigo-ingested")
-    ?.summary.match(/NIGO return \(([^)]+)\)/)?.[1] ??
-    "signature date predates form version";
-  if (spec.delayedNigo) {
+  if (verification.observedStatus === "nigo") {
     appended.push({
       step: "Returned NIGO (ingested Jul 28)",
       target: "Salesforce managed capability",
       status: "nigo",
       statusLabel: "Returned NIGO",
-      timestamp: formatDemoInstant(timeline.delayedExceptionAt),
-      timestampIso: timeline.delayedExceptionAt,
-      honestyLine: `Returned not in good order: ${nigoReason}.`,
+      timestamp: formatDemoInstant(verification.observedAt),
+      timestampIso: verification.observedAt,
+      honestyLine: `${verification.currentReason}: ${verification.custodianReason}.`,
       affordanceLabel: "Fix and resubmit the authorization",
       identifiers,
       fakeClass: "fake-adapter-response",
     });
   }
-  if (spec.partial) {
+  if (verification.observedStatus === "unknown") {
     appended.push({
       step: "Wire-transfer status",
       target: "Salesforce managed capability",
       status: "stuck",
       statusLabel: "Stuck",
-      timestamp: formatDemoInstant(timeline.delayedExceptionAt),
-      timestampIso: timeline.delayedExceptionAt,
-      honestyLine: "No status for two days - the stuck-state rule (forty-eight hours unconfirmed) fired.",
+      timestamp: formatDemoInstant(verification.observedAt),
+      timestampIso: verification.observedAt,
+      honestyLine: verification.currentReason,
       affordanceLabel: "Escalate to operations",
       identifiers,
       fakeClass: "fake-adapter-response",
     });
   }
+  const nextPollAt =
+    verification.polling.state === "scheduled"
+      ? new Date(
+          Date.parse(verification.observedAt) + 12 * 60 * 60 * 1_000,
+        ).toISOString()
+      : null;
   return {
     spine: buildSpine("Verification"),
-    proves: spec.delayedNigo
-      ? [
-          ...proves,
-          fact(
-            `Custodian returned the instruction NIGO: ${nigoReason}`,
-            "fake-adapter-response",
-            timeline.delayedExceptionAt,
-            formatDemoInstant(timeline.delayedExceptionAt),
-          ),
-        ]
-      : proves,
-    notProvenYet: spec.partial
-      ? [
-          "Incomplete part: disbursement-scheduled",
-          "Movement completion remains unknown and unconfirmed",
-        ]
-      : spec.delayedNigo
-        ? [
-            "Corrected paperwork has not been submitted",
-            "No replacement instruction has been accepted",
-          ]
-        : [
-          "Settlement at the custodian",
-          "Funds availability at the destination bank",
-          "That the instruction will not be returned not-in-good-order",
-        ],
+    state: {
+      observedStatus: verification.observedStatus,
+      settledClaim: verification.settledClaim,
+      observedAtIso: verification.observedAt,
+      currentReason: verification.currentReason,
+      custodianReason: verification.custodianReason,
+    },
+    proves,
+    notProvenYet: verification.notProvenYet,
     polling:
-      timeline.nextPollAt === null
+      verification.polling.state === "stopped"
         ? {
             state: "stopped",
             reason: "terminal-nigo-exception-opened",
-            latestObservationAtIso: timeline.delayedExceptionAt,
+            latestObservationAtIso: verification.observedAt,
             nextPollAtIso: null,
             display:
               "Status polling stopped after terminal NIGO; remediation is governed by the exception decision.",
@@ -416,30 +460,25 @@ export function buildVerification(
         : {
             state: "scheduled",
             interval: "PT12H",
-            latestObservationAtIso: spec.partial
-              ? timeline.delayedExceptionAt
-              : timeline.statusObservedAt,
-            nextPollAtIso: timeline.nextPollAt,
-            display: `Next status poll: ${formatDemoInstant(timeline.nextPollAt)}`,
+            latestObservationAtIso: verification.observedAt,
+            nextPollAtIso: nextPollAt!,
+            display: `Next status poll: ${formatDemoInstant(nextPollAt!)}`,
           },
     appended,
-    exceptionDecision: spec.partial || spec.delayedNigo
+    exceptionDecision: verification.exception
       ? {
           eventType: "ExceptionDecisionRequested",
-          reason: spec.delayedNigo ? "delayed-nigo" : "partial-execution",
+          reason: verification.exception.reason,
           priorDecisionId: "dec-smiths-renovation-2026-0726",
-          triggeringLedgerEvent: spec.delayedNigo
-            ? "StatusObserved"
-            : "ExecutionPartiallySucceeded",
+          triggeringLedgerEvent:
+            verification.exception.triggeringLedgerEvent,
           requestedAt: formatDemoInstant(
             timeline.exceptionDecisionRequestedAt,
             undefined,
             true,
           ),
           requestedAtIso: timeline.exceptionDecisionRequestedAt,
-          summary: spec.delayedNigo
-            ? `The observed NIGO opened a governed exception decision with the custodian reason preserved: ${nigoReason}.`
-            : "The partial receipt opened a governed exception decision while the incomplete disbursement remains unknown and unconfirmed.",
+          summary: verification.exception.summary,
         }
       : null,
     fakeClass: "fake-adapter-response",

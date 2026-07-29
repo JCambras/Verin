@@ -3540,3 +3540,28 @@ examiner record cite facts and authority from another case.
 **Revert path:** this captain ruling is product truth and is not reversible without a new captain
 decision. The typed projection, semantic fence, and browser companions are isolated to the demo
 fake-service.
+
+### D-072 · 2026-07-29 · captain-decision · One exact case projection governs every decision surface
+
+Each signed evidence row owns its displayed value and unit. The interactive canonical request owns
+one firm-neutral request instant, while each golden trigger retains its separate signed instant.
+Decision rationale, evidence age, source provenance, policy versions, household instructions,
+safety deltas, execution receipts, verification state, and the examiner record project from the
+selected exact case without scenario-flag or prose reconstruction.
+
+Verification is a closed typed state. It carries the current observed status, settled-claim rule,
+observation instant, current reason, custodian reason, proven and unproven claims, polling state,
+and typed exception. Execution receipts use their own ledger-event instants: execution success,
+partial success, and later observed status are never timestamped as execution start.
+
+Executable chronology requires `DecisionRecorded` before every required original
+`ApprovalRecorded`, all original approvals before pre-execution revalidation, and, after
+invalidation, the derived decision before every fresh approval. Existing final-approval,
+reservation, and execution edges remain required.
+
+**Why:** partially projecting a signed case allowed one account's liquidity, a generic policy id,
+or an execution-start timestamp to overwrite a distinct examiner-facing fact while the fixture and
+surface still appeared internally complete.
+**Revert path:** this captain ruling is product truth and is not reversible without a new captain
+decision. The fixture fields, projection modules, and adversarial fences are isolated to the demo
+fake-service.

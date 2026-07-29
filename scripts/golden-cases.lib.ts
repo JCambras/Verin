@@ -239,6 +239,7 @@ function validateExecutableLedgerOrder(
   const types = events.map((event) => event.type);
   const initialDecisionIndex = types.indexOf("DecisionRecorded");
   const decisionIndex = types.lastIndexOf("DecisionRecorded");
+  const firstApprovalIndex = types.indexOf("ApprovalRecorded");
   const finalApprovalIndex = types.lastIndexOf("ApprovalRecorded");
   const revalidationIndex = types.lastIndexOf("EvidenceSnapshotRecorded");
   const invalidationIndex = types.lastIndexOf("ApprovalInvalidated");
@@ -246,19 +247,33 @@ function validateExecutableLedgerOrder(
   const executionIndex = types.indexOf("ExecutionStarted");
 
   if (invalidationIndex >= 0) {
+    const originalApprovalIndexes = types.flatMap((type, index) =>
+      type === "ApprovalRecorded" && index < revalidationIndex
+        ? [index]
+        : [],
+    );
+    const freshApprovalIndexes = types.flatMap((type, index) =>
+      type === "ApprovalRecorded" && index > decisionIndex
+        ? [index]
+        : [],
+    );
     if (
       !(
         initialDecisionIndex >= 0 &&
-        initialDecisionIndex < revalidationIndex &&
+        originalApprovalIndexes.length > 0 &&
+        initialDecisionIndex < originalApprovalIndexes[0]! &&
+        originalApprovalIndexes.at(-1)! < revalidationIndex &&
         revalidationIndex < invalidationIndex &&
         invalidationIndex < decisionIndex &&
-        decisionIndex < finalApprovalIndex &&
+        freshApprovalIndexes.length > 0 &&
+        decisionIndex < freshApprovalIndexes[0]! &&
+        freshApprovalIndexes.at(-1) === finalApprovalIndex &&
         finalApprovalIndex < reservationIndex &&
         reservationIndex < executionIndex
       )
     ) {
       P(
-        "approval invalidation chronology must record changed evidence, ApprovalInvalidated, a derived DecisionRecorded, fresh ApprovalRecorded entries, ReservationCreated, then ExecutionStarted",
+        "approval invalidation chronology must record DecisionRecorded, original ApprovalRecorded entries, changed evidence, ApprovalInvalidated, a derived DecisionRecorded, fresh ApprovalRecorded entries, ReservationCreated, then ExecutionStarted",
       );
     }
     return;
@@ -266,6 +281,8 @@ function validateExecutableLedgerOrder(
 
   if (
     decisionIndex < 0 ||
+    (firstApprovalIndex >= 0 && decisionIndex >= firstApprovalIndex) ||
+    (finalApprovalIndex >= 0 && finalApprovalIndex >= revalidationIndex) ||
     revalidationIndex <= decisionIndex ||
     reservationIndex <= revalidationIndex ||
     executionIndex <= reservationIndex
@@ -274,11 +291,7 @@ function validateExecutableLedgerOrder(
       "eligible ledger chronology must record the current decision, pre-execution revalidation, ReservationCreated, then ExecutionStarted",
     );
   }
-  if (
-    finalApprovalIndex >= 0 &&
-    (finalApprovalIndex >= revalidationIndex ||
-      finalApprovalIndex >= reservationIndex)
-  ) {
+  if (finalApprovalIndex >= 0 && finalApprovalIndex >= reservationIndex) {
     P(
       "ReservationCreated must follow the final still-valid ApprovalRecorded and its pre-execution revalidation",
     );
@@ -667,12 +680,124 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
           P(`${at}.liquidityPhase must be initial-decision|pre-execution-revalidation when present`);
         }
         if ("observedAbsent" in e && !isBool(e.observedAbsent)) P(`${at}.observedAbsent must be a boolean when present`);
+        if ("displayValue" in e) {
+          if (!isObj(e.displayValue)) {
+            P(`${at}.displayValue must be an object when present`);
+          } else {
+            if (
+              typeof e.displayValue.value !== "number" ||
+              !Number.isFinite(e.displayValue.value)
+            ) {
+              P(`${at}.displayValue.value must be a finite number`);
+            }
+            if (
+              e.displayValue.unit !== "USD" &&
+              e.displayValue.unit !== "USD/month"
+            ) {
+              P(`${at}.displayValue.unit must be USD|USD/month`);
+            }
+          }
+        }
+        if (
+          "freshnessWindowDays" in e &&
+          (!isInt(e.freshnessWindowDays) ||
+            Number(e.freshnessWindowDays) <= 0)
+        ) {
+          P(`${at}.freshnessWindowDays must be a positive integer when present`);
+        }
         if (!(isNonEmptyString(e.freshness) && (FRESHNESS as readonly string[]).includes(e.freshness))) P(`${at}.freshness must be one of ${FRESHNESS.join("|")}`);
         if (!(isNonEmptyString(e.provenance) && refs.provenanceLabels.has(e.provenance))) P(`${at}.provenance must be a scenarios.yaml provenance label`);
       });
     }
     for (const problem of validateEvidenceCompleteness(c)) P(problem);
     validateSignedMoney(c, canonicalMonthlyUsd, P);
+    const signedMoney = readSignedMoney(c);
+    const evidenceRows = Array.isArray(c.householdEvidence)
+      ? c.householdEvidence.filter(isObj)
+      : [];
+    const hasDisplayValue = (
+      evidenceKind: string,
+      value: number,
+      unit: "USD" | "USD/month",
+      phase: string | null,
+    ): boolean =>
+      evidenceRows.some((row) => {
+        const displayValue = isObj(row.displayValue)
+          ? row.displayValue
+          : null;
+        return (
+          row.evidenceKind === evidenceKind &&
+          (row.liquidityPhase ?? null) === phase &&
+          displayValue?.value === value &&
+          displayValue.unit === unit
+        );
+      });
+    if (
+      signedMoney &&
+      signedMoney.availableLiquidityUsd !== null &&
+      !hasDisplayValue(
+        "account-balance",
+        signedMoney.availableLiquidityUsd,
+        "USD",
+        evidenceRows.some(
+          (row) =>
+            row.evidenceKind === "account-balance" &&
+            row.liquidityPhase === "initial-decision",
+        )
+          ? "initial-decision"
+          : null,
+      )
+    ) {
+      P("signedMoney.availableLiquidityUsd has no exact initial account-balance displayValue binding");
+    }
+    if (
+      signedMoney &&
+      signedMoney.plannedWithdrawalMonthlyUsd !== null &&
+      !hasDisplayValue(
+        "planned-withdrawals",
+        signedMoney.plannedWithdrawalMonthlyUsd,
+        "USD/month",
+        null,
+      )
+    ) {
+      P("signedMoney.plannedWithdrawalMonthlyUsd has no exact planned-withdrawals displayValue binding");
+    }
+    if (
+      signedMoney &&
+      signedMoney.pendingLiquidityUsd !== null &&
+      signedMoney.pendingLiquidityUsd > 0 &&
+      !hasDisplayValue(
+        "pending-actions",
+        signedMoney.pendingLiquidityUsd,
+        "USD",
+        null,
+      )
+    ) {
+      P("signedMoney.pendingLiquidityUsd has no exact pending-actions displayValue binding");
+    }
+    if (signedMoney?.preExecutionRevalidation) {
+      if (
+        !hasDisplayValue(
+          "account-balance",
+          signedMoney.preExecutionRevalidation.availableLiquidityUsd,
+          "USD",
+          "pre-execution-revalidation",
+        )
+      ) {
+        P("signedMoney.preExecutionRevalidation.availableLiquidityUsd has no exact account-balance displayValue binding");
+      }
+      if (
+        signedMoney.preExecutionRevalidation.pendingLiquidityUsd > 0 &&
+        !hasDisplayValue(
+          "pending-actions",
+          signedMoney.preExecutionRevalidation.pendingLiquidityUsd,
+          "USD",
+          "pre-execution-revalidation",
+        )
+      ) {
+        P("signedMoney.preExecutionRevalidation.pendingLiquidityUsd has no exact pending-actions displayValue binding");
+      }
+    }
 
     // policy versions. Household-instruction versions may be EMPTY only when the
     // case records why (householdInstructionsNote) - e.g. the ambiguous-household
@@ -780,14 +905,47 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
       const reached = isBool(vs.reached) ? vs.reached : undefined;
       if (reached === undefined) P("expectedVerificationState.reached must be a boolean");
       if (!isNonEmptyString(vs.note)) P("expectedVerificationState.note missing or empty");
+      if (!isNonEmptyString(vs.currentReason)) P("expectedVerificationState.currentReason missing or empty");
+      if (!Array.isArray(vs.proves)) P("expectedVerificationState.proves must be an array");
+      if (!Array.isArray(vs.notProvenYet)) P("expectedVerificationState.notProvenYet must be an array");
+      const polling = isObj(vs.polling) ? vs.polling : null;
+      const exception = isObj(vs.exception) ? vs.exception : null;
+      if (!polling) P("expectedVerificationState.polling object missing");
       if (reached === true) {
         if (!(isNonEmptyString(vs.observedStatus) && (EXECUTION_STATES as readonly string[]).includes(vs.observedStatus))) {
           P(`expectedVerificationState.observedStatus must be one of ${EXECUTION_STATES.join("|")} when reached, got ${JSON.stringify(vs.observedStatus)}`);
         } else if (!refs.executionStates.has(vs.observedStatus)) {
           P(`expectedVerificationState.observedStatus "${vs.observedStatus}" is not a scenarios.yaml execution-class state`);
         }
+        if (!TimestampSchema.safeParse(vs.observedAt).success) P("expectedVerificationState.observedAt must be canonical UTC when reached");
+        if (!isNonEmptyString(vs.settledClaim)) P("expectedVerificationState.settledClaim missing when reached");
+        if (!Array.isArray(vs.proves) || !vs.proves.every(isNonEmptyString)) P("expectedVerificationState.proves must contain only non-empty strings");
+        if (!Array.isArray(vs.notProvenYet) || !vs.notProvenYet.every(isNonEmptyString)) P("expectedVerificationState.notProvenYet must contain only non-empty strings");
+        if (vs.observedStatus === "submitted") {
+          if (vs.settledClaim !== "submitted-is-not-settled") P("submitted verification must state submitted-is-not-settled");
+          if (vs.custodianReason !== null) P("submitted verification must have null custodianReason");
+          if (polling?.state !== "scheduled" || polling.interval !== "PT12H") P("submitted verification must schedule PT12H polling");
+          if (vs.exception !== null) P("submitted verification must have null exception");
+        } else if (vs.observedStatus === "unknown") {
+          if (vs.settledClaim !== "partial-is-not-settled") P("unknown verification must state partial-is-not-settled");
+          if (vs.custodianReason !== null) P("unknown verification must have null custodianReason");
+          if (polling?.state !== "scheduled" || polling.interval !== "PT12H") P("unknown verification must schedule PT12H polling");
+          if (exception?.reason !== "partial-execution" || exception.triggeringLedgerEvent !== "ExecutionPartiallySucceeded" || !isNonEmptyString(exception.summary)) P("unknown verification must carry a typed partial-execution exception");
+        } else if (vs.observedStatus === "nigo") {
+          if (vs.settledClaim !== "submitted-is-not-settled") P("NIGO verification must preserve submitted-is-not-settled");
+          if (!isNonEmptyString(vs.custodianReason)) P("NIGO verification must preserve the custodian reason");
+          if (polling?.state !== "stopped" || polling.reason !== "terminal-nigo-exception-opened") P("NIGO verification must stop polling with the terminal exception reason");
+          if (exception?.reason !== "delayed-nigo" || exception.triggeringLedgerEvent !== "StatusObserved" || !isNonEmptyString(exception.summary)) P("NIGO verification must carry a typed delayed-nigo exception");
+        }
       } else if (reached === false) {
         if (vs.observedStatus !== null) P("expectedVerificationState.observedStatus must be null when execution is not reached");
+        if (vs.settledClaim !== null) P("expectedVerificationState.settledClaim must be null when execution is not reached");
+        if (vs.observedAt !== null) P("expectedVerificationState.observedAt must be null when execution is not reached");
+        if (vs.custodianReason !== null) P("expectedVerificationState.custodianReason must be null when execution is not reached");
+        if (!Array.isArray(vs.proves) || vs.proves.length !== 0) P("expectedVerificationState.proves must be empty when execution is not reached");
+        if (!Array.isArray(vs.notProvenYet) || vs.notProvenYet.length !== 0) P("expectedVerificationState.notProvenYet must be empty when execution is not reached");
+        if (polling?.state !== "not-reached" || polling.reason !== "execution-not-reached") P("not-reached verification must carry the execution-not-reached polling state");
+        if (vs.exception !== null) P("expectedVerificationState.exception must be null when execution is not reached");
       }
     }
 

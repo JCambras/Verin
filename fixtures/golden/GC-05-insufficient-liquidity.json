@@ -50,6 +50,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 160000, "unit": "USD"},
       "summary": "Joint taxable brokerage available balance 160000 USD - the only source that avoids a taxable event."
     },
     {
@@ -60,6 +61,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 20000, "unit": "USD"},
       "summary": "Pending approved distribution of 20000 USD (already authorized, not yet settled) reduces effective liquidity to 140000 USD."
     },
     {
@@ -70,6 +72,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Planned withdrawals 8000 USD/month; Firm B requires twelve months = 96000 USD in reserve. 140000 - 75000 = 65000 < 96000: the movement would breach the reserve."
     }
   ],
@@ -135,6 +138,13 @@
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
+    "observedAt": null,
+    "currentReason": "No execution occurs because the signed liquidity evidence does not satisfy the reserve",
+    "custodianReason": null,
+    "proves": [],
+    "notProvenYet": [],
+    "polling": {"state": "not-reached", "reason": "execution-not-reached"},
+    "exception": null,
     "note": "No execution occurs. The block resolves when fresh evidence shows the reserve satisfied (new funds, settled pending activity, or a smaller request re-entered as a new intent)."
   },
   "evidenceCompleteness": [

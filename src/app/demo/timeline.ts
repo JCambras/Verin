@@ -1,4 +1,5 @@
 import {
+  CANONICAL_REQUEST,
   DEMO_TIME_ZONE,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
@@ -10,13 +11,13 @@ import {
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
 const DAY = 24 * 60 * MINUTE;
-const DEFAULT_REQUEST_AT = "2026-07-26T13:30:00.000Z";
 
 const add = (instant: string, milliseconds: number): string =>
   new Date(new Date(instant).getTime() + milliseconds).toISOString();
 
 export interface DemoTimeline {
   readonly requestAt: string;
+  readonly sourceRequestAt: string;
   readonly initialEvidenceSnapshotAt: string;
   readonly decisionAt: string;
   readonly specialistReviewedAt: string;
@@ -43,9 +44,12 @@ export interface DemoTimeline {
 export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimeline {
   const authority = liquidityAuthorityFor(scenario, firm.id);
   const sourceCase = sourceCaseFor(scenario, firm.id);
-  const requestAt =
+  const sourceRequestAt =
     sourceCase?.trigger.requestAt ??
-    (authority.kind === "signed" ? authority.requestAt : DEFAULT_REQUEST_AT);
+    (authority.kind === "signed"
+      ? authority.requestAt
+      : CANONICAL_REQUEST.requestedAt);
+  const requestAt = CANONICAL_REQUEST.requestedAt;
   const latestInitialEvidenceAt = sourceCase?.evidence
     .filter(
       (entry) => entry.liquidityPhase !== "pre-execution-revalidation",
@@ -55,7 +59,7 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
     .at(-1);
   const initialEvidenceSnapshotAt = new Date(
     Math.max(
-      new Date(requestAt).getTime(),
+      new Date(sourceRequestAt).getTime(),
       latestInitialEvidenceAt
         ? new Date(latestInitialEvidenceAt).getTime()
         : Number.NEGATIVE_INFINITY,
@@ -63,14 +67,22 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
   ).toISOString();
   const decisionAt = new Date(
     Math.max(
-      new Date(add(requestAt, 10 * SECOND)).getTime(),
+      new Date(add(sourceRequestAt, 10 * SECOND)).getTime(),
       new Date(initialEvidenceSnapshotAt).getTime() + SECOND,
     ),
   ).toISOString();
   const specialist =
-    scenario.spec.bankChanged && firm.bankChangeHandling === "specialist-review";
+    sourceCase?.authority.stages.some(
+      (stage) => stage.stageId === "bank-change-specialist-review",
+    ) ?? false;
   const invalidation = hasSignedInvalidationAuthority(scenario, firm.id);
-  const competing = scenario.spec.competing;
+  const competing =
+    authority.kind === "signed" &&
+    (authority.relatedDecisions?.length ?? 0) > 0;
+  const verificationStatus =
+    sourceCase?.verification.reached === true
+      ? sourceCase.verification.observedStatus
+      : null;
   const approvalOneOffset = invalidation
     ? 6 * MINUTE
     : specialist
@@ -91,14 +103,14 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
       ? 20 * SECOND
       : 25 * MINUTE;
   const executionOffset = specialist ? 54 * MINUTE : 29 * MINUTE;
-  const executionAt = add(requestAt, executionOffset);
-  const approvalOneAt = add(requestAt, approvalOneOffset);
-  const approvalTwoAt = add(requestAt, approvalTwoOffset);
+  const executionAt = add(sourceRequestAt, executionOffset);
+  const approvalOneAt = add(sourceRequestAt, approvalOneOffset);
+  const approvalTwoAt = add(sourceRequestAt, approvalTwoOffset);
   const revalidatedAt =
     authority.kind === "signed" &&
     authority.preExecutionRevalidationAt
       ? authority.preExecutionRevalidationAt
-      : add(requestAt, revalidationOffset);
+      : add(sourceRequestAt, revalidationOffset);
   const freshApprovalOneAt = add(revalidatedAt, 6 * MINUTE);
   const freshApprovalTwoAt = add(revalidatedAt, 9 * MINUTE);
   const finalApprovalAt = invalidation ? freshApprovalTwoAt : approvalTwoAt;
@@ -111,14 +123,15 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
   ).toISOString();
   const delayedExceptionAt = add(executionAt, 2 * DAY);
   const latestObservationAt =
-    scenario.spec.partial || scenario.spec.delayedNigo
+    verificationStatus === "unknown" || verificationStatus === "nigo"
       ? delayedExceptionAt
       : add(executionAt, 20 * SECOND);
   return {
     requestAt,
+    sourceRequestAt,
     initialEvidenceSnapshotAt,
     decisionAt,
-    specialistReviewedAt: add(requestAt, 15 * MINUTE),
+    specialistReviewedAt: add(sourceRequestAt, 15 * MINUTE),
     approvalOneAt,
     approvalTwoAt,
     revalidatedAt,
@@ -132,18 +145,18 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
     statusObservedAt: add(executionAt, 20 * SECOND),
     retryAt: add(executionAt, MINUTE),
     completionVerifiedAt: add(executionAt, 98 * MINUTE),
-    nextPollAt: scenario.spec.delayedNigo
+    nextPollAt: verificationStatus === "nigo"
       ? null
       : add(latestObservationAt, 12 * 60 * MINUTE),
     exceptionDecisionRequestedAt: add(
-      scenario.spec.partial || scenario.spec.delayedNigo
+      verificationStatus === "unknown" || verificationStatus === "nigo"
         ? delayedExceptionAt
         : executionAt,
       SECOND,
     ),
     delayedExceptionAt,
-    escalatedAt: add(requestAt, DAY),
-    expiredAt: add(requestAt, 2 * DAY),
+    escalatedAt: add(sourceRequestAt, DAY),
+    expiredAt: add(sourceRequestAt, 2 * DAY),
   };
 }
 

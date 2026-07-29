@@ -50,6 +50,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 420000, "unit": "USD"},
       "summary": "Joint taxable brokerage available balance 420000 USD; liquidity is not the constraint here."
     },
     {
@@ -70,6 +71,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Planned withdrawals are 8000 USD per month; the six-month reserve (48000 USD) remains satisfied after the movement."
     },
     {
@@ -172,6 +174,13 @@
     "reached": true,
     "observedStatus": "submitted",
     "settledClaim": "submitted-is-not-settled",
+    "observedAt": "2026-07-26T14:24:20.000Z",
+    "currentReason": "Submission accepted by the capability",
+    "custodianReason": null,
+    "proves": ["Submission accepted by the capability"],
+    "notProvenYet": ["Settlement at the custodian", "Funds availability at the destination bank", "That the instruction will not be returned not-in-good-order"],
+    "polling": {"state": "scheduled", "interval": "PT12H"},
+    "exception": null,
     "note": "Firm A reaches a governed submission after specialist review. Execution/status carry fake-adapter-response provenance until the sandbox trigger fires."
   },
   "evidenceCompleteness": [

@@ -50,6 +50,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 160000, "unit": "USD"},
       "summary": "Available balance 160000 USD. EITHER 75000 USD request alone leaves 85000 USD (>= the 48000 USD six-month reserve); both together would leave 10000 USD - a joint violation."
     },
     {
@@ -60,6 +61,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Planned withdrawals 8000 USD/month; Firm A six-month reserve = 48000 USD."
     },
     {
@@ -163,6 +165,13 @@
     "reached": true,
     "observedStatus": "submitted",
     "settledClaim": "submitted-is-not-settled",
+    "observedAt": "2026-07-26T19:29:20.000Z",
+    "currentReason": "Submission accepted by the capability",
+    "custodianReason": null,
+    "proves": ["Submission accepted by the capability"],
+    "notProvenYet": ["Settlement at the custodian", "Funds availability at the destination bank", "That the instruction will not be returned not-in-good-order"],
+    "polling": {"state": "scheduled", "interval": "PT12H"},
+    "exception": null,
     "note": "The winner reaches a governed submission; the reservation is released on VerificationClosed or expiry. Execution/status carry fake-adapter-response provenance until the sandbox trigger fires."
   },
   "evidenceCompleteness": [

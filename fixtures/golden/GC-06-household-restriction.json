@@ -121,6 +121,13 @@
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
+    "observedAt": null,
+    "currentReason": "No execution occurs because the destination is permanently prohibited for this request",
+    "custodianReason": null,
+    "proves": [],
+    "notProvenYet": [],
+    "polling": {"state": "not-reached", "reason": "execution-not-reached"},
+    "exception": null,
     "note": "No execution occurs and no resolving affordance is shown. A future request to an on-list destination would be a NEW intent, not a resolution of this one."
   },
   "evidenceCompleteness": [

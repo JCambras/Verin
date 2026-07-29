@@ -1,4 +1,3 @@
-import { minorFromMajor } from "@contracts/money-movement";
 import { RAW_SIGNED_CASES } from "./signed-case-fixtures";
 import {
   SIGNED_CASE_IDS,
@@ -8,58 +7,20 @@ import {
   type SignedEvidenceData,
   type SignedMoneyData,
 } from "./signed-case-types";
+import {
+  asArray,
+  asBoolean,
+  asMinor,
+  asNullableMinor,
+  asNullableString,
+  asNumber,
+  asRecord,
+  asString,
+  asStringArray,
+} from "./signed-case-fields";
+import { parseVerification } from "./signed-verification";
 
 export * from "./signed-case-types";
-
-type UnknownRecord = Record<string, unknown>;
-
-const asRecord = (value: unknown, path: string): UnknownRecord => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError(`${path} must be an object`);
-  }
-  return value as UnknownRecord;
-};
-
-const asArray = (value: unknown, path: string): unknown[] => {
-  if (!Array.isArray(value)) throw new TypeError(`${path} must be an array`);
-  return value;
-};
-
-const asString = (value: unknown, path: string): string => {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new TypeError(`${path} must be a non-empty string`);
-  }
-  return value;
-};
-
-const asNullableString = (value: unknown, path: string): string | null =>
-  value === null ? null : asString(value, path);
-
-const asNumber = (value: unknown, path: string): number => {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new TypeError(`${path} must be a finite number`);
-  }
-  return value;
-};
-
-const asBoolean = (value: unknown, path: string): boolean => {
-  if (typeof value !== "boolean") throw new TypeError(`${path} must be a boolean`);
-  return value;
-};
-
-const asMinor = (value: unknown, path: string): number => {
-  const minor = minorFromMajor(asNumber(value, path));
-  if (minor === null) throw new RangeError(`${path} cannot be represented in minor units`);
-  return minor;
-};
-
-const asNullableMinor = (value: unknown, path: string): number | null =>
-  value === null ? null : asMinor(value, path);
-
-const asStringArray = (value: unknown, path: string): string[] =>
-  asArray(value, path).map((entry, index) =>
-    asString(entry, `${path}[${index}]`),
-  );
 
 function parseMoney(value: unknown, path: string): SignedMoneyData {
   const money = asRecord(value, path);
@@ -107,6 +68,16 @@ function parseMoney(value: unknown, path: string): SignedMoneyData {
 
 function parseEvidence(value: unknown, path: string): SignedEvidenceData {
   const evidence = asRecord(value, path);
+  const rawDisplayValue =
+    evidence.displayValue === undefined
+      ? null
+      : asRecord(evidence.displayValue, `${path}.displayValue`);
+  const unit = rawDisplayValue
+    ? asString(rawDisplayValue.unit, `${path}.displayValue.unit`)
+    : null;
+  if (unit !== null && unit !== "USD" && unit !== "USD/month") {
+    throw new TypeError(`${path}.displayValue.unit is unsupported`);
+  }
   return {
     evidenceKind: asString(evidence.evidenceKind, `${path}.evidenceKind`),
     subjectRef: asString(evidence.subjectRef, `${path}.subjectRef`),
@@ -124,6 +95,23 @@ function parseEvidence(value: unknown, path: string): SignedEvidenceData {
       evidence.observedAbsent === undefined
         ? false
         : asBoolean(evidence.observedAbsent, `${path}.observedAbsent`),
+    displayValue:
+      rawDisplayValue && unit
+        ? {
+            valueMinor: asMinor(
+              rawDisplayValue.value,
+              `${path}.displayValue.value`,
+            ),
+            unit,
+          }
+        : null,
+    freshnessWindowDays:
+      evidence.freshnessWindowDays === undefined
+        ? null
+        : asNumber(
+            evidence.freshnessWindowDays,
+            `${path}.freshnessWindowDays`,
+          ),
   };
 }
 
@@ -244,6 +232,10 @@ function parseVariant(value: unknown): SignedCaseVariant {
     fixture.expectedVerificationState,
     `${caseId}.expectedVerificationState`,
   );
+  const policyVersions = asRecord(
+    fixture.policyVersions,
+    `${caseId}.policyVersions`,
+  );
   return {
     caseId: caseId as SignedCaseId,
     scenarioId:
@@ -273,6 +265,47 @@ function parseVariant(value: unknown): SignedCaseVariant {
     ).map((entry, index) =>
       parseEvidence(entry, `${caseId}.householdEvidence[${index}]`),
     ),
+    policyVersions: {
+      domainConfigVersionId: asString(
+        policyVersions.domainConfigVersionId,
+        `${caseId}.policyVersions.domainConfigVersionId`,
+      ),
+      firmPolicyVersionId: asString(
+        policyVersions.firmPolicyVersionId,
+        `${caseId}.policyVersions.firmPolicyVersionId`,
+      ),
+      householdInstructionVersionIds: asStringArray(
+        policyVersions.householdInstructionVersionIds,
+        `${caseId}.policyVersions.householdInstructionVersionIds`,
+      ),
+      regulatoryVersionId: asNullableString(
+        policyVersions.regulatoryVersionId,
+        `${caseId}.policyVersions.regulatoryVersionId`,
+      ),
+    },
+    householdInstructions: asArray(
+      fixture.householdInstructions,
+      `${caseId}.householdInstructions`,
+    ).map((entry, index) => {
+      const instruction = asRecord(
+        entry,
+        `${caseId}.householdInstructions[${index}]`,
+      );
+      return {
+        instructionKind: asString(
+          instruction.instructionKind,
+          `${caseId}.householdInstructions[${index}].instructionKind`,
+        ),
+        versionId: asString(
+          instruction.versionId,
+          `${caseId}.householdInstructions[${index}].versionId`,
+        ),
+        summary: asString(
+          instruction.summary,
+          `${caseId}.householdInstructions[${index}].summary`,
+        ),
+      };
+    }),
     prohibition:
       rawProhibition && prohibitionSource && prohibitionSourceType
         ? {
@@ -371,30 +404,10 @@ function parseVariant(value: unknown): SignedCaseVariant {
         };
       }),
     },
-    verification: {
-      reached: asBoolean(
-        verification.reached,
-        `${caseId}.expectedVerificationState.reached`,
-      ),
-      observedStatus:
-        verification.observedStatus === null
-          ? null
-          : asString(
-              verification.observedStatus,
-              `${caseId}.expectedVerificationState.observedStatus`,
-            ),
-      settledClaim:
-        verification.settledClaim === null
-          ? null
-          : asString(
-              verification.settledClaim,
-              `${caseId}.expectedVerificationState.settledClaim`,
-            ),
-      note: asString(
-        verification.note,
-        `${caseId}.expectedVerificationState.note`,
-      ),
-    },
+    verification: parseVerification(
+      verification,
+      `${caseId}.expectedVerificationState`,
+    ),
     ledgerEvents: asArray(
       fixture.expectedLedgerEvents,
       `${caseId}.expectedLedgerEvents`,

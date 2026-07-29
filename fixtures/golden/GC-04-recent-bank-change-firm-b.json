@@ -114,6 +114,13 @@
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
+    "observedAt": null,
+    "currentReason": "No execution occurs because the bank instruction has not been independently verified",
+    "custodianReason": null,
+    "proves": [],
+    "notProvenYet": [],
+    "polling": {"state": "not-reached", "reason": "execution-not-reached"},
+    "exception": null,
     "note": "No execution occurs, so there is no external status to verify. The block is resolvable, not terminal."
   },
   "evidenceCompleteness": [

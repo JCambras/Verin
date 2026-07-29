@@ -77,13 +77,14 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   // 4 - Recommendation: proceed, with the specialist-review authority summary.
   await page.getByRole("link", { name: "View the recommendation" }).click();
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
-  await expect(page.getByText("specialist-review stage")).toBeVisible();
+  await expect(page.getByText(/specialist review \(stage 1\)/)).toBeVisible();
   await checkAxe(page, "decision");
   await snap(page, 4, "decision");
 
   // 5 - Policy trace: versions in mono, precedence rows.
   await page.getByRole("link", { name: "View the policy trace" }).click();
-  await expect(page.getByText("FA-4.2").first()).toBeVisible();
+  await expect(page.getByText("firm-a-policy@2026.07.1").first()).toBeVisible();
+  await expect(page.getByText("smiths-destination-restriction@v2").first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "Household destination restriction" })).toBeVisible();
   await checkAxe(page, "policy-trace");
   await snap(page, 5, "policy-trace");
@@ -130,7 +131,7 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
 
   // 10 - Firm A / Firm B: policy versions head the columns; differing rows marked.
   await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
-  await expect(page.getByText("FB-2.1").first()).toBeVisible();
+  await expect(page.getByText("firm-b-policy@2026.07.1").first()).toBeVisible();
   await expect(page.getByText("$48,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$96,000.00", { exact: true })).toBeVisible();
   expect(await page.getByTestId("comparison-differs").count()).toBeGreaterThan(0);
@@ -180,9 +181,13 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.goto("/app/demo/decision?scenario=competing-liquidity&firm=firm-b");
   await expect(page.getByTestId("disposition-blocked")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Reduce the amount or free additional liquidity" }),
+    page.getByRole("button", { name: "Return to a signed scenario" }),
   ).toBeVisible();
-  await expect(page.getByText("twelve-month reserve blocks the first request")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Exact signed source unavailable for this branch and firm; no resolving evidence or action is projected.",
+    ),
+  ).toBeVisible();
   await checkAxe(page, "decision-blocked-reserve");
   await snap(page, 18, "decision-blocked-reserve-firm-b");
   await page.goto("/app/demo/workspace?scenario=competing-liquidity&firm=firm-b");
@@ -247,6 +252,7 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(card.getByRole("link", { name: "View the policy trace" })).toBeVisible();
   await checkAxe(page, "decision-prohibited");
   await snap(page, 14, "decision-prohibited");
+  const canonicalRequestInstants: string[] = [];
   for (const firm of ["firm-a", "firm-b"]) {
     await page.goto(
       `/app/demo/intent?scenario=permanent-prohibition&firm=${firm}`,
@@ -258,7 +264,23 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
     ).toBeVisible();
     await expect(page.getByText("$75,000.00", { exact: true })).toBeVisible();
     await expect(page.getByText("$30,000.00", { exact: true })).toHaveCount(0);
+    canonicalRequestInstants.push(
+      (await page
+        .getByTestId("request-timestamp")
+        .getAttribute("data-event-instant"))!,
+    );
   }
+  expect(new Set(canonicalRequestInstants)).toEqual(
+    new Set(["2026-07-26T13:30:00.000Z"]),
+  );
+  await page.goto("/app/demo/evidence?scenario=safe-proceed&firm=firm-a");
+  await expect(
+    page.getByText(
+      /Traditional IRA balance 610000 USD; a distribution here is a taxable event/,
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("$610,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("$420,000.00", { exact: true })).toBeVisible();
   await page.goto("/app/demo/evidence?scenario=permanent-prohibition&firm=firm-a");
   await expect(
     page.getByText(
@@ -269,6 +291,15 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
     page.getByText(
       /Standing destination restriction: distributions may ONLY go to bank instructions titled to the household/,
     ),
+  ).toBeVisible();
+  await page.goto("/app/demo/workspace?scenario=stale-evidence&firm=firm-a");
+  const staleLiquidity = page.getByRole("region", { name: "Liquidity" });
+  await expect(staleLiquidity).toContainText(
+    "Sample data · as of 2026-06-09",
+  );
+  await page.goto("/app/demo/intent?scenario=stale-evidence&firm=firm-a");
+  await expect(
+    page.getByText("Exact signed source unavailable", { exact: true }),
   ).toBeVisible();
   await page.goto("/app/demo/evidence?scenario=stale-evidence&firm=firm-a");
   await expect(
@@ -395,7 +426,14 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   // the recorded per-firm split blocks until independently verified (contract §2).
   await page.goto("/app/demo/decision?scenario=specialist-review-expiration&firm=firm-b");
   await expect(page.getByTestId("disposition-blocked")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Request independent verification of the bank instruction" })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Exact signed source unavailable for this branch and firm; no resolving evidence or action is projected.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Return to a signed scenario" }),
+  ).toBeVisible();
   await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-b");
   await expect(page.getByText("Authority not reached")).toBeVisible();
 
@@ -525,6 +563,14 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   const incompletePart = page.getByTestId("timeline-event").filter({ hasText: "disbursement-scheduled" });
   await expect(completedPart).toContainText("Completed part");
   await expect(incompletePart).toContainText("Unconfirmed");
+  await expect(completedPart).toHaveAttribute(
+    "data-event-instant",
+    "2026-07-26T21:14:10.000Z",
+  );
+  await expect(incompletePart).toHaveAttribute(
+    "data-event-instant",
+    "2026-07-28T21:14:00.000Z",
+  );
   await expect(page.getByText("Settled · verified")).toHaveCount(0);
   await page.getByRole("link", { name: "View verification" }).click();
   await expect(page.getByText("Completed part: instruction-created")).toBeVisible();

@@ -5774,3 +5774,40 @@ typecheck, lint, knip, the v3 invariant report, file-size ratchet, and productio
 corrected state.
 
 **Date:** 2026-07-28 (review corrections, D-071).
+
+## F111 · exact cross-surface projection and complete approval chronology
+
+**Fences:** `src/__tests__/fitness/golden-cases.test.ts` and
+`e2e/demo-journey.spec.ts`.
+**Invariant:** one exact signed-case variant owns every displayed evidence value and unit, source
+binding, policy reference, execution occurrence, verification claim, observation, polling state,
+and exception state. The canonical interactive request keeps its firm-neutral instant independently
+of each signed trigger. Every staged ledger records `DecisionRecorded` before its required
+`ApprovalRecorded` entries, and every invalidation ledger records the original approvals before
+revalidation.
+
+Before correction, GC-01 rendered both its joint taxable account and Traditional IRA with the
+case-wide $420,000 liquidity value even though the signed IRA evidence stated $610,000. The
+canonical GC-06 request also inherited its separate signed trigger instant, signed policy references
+were discarded outside Evidence, and execution and verification rows reused `ExecutionStarted`.
+A planted GC-01 ledger with `DecisionRecorded` after `ApprovalRecorded` still passed the old
+validator.
+
+Companions now replace the IRA's rendered metric, leak a signed trigger instant into the canonical
+request, remove exact household policy references, detach GC-13 receipt timestamps, mutate GC-14's
+closed verification state, move a standard decision after approval, and move GC-15 revalidation
+before its original approvals. Each mutation produces its named metric, request, policy, event,
+verification, or chronology diagnostic. Unsupported verification combinations fail closed.
+
+Browser coverage proves the distinct $420,000 and $610,000 account rows, exact policy and household
+instruction versions, event-specific partial and NIGO observations, scheduled versus stopped
+polling, and explicit missing-authority states for unsigned branch-and-firm pairs. Desktop and phone
+screens have no horizontal overflow and the changed paths pass Axe.
+
+**Revert:** every adversarial mutation remains inside companion tests.
+
+All 574 Vitest cases, all 18 Playwright cases with Axe, the golden validator, typecheck, lint, knip,
+the v3 invariant report, file-size ratchet, production build, and live Chrome inspection pass on
+the corrected state.
+
+**Date:** 2026-07-29 (review corrections, D-072).

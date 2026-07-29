@@ -99,6 +99,13 @@
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
+    "observedAt": null,
+    "currentReason": "No execution occurs until the advisor resolves the household identity",
+    "custodianReason": null,
+    "proves": [],
+    "notProvenYet": [],
+    "polling": {"state": "not-reached", "reason": "execution-not-reached"},
+    "exception": null,
     "note": "No execution occurs. The advisor's recorded answer resolves the block and evaluation re-runs with the household bound - the disambiguation is attributed, timestamped evidence, not a silent retry."
   },
   "evidenceCompleteness": [

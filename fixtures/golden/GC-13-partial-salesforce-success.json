@@ -50,6 +50,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 420000, "unit": "USD"},
       "summary": "Available taxable liquidity is 420000 USD and the reserve is satisfied; evaluation is clean - the partial outcome is an execution-plane event."
     },
     {
@@ -60,6 +61,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Planned withdrawals are 8000 USD per month; the six-month reserve is 48000 USD and remains preserved after the movement."
     },
     {
@@ -158,6 +160,17 @@
     "reached": true,
     "observedStatus": "unknown",
     "settledClaim": "partial-is-not-settled",
+    "observedAt": "2026-07-28T21:14:00.000Z",
+    "currentReason": "Movement completion remains unknown and unconfirmed",
+    "custodianReason": null,
+    "proves": ["Submission accepted by the capability", "Completed part: instruction-created"],
+    "notProvenYet": ["Incomplete part: disbursement-scheduled", "Movement completion remains unknown and unconfirmed"],
+    "polling": {"state": "scheduled", "interval": "PT12H"},
+    "exception": {
+      "reason": "partial-execution",
+      "triggeringLedgerEvent": "ExecutionPartiallySucceeded",
+      "summary": "The partial receipt opened a governed exception decision while the incomplete disbursement remains unknown and unconfirmed."
+    },
     "note": "Verification cannot close: the completed part is proven, the incomplete part is not, and the surface says exactly that. All external responses here are fake-adapter-response until the sandbox trigger fires; this case is re-proven against the real managed package then (deferred-pending-sandbox)."
   },
   "evidenceCompleteness": [

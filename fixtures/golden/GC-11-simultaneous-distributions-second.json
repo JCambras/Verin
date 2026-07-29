@@ -50,6 +50,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 160000, "unit": "USD"},
       "summary": "Available balance still shows 160000 USD - the sibling's movement has not settled; raw balance alone would wrongly say this request is fine."
     },
     {
@@ -60,6 +61,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 75000, "unit": "USD"},
       "summary": "Active reservation res:GC-10:liquidity (75000 USD against conflict:smiths-liquidity) is visible as pending activity - effective liquidity is 85000 USD, not 160000 USD."
     },
     {
@@ -70,6 +72,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Firm A six-month reserve = 48000 USD. 85000 - 75000 = 10000 < 48000: this second movement would jointly violate the reserve."
     }
   ],
@@ -134,6 +137,13 @@
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
+    "observedAt": null,
+    "currentReason": "No execution occurs because the sibling reservation consumes the shared liquidity",
+    "custodianReason": null,
+    "proves": [],
+    "notProvenYet": [],
+    "polling": {"state": "not-reached", "reason": "execution-not-reached"},
+    "exception": null,
     "note": "No execution occurs. If the sibling releases its reservation, re-evaluation runs on a new bundle; two concurrent valid requests can never jointly violate liquidity policy (demo-contract §8 completion test)."
   },
   "evidenceCompleteness": [

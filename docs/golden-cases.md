@@ -114,7 +114,9 @@ Every case - in this document and in its fixture - states all of:
 2. **firm configuration** - the full §4 parameter set for the case's firm;
 3. **household evidence** - each item: evidenceKind, subjectRef, canonical UTC observedAt and
    retrievedAt, freshness (`fresh`/`stale`/`unknown`), source, provenance label, summary, and
-   `observedAbsent: true` when an explicit absence is the fact;
+   `observedAbsent: true` when an explicit absence is the fact. A row that displays money carries
+   its own structured `displayValue` with value and `USD` or `USD/month` unit; a material-age rule
+   carries its structured `freshnessWindowDays`;
 4. **evidence completeness** - one explicit matrix row per fact required to compute or validate the
    expected result, naming the evidence source and whether it is present or observed absent.
    Proceed cases record request amount, source balance, planned-withdrawal schedule, pending
@@ -138,8 +140,10 @@ Every case - in this document and in its fixture - states all of:
     trigger-bound by [ADR-0030](./adr/0030-authority-lapse-ledger-events.md); the validator fences
     the transcribed union against the pinned reference and fails when prompt 7 lands either event,
     so the extension collapses instead of shadowing the canonical member;
-12. **expected verification state** - reached flag, observed status (execution-plane state
-    vocabulary), the settled-claim rule, note;
+12. **expected verification state** - a closed state carrying reached flag, observed status
+    (execution-plane state vocabulary), settled-claim rule, observation instant, current and
+    custodian reasons, proven and not-yet-proven claims, polling state, typed exception state, and
+    note. Unsupported combinations fail instead of being repaired from scenario flags or prose;
 13. **signoff** - §1;
 14. **signed money** - `signedMoney`: currency, cadence, the request amount, the monthly planned
     withdrawal, the reserve floor, the available liquidity, and the pending liquidity activity
@@ -165,7 +169,8 @@ Every case - in this document and in its fixture - states all of:
     - every `proceed` case must state all five numeric authorities itself. Missing request,
       schedule, floor, available liquidity, or pending activity fails with a named
       missing-authority diagnostic, and every revalidation snapshot must independently cover the
-      request.
+      request. Every structured signed amount that appears as evidence must bind to that row's own
+      `displayValue`; one case-wide liquidity figure cannot replace another account's value.
 
 Structural consistency is validated, not assumed: a blocked or prohibited case cannot carry
 authority stages, execution eligibility, or a reached verification state (v3 invariants 8/9); a

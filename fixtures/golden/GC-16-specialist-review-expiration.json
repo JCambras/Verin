@@ -60,6 +60,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 420000, "unit": "USD"},
       "summary": "Available taxable liquidity is 420000 USD with the reserve satisfied; authority progress is the only open question."
     },
     {
@@ -70,6 +71,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Recurring planned withdrawals 8000 USD/month; 6 months of reserve = 48000 USD (firm-a requirement)."
     },
     {
@@ -161,6 +163,13 @@
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
+    "observedAt": null,
+    "currentReason": "No execution occurs while specialist authority remains unresolved",
+    "custodianReason": null,
+    "proves": [],
+    "notProvenYet": [],
+    "polling": {"state": "not-reached", "reason": "execution-not-reached"},
+    "exception": null,
     "note": "No execution occurs while authority is unresolved. The demo shows expiration and escalation as first-class, honest states (demo-contract §3, 2:30-3:20: expiration and escalation are visible proof)."
   },
   "evidenceCompleteness": [

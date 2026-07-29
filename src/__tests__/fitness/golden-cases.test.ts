@@ -139,6 +139,19 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
   });
 
   it("rejects reservation chronology that bypasses approval or revalidation", () => {
+    const approvalBeforeDecision = clone();
+    const stagedEvents = caseById(
+      approvalBeforeDecision,
+      "GC-01-firm-a-happy-path",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    const stagedDecision = stagedEvents.splice(1, 1)[0]!;
+    stagedEvents.splice(4, 0, stagedDecision);
+    expect(
+      run(approvalBeforeDecision).some((problem) =>
+        problem.includes("eligible ledger chronology"),
+      ),
+    ).toBe(true);
+
     const beforeApproval = clone();
     const beforeApprovalEvents = caseById(
       beforeApproval,
@@ -175,6 +188,19 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     invalidationEvents.splice(7, 0, invalidationReservation);
     expect(
       run(staleApproval).some((problem) =>
+        problem.includes("approval invalidation chronology"),
+      ),
+    ).toBe(true);
+
+    const revalidationBeforeOriginalApprovals = clone();
+    const twoPassEvents = caseById(
+      revalidationBeforeOriginalApprovals,
+      "GC-15-approval-invalidation",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    const changedEvidence = twoPassEvents.splice(4, 1)[0]!;
+    twoPassEvents.splice(2, 0, changedEvidence);
+    expect(
+      run(revalidationBeforeOriginalApprovals).some((problem) =>
         problem.includes("approval invalidation chronology"),
       ),
     ).toBe(true);
@@ -605,6 +631,35 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ),
     ).toBe(true);
 
+    const approvalBeforeDecision = demoClone();
+    const staged = approvalBeforeDecision.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-01-firm-a-happy-path",
+    )!;
+    const decision = staged.events.find(({ kind }) => kind === "DecisionRecorded")!;
+    const approval = staged.events.find(({ kind }) => kind === "ApprovalRecorded")!;
+    [decision.kind, approval.kind] = [approval.kind, decision.kind];
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, approvalBeforeDecision)
+        .some((problem) => problem.includes("unsorted production timeline")),
+    ).toBe(true);
+
+    const approvalAfterRevalidation = demoClone();
+    const twoPass = approvalAfterRevalidation.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-15-approval-invalidation",
+    )!;
+    const originalApproval = twoPass.events.find(
+      ({ kind }) => kind === "ApprovalRecorded",
+    )!;
+    const revalidation = twoPass.events.find(({ kind }) => kind === "revalidation")!;
+    [originalApproval.kind, revalidation.kind] = [
+      revalidation.kind,
+      originalApproval.kind,
+    ];
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, approvalAfterRevalidation)
+        .some((problem) => problem.includes("unsorted production timeline")),
+    ).toBe(true);
+
     const plantedInversion = demoClone();
     const invertedTimeline = plantedInversion.sourceTimelines.find(
       ({ sourceCaseId }) => sourceCaseId === "GC-12-duplicate-retry",
@@ -918,6 +973,58 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ),
     ).toBe(true);
 
+    const leakedTriggerTime = demoClone();
+    leakedTriggerTime.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-06-household-restriction",
+    )!.requestAt = "2026-07-26T14:15:00.000Z";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        leakedTriggerTime,
+      ).some((problem) =>
+        problem.includes("interactive request instant must remain firm-neutral"),
+      ),
+    ).toBe(true);
+
+    const wrongRowMetric = demoClone();
+    const ira = wrongRowMetric.decisions
+      .find(
+        (decision) =>
+          decision.sourceCaseId === "GC-01-firm-a-happy-path",
+      )!
+      .visibleEvidence.find(
+        (row) => row.subjectRef === "subject:smiths-ira",
+      )!;
+    ira.renderedValueMinor = 42_000_000;
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        wrongRowMetric,
+      ).some((problem) =>
+        problem.includes("visible evidence projection drifts"),
+      ),
+    ).toBe(true);
+
+    const wrongPolicyBinding = demoClone();
+    const safePolicy = wrongPolicyBinding.decisions.find(
+      (decision) =>
+        decision.sourceCaseId === "GC-01-firm-a-happy-path",
+    )!.policyBindings;
+    safePolicy.householdInstructionVersions = [];
+    safePolicy.recordPolicyVersion = "FA-4.2";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        wrongPolicyBinding,
+      ).some((problem) =>
+        problem.includes("policy trace or examiner record drifts"),
+      ),
+    ).toBe(true);
+
     const wrongCandidates = demoClone();
     const ambiguous = wrongCandidates.decisions.find(
       (decision) =>
@@ -1098,6 +1205,56 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         malformed,
       ).some((problem) =>
         problem.includes("has a non-canonical instant not-an-instant"),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects receipt timestamps and verification state detached from signed events", () => {
+    const receiptDrift = demoClone();
+    const gc13 = receiptDrift.executionGuards.find(
+      (guard) =>
+        guard.sourceCaseId === "GC-13-partial-salesforce-success",
+    )!;
+    gc13.executionRows[0]!.timestampIso =
+      "2026-07-26T21:14:00.000Z";
+    gc13.executionRows[1]!.timestampIso =
+      "2026-07-26T21:14:00.000Z";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        receiptDrift,
+      ).some((problem) =>
+        problem.includes("wrong event-specific instant"),
+      ),
+    ).toBe(true);
+
+    const stateDrift = demoClone();
+    const gc14 = stateDrift.executionGuards.find(
+      (guard) => guard.sourceCaseId === "GC-14-delayed-nigo",
+    )!;
+    gc14.verificationState!.custodianReason = "signature missing";
+    gc14.verificationState!.observedAtIso =
+      "2026-07-26T21:44:00.000Z";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        stateDrift,
+      ).some((problem) =>
+        problem.includes("rendered verification state drifts"),
+      ),
+    ).toBe(true);
+
+    const unsupported = clone();
+    const verification = caseById(
+      unsupported,
+      "GC-14-delayed-nigo",
+    ).expectedVerificationState as Record<string, unknown>;
+    verification.custodianReason = null;
+    expect(
+      run(unsupported).some((problem) =>
+        problem.includes("NIGO verification must preserve the custodian reason"),
       ),
     ).toBe(true);
   });

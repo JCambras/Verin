@@ -10,20 +10,16 @@
  */
 import { metric } from "@contracts/metric";
 import type { EvidenceRowVM, EvidenceVM, IntentVM, WorkspaceVM } from "./model";
-import type { SignedEvidenceData } from "./signed-cases";
 import { fact, fixtureMetric, prov } from "./provenance";
 import { buildSpine } from "./spine";
 import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   ACCOUNTS,
-  BANK_INSTRUCTION,
   DEMO_NOW,
   HOUSEHOLD,
   OBSERVED_RECENT,
-  OBSERVED_STALE,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   RETRIEVED_AT,
-  THIRD_PARTY_DESTINATION,
   liquidityAuthorityFor,
   requestFor,
   sourceCaseFor,
@@ -33,9 +29,16 @@ import {
 } from "./data";
 
 /** The destination the interpreted intent binds to for this branch. */
-export function destinationFor(scenario: ScenarioData): string {
-  if (scenario.spec.thirdPartyDestination) return THIRD_PARTY_DESTINATION;
-  return scenario.spec.bankChanged ? BANK_INSTRUCTION.changed : BANK_INSTRUCTION.stable;
+export function destinationFor(
+  scenario: ScenarioData,
+  firm?: FirmData,
+): string {
+  const exactDestination = firm
+    ? sourceCaseFor(scenario, firm.id)?.evidence.find(
+        (entry) => entry.evidenceKind === "bank-instruction",
+      )
+    : undefined;
+  return exactDestination?.subjectRef ?? "Exact signed source unavailable";
 }
 
 export function buildWorkspace(
@@ -43,8 +46,8 @@ export function buildWorkspace(
   firm: FirmData,
   pass: JourneyPass = "initial",
 ): WorkspaceVM {
-  const liquidityAsOf = scenario.spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
   const authority = liquidityAuthorityFor(scenario, firm.id);
+  const sourceCase = sourceCaseFor(scenario, firm.id);
   const timeline = timelineFor(scenario, firm);
   const refreshed =
     pass === "revalidated" && authority.kind === "signed"
@@ -54,10 +57,26 @@ export function buildWorkspace(
     authority.kind === "signed"
       ? (refreshed ?? authority.initialDecision)
       : null;
-  const liquidityObservedAt = refreshed ? timeline.revalidatedAt : liquidityAsOf;
-  const liquidityRetrievedAt = refreshed
-    ? formatDemoInstant(timeline.revalidatedAt)
-    : RETRIEVED_AT;
+  const liquidityEvidence = sourceCase?.evidence.find(
+    (entry) =>
+      entry.evidenceKind === "account-balance" &&
+      (refreshed
+        ? entry.liquidityPhase === "pre-execution-revalidation"
+        : entry.liquidityPhase !== "pre-execution-revalidation"),
+  );
+  const liquidityObservedAt =
+    liquidityEvidence?.observedAt ??
+    (refreshed ? timeline.revalidatedAt : OBSERVED_RECENT);
+  const liquidityRetrievedAt = liquidityEvidence
+    ? formatDemoInstant(liquidityEvidence.retrievedAt)
+    : refreshed
+      ? formatDemoInstant(timeline.revalidatedAt)
+      : RETRIEVED_AT;
+  const plannedEvidence = sourceCase?.evidence.find(
+    (entry) =>
+      entry.evidenceKind === "planned-withdrawals" &&
+      entry.liquidityPhase !== "pre-execution-revalidation",
+  );
   return {
     household: {
       name: HOUSEHOLD.name,
@@ -76,7 +95,13 @@ export function buildWorkspace(
     liquidity: liquidity
       ? fixtureMetric(liquidity.availableCashMinor, "currency-minor", "synthetic-fixture", liquidityObservedAt)
       : null,
-    plannedMonthlyWithdrawal: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
+    plannedMonthlyWithdrawal: fixtureMetric(
+      plannedEvidence?.displayValue?.valueMinor ??
+        PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+      "currency-minor",
+      "synthetic-fixture",
+      plannedEvidence?.observedAt ?? OBSERVED_RECENT,
+    ),
     pendingActivity: liquidity
       ? fact(liquidity.pendingNote, "synthetic-fixture", liquidityObservedAt, liquidityRetrievedAt)
       : null,
@@ -110,7 +135,7 @@ export function buildIntent(scenario: ScenarioData, firm: FirmData): IntentVM {
         { label: "Amount", metric: metric(request.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)) },
         { label: "Purpose", value: request.purpose },
         { label: "Needed by", value: request.deadline },
-        { label: "Destination", value: destinationFor(scenario) },
+        { label: "Destination", value: destinationFor(scenario, firm) },
       ],
       draftLabel: "Drafted - not yet reviewed",
       fakeClass: "llm-proposed-draft",
@@ -130,38 +155,16 @@ export function buildEvidence(
         pass === "revalidated" ||
         entry.liquidityPhase !== "pre-execution-revalidation",
     ) ?? [];
-  const moneyValueFor = (entry: SignedEvidenceData): number | null => {
-    if (!sourceCase) return null;
-    const revalidated =
-      entry.liquidityPhase === "pre-execution-revalidation";
-    if (entry.evidenceKind === "account-balance") {
-      return revalidated
-        ? sourceCase.money.preExecutionRevalidation?.availableLiquidityMinor ??
-            null
-        : sourceCase.money.availableLiquidityMinor;
-    }
-    if (entry.evidenceKind === "planned-withdrawals") {
-      return sourceCase.money.plannedWithdrawalMonthlyMinor;
-    }
-    if (entry.evidenceKind === "pending-actions" && !entry.observedAbsent) {
-      return revalidated
-        ? sourceCase.money.preExecutionRevalidation?.pendingLiquidityMinor ??
-            null
-        : sourceCase.money.pendingLiquidityMinor;
-    }
-    return null;
-  };
-  const labelFor = (entry: SignedEvidenceData): string =>
+  const labelFor = (entry: (typeof evidence)[number]): string =>
     `${entry.evidenceKind.replaceAll("-", " ")} · ${entry.subjectRef} · ${entry.source} · ${entry.freshness}`;
   const rows: EvidenceRowVM[] = evidence.map((entry) => {
-    const value = moneyValueFor(entry);
     const sourceBinding = { ...entry };
-    if (value !== null) {
+    if (entry.displayValue) {
       return {
         kind: "metric",
         label: labelFor(entry),
         metric: fixtureMetric(
-          value,
+          entry.displayValue.valueMinor,
           "currency-minor",
           "synthetic-fixture",
           entry.observedAt,

@@ -64,6 +64,12 @@ export function buildComparison(
   const dispB = dispositionFor(scenario, b.id);
   const headroomA = headroomMetric(scenario, a, pass);
   const headroomB = headroomMetric(scenario, b, pass);
+  const sourceA = sourceCaseFor(scenario, a.id);
+  const sourceB = sourceCaseFor(scenario, b.id);
+  const policyA =
+    sourceA?.policyVersions.firmPolicyVersionId ?? a.policyVersion;
+  const policyB =
+    sourceB?.policyVersions.firmPolicyVersionId ?? b.policyVersion;
   const amountA = amountMetric(scenario, a);
   const amountB = amountMetric(scenario, b);
   const rows: ComparisonRowVM[] = [
@@ -71,10 +77,10 @@ export function buildComparison(
     { dimension: "Requested amount", a: { metric: amountA }, b: { metric: amountB }, differs: amountA.value !== amountB.value },
     {
       dimension: "Cash-reserve requirement",
-      a: { metric: reserveFloorMetric(a) },
-      b: { metric: reserveFloorMetric(b) },
+      a: { metric: reserveFloorMetric(a, scenario) },
+      b: { metric: reserveFloorMetric(b, scenario) },
       differs: true,
-      why: { reason: `Firm A preserves six months of planned withdrawals (policy ${a.policyVersion} §2); Firm B preserves twelve (policy ${b.policyVersion} §3).` },
+      why: { reason: `Firm A preserves six months of planned withdrawals (policy ${policyA}); Firm B preserves twelve (policy ${policyB}).` },
     },
     {
       dimension: "Available after reserve",
@@ -93,21 +99,21 @@ export function buildComparison(
       a: { metric: thresholdMetric(a) },
       b: { metric: thresholdMetric(b) },
       differs: true,
-      why: { reason: `Policy ${a.policyVersion} §4 versus policy ${b.policyVersion} §4.` },
+      why: { reason: `Policy ${policyA} versus policy ${policyB}.` },
     },
     {
       dimension: "Quorum at this amount",
       a: { display: "Two distinct operations approvers - requester excluded" },
       b: { display: "No dual approval at this amount; Firm B states no requester rule" },
       differs: true,
-      why: { reason: `The request sits between the two thresholds: above Firm A's (policy ${a.policyVersion} §4), below Firm B's (policy ${b.policyVersion} §4). Firm B's requester rule is contract silence, not a lighter rule.` },
+      why: { reason: `The request sits between the two thresholds: above Firm A's (policy ${policyA}), below Firm B's (policy ${policyB}). Firm B's requester rule is contract silence, not a lighter rule.` },
     },
     {
       dimension: "Recent bank-change handling",
       a: { display: "Specialist review before execution" },
       b: { display: "Blocked until independently verified" },
       differs: true,
-      why: { reason: `Policy ${a.policyVersion} §6 routes a recent change to a specialist; policy ${b.policyVersion} §6 blocks execution until independent verification.` },
+      why: { reason: `Policy ${policyA} routes a recent change to a specialist; policy ${policyB} blocks execution until independent verification.` },
     },
     {
       dimension: "Disposition for this request",
@@ -121,8 +127,18 @@ export function buildComparison(
   ];
   return {
     columns: [
-      { firm: a.name, policyVersion: a.policyVersion, activeSince: `active since ${a.policyActiveSince}` },
-      { firm: b.name, policyVersion: b.policyVersion, activeSince: `active since ${b.policyActiveSince}` },
+      {
+        firm: a.name,
+        policyVersion:
+          policyA,
+        activeSince: `active since ${a.policyActiveSince}`,
+      },
+      {
+        firm: b.name,
+        policyVersion:
+          policyB,
+        activeSince: `active since ${b.policyActiveSince}`,
+      },
     ],
     rows,
     fakeClass: "deterministic-engine-output",
@@ -174,7 +190,7 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
       ? [
           {
             label: "Smith household reserve floor",
-            before: { metric: reserveFloorMetric(firm) },
+            before: { metric: reserveFloorMetric(firm, scenario) },
             after: { metric: derivedMetric(twelveMonthFloor, "currency-minor", liquidityInputs, DEMO_NOW) },
           },
           {
@@ -197,7 +213,7 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
         ? [
             {
               label: "Smith household reserve floor",
-              before: { metric: reserveFloorMetric(firm) },
+              before: { metric: reserveFloorMetric(firm, scenario) },
               after: { metric: derivedMetric(twelveMonthFloor, "currency-minor", liquidityInputs, DEMO_NOW) },
             },
             {
@@ -214,8 +230,8 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
         : [
           {
             label: "Smith household reserve floor",
-            before: { metric: reserveFloorMetric(firm) },
-            after: { metric: reserveFloorMetric(firm) },
+            before: { metric: reserveFloorMetric(firm, scenario) },
+            after: { metric: reserveFloorMetric(firm, scenario) },
           },
           {
             label: "This request",
@@ -311,7 +327,8 @@ function signedLifecycle(
     }
     if (type === "StatusObserved") {
       const instant =
-        scenario.spec.partial || statusIndex > 0
+        sourceCase.verification.observedStatus === "unknown" ||
+        statusIndex > 0
           ? timeline.delayedExceptionAt
           : timeline.statusObservedAt;
       statusIndex += 1;
@@ -334,8 +351,19 @@ function signedLifecycle(
 }
 
 export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
+  const sourceCase = sourceCaseFor(scenario, firm.id);
+  const sourceProvenance =
+    sourceCase?.evidence.map((entry) =>
+      prov("synthetic-fixture", entry.observedAt),
+    ) ?? [prov("synthetic-fixture", OBSERVED_RECENT)];
   const provenance = recordProvenance(
-    [prov("synthetic-fixture", OBSERVED_RECENT), prov("user-entered-demo-input", DEMO_NOW)],
+    [
+      ...sourceProvenance,
+      prov(
+        "user-entered-demo-input",
+        requestFor(scenario, firm.id).requestedAt,
+      ),
+    ],
     DEMO_NOW,
   );
   const timeline = timelineFor(scenario, firm);
@@ -374,9 +402,11 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData): RecordVM {
       watermark: isDemonstration(provenance) ? DEMO_WATERMARK : null,
     },
     hashes: {
-      policyVersion: firm.policyVersion,
+      policyVersion:
+        sourceCase?.policyVersions.firmPolicyVersionId ??
+        "Exact signed source unavailable",
       instructionVersion:
-        sourceCaseFor(scenario, firm.id)?.prohibition?.source.versionId ??
+        sourceCase?.policyVersions.householdInstructionVersionIds.join(", ") ||
         "Exact signed source unavailable",
       auditPosition: IDS.auditPosition,
     },

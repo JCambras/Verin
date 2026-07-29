@@ -50,6 +50,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 420000, "unit": "USD"},
       "summary": "Balance 420000 USD; twelve-month reserve (96000 USD) preserved - evaluation is clean."
     },
     {
@@ -70,6 +71,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Recurring planned withdrawals 8000 USD/month; 12 months of reserve = 96000 USD (firm-b requirement)."
     },
     {
@@ -143,6 +145,17 @@
     "reached": true,
     "observedStatus": "nigo",
     "settledClaim": "submitted-is-not-settled",
+    "observedAt": "2026-07-28T21:44:00.000Z",
+    "currentReason": "Returned not in good order",
+    "custodianReason": "signature date predates form version",
+    "proves": ["Submission accepted by the capability", "Custodian returned the instruction NIGO: signature date predates form version"],
+    "notProvenYet": ["Corrected paperwork has not been submitted", "No replacement instruction has been accepted"],
+    "polling": {"state": "stopped", "reason": "terminal-nigo-exception-opened"},
+    "exception": {
+      "reason": "delayed-nigo",
+      "triggeringLedgerEvent": "StatusObserved",
+      "summary": "The observed NIGO opened a governed exception decision with the custodian reason preserved: signature date predates form version."
+    },
     "note": "Verification lands on NIGO: what the returned status actually proves is shown honestly, and the exception path is visible. Status responses are fake-adapter-response until the sandbox trigger fires."
   },
   "evidenceCompleteness": [

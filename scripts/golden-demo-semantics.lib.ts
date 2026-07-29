@@ -40,6 +40,10 @@ export interface VisibleEvidenceProjection {
   summary: string;
   liquidityPhase: string | null;
   observedAbsent: boolean;
+  displayValueMinor: number | null;
+  displayUnit: string | null;
+  renderedValueMinor: number | null;
+  renderedFormat: MetricFormat | null;
 }
 
 export interface ProhibitionProjection {
@@ -64,6 +68,14 @@ export interface DisplayedDecision {
   signedTrigger: SignedTriggerProjection | null;
   visibleEvidence: VisibleEvidenceProjection[];
   prohibition: ProhibitionProjection | null;
+  policyBindings: {
+    domainConfigVersion: string;
+    firmPolicyVersion: string;
+    householdInstructionVersions: string[];
+    regulatoryVersion: string | null;
+    recordPolicyVersion: string;
+    recordInstructionVersion: string;
+  };
   liquidityAuthorityMissing: string | null;
   availableCashMinor: number | null;
   pendingActivityMinor: number | null;
@@ -95,6 +107,7 @@ export interface SourceTimeline {
 
 export interface DemoSemanticSnapshot {
   requestAmountMinor: number;
+  canonicalRequestAt: string;
   plannedWithdrawalMonthlyMinor: number;
   /** Every distinct format the demo's money metrics actually carry. */
   moneyUnits: MetricFormat[];
@@ -160,6 +173,17 @@ export interface DemoSemanticSnapshot {
     } | null;
     verificationProves: string[];
     verificationNotProvenYet: string[];
+    executionRows: Array<{
+      status: string;
+      timestampIso: string;
+    }>;
+    verificationState: {
+      observedStatus: string;
+      settledClaim: string;
+      observedAtIso: string;
+      currentReason: string;
+      custodianReason: string | null;
+    } | null;
   }>;
   authorityPlans: Array<{
     scenarioId: string;
@@ -337,13 +361,18 @@ function expectedSignedCaseVariant(
   const verification = isObj(data.expectedVerificationState)
     ? data.expectedVerificationState
     : null;
+  const policyVersions = isObj(data.policyVersions)
+    ? data.policyVersions
+    : null;
   if (
     !signed ||
     !trigger ||
     !authority ||
     !eligibility ||
     !verification ||
+    !policyVersions ||
     !Array.isArray(data.householdEvidence) ||
+    !Array.isArray(data.householdInstructions) ||
     !Array.isArray(data.expectedLedgerEvents) ||
     !Array.isArray(data.expectedExplanationNodes)
   ) {
@@ -397,7 +426,28 @@ function expectedSignedCaseVariant(
       summary: evidence.summary,
       liquidityPhase: evidence.liquidityPhase ?? null,
       observedAbsent: evidence.observedAbsent ?? false,
+      displayValue: isObj(evidence.displayValue)
+        ? {
+            valueMinor: minorFromMajor(evidence.displayValue.value),
+            unit: evidence.displayValue.unit,
+          }
+        : null,
+      freshnessWindowDays: evidence.freshnessWindowDays ?? null,
     })),
+    policyVersions: {
+      domainConfigVersionId: policyVersions.domainConfigVersionId,
+      firmPolicyVersionId: policyVersions.firmPolicyVersionId,
+      householdInstructionVersionIds:
+        policyVersions.householdInstructionVersionIds,
+      regulatoryVersionId: policyVersions.regulatoryVersionId,
+    },
+    householdInstructions: data.householdInstructions
+      .filter(isObj)
+      .map((instruction) => ({
+        instructionKind: instruction.instructionKind,
+        versionId: instruction.versionId,
+        summary: instruction.summary,
+      })),
     prohibition: isObj(data.prohibition)
       ? {
           source: data.prohibition.source,
@@ -422,6 +472,13 @@ function expectedSignedCaseVariant(
       reached: verification.reached,
       observedStatus: verification.observedStatus,
       settledClaim: verification.settledClaim,
+      observedAt: verification.observedAt,
+      currentReason: verification.currentReason,
+      custodianReason: verification.custodianReason,
+      proves: verification.proves,
+      notProvenYet: verification.notProvenYet,
+      polling: verification.polling,
+      exception: verification.exception,
       note: verification.note,
     },
     ledgerEvents: data.expectedLedgerEvents.filter(isObj).map((event) => ({
@@ -571,6 +628,15 @@ export function validateStatusVocabularyDocs(docs: { path: string; text: string 
 function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnapshot): string[] {
   const problems: string[] = [];
   if (demo.decisions.length === 0) return ["the demo renders no decision to fence"];
+  const canonicalInstant = Date.parse(demo.canonicalRequestAt);
+  if (
+    !Number.isFinite(canonicalInstant) ||
+    new Date(canonicalInstant).toISOString() !== demo.canonicalRequestAt
+  ) {
+    problems.push(
+      `canonical interactive request instant is not canonical UTC: ${demo.canonicalRequestAt}`,
+    );
+  }
   const candidatesByKey = exactSourceCandidates(cases, demo);
   const boundSourceIds = new Set<string>();
   for (const d of demo.decisions) {
@@ -581,6 +647,14 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     ) {
       problems.push(
         `${at}: canonical request drift, demo journey=${d.requestAmountMinor}, canonical=${demo.requestAmountMinor}`,
+      );
+    }
+    if (
+      d.decisionRole === "primary" &&
+      d.requestAt !== demo.canonicalRequestAt
+    ) {
+      problems.push(
+        `${at}: interactive request instant must remain firm-neutral at ${demo.canonicalRequestAt}`,
       );
     }
     const candidates =
@@ -658,10 +732,13 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     if (
       !isNonEmptyString(d.requestAt) ||
       !isNonEmptyString(trigger?.asOf) ||
-      d.requestAt !== trigger.asOf
+      d.requestAt !==
+        (d.decisionRole === "primary"
+          ? demo.canonicalRequestAt
+          : trigger.asOf)
     ) {
       problems.push(
-        `${at}: request instant drift, ${d.sourceCaseId}=${String(trigger?.asOf)}, demo=${String(d.requestAt)}`,
+        `${at}: request instant drift, canonical=${demo.canonicalRequestAt}, signed trigger=${String(trigger?.asOf)}, demo=${String(d.requestAt)}`,
       );
     }
     if (
@@ -695,6 +772,23 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
               summary: entry.summary,
               liquidityPhase: entry.liquidityPhase ?? null,
               observedAbsent: entry.observedAbsent ?? false,
+              ...(isObj(entry.displayValue)
+                ? {
+                    displayValueMinor: minorFromMajor(
+                      entry.displayValue.value,
+                    ),
+                    displayUnit: entry.displayValue.unit,
+                    renderedValueMinor: minorFromMajor(
+                      entry.displayValue.value,
+                    ),
+                    renderedFormat: MONEY_METRIC_FORMAT,
+                  }
+                : {
+                    displayValueMinor: null,
+                    displayUnit: null,
+                    renderedValueMinor: null,
+                    renderedFormat: null,
+                  }),
             }))
         : [];
       if (JSON.stringify(d.visibleEvidence) !== JSON.stringify(expectedEvidence)) {
@@ -733,6 +827,37 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       ) {
         problems.push(
           `${at}: visible prohibition projection drifts from exact signed case ${d.sourceCaseId}`,
+        );
+      }
+      const policyVersions = isObj(source?.policyVersions)
+        ? source.policyVersions
+        : null;
+      const expectedInstructionVersions = Array.isArray(
+        policyVersions?.householdInstructionVersionIds,
+      )
+        ? policyVersions.householdInstructionVersionIds.filter(
+            isNonEmptyString,
+          )
+        : [];
+      if (
+        !policyVersions ||
+        d.policyBindings.domainConfigVersion !==
+          policyVersions.domainConfigVersionId ||
+        d.policyBindings.firmPolicyVersion !==
+          policyVersions.firmPolicyVersionId ||
+        JSON.stringify(
+          d.policyBindings.householdInstructionVersions,
+        ) !== JSON.stringify(expectedInstructionVersions) ||
+        d.policyBindings.regulatoryVersion !==
+          policyVersions.regulatoryVersionId ||
+        d.policyBindings.recordPolicyVersion !==
+          policyVersions.firmPolicyVersionId ||
+        d.policyBindings.recordInstructionVersion !==
+          (expectedInstructionVersions.join(", ") ||
+            "Exact signed source unavailable")
+      ) {
+        problems.push(
+          `${at}: policy trace or examiner record drifts from exact signed policy and household-instruction bindings`,
         );
       }
     }
@@ -977,14 +1102,27 @@ function validateSourceTimelines(
     if (eligibility === true) {
       const initialDecisionIndex = eventKinds.indexOf("DecisionRecorded");
       const decisionIndex = eventKinds.lastIndexOf("DecisionRecorded");
+      const firstApprovalIndex = eventKinds.indexOf("ApprovalRecorded");
       const finalApprovalIndex = eventKinds.lastIndexOf("ApprovalRecorded");
       const revalidationIndex = eventKinds.lastIndexOf("revalidation");
       const invalidationIndex = eventKinds.lastIndexOf("ApprovalInvalidated");
       const reservationIndex = eventKinds.indexOf("ReservationCreated");
       const executionIndex = eventKinds.indexOf("ExecutionStarted");
+      const originalApprovalIndexes = eventKinds.flatMap((kind, index) =>
+        kind === "ApprovalRecorded" && index < revalidationIndex
+          ? [index]
+          : [],
+      );
+      const freshApprovalIndexes = eventKinds.flatMap((kind, index) =>
+        kind === "ApprovalRecorded" && index > decisionIndex
+          ? [index]
+          : [],
+      );
       const validStandardOrder =
         invalidationIndex < 0 &&
         decisionIndex >= 0 &&
+        (firstApprovalIndex < 0 ||
+          decisionIndex < firstApprovalIndex) &&
         decisionIndex < revalidationIndex &&
         (finalApprovalIndex < 0 || finalApprovalIndex < revalidationIndex) &&
         revalidationIndex < reservationIndex &&
@@ -992,10 +1130,14 @@ function validateSourceTimelines(
       const validInvalidationOrder =
         invalidationIndex >= 0 &&
         initialDecisionIndex >= 0 &&
-        initialDecisionIndex < revalidationIndex &&
+        originalApprovalIndexes.length > 0 &&
+        initialDecisionIndex < originalApprovalIndexes[0]! &&
+        originalApprovalIndexes.at(-1)! < revalidationIndex &&
         revalidationIndex < invalidationIndex &&
         invalidationIndex < decisionIndex &&
-        decisionIndex < finalApprovalIndex &&
+        freshApprovalIndexes.length > 0 &&
+        decisionIndex < freshApprovalIndexes[0]! &&
+        freshApprovalIndexes.at(-1) === finalApprovalIndex &&
         finalApprovalIndex < reservationIndex &&
         reservationIndex < executionIndex;
       if (!validStandardOrder && !validInvalidationOrder) {
@@ -1347,6 +1489,89 @@ export function validateGoldenDemoSemantics(
         `${guard.sourceCaseId}: rendered execution eligibility drifts from its signed eligibility, refusal reason, idempotency key, reservations, expiry, conflict keys, or preconditions`,
       );
     }
+    const expectedVerification = isObj(source?.expectedVerificationState)
+      ? source.expectedVerificationState
+      : null;
+    if (expectedVerification?.reached === true) {
+      const expectedProves = Array.isArray(expectedVerification.proves)
+        ? expectedVerification.proves.filter(isNonEmptyString)
+        : [];
+      const expectedNotProven = Array.isArray(
+        expectedVerification.notProvenYet,
+      )
+        ? expectedVerification.notProvenYet.filter(isNonEmptyString)
+        : [];
+      const expectedPolling = isObj(expectedVerification.polling)
+        ? expectedVerification.polling
+        : null;
+      const expectedException = isObj(expectedVerification.exception)
+        ? expectedVerification.exception
+        : null;
+      const renderedException = guard.exceptionDecision;
+      if (
+        !guard.verificationReached ||
+        !guard.verificationState ||
+        guard.verificationState.observedStatus !==
+          expectedVerification.observedStatus ||
+        guard.verificationState.settledClaim !==
+          expectedVerification.settledClaim ||
+        guard.verificationState.observedAtIso !==
+          expectedVerification.observedAt ||
+        guard.verificationState.currentReason !==
+          expectedVerification.currentReason ||
+        guard.verificationState.custodianReason !==
+          expectedVerification.custodianReason ||
+        JSON.stringify(guard.verificationProves) !==
+          JSON.stringify(expectedProves) ||
+        JSON.stringify(guard.verificationNotProvenYet) !==
+          JSON.stringify(expectedNotProven) ||
+        guard.polling?.state !== expectedPolling?.state ||
+        (expectedPolling?.state === "stopped" &&
+          guard.polling?.reason !== expectedPolling.reason) ||
+        (expectedException === null) !==
+          (renderedException === null) ||
+        (expectedException !== null &&
+          (renderedException?.reason !== expectedException.reason ||
+            renderedException?.triggeringLedgerEvent !==
+              expectedException.triggeringLedgerEvent))
+      ) {
+        problems.push(
+          `${guard.sourceCaseId}: rendered verification state drifts from its closed signed status, claim, reason, observation, polling, or exception state`,
+        );
+      }
+      const timeline = demo.sourceTimelines.find(
+        ({ sourceCaseId }) => sourceCaseId === guard.sourceCaseId,
+      );
+      const initialStatusObserved = timeline?.events.find(
+        ({ kind }) => kind === "StatusObserved",
+      )?.instant;
+      const partialSucceeded = timeline?.events.find(
+        ({ kind }) => kind === "ExecutionPartiallySucceeded",
+      )?.instant;
+      for (const row of guard.executionRows) {
+        if (
+          (row.status === "submitted" &&
+            row.timestampIso !== initialStatusObserved) ||
+          (row.status === "completed" &&
+            row.timestampIso !== partialSucceeded) ||
+          (row.status === "unknown" &&
+            row.timestampIso !== expectedVerification.observedAt)
+        ) {
+          problems.push(
+            `${guard.sourceCaseId}: execution receipt or observed status uses the wrong event-specific instant`,
+          );
+        }
+      }
+    } else if (
+      expectedVerification?.reached === false &&
+      (guard.verificationReached ||
+        guard.verificationState !== null ||
+        guard.executionRows.length > 0)
+    ) {
+      problems.push(
+        `${guard.sourceCaseId}: not-reached signed verification must not project execution or verification state`,
+      );
+    }
     if (
       guard.polling?.state === "scheduled" &&
       !(
@@ -1397,7 +1622,9 @@ export function validateGoldenDemoSemantics(
     (evidence) => evidence.evidenceKind === "household-directory",
   );
   if (
-    ambiguous?.requestAt !== "2026-07-26T17:20:00.000Z" ||
+    ambiguous?.requestAt !== demo.canonicalRequestAt ||
+    ambiguous?.signedTrigger?.requestAt !==
+      "2026-07-26T17:20:00.000Z" ||
     directoryEvidence?.observedAt !== "2026-07-26T17:20:00.000Z" ||
     directoryEvidence.retrievedAt !== "2026-07-26T17:20:02.000Z" ||
     !directoryEvidence.summary.includes("subject:smiths-robert-ana") ||

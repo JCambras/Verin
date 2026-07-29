@@ -111,6 +111,13 @@
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
+    "observedAt": null,
+    "currentReason": "No execution occurs while the active legal hold prohibits the movement",
+    "custodianReason": null,
+    "proves": [],
+    "notProvenYet": [],
+    "polling": {"state": "not-reached", "reason": "execution-not-reached"},
+    "exception": null,
     "note": "No execution occurs. Release of the hold would arrive as new evidence and any retry is a NEW intent evaluated against it - this decision stays prohibited as recorded."
   },
   "evidenceCompleteness": [

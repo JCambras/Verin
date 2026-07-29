@@ -50,6 +50,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 420000, "unit": "USD"},
       "summary": "Joint taxable brokerage available balance 420000 USD; liquid without a taxable-event penalty."
     },
     {
@@ -60,6 +61,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 610000, "unit": "USD"},
       "summary": "Traditional IRA balance 610000 USD; a distribution here is a taxable event and is rejected as the source."
     },
     {
@@ -70,6 +72,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Recurring planned withdrawals 8000 USD/month; six months of reserve = 48000 USD (Firm A requirement)."
     },
     {
@@ -174,6 +177,13 @@
     "reached": true,
     "observedStatus": "submitted",
     "settledClaim": "submitted-is-not-settled",
+    "observedAt": "2026-07-26T13:59:20.000Z",
+    "currentReason": "Submission accepted by the capability",
+    "custodianReason": null,
+    "proves": ["Submission accepted by the capability"],
+    "notProvenYet": ["Settlement at the custodian", "Funds availability at the destination bank", "That the instruction will not be returned not-in-good-order"],
+    "polling": {"state": "scheduled", "interval": "PT12H"},
+    "exception": null,
     "note": "The demo displays 'submitted', never 'settled'; the next poll and external-status expectation are shown. Execution and status carry provenance fake-adapter-response until the Salesforce sandbox trigger fires (scenarios.yaml deferral)."
   },
   "evidenceCompleteness": [

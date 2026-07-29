@@ -26,7 +26,7 @@ import {
   requestFor,
   sourceCaseFor,
 } from "../src/app/demo/data";
-import { formatDemoInstant } from "../src/app/demo/timeline";
+import { formatDemoInstant, timelineFor } from "../src/app/demo/timeline";
 import {
   SIGNED_CASE_VARIANTS,
   type SignedCaseVariant,
@@ -80,7 +80,31 @@ function displayedDecisions(): DisplayedDecision[] {
       const journey = getJourney(scenario.id, firm.id);
       const visibleEvidence = journey.evidence.rows.flatMap((row) =>
         row.kind === "fact" || row.kind === "metric"
-          ? [{ ...row.sourceBinding }]
+          ? [
+              {
+                evidenceKind: row.sourceBinding.evidenceKind,
+                subjectRef: row.sourceBinding.subjectRef,
+                observedAt: row.sourceBinding.observedAt,
+                retrievedAt: row.sourceBinding.retrievedAt,
+                freshness: row.sourceBinding.freshness,
+                source: row.sourceBinding.source,
+                provenance: row.sourceBinding.provenance,
+                summary: row.sourceBinding.summary,
+                liquidityPhase: row.sourceBinding.liquidityPhase,
+                observedAbsent: row.sourceBinding.observedAbsent,
+                displayValueMinor:
+                  row.sourceBinding.displayValue?.valueMinor ?? null,
+                displayUnit:
+                  row.sourceBinding.displayValue?.unit ?? null,
+                renderedValueMinor:
+                  row.kind === "metric" &&
+                  typeof row.metric.value === "number"
+                    ? row.metric.value
+                    : null,
+                renderedFormat:
+                  row.kind === "metric" ? row.metric.format : null,
+              },
+            ]
           : [],
       );
       const dispositionSource = journey.recommendation.disposition.source;
@@ -103,11 +127,22 @@ function displayedDecisions(): DisplayedDecision[] {
         decisionRole: "primary",
         disposition: dispositionFor(scenario, firm.id),
         sourceCaseId: sourceCase?.caseId ?? null,
-        requestAt: sourceCase?.trigger.requestAt ?? null,
+        requestAt: journey.intent.requestAt.provenance.asOf,
         requestAmountMinor: requestFor(scenario, firm.id).amountMinor,
         signedTrigger: signedTrigger(sourceCase),
         visibleEvidence,
         prohibition,
+        policyBindings: {
+          domainConfigVersion: journey.policyTrace.domainConfigVersion,
+          firmPolicyVersion: journey.policyTrace.firmPolicyVersion,
+          householdInstructionVersions: [
+            ...journey.policyTrace.householdInstructionVersions,
+          ],
+          regulatoryVersion: journey.policyTrace.regulatoryVersion,
+          recordPolicyVersion: journey.record.hashes.policyVersion,
+          recordInstructionVersion:
+            journey.record.hashes.instructionVersion,
+        },
         liquidityAuthorityMissing: authority.kind === "missing" ? authority.reason : null,
         availableCashMinor: initial?.availableCashMinor ?? null,
         pendingActivityMinor: initial?.pendingActivityMinor ?? null,
@@ -137,6 +172,29 @@ function displayedDecisions(): DisplayedDecision[] {
                   signedTrigger: signedTrigger(relatedSource ?? null),
                   visibleEvidence: [],
                   prohibition: null,
+                  policyBindings: {
+                    domainConfigVersion:
+                      relatedSource?.policyVersions
+                        .domainConfigVersionId ??
+                      "Exact signed source unavailable",
+                    firmPolicyVersion:
+                      relatedSource?.policyVersions.firmPolicyVersionId ??
+                      "Exact signed source unavailable",
+                    householdInstructionVersions: [
+                      ...(relatedSource?.policyVersions
+                        .householdInstructionVersionIds ?? []),
+                    ],
+                    regulatoryVersion:
+                      relatedSource?.policyVersions.regulatoryVersionId ??
+                      null,
+                    recordPolicyVersion:
+                      relatedSource?.policyVersions.firmPolicyVersionId ??
+                      "Exact signed source unavailable",
+                    recordInstructionVersion:
+                      relatedSource?.policyVersions
+                        .householdInstructionVersionIds.join(", ") ||
+                      "Exact signed source unavailable",
+                  },
                   liquidityAuthorityMissing: null,
                   availableCashMinor:
                     decision.initialDecision.availableCashMinor,
@@ -194,16 +252,16 @@ function sourceTimelines(): SourceTimeline[] {
         ? [
             event(
               "request",
-              journey.intent.requestAt.provenance.asOf,
-              journey.intent.requestAt.display,
+              sourceCase.trigger.requestAt,
+              `Signed trigger ${formatDemoInstant(sourceCase.trigger.requestAt)}`,
             ),
             ...lifecycleEvents,
           ]
         : [
             event(
               "request",
-              journey.intent.requestAt.provenance.asOf,
-              journey.intent.requestAt.display,
+              sourceCase.trigger.requestAt,
+              `Signed trigger ${formatDemoInstant(sourceCase.trigger.requestAt)}`,
             ),
             ...[
               event(
@@ -462,7 +520,10 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         }
         const journey = getJourney(scenario.id, firm.id);
         const reservationAt = journey.safety?.reservationAtIso;
-        const executionAt = journey.execution?.rows[0]?.timestampIso;
+        const executionAt =
+          journey.execution === null
+            ? null
+            : timelineFor(scenario, firm).executionAt;
         if (!reservationAt || !executionAt) return [];
         return authority.relatedDecisions.map((related) => ({
           scenarioId: scenario.id,
@@ -479,6 +540,7 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     );
   return {
     requestAmountMinor: CANONICAL_REQUEST.amountMinor,
+    canonicalRequestAt: CANONICAL_REQUEST.requestedAt,
     plannedWithdrawalMonthlyMinor: PLANNED_WITHDRAWAL_MONTHLY_MINOR,
     moneyUnits: [...new Set(moneyMetrics.map((money) => money.format))],
     moneyRenders: moneyMetrics.map(renderMoney),
@@ -519,7 +581,12 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     },
     executionGuards: SCENARIOS.flatMap((scenario) =>
       firms.map((firm) => {
-        const journey = getJourney(scenario.id, firm.id);
+        const initialJourney = getJourney(scenario.id, firm.id);
+        const journey =
+          scenario.spec.invalidation &&
+          sourceCaseFor(scenario, firm.id)?.verification.reached === true
+            ? getJourney(scenario.id, firm.id, "revalidated")
+            : initialJourney;
         const authority = liquidityAuthorityFor(scenario, firm.id);
         return {
           scenarioId: scenario.id,
@@ -591,6 +658,14 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
           verificationNotProvenYet: [
             ...(journey.verification?.notProvenYet ?? []),
           ],
+          executionRows:
+            journey.execution?.rows.map((row) => ({
+              status: row.status,
+              timestampIso: row.timestampIso,
+            })) ?? [],
+          verificationState: journey.verification
+            ? { ...journey.verification.state }
+            : null,
         };
       }),
     ),

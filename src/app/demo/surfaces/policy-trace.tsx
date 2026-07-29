@@ -29,8 +29,20 @@ export function PolicyTraceSurface({
           Firm policy <span className="font-mono text-xs text-slate-800">{vm.firmPolicyVersion}</span>
         </span>
         <span>
-          Household instructions <span className="font-mono text-xs text-slate-800">{vm.householdInstructionVersion}</span>
+          Domain config <span className="font-mono text-xs text-slate-800">{vm.domainConfigVersion}</span>
         </span>
+        <span>
+          Household instructions{" "}
+          <span className="font-mono text-xs text-slate-800">
+            {vm.householdInstructionVersions.join(", ") ||
+              "Exact signed source unavailable"}
+          </span>
+        </span>
+        {vm.regulatoryVersion ? (
+          <span>
+            Regulation <span className="font-mono text-xs text-slate-800">{vm.regulatoryVersion}</span>
+          </span>
+        ) : null}
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
       </p>
 

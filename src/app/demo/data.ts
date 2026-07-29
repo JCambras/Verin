@@ -25,7 +25,6 @@ export const DEMO_NOW = "2026-07-26";
 export const DEMO_TIME_ZONE = "America/New_York";
 export const RETRIEVED_AT = "Jul 26, 09:14";
 export const OBSERVED_RECENT = "2026-07-24"; // ~2 days old: fresh
-export const OBSERVED_STALE = "2026-06-12"; // 44 days old: visibly receded, over policy age
 export const DEADLINE = "August 15, 2026";
 
 // ── The Smiths household (contract §2; scenarios.yaml household.required_shape) ──────
@@ -86,15 +85,6 @@ export interface MissingLiquidityAuthority {
 export type LiquidityAuthority = SignedLiquidityAuthority | MissingLiquidityAuthority;
 const NO_PENDING_ACTIVITY = "No pending or reserved liquidity activity was observed at evaluation time";
 
-// Bank instructions (required shape: a recently changed bank instruction).
-export const BANK_INSTRUCTION = {
-  stable: "Chase ····4417 (Robert & Elaine Smith)",
-  changed: "Chase ····8802 (Robert & Elaine Smith, new checking)",
-  changedOn: OBSERVED_RECENT,
-} as const;
-
-export const THIRD_PARTY_DESTINATION = "Hartwell Construction LLC operating account (third party)";
-
 // ── The two firms (contract §2; scenarios.yaml firms) ───────────────────────────────
 export interface FirmData {
   readonly id: string;
@@ -139,6 +129,7 @@ export const CANONICAL_REQUEST = {
   amountMinor: 7_500_000,
   purpose: "home renovation",
   deadline: DEADLINE,
+  requestedAt: "2026-07-26T13:30:00.000Z",
 } as const;
 
 // The demo cast (synthetic personas, labeled like all fixture data).
@@ -248,14 +239,11 @@ export function requestFor(
   readonly amountMinor: number;
   readonly purpose: string;
   readonly deadline: string;
-  readonly requestedAt: string | null;
+  readonly requestedAt: string;
 } {
-  const sourceCase = sourceCaseFor(scenario, firmId);
-  if (!sourceCase) return { ...CANONICAL_REQUEST, requestedAt: null };
-  return {
-    ...CANONICAL_REQUEST,
-    requestedAt: sourceCase.trigger.requestAt,
-  };
+  void scenario;
+  void firmId;
+  return CANONICAL_REQUEST;
 }
 function pendingNoteFor(
   sourceCase: SignedCaseVariant,

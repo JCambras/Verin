@@ -54,6 +54,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 300000, "unit": "USD"},
       "liquidityPhase": "initial-decision",
       "summary": "Balance 300000 USD at first evaluation."
     },
@@ -77,6 +78,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 300000, "unit": "USD"},
       "liquidityPhase": "pre-execution-revalidation",
       "summary": "Available taxable liquidity remains 300000 USD at pre-execution revalidation."
     },
@@ -88,6 +90,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 15000, "unit": "USD"},
       "liquidityPhase": "pre-execution-revalidation",
       "summary": "After approval, a new 15000 USD pending distribution posts; effective liquidity is 285000 USD before the 75000 USD request."
     },
@@ -99,6 +102,7 @@
       "freshness": "fresh",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
       "summary": "Planned withdrawals are 8000 USD per month and the six-month reserve is 48000 USD; it is satisfied on both the original and refreshed basis."
     },
     {
@@ -195,6 +199,13 @@
     "reached": true,
     "observedStatus": "submitted",
     "settledClaim": "submitted-is-not-settled",
+    "observedAt": "2026-07-26T22:14:20.000Z",
+    "currentReason": "Submission accepted by the capability",
+    "custodianReason": null,
+    "proves": ["Submission accepted by the capability"],
+    "notProvenYet": ["Settlement at the custodian", "Funds availability at the destination bank", "That the instruction will not be returned not-in-good-order"],
+    "polling": {"state": "scheduled", "interval": "PT12H"},
+    "exception": null,
     "note": "The demo's approval-invalidation moment (demo-contract §3, 3:20-4:05): the timeline shows approval, the detected change, the invalidation, and the re-approval as distinct recorded facts. Execution/status carry fake-adapter-response provenance until the sandbox trigger fires."
   },
   "evidenceCompleteness": [

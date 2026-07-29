@@ -51,6 +51,24 @@ export interface SignedEvidenceData {
   readonly summary: string;
   readonly liquidityPhase: string | null;
   readonly observedAbsent: boolean;
+  readonly displayValue: {
+    readonly valueMinor: number;
+    readonly unit: "USD" | "USD/month";
+  } | null;
+  readonly freshnessWindowDays: number | null;
+}
+
+export interface SignedPolicyVersionsData {
+  readonly domainConfigVersionId: string;
+  readonly firmPolicyVersionId: string;
+  readonly householdInstructionVersionIds: readonly string[];
+  readonly regulatoryVersionId: string | null;
+}
+
+export interface SignedHouseholdInstructionData {
+  readonly instructionKind: string;
+  readonly versionId: string;
+  readonly summary: string;
 }
 
 export interface SignedEscalationData {
@@ -97,12 +115,79 @@ export interface SignedExecutionEligibilityData {
   readonly preconditions: readonly SignedPreconditionData[];
 }
 
-export interface SignedVerificationData {
-  readonly reached: boolean;
-  readonly observedStatus: string | null;
-  readonly settledClaim: string | null;
-  readonly note: string;
-}
+export type SignedVerificationData =
+  | {
+      readonly reached: false;
+      readonly observedStatus: null;
+      readonly settledClaim: null;
+      readonly observedAt: null;
+      readonly currentReason: string;
+      readonly custodianReason: null;
+      readonly proves: readonly [];
+      readonly notProvenYet: readonly [];
+      readonly polling: {
+        readonly state: "not-reached";
+        readonly reason: "execution-not-reached";
+      };
+      readonly exception: null;
+      readonly note: string;
+    }
+  | {
+      readonly reached: true;
+      readonly observedStatus: "submitted";
+      readonly settledClaim: "submitted-is-not-settled";
+      readonly observedAt: string;
+      readonly currentReason: string;
+      readonly custodianReason: null;
+      readonly proves: readonly string[];
+      readonly notProvenYet: readonly string[];
+      readonly polling: {
+        readonly state: "scheduled";
+        readonly interval: "PT12H";
+      };
+      readonly exception: null;
+      readonly note: string;
+    }
+  | {
+      readonly reached: true;
+      readonly observedStatus: "unknown";
+      readonly settledClaim: "partial-is-not-settled";
+      readonly observedAt: string;
+      readonly currentReason: string;
+      readonly custodianReason: null;
+      readonly proves: readonly string[];
+      readonly notProvenYet: readonly string[];
+      readonly polling: {
+        readonly state: "scheduled";
+        readonly interval: "PT12H";
+      };
+      readonly exception: {
+        readonly reason: "partial-execution";
+        readonly triggeringLedgerEvent: "ExecutionPartiallySucceeded";
+        readonly summary: string;
+      };
+      readonly note: string;
+    }
+  | {
+      readonly reached: true;
+      readonly observedStatus: "nigo";
+      readonly settledClaim: "submitted-is-not-settled";
+      readonly observedAt: string;
+      readonly currentReason: string;
+      readonly custodianReason: string;
+      readonly proves: readonly string[];
+      readonly notProvenYet: readonly string[];
+      readonly polling: {
+        readonly state: "stopped";
+        readonly reason: "terminal-nigo-exception-opened";
+      };
+      readonly exception: {
+        readonly reason: "delayed-nigo";
+        readonly triggeringLedgerEvent: "StatusObserved";
+        readonly summary: string;
+      };
+      readonly note: string;
+    };
 
 export interface SignedLedgerEventData {
   readonly type: string;
@@ -145,6 +230,8 @@ export interface SignedCaseVariant {
   readonly trigger: SignedTriggerData;
   readonly money: SignedMoneyData;
   readonly evidence: readonly SignedEvidenceData[];
+  readonly policyVersions: SignedPolicyVersionsData;
+  readonly householdInstructions: readonly SignedHouseholdInstructionData[];
   readonly prohibition: SignedProhibitionData | null;
   readonly authority: SignedAuthorityData;
   readonly executionEligibility: SignedExecutionEligibilityData;

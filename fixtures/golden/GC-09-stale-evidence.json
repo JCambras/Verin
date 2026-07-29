@@ -60,6 +60,8 @@
       "freshness": "stale",
       "source": "house-crm",
       "provenance": "synthetic-fixture",
+      "displayValue": {"value": 8000, "unit": "USD/month"},
+      "freshnessWindowDays": 30,
       "summary": "Planned-withdrawal schedule last observed 2026-06-09 (47 days before asOf) - outside the 30-day freshness window firm policy requires for reserve-material evidence. Observed time and retrieved time are shown separately."
     }
   ],
@@ -119,6 +121,13 @@
     "reached": false,
     "observedStatus": null,
     "settledClaim": null,
+    "observedAt": null,
+    "currentReason": "No execution occurs because the planned-withdrawal evidence is stale",
+    "custodianReason": null,
+    "proves": [],
+    "notProvenYet": [],
+    "polling": {"state": "not-reached", "reason": "execution-not-reached"},
+    "exception": null,
     "note": "No execution occurs. A fresh planned-withdrawal snapshot resolves the block and evaluation re-runs on a NEW input bundle - the stale bundle is never patched in place."
   },
   "evidenceCompleteness": [

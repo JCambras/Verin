@@ -1,21 +1,6 @@
-/**
- * TYPED UI STATE MODEL for the Phase 1 investor-demo walking skeleton (v3 prompt 3;
- * demo contract §4; design language docs/demo-design-language.md §3). Every rendered
- * state in the twelve demo surfaces comes from one of these view models - there is NO
- * business logic and NO decision branch in the surface components (Gate 0: "the UI does
- * not invent decisions"). The disposition, station states, statuses, and provenance
- * labels are DATA here; the components are pure functions of these types.
- *
- * Nothing in this file computes a decision: it only declares the shape a decision,
- * once made elsewhere (a real engine in Wave D; a labeled fake now), takes on screen.
- *
- * This module is dependency-free of the app runtime (contracts types only), so the
- * fake service (./service.ts) and the surface components share exactly one vocabulary.
- */
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance, DerivedProvenance, SourceSystem } from "@contracts/provenance";
 import type { ExecutionReceiptId, ObservedStatusId, VerificationProjectionId } from "@contracts/execution-status";
-
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
 // has landed yet), so every element carries one of these classes and a DevProvenanceBadge
@@ -168,6 +153,11 @@ export interface EvidenceSourceBindingVM {
   readonly summary: string;
   readonly liquidityPhase: string | null;
   readonly observedAbsent: boolean;
+  readonly displayValue: {
+    readonly valueMinor: number;
+    readonly unit: "USD" | "USD/month";
+  } | null;
+  readonly freshnessWindowDays: number | null;
 }
 export type EvidenceRowVM =
   | { readonly kind: "fact"; readonly label: string; readonly fact: FactVM; readonly sourceBinding: EvidenceSourceBindingVM; readonly fakeClass: FakeClass; readonly why?: WhyVM }
@@ -207,8 +197,10 @@ export interface PrecedenceRowVM {
 }
 export interface PolicyTraceVM {
   readonly spine: DecisionSpineVM;
+  readonly domainConfigVersion: string;
   readonly firmPolicyVersion: string;
-  readonly householdInstructionVersion: string;
+  readonly householdInstructionVersions: readonly string[];
+  readonly regulatoryVersion: string | null;
   readonly rows: readonly PrecedenceRowVM[];
   readonly fakeClass: FakeClass;
 }
@@ -360,6 +352,15 @@ export interface ExceptionDecisionVM {
 }
 export interface VerificationVM {
   readonly spine: DecisionSpineVM;
+  readonly state: {
+    readonly observedStatus: "submitted" | "unknown" | "nigo";
+    readonly settledClaim:
+      | "submitted-is-not-settled"
+      | "partial-is-not-settled";
+    readonly observedAtIso: string;
+    readonly currentReason: string;
+    readonly custodianReason: string | null;
+  };
   readonly proves: readonly FactVM[];
   readonly notProvenYet: readonly string[];
   readonly polling:
