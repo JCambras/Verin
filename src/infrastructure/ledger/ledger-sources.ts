@@ -26,6 +26,7 @@ import {
   type ValidatedLedgerSourceWrite,
 } from "./ledger-source-capability";
 import { verifyReplaySourceProvenanceBinding } from "./ledger-source-provenance";
+import { decisionReplayPinsMatchBundle } from "./ledger-bindings";
 
 export function replaySourcesContainPII(values: readonly unknown[]): boolean {
   try {
@@ -415,6 +416,7 @@ export async function loadVerifiedReplayDecision(
     event.decisionHash !== record.decisionHash ||
     verifiedBundle.recordedHash !== bundle.bundleHash ||
     (event.bundleHash !== undefined && event.bundleHash !== bundle.bundleHash) ||
+    !decisionReplayPinsMatchBundle(record, bundle) ||
     memberIds.length !== expectedIds.length ||
     memberIds.some((id, index) => id !== expectedIds[index]) ||
     expectedIds.some((id) => !verifiedEvidence.has(id))

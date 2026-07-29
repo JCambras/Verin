@@ -15,6 +15,7 @@ import { parseRecordedLedgerProvenance } from "./ledger-schema-registry";
 type SourceKind = "evidence" | "bundle" | "decision";
 
 interface BindingRow {
+  readonly recording_entry_id: string;
   readonly event_type: string;
   readonly decision_id: string | null;
   readonly evidence_snapshot_id: string | null;
@@ -26,6 +27,9 @@ interface BindingRow {
   readonly schema_version: string;
   readonly serializer_version: string;
 }
+
+export const UNVERIFIED_REPLAY_SOURCE_PROVENANCE =
+  "immutable replay source provenance binding is outside verified window";
 
 function bindingProvenance(
   row: BindingRow | undefined,
@@ -63,9 +67,10 @@ async function loadBinding(
   orgId: string,
   kind: SourceKind,
   id: string,
+  verifiedRecordingEntryIds?: ReadonlySet<string>,
 ): Promise<RecordProvenance | null> {
   const result = await tx.query<BindingRow>(
-    `SELECT ledger.event_type, ledger.decision_id,
+    `SELECT binding.recording_entry_id, ledger.event_type, ledger.decision_id,
             ledger.evidence_snapshot_id, record.input_bundle_id,
             EXISTS (
               SELECT 1
@@ -101,13 +106,25 @@ async function loadBinding(
         AND binding.source_id = $3`,
     [orgId, kind, id],
   );
-  return bindingProvenance(result.rows[0], kind, id);
+  const row = result.rows[0];
+  if (
+    row &&
+    verifiedRecordingEntryIds &&
+    !verifiedRecordingEntryIds.has(row.recording_entry_id)
+  ) {
+    throw appError(
+      "STORE_CONSTRAINT",
+      UNVERIFIED_REPLAY_SOURCE_PROVENANCE,
+    );
+  }
+  return bindingProvenance(row, kind, id);
 }
 
 async function decisionSourceProvenance(
   tx: SqlQueryable,
   event: DecisionRecorded,
   fallback: RecordProvenance | null,
+  verifiedRecordingEntryIds?: ReadonlySet<string>,
 ): Promise<RecordProvenance[]> {
   const record = await tx.query<{ input_bundle_id: string }>(
     `SELECT input_bundle_id FROM decision_records
@@ -126,8 +143,15 @@ async function decisionSourceProvenance(
     event.firmId,
     "decision",
     event.decisionRef.id,
+    verifiedRecordingEntryIds,
   );
-  const bundle = await loadBinding(tx, event.firmId, "bundle", bundleId);
+  const bundle = await loadBinding(
+    tx,
+    event.firmId,
+    "bundle",
+    bundleId,
+    verifiedRecordingEntryIds,
+  );
   if ((!decision || !bundle) && !fallback) {
     throw appError(
       "STORE_CONSTRAINT",
@@ -151,6 +175,7 @@ async function decisionSourceProvenance(
       event.firmId,
       "evidence",
       member.evidence_snapshot_id,
+      verifiedRecordingEntryIds,
     );
     if (!provenance) {
       throw appError(
@@ -168,6 +193,7 @@ export async function deriveLedgerEventProvenance(
   event: LedgerEntry,
   eventProvenance: RecordProvenance,
   allowCurrentDecisionBinding = false,
+  verifiedRecordingEntryIds?: ReadonlySet<string>,
 ): Promise<DerivedProvenance> {
   const inputs: RecordProvenance[] = [eventProvenance];
   if (event.type === "DecisionRecorded") {
@@ -175,6 +201,7 @@ export async function deriveLedgerEventProvenance(
       tx,
       event,
       allowCurrentDecisionBinding ? eventProvenance : null,
+      verifiedRecordingEntryIds,
     ));
   } else if (
     event.type === "StatusObserved" &&
@@ -185,6 +212,7 @@ export async function deriveLedgerEventProvenance(
       event.firmId,
       "evidence",
       event.evidenceSnapshotRef.id,
+      verifiedRecordingEntryIds,
     );
     if (!provenance) {
       throw appError(

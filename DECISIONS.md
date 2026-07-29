@@ -3469,3 +3469,26 @@ decisions cannot cite unpinned regulatory versions, bounded reads cannot scale w
 bundle size, and exact SQL ownership must cover ordinary alias forms.
 **Revert path:** none while Prompt 7 promises additive recorded codecs, exact replay
 pins, bounded register reads, and one immutable insert owner.
+
+### D-113 · 2026-07-28 · reversible · Replay pins, provenance windows, and immutable insert targets fail closed
+
+Every retained decision replay reapplies the single exact-bundle citation authority
+after the recorded bundle codec upcasts its value. A source-schema 1.7 bundle therefore
+cannot make regulatory or other off-bundle citations trusted merely because its
+upcast supplies an empty current regulatory collection.
+
+Bounded register replay supplies the exact verified entry identifiers to the shared
+source-provenance authority. A decision whose first immutable source binding lies
+outside that window is incomplete and excluded, while corrupt sources inside the
+window still fail the bounded snapshot with no trusted state. The request path never
+parses provenance from an unverified binding row.
+
+The immutable-insert fence tokenizes deterministic PostgreSQL text, normalizes quoted
+and schema-qualified targets, and follows tagged templates plus statically resolvable
+spread forwarding. Parameter arrays remain data and are not scanned as SQL text.
+
+**Why:** source codecs cannot establish replay trust without exact citation binding,
+bounded verification cannot consume an unverified historical producer label, and one
+raw-insert owner must remain one owner across valid PostgreSQL and TypeScript syntax.
+**Revert path:** none while Prompt 7 promises exact replay pins, exact-window provenance
+trust, bounded register reads, and one immutable insert owner.

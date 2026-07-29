@@ -28,10 +28,143 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
     "src/infrastructure/ledger/ledger-sources.ts",
   decision_ledger: "src/infrastructure/ledger/ledger-store.ts",
 };
-const RAW_INSERT = new RegExp(
-  `\\bINSERT\\s+INTO\\s+(${IMMUTABLE_TABLES.join("|")})\\b`,
-  "gi",
-);
+const IMMUTABLE_TABLE_SET = new Set<string>(IMMUTABLE_TABLES);
+
+interface SqlToken {
+  readonly kind: "identifier" | "dot" | "other";
+  readonly value?: string;
+}
+
+function sqlTokens(sql: string): SqlToken[] {
+  const tokens: SqlToken[] = [];
+  let index = 0;
+  while (index < sql.length) {
+    const char = sql[index]!;
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+    if (sql.startsWith("--", index)) {
+      const end = sql.indexOf("\n", index + 2);
+      index = end < 0 ? sql.length : end + 1;
+      continue;
+    }
+    if (sql.startsWith("/*", index)) {
+      let depth = 1;
+      index += 2;
+      while (index < sql.length && depth > 0) {
+        if (sql.startsWith("/*", index)) {
+          depth += 1;
+          index += 2;
+        } else if (sql.startsWith("*/", index)) {
+          depth -= 1;
+          index += 2;
+        } else {
+          index += 1;
+        }
+      }
+      continue;
+    }
+    if (char === "'") {
+      index += 1;
+      while (index < sql.length) {
+        if (sql[index] === "\\") {
+          index += 2;
+        } else if (sql[index] === "'" && sql[index + 1] === "'") {
+          index += 2;
+        } else if (sql[index] === "'") {
+          index += 1;
+          break;
+        } else {
+          index += 1;
+        }
+      }
+      tokens.push({ kind: "other" });
+      continue;
+    }
+    if (char === "$") {
+      const tag = sql.slice(index).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)?.[0];
+      if (tag) {
+        const end = sql.indexOf(tag, index + tag.length);
+        index = end < 0 ? sql.length : end + tag.length;
+        tokens.push({ kind: "other" });
+        continue;
+      }
+    }
+    if (char === "\"") {
+      let value = "";
+      index += 1;
+      while (index < sql.length) {
+        if (sql[index] === "\"" && sql[index + 1] === "\"") {
+          value += "\"";
+          index += 2;
+        } else if (sql[index] === "\"") {
+          index += 1;
+          break;
+        } else {
+          value += sql[index]!;
+          index += 1;
+        }
+      }
+      tokens.push({ kind: "identifier", value });
+      continue;
+    }
+    if (/[A-Za-z_]/.test(char)) {
+      const start = index;
+      index += 1;
+      while (
+        index < sql.length &&
+        /[A-Za-z0-9_$]/.test(sql[index]!)
+      ) {
+        index += 1;
+      }
+      tokens.push({
+        kind: "identifier",
+        value: sql.slice(start, index).toLowerCase(),
+      });
+      continue;
+    }
+    tokens.push({ kind: char === "." ? "dot" : "other" });
+    index += 1;
+  }
+  return tokens;
+}
+
+function immutableInsertTargets(sql: string): ImmutableTable[] {
+  const tokens = sqlTokens(sql);
+  const targets: ImmutableTable[] = [];
+  for (let index = 0; index < tokens.length - 2; index += 1) {
+    if (
+      tokens[index]?.kind !== "identifier" ||
+      tokens[index]?.value !== "insert" ||
+      tokens[index + 1]?.kind !== "identifier" ||
+      tokens[index + 1]?.value !== "into"
+    ) {
+      continue;
+    }
+    let targetIndex = index + 2;
+    if (
+      tokens[targetIndex]?.kind === "identifier" &&
+      tokens[targetIndex]?.value === "only"
+    ) {
+      targetIndex += 1;
+    }
+    const firstTarget = tokens[targetIndex];
+    if (firstTarget?.kind !== "identifier") continue;
+    let targetValue = firstTarget.value;
+    while (
+      tokens[targetIndex + 1]?.kind === "dot" &&
+      tokens[targetIndex + 2]?.kind === "identifier"
+    ) {
+      targetIndex += 2;
+      targetValue = tokens[targetIndex]!.value;
+    }
+    if (targetValue && IMMUTABLE_TABLE_SET.has(targetValue)) {
+      targets.push(targetValue as ImmutableTable);
+    }
+  }
+  return targets;
+}
 
 interface Violation {
   readonly file: string;
@@ -94,6 +227,67 @@ function staticStringArray(node: Node, seen: Set<Node>): string[] | null {
             : undefined;
         const value = initializer
           ? staticStringArray(initializer, new Set(seen))
+          : null;
+        return value === null ? [] : [value];
+      },
+    );
+    return values.length > 0 &&
+      values.every((value) =>
+        value.length === values[0]!.length &&
+        value.every((item, index) => item === values[0]![index]))
+      ? values[0]!
+      : null;
+  }
+  return null;
+}
+
+function staticArrayNodes(
+  node: Node,
+  seen = new Set<Node>(),
+): Node[] | null {
+  if (seen.has(node)) return null;
+  seen.add(node);
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isSatisfiesExpression(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isTypeAssertion(node)
+  ) {
+    return staticArrayNodes(node.getExpression(), seen);
+  }
+  if (Node.isArrayLiteralExpression(node)) {
+    const values: Node[] = [];
+    for (const element of node.getElements()) {
+      if (Node.isSpreadElement(element)) {
+        const spread = staticArrayNodes(
+          element.getExpression(),
+          new Set(seen),
+        );
+        if (spread === null) return null;
+        values.push(...spread);
+      } else {
+        values.push(element);
+      }
+    }
+    return values;
+  }
+  if (
+    Node.isIdentifier(node) ||
+    Node.isPropertyAccessExpression(node) ||
+    Node.isElementAccessExpression(node)
+  ) {
+    const symbol = node.getSymbol();
+    const resolved = symbol?.isAlias() ? symbol.getAliasedSymbol() : symbol;
+    const values = (resolved?.getDeclarations() ?? []).flatMap(
+      (declaration) => {
+        const initializer =
+          Node.isVariableDeclaration(declaration) ||
+          Node.isPropertyAssignment(declaration)
+            ? declaration.getInitializer()
+            : undefined;
+        const value = initializer
+          ? staticArrayNodes(initializer, new Set(seen))
           : null;
         return value === null ? [] : [value];
       },
@@ -317,6 +511,9 @@ function hasStaticStringRoot(
     Node.isNonNullExpression(node) ||
     Node.isTypeAssertion(node)
   ) {
+    return hasStaticStringRoot(node.getExpression(), seen);
+  }
+  if (Node.isSpreadElement(node)) {
     return hasStaticStringRoot(node.getExpression(), seen);
   }
   if (Node.isArrayLiteralExpression(node)) {
@@ -581,9 +778,14 @@ function sqlCallableParameter(
     ];
     for (const call of calls) {
       const argument = sqlTextArgument(call, new Set(seen));
-      if (!argument || !Node.isIdentifier(argument)) continue;
+      if (!argument) continue;
+      const forwarded = Node.isSpreadElement(argument)
+        ? argument.getExpression()
+        : argument;
+      if (!Node.isIdentifier(forwarded)) continue;
       const parameter = parameters.findIndex(
-        (candidate) => symbolOf(candidate.getNameNode()) === symbolOf(argument),
+        (candidate) =>
+          symbolOf(candidate.getNameNode()) === symbolOf(forwarded),
       );
       if (parameter >= 0) return parameter;
     }
@@ -601,7 +803,24 @@ function sqlTextArgument(
     call.getStart(),
     seen,
   );
-  return parameter === null ? null : call.getArguments()[parameter] ?? null;
+  if (parameter === null) return null;
+  let position = 0;
+  for (const argument of call.getArguments()) {
+    if (Node.isSpreadElement(argument)) {
+      const spread = staticArrayNodes(argument.getExpression());
+      if (spread === null) {
+        return position === parameter ? argument : null;
+      }
+      if (parameter < position + spread.length) {
+        return spread[parameter - position] ?? null;
+      }
+      position += spread.length;
+    } else {
+      if (position === parameter) return argument;
+      position += 1;
+    }
+  }
+  return null;
 }
 
 function hasSqlCallableRoot(
@@ -692,10 +911,9 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
         }
         continue;
       }
-      for (const match of value.matchAll(RAW_INSERT)) {
-        const table = match[1]?.toLowerCase() as ImmutableTable | undefined;
+      for (const table of immutableInsertTargets(value)) {
         const key = `${rel}:${table}`;
-        if (table && INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
+        if (INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
           seen.add(key);
           violations.push({
             file: rel,
@@ -703,8 +921,41 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
           });
         }
       }
-      if (RAW_INSERT.lastIndex !== 0) {
-        RAW_INSERT.lastIndex = 0;
+    }
+    for (const tagged of file.getDescendantsOfKind(
+      SyntaxKind.TaggedTemplateExpression,
+    )) {
+      if (!hasSqlCallableRoot(
+        tagged.getTag(),
+        tagged.getStart(),
+      )) {
+        continue;
+      }
+      const template = tagged.getTemplate();
+      const value = staticString(template);
+      if (value === null) {
+        if (hasStaticStringRoot(template)) {
+          const key =
+            `${rel}:${template.getStartLineNumber()}:unresolved-tagged`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            violations.push({
+              file: rel,
+              line: template.getStartLineNumber(),
+            });
+          }
+        }
+        continue;
+      }
+      for (const table of immutableInsertTargets(value)) {
+        const key = `${rel}:${table}`;
+        if (INSERT_ALLOWLIST[table] !== rel && !seen.has(key)) {
+          seen.add(key);
+          violations.push({
+            file: rel,
+            line: template.getStartLineNumber(),
+          });
+        }
       }
     }
   }
@@ -993,6 +1244,39 @@ describe("decision-ledger append-only fence", () => {
       ]);
     });
 
+    it("detects quoted, qualified, tagged, and spread-forwarded inserts", () => {
+      const project = inMemoryProject({
+        "/scripts/quoted.ts":
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query('INSERT INTO "decision_ledger" (id) VALUES ($1)');`,
+        "/scripts/qualified.ts":
+          `export const run = (db: { exec(s: string): unknown }) => ` +
+          `db.exec('INSERT /**/ INTO ONLY "public"."decision_records" (id) VALUES ($1)');`,
+        "/scripts/tagged.ts":
+          `export const run = (db: { query: any }) => ` +
+          "db.query`INSERT INTO evidence_snapshots (id) VALUES ($1)`;",
+        "/scripts/spread.ts":
+          `export const run = (db: { query(s: string): unknown }) => ` +
+          `db.query(...["INSERT INTO decision_input_bundles (id) VALUES ($1)"]);`,
+        "/scripts/spread-wrapper.ts":
+          `export const run = (db: { exec(s: string): unknown }) => {\n` +
+          `  const execute = (...args: [string]) => db.exec(...args);\n` +
+          `  return execute(...["INSERT INTO public.decision_replay_source_provenance (source_id) VALUES ($1)"]);\n` +
+          `};`,
+      });
+      expect(
+        ledgerInsertViolations(project.getSourceFiles())
+          .map(({ file }) => file.split("/").at(-1))
+          .sort(),
+      ).toEqual([
+        "qualified.ts",
+        "quoted.ts",
+        "spread-wrapper.ts",
+        "spread.ts",
+        "tagged.ts",
+      ]);
+    });
+
     it("fails closed on an unresolved SQL-bearing alias", () => {
       const project = inMemoryProject({
         "/scripts/unresolved-alias.ts":
@@ -1010,7 +1294,8 @@ describe("decision-ledger append-only fence", () => {
         "/scripts/parameters.ts":
           `export const run = (` +
           `db: { query(s: string, p: unknown[]): unknown }, value: string) => ` +
-          `db.query("SELECT $1::text", [value, "INSERT INTO decision_ledger"]);`,
+          `db.query("SELECT $1::text, 'INSERT INTO decision_ledger'", ` +
+          `[value, "INSERT INTO decision_ledger"]);`,
       });
       expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([]);
     });

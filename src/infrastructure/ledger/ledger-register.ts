@@ -23,7 +23,10 @@ import {
   loadVerifiedReplayDecision,
   verifyReplayEvidence,
 } from "./ledger-sources";
-import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
+import {
+  deriveLedgerEventProvenance,
+  UNVERIFIED_REPLAY_SOURCE_PROVENANCE,
+} from "./ledger-source-provenance";
 import { listReplayDecisionEvidenceCoverage } from "./ledger-source-coverage";
 
 export interface VerifiedRegisterDecision {
@@ -68,6 +71,7 @@ async function replayRegisterWindow(
   const incompleteDecisions = new Set<string>();
   const decisions = new Map<string, VerifiedRegisterDecision>();
   const windowStart = rows[0]?.sequence ?? 0;
+  const verifiedRecordingEntryIds = new Set(rows.map((row) => row.id));
   for (const row of rows) {
     const event = parseEvent(row);
     if (event.type === "EvidenceSnapshotRecorded") {
@@ -141,11 +145,26 @@ async function replayRegisterWindow(
     if (!provenance) {
       throw appError("STORE_CONSTRAINT", "verified ledger provenance is invalid");
     }
-    const eventProvenance = await deriveLedgerEventProvenance(
-      tx,
-      event,
-      provenance,
-    );
+    let eventProvenance;
+    try {
+      eventProvenance = await deriveLedgerEventProvenance(
+        tx,
+        event,
+        provenance,
+        false,
+        verifiedRecordingEntryIds,
+      );
+    } catch (error) {
+      if (
+        isAppError(error) &&
+        error.message === UNVERIFIED_REPLAY_SOURCE_PROVENANCE
+      ) {
+        decisions.delete(id);
+        incompleteDecisions.add(id);
+        continue;
+      }
+      throw error;
+    }
     const asOf = current && current.provenance.asOf > eventProvenance.asOf
       ? current.provenance.asOf
       : eventProvenance.asOf;

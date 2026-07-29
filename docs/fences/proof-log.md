@@ -5959,3 +5959,67 @@ limit, and planted operator script were restored or removed. The focused registr
 decision-ledger, projection, and anti-fork suites pass.
 
 **Date:** 2026-07-28 (review corrections M1-M4, ADR-0033, D-112).
+
+## Exact-bundle replay, provenance windows, and SQL target ownership (D-113)
+
+**Invariants:** every retained decision is replay-bound to the exact decoded and
+upcast immutable bundle; a bounded register consumes producer provenance only from
+recording entries inside its verified window; deterministic PostgreSQL insert syntax
+cannot bypass the exact immutable-table owner.
+
+A coherent retained source-schema 1.7 decision and bundle were installed through the
+privileged tamper harness. The decision cited a regulatory version while the historical
+bundle had no regulatory collection. Its ledger envelope, source hashes, and anchor were
+recomputed, so L1-L4 and source hash checks passed. Replay trusted the off-bundle
+citation:
+
+```text
+× rejects retained replay citations that its upcast bundle does not pin
+  expected true to be false
+  src/__tests__/integration/decision-ledger.test.ts:1384
+```
+
+The shared exact-bundle matcher now runs after every recorded source codec upcast.
+The companion keeps the retained 1.7 bytes internally coherent and fails only when
+that final replay-pin authority is absent.
+
+A reused bundle then recorded all evidence and its second decision inside a five-entry
+verified window. The first source-binding rows remained outside the window and their
+stored provenance was changed without changing their chain hashes. The bounded
+register rendered the decision as real:
+
+```text
+× excludes provenance whose binding entry is outside the verified window
+  expected [ { projection: ..., provenance: ... } ] to deeply equal []
+  src/__tests__/integration/ledger-projections.test.ts:600
+```
+
+The request path now passes the exact verified entry-id set into the shared provenance
+loader before any stored producer value is parsed. An outside-window binding marks
+only its affected decision incomplete. The companion separately preserves fail-closed
+behavior for a corrupt source whose recording fact is inside the window.
+
+Finally, five deterministic raw inserts were planted through quoted, schema-qualified,
+tagged-template, direct-spread, and spread-wrapper forms:
+
+```text
+× detects quoted, qualified, tagged, and spread-forwarded inserts
+  expected [] to deeply equal [
+    'qualified.ts',
+    'quoted.ts',
+    'spread-wrapper.ts',
+    'spread.ts',
+    'tagged.ts'
+  ]
+  src/__tests__/fitness/ledger-append-only.test.ts:1020
+```
+
+The fence now tokenizes PostgreSQL identifiers and comments, resolves the SQL argument
+through static spreads, and scans SQL-bearing tagged templates. The existing dynamic
+parameter companion remains green because only the sink's SQL argument is inspected.
+
+**Revert:** the retained replay bypass, outside-window provenance read, and five planted
+SQL forms were restored to their valid fail-closed outcomes. The focused ledger,
+projection, anti-fork, and typecheck suites pass.
+
+**Date:** 2026-07-28 (review corrections N1-N3, ADR-0033, D-113).

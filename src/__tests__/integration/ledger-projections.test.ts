@@ -543,12 +543,62 @@ describe("deterministic decision-ledger projections", () => {
     const snapshot = await readVerifiedDecisionRegister(
       db,
       LEDGER_ORG,
-      rerecorded.length + 1,
+      input.events.length + rerecorded.length + second.events.length,
       50,
     );
     expect(snapshot.verification.ok).toBe(true);
     expect(snapshot.decisions.map(({ projection }) =>
-      projection.decisionId)).toEqual(["dec:GC-01:0002"]);
+      projection.decisionId)).toContain("dec:GC-01:0002");
+  });
+
+  it("excludes provenance whose binding entry is outside the verified window", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const realProvenance = {
+      source: "verin-crm",
+      asOf: LEDGER_TIME,
+      confidence: "high",
+    } as const;
+    const rerecorded = input.events.slice(0, -1).map((event, index) =>
+      LedgerEntrySchema.parse({
+        ...event,
+        id: `projection:verified-evidence:${index}`,
+      }));
+    await expect(db.transaction((tx) => appendDecisionEvents(
+      tx,
+      LEDGER_ORG,
+      rerecorded,
+      realProvenance,
+      input.evidenceSnapshots,
+    ))).resolves.toHaveLength(rerecorded.length);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, {
+      ...second,
+      provenance: realProvenance,
+    })).ok).toBe(true);
+    await db.exec(
+      "ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update",
+    );
+    await db.query(
+      `UPDATE decision_ledger
+          SET prov_source = 'verin-crm'
+        WHERE org_id = $1 AND sequence < $2`,
+      [LEDGER_ORG, input.events.length],
+    );
+    await db.exec(
+      "ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update",
+    );
+
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_ORG,
+      rerecorded.length + 1,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.replaySourceReason).toBeNull();
+    expect(snapshot.decisions).toEqual([]);
+    expect(snapshot.decisionsTotal).toBe(0);
   });
 
   it("bounds bundle membership reads to verified-window capacity", async () => {

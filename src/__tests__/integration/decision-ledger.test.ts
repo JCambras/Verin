@@ -47,6 +47,14 @@ import {
   EvidenceSnapshotRefSchema,
 } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
+import { DecisionRecordV1_7_0Schema } from "@contracts/decision-core/v1-7/decision";
+import { DecisionInputBundleV1_7_0Schema } from "@contracts/decision-core/v1-7/evidence";
+import {
+  bundleHashPreimageV1_7_0,
+  canonicalJsonV1_0_0,
+  decisionHashPreimageV1_7_0,
+  type JsonValue as JsonValueV1_7_0,
+} from "@contracts/decision-core/v1-7/serialization";
 import {
   LEDGER_LATER,
   LEDGER_ORG,
@@ -62,6 +70,12 @@ const TS = "2026-07-26T13:30:00.000Z";
 
 function hashPreimage(value: unknown): string {
   const canonical = canonicalJson(value as JsonValue);
+  if (!canonical.ok) throw canonical.error;
+  return createHash("sha256").update(canonical.value, "utf8").digest("hex");
+}
+
+function hashPreimageV1_7_0(value: unknown): string {
+  const canonical = canonicalJsonV1_0_0(value as JsonValueV1_7_0);
   if (!canonical.ok) throw canonical.error;
   return createHash("sha256").update(canonical.value, "utf8").digest("hex");
 }
@@ -1230,6 +1244,147 @@ describe("decision ledger storage and L1-L4 verification", () => {
       build(input, regulatory.versionRef.id),
     );
     expect(accepted.ok, accepted.ok ? "" : accepted.error.message).toBe(true);
+  });
+
+  it("rejects retained replay citations that its upcast bundle does not pin", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, input)).ok).toBe(true);
+    const regulatory = {
+      sourceType: "regulatory" as const,
+      sourceRef: {
+        firmId: LEDGER_ORG,
+        id: "reg-distribution-holds",
+      },
+      versionRef: {
+        firmId: LEDGER_ORG,
+        id: "reg-distribution-holds@2026.02",
+      },
+    };
+    const recordCandidate = DecisionRecordV1_7_0Schema.parse({
+      ...input.decisionRecord,
+      explanationTrace: input.decisionRecord.explanationTrace.map(
+        (node, index) => index === 0
+          ? { ...node, sourceRefs: [...node.sourceRefs, regulatory] }
+          : node,
+      ),
+      decisionHash: "0".repeat(64),
+    });
+    const decisionRecord = DecisionRecordV1_7_0Schema.parse({
+      ...recordCandidate,
+      decisionHash: hashPreimageV1_7_0(
+        decisionHashPreimageV1_7_0(recordCandidate),
+      ),
+    });
+    const {
+      regulatoryVersionRefs: _regulatoryVersionRefs,
+      ...bundleWithoutRegulatoryPins
+    } = input.inputBundle;
+    expect(_regulatoryVersionRefs).toEqual([]);
+    const bundleCandidate = DecisionInputBundleV1_7_0Schema.parse({
+      ...bundleWithoutRegulatoryPins,
+      schemaVersion: "1.7.0",
+      bundleHash: "0".repeat(64),
+    });
+    const inputBundle = DecisionInputBundleV1_7_0Schema.parse({
+      ...bundleCandidate,
+      bundleHash: hashPreimageV1_7_0(
+        bundleHashPreimageV1_7_0(bundleCandidate),
+      ),
+    });
+    const decisionEvent = LedgerEntrySchema.parse({
+      ...input.events.at(-1)!,
+      decisionHash: decisionRecord.decisionHash,
+      bundleHash: inputBundle.bundleHash,
+    });
+    const recordBytes = canonicalJsonV1_0_0(
+      decisionRecord as unknown as JsonValueV1_7_0,
+    );
+    const bundleBytes = canonicalJsonV1_0_0(
+      inputBundle as unknown as JsonValueV1_7_0,
+    );
+    const eventBytes = canonicalJson(
+      decisionEvent as unknown as JsonValue,
+    );
+    expect(recordBytes.ok && bundleBytes.ok && eventBytes.ok).toBe(true);
+    if (!recordBytes.ok || !bundleBytes.ok || !eventBytes.ok) return;
+    const row = await db.query<{
+      prev_hash: string;
+      schema_version: string;
+      serializer_version: string;
+      prov_source: string;
+      prov_asof: string;
+      prov_confidence: string;
+    }>(
+      `SELECT prev_hash, schema_version, serializer_version,
+              prov_source, prov_asof, prov_confidence
+         FROM decision_ledger
+        WHERE org_id = $1 AND decision_id = $2`,
+      [LEDGER_ORG, input.decisionRecord.id],
+    );
+    const preimage = decisionLedgerChainPreimage(
+      row.rows[0]!.schema_version,
+      row.rows[0]!.serializer_version,
+      eventBytes.value,
+      {
+        source: row.rows[0]!.prov_source as "fixture",
+        asOf: row.rows[0]!.prov_asof,
+        confidence: row.rows[0]!.prov_confidence as "high",
+      },
+    );
+    expect(preimage).not.toBeNull();
+    if (!preimage) return;
+    const entryHash = computeChainHash(preimage, row.rows[0]!.prev_hash);
+    await db.exec(
+      "ALTER TABLE decision_input_bundles DISABLE TRIGGER decision_input_bundles_no_update",
+    );
+    await db.exec(
+      "ALTER TABLE decision_records DISABLE TRIGGER decision_records_no_update",
+    );
+    await db.exec(
+      "ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update",
+    );
+    await db.query(
+      `UPDATE decision_input_bundles
+          SET canonical_json = $3, schema_version = '1.7.0', bundle_hash = $4
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, inputBundle.id, bundleBytes.value, inputBundle.bundleHash],
+    );
+    await db.query(
+      `UPDATE decision_records
+          SET canonical_json = $3, schema_version = '1.7.0', decision_hash = $4
+        WHERE org_id = $1 AND id = $2`,
+      [
+        LEDGER_ORG,
+        decisionRecord.id,
+        recordBytes.value,
+        decisionRecord.decisionHash,
+      ],
+    );
+    await db.query(
+      `UPDATE decision_ledger
+          SET payload_json = $3, entry_hash = $4
+        WHERE org_id = $1 AND decision_id = $2`,
+      [LEDGER_ORG, decisionRecord.id, eventBytes.value, entryHash],
+    );
+    await db.query(
+      "UPDATE decision_ledger_anchor SET head_hash = $2 WHERE org_id = $1",
+      [LEDGER_ORG, entryHash],
+    );
+    await db.exec(
+      "ALTER TABLE decision_input_bundles ENABLE TRIGGER decision_input_bundles_no_update",
+    );
+    await db.exec(
+      "ALTER TABLE decision_records ENABLE TRIGGER decision_records_no_update",
+    );
+    await db.exec(
+      "ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update",
+    );
+
+    const verified = await verifyDecisionLedgerIntegrity(db, LEDGER_ORG);
+    expect(verified.ok).toBe(false);
+    expect(verified.replaySourceReason).toBe(
+      "decision replay source binding differs during replay",
+    );
   });
 
   it("refuses retained names and unformatted account numbers without rewriting bytes", async () => {
