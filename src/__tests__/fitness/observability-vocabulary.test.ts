@@ -38,7 +38,7 @@ const TRACER = "src/infrastructure/observability/tracer.ts";
 const LOGGER = "src/infrastructure/observability/logger.ts";
 const SAFE_VALUES = "src/domain/observability/safe-values.ts";
 const RECORD_ID = "src/infrastructure/observability/record-id.ts";
-const SECRET = "src/contracts/secret.ts";
+const CREDENTIAL_CONTRACT = "src/contracts/secret.ts";
 const CONFIG = "src/infrastructure/config/index.ts";
 const RECORD_ID_KEY_PURPOSE = "verin:observability-record-id:key:v1";
 /**
@@ -340,7 +340,7 @@ function hmacDigestTrace(
 function isSessionSecret(node: Node): boolean {
   if (
     !Node.isCallExpression(node) ||
-    !resolvesTo(node.getExpression(), SECRET, "revealSecret") ||
+    !resolvesTo(node.getExpression(), CREDENTIAL_CONTRACT, "revealSecret") ||
     node.getArguments().length !== 1
   ) {
     return false;

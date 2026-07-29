@@ -21,6 +21,7 @@
  * seeded rows). The flow-execution workload deliberately uses the real
  * (randomUUID-keyed, timestamped) write path - that IS the path the SLO measures.
  */
+import { randomUUID } from "node:crypto";
 import { createMemoryDb } from "../src/infrastructure/store/db";
 import { startAccountOpening, resumeAccountOpeningByToken } from "../src/infrastructure/wire";
 import { systemTenant } from "../src/contracts/tenant";
@@ -45,7 +46,6 @@ const STEP_P95_BUDGET_MS = 2000;
 const FLOWS = 50; // sequential account-opening flows (2 interactive steps each)
 const CONCURRENCY = 16; // simultaneous flows/reads contending on the serialize mutex
 const ORG = "org-load";
-const ADVISOR_PASSWORD = "load-smoke-credential-only";
 
 function pct(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
@@ -90,15 +90,16 @@ async function runFlow(
 
 async function main(): Promise<void> {
   const db = await createMemoryDb();
+  const advisorCredential = randomUUID();
   const t0 = "2026-01-01T00:00:00.000Z";
   await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Load Firm',$2,'verin-crm',$2,'high')", [ORG, t0]);
   await createUser(db, systemTenant("load-smoke", ORG), {
     email: "load@firm.test",
     displayName: "Load Advisor",
     role: "advisor",
-    password: ADVISOR_PASSWORD,
+    password: advisorCredential,
   });
-  const authenticated = await authenticate(db, "load@firm.test", ADVISOR_PASSWORD);
+  const authenticated = await authenticate(db, "load@firm.test", advisorCredential);
   if (!authenticated) throw new Error("load advisor authentication failed");
   const advisorPrincipal = await createSession(
     db,

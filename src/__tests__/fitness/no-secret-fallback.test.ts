@@ -520,11 +520,11 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     // consumers") is only true while the class has no `reveal` member; the
     // detector's member/computed/destructured branches are the regression
     // backstop for the day someone re-adds one (proven by their companion).
-    const secret = realSemanticProject().getSourceFiles().find((sf) =>
+    const contractModule = realSemanticProject().getSourceFiles().find((sf) =>
       normalizedPath(sf.getFilePath()) === "src/contracts/secret.ts"
     );
-    expect(secret, "src/contracts/secret.ts missing").toBeTruthy();
-    const members = secret!.getClassOrThrow("SecretValue").getMembers()
+    expect(contractModule, "src/contracts/secret.ts missing").toBeTruthy();
+    const members = contractModule!.getClassOrThrow("SecretValue").getMembers()
       .flatMap((member) =>
         Node.isMethodDeclaration(member) || Node.isPropertyDeclaration(member)
           ? [member.getName()]

@@ -3004,3 +3004,27 @@ case the reported reassignment while leaving equivalent mutable bindings open.
 
 **Revert path:** restore initializer-only digest validation and remove the two
 digest-binding companions.
+
+## D-097 - CI security gates use deterministic execution and nonliteral credentials
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-012, D-093,
+v3 §15.4, charter #4/#7/#15
+
+The v3 invariant runner now uses the same single-worker, file-serial Vitest
+execution policy as the default test command. Its seven mapped semantic fitness
+files build large ts-morph projects, so running them concurrently made the
+`tokenized-factory-only` file exceed its per-test timeout on a shared CI runner
+even though the serialized blocking test job passed the same file. Assertions
+and timeouts remain unchanged.
+
+The load smoke creates its throwaway advisor credential at runtime instead of
+committing a password literal. Two fitness-test source-file handles no longer
+use credential-shaped variable names, preventing the SAST heuristic from
+misclassifying repository paths and AST nodes as embedded secrets.
+
+**Alternatives rejected:** increase the test timeout while retaining resource
+contention; weaken or skip the mapped security fence; suppress the real
+hardcoded load credential finding; or disable the blocking njsscan rules.
+
+**Revert path:** restore parallel v3 fence execution, the literal load
+credential, and the prior AST handle names.
