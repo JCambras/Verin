@@ -1080,6 +1080,23 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
       ), violations.join("\n")).toBe(true);
     });
 
+    it("rejects createRequire reached through a destructured Reflect.get alias", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": marker,
+        "/src/domain/schema/entities.ts": `import type { PIIBearing } from "@contracts/pii"; export interface Contact extends PIIBearing { firstName: string }`,
+        "/src/infrastructure/llm/evil.ts": `
+          import * as nodeModule from "node:module";
+          const { get: read } = Reflect;
+          const req = read(nodeModule, "createRequire")(import.meta.url);
+          export const load = () => req("../../domain/schema/entities") as unknown;
+        `,
+      });
+      const violations = detectPIIReachableFromLlm(project);
+      expect(violations.some((violation) =>
+        violation.includes("unresolvable") && violation.includes("src/infrastructure/llm/evil.ts")
+      ), violations.join("\n")).toBe(true);
+    });
+
     it("resolves JavaScript import specifiers through TypeScript extension substitution", () => {
       const project = inMemoryProject({
         "/src/contracts/pii.ts": marker,

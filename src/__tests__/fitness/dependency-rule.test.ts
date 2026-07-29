@@ -5,6 +5,7 @@ import {
   detectContractsExternalImportViolations,
   detectLayerViolations,
   isShippedSourceFilePath,
+  moduleReferences,
   realProject,
   inMemoryProject,
   SRC_ROOT,
@@ -206,6 +207,10 @@ describe("dependency-rule fence", () => {
       `const nodeModule = await import("node:module");\nconst load = nodeModule.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `const nodeModule = await import("node:module");\nconst key = "createRequire";\nconst load = nodeModule[key](import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst load = Reflect.get(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst { get } = Reflect;\nconst load = get(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst reflection = globalThis.Reflect;\nconst { get } = reflection;\nconst load = get(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nlet read: typeof Reflect.get;\n({ get: read } = Reflect);\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nlet read = Object.getOwnPropertyDescriptor;\n({ get: read } = Reflect);\nconst load = read(nodeModule, "createRequire")(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loaders fail closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -213,6 +218,22 @@ describe("dependency-rule fence", () => {
       expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
         "domain->unresolved",
       );
+    });
+
+    it("uses the latest write when a destructured reflection binding is overwritten", () => {
+      const project = inMemoryProject({
+        "src/domain/fine.ts": `
+          import * as nodeModule from "node:module";
+          let read: Function;
+          ({ get: read } = Reflect);
+          read = Object.getOwnPropertyDescriptor;
+          read(nodeModule, "createRequire");
+        `,
+      });
+      const source = project.getSourceFileOrThrow("src/domain/fine.ts");
+      expect(moduleReferences(source).filter((reference) =>
+        reference.kind === "create-require"
+      )).toEqual([]);
     });
 
     it("type-asserted node:module loaders cannot evade createRequire detection", () => {

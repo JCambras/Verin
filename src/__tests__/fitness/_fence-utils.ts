@@ -436,7 +436,102 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       isNodeModuleSpecifier(loaderSpecifier(expression))
     );
   };
+  const isAmbientReflectReference = (node: Node | undefined): boolean => {
+    const expression = expressionProvenance(node);
+    if (
+      Node.isIdentifier(expression) &&
+      expression.getText() === "Reflect" &&
+      isAmbientGlobalReference(expression)
+    ) {
+      return true;
+    }
+    if (
+      Node.isPropertyAccessExpression(expression) &&
+      expression.getName() === "Reflect"
+    ) {
+      return isAmbientGlobalReference(expression.getExpression());
+    }
+    if (Node.isElementAccessExpression(expression)) {
+      return literalPropertyKey(expression.getArgumentExpression()) === "Reflect" &&
+        isAmbientGlobalReference(expression.getExpression());
+    }
+    return false;
+  };
   const isReflectGet = (node: Node | undefined): boolean => {
+    const raw = unwrapExpression(node);
+    if (Node.isIdentifier(raw)) {
+      const symbol = raw.getSymbol();
+      const latestSimpleAssignment = sf
+        .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+        .filter((candidate) =>
+          candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+          candidate.getStart() < raw.getStart() &&
+          Node.isIdentifier(unwrapExpression(candidate.getLeft())) &&
+          unwrapExpression(candidate.getLeft())?.getSymbol() === symbol
+        )
+        .sort((left, right) => right.getStart() - left.getStart())[0];
+      const destructuredAssignments = sf
+        .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+        .filter((candidate) =>
+          candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+          candidate.getStart() < raw.getStart() &&
+          Node.isObjectLiteralExpression(unwrapExpression(candidate.getLeft()))
+        )
+        .sort((left, right) => right.getStart() - left.getStart())
+        .flatMap((assignment) => {
+          const object = unwrapExpression(assignment.getLeft());
+          if (!Node.isObjectLiteralExpression(object)) return [];
+          const property = object.getProperties().find((candidate) => {
+            const bindingTarget = Node.isPropertyAssignment(candidate)
+              ? unwrapExpression(candidate.getInitializer())
+              : Node.isShorthandPropertyAssignment(candidate)
+              ? candidate.getNameNode()
+              : undefined;
+            return Node.isIdentifier(bindingTarget) &&
+              bindingTarget.getSymbol() === symbol;
+          });
+          return property ? [{ assignment, property }] : [];
+        });
+      const latestDestructured = destructuredAssignments[0];
+      if (
+        latestDestructured &&
+        latestDestructured.assignment.getStart() >
+          (latestSimpleAssignment?.getStart() ?? -1)
+      ) {
+        const { assignment, property } = latestDestructured;
+        return (
+          (Node.isPropertyAssignment(property) ||
+            Node.isShorthandPropertyAssignment(property)) &&
+          (propertyName(property.getNameNode(), property.getName()) === null ||
+            propertyName(property.getNameNode(), property.getName()) === "get") &&
+          isAmbientReflectReference(assignment.getRight())
+        );
+      }
+      if (!latestSimpleAssignment) {
+        const target = symbol?.getAliasedSymbol() ?? symbol;
+        const binding = target?.getDeclarations().find(Node.isBindingElement);
+        if (binding) {
+          const pattern = binding.getParent();
+          const owner = pattern.getParent();
+          const receiver =
+            Node.isObjectBindingPattern(pattern) &&
+            (Node.isVariableDeclaration(owner) || Node.isParameterDeclaration(owner))
+              ? owner.getInitializer()
+              : undefined;
+          const name = propertyName(
+            binding.getPropertyNameNode(),
+            binding.getName(),
+          );
+          if (
+            receiver &&
+            (name === null || name === "get") &&
+            isAmbientReflectReference(receiver)
+          ) {
+            return true;
+          }
+        }
+      }
+    }
     let expression = expressionProvenance(node);
     if (
       Node.isBinaryExpression(expression) &&
@@ -446,11 +541,12 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     }
     if (Node.isPropertyAccessExpression(expression)) {
       return expression.getName() === "get" &&
-        isAmbientGlobalReference(expression.getExpression());
+        isAmbientReflectReference(expression.getExpression());
     }
     if (Node.isElementAccessExpression(expression)) {
-      return literalPropertyKey(expression.getArgumentExpression()) === "get" &&
-        isAmbientGlobalReference(expression.getExpression());
+      const name = literalPropertyKey(expression.getArgumentExpression());
+      return (name === null || name === "get") &&
+        isAmbientReflectReference(expression.getExpression());
     }
     return false;
   };
@@ -1104,6 +1200,28 @@ export function returnedCallableMembers(
     ? declaration.getBody()
     : null;
   if (!body) return [];
+  const signature = Node.isFunctionDeclaration(declaration) ||
+      Node.isFunctionExpression(declaration) ||
+      Node.isArrowFunction(declaration) ||
+      Node.isMethodDeclaration(declaration) ||
+      Node.isGetAccessorDeclaration(declaration)
+    ? declaration.getSignature()
+    : null;
+  let returnType = signature?.getReturnType();
+  while (
+    returnType &&
+    (returnType.getAliasSymbol() ?? returnType.getSymbol())?.getName() === "Promise"
+  ) {
+    returnType = returnType.getTypeArguments()[0];
+  }
+  if (
+    returnType &&
+    ["SqlDb", "SqlTx", "SqlQueryable"].some((name) =>
+      typeIsExactDeclaration(returnType!, "src/infrastructure/store/db.ts", name)
+    )
+  ) {
+    return [];
+  }
   const returned: Node[] = [];
   if (!Node.isBlock(body)) returned.push(body);
   for (const statement of body.getDescendantsOfKind(SyntaxKind.ReturnStatement)) {
@@ -1118,36 +1236,6 @@ export function returnedCallableMembers(
       returned.push(statement.getExpression()!);
     }
   }
-  const resolveObject = (expression: Node, seen = new Set<string>()): Node | null => {
-    const key = `${expression.getSourceFile().getFilePath()}:${expression.getStart()}`;
-    if (seen.has(key)) return null;
-    seen.add(key);
-    if (Node.isObjectLiteralExpression(expression)) return expression;
-    if (
-      Node.isParenthesizedExpression(expression) ||
-      Node.isAsExpression(expression) ||
-      Node.isSatisfiesExpression(expression) ||
-      Node.isTypeAssertion(expression)
-    ) return resolveObject(expression.getExpression(), seen);
-    if (Node.isCallExpression(expression)) {
-      const callee = expression.getExpression();
-      if (
-        Node.isPropertyAccessExpression(callee) &&
-        callee.getExpression().getText() === "Object" &&
-        ["freeze", "seal"].includes(callee.getName()) &&
-        expression.getArguments().length === 1
-      ) return resolveObject(expression.getArguments()[0]!, seen);
-      return null;
-    }
-    if (!Node.isIdentifier(expression)) return null;
-    const symbol = expression.getSymbol();
-    const target = symbol?.getAliasedSymbol() ?? symbol;
-    for (const candidate of target?.getDeclarations() ?? []) {
-      if (!Node.isVariableDeclaration(candidate) || !candidate.getInitializer()) continue;
-      return resolveObject(candidate.getInitializer()!, seen);
-    }
-    return null;
-  };
   const resolveCallable = (identifier: Node): Node | undefined => {
     const symbol = identifier.getSymbol();
     const target = symbol?.getAliasedSymbol() ?? symbol;
@@ -1167,20 +1255,78 @@ export function returnedCallableMembers(
     return undefined;
   };
   const members: ReturnedCallableMember[] = [];
-  const collect = (object: Node, visited: Set<string>): void => {
-    if (!Node.isObjectLiteralExpression(object)) return;
+  const memberKeys = new Set<string>();
+  const addMember = (
+    name: string,
+    implementation: Node,
+    signature: Signature,
+  ): void => {
+    const signatureDeclaration = signature.getDeclaration();
+    const key = [
+      name,
+      implementation.getSourceFile().getFilePath(),
+      implementation.getStart(),
+      signatureDeclaration.getSourceFile().getFilePath(),
+      signatureDeclaration.getStart(),
+    ].join(":");
+    if (memberKeys.has(key)) return;
+    memberKeys.add(key);
+    members.push({ name, declaration: implementation, signature });
+  };
+  const callableProperties = (
+    type: Type,
+  ): Array<{ name: string; signature: Signature }> => {
+    const found: Array<{ name: string; signature: Signature }> = [];
+    for (const signature of type.getCallSignatures()) {
+      found.push({ name: "<call>", signature });
+    }
+    for (const property of type.getProperties()) {
+      const propertyDeclaration = property.getValueDeclaration() ??
+        property.getDeclarations()[0];
+      if (
+        !propertyDeclaration ||
+        !normalizedPath(propertyDeclaration.getSourceFile().getFilePath())
+          .startsWith("src/")
+      ) {
+        continue;
+      }
+      for (const signature of property
+        .getTypeAtLocation(propertyDeclaration)
+        .getCallSignatures()) {
+        found.push({ name: property.getName(), signature });
+      }
+    }
+    return found;
+  };
+  const addUnresolved = (expression: Node): void => {
+    for (const callable of callableProperties(expression.getType())) {
+      addMember(
+        `${owner}.${callable.name}`,
+        expression,
+        callable.signature,
+      );
+    }
+  };
+  const collectObject = (
+    object: Node,
+    visited: Set<string>,
+    collectExpression: (expression: Node, seen: Set<string>) => void,
+  ): void => {
+    if (!Node.isObjectLiteralExpression(object)) {
+      addUnresolved(object);
+      return;
+    }
     for (const property of object.getProperties()) {
       if (Node.isMethodDeclaration(property)) {
-        members.push({
-          name: `${owner}.${property.getName()}`,
-          declaration: property,
-          signature: property.getSignature(),
-        });
+        addMember(
+          `${owner}.${property.getName()}`,
+          property,
+          property.getSignature(),
+        );
         continue;
       }
       if (Node.isSpreadAssignment(property)) {
-        const spread = resolveObject(property.getExpression(), visited);
-        if (spread) collect(spread, visited);
+        collectExpression(property.getExpression(), visited);
         continue;
       }
       const callable = Node.isPropertyAssignment(property)
@@ -1194,17 +1340,181 @@ export function returnedCallableMembers(
           Node.isFunctionExpression(callable) ||
           Node.isFunctionDeclaration(callable))
       ) {
-        members.push({
-          name: `${owner}.${property.getName()}`,
-          declaration: callable,
-          signature: callable.getSignature(),
-        });
+        addMember(
+          `${owner}.${property.getName()}`,
+          callable,
+          callable.getSignature(),
+        );
+      } else if (
+        Node.isPropertyAssignment(property) ||
+        Node.isShorthandPropertyAssignment(property)
+      ) {
+        const signature = property.getType().getCallSignatures()[0];
+        if (signature) {
+          addMember(
+            `${owner}.${property.getName()}`,
+            property,
+            signature,
+          );
+        }
       }
     }
   };
+  const collectClass = (
+    classDeclaration: Node,
+    visited: Set<string>,
+  ): void => {
+    if (!Node.isClassDeclaration(classDeclaration) &&
+        !Node.isClassExpression(classDeclaration)) {
+      addUnresolved(classDeclaration);
+      return;
+    }
+    const base = classDeclaration.getBaseClass();
+    if (base) collectClass(base, visited);
+    for (const method of classDeclaration.getMethods()) {
+      if (method.getScope() === "private" || method.getScope() === "protected") {
+        continue;
+      }
+      addMember(
+        `${owner}.${method.getName()}`,
+        method,
+        method.getSignature(),
+      );
+    }
+    for (const property of classDeclaration.getProperties()) {
+      if (property.getScope() === "private" || property.getScope() === "protected") {
+        continue;
+      }
+      const initializer = property.getInitializer();
+      if (
+        initializer &&
+        (Node.isArrowFunction(initializer) ||
+          Node.isFunctionExpression(initializer))
+      ) {
+        addMember(
+          `${owner}.${property.getName()}`,
+          initializer,
+          initializer.getSignature(),
+        );
+        continue;
+      }
+      const signature = property.getType().getCallSignatures()[0];
+      if (signature) {
+        addMember(
+          `${owner}.${property.getName()}`,
+          property,
+          signature,
+        );
+      }
+    }
+    for (const accessor of classDeclaration.getGetAccessors()) {
+      if (accessor.getScope() === "private" || accessor.getScope() === "protected") {
+        continue;
+      }
+      const returnedMembers = returnedCallableMembers(
+        accessor,
+        `${owner}.${accessor.getName()}`,
+      );
+      for (const member of returnedMembers) {
+        addMember(member.name, member.declaration, member.signature);
+      }
+      if (returnedMembers.length === 0) {
+        for (const signature of accessor.getReturnType().getCallSignatures()) {
+          addMember(
+            `${owner}.${accessor.getName()}`,
+            accessor,
+            signature,
+          );
+        }
+      }
+    }
+  };
+  const collectExpression = (
+    source: Node,
+    seen: Set<string>,
+  ): void => {
+    let expression = source;
+    while (
+      Node.isParenthesizedExpression(expression) ||
+      Node.isAsExpression(expression) ||
+      Node.isSatisfiesExpression(expression) ||
+      Node.isTypeAssertion(expression) ||
+      Node.isNonNullExpression(expression) ||
+      Node.isAwaitExpression(expression)
+    ) {
+      expression = expression.getExpression();
+    }
+    const key = `${expression.getSourceFile().getFilePath()}:${expression.getStart()}`;
+    if (seen.has(key)) {
+      addUnresolved(expression);
+      return;
+    }
+    const visited = new Set(seen).add(key);
+    if (Node.isObjectLiteralExpression(expression)) {
+      collectObject(expression, visited, collectExpression);
+      return;
+    }
+    if (Node.isConditionalExpression(expression)) {
+      collectExpression(expression.getWhenTrue(), visited);
+      collectExpression(expression.getWhenFalse(), visited);
+      return;
+    }
+    if (Node.isNewExpression(expression)) {
+      const symbol = expression.getExpression().getSymbol();
+      const target = symbol?.getAliasedSymbol() ?? symbol;
+      const classDeclaration = target?.getDeclarations().find((candidate) =>
+        Node.isClassDeclaration(candidate) || Node.isClassExpression(candidate)
+      );
+      if (classDeclaration) {
+        collectClass(classDeclaration, visited);
+      } else {
+        addUnresolved(expression);
+      }
+      return;
+    }
+    if (Node.isCallExpression(expression)) {
+      const callee = expression.getExpression();
+      if (
+        Node.isPropertyAccessExpression(callee) &&
+        callee.getExpression().getText() === "Object" &&
+        ["freeze", "seal"].includes(callee.getName()) &&
+        expression.getArguments().length === 1
+      ) {
+        collectExpression(expression.getArguments()[0]!, visited);
+      } else {
+        addUnresolved(expression);
+      }
+      return;
+    }
+    if (Node.isArrowFunction(expression) ||
+        Node.isFunctionExpression(expression) ||
+        Node.isFunctionDeclaration(expression)) {
+      addMember(`${owner}.<call>`, expression, expression.getSignature());
+      return;
+    }
+    if (Node.isIdentifier(expression)) {
+      const callable = resolveCallable(expression);
+      if (
+        Node.isArrowFunction(callable) ||
+        Node.isFunctionExpression(callable) ||
+        Node.isFunctionDeclaration(callable)
+      ) {
+        addMember(`${owner}.<call>`, callable, callable.getSignature());
+        return;
+      }
+      const symbol = expression.getSymbol();
+      const target = symbol?.getAliasedSymbol() ?? symbol;
+      const variable = target?.getDeclarations().find(Node.isVariableDeclaration);
+      const initializer = variable?.getInitializer();
+      if (initializer) {
+        collectExpression(initializer, visited);
+        return;
+      }
+    }
+    addUnresolved(expression);
+  };
   for (const expression of returned) {
-    const object = resolveObject(expression);
-    if (object) collect(object, new Set());
+    collectExpression(expression, new Set());
   }
   return members;
 }
@@ -1510,7 +1820,11 @@ export function grantAction(authority: SealedAuthorityParameter): string | null 
  */
 export function requiredAuthorityPrologue(
   signature: Signature,
-): { required: RequiredAuthorityAssertion[]; unfenceable: string[] } {
+): {
+  required: RequiredAuthorityAssertion[];
+  captures: RequiredAuthorityCapture[];
+  unfenceable: string[];
+} {
   const inventory = authorityInventory(signature);
   const authorities = inventory.authorities;
   const grants = authorities.filter((authority) => authority.kind === "grant");
@@ -1529,6 +1843,16 @@ export function requiredAuthorityPrologue(
       ? [authority.argument, JSON.stringify(actions.get(authority))]
       : [authority.argument],
   }));
+  const captures = [...new Map(
+    authorities
+      .filter((authority) =>
+        !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(authority.argument)
+      )
+      .map((authority) => [
+        authority.argument,
+        { source: authority.argument, authorityType: typeKey(authority.type) },
+      ]),
+  ).values()];
   const scopes = authorities.map((authority) =>
     authority.kind === "tenant" ? authority.argument : `${authority.argument}.tenant`
   );
@@ -1541,7 +1865,7 @@ export function requiredAuthorityPrologue(
       });
     }
   }
-  return { required, unfenceable };
+  return { required, captures, unfenceable };
 }
 
 export interface RequiredAuthorityAssertion {
@@ -1553,6 +1877,11 @@ export interface RequiredAuthorityAssertion {
    * as written, which is what pins the guard to the actual parameter binding.
    */
   readonly args: readonly string[];
+}
+
+export interface RequiredAuthorityCapture {
+  readonly source: string;
+  readonly authorityType: string;
 }
 
 /**
@@ -1590,56 +1919,198 @@ export function callResolvesToDeclaration(call: Node, file: string, name: string
 function functionBody(declaration: Node): Node | undefined {
   return Node.isFunctionDeclaration(declaration) ||
       Node.isMethodDeclaration(declaration) ||
+      Node.isGetAccessorDeclaration(declaration) ||
       Node.isFunctionExpression(declaration) ||
       Node.isArrowFunction(declaration)
     ? declaration.getBody()
     : undefined;
 }
 
-/** The contiguous leading run of authority assertions, empty as soon as anything else appears. */
-function authorityPrologue(declaration: Node): CallExpression[] {
+interface ParsedAuthorityPrologue {
+  readonly calls: CallExpression[];
+  readonly captureBindings: ReadonlyMap<string, string>;
+  readonly captureInitializers: ReadonlyMap<string, Node>;
+}
+
+function canonicalAuthorityText(text: string): string {
+  return text
+    .replace(/\s+/g, "")
+    .replace(/\[(["'][^"'\\]*(?:\\.[^"'\\]*)*["'])\]/g, (match, quoted: string) => {
+      try {
+        const value = JSON.parse(
+          quoted.startsWith("'")
+            ? `"${quoted.slice(1, -1).replace(/"/g, '\\"')}"`
+            : quoted,
+        ) as unknown;
+        return typeof value === "string" && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value)
+          ? `.${value}`
+          : match;
+      } catch {
+        return match;
+      }
+    });
+}
+
+function authorityPrologue(
+  declaration: Node,
+  captures: readonly RequiredAuthorityCapture[],
+): ParsedAuthorityPrologue {
   const body = functionBody(declaration);
-  if (!Node.isBlock(body)) return [];
-  const prologue: CallExpression[] = [];
+  if (!Node.isBlock(body)) {
+    return {
+      calls: [],
+      captureBindings: new Map(),
+      captureInitializers: new Map(),
+    };
+  }
+  const requiredSources = new Set(captures.map((capture) =>
+    canonicalAuthorityText(capture.source)
+  ));
+  const calls: CallExpression[] = [];
+  const captureBindings = new Map<string, string>();
+  const captureInitializers = new Map<string, Node>();
+  let assertionsStarted = false;
   for (const statement of body.getStatements()) {
+    if (Node.isVariableStatement(statement) && !assertionsStarted) {
+      if (
+        !statement.getDeclarationKindKeywords().some((keyword) =>
+          keyword.getKind() === SyntaxKind.ConstKeyword
+        )
+      ) break;
+      const pending: Array<{ source: string; binding: string; initializer: Node }> = [];
+      let valid = true;
+      for (const variable of statement.getDeclarations()) {
+        const name = variable.getNameNode();
+        const initializer = variable.getInitializer();
+        const source = initializer
+          ? canonicalAuthorityText(initializer.getText())
+          : "";
+        if (
+          !Node.isIdentifier(name) ||
+          !initializer ||
+          !requiredSources.has(source) ||
+          captureBindings.has(source)
+        ) {
+          valid = false;
+          break;
+        }
+        pending.push({
+          source,
+          binding: name.getText(),
+          initializer,
+        });
+      }
+      if (!valid || pending.length === 0) break;
+      for (const capture of pending) {
+        captureBindings.set(capture.source, capture.binding);
+        captureInitializers.set(capture.source, capture.initializer);
+      }
+      continue;
+    }
     if (!Node.isExpressionStatement(statement)) break;
     const expression = statement.getExpression();
     if (!Node.isCallExpression(expression)) break;
-    if (
-      !AUTHORITY_ASSERTIONS.some((assertion) =>
-        callResolvesToDeclaration(expression, assertion.file, assertion.functionName)
-      )
-    ) break;
-    prologue.push(expression);
+    if (!AUTHORITY_ASSERTIONS.some((assertion) =>
+      callResolvesToDeclaration(expression, assertion.file, assertion.functionName)
+    )) break;
+    assertionsStarted = true;
+    calls.push(expression);
   }
-  return prologue;
+  return { calls, captureBindings, captureInitializers };
+}
+
+function capturedAuthorityArgument(
+  expected: string,
+  captures: ReadonlyMap<string, string>,
+): string {
+  const canonical = canonicalAuthorityText(expected);
+  for (const [source, binding] of [...captures.entries()].sort(
+    ([left], [right]) => right.length - left.length,
+  )) {
+    if (canonical === source || canonical.startsWith(`${source}.`)) {
+      return `${binding}${canonical.slice(source.length)}`;
+    }
+  }
+  return expected;
+}
+
+function repeatedAuthorityEvaluations(
+  declaration: Node,
+  captures: readonly RequiredAuthorityCapture[],
+  initializers: ReadonlyMap<string, Node>,
+  stableBindings: ReadonlySet<string>,
+): string[] {
+  const body = functionBody(declaration);
+  if (!Node.isBlock(body)) return [];
+  const expressions = [
+    ...body.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
+    ...body.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
+    ...body.getDescendantsOfKind(SyntaxKind.CallExpression),
+  ];
+  return captures.flatMap((capture) => {
+    const source = canonicalAuthorityText(capture.source);
+    const initializer = initializers.get(source);
+    const repeated = expressions.some((expression) =>
+      typeKey(expression.getType()) === capture.authorityType &&
+      expression.getStart() !== initializer?.getStart() &&
+      !stableBindings.has(
+        expression
+          .getFirstDescendantByKind(SyntaxKind.Identifier)
+          ?.getText() ?? "",
+      )
+    );
+    return repeated
+      ? [
+        `wrapped authority '${capture.source}' must be evaluated exactly once into its const prologue binding`,
+      ]
+      : [];
+  });
 }
 
 /** One message per required assertion that is missing from the prologue. */
 export function authorityPrologueViolations(
   declaration: Node,
   required: readonly RequiredAuthorityAssertion[],
+  captures: readonly RequiredAuthorityCapture[] = [],
 ): string[] {
-  if (required.length === 0) return [];
+  if (required.length === 0 && captures.length === 0) return [];
   if (!Node.isBlock(functionBody(declaration))) {
-    return required.map((requirement) =>
-      `${requirement.functionName}(${requirement.args.join(", ")}) cannot run: the boundary has no statement body`,
-    );
+    return [
+      ...captures.map((capture) =>
+        `const capture of ${capture.source} cannot run: the boundary has no statement body`
+      ),
+      ...required.map((requirement) =>
+        `${requirement.functionName}(${requirement.args.join(", ")}) cannot run: the boundary has no statement body`,
+      ),
+    ];
   }
-  const prologue = authorityPrologue(declaration);
-  return required
+  const prologue = authorityPrologue(declaration, captures);
+  const missingCaptures = captures
+    .filter((capture) =>
+      !prologue.captureBindings.has(canonicalAuthorityText(capture.source))
+    )
+    .map((capture) =>
+      `wrapped authority '${capture.source}' must be captured exactly once in a const binding at the start of the authority prologue`,
+    );
+  const missingAssertions = required
     .filter((requirement) =>
-      !prologue.some((call) =>
+      !prologue.calls.some((call) =>
         callResolvesToDeclaration(call, requirement.file, requirement.functionName) &&
         (
           requirement.args.every((expected, index) =>
-            authorityArgumentMatches(call.getArguments()[index], expected)
+            authorityArgumentMatches(
+              call.getArguments()[index],
+              capturedAuthorityArgument(expected, prologue.captureBindings),
+            )
           ) ||
           (
             requirement.functionName === "assertSameTenant" &&
             requirement.args.length === 2 &&
             requirement.args.every((expected, index) =>
-              authorityArgumentMatches(call.getArguments()[1 - index], expected)
+              authorityArgumentMatches(
+                call.getArguments()[1 - index],
+                capturedAuthorityArgument(expected, prologue.captureBindings),
+              )
             )
           )
         )
@@ -1648,6 +2119,28 @@ export function authorityPrologueViolations(
     .map((requirement) =>
       `${requirement.functionName}(${requirement.args.join(", ")}) must appear in the contiguous authority prologue, before any side effect, database call, or branching logic`,
     );
+  const stableBindings = new Set([
+    ...prologue.captureBindings.values(),
+    ...required
+      .filter((requirement) => requirement.functionName !== "assertSameTenant")
+      .map((requirement) =>
+        capturedAuthorityArgument(
+          requirement.args[0] ?? "",
+          prologue.captureBindings,
+        )
+      )
+      .filter((argument) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(argument)),
+  ]);
+  return [
+    ...missingCaptures,
+    ...missingAssertions,
+    ...repeatedAuthorityEvaluations(
+      declaration,
+      captures,
+      prologue.captureInitializers,
+      stableBindings,
+    ),
+  ];
 }
 
 const SQL_EXECUTOR_METHODS = new Set(["exec", "execute", "query"]);

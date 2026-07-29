@@ -4229,3 +4229,72 @@ pnpm test:e2e                                                # 17 tests passed
 ```
 
 **Date:** 2026-07-28 (twenty-first review-fix round on v3 build-sequence prompt 6).
+
+### PF-120 destructured reflection retains loader provenance
+
+The module-reference walker recognized direct `Reflect.get` but lost the
+receiver when `get` was destructured or assigned to another binding. That allowed
+a reflected `createRequire` loader to enter an inner layer without a reported
+module reference.
+
+**Adversarial proof:** test-first companions acquired `createRequire` through both
+`const { get } = Reflect` and `({ get: read } = Reflect)`, including a
+`globalThis.Reflect` alias. The dependency
+companion reported zero violations before the change. The LLM PII, sealed-factory,
+and secret-containment companions likewise missed the same loader. All four scans
+now report the shared unresolved loader reference.
+
+### PF-121 wrapped authorities are captured once
+
+Assertions evaluated wrapped authority expressions repeatedly. A stateful getter
+could return one grant for validation and another tenant or actor for repository
+work.
+
+**Adversarial proof:** a synthetic repository parameter used a class getter for
+`carrier.piiGrant`, asserted it directly, compared its tenant directly, and
+produced zero violations before the change. It now fails. Capturing the getter
+once into a `const`, then using only that binding for the exact action assertion,
+pairwise tenant proof, and work passes. Existing direct, destructured-parameter,
+closed-union, and fixed-tuple permutations remain covered.
+
+### PF-122 returned callable implementations resolve or fail closed
+
+Returned-callable discovery stopped at object literals and transparent wrappers.
+A private class instance, a conditional return, or an opaque local builder made
+an escaped factory's methods disappear from tenant and governed-sink inspection.
+
+**Adversarial proof:** test-first factories returned either a private class or an
+object literal with the same unguarded method. Both the tenant and governed-sink
+detectors reported zero violations before the change and now report both live
+implementations. A separate factory returning an interface from an unresolved
+builder now reports its method as an unverifiable execution boundary instead of
+silently dropping it. A callable getter on a private returned class is likewise
+resolved to its returned function and checked.
+
+### PF-123 every sealed union arm agrees at the same position
+
+Sealed reshape analysis accepted the first union arm that exposed a sealed type.
+`TenantContext | string` and the nested equivalent could therefore be asserted as
+sealed authority.
+
+**Adversarial proof:** direct and nested mixed-arm casts produced zero construction
+findings before the change. Both now fail. A union whose every arm carries
+`TenantContext` at the same property and an intersection that retains
+`TenantContext` both remain clean, proving the correction distinguishes alternative
+runtime values from simultaneous constraints.
+
+### PF-120 - PF-123 verification
+
+```
+pnpm test                                                    # 56 files, 1,011 tests passed
+pnpm lint                                                    # clean
+pnpm typecheck                                               # clean
+pnpm knip                                                    # clean
+pnpm v3:invariants                                           # 6 active-pass, 0 active-fail
+pnpm golden:validate                                         # all 16 signed cases passed
+pnpm vitest run src/__tests__/fitness/line-budget.test.ts    # contracts 3,998; domain 1,250; infrastructure 3,382
+APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```
+
+**Date:** 2026-07-28 (twenty-second review-fix round on v3 build-sequence prompt 6).

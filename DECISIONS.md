@@ -2238,3 +2238,61 @@ observability (client names remain loggable).
 **Revert path:** revert this changeset to restore conditional authority carriers,
 heuristic free-text provenance, unformatted-only account detection, organization-only
 dependency checks, and generic slug record identities.
+
+## D-083 - Loader provenance, stable authority captures, callable returns, and sealed unions fail closed
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-079, D-080, D-082,
+ADR-0034, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13
+
+Four review findings were legitimate symptoms of shared semantic-walker gaps.
+
+Destructured and assignment-bound `Reflect.get` values now retain their receiver
+and property provenance. A reflected `createRequire` loader is therefore reported
+by the shared module-reference walker before it can bypass the layer, LLM PII,
+sealed-factory, or secret-containment fences. An unresolved reflected property
+fails closed when it is invoked over the Node module namespace.
+
+Every wrapped sealed authority is captured once into a `const` binding at the
+start of the shared authority prologue. Assertions and pairwise tenant-and-actor
+proofs must use that binding, and a later re-read of the carrier is refused. The
+three shipped wrapped-authority boundaries now follow the same rule.
+
+Returned-callable discovery recursively resolves object literals, transparent
+wrappers, fixed conditionals, local variables, private class instances, inherited
+public methods, callable fields, and callable accessors. When a statically typed callable return has
+no resolvable implementation, the returned method is represented as unresolved
+and fails its execution-boundary checks. SQL database capability factories remain
+outside repository-method discovery by their exact `SqlDb`/`SqlTx`/`SqlQueryable`
+return contracts, not by a filename allowlist.
+
+A sealed reshape across a union is valid only when every possible arm exposes the
+same sealed key at the same structural position. Intersections are evaluated as
+simultaneous constraints rather than alternative runtime arms. Direct and nested
+`TenantContext | string` laundering now fail while same-key union and intersection
+reshapes remain valid.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 3,998 | 4,000 | 2 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,382 | 3,400 | 18 |
+| presentation | 918 | 6,000 | 5,082 |
+
+No ceiling changed. The fixes added no contracts or domain production lines, and
+no useful code or documentation was deleted or compressed to manufacture room.
+Infrastructure grew only by the stable authority bindings required at live
+boundaries. Any subsequent contracts or domain growth requires a new measured ADR
+amendment before it can pass the fence.
+
+**Alternatives rejected:** enumerate another loader spelling (destructuring and
+assignment aliases would drift again); reject all wrapped authority carriers
+(closed carriers are statically enforceable once captured); inspect exported
+classes only (private implementations returned by public factories remain live);
+and accept a union when any arm is sealed (an unsealed runtime arm can still be
+asserted into authority).
+
+**Revert path:** revert this changeset to restore destructured reflection gaps,
+carrier re-evaluation, object-literal-only returned-callable discovery, and
+first-matching-arm sealed reshape acceptance.

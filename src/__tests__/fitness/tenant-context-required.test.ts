@@ -136,11 +136,14 @@ function callableMembers(
  * authority happens to be declared first.
  */
 function runtimeGuardViolations(signature: Signature): string[] {
-  const { required, unfenceable } = requiredAuthorityPrologue(signature);
+  const { required, captures, unfenceable } = requiredAuthorityPrologue(signature);
   if (required.length === 0) {
     return ["no sealed authority parameter to assert"];
   }
-  return [...unfenceable, ...authorityPrologueViolations(signature.getDeclaration(), required)];
+  return [
+    ...unfenceable,
+    ...authorityPrologueViolations(signature.getDeclaration(), required, captures),
+  ];
 }
 
 function exportedDomainCallableTypes(
@@ -747,10 +750,21 @@ ${body}
     it.each(mixedGrantPairs)(
       "accepts a mixed direct/wrapped grant pair with both assertions and its scope proof",
       ({ params, execution, pii }) => {
+        const executionRef = execution.includes(".") ? "capturedExecutionGrant" : execution;
+        const piiRef = pii.includes(".") ? "capturedPiiGrant" : pii;
+        const captures = [
+          execution.includes(".")
+            ? `const ${executionRef} = ${execution};`
+            : "",
+          pii.includes(".")
+            ? `const ${piiRef} = ${pii};`
+            : "",
+        ].filter(Boolean).join("\n          ");
         expect(dualAuthorityViolations(`
-          assertActionGrant(${execution}, "execution.initiate");
-          assertActionGrant(${pii}, "pii.view");
-          assertSameTenant(${execution}.tenant, ${pii}.tenant);
+          ${captures}
+          assertActionGrant(${executionRef}, "execution.initiate");
+          assertActionGrant(${piiRef}, "pii.view");
+          assertSameTenant(${executionRef}.tenant, ${piiRef}.tenant);
           return db.query("SELECT 1");
         `, params)).toEqual([]);
       },
@@ -770,14 +784,49 @@ ${body}
           return db.query("SELECT 1");
       `, params)).toHaveLength(1);
       expect(dualAuthorityViolations(`
-          assertActionGrant(wrapped.authorities.executionGrant, "execution.initiate");
-          assertActionGrant(wrapped.authorities.piiGrant, "pii.view");
+          const executionGrant = wrapped.authorities.executionGrant;
+          const piiGrant = wrapped.authorities.piiGrant;
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
           assertSameTenant(
-            wrapped.authorities.executionGrant.tenant,
-            wrapped.authorities.piiGrant.tenant
+            executionGrant.tenant,
+            piiGrant.tenant
           );
           return db.query("SELECT 1");
       `, params)).toEqual([]);
+    });
+
+    it("rejects repeated evaluation of an accessor-backed wrapped authority", () => {
+      const prelude = `
+        class GrantCarrier {
+          get piiGrant(): ActionGrant<"pii.view"> {
+            throw new Error("stateful getter");
+          }
+        }`;
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          carrier: GrantCarrier,`;
+      expect(dualAuthorityViolations(`
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(carrier.piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, carrier.piiGrant.tenant);
+          return db.query("SELECT 1");
+      `, params, prelude)).toHaveLength(1);
+      expect(dualAuthorityViolations(`
+          const piiGrant = carrier.piiGrant;
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+          return db.query("SELECT 1");
+      `, params, prelude)).toEqual([]);
+      expect(dualAuthorityViolations(`
+          const piiGrant = carrier.piiGrant;
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+          const alias = carrier;
+          return db.query(alias.piiGrant.tenant.orgId);
+      `, params, prelude)).toHaveLength(1);
     });
 
     it("accepts a closed union only when every arm has the same authority inventory", () => {
@@ -787,9 +836,10 @@ ${body}
             | { piiGrant: ActionGrant<"pii.view">; mode: "one" }
             | { piiGrant: ActionGrant<"pii.view">; mode: "two" },`;
       expect(dualAuthorityViolations(`
+          const piiGrant = wrapped.piiGrant;
           assertActionGrant(executionGrant, "execution.initiate");
-          assertActionGrant(wrapped.piiGrant, "pii.view");
-          assertSameTenant(executionGrant.tenant, wrapped.piiGrant.tenant);
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
           return db.query("SELECT 1");
       `, params)).toEqual([]);
     });
@@ -836,9 +886,11 @@ ${body}
           return db.query("SELECT 1");
       `, params)).toHaveLength(1);
       expect(dualAuthorityViolations(`
-          assertActionGrant(grants[0], "execution.initiate");
-          assertActionGrant(grants[1], "pii.view");
-          assertSameTenant(grants[0].tenant, grants[1].tenant);
+          const executionGrant = grants[0];
+          const piiGrant = grants[1];
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
           return db.query("SELECT 1");
       `, params)).toEqual([]);
     });
@@ -925,9 +977,10 @@ ${body}
       )).toHaveLength(1);
       expect(dualAuthorityViolations(
         `
-          assertTenantContext(ctx.tenant);
+          const tenant = ctx.tenant;
+          assertTenantContext(tenant);
           assertActionGrant(grant, "pii.view");
-          assertSameTenant(ctx.tenant, grant.tenant);
+          assertSameTenant(tenant, grant.tenant);
           return db.query("SELECT 1");
         `,
         wrapped,
@@ -949,9 +1002,10 @@ ${body}
       )).toHaveLength(1);
       expect(dualAuthorityViolations(
         `
+          const wrappedTenant = wrapped.authority.tenant;
           assertTenantContext(tenant);
-          assertTenantContext(wrapped.authority.tenant);
-          assertSameTenant(tenant, wrapped.authority.tenant);
+          assertTenantContext(wrappedTenant);
+          assertSameTenant(tenant, wrappedTenant);
           return db.query("SELECT 1");
         `,
         params,
@@ -1238,6 +1292,90 @@ ${body}
       )).toEqual([
         {
           ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById",
+          detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
+    });
+
+    it("flags methods returned by private class and conditional factory implementations", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import type { TenantContext } from "../../contracts/tenant";
+        interface Repo {
+          loadById(id: string, tenant: TenantContext): unknown;
+        }
+        class PrivateRepo implements Repo {
+          constructor(private readonly db: SqlDb) {}
+          loadById(id: string, tenant: TenantContext) {
+            return this.db.query("SELECT 1");
+          }
+        }
+        export function makeRepo(db: SqlDb, useClass: boolean): Repo {
+          return useClass
+            ? new PrivateRepo(db)
+            : {
+                loadById(id, tenant) {
+                  return db.query("SELECT 1");
+                },
+              };
+        }
+      `);
+      const violations = detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      );
+      expect(violations.filter((violation) =>
+        violation.ref === "src/infrastructure/crm/subject.ts :: makeRepo.loadById"
+      )).toHaveLength(2);
+    });
+
+    it("fails closed when a factory's callable implementation cannot be resolved", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import type { TenantContext } from "../../contracts/tenant";
+        interface Repo {
+          loadById(id: string, tenant: TenantContext): unknown;
+        }
+        declare function buildRepo(db: SqlDb): Repo;
+        export function makeRepo(db: SqlDb): Repo {
+          return buildRepo(db);
+        }
+      `);
+      expect(detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      )).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById",
+          detail: "repository callable does not assert its sealed tenant authority before SQL access",
+        },
+      ]);
+    });
+
+    it("resolves callable getters returned by private class factories", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import type { TenantContext } from "../../contracts/tenant";
+        interface Repo {
+          readonly loadById: (id: string, tenant: TenantContext) => unknown;
+        }
+        class PrivateRepo implements Repo {
+          constructor(private readonly db: SqlDb) {}
+          get loadById() {
+            return (id: string, tenant: TenantContext) =>
+              this.db.query("SELECT 1");
+          }
+        }
+        export function makeRepo(db: SqlDb): Repo {
+          return new PrivateRepo(db);
+        }
+      `);
+      expect(detectMissingTenantParams(
+        project,
+        new Set(["src/infrastructure/crm/subject.ts :: makeRepo"]),
+      )).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: makeRepo.loadById.<call>",
           detail: "repository callable does not assert its sealed tenant authority before SQL access",
         },
       ]);

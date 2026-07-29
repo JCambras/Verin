@@ -189,9 +189,10 @@ export async function createSession(
   user: AuthenticatedUser,
   ttlMinutes: number,
 ): Promise<Principal> {
+  const authenticatedTenant = user.tenant;
   assertTenantContext(tenant);
-  assertTenantContext(user.tenant);
-  assertSameTenant(tenant, user.tenant);
+  assertTenantContext(authenticatedTenant);
+  assertSameTenant(tenant, authenticatedTenant);
   assertAuthenticatedUser(user);
   // user.tenant is minted from the authenticated ROW (tenantFromIdentity(row.id,
   // row.org_id)), so "same org, same human actor" is exactly the ownership check this

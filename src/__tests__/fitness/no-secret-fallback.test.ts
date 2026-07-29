@@ -725,6 +725,20 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
         hit.startsWith("src/app/evil.ts:3")
       )).toBe(true);
     });
+    it("catches createRequire through a destructured Reflect.get alias", () => {
+      const project = inMemoryProject({
+        "/src/contracts/secret.ts": `export class SecretValue {}; export function revealSecret(value: SecretValue): string { return ""; }`,
+        "/src/app/evil.ts": `
+          import * as nodeModule from "node:module";
+          const { get: read } = Reflect;
+          const created = read(nodeModule, "createRequire")(import.meta.url);
+          created("../contracts/secret");
+        `,
+      });
+      expect(detectUnsanctionedReveal(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts:4")
+      )).toBe(true);
+    });
     it("catches computed and destructured access if a raw accessor is reintroduced", () => {
       const project = inMemoryProject({
         "/src/contracts/secret.ts": `export class SecretValue { reveal(): string { return ""; } }`,

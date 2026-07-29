@@ -483,13 +483,20 @@ interface SealedPosition {
  * `ActionGrant<"decision.approve">` are different authorities rather than one name.
  */
 function sealedKeyOf(type: Type): string | null {
-  const members = [...type.getUnionTypes(), ...type.getIntersectionTypes()];
-  if (members.length) {
-    for (const member of members) {
-      const key = sealedKeyOf(member);
-      if (key) return key;
-    }
-    return null;
+  const unions = type.getUnionTypes();
+  if (unions.length) {
+    const keys = unions.map(sealedKeyOf);
+    return keys.every((key): key is string => key !== null) &&
+      new Set(keys).size === 1
+      ? keys[0]!
+      : null;
+  }
+  const intersections = type.getIntersectionTypes();
+  if (intersections.length) {
+    const keys = intersections
+      .map(sealedKeyOf)
+      .filter((key): key is string => key !== null);
+    return keys.length > 0 && new Set(keys).size === 1 ? keys[0]! : null;
   }
   const direct = sealedValueType(type);
   if (!direct) return null;
@@ -571,35 +578,57 @@ function sealedPositionsOf(
  * name on demand, never by enumerating that side's members, so a foreign source
  * (zod's inferred `parsed.data`) is answered without dragging its type graph in.
  */
-function typeAtPosition(type: Type, steps: readonly PositionStep[]): Type | null {
-  let current: Type | null = type;
-  for (const step of steps) {
-    if (!current) return null;
-    const members: Type[] = [
-      ...current.getUnionTypes(),
-      ...current.getIntersectionTypes(),
-    ];
-    if (members.length) {
-      const resolved: Type | null = members
-        .map((member): Type | null => typeAtPosition(member, [step]))
-        .find((candidate): candidate is Type => candidate !== null) ?? null;
-      current = resolved;
-      continue;
-    }
-    if (step.kind === "property") {
-      const property = current.getProperty(step.name);
-      const declaration = property?.getValueDeclaration() ?? property?.getDeclarations()[0];
-      current = property && declaration ? property.getTypeAtLocation(declaration) : null;
-    } else if (step.kind === "element") {
-      current = current.getArrayElementType() ?? null;
-    } else if (step.kind === "argument") {
-      current = [...current.getAliasTypeArguments(), ...current.getTypeArguments()][step.index] ?? null;
-    } else {
-      current = current.getCallSignatures()[0]?.getReturnType() ??
-        current.getConstructSignatures()[0]?.getReturnType() ?? null;
-    }
+function nextTypeAtPosition(type: Type, step: PositionStep): Type | null {
+  if (step.kind === "property") {
+    const property = type.getProperty(step.name);
+    const declaration = property?.getValueDeclaration() ?? property?.getDeclarations()[0];
+    return property && declaration ? property.getTypeAtLocation(declaration) : null;
   }
-  return current;
+  if (step.kind === "element") {
+    return type.getArrayElementType() ?? null;
+  }
+  if (step.kind === "argument") {
+    return [...type.getAliasTypeArguments(), ...type.getTypeArguments()][step.index] ?? null;
+  }
+  return type.getCallSignatures()[0]?.getReturnType() ??
+    type.getConstructSignatures()[0]?.getReturnType() ?? null;
+}
+
+function sealedKeyAtPosition(type: Type, steps: readonly PositionStep[]): string | null {
+  if (steps.length === 0) return sealedKeyOf(type);
+  const unions = type.getUnionTypes();
+  if (unions.length) {
+    const keys = unions.map((member) => sealedKeyAtPosition(member, steps));
+    return keys.every((key): key is string => key !== null) &&
+      new Set(keys).size === 1
+      ? keys[0]!
+      : null;
+  }
+  const [step, ...rest] = steps;
+  const next = nextTypeAtPosition(type, step!);
+  if (next) return sealedKeyAtPosition(next, rest);
+  const intersections = type.getIntersectionTypes();
+  if (intersections.length) {
+    const keys = intersections
+      .map((member) => sealedKeyAtPosition(member, steps))
+      .filter((key): key is string => key !== null);
+    return keys.length > 0 && new Set(keys).size === 1 ? keys[0]! : null;
+  }
+  return null;
+}
+
+function uncheckedAtPosition(type: Type, steps: readonly PositionStep[]): boolean {
+  if (steps.length === 0) return isUncheckedSource(awaited(type));
+  const unions = type.getUnionTypes();
+  if (unions.length) {
+    return unions.some((member) => uncheckedAtPosition(member, steps));
+  }
+  const [step, ...rest] = steps;
+  const next = nextTypeAtPosition(type, step!);
+  if (next) return uncheckedAtPosition(next, rest);
+  return type.getIntersectionTypes().some((member) =>
+    uncheckedAtPosition(member, steps)
+  );
 }
 
 /**
@@ -611,10 +640,9 @@ function typeAtPosition(type: Type, steps: readonly PositionStep[]): Type | null
 function isSealedReshape(source: Type, target: Type): boolean {
   const wanted = sealedPositionsOf(target);
   if (wanted.length === 0) return false;
-  return wanted.every(({ steps, sealed }) => {
-    const held = typeAtPosition(source, steps);
-    return held !== null && sealedKeyOf(held) === sealed;
-  });
+  return wanted.every(({ steps, sealed }) =>
+    sealedKeyAtPosition(source, steps) === sealed
+  );
 }
 
 /**
@@ -638,10 +666,9 @@ function carriesUncheckedMember(type: Type): boolean {
 }
 
 function uncheckedAtSealedPosition(value: Type, expected: Type): boolean {
-  return sealedPositionsOf(expected).some(({ steps }) => {
-    const held = typeAtPosition(value, steps);
-    return held !== null && isUncheckedSource(awaited(held));
-  });
+  return sealedPositionsOf(expected).some(({ steps }) =>
+    uncheckedAtPosition(value, steps)
+  );
 }
 
 /**
@@ -1677,6 +1704,44 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       )).toEqual([]);
     });
 
+    it("rejects union reshapes unless every possible arm carries the same sealed type", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          declare const direct: TenantContext | string;
+          declare const nested:
+            | { tenant: TenantContext; kind: "trusted" }
+            | { tenant: string; kind: "raw" };
+          export const forgedDirect = direct as TenantContext;
+          export const forgedNested = nested as { tenant: TenantContext };
+        `,
+      );
+      const hits = detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/app/evil.ts") && hit.includes("cast")
+      );
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:7"))).toBe(true);
+      expect(hits.some((hit) => hit.startsWith("src/app/evil.ts:8"))).toBe(true);
+    });
+
+    it("accepts union and intersection reshapes that retain sealed identity in every runtime value", () => {
+      const project = sealedFixture(
+        "/src/app/fine.ts",
+        `
+          import type { TenantContext } from "../contracts/tenant";
+          declare const union:
+            | { tenant: TenantContext; kind: "one" }
+            | { tenant: TenantContext; kind: "two" };
+          declare const intersection: TenantContext & { readonly source: "trusted" };
+          export const narrowedUnion = union as { tenant: TenantContext };
+          export const narrowedIntersection = intersection as TenantContext;
+        `,
+      );
+      expect(detectSealedTypeConstruction(project).filter((hit) =>
+        hit.startsWith("src/app/fine.ts")
+      )).toEqual([]);
+    });
+
     it("allows RESHAPING an already-sealed value and passing one into a sealed parameter", () => {
       const project = sealedFixture(
         "/src/app/fine.ts",
@@ -2005,6 +2070,21 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
       );
       expect(detectUntrustedFactoryCalls(project).some((hit) =>
         hit.startsWith("src/app/evil.ts:3") && hit.includes("unverifiable module load")
+      )).toBe(true);
+    });
+
+    it("catches createRequire through a destructured Reflect.get alias", () => {
+      const project = sealedFixture(
+        "/src/app/evil.ts",
+        `
+          import * as nodeModule from "node:module";
+          const { get: read } = Reflect;
+          const created = read(nodeModule, "createRequire")(import.meta.url);
+          created("../contracts/tenant");
+        `,
+      );
+      expect(detectUntrustedFactoryCalls(project).some((hit) =>
+        hit.startsWith("src/app/evil.ts:4") && hit.includes("unverifiable module load")
       )).toBe(true);
     });
 

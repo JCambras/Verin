@@ -325,9 +325,10 @@ export async function auditEvent(
   db: SqlDb,
   opts: { actor: WriteActor; action: ObservabilityAction; entityType: ObservabilityEntityType; entityId: string; detail: string },
 ): Promise<void> {
-  assertWriteActor(opts.actor);
+  const actor = opts.actor;
+  assertWriteActor(actor);
   const recorded = await auditedWrite({
-    db, actor: opts.actor, action: opts.action, entityType: opts.entityType,
+    db, actor, action: opts.action, entityType: opts.entityType,
     entityId: opts.entityId, detail: opts.detail, perform: async () => ({}),
   });
   if (!recorded.ok) {
@@ -341,7 +342,7 @@ export async function auditEvent(
         // fails (a logout would return an unenveloped 500 with the session already
         // revoked). Both identifiers degrade to the same value the log formatter
         // would have written anyway.
-        orgId: observabilityIdOrRedacted("orgId", opts.actor.tenant.orgId),
+        orgId: observabilityIdOrRedacted("orgId", actor.tenant.orgId),
         action: opts.action,
         entityType: opts.entityType,
         entityId: observabilityIdOrRedacted("entityId", opts.entityId),

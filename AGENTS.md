@@ -162,8 +162,10 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   LEADING run of sealed-authority assertions, and any required assertion outside it fails. Order is
   free; anything else (a db call, a branch, a side effect) ENDS the prologue. Every `ActionGrant` owes
   its exact action assertion. Every grant pair owes `assertSameTenant(left.tenant, right.tenant)`, and
-  each explicit `TenantContext` must be compared with every grant. `assertSameTenant` checks both org
-  and actor identity, so authorities that disagree on either cannot reach work. Closed unions and fixed
+  each explicit `TenantContext` must be compared with every grant. A wrapped authority is read exactly
+  once into a `const` binding before those assertions and is never re-read from its carrier.
+  `assertSameTenant` checks both org and actor identity, so authorities that disagree on either cannot
+  reach work. Closed unions and fixed
   tuples are accepted only when every arm exposes one identical complete authority inventory; optional
   authorities, arrays, open records, and index signatures are refused as runtime-dynamic. Demanding a literal
   statement #1 in each fence separately is what made dual-authority signatures unbuildable.

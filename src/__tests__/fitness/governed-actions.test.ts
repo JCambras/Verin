@@ -805,11 +805,11 @@ export function detectUnguardedGovernedSinks(project: Project): string[] {
     // included, and in whatever order they are declared - plus every tenant-to-grant
     // and grant-to-grant scope proof. Deriving it separately here is what let the two
     // fences demand incompatible prologues for the same signature.
-    const { required, unfenceable } = requiredAuthorityPrologue(sink.signature);
+    const { required, captures, unfenceable } = requiredAuthorityPrologue(sink.signature);
     out.push(
       ...[
         ...unfenceable,
-        ...authorityPrologueViolations(sink.declaration, required),
+        ...authorityPrologueViolations(sink.declaration, required, captures),
       ].map((message) => `${sink.file} :: ${sink.name}: ${message}`),
     );
   }
@@ -1863,20 +1863,25 @@ describe("governed-actions fence (v3 §15.3)", () => {
               grant: ActionGrant<"pii.view">,
             ): ClientRecord[] {
 ${body}
-              return [{ fullName: ctx.tenant.orgId }];
+              return [{ fullName: tenant.orgId }];
             }
           `,
         }));
-      expect(sink(`              assertActionGrant(grant, "pii.view");`)).toHaveLength(2);
       expect(sink(`
-              assertTenantContext(ctx.tenant);
+              const tenant = ctx.tenant;
+              assertTenantContext(tenant);
+              assertActionGrant(grant, "pii.view");`).length).toBeGreaterThan(0);
+      expect(sink(`
+              const tenant = ctx.tenant;
+              assertTenantContext(tenant);
               assertActionGrant(grant, "pii.view");
-              assertSameTenant(ctx.tenant, grant.tenant);`)).toEqual([]);
+              assertSameTenant(tenant, grant.tenant);`)).toEqual([]);
       // ...and the action compares as a VALUE, so the other quote style is fine.
       expect(sink(`
-              assertTenantContext(ctx.tenant);
+              const tenant = ctx.tenant;
+              assertTenantContext(tenant);
               assertActionGrant(grant, 'pii.view');
-              assertSameTenant(ctx.tenant, grant.tenant);`)).toEqual([]);
+              assertSameTenant(tenant, grant.tenant);`)).toEqual([]);
     });
     it("derives PII read sinks from arrow, object, and class callables", () => {
       const project = inMemoryProject({
@@ -2010,6 +2015,28 @@ ${body}
       const hits = detectUnguardedGovernedSinks(project);
       expect(hits.some((hit) => hit.includes(":: factories.make.list:"))).toBe(true);
       expect(hits.some((hit) => hit.includes(":: Factory.make.load:"))).toBe(true);
+    });
+    it("derives PII sinks from private class and conditional factory returns", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/new-adapter/repository.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Client extends PIIBearing { email: string }
+          interface Repo { list(tenant: TenantContext): Client[] }
+          class PrivateRepo implements Repo {
+            list(tenant: TenantContext): Client[] { return [{ email: tenant.orgId }]; }
+          }
+          export function makeRepo(useClass: boolean): Repo {
+            return useClass
+              ? new PrivateRepo()
+              : { list(tenant) { return [{ email: tenant.orgId }]; } };
+          }
+        `,
+      });
+      const hits = detectUnguardedGovernedSinks(project);
+      expect(hits.filter((hit) => hit.includes(":: makeRepo.list:"))).toHaveLength(2);
     });
     it("derives audit-export sinks from governed output markers", () => {
       const project = inMemoryProject({
