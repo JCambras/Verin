@@ -1,10 +1,11 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, posix } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   Node,
   Project,
   SyntaxKind,
+  ts,
   VariableDeclarationKind,
   type ArrowFunction,
   type CallExpression,
@@ -27,6 +28,7 @@ import { REPO_ROOT } from "./_fence-utils";
 const AXE_HELPER_PATH = "e2e/axe.ts";
 const E2E_HELPERS_PATH = "e2e/helpers.ts";
 const PLAYWRIGHT_CONFIG_PATH = "playwright.config.ts";
+const TSCONFIG_PATH = "tsconfig.json";
 const AXE_HELPER_EXPORT = "assertNoAxeViolations";
 const REQUIRED_AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const;
 const REQUIRED_AXE_SPECS = [
@@ -34,6 +36,257 @@ const REQUIRED_AXE_SPECS = [
   "e2e/walkthrough.spec.ts",
   "e2e/demo-journey.spec.ts",
 ] as const;
+const AXE_IMPORT_GRAPH_ROOTS = [
+  AXE_HELPER_PATH,
+  E2E_HELPERS_PATH,
+  ...REQUIRED_AXE_SPECS,
+] as const;
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"] as const;
+const ALLOWED_AXE_EXTERNAL_MODULES = new Set([
+  "@axe-core/playwright",
+  "@playwright/test",
+]);
+
+interface LocalModuleConfig {
+  readonly baseUrl: string;
+  readonly paths: Readonly<Record<string, readonly string[]>>;
+}
+
+interface RuntimeModuleReference {
+  readonly specifier?: string;
+  readonly display: string;
+}
+
+function parseLocalModuleConfig(
+  source: string | undefined,
+): LocalModuleConfig | undefined {
+  if (source === undefined) return undefined;
+  const parsed = ts.parseConfigFileTextToJson(TSCONFIG_PATH, source);
+  if (
+    parsed.error !== undefined ||
+    parsed.config === null ||
+    typeof parsed.config !== "object" ||
+    parsed.config.extends !== undefined
+  ) {
+    return undefined;
+  }
+  const compilerOptions = parsed.config.compilerOptions as
+    | {
+        baseUrl?: unknown;
+        paths?: unknown;
+      }
+    | undefined;
+  const baseUrl =
+    typeof compilerOptions?.baseUrl === "string"
+      ? compilerOptions.baseUrl
+      : ".";
+  const rawPaths = compilerOptions?.paths;
+  const paths =
+    rawPaths !== null && typeof rawPaths === "object"
+      ? Object.fromEntries(
+          Object.entries(rawPaths).flatMap(([pattern, targets]) =>
+            Array.isArray(targets) &&
+            targets.every((target) => typeof target === "string")
+              ? [[pattern, targets]]
+              : [],
+          ),
+        )
+      : {};
+  return { baseUrl, paths };
+}
+
+function normalizedRepoPath(path: string): string | undefined {
+  const normalized = posix.normalize(path).replace(/^\.\//, "");
+  return normalized === ".." ||
+    normalized.startsWith("../") ||
+    posix.isAbsolute(normalized)
+    ? undefined
+    : normalized;
+}
+
+function pathPatternCapture(pattern: string, specifier: string): string | undefined {
+  const star = pattern.indexOf("*");
+  if (star === -1) return pattern === specifier ? "" : undefined;
+  if (pattern.indexOf("*", star + 1) !== -1) return undefined;
+  const prefix = pattern.slice(0, star);
+  const suffix = pattern.slice(star + 1);
+  return specifier.startsWith(prefix) && specifier.endsWith(suffix)
+    ? specifier.slice(prefix.length, specifier.length - suffix.length)
+    : undefined;
+}
+
+function localModuleBases(
+  importer: string,
+  specifier: string,
+  config: LocalModuleConfig,
+): string[] | undefined {
+  if (specifier.startsWith(".")) {
+    const resolved = normalizedRepoPath(
+      posix.join(posix.dirname(importer), specifier),
+    );
+    return resolved === undefined ? [] : [resolved];
+  }
+  const bases = Object.entries(config.paths).flatMap(
+    ([pattern, targets]) => {
+      const capture = pathPatternCapture(pattern, specifier);
+      if (capture === undefined) return [];
+      return targets.flatMap((target) => {
+        const star = target.indexOf("*");
+        const substituted =
+          star === -1
+            ? target
+            : `${target.slice(0, star)}${capture}${target.slice(star + 1)}`;
+        const resolved = normalizedRepoPath(
+          posix.join(config.baseUrl, substituted),
+        );
+        return resolved === undefined ? [] : [resolved];
+      });
+    },
+  );
+  return bases.length === 0 ? undefined : bases;
+}
+
+function sourcePathCandidates(base: string): string[] {
+  const extension = posix.extname(base);
+  if (SOURCE_EXTENSIONS.includes(extension as (typeof SOURCE_EXTENSIONS)[number])) {
+    return [base];
+  }
+  const sourceBase = [".js", ".jsx", ".mjs", ".cjs"].includes(extension)
+    ? base.slice(0, -extension.length)
+    : base;
+  return [
+    ...SOURCE_EXTENSIONS.map((candidate) => `${sourceBase}${candidate}`),
+    ...SOURCE_EXTENSIONS.map((candidate) =>
+      posix.join(sourceBase, `index${candidate}`),
+    ),
+  ];
+}
+
+function runtimeModuleReferences(sourceFile: SourceFile): RuntimeModuleReference[] {
+  const references: RuntimeModuleReference[] = [];
+  for (const declaration of sourceFile.getImportDeclarations()) {
+    const clause = declaration.getImportClause();
+    const namedImports = declaration.getNamedImports();
+    const runtime =
+      clause === undefined ||
+      (!declaration.isTypeOnly() &&
+        (declaration.getDefaultImport() !== undefined ||
+          declaration.getNamespaceImport() !== undefined ||
+          namedImports.length === 0 ||
+          namedImports.some((specifier) => !specifier.isTypeOnly())));
+    if (runtime) {
+      const specifier = declaration.getModuleSpecifierValue();
+      references.push({ specifier, display: specifier });
+    }
+  }
+  for (const declaration of sourceFile.getExportDeclarations()) {
+    const moduleSpecifier = declaration.getModuleSpecifierValue();
+    if (moduleSpecifier === undefined || declaration.isTypeOnly()) continue;
+    const namedExports = declaration.getNamedExports();
+    if (
+      namedExports.length > 0 &&
+      namedExports.every((specifier) => specifier.isTypeOnly())
+    ) {
+      continue;
+    }
+    references.push({ specifier: moduleSpecifier, display: moduleSpecifier });
+  }
+  for (const declaration of sourceFile.getDescendantsOfKind(
+    SyntaxKind.ImportEqualsDeclaration,
+  )) {
+    if (declaration.isTypeOnly()) continue;
+    const moduleReference = declaration.getModuleReference();
+    if (!Node.isExternalModuleReference(moduleReference)) continue;
+    const expression = moduleReference.getExpression();
+    references.push(
+      Node.isStringLiteral(expression)
+        ? {
+            specifier: expression.getLiteralText(),
+            display: expression.getLiteralText(),
+          }
+        : { display: expression?.getText() ?? "<non-literal>" },
+    );
+  }
+  for (const call of sourceFile.getDescendantsOfKind(
+    SyntaxKind.CallExpression,
+  )) {
+    const expression = call.getExpression();
+    const isDynamicImport =
+      expression.getKind() === SyntaxKind.ImportKeyword;
+    const isRequire =
+      Node.isIdentifier(expression) &&
+      expression.getText() === "require" &&
+      (expression
+        .getSymbol()
+        ?.getDeclarations()
+        .every(
+          (declaration) =>
+            declaration.getSourceFile() !== sourceFile,
+        ) ??
+        true);
+    if (!isDynamicImport && !isRequire) continue;
+    const argument = call.getArguments()[0];
+    references.push(
+      Node.isStringLiteral(argument) ||
+        Node.isNoSubstitutionTemplateLiteral(argument)
+        ? {
+            specifier: argument.getLiteralText(),
+            display: argument.getLiteralText(),
+          }
+        : { display: argument?.getText() ?? "<missing>" },
+    );
+  }
+  return references;
+}
+
+function resolveLocalModulePath(
+  importer: string,
+  specifier: string,
+  config: LocalModuleConfig,
+  exists: (path: string) => boolean,
+): string | undefined | null {
+  const bases = localModuleBases(importer, specifier, config);
+  if (bases === undefined) return undefined;
+  return (
+    bases
+      .flatMap(sourcePathCandidates)
+      .find(exists) ?? null
+  );
+}
+
+function readAxeAnalysisSources(): Record<string, string> {
+  const sources: Record<string, string> = {
+    [TSCONFIG_PATH]: readFileSync(join(REPO_ROOT, TSCONFIG_PATH), "utf8"),
+    [PLAYWRIGHT_CONFIG_PATH]: readFileSync(
+      join(REPO_ROOT, PLAYWRIGHT_CONFIG_PATH),
+      "utf8",
+    ),
+  };
+  const config = parseLocalModuleConfig(sources[TSCONFIG_PATH]) ?? {
+    baseUrl: ".",
+    paths: {},
+  };
+  const project = new Project({ useInMemoryFileSystem: true });
+  const pending: string[] = [...AXE_IMPORT_GRAPH_ROOTS];
+  while (pending.length > 0) {
+    const path = pending.pop()!;
+    if (sources[path] !== undefined) continue;
+    const source = readFileSync(join(REPO_ROOT, path), "utf8");
+    sources[path] = source;
+    const sourceFile = project.createSourceFile(`/${path}`, source);
+    for (const reference of runtimeModuleReferences(sourceFile)) {
+      if (reference.specifier === undefined) continue;
+      const resolved = resolveLocalModulePath(
+        path,
+        reference.specifier,
+        config,
+        (candidate) => existsSync(join(REPO_ROOT, candidate)),
+      );
+      if (resolved !== undefined && resolved !== null) pending.push(resolved);
+    }
+  }
+  return sources;
+}
 const REQUIRED_ROUTE_GROUPS: Record<
   (typeof REQUIRED_AXE_SPECS)[number],
   readonly { readonly imported: string; readonly requiresLogin: boolean }[]
@@ -1800,6 +2053,78 @@ function loginHelperIsSanctioned(sourceFile: SourceFile): boolean {
     ]);
 }
 
+function importedAxeGraphProblems(
+  sourceFiles: ReadonlyMap<string, SourceFile>,
+  config: LocalModuleConfig | undefined,
+): string[] {
+  const problems: string[] = [];
+  if (config === undefined) {
+    problems.push(
+      `${TSCONFIG_PATH}:1 must be a directly parseable local module-resolution configuration for Axe evidence`,
+    );
+  }
+  const localConfig = config ?? { baseUrl: ".", paths: {} };
+  const reachable = new Set<string>();
+  const pending: string[] = [...AXE_IMPORT_GRAPH_ROOTS];
+  while (pending.length > 0) {
+    const path = pending.pop()!;
+    if (reachable.has(path)) continue;
+    const sourceFile = sourceFiles.get(path);
+    if (sourceFile === undefined) continue;
+    reachable.add(path);
+    for (const reference of runtimeModuleReferences(sourceFile)) {
+      if (reference.specifier === undefined) {
+        problems.push(
+          `${path}:1 reachable Axe evidence modules require literal runtime module references`,
+        );
+        continue;
+      }
+      const resolved = resolveLocalModulePath(
+        path,
+        reference.specifier,
+        localConfig,
+        (candidate) => sourceFiles.has(candidate),
+      );
+      if (resolved === null) {
+        problems.push(
+          `${path}:1 local runtime import '${reference.display}' cannot be resolved inside the Axe evidence graph`,
+        );
+      } else if (
+        resolved === undefined &&
+        !ALLOWED_AXE_EXTERNAL_MODULES.has(reference.specifier)
+      ) {
+        problems.push(
+          `${path}:1 runtime import '${reference.display}' is neither a configured local module nor an allowed Axe evidence dependency`,
+        );
+      } else if (resolved !== undefined) {
+        pending.push(resolved);
+      }
+    }
+  }
+  for (const path of reachable) {
+    const sourceFile = sourceFiles.get(path)!;
+    if ((AXE_IMPORT_GRAPH_ROOTS as readonly string[]).includes(path)) {
+      continue;
+    }
+    if (
+      path !== AXE_HELPER_PATH &&
+      runtimeModuleReferences(sourceFile).some((reference) =>
+        reference.specifier?.startsWith("@axe-core/playwright"),
+      )
+    ) {
+      problems.push(
+        `${path}:1 reachable local Axe evidence module must not import the Axe runtime outside ${AXE_HELPER_PATH}`,
+      );
+    }
+    if (hasRegisteredPlaywrightHook(sourceFile)) {
+      problems.push(
+        `${path}:1 reachable local Axe evidence module must not register Playwright hooks`,
+      );
+    }
+  }
+  return problems;
+}
+
 export function axeCoverageProblems(sources: Readonly<Record<string, string>>): string[] {
   const project = new Project({ useInMemoryFileSystem: true });
   const problems: string[] = [];
@@ -1807,6 +2132,12 @@ export function axeCoverageProblems(sources: Readonly<Record<string, string>>): 
   for (const [path, source] of Object.entries(sources)) {
     sourceFiles.set(path, project.createSourceFile(`/${path}`, source));
   }
+  problems.push(
+    ...importedAxeGraphProblems(
+      sourceFiles,
+      parseLocalModuleConfig(sources[TSCONFIG_PATH]),
+    ),
+  );
   const helper = sourceFiles.get(AXE_HELPER_PATH);
   if (helper === undefined) {
     problems.push(`${AXE_HELPER_PATH}:1 sanctioned Axe assertion helper is missing`);
@@ -1876,6 +2207,21 @@ export async function assertNoAxeViolations(page: Page, context: string): Promis
 const VALID_CONFIG = `import { defineConfig } from "@playwright/test";
 export default defineConfig({ testDir: "./e2e", forbidOnly: true });`;
 
+const VALID_TSCONFIG = `{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@app/*": ["./src/app/*"]
+    }
+  }
+}`;
+
+const VALID_AXE_ROUTES = `export const PUBLIC_AXE_ROUTES = Object.freeze([]);
+export const LOGIN_AXE_ROUTES = Object.freeze([]);
+export const AUTHENTICATED_AXE_ROUTES = Object.freeze([]);
+export const DEMO_AXE_ROUTES = Object.freeze([]);`;
+
 const VALID_LOGIN_HELPER = `import { expect, type Page } from "@playwright/test";
 export async function login(page: Page, creds: { email: string; password: string }): Promise<void> {
   await page.goto("/login");
@@ -1936,6 +2282,8 @@ function completeSources(
     [AXE_HELPER_PATH]: helper,
     [E2E_HELPERS_PATH]: VALID_LOGIN_HELPER,
     [PLAYWRIGHT_CONFIG_PATH]: VALID_CONFIG,
+    [TSCONFIG_PATH]: VALID_TSCONFIG,
+    "e2e/axe-routes.ts": VALID_AXE_ROUTES,
     ...VALID_SPECS,
     ...overrides,
   };
@@ -1943,13 +2291,7 @@ function completeSources(
 
 describe("axe-required fence", () => {
   it("enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion", () => {
-    const paths = [
-      PLAYWRIGHT_CONFIG_PATH,
-      AXE_HELPER_PATH,
-      E2E_HELPERS_PATH,
-      ...REQUIRED_AXE_SPECS,
-    ];
-    const sources = Object.fromEntries(paths.map((path) => [path, readFileSync(join(REPO_ROOT, path), "utf8")]));
+    const sources = readAxeAnalysisSources();
     const problems = axeCoverageProblems(sources);
     expect(problems, problems.join("\n")).toEqual([]);
   }, 60_000);
@@ -2012,6 +2354,50 @@ describe("axe-required fence", () => {
   });
 
   describe("detects (companion): accessibility enforcement cannot become false-green", () => {
+    it("rejects Axe instrumentation and Playwright hooks in transitive side-effect imports", () => {
+      const sources = completeSources();
+      sources["e2e/axe-routes.ts"] =
+        `import "./axe-bridge";\nimport "@app/demo/axe-hook";\n${VALID_AXE_ROUTES}`;
+      sources["e2e/axe-bridge.ts"] = `import "./axe-poison";`;
+      sources["e2e/axe-poison.ts"] =
+        `import AxeBuilder from "@axe-core/playwright";\nAxeBuilder.prototype.analyze = async () => ({ violations: [] } as never);`;
+      sources["src/app/demo/axe-hook.ts"] =
+        `import { test } from "@playwright/test";\ntest.beforeEach(() => undefined);`;
+      const problems = axeCoverageProblems(sources);
+      expect(problems).toContain(
+        `e2e/axe-poison.ts:1 reachable local Axe evidence module must not import the Axe runtime outside ${AXE_HELPER_PATH}`,
+      );
+      expect(problems).toContain(
+        "src/app/demo/axe-hook.ts:1 reachable local Axe evidence module must not register Playwright hooks",
+      );
+    });
+
+    it("fails closed on unresolved or non-literal runtime imports in the Axe evidence graph", () => {
+      const unresolved = completeSources();
+      unresolved["e2e/axe-routes.ts"] =
+        `import "./missing-side-effect";\n${VALID_AXE_ROUTES}`;
+      expect(axeCoverageProblems(unresolved)).toContain(
+        "e2e/axe-routes.ts:1 local runtime import './missing-side-effect' cannot be resolved inside the Axe evidence graph",
+      );
+      const dynamic = completeSources();
+      dynamic["e2e/axe-routes.ts"] =
+        `const target = "./runtime-module";\nvoid import(target);\n${VALID_AXE_ROUTES}`;
+      expect(axeCoverageProblems(dynamic)).toContain(
+        "e2e/axe-routes.ts:1 reachable Axe evidence modules require literal runtime module references",
+      );
+      const unclassified = completeSources();
+      unclassified["e2e/axe-routes.ts"] =
+        `import "local-evidence-poison";\n${VALID_AXE_ROUTES}`;
+      expect(axeCoverageProblems(unclassified)).toContain(
+        "e2e/axe-routes.ts:1 runtime import 'local-evidence-poison' is neither a configured local module nor an allowed Axe evidence dependency",
+      );
+      const malformedConfig = completeSources();
+      malformedConfig[TSCONFIG_PATH] = "{";
+      expect(axeCoverageProblems(malformedConfig)).toContain(
+        `${TSCONFIG_PATH}:1 must be a directly parseable local module-resolution configuration for Axe evidence`,
+      );
+    });
+
     it("rejects an unclassified or unscanned Next page route", () => {
       const collections = {
         PUBLIC_AXE_ROUTES: [

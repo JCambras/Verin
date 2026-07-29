@@ -47,7 +47,7 @@ import {
  * This file owns the ADVERSARIAL half (charter #4: detection is not
  * verification) plus the captain's ruled requirement sets and the five ratchets
  * that keep those sets from moving by a registry edit alone: the 30-invariant
- * activation-ownership map, the prompt-5 proof points for invariants 7-9,
+ * activation-ownership map, the complete cross-gate proof-point map,
  * invariant 3's activation prerequisites, complete gate metadata, and every
  * gate's COMPLETE typed requirement set.
  *
@@ -151,7 +151,7 @@ describe("v3 gate-ordering fence", () => {
     expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
   });
 
-  it("enforces (ratchet): invariants 7, 8, and 9 retain their prompt-5 proof point", () => {
+  it("enforces (ratchet): every cross-gate invariant retains its complete proof point", () => {
     expect(earliestProofPromptsOf(registry)).toEqual(EARLIEST_PROOF_PROMPTS_RATCHET);
   });
 
@@ -833,6 +833,32 @@ describe("v3 gate-ordering fence", () => {
       const falsifiedEarlyProof = clone(registry);
       falsifiedEarlyProof.invariants.find((i) => i.id === 7)!.activationPrompts = [1];
       expect(earliestProofPromptsOf(falsifiedEarlyProof)).not.toEqual(EARLIEST_PROOF_PROMPTS_RATCHET);
+      const falsifiedPolicyProof = clone(registry);
+      const policyInvariant = falsifiedPolicyProof.invariants.find((i) => i.id === 16)!;
+      policyInvariant.activationPrompts = [1];
+      policyInvariant.activatesWhen =
+        "the closed policy AST and its loader land (Wave B prompt 1)";
+      expect(gateOrderingProblems(falsifiedPolicyProof, () => true)).toEqual(
+        [],
+      );
+      expect(earliestProofPromptsOf(falsifiedPolicyProof)).not.toEqual(
+        EARLIEST_PROOF_PROMPTS_RATCHET,
+      );
+      expect(
+        gateConstitutionProblems(
+          falsifiedPolicyProof,
+          () => true,
+        ).some((problem) =>
+          problem.includes(
+            "cross-gate invariant proof points drifted from the ADR-0030 ratchet",
+          ),
+        ),
+      ).toBe(true);
+      const fabricatedFallbackProof = clone(registry);
+      fabricatedFallbackProof.invariants.find((i) => i.id === 1)!.activationPrompts = [1];
+      expect(earliestProofPromptsOf(fabricatedFallbackProof)).not.toEqual(
+        EARLIEST_PROOF_PROMPTS_RATCHET,
+      );
       const weakenedActivation = clone(registry);
       weakenedActivation.invariants.find((i) => i.id === 3)!.activationMechanisms = [
         { type: "fitness", ref: "src/__tests__/fitness/no-bare-throw.test.ts" },

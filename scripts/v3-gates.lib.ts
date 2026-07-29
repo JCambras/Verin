@@ -259,9 +259,14 @@ export const GATE_ASSIGNMENT_RATCHET: Readonly<
 export const EARLIEST_PROOF_PROMPTS_RATCHET: Readonly<
   Record<string, readonly number[]>
 > = {
+  1: [6],
   7: [5],
   8: [5],
   9: [5],
+  11: [15],
+  16: [9],
+  18: [18],
+  19: [18],
 };
 
 export type RatchetedGateMetadata = Pick<
@@ -947,20 +952,28 @@ export const ownershipOf = (
 
 export const earliestProofPromptsOf = (
   reg: Registry,
-): Record<string, readonly number[]> =>
-  Object.fromEntries(
+): Record<string, readonly number[]> => {
+  const crossGateRequirements = new Set(
+    Object.entries(reg.gates).flatMap(([gateKey, gate]) =>
+      gate.requires
+        .filter((requirement) => {
+          if (requirement.kind !== "invariant") return false;
+          return reg.invariants.find(
+            (invariant) => invariant.id === requirement.id,
+          )?.gate !== gateKey;
+        })
+        .map((requirement) => requirement.id!),
+    ),
+  );
+  return Object.fromEntries(
     reg.invariants
-      .filter((invariant) =>
-        Object.hasOwn(
-          EARLIEST_PROOF_PROMPTS_RATCHET,
-          String(invariant.id),
-        ),
-      )
+      .filter((invariant) => crossGateRequirements.has(invariant.id))
       .map((invariant) => [
         String(invariant.id),
         invariant.activationPrompts ?? [],
       ]),
   );
+};
 
 export const invariantThreeActivationOf = (reg: Registry) => {
   const invariant = reg.invariants.find(
@@ -1021,7 +1034,7 @@ export function gateRatchetProblems(reg: Registry): string[] {
       actual: ownershipOf(reg),
     },
     {
-      label: "prompt-5 earliest proof points",
+      label: "cross-gate invariant proof points",
       expected: EARLIEST_PROOF_PROMPTS_RATCHET,
       actual: earliestProofPromptsOf(reg),
     },

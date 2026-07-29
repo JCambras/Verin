@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, and the captain-approved gate-local evaluator proof and single-run fitness review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, and the captain-approved cross-gate proof and imported Axe-graph review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -53,8 +53,8 @@ The ruling is implemented as machine-checked structure, not prose:
 - Every not-yet-active invariant declares `activationPrompts` - the prompt numbers whose landing
   activates it - so "later wave" is a decidable relation instead of a reading of prose.
 - Every declared `activationPrompts` array is validated regardless of activation status. Active
-  invariants cannot retain invalid proof metadata after activation, and the ruled prompt-5 proof points
-  for invariants 7, 8, and 9 are ratcheted exactly.
+  invariants cannot retain invalid proof metadata after activation, and the complete proof metadata for
+  every cross-gate invariant reference is ratcheted exactly.
 - Invariant 3 declares `activationArtifacts`: `config/domains/account-opening.yaml` and
   `config/domains/money-movement.yaml`. It may not be flipped to `active` until those prompt-10
   artifacts exist on disk. That is ruling 5 in mechanical form.
@@ -112,9 +112,11 @@ A, rather than silently postponing an already-proven invariant.
 
 Validation applies to active and not-yet-active invariants alike. A declared proof list must be
 non-empty, contain unique prompt numbers inside the 1-30 sequence, and include every prompt named by
-`activatesWhen`. The earlier Gate A references depend on exact prompt-5 proof, so a fourth ratchet pins
-invariants 7, 8, and 9 to `[5]`; changing them to an earlier valid prompt fails even when the general
-ordering rule would still pass.
+`activatesWhen`. A fourth ratchet derives the complete cross-gate reference inventory and pins its proof
+metadata: invariant 1 at prompt 6, invariants 7-9 at prompt 5, invariant 11 at prompt 15, invariant 16 at
+prompt 9, and invariants 18-19 at prompt 18. Changing any of them to an earlier valid prompt fails even
+when the general ordering rule would still pass, and a new cross-gate reference fails until its proof
+metadata is added to the same governed ratchet.
 The active-invariant ratchet also pins every complete mechanism tuple, including type, reference, and
 CI command where present. An active invariant therefore cannot keep its status while redirecting its
 proof to an unrelated passing fitness file. The active invariant ID set must exactly equal the ratchet
@@ -248,6 +250,13 @@ and when the bound callable is invoked through `call` or `apply`; unresolved loc
 its typed route loops and a stable canonical login call. The login helper is pinned to its uninstrumented
 browser flow, and required specifications may register no Playwright hooks. `addInitScript`, response
 replacement, or comparable caller-side page setup therefore cannot mask the surfaces before analysis.
+The fence follows every runtime local import reachable from the required specifications and sanctioned
+helpers, including side-effect imports, re-exports, configured TypeScript aliases, literal dynamic
+imports, and CommonJS imports. Every reachable local module is subject to the same prohibition on
+Playwright hook registration and may not import the Axe runtime outside the sanctioned helper.
+Unresolved local imports and non-literal runtime imports are non-evidence. Bare runtime imports must
+either resolve through the directly parseable TypeScript path configuration or belong to the exact
+Playwright/Axe dependency allowlist.
 Configuration property names are normalized across direct and computed literal syntax at the root and
 project levels. A computed name that cannot be resolved statically makes the configuration non-evidence
 instead of leaving open a hidden selection override.
@@ -356,6 +365,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 | Treat a filtered or manual-only workflow as normal CI evidence | A valid command that does not run for ordinary pushes and pull requests is not a blocking repository control. Trigger filters therefore invalidate the whole workflow as evidence. |
 | Accept package-script names as owned entry points | A script body can become `true` while the workflow and every exact command mapping stay unchanged. Mapped controls invoke their binary or owned source entry point directly. |
 | Prove Axe from required spec source without parsing Playwright selection or route state | `testIgnore`, `testMatch`, `grep`, a wrong route, or a pre-load scan can leave source text intact while the required UI never gates. Configuration, route groups, and loaded markers are one structural proof. |
+| Inspect only the directly named Axe files | A side-effect import can patch `AxeBuilder.prototype.analyze` or register a Playwright hook before the required scan. The complete runtime local import graph is part of the evidence boundary. |
 
 ## Trade-offs and Costs
 
@@ -387,7 +397,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   invariant changed ACTIVATION ownership: 16 is owned by E, 11 by D, and 18 and 19 by F, each additionally
   required at the earlier gate that can prove it.
 - Five RATCHETS live in the shared gate library and are exercised by the fence: the complete 30-invariant
-  activation-ownership map, the exact prompt-5 proof points for invariants 7, 8, and 9, invariant 3's
+  activation-ownership map, the complete proof metadata for every cross-gate invariant reference, invariant 3's
   exact activation artifacts and fitness mechanism, complete gate metadata (`wave`, predecessor chain,
   `entryCondition`, `outcome`), and every gate's COMPLETE TYPED requirement set - `kind` plus id/ref and
   proof prompt, and the `command` for a `ci-gate`, not invariant ids alone. The ratified ten-gate prompt
@@ -433,7 +443,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   invoke neutralizers, are followed transitively, while unresolved local callable indirection is
   non-evidence. Required route callbacks admit only their typed loops and stable canonical login call;
   the login helper itself is pinned to the uninstrumented browser flow, and required specifications may
-  register no Playwright hooks.
+  register no Playwright hooks. The same prohibition extends through the complete runtime local import
+  graph of required specifications and sanctioned helpers. A transitive module may not import the Axe
+  runtime outside `e2e/axe.ts`, register a Playwright hook, hide behind a side-effect import, or depend
+  on an unresolved, unclassified, or non-literal runtime import.
   Direct, aliased, and reflective `Reflect.apply` invocations are resolved through the same callable
   provenance, so neither a neutralizer nor a registered hook can hide behind reflective dispatch.
   Optional assertion messages must be structurally side-effect-free. The
@@ -543,6 +556,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   owner gate's close without them, which would make the earlier gate's requirement illegal. If a future
   invariant genuinely has no single landing prompt, the proof-point model needs the partial-activation
   extension named in the first bullet above rather than a dropped field.
+- A required Axe specification or sanctioned helper needs a non-literal runtime local import: extend the
+  import-graph resolver with a complete, adversarially proven execution model before admitting it.
 - A `ci-gate` job is renamed or its command changes: update the registry's `ref`/`command` in the same
   PR and keep the required command in a dedicated simple step. The structural check reads the workflow,
   so a stale or compound form fails rather than silently matching.

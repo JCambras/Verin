@@ -90,6 +90,8 @@ neutralized by `continue-on-error` or an `if:`.
 An unsupported runner, custom shell, evidence job carrying a non-empty `needs` dependency, or evidence
 job using `strategy.matrix` is non-evidence because its execution or reachability semantics are not
 proven. Every declared `activationPrompts` array is validated regardless of activation status.
+Every invariant referenced across activation ownership is derived from the gate requirements and its
+complete proof metadata is ratcheted, so matching prose cannot fabricate an earlier proof point.
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too, and every enforced charter mapping is bound to its exact command.
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
@@ -109,8 +111,8 @@ an unrelated naming fence, and the pinned fitness must adversarially prove both 
 domain schema and bind through the shared engine.
 A gate's
 `awaiting:` line names every requirement holding it back, undecidable ones included. Five ratchets in
-the shared gate library pin the complete 30-invariant gate-assignment map, the prompt-5 proof points for invariants
-7, 8, and 9, invariant 3's exact activation artifacts and fitness mechanism, complete gate metadata
+the shared gate library pin the complete 30-invariant gate-assignment map, the complete cross-gate
+proof-point map, invariant 3's exact activation artifacts and fitness mechanism, complete gate metadata
 (wave, structural predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED
 requirement set including each non-invariant proof prompt. The ratified prompt ranges are pinned beside
 them, and the blocking runner fails immediately on any shared constitution drift. Readiness
@@ -153,7 +155,12 @@ and unresolved local callable
 indirection fails closed.
 Required route callbacks admit only their typed loops and stable canonical login call, and the shared
 login helper is pinned to the uninstrumented browser flow. Required specifications may register no
-Playwright hooks, including reflectively registered hooks, or import the Axe runtime directly. The
+Playwright hooks, including reflectively registered hooks, or import the Axe runtime directly. Their
+complete transitive runtime local import graph is inspected through side-effect imports, re-exports,
+configured aliases, literal dynamic imports, and CommonJS imports. Imported modules may not register
+Playwright hooks or import the Axe runtime outside the sanctioned helper, and unresolved or non-literal
+runtime imports are non-evidence. Bare runtime dependencies are restricted to configured local paths and
+the exact Playwright/Axe allowlist. The
 sanctioned helper admits no module-scope executable statement that could replace its analysis method.
 Conditional callback exits before a required scan are rejected as non-evidence. Charter-drift detects
 disabled or focused Vitest fences through symbol-aware AST registration analysis, including computed

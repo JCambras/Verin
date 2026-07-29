@@ -11484,3 +11484,49 @@ then validates every recursively inventoried fitness result from that same full-
 runner passed with all 33 fitness files executed inside the full suite.
 
 **Date:** 2026-07-29.
+
+### PF-030 (continued) · complete cross-gate proof-point ratchet
+
+**Invariant (ADR-0030 / D-061):** every invariant referenced by a gate other than its activation owner
+retains the ratified prompt at which its complete proof first exists.
+
+**Injection:** changed invariant 16's `activationPrompts` from `[9]` to `[1]` and changed its
+`activatesWhen` prose to name prompt 1, leaving activation ownership and every gate requirement
+unchanged.
+
+**Observed failure (verbatim):**
+```text
+cross-gate invariant proof points drifted from the ADR-0030 ratchet; expected {"1":[6],"7":[5],"8":[5],"9":[5],"11":[15],"16":[9],"18":[18],"19":[18]}, received {"1":[6],"7":[5],"8":[5],"9":[5],"11":[15],"16":[1],"18":[18],"19":[18]}
+```
+
+The focused gate-ordering fence exited 1. The continuous companion separately proves that the general
+ordering rules accept the matching earlier prompt while the complete cross-gate ratchet rejects it.
+
+**Revert:** restored invariant 16's prompt 9 metadata. The restored focused governance run passed all
+62 gate-ordering tests.
+
+**Date:** 2026-07-29.
+
+### PF-031 (continued) · complete local Axe import graph
+
+**Invariant (charter #9 / ADR-0030):** a local module imported by required Axe evidence cannot patch the
+Axe runtime or register Playwright hooks before a required scan.
+
+**Injection:** side-effect imported `e2e/axe-import-poison.ts` from the required smoke specification.
+The imported module replaced `AxeBuilder.prototype.analyze` and registered `test.beforeEach`.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-import-poison.ts:1 reachable local Axe evidence module must not import the Axe runtime outside e2e/axe.ts
+e2e/axe-import-poison.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+The focused Axe fence exited 1. Continuous companions also route the same violations through a nested
+side-effect import and a configured `@app/*` alias, and prove unresolved and non-literal runtime imports
+are non-evidence. Unclassified bare imports and an unreadable TypeScript path configuration fail closed
+as well.
+
+**Revert:** removed the side-effect import and deleted the injected module. The restored focused Axe
+run passed all 21 tests.
+
+**Date:** 2026-07-29.

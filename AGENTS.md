@@ -36,7 +36,7 @@ a command in a comment, echo argument, short-circuited expression, heredoc, step
 commented-out block-scalar line, or a job/step carrying `continue-on-error` or an `if:` proves nothing.
 Unsupported runners, custom shells, evidence jobs with non-empty `needs` dependencies, and evidence
 jobs using `strategy.matrix` also prove nothing. Declared `activationPrompts` are validated for every
-status, the prompt-5 proof points for invariants 7, 8, and 9 are pinned exactly, and every shipped active
+status, every cross-gate invariant proof point is pinned exactly, and every shipped active
 invariant's complete mechanism tuple set is ratcheted. The active invariant ID set must exactly match
 the mechanism-ratchet keys through one shared validator invoked by both the registry fence and blocking
 runner.
@@ -47,7 +47,7 @@ effective enforced mechanism tuple, including mechanism-level status. Both v3 ma
 `pnpm exec tsx scripts/v3-invariants.ts`, and the runner exits nonzero for every mapped fitness failure
 or missing result. Readiness computes every gate's structural `entryGates`, so a later
 gate cannot report green while a predecessor is non-green. Five ratchets in the shared gate library pin the
-30-invariant gate-assignment map, the prompt-5 proof points for invariants 7, 8, and 9, invariant 3's
+30-invariant gate-assignment map, the complete cross-gate proof-point map, invariant 3's
 activation artifacts and fitness mechanism, complete gate metadata (wave, predecessor chain, entry
 condition, outcome), and every gate's COMPLETE TYPED requirement set including each non-invariant proof
 prompt: moving one, including deleting an `evidence` clause, is an ADR-0030 + ADR-0023 amendment, never a
@@ -269,7 +269,9 @@ inventory and requires a per-file result even if Vitest include or exclude confi
   selects the required specs, derives the complete Next `page.tsx` inventory, and binds every public,
   authenticated, and demo route to its loaded-state
   scan. Required callbacks admit only their typed loops and canonical uninstrumented login call.
-  Required specifications may register no Playwright hooks. Required route collections cannot be supplied
+  Required specifications may register no Playwright hooks. The same hook and Axe-runtime prohibitions
+  cover their complete transitive runtime local import graph, including side-effect imports and TypeScript
+  path aliases; unresolved, unclassified, and non-literal runtime imports are non-evidence. Required route collections cannot be supplied
   through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.
   Required specs cannot import the Axe runtime, and the sanctioned helper cannot carry module-scope
   executable instrumentation. Charter-drift uses symbol-aware Vitest registration analysis for computed,

@@ -6447,6 +6447,17 @@ fitness invocation immediately after report parsing and before emitting any inva
 the full unit, integration, and fitness suite while recursively requiring one passing result from every
 fitness file. PF-001, PF-024, and PF-030 record the reproductions, companions, and restored proofs.
 
+The captain-approved cross-gate proof and imported Axe-graph review (2026-07-29) amended ADR-0030 in
+place a twenty-fourth time: **(1)** the proof-point ratchet derives every invariant referenced across
+gate ownership and pins the complete set - invariant 1 at prompt 6, invariants 7-9 at prompt 5, invariant
+11 at prompt 15, invariant 16 at prompt 9, and invariants 18-19 at prompt 18 - so matching prose cannot
+fabricate an earlier proof while the general ordering rule remains green; and **(2)** the Axe fence
+follows the complete runtime local import graph of required specifications and sanctioned helpers
+through side-effect imports, re-exports, configured TypeScript aliases, literal dynamic imports, and
+CommonJS imports. Every reachable local module rejects Playwright hook registration and Axe runtime
+access outside `e2e/axe.ts`; unresolved, unclassified, and non-literal runtime imports are non-evidence. PF-030 and
+PF-031 record the reproductions, companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
