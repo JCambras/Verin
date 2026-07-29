@@ -219,6 +219,12 @@
           "id": 9
         },
         {
+          "kind": "evidence",
+          "ref": "prompt-17 evaluator property tests prove proceed emits authority and execution, blocked emits neither, and prohibited emits neither nor any resolving condition",
+          "prompt": 17,
+          "note": "NO MECHANISM YET: the prompt-17 evaluator and its property tests do not exist. Invariants 7, 8, and 9 are active-pass from prompt-5 structural schema proof, but that global state cannot satisfy Gate D's distinct evaluator-behavior proof. This evidence becomes a gate-local fitness requirement when prompt 17 lands."
+        },
+        {
           "kind": "invariant",
           "id": 10
         },

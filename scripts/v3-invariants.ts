@@ -185,6 +185,15 @@ if (fitnessFiles.length > 0) {
   }
 }
 
+const fitnessFailures = mappedFitnessProblems(
+  fitnessFiles,
+  fileResults,
+  fitnessRunStatus,
+);
+if (fitnessFailures.length > 0) {
+  fail(`mapped fitness fences failing:\n  - ${fitnessFailures.join("\n  - ")}`);
+}
+
 // ---------- compute per-invariant state ----------
 type State = "active-pass" | "active-fail" | "not-yet-active";
 const failures: string[] = [];
@@ -280,12 +289,4 @@ for (const view of gateReadiness(registry, {
 
 console.log(bold(`\n  summary: ${green(`${counts["active-pass"]} active-pass`)} · ${counts["active-fail"] > 0 ? red(`${counts["active-fail"]} active-fail`) : `${counts["active-fail"]} active-fail`} · ${dim(`${counts["not-yet-active"]} not-yet-active`)} (${registry.invariants.length} total)\n`));
 
-const fitnessFailures = mappedFitnessProblems(
-  fitnessFiles,
-  fileResults,
-  fitnessRunStatus,
-);
-if (fitnessFailures.length > 0) {
-  fail(`mapped fitness fences failing:\n  - ${fitnessFailures.join("\n  - ")}`);
-}
 if (failures.length > 0) fail(`ACTIVE invariants failing:\n  - ${failures.join("\n  - ")}`);

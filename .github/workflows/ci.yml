@@ -53,9 +53,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: unit + integration + fitness
-        run: pnpm exec vitest run
-      - name: complete fitness inventory
+      - name: unit + integration + complete fitness inventory
         run: pnpm exec tsx scripts/fitness-tests.ts
 
   knip:

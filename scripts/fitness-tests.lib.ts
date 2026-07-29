@@ -6,6 +6,14 @@ export interface FitnessTestResult {
   status: string;
 }
 
+export function completeTestRunArguments(outputFile: string): string[] {
+  return [
+    "run",
+    "--reporter=json",
+    `--outputFile=${outputFile}`,
+  ];
+}
+
 function normalizedPath(path: string): string {
   return path.replace(/\\/g, "/");
 }

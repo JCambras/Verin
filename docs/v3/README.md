@@ -70,7 +70,9 @@ invariants 7, 8, and 9 without moving their Gate D ownership, Gate B requires in
 prompt 9), Gate C requires invariant 11 (validation stage, complete at prompt 15), and Gate D requires
 invariants 18 and 19 (approval stages and approval invalidation, complete at prompt 18) without taking
 any of them from the gate that owns it, while invariant 6 stays a Gate D requirement because it needs both
-prompt 15's bundle and prompt 16's evaluator. The shared rule
+prompt 15's bundle and prompt 16's evaluator. Gate D also carries a distinct prompt-17 evaluator
+property-test requirement for invariants 7, 8, and 9, so their prompt-5 structural `active-pass` state
+cannot satisfy the later behavioral proof. The shared rule
 set (`scripts/v3-gates.lib.ts`) is enforced BOTH by the gate-ordering fence
 (`src/__tests__/fitness/v3-gate-ordering.test.ts`) and by the blocking runner, so they cannot drift: it
 fails the build if a gate requires anything whose PROOF POINT falls after that gate closes, if a gate
@@ -93,9 +95,10 @@ That parse is the repo's one structured CI authority; the charter-drift fence re
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
 The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
 so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
-The blocking test job also invokes a direct fitness-inventory runner that recursively enumerates every
-fitness file and shares that inventory with charter disabled/orphan analysis and the companion meta-fence,
-so Vitest include or exclude drift cannot silently omit a fence or nested subtree.
+The blocking test job invokes a direct runner once for the complete unit, integration, and fitness suite.
+That runner recursively enumerates every fitness file and shares the inventory with charter
+disabled/orphan analysis and the companion meta-fence. Vitest include or exclude drift therefore cannot
+silently omit a fence or nested subtree, and no fitness file executes twice.
 The shared v3 validator pins the complete mechanism tuple set for every shipped active invariant and
 requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
 be redirected to an unrelated passing fence and a new active guarantee cannot bypass ratchet review.

@@ -11408,3 +11408,79 @@ approval value, and the renderer argument is bound by symbol to the exact query-
 files and all 22 tests.
 
 **Date:** 2026-07-29.
+
+### PF-024 (continued) · mapped fitness failure blocks before state output
+
+**Invariant (v3 §17):** a nonzero mapped-fitness invocation cannot emit an invariant `active-pass` or a
+green gate before the runner fails.
+
+**Injection:** after Vitest produced passing per-file JSON, forced `fitnessRunStatus` to `1` and ran
+`corepack pnpm v3:invariants`.
+
+**Observed failure (verbatim):**
+```text
+running 6 mapped fitness fence file(s) via vitest…
+
+v3-invariants: mapped fitness fences failing:
+  - mapped fitness invocation exited 1
+```
+
+The process exited 1 without printing the invariant header, any invariant state, or any gate state. The
+pre-fix reproduction printed all five `active-pass` states, Gate 0 green, every later gate state, and the
+summary before the identical fatal message.
+
+**Companion added:** symbol-aware runner analysis requires the mapped-fitness result declaration to be
+immediately followed by its fatal guard and requires that guard to precede the first invariant-state
+report. A synthetic report inserted before the guard and a neutralized guard are both rejected.
+
+**Revert:** restored the real child status. The focused governance run passed 90 tests across
+`v3-gate-ordering`, `v3-invariants`, and `charter-drift`.
+
+**Date:** 2026-07-29.
+
+### PF-030 (continued) · Gate D requires distinct prompt-17 evaluator proof
+
+**Invariant (ADR-0030 / D-061):** Gate A may use prompt-5 structural proof for invariants 7, 8, and 9,
+but Gate D cannot reuse those global `active-pass` bits as proof of prompt-17 evaluator behavior.
+
+**Injection:** removed Gate D's prompt-17 evaluator property-test evidence entry from
+`v3-invariants.json` while leaving all three invariants active and their prompt-5 mechanisms green.
+
+**Observed failure (verbatim):**
+```text
+complete typed gate requirements drifted from the ADR-0030 ratchet
+```
+
+The focused gate fence exited 1 with four failing cases. Its continuous companion independently supplied
+`active-pass` for every invariant and proved that Gate D becomes `green` when the gate-local evidence is
+deleted, while the complete requirement ratchet rejects that deletion.
+
+**Companion added:** Gate D's invariant 7, 8, and 9 requirements are asserted met under global
+`active-pass`, but its prompt-17 evaluator requirement remains `unverifiable`. Removing only that
+requirement produces green readiness and a shared-constitution failure.
+
+**Revert:** restored the typed evidence entry. The focused governance run passed 90 tests.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · complete test suite executes once
+
+**Invariant (charter operating model):** the blocking test job runs the complete unit, integration, and
+fitness suite once while still requiring one result for every recursively inventoried fitness file.
+
+**Injection:** added `pnpm exec vitest run` immediately before the complete inventory runner in the
+blocking `test` job.
+
+**Observed failure (verbatim):**
+```text
+AssertionError: expected [ 'pnpm exec vitest run', …(1) ] to deeply equal [ Array(1) ]
+```
+
+The charter-drift fence exited 1 and named both suite-entry commands. The runner-argument companion
+separately proves that `scripts/fitness-tests.ts` invokes Vitest without selecting only fitness paths,
+then validates every recursively inventoried fitness result from that same full-suite report.
+
+**Revert:** removed the duplicate CI step. The focused governance run passed 90 tests, and the complete
+runner passed with all 33 fitness files executed inside the full suite.
+
+**Date:** 2026-07-29.

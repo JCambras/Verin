@@ -346,7 +346,7 @@
         {
           "type": "ci-gate",
           "ref": "test",
-          "command": "pnpm exec vitest run"
+          "command": "pnpm exec tsx scripts/fitness-tests.ts"
         }
       ]
     },

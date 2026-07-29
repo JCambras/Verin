@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  completeTestRunArguments,
   fitnessTestFiles,
   fitnessInventoryProblems,
   type FitnessTestResult,
@@ -25,10 +26,7 @@ const run = spawnSync(
   process.execPath,
   [
     vitestEntry,
-    "run",
-    "--reporter=json",
-    `--outputFile=${outputFile}`,
-    ...fitnessFiles,
+    ...completeTestRunArguments(outputFile),
   ],
   {
     cwd: ROOT,
@@ -66,5 +64,7 @@ if (problems.length > 0) {
   console.error(`fitness inventory failed:\n  - ${problems.join("\n  - ")}`);
   process.exitCode = 1;
 } else {
-  console.log(`fitness inventory passed: ${fitnessFiles.length} files executed`);
+  console.log(
+    `complete test suite passed: ${fitnessFiles.length} fitness files executed`,
+  );
 }

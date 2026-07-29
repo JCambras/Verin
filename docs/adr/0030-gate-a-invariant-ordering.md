@@ -1,6 +1,6 @@
 # ADR-0030: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, and the captain-approved recursive-inventory and bound-reflection review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28 and 2026-07-29 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, and the captain-approved gate-local evaluator proof and single-run fitness review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved 2026-07-28), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -104,7 +104,10 @@ not a structural rule, and the fallback is fail-closed, so `activationPrompts` i
 when an invariant landed rather than a to-do list. Invariants 7, 8, and 9 permanently record prompt 5 as
 their proof point, and Gate A requires those structural guarantees at the earliest gate that can fully
 prove them. Their activation ownership stays at Gate D, which later re-asserts the distinct evaluator
-behavior. Dropping the prompt-5 record makes the proof point fall back to Gate D's close and breaks Gate
+behavior. Gate D carries a separate prompt-17 typed evidence requirement for evaluator property tests,
+so the global `active-pass` produced by the prompt-5 schema fence cannot satisfy both proof contexts.
+When prompt 17 lands, that named gap becomes a gate-local `fitness` requirement. Dropping the prompt-5
+record makes the proof point fall back to Gate D's close and breaks Gate
 A, rather than silently postponing an already-proven invariant.
 
 Validation applies to active and not-yet-active invariants alike. A declared proof list must be
@@ -436,10 +439,11 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
-- The blocking test job directly runs `scripts/fitness-tests.ts` after the general suite. That command
-  recursively enumerates every fitness test file, supplies that one complete inventory to Vitest,
-  charter-drift disabled/orphan analysis, and the companion meta-fence, parses the per-file report, and
-  fails when an expected file is missing, duplicated, failed, or omitted by configuration.
+- The blocking test job directly runs `scripts/fitness-tests.ts` as its single complete Vitest
+  invocation. That command runs unit, integration, and fitness tests together, recursively enumerates
+  every fitness test file, supplies that one complete inventory to charter-drift disabled/orphan analysis
+  and the companion meta-fence, parses the per-file report, and fails when an expected file is missing,
+  duplicated, failed, or omitted by configuration.
   The charter map and mechanism ratchet pin the runner and its exact blocking command.
 - Vitest registration analysis follows computed and aliased `todo`, `fails`, `skipIf`, and `runIf`
   chains. Unknown conditional state is non-evidence. The Axe helper admits no module-scope executable
@@ -505,7 +509,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   both reject an unratcheted activation. If the fence cannot be written without domain-named exceptions,
   the primitive vocabulary is overfit and ADR-0025's revisit trigger fires first.
 - A mechanism lands that decides an `evidence` requirement (gate B's domain-schema/shared-engine
-  binding or stable-corpus clauses, gate C's validated-bundle
+  binding or stable-corpus clauses, gate C's validated-bundle, Gate D's prompt-17 evaluator property-test
   clause, gate F's verification-reconciler clause, Gate H's timing/measurement/cold-review clauses, or gate I's severity verdict): replace that entry with the
   `invariant` / `fitness` / `artifact` requirement that decides it, in the same PR. An `evidence` entry
   is a named gap, never a permanent excuse.

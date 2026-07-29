@@ -938,6 +938,47 @@ describe("v3 gate-ordering fence", () => {
       expect(requirementsOf(reg)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
     });
 
+    it("holds Gate D below green until prompt-17 evaluator property tests independently prove invariants 7-9", () => {
+      const reg = clone(registry);
+      reg.gates = {
+        D: {
+          ...reg.gates.D!,
+          entryGates: [],
+          entryCondition: "None.",
+        },
+      };
+      const deps = {
+        invariantState: () => "active-pass",
+        exists: () => true,
+        ciRuns: () => true,
+        fitnessPassed: () => true,
+      };
+      const view = gateReadiness(reg, deps)[0]!;
+      expect(
+        view.requirements
+          .filter((requirement) =>
+            ["#7", "#8", "#9"].includes(requirement.label),
+          )
+          .every((requirement) => requirement.state === "met"),
+      ).toBe(true);
+      expect(view.state).toBe("not-yet-verifiable");
+      expect(view.undecidable).toContain(
+        "prompt-17 evaluator property tests prove proceed emits authority and execution, blocked emits neither, and prohibited emits neither nor any resolving condition",
+      );
+      reg.gates.D!.requires = reg.gates.D!.requires.filter(
+        (requirement) =>
+          requirement.ref !==
+          "prompt-17 evaluator property tests prove proceed emits authority and execution, blocked emits neither, and prohibited emits neither nor any resolving condition",
+      );
+      expect(gateReadiness(reg, deps)[0]!.state).toBe("green");
+      expect(requirementsOf(reg)).not.toEqual(
+        GATE_REQUIREMENTS_RATCHET,
+      );
+      expect(gateConstitutionProblems(reg, () => true)).not.toEqual(
+        [],
+      );
+    });
+
     it("flags a gate deleting its ruled surface-completeness requirement", () => {
       const gutted = clone(registry);
       gutted.gates["0"]!.requires = gutted.gates["0"]!.requires.filter(

@@ -155,6 +155,93 @@ export function runnerFailsClosedOnValidator(
     );
 }
 
+export function runnerGuardsMappedFitnessBeforeReporting(
+  source: string,
+): boolean {
+  const project = new Project({ useInMemoryFileSystem: true });
+  const file = project.createSourceFile(
+    "/scripts/v3-invariants.ts",
+    source,
+  );
+  const imported = file
+    .getImportDeclaration("./v3-gates.lib")
+    ?.getNamedImports()
+    .find(
+      (specifier) =>
+        specifier.getName() === "mappedFitnessProblems",
+    )
+    ?.getNameNode()
+    .getSymbol();
+  const result = file.getVariableDeclaration("fitnessFailures");
+  const resultSymbol = result?.getSymbol();
+  const fail = file.getFunction("fail")?.getSymbol();
+  if (
+    imported === undefined ||
+    result === undefined ||
+    resultSymbol === undefined ||
+    fail === undefined
+  ) {
+    return false;
+  }
+  const validation = result.getInitializer();
+  if (
+    !Node.isCallExpression(validation) ||
+    !Node.isIdentifier(validation.getExpression()) ||
+    validation.getExpression().getSymbol() !== imported
+  ) {
+    return false;
+  }
+  const declarationStatement =
+    result.getFirstAncestorByKind(SyntaxKind.VariableStatement);
+  const statements = file.getStatements();
+  const declarationIndex =
+    declarationStatement === undefined
+      ? -1
+      : statements.indexOf(declarationStatement);
+  const guard = statements[declarationIndex + 1];
+  if (!Node.isIfStatement(guard)) return false;
+  const condition = guard.getExpression();
+  const right = Node.isBinaryExpression(condition)
+    ? condition.getRight()
+    : undefined;
+  const left = Node.isBinaryExpression(condition)
+    ? condition.getLeft()
+    : undefined;
+  if (
+    !Node.isBinaryExpression(condition) ||
+    condition.getOperatorToken().getKind() !==
+      SyntaxKind.GreaterThanToken ||
+    !Node.isNumericLiteral(right) ||
+    Number(right.getLiteralText()) !== 0 ||
+    !Node.isPropertyAccessExpression(left) ||
+    left.getName() !== "length" ||
+    !Node.isIdentifier(left.getExpression()) ||
+    left.getExpression().getSymbol() !== resultSymbol
+  ) {
+    return false;
+  }
+  const callsFail = guard
+    .getThenStatement()
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some(
+      (call) =>
+        Node.isIdentifier(call.getExpression()) &&
+        call.getExpression().getSymbol() === fail,
+    );
+  const report = file
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .find(
+      (call) =>
+        call.getExpression().getText() === "console.log" &&
+        call.getText().includes("V3 PHASE-GATED INVARIANTS"),
+    );
+  return (
+    callsFail &&
+    report !== undefined &&
+    guard.getEnd() < report.getStart()
+  );
+}
+
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
 export function validateRegistry(reg: Registry, deps: { exists: (path: string) => boolean; ciJobs: Map<string, CiJob> }): string[] {
   const problems: string[] = [];
@@ -462,6 +549,27 @@ describe("v3-invariant registry fence", () => {
           0,
         ),
       ).toEqual([]);
+    });
+    it("blocks a failed mapped-fitness invocation before any invariant or gate state output", () => {
+      expect(
+        runnerGuardsMappedFitnessBeforeReporting(runnerSource),
+      ).toBe(true);
+      expect(
+        runnerGuardsMappedFitnessBeforeReporting(
+          runnerSource.replace(
+            "const fitnessFailures = mappedFitnessProblems(",
+            'console.log("V3 PHASE-GATED INVARIANTS");\nconst fitnessFailures = mappedFitnessProblems(',
+          ),
+        ),
+      ).toBe(false);
+      expect(
+        runnerGuardsMappedFitnessBeforeReporting(
+          runnerSource.replace(
+            "if (fitnessFailures.length > 0)",
+            "if (false && fitnessFailures.length > 0)",
+          ),
+        ),
+      ).toBe(false);
     });
     it("accepts a complete honest registry (cannot pass by always-failing)", () => {
       expect(validateRegistry(full(new Map(ratchetActive)), deps)).toEqual([]);

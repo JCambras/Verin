@@ -390,6 +390,7 @@ export const GATE_REQUIREMENTS_RATCHET: Readonly<
     "invariant:7",
     "invariant:8",
     "invariant:9",
+    "evidence:prompt-17 evaluator property tests prove proceed emits authority and execution, blocked emits neither, and prohibited emits neither nor any resolving condition @ prompt 17",
     "invariant:10",
     "invariant:11",
     "invariant:12",

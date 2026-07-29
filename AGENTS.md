@@ -24,7 +24,9 @@ rejects a gate requiring anything whose PROOF POINT (last `activationPrompts` en
 gate's closing prompt) falls after that gate closes, a gate with no machine-checkable requirement, and a
 `ci-gate` that does not name the command its blocking job runs (ADR-0030 - Gate A owns 1/2/4/5 and
 references prompt-5 guarantees 7/8/9;
-invariant 3 is required at Gate B because its prerequisite is prompt 10). `ci-gate` evidence is a real
+Gate D separately awaits prompt-17 evaluator property tests for 7/8/9 so the prompt-5 `active-pass`
+state cannot satisfy both proof contexts; invariant 3 is required at Gate B because its prerequisite is
+prompt 10). `ci-gate` evidence is a real
 YAML parse of `ci.yml` walking `jobs.<k>.steps[].run` plus a restricted shell-command parse of the
 effective workflow/job/step shell and working directory. The workflow must run on unfiltered normal
 push and pull request events, every mapped command runs from the repository root, and mapped controls

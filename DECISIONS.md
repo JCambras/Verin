@@ -6438,6 +6438,15 @@ AST-intensive enforcement checks that exceeded the global 20-second per-test lim
 contention have explicit 60-second budgets; no assertion was removed. PF-001, PF-031, and PF-032 record
 the real red reproductions, focused companions, and restored green proofs.
 
+The captain-approved gate-local evaluator proof and single-run fitness review (2026-07-29) amended
+ADR-0030 in place a twenty-third time: **(1)** Gate D carries a ratcheted prompt-17 evaluator
+property-test evidence requirement for invariants 7, 8, and 9, separate from the prompt-5 structural
+mechanism that supplies their global `active-pass` state; **(2)** the v3 runner rejects a nonzero mapped
+fitness invocation immediately after report parsing and before emitting any invariant or gate state; and
+**(3)** the blocking test job enters Vitest once through the complete fitness-inventory runner, which runs
+the full unit, integration, and fitness suite while recursively requiring one passing result from every
+fitness file. PF-001, PF-024, and PF-030 record the reproductions, companions, and restored proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

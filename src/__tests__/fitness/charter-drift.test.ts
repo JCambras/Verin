@@ -18,6 +18,7 @@ import {
 } from "ts-morph";
 import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
 import {
+  completeTestRunArguments,
   fitnessInventoryProblems,
   fitnessTestFiles,
 } from "../../../scripts/fitness-tests.lib";
@@ -143,7 +144,13 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["13", "ci-gate", "audit-chain-verify", "pnpm exec tsx scripts/audit-chain-verify.ts", "enforced"],
   ["14", "fitness", "src/__tests__/fitness/no-console.test.ts", "", "enforced"],
   ["14", "fitness", "src/__tests__/fitness/observability-coverage.test.ts", "", "enforced"],
-  ["14", "ci-gate", "test", "pnpm exec vitest run", "enforced"],
+  [
+    "14",
+    "ci-gate",
+    "test",
+    "pnpm exec tsx scripts/fitness-tests.ts",
+    "enforced",
+  ],
   [
     "15",
     "ci-gate",
@@ -233,7 +240,11 @@ const RATCHETED_CI_COMMANDS = [
   { entryId: "9", ref: "e2e", command: "pnpm exec playwright test" },
   { entryId: "11", ref: "load-smoke", command: "pnpm exec tsx scripts/load-smoke.ts" },
   { entryId: "13", ref: "audit-chain-verify", command: "pnpm exec tsx scripts/audit-chain-verify.ts" },
-  { entryId: "14", ref: "test", command: "pnpm exec vitest run" },
+  {
+    entryId: "14",
+    ref: "test",
+    command: "pnpm exec tsx scripts/fitness-tests.ts",
+  },
   {
     entryId: "15",
     ref: "secret-scan",
@@ -260,6 +271,16 @@ const RATCHETED_CI_COMMANDS = [
 function blockingCiJobs(): Map<string, CiJob> {
   const f = p(".github/workflows/ci.yml");
   return parseCiJobs(existsSync(f) ? readFileSync(f, "utf8") : "");
+}
+
+function completeSuiteEntryCommands(
+  job: CiJob | undefined,
+): string[] {
+  return (job?.commands ?? []).filter(
+    (command) =>
+      command.includes("vitest") ||
+      command.includes("scripts/fitness-tests.ts"),
+  );
 }
 
 function mechanismRatchetProblems(entries: readonly Entry[]): string[] {
@@ -584,6 +605,29 @@ describe("charter-drift fence", () => {
     expect(missing, `enforced CI gates are not proven by .github/workflows/ci.yml:\n${missing.join("\n")}`).toEqual([]);
   });
 
+  it("(a') the blocking test job enters the complete suite exactly once", () => {
+    expect(
+      completeSuiteEntryCommands(blockingCiJobs().get("test")),
+    ).toEqual(["pnpm exec tsx scripts/fitness-tests.ts"]);
+    const duplicated = parseCiJobs(`
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pnpm exec vitest run
+      - run: pnpm exec tsx scripts/fitness-tests.ts
+`);
+    expect(
+      completeSuiteEntryCommands(duplicated.get("test")),
+    ).toEqual([
+      "pnpm exec vitest run",
+      "pnpm exec tsx scripts/fitness-tests.ts",
+    ]);
+  });
+
   it("(b) no fitness fence is disabled or focused (this file included)", () => {
     const project = new Project({
       useInMemoryFileSystem: true,
@@ -710,6 +754,18 @@ test.runIf(true)("runs too", () => {});`,
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
+  });
+
+  it("(b' companion) runs the complete test suite without selecting fitness files twice", () => {
+    const args = completeTestRunArguments("/work/vitest.json");
+    expect(args).toEqual([
+      "run",
+      "--reporter=json",
+      "--outputFile=/work/vitest.json",
+    ]);
+    expect(args.some((argument) => argument.endsWith(".test.ts"))).toBe(
+      false,
+    );
   });
 
   it("(e) ratchet: every id that shipped as 'enforced' is still enforced", () => {
