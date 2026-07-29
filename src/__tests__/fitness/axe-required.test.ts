@@ -67,6 +67,45 @@ function isDirectNamedImportIdentifier(node: Node, moduleName: string, imported:
   );
 }
 
+function isDirectNamespaceImportIdentifier(node: Node, moduleName: string): boolean {
+  if (!Node.isIdentifier(node)) return false;
+  return (
+    node
+      .getSymbol()
+      ?.getDeclarations()
+      .some(
+        (declaration) =>
+          Node.isNamespaceImport(declaration) &&
+          declaration.getName() === node.getText() &&
+          importModuleOf(declaration) === moduleName,
+      ) ?? false
+  );
+}
+
+function isNamespaceImportIdentifier(
+  node: Node,
+  moduleName: string,
+  seen = new Set<Node>(),
+): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+  if (isDirectNamespaceImportIdentifier(node, moduleName)) return true;
+  if (!Node.isIdentifier(node)) return false;
+  return (
+    node
+      .getSymbol()
+      ?.getDeclarations()
+      .some((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return false;
+        const initializer = declaration.getInitializer();
+        return (
+          initializer !== undefined &&
+          isNamespaceImportIdentifier(initializer, moduleName, new Set(seen))
+        );
+      }) ?? false
+  );
+}
+
 function isNamedImportIdentifier(
   node: Node,
   moduleName: string,
@@ -76,6 +115,13 @@ function isNamedImportIdentifier(
   if (seen.has(node)) return false;
   seen.add(node);
   if (isDirectNamedImportIdentifier(node, moduleName, imported)) return true;
+  const access = memberAccess(node);
+  if (
+    access?.name === imported &&
+    isNamespaceImportIdentifier(access.receiver, moduleName)
+  ) {
+    return true;
+  }
   if (!Node.isIdentifier(node)) return false;
   return (
     node
@@ -96,10 +142,7 @@ function isNamedImportIdentifier(
         }
         if (!Node.isBindingElement(declaration)) return false;
         const property = declaration.getPropertyNameNode() ?? declaration.getNameNode();
-        if (
-          !Node.isIdentifier(property) ||
-          property.getText() !== imported
-        ) {
+        if (staticPropertyName(property) !== imported) {
           return false;
         }
         const variable = declaration.getFirstAncestorByKind(
@@ -108,12 +151,13 @@ function isNamedImportIdentifier(
         const initializer = variable?.getInitializer();
         return (
           initializer !== undefined &&
-          isNamedImportIdentifier(
-            initializer,
-            moduleName,
-            imported,
-            new Set(seen),
-          )
+          (isNamespaceImportIdentifier(initializer, moduleName) ||
+            isNamedImportIdentifier(
+              initializer,
+              moduleName,
+              imported,
+              new Set(seen),
+            ))
         );
       }) ?? false
   );
@@ -172,6 +216,12 @@ function memberAccess(
 function staticPropertyName(node: Node): string | undefined {
   if (Node.isIdentifier(node) || Node.isStringLiteral(node)) {
     return Node.isIdentifier(node) ? node.getText() : node.getLiteralText();
+  }
+  if (Node.isComputedPropertyName(node)) {
+    const expression = node.getExpression();
+    return Node.isStringLiteral(expression)
+      ? expression.getLiteralText()
+      : undefined;
   }
   return undefined;
 }
@@ -392,6 +442,15 @@ function routeLoopIsSanctioned(
   requiresLogin: boolean,
 ): boolean {
   if (!Node.isForOfStatement(loop)) return false;
+  const callbackBody = callback.getBody();
+  if (
+    !Node.isBlock(callbackBody) ||
+    loop.getParent() !== callbackBody ||
+    isStaticallyDead(loop, callback) ||
+    isInsideTry(loop, callback)
+  ) {
+    return false;
+  }
   const initializer = loop.getInitializer();
   if (!Node.isVariableDeclarationList(initializer)) return false;
   const routeName = initializer.getDeclarations()[0]?.getNameNode();
@@ -450,12 +509,13 @@ function routeLoopIsSanctioned(
   });
   if (!navigates || !waitsUntilLoaded || !scans) return false;
   if (!requiresLogin) return true;
-  return ownedCalls(callback).some(
-    (call) =>
-      call.getStart() < loop.getStart() &&
-      isNamedImportCall(call, "./helpers", "login") &&
-      Node.isAwaitExpression(call.getParent()) &&
-      call.getArguments()[0]?.getText() === pageName,
+  const loopIndex = callbackBody.getStatements().indexOf(loop);
+  return callbackBody.getStatements().slice(0, loopIndex).some(
+    (statement) =>
+      awaitedCall(statement, (call) =>
+        isNamedImportCall(call, "./helpers", "login") &&
+        call.getArguments()[0]?.getText() === pageName,
+      ),
   );
 }
 
@@ -464,9 +524,12 @@ function specCoversRouteGroup(
   imported: string,
   requiresLogin: boolean,
 ): boolean {
-  return enabledTestCallbacks(sourceFile).some((callback) =>
-    callback
-      .getDescendantsOfKind(SyntaxKind.ForOfStatement)
+  return enabledTestCallbacks(sourceFile).some((callback) => {
+    const body = callback.getBody();
+    if (!Node.isBlock(body)) return false;
+    return body
+      .getStatements()
+      .filter(Node.isForOfStatement)
       .some(
         (loop) =>
           isNamedImportIdentifier(
@@ -474,8 +537,8 @@ function specCoversRouteGroup(
             "./axe-routes",
             imported,
           ) && routeLoopIsSanctioned(loop, callback, requiresLogin),
-      ),
-  );
+      );
+  });
 }
 
 function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
@@ -484,6 +547,7 @@ function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
   if (!isNamedImportCall(exported, "@playwright/test", "defineConfig")) {
     return false;
   }
+  if (exported.getArguments().length !== 1) return false;
   const config = exported.getArguments()[0];
   if (!Node.isObjectLiteralExpression(config)) return false;
   if (config.getProperties().some(Node.isSpreadAssignment)) return false;
@@ -628,12 +692,26 @@ function isAnimationSettlement(statement: Node, pageName: string): boolean {
 function isDirectViolationAssertion(statement: Node, resultName: string): boolean {
   if (!Node.isExpressionStatement(statement)) return false;
   const matcherCall = statement.getExpression();
-  if (!Node.isCallExpression(matcherCall)) return false;
+  if (
+    !Node.isCallExpression(matcherCall) ||
+    matcherCall.getArguments().length !== 1
+  ) {
+    return false;
+  }
   const matcher = matcherCall.getExpression();
   if (!Node.isPropertyAccessExpression(matcher) || matcher.getName() !== "toEqual") return false;
   const expectation = matcher.getExpression();
   if (!Node.isCallExpression(expectation) || !isNamedImportCall(expectation, "@playwright/test", "expect")) return false;
-  const subject = expectation.getArguments()[0];
+  const expectationArguments = expectation.getArguments();
+  if (
+    expectationArguments.length < 1 ||
+    expectationArguments.length > 2 ||
+    (expectationArguments[1] !== undefined &&
+      !isSideEffectFreeMessage(expectationArguments[1], resultName))
+  ) {
+    return false;
+  }
+  const subject = expectationArguments[0];
   if (
     !Node.isPropertyAccessExpression(subject) ||
     subject.getName() !== "violations" ||
@@ -643,6 +721,55 @@ function isDirectViolationAssertion(statement: Node, resultName: string): boolea
   }
   const expected = matcherCall.getArguments()[0];
   return Node.isArrayLiteralExpression(expected) && expected.getElements().length === 0;
+}
+
+function isSideEffectFreeMessage(node: Node, resultName: string): boolean {
+  if (
+    Node.isIdentifier(node) ||
+    Node.isStringLiteral(node) ||
+    Node.isNumericLiteral(node) ||
+    Node.isNoSubstitutionTemplateLiteral(node) ||
+    [
+      SyntaxKind.TrueKeyword,
+      SyntaxKind.FalseKeyword,
+      SyntaxKind.NullKeyword,
+    ].includes(node.getKind())
+  ) {
+    return true;
+  }
+  if (Node.isTemplateExpression(node)) {
+    return node
+      .getTemplateSpans()
+      .every((span) =>
+        isSideEffectFreeMessage(span.getExpression(), resultName),
+      );
+  }
+  if (
+    Node.isParenthesizedExpression(node) ||
+    Node.isAsExpression(node) ||
+    Node.isTypeAssertion(node) ||
+    Node.isNonNullExpression(node) ||
+    Node.isSatisfiesExpression(node)
+  ) {
+    return isSideEffectFreeMessage(node.getExpression(), resultName);
+  }
+  if (!Node.isCallExpression(node)) return false;
+  const expression = node.getExpression();
+  if (
+    !Node.isPropertyAccessExpression(expression) ||
+    expression.getName() !== "stringify" ||
+    !isUnshadowedGlobal(expression.getExpression(), "JSON")
+  ) {
+    return false;
+  }
+  const args = node.getArguments();
+  return (
+    args.length === 3 &&
+    args[0]?.getText() === `${resultName}.violations` &&
+    args[1]?.getKind() === SyntaxKind.NullKeyword &&
+    Node.isNumericLiteral(args[2]) &&
+    args[2].getLiteralText() === "2"
+  );
 }
 
 function helperIsSanctioned(sourceFile: SourceFile): boolean {
@@ -874,6 +1001,21 @@ check.describe("group", () => {
           completeSources({ "e2e/smoke.spec.ts": describeSpec }),
         ),
       ).toEqual([]);
+      const namespaceSpec = `import * as pw from "@playwright/test";
+import { assertNoAxeViolations as scan } from "./axe";
+import { PUBLIC_AXE_ROUTES as routes } from "./axe-routes";
+pw.test("axe", async ({ page }) => {
+  for (const route of routes) {
+    await page.goto(route.path);
+    await pw.expect(page.locator(route.readySelector)).toBeVisible();
+    await scan(page, route.path);
+  }
+});`;
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": namespaceSpec }),
+        ),
+      ).toEqual([]);
     });
 
     it("rejects unreachable, disabled, expected-failure, unawaited, and caught helper calls", () => {
@@ -931,6 +1073,12 @@ check.describe("group", () => {
       expect(axeCoverageProblems(focused)).toContain(
         "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
       );
+      const merged = completeSources();
+      merged[PLAYWRIGHT_CONFIG_PATH] =
+        `import { defineConfig } from "@playwright/test"; export default defineConfig({ testDir: "./e2e", forbidOnly: true }, { testIgnore: ["**/smoke.spec.ts"] });`;
+      expect(axeCoverageProblems(merged)).toContain(
+        "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
+      );
     });
 
     it("rejects a required specification that scans the wrong route or an unloaded state", () => {
@@ -947,11 +1095,83 @@ test("axe", async ({ page }) => {
       );
     });
 
+    it("rejects route loops hidden in uncalled functions or caught branches", () => {
+      const hiddenLoops = [
+        `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  await assertNoAxeViolations(page, "decoy");
+  async function neverCalled() {
+    for (const route of PUBLIC_AXE_ROUTES) {
+      await page.goto(route.path);
+      await expect(page.locator(route.readySelector)).toBeVisible();
+      await assertNoAxeViolations(page, route.path);
+    }
+  }
+});`,
+        `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+test("axe", async ({ page }) => {
+  await assertNoAxeViolations(page, "decoy");
+  try {
+    for (const route of PUBLIC_AXE_ROUTES) {
+      await page.goto(route.path);
+      await expect(page.locator(route.readySelector)).toBeVisible();
+      await assertNoAxeViolations(page, route.path);
+    }
+  } catch {}
+});`,
+      ];
+      for (const spec of hiddenLoops) {
+        expect(
+          axeCoverageProblems(
+            completeSources({ "e2e/smoke.spec.ts": spec }),
+          ),
+          spec,
+        ).toContain(
+          "e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion",
+        );
+      }
+    });
+
+    it("rejects namespace-imported Playwright neutralizers", () => {
+      const neutralizers = [
+        'pw.test["skip"](() => true, "file disabled");',
+        'const check = pw.test; const disable = check.fixme; disable(() => true, "file disabled");',
+        'const { test: check } = pw; const { ["fail"]: disable } = check; disable(() => true, "expected failure");',
+      ];
+      for (const neutralizer of neutralizers) {
+        const spec = `import { expect, test } from "@playwright/test";
+import * as pw from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+${neutralizer}
+test("axe", async ({ page }) => {
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`;
+        expect(
+          axeCoverageProblems(
+            completeSources({ "e2e/smoke.spec.ts": spec }),
+          ),
+          spec,
+        ).toContain(
+          "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
+        );
+      }
+    });
+
     it("rejects caught, transformed, incomplete, or masked helper assertions", () => {
       const invalid = [
         VALID_HELPER.replace("expect(results.violations, context).toEqual([]);", "try { expect(results.violations, context).toEqual([]); } catch {}"),
         VALID_HELPER.replace("results.violations, context", "results.violations.filter(() => false), context"),
         VALID_HELPER.replace("expect(results.violations, context)", "results.violations.length = 0;\n  expect(results.violations, context)"),
+        VALID_HELPER.replace("expect(results.violations, context)", "expect(results.violations, (results.violations.length = 0, context))"),
         VALID_HELPER.replace("const results = await", "const results ="),
         VALID_HELPER.replace(".withTags(", '.exclude("body").withTags('),
         VALID_HELPER.replace(

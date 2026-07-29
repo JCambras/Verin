@@ -10319,3 +10319,63 @@ aliases while valid imported aliases remain accepted.
 passes.
 
 **Date:** 2026-07-28 (ADR-0030 and D-061 execution-reachability review).
+
+### PF-031 (continued) · effective configuration, route ownership, safe messages, and namespace symbols
+
+**Invariant (charter #9):** the effective Playwright configuration selects every required Axe
+specification, every required route loop executes directly inside an enabled registered test, assertion
+messages cannot mutate the violations being checked, and every imported Playwright symbol form remains
+subject to neutralization detection.
+
+Before the enforcement changes, five focused companions reproduced the reported bypasses. The suite
+failed on a second `defineConfig` argument, route loops inside an uncalled function and a caught branch,
+a namespace-imported `test.skip`, and an assertion message that emptied `results.violations`.
+
+**Injection 7 - override the inspected configuration.** Added a second real `defineConfig` argument:
+`{ testIgnore: ["**/smoke.spec.ts"] }`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters
+```
+
+**Companions added:** in-memory specifications reject multi-argument configuration, route loops inside
+uncalled functions or caught branches, side-effecting optional assertion messages, and direct,
+computed, aliased, destructured, or namespace-imported `skip`, `fixme`, and `fail` calls. A namespace
+import remains accepted for a valid test registration and loaded-state assertion, so the resolver
+cannot satisfy the refusal cases by rejecting every namespace symbol.
+
+**Revert:** the injected second configuration argument was removed immediately. The focused Axe fence
+then passed all 10 tests.
+
+**Date:** 2026-07-29 (ADR-0030 and D-061 executable-evidence review).
+
+### PF-032 (continued) · awaited screenshot execution and non-empty artifacts
+
+**Invariant (Gate 0, ADR-0030):** each canonical screenshot call is a direct awaited statement of the
+registered journey test. The `snap` helper directly awaits `page.screenshot`, writes the manifest-derived
+name into `demo-screens`, and proves the returned capture is non-empty.
+
+Before the enforcement change, the companion accepted an unawaited screenshot, a different receiver,
+and a screenshot hidden behind `if (false)`. Those cases failed red before the helper ownership and
+artifact contract were implemented.
+
+**Injection 2 - stop awaiting the real screenshot.** Replaced the real helper declaration with
+`const screenshot = page.screenshot(...)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical clickable journey must capture every typed surface in contract order
+```
+
+**Companions added:** in-memory journeys reject unawaited or conditionally hidden canonical `snap`
+calls; an unawaited, wrong-receiver, or dead helper capture; a changed artifact directory; and a missing
+non-empty-buffer assertion. The real helper now checks `screenshot.byteLength > 0` after the awaited
+write.
+
+**Revert:** the real `await` was restored immediately. The focused surface-completeness fence then
+passed both tests, and the combined focused run passed all 12 tests.
+
+**Date:** 2026-07-29 (ADR-0030 and D-061 executable-evidence review).

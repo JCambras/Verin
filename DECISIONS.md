@@ -6304,6 +6304,16 @@ public, authenticated, and demo route groups to navigation and loaded-state asse
 direct, computed, destructured, and aliased neutralization calls through imported symbols. PF-030,
 PF-031, and new PF-032 record focused companions and real injections.
 
+The captain-approved executable-evidence review (2026-07-29) amended ADR-0030 in place a tenth time:
+**(1)** Playwright configuration proof rejects multiple `defineConfig` arguments because later values
+can override the inspected selection contract; **(2)** required route loops must be direct statements
+of an enabled registered test, outside uncalled functions and caught branches; **(3)** optional Axe
+assertion messages are structurally side-effect-free; **(4)** computed, destructured, aliased, and
+namespace-imported Playwright symbols share one neutralization resolver; and **(5)** Gate 0 accepts only
+direct awaited canonical `snap` calls whose helper directly awaits `page.screenshot` into the pinned
+`demo-screens` directory and asserts a non-empty capture. PF-031 and PF-032 record the red reproductions,
+focused companions, and restored green proofs.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

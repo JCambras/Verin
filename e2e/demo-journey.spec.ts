@@ -18,7 +18,8 @@ async function snap(page: Page, index: number, name: string) {
   // Settle the surface-entry fade (design §12.2) before capturing: a mid-fade
   // screenshot is washed out and non-deterministic across runs.
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
-  await page.screenshot({ path: `${SHOTS}/${String(index).padStart(2, "0")}-${name}.png`, fullPage: true });
+  const screenshot = await page.screenshot({ path: `${SHOTS}/${String(index).padStart(2, "0")}-${name}.png`, fullPage: true });
+  expect(screenshot.byteLength).toBeGreaterThan(0);
 }
 
 /** Every fake-backed surface must show the development-only provenance badge. */

@@ -206,7 +206,8 @@ Axe-specific fitness fence that proves the public, authenticated, and demo E2E s
 Axe through an enabled and reachable Playwright test. The required specifications await one sanctioned
 helper, and the fence pins that helper to the exact non-mutating document-animation settlement, a complete
 WCAG-tagged analysis, and a direct assertion over the unmodified `results.violations` array. The assertion
-cannot be caught, filtered, mapped, emptied, or hidden behind extra statements. Test registration is
+cannot be caught, filtered, mapped, emptied, hidden behind extra statements, or masked through a
+side-effecting optional assertion message. Test registration is
 accepted only at module scope or directly inside an enabled module-scope `test.describe` callback.
 Skipped descriptions, file or describe scope skip/fixme annotations, expected failures, runtime skips,
 statically dead branches, unawaited helper calls, caught helper calls, and tests inside uncalled
@@ -216,15 +217,18 @@ charter-drift green. Both v3 governance mappings are ratcheted to the exact bloc
 `pnpm exec tsx scripts/v3-invariants.ts` command, so either mapping cannot regress to a name-only job
 check. The fence also parses `playwright.config.ts`, forbids focused-test exclusion, rejects selectors that exclude required tests,
 binds each required specification to its typed route group and loaded-state assertion, and resolves
-direct, computed, destructured, and aliased Playwright neutralization calls through their imported
-symbols.
+direct, computed, destructured, aliased, and namespace-imported Playwright neutralization calls through
+their imported symbols. A multi-argument `defineConfig` is rejected because later arguments override
+earlier selection settings. Each sanctioned route loop is a direct statement of its enabled registered
+test, outside uncalled functions and caught branches.
 
 **Gate 0 surface completeness is executable.** The prompt-3 evidence gap is replaced by
 `demo-surface-completeness.test.ts`. A typed twelve-surface manifest is equal to the normative
 `docs/demo-contract.md` section 4 list, the dynamic route renders every station, every component exists,
-and the canonical journey screenshots each surface in order. The blocking E2E gate reaches every typed
-demo route and waits for its surface-specific loaded marker. Gate 0 now computes green, and remains the
-structural predecessor of Gate A.
+and the canonical journey directly awaits each surface screenshot in order. Its `snap` helper directly
+awaits `page.screenshot` into `demo-screens` and asserts that every returned capture is non-empty. The
+blocking E2E gate reaches every typed demo route and waits for its surface-specific loaded marker.
+Gate 0 now computes green, and remains the structural predecessor of Gate A.
 
 **Entry conditions are executable dependencies, not display copy.** Every gate declares structural
 `entryGates` alongside its human-readable `entryCondition`. The rule set requires both forms to agree,
@@ -359,10 +363,11 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   and the Axe-specific fitness fence. All required surface specifications await `e2e/axe.ts`, whose
   non-mutating animation settlement, complete scan, and direct unmodified-violations assertion are
   structurally pinned by that fence. Module/file/describe scope annotations and expected-failure tests
-  cannot neutralize the required scans, including computed, destructured, and aliased annotation calls.
-  Playwright configuration must reject focused-test exclusion and select the required specifications,
-  and typed public, authenticated,
-  and demo route groups bind each scan to navigation plus its loaded-state marker. The
+  cannot neutralize the required scans, including computed, destructured, aliased, and namespace-imported
+  annotation calls. Playwright configuration must be one effective configuration object, reject
+  focused-test exclusion, and select the required specifications. Typed public, authenticated,
+  and demo route groups bind each directly owned route loop to navigation plus its loaded-state marker.
+  Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
 - A gate's `awaiting:` line lists EVERY requirement holding it back, undecidable ones included, with a
@@ -370,9 +375,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   understate what a gate needs.
 - Registering a gate cannot make it green, and neither can deleting what it cannot prove. Gate 0 now
   reads `green`: `demo-surface-completeness.test.ts` binds the normative section 4 list to the typed
-  manifest, route switch, component inventory, and ordered screenshots, while the blocking E2E gate
-  reaches every typed route after its loaded marker. Gates A through I remain non-green against their
-  own unmet requirements.
+  manifest, route switch, component inventory, and direct awaited ordered screenshots. The screenshot
+  helper writes only to the pinned artifact directory and rejects an empty capture, while the blocking
+  E2E gate reaches every typed route after its loaded marker. Gates A through I remain non-green against
+  their own unmet requirements.
 - `scripts/v3-gates.lib.ts` is the single rule set; the fence and the blocking runner both import it, so
   a rule cannot be enforced in one and missing in the other.
 - `charter-map.json` gains the `v3-gate-ordering` operating-model entry, so the charter-drift fence's
