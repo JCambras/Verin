@@ -5,6 +5,7 @@ import {
   SNAPSHOTS_PER_PRINCIPAL,
   SNAPSHOT_TTL_MS,
   activatedSetupSnapshot,
+  isSetupActivationToken,
   registerActivatedSetupSnapshot,
   type SetupActivationScope,
 } from "@app/demo/setup-activation-store";
@@ -124,5 +125,27 @@ describe("activated setup snapshot registry", () => {
     const snapshot = snapshotAt(3);
     registerActivatedSetupSnapshot(principal, snapshot);
     expect(activatedSetupSnapshot(principal, "not-a-snapshot-hash")).toBeNull();
+  });
+
+  it("accepts only generated lowercase SHA-256 activation tokens", () => {
+    const principal = scope();
+    const snapshot = snapshotAt(4);
+    expect(isSetupActivationToken(snapshot.snapshotHash)).toBe(true);
+    for (const invalid of [
+      "",
+      "a".repeat(63),
+      "A".repeat(64),
+      "g".repeat(64),
+      `${snapshot.snapshotHash}suffix`,
+    ]) {
+      expect(isSetupActivationToken(invalid)).toBe(false);
+      expect(activatedSetupSnapshot(principal, invalid)).toBeNull();
+    }
+    expect(() =>
+      registerActivatedSetupSnapshot(principal, {
+        ...snapshot,
+        snapshotHash: "not-a-generated-token",
+      }),
+    ).toThrow("invalid token");
   });
 });

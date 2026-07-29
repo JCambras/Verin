@@ -140,10 +140,10 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByRole("heading", { name: "See the impact on signed examples" })).toBeVisible();
   await expect(page.getByTestId("signed-impact-recent-bank")).toContainText("GC-03 / GC-04");
   await expect(page.getByTestId("signed-impact-recent-bank")).toContainText(
-    "changed 2026-07-22 · 4 days ago",
+    "changed 2026-07-22 · 6 days ago",
   );
   await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
-    "Planned-withdrawal evidence observed 2026-06-09 · 47 days old",
+    "Planned-withdrawal evidence observed 2026-06-09 · 49 days old",
   );
   await expect(page.getByTestId("signed-impact-stale-withdrawals")).toContainText(
     "Available cash remains fresh as of 2026-07-26",
@@ -260,14 +260,18 @@ test("each firm's export lands on the record whose identifiers the proof step sh
       firmId === "firm-a" ? "$297,000.00" : "$249,000.00",
     );
     if (firmId === "firm-a") {
+      const authority = page.locator(
+        'section[aria-label="Authority and approvals"]',
+      );
       await expect(
-        page
-          .locator('section[aria-label="Authority and approvals"]')
-          .locator(":scope > div > p:first-child"),
+        authority.locator(":scope > div > p:first-child"),
       ).toHaveText([
         "Stage 1 - Bank-instruction specialist review",
         "Stage 2 - Dual operations approval",
       ]);
+      await expect(authority).toContainText("Reviewed · Jul 28, 10:15");
+      await expect(authority).toContainText("Approved · Jul 28, 10:32");
+      await expect(authority).toContainText("Approved · Jul 28, 10:41");
     }
     await checkAxe(page, `record-${firmId}`);
     await snap(page, 10 + index, `record-${firmId}`);
@@ -446,8 +450,17 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   ).toContainText("as of 2026-06-09");
   await page.goto("/app/demo/decision?scenario=stale-evidence&firm=firm-a");
   await expect(page.getByTestId("blocker-row")).toContainText(
-    "Planned-withdrawal evidence is 47 days old",
+    "Planned-withdrawal evidence is 49 days old",
   );
+  await page.goto("/app/demo/record?scenario=stale-evidence&firm=firm-a");
+  await expect(page.getByTestId("record-reserve-state")).toContainText(
+    "Reserve calculation not evaluated",
+  );
+  await expect(page.getByTestId("record-reserve-state").locator("..")).toContainText(
+    "no reserve floor or headroom was calculated",
+  );
+  await expect(page.getByTestId("record-reserve-floor")).toHaveCount(0);
+  await expect(page.getByTestId("record-reserve-headroom")).toHaveCount(0);
 
   await page.goto(
     "/app/demo/evidence?scenario=recent-bank-change-block&firm=firm-a",
@@ -485,13 +498,26 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(card.getByRole("link", { name: "View the policy trace" })).toBeVisible();
   await checkAxe(page, "decision-prohibited");
   await snap(page, 14, "decision-prohibited");
+  await page.goto(
+    "/app/demo/record?scenario=permanent-prohibition&firm=firm-a",
+  );
+  await expect(page.getByTestId("record-reserve-state")).toContainText(
+    "Reserve calculation not applicable",
+  );
+  await expect(page.getByTestId("record-reserve-floor")).toHaveCount(0);
+  await expect(page.getByTestId("record-reserve-headroom")).toHaveCount(0);
 
   // The approval-invalidation moment: the voided approval STAYS, what changed is
   // announced, one clear next action.
   await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a");
   await expect(page.getByTestId("voided-approval")).toBeVisible();
   await expect(page.getByText("Approval voided - evidence changed").first()).toBeVisible();
-  await expect(page.getByTestId("what-changed")).toBeVisible();
+  await expect(page.getByTestId("what-changed")).toContainText(
+    "A $15,000 pending distribution posted after this approval was given.",
+  );
+  await expect(page.getByTestId("what-changed")).not.toContainText(
+    "bank instruction changed",
+  );
   await expect(page.getByRole("link", { name: "Re-evaluate with current evidence" })).toBeVisible();
   await checkAxe(page, "safety-invalidation");
   await snap(page, 15, "safety-invalidation");

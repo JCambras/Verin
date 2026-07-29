@@ -205,7 +205,7 @@ export function ProofBody({
           </div>
           <div>
             <dt className="text-xs text-slate-600">Data provenance</dt>
-            <dd className="text-sm text-slate-800">Synthetic Smiths fixture · as of Jul 26, 2026</dd>
+            <dd className="text-sm text-slate-800">{vm.proof.dataProvenance}</dd>
           </div>
           <div>
             <dt className="text-xs text-slate-600">Execution provenance</dt>

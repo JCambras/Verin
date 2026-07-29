@@ -105,10 +105,11 @@ export function EvidenceConflict({
 }
 
 /** The explicit data-gap row (EmptyState idiom at row scale). */
-export function EvidenceMissing({ text }: { text: string }) {
+export function EvidenceMissing({ text, badgeLabel }: { text: string; badgeLabel?: string }) {
   return (
-    <p className="rounded-md border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600" data-testid="evidence-missing">
-      {text}
-    </p>
+    <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600" data-testid="evidence-missing">
+      <p>{text}</p>
+      {badgeLabel ? <DevProvenanceBadge label={badgeLabel} /> : null}
+    </div>
   );
 }

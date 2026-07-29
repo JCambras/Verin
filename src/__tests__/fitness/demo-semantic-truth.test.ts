@@ -7,7 +7,11 @@ import {
   APPROVAL_CLOCKS,
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
+  DEMO_ACTIVATION_EFFECTIVE_AT,
   DEMO_NOW,
+  DEMO_RECORD_CREATED_AT,
+  DEMO_REQUEST_REF,
+  DEMO_TIMELINE,
   DESTINATION_RESTRICTION,
   FIRMS,
   LOW_HEADROOM_LIQUIDITY,
@@ -20,6 +24,7 @@ import {
   resolveFirmId,
   resolveScenarioId,
   scenarioById,
+  demoTimestampLabel,
 } from "@app/demo/data";
 import { headroomMinor } from "@app/demo/build-decision";
 import { RESERVE_FLOOR_INPUTS, derivedMetric, fixtureMetric } from "@app/demo/provenance";
@@ -40,6 +45,7 @@ import {
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import type { DisplayMetric } from "@contracts/metric";
 import { isDemonstration } from "@contracts/provenance";
+import type { RecordReserveVM, RecordVM } from "@app/demo/model";
 import { REPO_ROOT } from "./_fence-utils";
 
 /**
@@ -525,6 +531,61 @@ export function metricTraceOf(displayed: DisplayMetric): MetricTrace {
     derivedFrom:
       "derivedFrom" in provenance ? [...provenance.derivedFrom].sort() : [],
   };
+}
+
+function evaluatedReserve(
+  record: RecordVM,
+): Extract<RecordReserveVM, { readonly kind: "evaluated" }> {
+  expect(record.reserve.kind).toBe("evaluated");
+  if (record.reserve.kind !== "evaluated") {
+    throw new Error(`Expected evaluated reserve, received ${record.reserve.kind}`);
+  }
+  return record.reserve;
+}
+
+interface ReserveStateClaim {
+  readonly kind: RecordReserveVM["kind"];
+  readonly floorMinor?: number;
+  readonly headroomMinor?: number;
+}
+
+export function reserveStateViolations(
+  claim: ReserveStateClaim,
+): string[] {
+  const hasFigures =
+    claim.floorMinor !== undefined || claim.headroomMinor !== undefined;
+  if (claim.kind === "evaluated") {
+    return claim.floorMinor === undefined || claim.headroomMinor === undefined
+      ? ["evaluated reserve state is missing its floor or headroom"]
+      : [];
+  }
+  return hasFigures
+    ? [`${claim.kind} reserve state carries evaluated figures`]
+    : [];
+}
+
+interface TimelineInstant {
+  readonly label: string;
+  readonly at: string;
+}
+
+export function timelineOrderViolations(
+  instants: readonly TimelineInstant[],
+): string[] {
+  const violations: string[] = [];
+  for (let index = 0; index < instants.length; index += 1) {
+    const current = instants[index]!;
+    const currentTime = Date.parse(current.at);
+    if (!Number.isFinite(currentTime)) {
+      violations.push(`${current.label} has an invalid timestamp`);
+      continue;
+    }
+    const prior = instants[index - 1];
+    if (prior && currentTime < Date.parse(prior.at)) {
+      violations.push(`${current.label} occurs before ${prior.label}`);
+    }
+  }
+  return violations;
 }
 
 /**
@@ -1228,6 +1289,84 @@ describe("demo semantic-truth fence", () => {
     expect(Object.isFrozen(firmA.authorityPlan.stages)).toBe(true);
   });
 
+  it("enforces: activation, decision, authority, and evidence age share the July 28 timeline", () => {
+    expect(DEMO_NOW).toBe("2026-07-28");
+    const setup = buildMoneyMovementSetup();
+    expect(setup.activation.effectiveAt).toBe(DEMO_ACTIVATION_EFFECTIVE_AT);
+    expect(setup.request.requestRef).toBe(DEMO_REQUEST_REF);
+
+    const snapshot = activatedSnapshot();
+    expect(snapshot.activatedAt).toBe(DEMO_ACTIVATION_EFFECTIVE_AT);
+    const firmAStages = snapshot.firms[0].authorityPlan.stages;
+    expect(firmAStages[0]?.actors[0]?.statusLabel).toBe(
+      `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
+    );
+    expect(firmAStages[1]?.actors[0]?.statusLabel).toBe(
+      `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval1At)}`,
+    );
+    expect(firmAStages[1]?.actors[1]?.statusLabel).toBe(
+      `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval2At)}`,
+    );
+
+    expect(
+      timelineOrderViolations([
+        { label: "activation", at: DEMO_TIMELINE.activationAt },
+        { label: "decision", at: DEMO_TIMELINE.decisionCreatedAt },
+        {
+          label: "specialist review",
+          at: DEMO_TIMELINE.specialistReviewedAt,
+        },
+        {
+          label: "operations approval 1",
+          at: DEMO_TIMELINE.operationsApproval1At,
+        },
+        {
+          label: "operations approval 2",
+          at: DEMO_TIMELINE.operationsApproval2At,
+        },
+      ]),
+    ).toEqual([]);
+
+    const record = buildActivatedRecord(snapshot, "firm-a");
+    expect(record.header.createdAt).toBe(DEMO_RECORD_CREATED_AT);
+    const journeyStages = getJourney(
+      "recent-bank-change-block",
+      "firm-a",
+    ).record.approvalStages;
+    expect(journeyStages?.map((stage) => stage.title)).toEqual([
+      "Stage 1 - Bank-instruction specialist review",
+      "Stage 2 - Dual operations approval",
+    ]);
+    expect(journeyStages?.[0]?.actors[0]?.statusLabel).toBe(
+      `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
+    );
+    expect(BANK_INSTRUCTION.changedAgeDays).toBe(6);
+    expect(
+      buildMoneyMovementSetup().impacts.find(
+        (impact) => impact.id === "stale-withdrawals",
+      )?.facts,
+    ).toContain("49 days old");
+
+    const expired = getJourney(
+      "specialist-review-expiration",
+      "firm-a",
+    ).record.approvalStages;
+    expect(expired?.[0]?.stepState).toBe("active");
+    expect(expired?.[1]?.stepState).toBe("pending");
+    expect(expired?.[1]?.actors.every((actor) => actor.status !== "done")).toBe(
+      true,
+    );
+  });
+
+  it("detects: authority events cannot occur before their prerequisite stage", () => {
+    expect(
+      timelineOrderViolations([
+        { label: "specialist review", at: "2026-07-28T15:15:00.000Z" },
+        { label: "operations approval", at: "2026-07-28T14:31:00.000Z" },
+      ]),
+    ).toEqual(["operations approval occurs before specialist review"]);
+  });
+
   it("enforces: Firm B mutations add neither a standard approval nor a requester rule", () => {
     const belowThreshold = activatedSnapshot((selections) => {
       selections["firm-b"]["bank-change"] = "specialist";
@@ -1273,6 +1412,12 @@ describe("demo semantic-truth fence", () => {
     expect(result.error).toContain("Unsupported setup combination");
     expect(result.error).toContain("firm-a:reserve=18-months");
     expect(result.error).toContain("firm-b[");
+  });
+
+  it("enforces: an empty truth-label set cannot become a signed configuration", () => {
+    expect(() => configurationPosture([])).toThrow(
+      "requires at least one selected option",
+    );
   });
 
   it("enforces: GC-09 freshness stays attached to the signed evidence rows", () => {
@@ -1393,6 +1538,7 @@ describe("demo semantic-truth fence", () => {
         selections["firm-a"].reserve = `${months}-months`;
       });
       const record = buildActivatedRecord(snapshot, "firm-a");
+      const reserve = evaluatedReserve(record);
       const reserveRow = record.precedence.find((row) =>
         row.rule.startsWith("Cash-reserve floor"),
       );
@@ -1403,8 +1549,8 @@ describe("demo semantic-truth fence", () => {
         {
           reserveMonths: months,
           precedenceReason: reserveRow?.why?.reason ?? "",
-          reserveFloorMinor: Number(record.reserve.floor.value),
-          headroomMinor: Number(record.reserve.headroom.value),
+          reserveFloorMinor: Number(reserve.floor.value),
+          headroomMinor: Number(reserve.headroom.value),
         },
         SUPPORTED_RESERVE_MONTHS,
         SMITHS_LIQUIDITY,
@@ -1416,11 +1562,73 @@ describe("demo semantic-truth fence", () => {
       ).toEqual([]);
       // The horizon prose the record prints and the floor the setup step showed must
       // be the same activated number, not two independently-correct figures.
-      expect(record.reserve.horizon).toBe(`${months} months of planned withdrawals`);
-      expect(Number(record.reserve.floor.value)).toBe(
+      expect(reserve.horizon).toBe(`${months} months of planned withdrawals`);
+      expect(Number(reserve.floor.value)).toBe(
         Number(snapshot.firms[0].reserveMetric.value),
       );
     }
+  });
+
+  it("enforces: reserve figures exist only when precedence establishes evaluation", () => {
+    const evaluated = evaluatedReserve(
+      getJourney("safe-proceed", "firm-a").record,
+    );
+    expect(
+      reserveStateViolations({
+        kind: evaluated.kind,
+        floorMinor: Number(evaluated.floor.value),
+        headroomMinor: Number(evaluated.headroom.value),
+      }),
+    ).toEqual([]);
+
+    const stale = getJourney("stale-evidence", "firm-a").record.reserve;
+    expect(stale.kind).toBe("not-evaluated");
+    expect(reserveStateViolations({ kind: stale.kind })).toEqual([]);
+    expect("floor" in stale).toBe(false);
+    expect("headroom" in stale).toBe(false);
+    expect(
+      getJourney("stale-evidence", "firm-a").record.precedence.find(
+        (row) => row.rule.startsWith("Cash-reserve floor"),
+      )?.result,
+    ).toContain("Cannot evaluate");
+
+    const prohibitedRecord = getJourney(
+      "permanent-prohibition",
+      "firm-a",
+    ).record;
+    const prohibited = prohibitedRecord.reserve;
+    expect(prohibited.kind).toBe("not-applicable");
+    expect(reserveStateViolations({ kind: prohibited.kind })).toEqual([]);
+    expect("floor" in prohibited).toBe(false);
+    expect("headroom" in prohibited).toBe(false);
+    const prohibitedTrace = prohibitedRecord.precedence.find((row) =>
+      row.rule.startsWith("Cash-reserve floor"),
+    );
+    expect(prohibitedTrace?.result).toContain("Not applicable");
+    expect(prohibitedTrace?.why?.reason).not.toContain(
+      "months of planned withdrawals",
+    );
+    expect(
+      prohibitedRecord.precedence
+        .slice(1)
+        .every((row) => row.result.startsWith("Not applicable")),
+    ).toBe(true);
+  });
+
+  it("detects: non-evaluated and non-applicable reserve states cannot carry figures", () => {
+    expect(
+      reserveStateViolations({
+        kind: "not-evaluated",
+        floorMinor: 4_800_000,
+        headroomMinor: 29_700_000,
+      }),
+    ).toEqual(["not-evaluated reserve state carries evaluated figures"]);
+    expect(
+      reserveStateViolations({
+        kind: "not-applicable",
+        floorMinor: 4_800_000,
+      }),
+    ).toEqual(["not-applicable reserve state carries evaluated figures"]);
   });
 
   it("enforces: the record's reserve floor and headroom declare every leaf they stand on", () => {
@@ -1431,8 +1639,9 @@ describe("demo semantic-truth fence", () => {
       ["the activated record", activated],
       ["the fixture-journey record", journey],
     ] as const) {
-      const floor = metricTraceOf(record.reserve.floor);
-      const headroom = metricTraceOf(record.reserve.headroom);
+      const reserve = evaluatedReserve(record);
+      const floor = metricTraceOf(reserve.floor);
+      const headroom = metricTraceOf(reserve.headroom);
       expect(floor.demonstration, `${label} floor must be a demonstration`).toBe(true);
       expect(headroom.demonstration, `${label} headroom must be a demonstration`).toBe(true);
       // A derived figure may never claim a NARROWER lineage than one of its own
@@ -1449,8 +1658,12 @@ describe("demo semantic-truth fence", () => {
     }
     // The activated horizon is administrator-entered; the journey horizon is a FIRMS
     // fixture. Same arithmetic, honestly different leaves.
-    expect(metricTraceOf(activated.reserve.floor).derivedFrom).toContain("user-input");
-    expect(metricTraceOf(journey.reserve.floor).derivedFrom).toEqual(["fixture"]);
+    expect(
+      metricTraceOf(evaluatedReserve(activated).floor).derivedFrom,
+    ).toContain("user-input");
+    expect(
+      metricTraceOf(evaluatedReserve(journey).floor).derivedFrom,
+    ).toEqual(["fixture"]);
   });
 
   it("enforces: a configuration may claim only the authority its complete truth-label set carries", () => {

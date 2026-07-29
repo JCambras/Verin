@@ -3301,3 +3301,38 @@ no printed arithmetic beside it is a claim an examiner cannot check.
 **Revert path:** collapse the three postures back to a binary only alongside a captain
 ruling that a recommended default IS captain-signed; drop the record's reserve block only
 if the same figures land on a ledger-derived export that carries them instead.
+
+### D-067 · 2026-07-28 · reversible · One timeline and typed reserve evaluation govern the demo
+
+The primary setup demo now has one July 28 activation and decision timeline in
+`src/app/demo/data.ts`. Activation, record creation, request and evidence references,
+evidence retrieval, specialist review, operations approvals, revalidation, execution,
+verification, expiry, and later status events derive from that authority. Evidence ages
+are measured against the same July 28 decision date. Sequential authority cannot advance
+to operations before specialist review, and an expired specialist stage leaves operations
+pending. GC-15's invalidation remains the signed $15,000 pending distribution, so the
+separate signed July 22 bank-instruction change never acquires a second date or meaning.
+
+The exported reserve block is a discriminated state: evaluated, not evaluated, or not
+applicable. Only evaluated records carry horizon, floor, and headroom metrics. Stale
+planned-withdrawal evidence produces a reasoned not-evaluated state. A binding destination
+prohibition stops precedence and produces a reasoned not-applicable state. This amends
+D-066's printed-arithmetic ruling: its arithmetic and provenance requirements apply
+exactly when reserve evaluation is established.
+
+Five fail-closed boundaries travel with that ownership correction. Configuration posture
+rejects an empty truth-label set. Activation references must match the generated
+64-character lowercase SHA-256 shape before lookup or display and malformed values are
+never echoed. Accountable role assignments carry `firmId` and resolve profile labels by
+identity. The dead-field fence traverses object, union, and intersection type aliases.
+That stronger fence exposed and corrected an unlabeled missing-evidence row.
+
+**Why:** time, authority progression, reserve evaluation, activation identity, and
+presentation ownership are parts of one exported decision claim. Allowing any one of them
+to fail open can make a locally plausible record contradict the activation and precedence
+that supposedly govern it.
+
+**Revert path:** remove the shared timeline and typed reserve states together only if the
+demo export is replaced by a real ledger projection that owns all timestamps and
+evaluation states. The validation and identity-keyed boundaries remain independently
+reversible.

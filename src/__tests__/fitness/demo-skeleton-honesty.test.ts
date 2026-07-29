@@ -3,7 +3,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { parseDocument } from "yaml";
-import { Node, Project, SyntaxKind, type TypeLiteralNode } from "ts-morph";
+import {
+  Node,
+  Project,
+  SyntaxKind,
+  type Type,
+  type TypeLiteralNode,
+} from "ts-morph";
 import { walk, REPO_ROOT, inMemoryProject } from "./_fence-utils";
 import { SCENARIOS, FIRMS } from "@app/demo/data";
 
@@ -39,6 +45,7 @@ import { SCENARIOS, FIRMS } from "@app/demo/data";
  *    A read counts only when the receiver resolves to the actual declaration that
  *    owns the field. Ownerless inline shapes, Records, and unrelated structural
  *    subsets do not prove that a populated view-model field reaches a surface.
+ *    Interfaces and type-alias object, union, and intersection members all count.
  *    The walk DESCENDS into nested inline object types (`authorityPlan`,
  *    `RecordVM.header`, `readonly {...}[]` elements): a top-level-only walk let a dead
  *    field hide one level down inside a shipped view model.
@@ -225,9 +232,8 @@ function nestedTypeLiterals(typeNode: Node | undefined): TypeLiteralNode[] {
   return [];
 }
 
-/** Every field a view model declares, including the members of its nested inline
- * object types. Descending matters: a top-level-only walk let `authorityPlan.mode` sit
- * populated and unrendered inside a shipped view model (charter #5). */
+/** Every field a view model declares, including type-alias arms and the members of
+ * nested inline object types. */
 export function declaredViewModelFields(project: Project): DeclaredField[] {
   const fields: DeclaredField[] = [];
   for (const sf of project.getSourceFiles()) {
@@ -252,6 +258,11 @@ export function declaredViewModelFields(project: Project): DeclaredField[] {
     for (const iface of sf.getInterfaces()) {
       collect(iface.getProperties(), iface.getName(), declarationKey(iface));
     }
+    for (const alias of sf.getTypeAliases()) {
+      for (const literal of nestedTypeLiterals(alias.getTypeNode())) {
+        collect(literal.getMembers(), alias.getName(), declarationKey(literal));
+      }
+    }
   }
   return fields;
 }
@@ -272,6 +283,18 @@ export interface PropertyRead {
  * say nothing about which view model is being rendered. Anonymous object types keep
  * their declaration position, which is what lets a nested inline shape be owned by the
  * view model that declares it and by nothing else. */
+function constituentTypes(type: Type): Type[] {
+  if (type.isUnion()) {
+    return type.getUnionTypes().flatMap((member) => constituentTypes(member));
+  }
+  if (type.isIntersection()) {
+    return type
+      .getIntersectionTypes()
+      .flatMap((member) => constituentTypes(member));
+  }
+  return [type];
+}
+
 function ownersOf(node: Node | undefined): ReadOwner[] {
   if (node === undefined) return [];
   let type;
@@ -280,7 +303,7 @@ function ownersOf(node: Node | undefined): ReadOwner[] {
   } catch {
     return [];
   }
-  const constituents = type.isUnion() ? type.getUnionTypes() : [type];
+  const constituents = constituentTypes(type);
   const owners = new Map<string, ReadOwner>();
   for (const constituent of constituents) {
     const symbol = constituent.getSymbol() ?? constituent.getAliasSymbol();
@@ -461,6 +484,64 @@ describe("demo-skeleton-honesty fence", () => {
       expect(violations.length).toBe(1);
       expect(violations[0]).toContain("setup-model.ts:3");
       expect(violations[0]).toContain("ProofVM.ghostField");
+    });
+
+    it("RULE C flags an unread field declared by an object type alias", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/model.ts": `export type EvidenceVM = {\n  readonly label: string;\n  readonly ghostField: string;\n};`,
+        "/src/app/demo/surfaces/evidence.tsx": `import type { EvidenceVM } from "../model";\nexport function Evidence({ vm }: { vm: EvidenceVM }) { return vm.label; }`,
+      });
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain("model.ts:3");
+      expect(violations[0]).toContain("EvidenceVM.ghostField");
+    });
+
+    it("RULE C flags unread fields in every union type-alias arm", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/model.ts": `export type ResultVM =\n  | { readonly ok: true; readonly value: string; readonly successGhost: string }\n  | { readonly ok: false; readonly error: string; readonly failureGhost: string };`,
+        "/src/app/demo/surfaces/result.tsx": `import type { ResultVM } from "../model";\nexport function Result({ vm }: { vm: ResultVM }) { return vm.ok ? vm.value : vm.error; }`,
+      });
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
+      expect(violations).toHaveLength(2);
+      expect(
+        violations.some((violation) =>
+          violation.includes("ResultVM.successGhost"),
+        ),
+      ).toBe(true);
+      expect(
+        violations.some((violation) =>
+          violation.includes("ResultVM.failureGhost"),
+        ),
+      ).toBe(true);
+    });
+
+    it("RULE C flags unread fields in every intersection type-alias member", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/model.ts": `export type CombinedVM =\n  { readonly title: string; readonly titleGhost: string }\n  & { readonly detail: string; readonly detailGhost: string };`,
+        "/src/app/demo/surfaces/combined.tsx": `import type { CombinedVM } from "../model";\nexport function Combined({ vm }: { vm: CombinedVM }) { return vm.title + vm.detail; }`,
+      });
+      const violations = deadFieldViolations(
+        declaredViewModelFields(project),
+        readProperties(project),
+      );
+      expect(violations).toHaveLength(2);
+      expect(
+        violations.some((violation) =>
+          violation.includes("CombinedVM.titleGhost"),
+        ),
+      ).toBe(true);
+      expect(
+        violations.some((violation) =>
+          violation.includes("CombinedVM.detailGhost"),
+        ),
+      ).toBe(true);
     });
 
     it("RULE C descends: a dead field inside a NESTED inline object type is flagged with file:line", () => {

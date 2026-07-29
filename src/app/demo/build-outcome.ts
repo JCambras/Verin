@@ -11,7 +11,15 @@
 import type { ExecutionRowVM, ExecutionVM, SafetyVM, VerificationVM } from "./model";
 import { fact } from "./provenance";
 import { buildSpine } from "./spine";
-import { BANK_INSTRUCTION, CAST, IDS, RETRIEVED_AT, type ScenarioData } from "./data";
+import {
+  CAST,
+  DEMO_NOW,
+  DEMO_TIMELINE,
+  IDS,
+  RETRIEVED_AT,
+  demoTimestampLabel,
+  type ScenarioData,
+} from "./data";
 
 const IDENTIFIERS = [
   { label: "Idempotency key", value: IDS.idempotencyKey },
@@ -44,20 +52,40 @@ export function buildSafety(scenario: ScenarioData): SafetyVM {
   }
   return {
     spine: buildSpine("Safety", spec.invalidation ? { status: "voided", label: "Approval voided" } : undefined),
-    revalidatedAt: fact("Material evidence re-checked Jul 26, 13:58", "deterministic-engine-output", "2026-07-26", "Jul 26, 13:58"),
+    revalidatedAt: fact(
+      `Material evidence re-checked ${demoTimestampLabel(DEMO_TIMELINE.revalidatedAt)}`,
+      "deterministic-engine-output",
+      DEMO_NOW,
+      demoTimestampLabel(DEMO_TIMELINE.revalidatedAt),
+    ),
     checks,
     reservationId: IDS.reservationId,
     conflictKeys: IDS.conflictKeys,
     idempotencyKey: IDS.idempotencyKey,
     invalidation: spec.invalidation
       ? {
-          voidedActor: { name: CAST.opsApprover1, role: "Operations", when: "Jul 26, 10:02" },
-          deltaSentence: "The bank instruction changed after this approval was given.",
-          before: fact(BANK_INSTRUCTION.stable, "synthetic-fixture", "2026-05-20", RETRIEVED_AT),
-          after: fact(BANK_INSTRUCTION.changed, "synthetic-fixture", "2026-07-26", "Jul 26, 13:58"),
+          voidedActor: {
+            name: CAST.opsApprover1,
+            role: "Operations",
+            when: demoTimestampLabel(DEMO_TIMELINE.operationsApproval1At),
+          },
+          deltaSentence:
+            "A $15,000 pending distribution posted after this approval was given.",
+          before: fact(
+            "No pending approved activity recorded",
+            "synthetic-fixture",
+            DEMO_NOW,
+            RETRIEVED_AT,
+          ),
+          after: fact(
+            "$15,000 pending approved distribution",
+            "synthetic-fixture",
+            DEMO_NOW,
+            demoTimestampLabel(DEMO_TIMELINE.revalidatedAt),
+          ),
           why: {
             reason:
-              "Approval binds to the decision hash and the input-bundle hash. The bundle changed when the bank instruction changed, so the approval cannot stand.",
+              "Approval binds to the decision hash and the input-bundle hash. The bundle changed when the pending distribution posted, so the approval cannot stand.",
           },
           primaryLabel: "Re-evaluate with current evidence",
         }
@@ -76,8 +104,8 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
         target: "Salesforce managed capability",
         status: "settled",
         statusLabel: "Settled · verified",
-        timestamp: "Jul 26, 14:02",
-        honestyLine: "Verified against returned custodian status, Jul 26, 15:40.",
+        timestamp: demoTimestampLabel(DEMO_TIMELINE.executionSubmittedAt),
+        honestyLine: `Verified against returned custodian status, ${demoTimestampLabel(DEMO_TIMELINE.executionVerifiedAt)}.`,
         identifiers: IDENTIFIERS,
         fakeClass: "fake-adapter-response",
       },
@@ -86,7 +114,7 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
         target: "Salesforce managed capability",
         status: "unknown",
         statusLabel: "Unconfirmed",
-        timestamp: "Jul 26, 14:02",
+        timestamp: demoTimestampLabel(DEMO_TIMELINE.executionSubmittedAt),
         honestyLine: "No returned status for this part - an exception decision has been requested.",
         affordanceLabel: "Review the exception",
         identifiers: IDENTIFIERS,
@@ -99,7 +127,7 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
       target: "Salesforce managed capability",
       status: "submitted",
       statusLabel: "Submitted",
-      timestamp: "Jul 26, 14:02",
+      timestamp: demoTimestampLabel(DEMO_TIMELINE.executionSubmittedAt),
       honestyLine: "Accepted for processing - settlement not yet confirmed.",
       identifiers: IDENTIFIERS,
       fakeClass: "fake-adapter-response",
@@ -111,7 +139,7 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
       target: "Salesforce managed capability",
       status: "duplicate-suppressed",
       statusLabel: "Duplicate suppressed",
-      timestamp: "Jul 26, 14:03",
+      timestamp: demoTimestampLabel(DEMO_TIMELINE.duplicateSuppressedAt),
       plainClaim: "Already submitted once - Verin did not send it again.",
       identifiers: [{ label: "Idempotency key (matches the original byte-for-byte)", value: IDS.idempotencyKey }],
       fakeClass: "fake-adapter-response",
@@ -128,16 +156,32 @@ export function buildExecution(scenario: ScenarioData): ExecutionVM {
 
 export function buildVerification(scenario: ScenarioData): VerificationVM {
   const spec = scenario.spec;
-  const proves = [fact("Submission accepted by the capability", "fake-adapter-response", "2026-07-26", "Jul 26, 14:02")];
-  if (spec.partial) proves.push(fact("Money-market redemption settled", "fake-adapter-response", "2026-07-26", "Jul 26, 15:40"));
+  const proves = [
+    fact(
+      "Submission accepted by the capability",
+      "fake-adapter-response",
+      DEMO_NOW,
+      demoTimestampLabel(DEMO_TIMELINE.executionSubmittedAt),
+    ),
+  ];
+  if (spec.partial) {
+    proves.push(
+      fact(
+        "Money-market redemption settled",
+        "fake-adapter-response",
+        DEMO_NOW,
+        demoTimestampLabel(DEMO_TIMELINE.executionVerifiedAt),
+      ),
+    );
+  }
   const appended: ExecutionRowVM[] = [];
   if (spec.delayedNigo) {
     appended.push({
-      step: "Returned NIGO (ingested Jul 28)",
+      step: `Returned NIGO (ingested ${demoTimestampLabel(DEMO_TIMELINE.delayedNigoAt)})`,
       target: "Salesforce managed capability",
       status: "nigo",
       statusLabel: "Returned NIGO",
-      timestamp: "Jul 28, 07:12",
+      timestamp: demoTimestampLabel(DEMO_TIMELINE.delayedNigoAt),
       honestyLine: "Returned - the bank letter of authorization is not in good order: signature missing.",
       affordanceLabel: "Fix and resubmit the authorization",
       identifiers: [{ label: "Idempotency key", value: IDS.idempotencyKey }],
@@ -150,7 +194,7 @@ export function buildVerification(scenario: ScenarioData): VerificationVM {
       target: "Salesforce managed capability",
       status: "stuck",
       statusLabel: "Stuck",
-      timestamp: "Jul 28, 14:02",
+      timestamp: demoTimestampLabel(DEMO_TIMELINE.stuckAt),
       honestyLine: "No status for two days - the stuck-state rule (forty-eight hours unconfirmed) fired.",
       affordanceLabel: "Escalate to operations",
       identifiers: [{ label: "Idempotency key", value: IDS.idempotencyKey }],
@@ -165,7 +209,7 @@ export function buildVerification(scenario: ScenarioData): VerificationVM {
       "Funds availability at the destination bank",
       "That the instruction will not be returned not-in-good-order",
     ],
-    nextPoll: "Next status poll: Jul 27, 06:00",
+    nextPoll: `Next status poll: ${demoTimestampLabel(DEMO_TIMELINE.nextPollAt)}`,
     appended,
     fakeClass: "fake-adapter-response",
   };

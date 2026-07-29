@@ -5,7 +5,12 @@
  */
 import type { RecordProvenance } from "@contracts/provenance";
 import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
-import type { ApprovalStageVM, DispositionVM, RecordVM } from "./model";
+import type {
+  ApprovalStageVM,
+  DispositionVM,
+  RecordReserveVM,
+  RecordVM,
+} from "./model";
 import { FIXTURE_RESERVE_HORIZON, prov, recordProvenance } from "./provenance";
 import { buildEvidence, buildIntent } from "./build-context";
 import {
@@ -19,6 +24,7 @@ import {
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import {
   DEMO_NOW,
+  DEMO_RECORD_CREATED_AT,
   IDS,
   OBSERVED_RECENT,
   decisionIdentityFor,
@@ -36,6 +42,34 @@ export interface RecordBuildOptions {
    * administrator's activated choice after setup. It changes the ADR-0022 leaf
    * classes behind the printed floor and headroom, never the arithmetic. */
   readonly reserveHorizon?: RecordProvenance;
+}
+
+function buildRecordReserve(
+  scenario: ScenarioData,
+  firm: FirmData,
+  disposition: DispositionVM,
+  reserveHorizon: RecordProvenance,
+): RecordReserveVM {
+  if (disposition.kind === "prohibited") {
+    return {
+      kind: "not-applicable",
+      reason:
+        "The household destination prohibition stopped precedence before reserve evaluation.",
+    };
+  }
+  if (scenario.spec.stalePlannedWithdrawals) {
+    return {
+      kind: "not-evaluated",
+      reason:
+        "Planned-withdrawal evidence is outside the active freshness window, so no reserve floor or headroom was calculated.",
+    };
+  }
+  return {
+    kind: "evaluated",
+    horizon: reserveHorizonPhrase(firm),
+    floor: reserveFloorMetric(firm, reserveHorizon),
+    headroom: headroomMetric(firm, reserveHorizon),
+  };
 }
 
 export function buildRecord(
@@ -68,7 +102,7 @@ export function buildRecord(
       bundleHash: identity.bundleHash,
     },
     header: {
-      createdAt: "Jul 26, 2026, 14:05",
+      createdAt: DEMO_RECORD_CREATED_AT,
       watermark: isDemonstration(provenance) ? DEMO_WATERMARK : null,
     },
     hashes: {
@@ -81,14 +115,12 @@ export function buildRecord(
     evidence: buildEvidence(scenario).rows,
     disposition,
     precedence: buildPolicyTrace(scenario, firm, disposition.kind).rows,
-    // The two numbers an examiner looks for beside "preserves N months". Both come off
-    // the SAME projection the setup and decision surfaces read - no second constant,
-    // and never recomputed in a surface.
-    reserve: {
-      horizon: reserveHorizonPhrase(firm),
-      floor: reserveFloorMetric(firm, reserveHorizon),
-      headroom: headroomMetric(firm, reserveHorizon),
-    },
+    reserve: buildRecordReserve(
+      scenario,
+      firm,
+      disposition,
+      reserveHorizon,
+    ),
     approvalStages:
       options.approvalStages !== undefined
         ? options.approvalStages

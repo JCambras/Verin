@@ -23,6 +23,11 @@ export const SNAPSHOT_TTL_MS = 60 * 60 * 1000;
 export const SNAPSHOTS_PER_PRINCIPAL = 8;
 /** A bound on concurrently-remembered principals, so the outer map cannot grow either. */
 const MAX_PRINCIPALS = 64;
+const ACTIVATION_TOKEN = /^[a-f0-9]{64}$/;
+
+export function isSetupActivationToken(value: string): boolean {
+  return ACTIVATION_TOKEN.test(value);
+}
 
 /** Who activated a snapshot. Resolved server-side from the session, never from a
  * query string or a request body (charter #7/#12). */
@@ -74,6 +79,9 @@ export function registerActivatedSetupSnapshot(
   scope: SetupActivationScope,
   snapshot: SetupActivatedSnapshotVM,
 ): void {
+  if (!isSetupActivationToken(snapshot.snapshotHash)) {
+    throw new Error("Activated setup snapshot has an invalid token");
+  }
   const now = Date.now();
   const key = scopeKey(scope);
   const entries = byPrincipal().get(key) ?? new Map<string, StoredSnapshot>();
@@ -93,6 +101,7 @@ export function activatedSetupSnapshot(
   scope: SetupActivationScope,
   snapshotHash: string,
 ): SetupActivatedSnapshotVM | null {
+  if (!isSetupActivationToken(snapshotHash)) return null;
   const now = Date.now();
   const key = scopeKey(scope);
   const entries = byPrincipal().get(key);

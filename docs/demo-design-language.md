@@ -249,7 +249,7 @@ A composition (not a fork) for one evidence item:
 - The value through `FreshValue` - which yields the `source · as of` label from
   `provenanceLabel()` and freshness-as-opacity from `opacityForAge()` (floor 0.7). `asOf` is the
   **observed** time - when the fact was true at its source - and it is what freshness keys off.
-- The **retrieved** time as a trailing `text-xs text-slate-500` suffix: "retrieved Jul 26,
+- The **retrieved** time as a trailing `text-xs text-slate-500` suffix: "retrieved Jul 28,
   09:14". Observed versus retrieved is the contract's requirement; observed governs opacity,
   retrieved is metadata. The retrieved timestamp comes from the evidence view model backed by
   `EvidenceSnapshotRef` (`observedAt` / `retrievedAt` in the v3 contracts), landing with the
@@ -341,7 +341,7 @@ One card per stage (standard card recipe), containing:
   requester-exclusion rules are sentences in `text-sm text-slate-600` (the `Field` hint idiom),
   never icon grammar.
 - **Actor slots as rows**: actor name/role, then a `StatusBadge` - `pending` ("Awaiting
-  approval"), `done` ("Approved · Jul 26, 10:02"), or the amber family for expiry-adjacent
+  approval"), `done` ("Approved · Jul 28, 10:32"), or the amber family for expiry-adjacent
   states. The requester's own row states "You requested this - you cannot approve" in
   `text-xs text-slate-600`, and **their approve button is absent, not disabled** - eligibility is
   server-enforced (charter #12), and the UI reflects reality instead of teasing a dead control.
@@ -372,7 +372,7 @@ The specification, in full:
    freshness-as-opacity applied to a superseded state (the same visual grammar as stale data,
    which is exactly what a voided approval is). No strikethrough, no red, no shake.
 2. **What changed appears at full weight** directly beneath: a block stating the delta in one
-   sentence - "The bank instruction changed after this approval was given" - followed by the
+   sentence - "A $15,000 pending distribution posted after this approval was given" - followed by the
    changed evidence as before/after `EvidenceRow`s (old value at receded opacity per its now-stale
    `asOf`, new value at full weight, each with observed and retrieved times).
 3. **Why, on tap:** a `WhyBubble` citing the binding rule - approval binds to the decision hash
@@ -445,9 +445,9 @@ non-engineer trusts:
 Two plain lists under the register, no gauges, no percent-complete:
 
 - **"What this status proves"** and **"What it does not prove yet"** - `text-sm` items, each
-  provable claim sourced ("submission accepted - Salesforce response, retrieved Jul 26 14:02" as
+  provable claim sourced ("submission accepted - Salesforce response, retrieved Jul 28 14:02" as
   a FreshValue-labeled line).
-- The **next expectation** as a quiet label: "Next status poll: Jul 27, 06:00" in `text-xs
+- The **next expectation** as a quiet label: "Next status poll: Jul 29, 06:00" in `text-xs
   text-slate-600`.
 - Delayed NIGO arrivals and stuck-state transitions append rows to the same register - the
   timeline is append-only in presentation just as the ledger is in storage; a status never
@@ -561,11 +561,13 @@ What is deleted is the desktop table abstraction, not the doctrine.
   the shared firm-neutral request/evidence input hash, decision hash, and the firm-specific
   policy-bearing bundle hash render in full on both sides and compare byte for byte. The export
   names one firm explicitly; two outcomes never funnel into one firm's record.
-- **Checkable reserve arithmetic on the record.** The precedence trace states a horizon in prose
-  ("preserves 6 months of planned withdrawals"); directly beneath it the record prints the derived
-  reserve floor and the resulting post-reserve headroom through `Metric`, from the one signed
-  projection the setup and decision surfaces read. An examiner checks the words against the numbers
-  without leaving the page, and no surface recomputes either figure.
+- **Reserve evaluation state on the record.** When precedence reaches reserve policy with fresh
+  evidence, the trace states a horizon in prose ("preserves 6 months of planned withdrawals") and
+  the record prints the derived reserve floor and post-reserve headroom through `Metric`, from the
+  one signed projection the setup and decision surfaces read. When the required evidence is stale
+  or insufficient, the record prints "Reserve calculation not evaluated" and its reason with no
+  figures. When an earlier prohibition stops precedence, it prints "Reserve calculation not
+  applicable" and its reason with no figures. No surface recomputes either figure.
 - **One name per profile.** A surface never spells a firm's display name or derives one from
   `firmId`. `SetupProfileVM.firmLabel` / `FirmChoiceVM.firmLabel` / `SetupProofFirmVM.firmLabel` are
   the single source, including the roles table, the choice-group legends, the impact headings, and

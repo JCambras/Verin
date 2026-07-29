@@ -94,15 +94,16 @@ export function ControlsBody({ vm }: { vm: MoneyMovementSetupVM }) {
             <article key={role.responsibility} className="min-w-0 rounded-lg border border-slate-200 bg-surface p-4">
               <h3 className="text-sm font-semibold text-slate-900">{role.responsibility}</h3>
               <dl className="mt-3 grid gap-2 text-sm">
-                <div>
-                  {/* One profile, one name: the heading is the profile's own label. */}
-                  <dt className="text-xs font-medium text-slate-600">{vm.profiles[0].firmLabel}</dt>
-                  <dd className="text-slate-800">{role.firmA}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-600">{vm.profiles[1].firmLabel}</dt>
-                  <dd className="text-slate-800">{role.firmB}</dd>
-                </div>
+                {vm.profiles.map((profile) => (
+                  <div key={profile.firmId}>
+                    <dt className="text-xs font-medium text-slate-600">
+                      {profile.firmLabel}
+                    </dt>
+                    <dd className="text-slate-800">
+                      {role.firms[profile.firmId]}
+                    </dd>
+                  </div>
+                ))}
               </dl>
               <p className="mt-3 text-xs text-slate-600">{role.rule}</p>
             </article>

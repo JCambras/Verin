@@ -19,7 +19,10 @@ import { RESERVE_FLOOR_INPUTS, derivedMetric, fixtureMetric, prov } from "./prov
 import {
   CANONICAL_REQUEST,
   BANK_INSTRUCTION,
+  DEMO_ACTIVATION_EFFECTIVE_AT,
+  DEMO_EVIDENCE_REF,
   DEMO_NOW,
+  DEMO_REQUEST_REF,
   LOW_HEADROOM_LIQUIDITY,
   OBSERVED_RECENT,
   OBSERVED_GC09_BALANCE,
@@ -298,8 +301,8 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       { id: "proof-strength", title: "Status never outruns proof", description: "Stable idempotency suppresses duplicates and submitted never means completed or verified.", proof: "Idempotency key and sourced status receipt" },
     ],
     roles: [
-      { responsibility: "Policy proposal and approval", firmA: "Taylor Morgan · CCO proposes", firmB: "Taylor Morgan · CCO proposes", rule: "Jordan Lee · Principal approves. The proposer and approver must be different humans." },
-      { responsibility: "Expiry, escalation, and stuck work", firmA: "Operations manager", firmB: "Operations manager", rule: "Time creates owned work and never autoapproval." },
+      { responsibility: "Policy proposal and approval", firms: { "firm-a": "Taylor Morgan · CCO proposes", "firm-b": "Taylor Morgan · CCO proposes" }, rule: "Jordan Lee · Principal approves. The proposer and approver must be different humans." },
+      { responsibility: "Expiry, escalation, and stuck work", firms: { "firm-a": "Operations manager", "firm-b": "Operations manager" }, rule: "Time creates owned work and never autoapproval." },
     ],
     baseline: [
       { label: "Reserve horizon", value: "12 months", detail: "Reserve dollars are derived from each household schedule." },
@@ -328,7 +331,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
       proposerRole: "CCO",
       approver: "Jordan Lee",
       approverRole: "Principal",
-      effectiveAt: "Jul 28, 2026 at 10:00 ET",
+      effectiveAt: DEMO_ACTIVATION_EFFECTIVE_AT,
       simulationRef: "demo-simulation:signed-cases@2026-07-26",
       requesterDecisionNotice: "Signed fixtures exclude the requester while ratified prose permits one approval. The recommendation is exclusion, but this demonstration leaves the policy value unbound until the existing captain decision is resolved.",
       demonstrationNotice: "This local acknowledgment demonstrates the review contract only. It is not persisted, cannot govern a production request, and must be deleted when the real policy lifecycle lands.",
@@ -336,8 +339,8 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
     request: {
       title: `${usd(SMITHS_LIQUIDITY.requestMinor)} one-time ACH distribution`,
       summary: `Smith household · taxable account · household-titled destination · bank instruction changed ${BANK_INSTRUCTION.changedAgeDays} days ago`,
-      requestRef: "request:smiths-renovation@demo-2026-07-28",
-      evidenceRef: "smiths-evidence@2026-07-26T14:00Z",
+      requestRef: DEMO_REQUEST_REF,
+      evidenceRef: DEMO_EVIDENCE_REF,
       facts: [
         { label: "Request amount", metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)), category: "Synthetic fixture", provenance: prov("user-entered-demo-input", DEMO_NOW), fakeClass: "user-entered-demo-input" },
         { label: "Available balance", metric: fixtureMetric(SMITHS_LIQUIDITY.availableMinor, "currency-minor", "synthetic-fixture", OBSERVED_RECENT), category: "Synthetic fixture", provenance: prov("synthetic-fixture", OBSERVED_RECENT), fakeClass: "synthetic-fixture" },
@@ -355,6 +358,7 @@ export function buildMoneyMovementSetup(): MoneyMovementSetupVM {
     },
     proof: {
       engineLabel: "Labeled deterministic presentation builder · not production evaluator output",
+      dataProvenance: `Synthetic Smiths fixture · as of ${OBSERVED_GC09_BALANCE}`,
       exportQuestion: "Which profile's decision record do you want to export?",
       exportHint: "The setup produced two outcomes, so the export names one of them. The identifiers above are what the exported record carries.",
       exportError: "Choose which profile's decision record to export.",

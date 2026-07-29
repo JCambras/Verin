@@ -27,10 +27,12 @@ import {
   CAST,
   DEFAULT_APPROVAL_CLOCK,
   DEMO_NOW,
+  DEMO_TIMELINE,
   DESTINATION_RESTRICTION,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   PLANNED_WITHDRAWAL_STALE_AGE_DAYS,
   SMITHS_LIQUIDITY,
+  demoTimestampLabel,
   decisionConfigurationFor,
   decisionIdentityFor,
   dispositionFor,
@@ -184,7 +186,12 @@ export function buildRecommendation(scenario: ScenarioData, firm: FirmData): Rec
       ? {
           recommendation: {
             amount: amountMetric(),
-            source: fact("Smith Family Taxable · Fidelity", "deterministic-engine-output", DEMO_NOW, "Jul 26, 09:20"),
+            source: fact(
+              "Smith Family Taxable · Fidelity",
+              "deterministic-engine-output",
+              DEMO_NOW,
+              demoTimestampLabel(DEMO_TIMELINE.recommendationRetrievedAt),
+            ),
           },
         }
       : {}),
@@ -227,29 +234,46 @@ export function buildPolicyTrace(
     {
       order: 2,
       rule: "Cash-reserve floor (months of planned withdrawals)",
-      result: spec.stalePlannedWithdrawals
-        ? "Cannot evaluate - planned-withdrawal evidence is older than policy allows"
-        : "Satisfied after this movement",
+      result:
+        kind === "prohibited"
+          ? "Not applicable - precedence stopped at the household destination prohibition"
+          : spec.stalePlannedWithdrawals
+            ? "Cannot evaluate - planned-withdrawal evidence is older than policy allows"
+            : "Satisfied after this movement",
       version: reserveCite,
-      why: { reason: `${firm.name} preserves ${reserveHorizonPhrase(firm)} in cash.`, regulation: `Firm policy ${reserveCite}` },
+      why:
+        kind === "prohibited"
+          ? {
+              reason:
+                "The binding household instruction ended evaluation before firm reserve policy could apply.",
+            }
+          : {
+              reason: `${firm.name} preserves ${reserveHorizonPhrase(firm)} in cash.`,
+              regulation: `Firm policy ${reserveCite}`,
+            },
     },
     {
       order: 3,
       rule: "Recent bank-instruction change handling",
-      result: !spec.bankChanged
-        ? "Not triggered - no recent change"
-        : firm.bankChangeHandling === "specialist-review"
-          ? "Specialist review required before execution"
-          : "Blocked until independently verified",
+      result:
+        kind === "prohibited"
+          ? "Not applicable - precedence stopped at the household destination prohibition"
+          : !spec.bankChanged
+            ? "Not triggered - no recent change"
+            : firm.bankChangeHandling === "specialist-review"
+              ? "Specialist review required before execution"
+              : "Blocked until independently verified",
       version: `${firm.policyVersion} §6`,
     },
     {
       order: 4,
       rule: "Dual-approval threshold",
       result:
-        CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor
-          ? "Triggered - two distinct operations approvers required"
-          : "Not triggered at this amount",
+        kind === "prohibited"
+          ? "Not applicable - precedence stopped at the household destination prohibition"
+          : CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor
+            ? "Triggered - two distinct operations approvers required"
+            : "Not triggered at this amount",
       version: `${firm.policyVersion} §4`,
     },
   ];
@@ -277,21 +301,96 @@ export function buildStages(
   const spec = scenario.spec;
   const stages: ApprovalStageVM[] = [];
   const dualApproval = CANONICAL_REQUEST.amountMinor > firm.dualApprovalThresholdMinor;
+  const hasSpecialist =
+    spec.bankChanged && firm.bankChangeHandling === "specialist-review";
+  const specialistComplete =
+    !hasSpecialist || (phase === "final" && !spec.specialistExpired);
+  if (hasSpecialist) {
+    stages.push(
+      spec.specialistExpired
+        ? {
+            title: "Stage 1 - Bank-instruction specialist review",
+            requirement:
+              "The changed bank instruction requires review by a banking specialist before execution.",
+            stepState: "active",
+            actors: [
+              {
+                name: CAST.specialist,
+                role: "Banking specialist",
+                status: "expired",
+                statusLabel: `Expired · ${demoTimestampLabel(DEMO_TIMELINE.specialistExpiredAt)}`,
+              },
+              {
+                name: CAST.principal,
+                role: "Principal (escalation)",
+                status: "pending",
+                statusLabel: "Awaiting review",
+              },
+            ],
+            expiry: `Expired ${demoTimestampLabel(DEMO_TIMELINE.specialistExpiredAt)}`,
+            escalation: "Escalates to: principal",
+          }
+        : {
+            title: "Stage 1 - Bank-instruction specialist review",
+            requirement:
+              "The changed bank instruction requires review by a banking specialist before execution.",
+            stepState: phase === "final" ? "done" : "active",
+            actors: [
+              phase === "final"
+                ? {
+                    name: CAST.specialist,
+                    role: "Banking specialist",
+                    status: "done",
+                    statusLabel: `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
+                  }
+                : {
+                    name: CAST.specialist,
+                    role: "Banking specialist",
+                    status: "pending",
+                    statusLabel: "Awaiting review",
+                  },
+            ],
+            expiry: "Expires after 2 days",
+            escalation: "Escalates after 1 day to operations manager",
+          },
+    );
+  }
+  const operationsStage = stages.length + 1;
   if (dualApproval) {
     const second =
-      phase === "final" && !spec.invalidation
-        ? { name: CAST.opsApprover2, role: "Operations", status: "done", statusLabel: "Approved · Jul 26, 10:31" }
+      phase === "final" && specialistComplete && !spec.invalidation
+        ? {
+            name: CAST.opsApprover2,
+            role: "Operations",
+            status: "done",
+            statusLabel: `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval2At)}`,
+          }
         : { name: CAST.opsApprover2, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
     stages.push({
-      title: "Stage 1 - Dual operations approval",
+      title: `Stage ${operationsStage} - Dual operations approval`,
       requirement: "Two approvals required from distinct operations approvers. The requester cannot satisfy both approvals.",
-      stepState: phase === "final" && !spec.invalidation ? "done" : "active",
+      stepState:
+        phase === "final" && specialistComplete && !spec.invalidation
+          ? "done"
+          : !specialistComplete
+            ? "pending"
+            : "active",
       actors: [
         {
           name: CAST.opsApprover1,
           role: "Operations",
-          status: spec.invalidation && phase === "final" ? "voided" : "done",
-          statusLabel: spec.invalidation && phase === "final" ? "Approval voided - evidence changed" : "Approved · Jul 26, 10:02",
+          status:
+            spec.invalidation && phase === "final"
+              ? "voided"
+              : specialistComplete && (phase === "final" || !hasSpecialist)
+                ? "done"
+                : "pending",
+          statusLabel:
+            spec.invalidation && phase === "final"
+              ? "Approval voided - evidence changed"
+              : specialistComplete && (phase === "final" || !hasSpecialist)
+                ? `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval1At)}`
+                : "Awaiting approval",
         },
         second,
         {
@@ -310,45 +409,27 @@ export function buildStages(
     const approver =
       spec.invalidation && phase === "final"
         ? { name: CAST.opsApprover1, role: "Operations", status: "voided", statusLabel: "Approval voided - evidence changed" }
-        : spec.invalidation || phase === "final"
-          ? { name: CAST.opsApprover1, role: "Operations", status: "done", statusLabel: "Approved · Jul 26, 10:02" }
+        : specialistComplete && (spec.invalidation || phase === "final")
+          ? {
+              name: CAST.opsApprover1,
+              role: "Operations",
+              status: "done",
+              statusLabel: `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval1At)}`,
+            }
           : { name: CAST.opsApprover1, role: "Operations", status: "pending", statusLabel: "Awaiting approval" };
     stages.push({
-      title: "Stage 1 - Approval",
+      title: `Stage ${operationsStage} - Approval`,
       requirement: `Below ${firm.name}'s dual-approval threshold at this amount. ${firm.name} policy does not name an approver role for this stage.`,
-      stepState: phase === "final" && !spec.invalidation ? "done" : "active",
+      stepState:
+        phase === "final" && specialistComplete && !spec.invalidation
+          ? "done"
+          : !specialistComplete
+            ? "pending"
+            : "active",
       actors: [approver],
       expiry: approvalClock.expiry,
       escalation: approvalClock.escalation,
     });
-  }
-  if (spec.bankChanged && firm.bankChangeHandling === "specialist-review") {
-    if (spec.specialistExpired) {
-      stages.push({
-        title: "Stage 2 - Bank-instruction specialist review",
-        requirement: "The changed bank instruction requires review by a banking specialist before execution.",
-        stepState: "active",
-        actors: [
-          { name: CAST.specialist, role: "Banking specialist", status: "expired", statusLabel: "Expired - escalated" },
-          { name: CAST.principal, role: "Principal (escalation)", status: "pending", statusLabel: "Awaiting review" },
-        ],
-        expiry: "expired Jul 25",
-        escalation: "Escalates to: principal",
-      });
-    } else {
-      stages.push({
-        title: "Stage 2 - Bank-instruction specialist review",
-        requirement: "The changed bank instruction requires review by a banking specialist before execution.",
-        stepState: phase === "final" ? "done" : "pending",
-        actors: [
-          phase === "final"
-            ? { name: CAST.specialist, role: "Banking specialist", status: "done", statusLabel: "Reviewed · Jul 26, 11:15" }
-            : { name: CAST.specialist, role: "Banking specialist", status: "pending", statusLabel: "Awaiting review" },
-        ],
-        expiry: "expires Aug 12",
-        escalation: "Escalates to: principal",
-      });
-    }
   }
   return stages;
 }

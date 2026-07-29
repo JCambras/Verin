@@ -1,4 +1,10 @@
-import { CAST, type ApprovalClock, type FirmData } from "./data";
+import {
+  CAST,
+  DEMO_TIMELINE,
+  demoTimestampLabel,
+  type ApprovalClock,
+  type FirmData,
+} from "./data";
 import type { SetupProofFirmVM } from "./setup-model";
 
 export function evaluateAuthorityPlan(
@@ -25,7 +31,7 @@ export function evaluateAuthorityPlan(
         name: CAST.specialist,
         role: "Banking specialist",
         status: "done",
-        statusLabel: "Reviewed · Jul 26, 11:15",
+        statusLabel: `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
       },
     ],
     expiry: "Expires after 2 days",
@@ -44,13 +50,13 @@ export function evaluateAuthorityPlan(
       name: CAST.opsApprover1,
       role: "Operations",
       status: "done",
-      statusLabel: "Approved · Jul 26, 10:02",
+      statusLabel: `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval1At)}`,
     },
     {
       name: CAST.opsApprover2,
       role: "Operations",
       status: "done",
-      statusLabel: "Approved · Jul 26, 10:31",
+      statusLabel: `Approved · ${demoTimestampLabel(DEMO_TIMELINE.operationsApproval2At)}`,
     },
     ...(firm.requesterConstraint === null
       ? []

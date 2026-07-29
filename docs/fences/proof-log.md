@@ -6029,3 +6029,79 @@ real `src/app/demo/data.ts:<line>` and never `data.ts:1`.
 above printed `src/app/demo/build-decision.ts:1` before the anchor was corrected to
 `export function reserveHorizonPhrase`. With `sourceRef` hardened, the same staleness now
 fails the suite outright instead of reporting line 1.
+
+## PF-setup-27 · reserve figures require an evaluated state
+
+**Date:** 2026-07-28.
+
+**Invariant:** a decision record carries exactly one reserve state. `evaluated` owns the
+horizon, floor, and headroom. `not-evaluated` and `not-applicable` own only a reason. Stale
+planned-withdrawal evidence is not evaluated, and a binding household prohibition is not
+applicable because precedence has already stopped.
+
+**Fence:** `reserveStateViolations` and the production assertions in
+`src/__tests__/fitness/demo-semantic-truth.test.ts` inspect safe, stale, and prohibited
+records. E2E visits both stopped records and asserts that neither metric test id exists.
+
+**Adversarial proof:** planted not-evaluated and not-applicable claims carrying reserve
+figures both fail the detector. The pre-fix live record reproduced the defect by rendering
+`$48,000.00` and `$297,000.00` on both stopped branches.
+
+## PF-setup-28 · one ordered July 28 decision timeline
+
+**Date:** 2026-07-28.
+
+**Invariant:** activation precedes decision creation, which precedes specialist review,
+which precedes both operations approvals. Every record date, request and evidence
+reference, displayed event time, and evidence age derives from the same July 28 authority.
+An expired prerequisite leaves later stages pending. GC-15 renders its signed $15,000
+pending-distribution change rather than repurposing the signed July 22 bank-instruction
+change as a later event.
+
+**Fence:** `timelineOrderViolations` checks the canonical instants, while semantic
+assertions compare activation, record, authority-stage, reference, and evidence-age
+projections to `DEMO_TIMELINE`. The specialist-expiration branch proves operations never
+advance after its prerequisite expires. E2E asserts the invalidation surface names the
+pending distribution and never claims that the bank instruction changed after approval.
+
+**Adversarial proof:** a planted operations approval at 10:31 before specialist review at
+11:15 fails with `operations approval occurs before specialist review`.
+
+## PF-setup-29 · type aliases cannot hide dead view-model fields
+
+**Date:** 2026-07-28.
+
+**Invariant:** every field populated in a demo view model reaches a consumer regardless of
+whether its object shape is declared by an interface, object type alias, union arm, or
+intersection member.
+
+**Fence:** RULE C in `src/__tests__/fitness/demo-skeleton-honesty.test.ts` recursively
+collects those alias shapes and resolves reads across union and intersection constituent
+types. Three planted companions cover object, union, and intersection aliases.
+
+**Adversarial proof:** enabling the strengthened production fence immediately failed with:
+
+```text
+src/app/demo/model.ts:158 :: EvidenceRowVM.fakeClass is populated but never rendered - ship it or delete it (charter #5)
+```
+
+The missing-evidence row now renders its development provenance badge on the evidence and
+record surfaces.
+
+## PF-setup-30 · activation, posture, and firm identity fail closed
+
+**Date:** 2026-07-28.
+
+**Invariant:** an empty option set cannot claim a signed configuration, only generated
+lowercase SHA-256 activation references reach the snapshot store, invalid references are
+not echoed, and accountable-role labels are resolved from the assignment's `firmId`.
+
+**Fence:** unit tests reject empty posture input, malformed activation values, and a
+registry write with an invalid generated token. A component test reverses the profile
+tuple and proves role labels retain Firm A then Firm B assignment identity. E2E supplies a
+256-character malformed activation on a 390 CSS-pixel viewport and checks the generic
+error, absence of raw echo, no overflow, and axe.
+
+**Adversarial proof:** the invalid-token cases include wrong length, uppercase hex,
+non-hex, and suffix forms. Reversing the profile tuple is the positional-pairing
+injection: a positional renderer swaps the two firm labels and fails the component test.

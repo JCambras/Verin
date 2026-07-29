@@ -9,7 +9,10 @@ import { notFound, redirect } from "next/navigation";
 import { currentSession } from "@app/_server/session";
 import { getJourney } from "@app/demo/journey";
 import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
-import { activatedSetupSnapshot } from "@app/demo/setup-activation-store";
+import {
+  activatedSetupSnapshot,
+  isSetupActivationToken,
+} from "@app/demo/setup-activation-store";
 import { buildActivatedRecord } from "@app/demo/setup-evaluator";
 import type { SetupFirmId } from "@app/demo/setup-model";
 import {
@@ -35,6 +38,19 @@ function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
+function RecordUnavailable({ message }: { message: string }) {
+  return (
+    <SurfaceShell
+      title="Decision record unavailable"
+      description="The export failed closed before any unrelated signed record could be substituted."
+    >
+      <p role="alert" className="break-words rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
+        {message}
+      </p>
+    </SurfaceShell>
+  );
+}
+
 export default async function DemoStationPage({
   params,
   searchParams,
@@ -58,6 +74,11 @@ export default async function DemoStationPage({
   if (!scenarioId || !firmId) notFound();
   const activation = first(sp.activation);
   if (station === "record" && activation) {
+    if (!isSetupActivationToken(activation)) {
+      return (
+        <RecordUnavailable message="The activation reference is invalid. Re-run setup and activate the draft again to produce a fresh record." />
+      );
+    }
     // Read-only identity: a Server Component cannot set the rotated cookie
     // requirePrincipal writes, so the activation scope is resolved through the
     // request-memoized resolveSession the /app layout already ran (ADR-0008, D-030) -
@@ -84,16 +105,13 @@ export default async function DemoStationPage({
       );
     }
     return (
-      <SurfaceShell
-        title="Decision record unavailable"
-        description="The export failed closed before any unrelated signed record could be substituted."
-      >
-        <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
-          {snapshot
-            ? `Activated setup snapshot ${activation} does not contain scenario ${scenarioId} for firm ${firmId}.`
-            : `Activated setup snapshot ${activation} is not available to this session. Activation snapshots are held in memory for the signed-in demonstration that created them, so a restart, a second server instance, or a newer activation ends them. Re-run setup and activate the draft again to produce a fresh record.`}
-        </p>
-      </SurfaceShell>
+      <RecordUnavailable
+        message={
+          snapshot
+            ? `The activated setup snapshot does not contain scenario ${scenarioId} for firm ${firmId}.`
+            : `Activated setup snapshot ${activation} is not available to this session. Activation snapshots are held in memory for the signed-in demonstration that created them, so a restart, a second server instance, or a newer activation ends them. Re-run setup and activate the draft again to produce a fresh record.`
+        }
+      />
     );
   }
   const journey = getJourney(scenarioId, firmId);

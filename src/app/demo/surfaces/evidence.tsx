@@ -42,7 +42,7 @@ function Row({ row }: { row: EvidenceRowVM }) {
         />
       );
     case "missing":
-      return <EvidenceMissing text={row.text} />;
+      return <EvidenceMissing text={row.text} badgeLabel={DEV_BADGE_TEXT[row.fakeClass]} />;
   }
 }
 

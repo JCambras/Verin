@@ -13,10 +13,67 @@
 import { createHash } from "node:crypto";
 import type { DispositionKind } from "./model";
 
-// A fixed demo world clock keeps freshness and screenshots stable.
-export const DEMO_NOW = "2026-07-26";
-export const RETRIEVED_AT = "Jul 26, 09:14";
-export const OBSERVED_RECENT = "2026-07-24"; // ~2 days old: fresh
+const DEMO_TIME_ZONE = "America/New_York";
+
+function timestampParts(iso: string): Record<string, string> {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: DEMO_TIME_ZONE,
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(new Date(iso))
+      .map((part) => [part.type, part.value]),
+  );
+}
+
+export function demoTimestampLabel(iso: string, includeYear = false): string {
+  const parts = timestampParts(iso);
+  return `${parts.month} ${parts.day}${includeYear ? `, ${parts.year}` : ""}, ${parts.hour}:${parts.minute}`;
+}
+
+function activationTimestampLabel(iso: string): string {
+  const parts = timestampParts(iso);
+  return `${parts.month} ${parts.day}, ${parts.year} at ${parts.hour}:${parts.minute} ET`;
+}
+
+export const DEMO_TIMELINE = {
+  decisionDate: "2026-07-28",
+  activationAt: "2026-07-28T14:00:00.000Z",
+  decisionCreatedAt: "2026-07-28T14:05:00.000Z",
+  evidenceRetrievedAt: "2026-07-28T13:14:00.000Z",
+  recommendationRetrievedAt: "2026-07-28T13:20:00.000Z",
+  specialistReviewedAt: "2026-07-28T14:15:00.000Z",
+  operationsApproval1At: "2026-07-28T14:32:00.000Z",
+  operationsApproval2At: "2026-07-28T14:41:00.000Z",
+  revalidatedAt: "2026-07-28T17:58:00.000Z",
+  executionSubmittedAt: "2026-07-28T18:02:00.000Z",
+  duplicateSuppressedAt: "2026-07-28T18:03:00.000Z",
+  executionVerifiedAt: "2026-07-28T19:40:00.000Z",
+  nextPollAt: "2026-07-29T10:00:00.000Z",
+  specialistExpiredAt: "2026-07-30T14:15:00.000Z",
+  delayedNigoAt: "2026-07-30T11:12:00.000Z",
+  stuckAt: "2026-07-30T18:02:00.000Z",
+} as const;
+
+export const DEMO_NOW = DEMO_TIMELINE.decisionDate;
+export const RETRIEVED_AT = demoTimestampLabel(
+  DEMO_TIMELINE.evidenceRetrievedAt,
+);
+export const DEMO_ACTIVATION_EFFECTIVE_AT = activationTimestampLabel(
+  DEMO_TIMELINE.activationAt,
+);
+export const DEMO_RECORD_CREATED_AT = demoTimestampLabel(
+  DEMO_TIMELINE.decisionCreatedAt,
+  true,
+);
+export const DEMO_REQUEST_REF = `request:smiths-renovation@demo-${DEMO_TIMELINE.decisionDate}`;
+export const DEMO_EVIDENCE_REF = `smiths-evidence@${DEMO_TIMELINE.evidenceRetrievedAt}`;
+export const OBSERVED_RECENT = "2026-07-24";
 export const OBSERVED_BANK_INSTRUCTION_CHANGED = "2026-07-22";
 export const OBSERVED_GC09_BALANCE = "2026-07-26";
 export const OBSERVED_STALE = "2026-06-09"; // visibly receded, over policy age

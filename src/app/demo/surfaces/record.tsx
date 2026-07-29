@@ -55,7 +55,7 @@ function EvidenceDocRow({ row }: { row: EvidenceRowVM }) {
     case "conflict":
       return <EvidenceConflict label={row.label} rule={row.rule} a={row.a} b={row.b} badgeLabel={DEV_BADGE_TEXT[row.fakeClass]} />;
     case "missing":
-      return <EvidenceMissing text={row.text} />;
+      return <EvidenceMissing text={row.text} badgeLabel={DEV_BADGE_TEXT[row.fakeClass]} />;
   }
 }
 
@@ -264,29 +264,37 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                     </li>
                   ))}
                 </ol>
-                {/* The two figures the horizon prose above must survive: both come off
-                    the one signed projection, so an examiner can check the words against
-                    the arithmetic without leaving the page. */}
-                <dl className="mt-1 grid gap-x-8 gap-y-1 border-t border-slate-100 pt-2 sm:grid-cols-2 print-avoid-break">
-                  <div className="flex min-w-0 flex-col">
-                    <dt className="text-xs text-slate-600">Reserve horizon</dt>
-                    <dd className="text-sm text-slate-800" data-testid="record-reserve-horizon">
-                      {vm.reserve.horizon}
-                    </dd>
+                {vm.reserve.kind === "evaluated" ? (
+                  <dl className="mt-1 grid gap-x-8 gap-y-1 border-t border-slate-100 pt-2 sm:grid-cols-2 print-avoid-break">
+                    <div className="flex min-w-0 flex-col">
+                      <dt className="text-xs text-slate-600">Reserve horizon</dt>
+                      <dd className="text-sm text-slate-800" data-testid="record-reserve-horizon">
+                        {vm.reserve.horizon}
+                      </dd>
+                    </div>
+                    <div className="flex min-w-0 flex-col">
+                      <dt className="text-xs text-slate-600">Reserve floor</dt>
+                      <dd className="text-sm text-slate-800" data-testid="record-reserve-floor">
+                        <Metric metric={vm.reserve.floor} />
+                      </dd>
+                    </div>
+                    <div className="flex min-w-0 flex-col sm:col-span-2">
+                      <dt className="text-xs text-slate-600">Available after this request and reserve</dt>
+                      <dd className="text-sm text-slate-800" data-testid="record-reserve-headroom">
+                        <Metric metric={vm.reserve.headroom} />
+                      </dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <div className="mt-1 border-t border-slate-100 pt-2 print-avoid-break">
+                    <p className="text-sm font-medium text-slate-800" data-testid="record-reserve-state">
+                      {vm.reserve.kind === "not-evaluated"
+                        ? "Reserve calculation not evaluated"
+                        : "Reserve calculation not applicable"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">{vm.reserve.reason}</p>
                   </div>
-                  <div className="flex min-w-0 flex-col">
-                    <dt className="text-xs text-slate-600">Reserve floor</dt>
-                    <dd className="text-sm text-slate-800" data-testid="record-reserve-floor">
-                      <Metric metric={vm.reserve.floor} />
-                    </dd>
-                  </div>
-                  <div className="flex min-w-0 flex-col sm:col-span-2">
-                    <dt className="text-xs text-slate-600">Available after this request and reserve</dt>
-                    <dd className="text-sm text-slate-800" data-testid="record-reserve-headroom">
-                      <Metric metric={vm.reserve.headroom} />
-                    </dd>
-                  </div>
-                </dl>
+                )}
               </DocSection>
 
               <DocSection n={5} title="Authority and approvals">

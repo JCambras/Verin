@@ -67,8 +67,7 @@ export interface RequiredControlVM {
 
 export interface AccountableRoleVM {
   readonly responsibility: string;
-  readonly firmA: string;
-  readonly firmB: string;
+  readonly firms: Readonly<Record<SetupFirmId, string>>;
   readonly rule: string;
 }
 
@@ -121,6 +120,9 @@ export function optionPosture(truthLabel: SetupTruthLabel): SetupAuthorityPostur
 export function configurationPosture(
   truthLabels: readonly SetupTruthLabel[],
 ): SetupAuthorityPosture {
+  if (truthLabels.length === 0) {
+    throw new Error("A configuration posture requires at least one selected option");
+  }
   return truthLabels.reduce<SetupAuthorityPosture>((weakest, label) => {
     const posture = optionPosture(label);
     return POSTURE_STRENGTH[posture] < POSTURE_STRENGTH[weakest] ? posture : weakest;
@@ -271,6 +273,7 @@ export interface SetupProofFirmVM {
 
 export interface SetupProofVM {
   readonly engineLabel: string;
+  readonly dataProvenance: string;
   readonly exportQuestion: string;
   readonly exportHint: string;
   readonly exportError: string;

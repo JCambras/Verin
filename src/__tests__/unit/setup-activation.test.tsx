@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
@@ -13,6 +13,7 @@ import {
   activationResponseMatchesDraft,
   captureSetupActivationDraft,
 } from "@app/demo/surfaces/setup-activation-state";
+import { ControlsBody } from "@app/demo/surfaces/setup-governance";
 import { MoneyMovementSetupSurface } from "@app/demo/surfaces/setup";
 
 vi.mock("next/navigation", () => ({
@@ -96,5 +97,40 @@ describe("setup activation", () => {
     expect(activationResponseMatchesDraft(captured, 5, selections)).toBe(false);
     expect(activationResponseMatchesDraft(captured, 4, changed)).toBe(false);
     expect(activationResponseMatchesDraft(captured, 4, selections)).toBe(true);
+  });
+
+  it("pairs accountable roles to firm labels by identity after profile reordering", () => {
+    const original = buildMoneyMovementSetup();
+    const vm = {
+      ...original,
+      profiles: [original.profiles[1], original.profiles[0]],
+      roles: original.roles.map((role, index) =>
+        index === 0
+          ? {
+              ...role,
+              firms: {
+                "firm-a": "Firm A accountable owner",
+                "firm-b": "Firm B accountable owner",
+              },
+            }
+          : role,
+      ),
+    } satisfies typeof original;
+    render(<ControlsBody vm={vm} />);
+
+    const responsibility = screen
+      .getByRole("heading", { name: "Policy proposal and approval" })
+      .closest("article");
+    expect(responsibility).not.toBeNull();
+    const labels = within(responsibility!).getAllByRole("term");
+    expect(labels.map((label) => label.textContent)).toEqual([
+      "Firm B",
+      "Firm A",
+    ]);
+    const assignments = within(responsibility!).getAllByRole("definition");
+    expect(assignments.map((assignment) => assignment.textContent)).toEqual([
+      "Firm B accountable owner",
+      "Firm A accountable owner",
+    ]);
   });
 });

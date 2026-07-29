@@ -311,3 +311,23 @@ test("200 percent text, reduced motion, and software-keyboard posture stay safe"
     if (index < STEPS.length - 1) await action.click();
   }
 });
+
+test("invalid activation references fail closed without echo or overflow", async ({
+  page,
+}) => {
+  await login(page, PRINCIPAL);
+  await page.setViewportSize(WIDTHS[0]);
+  const invalid = "g".repeat(256);
+  await page.goto(
+    `/app/demo/record?scenario=recent-bank-change-block&firm=firm-a&activation=${invalid}`,
+  );
+  await expect(page.getByRole("heading", { name: "Decision record unavailable" })).toBeVisible();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "activation reference" }),
+  ).toContainText(
+    "The activation reference is invalid.",
+  );
+  await expect(page.locator("body")).not.toContainText(invalid);
+  await assertNoPageOverflow(page);
+  await assertAxe(page, "invalid-activation");
+});

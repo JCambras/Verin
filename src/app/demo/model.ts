@@ -303,14 +303,23 @@ export interface ActivatedConfigurationRecordVM {
   readonly configurationProvenance: string;
 }
 
-/** The reserve arithmetic the record prints beside its horizon prose. Both figures
- * come from the one signed projection - the record states the numbers an examiner
- * checks the prose against, instead of asserting a horizon with nothing to verify. */
-export interface RecordReserveVM {
-  readonly horizon: string;
-  readonly floor: DisplayMetric;
-  readonly headroom: DisplayMetric;
-}
+/** Reserve reaches exactly one terminal state. Arithmetic exists only when the
+ * precedence trace established that the signed inputs were evaluable. */
+export type RecordReserveVM =
+  | {
+      readonly kind: "evaluated";
+      readonly horizon: string;
+      readonly floor: DisplayMetric;
+      readonly headroom: DisplayMetric;
+    }
+  | {
+      readonly kind: "not-evaluated";
+      readonly reason: string;
+    }
+  | {
+      readonly kind: "not-applicable";
+      readonly reason: string;
+    };
 
 export interface RecordVM {
   readonly identity: RecordIdentityVM;
