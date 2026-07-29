@@ -22,59 +22,106 @@ const OPAQUE_TOKEN = /^tok:[0-9a-f]{16}$/;
 const REPLAY_SCHEMA_FILE = "real-derived-replay-schema.json";
 
 type PendingReplay = {
-  actionRef: string | null;
-  actionKind: PendingActionKind | null;
-  actionState: PendingActionState | null;
-  direction: "outgoing" | "incoming" | "unknown" | null;
+  actionRef: string | null; actionKind: PendingActionKind | null;
+  actionState: PendingActionState | null; amountMinor: number | null; direction: "outgoing" | "incoming" | "unknown" | null;
   liquidityClass: "distribution" | "debit" | "credit" | "unclassified" | null;
-  amountMinor: number | null;
-  reducesEffectiveLiquidity: boolean;
-  increasesAvailableLiquidity: boolean;
+  reducesEffectiveLiquidity: boolean; increasesAvailableLiquidity: boolean;
 };
 type ReplayPayload = {
-  request: { householdRef: string; destinationRef: string; amountMinor: number };
+  request: { householdRef: string; destinationRef: string; amountMinor: number; deadlineAt: string | null; settlementEarliestAt: string | null };
   identity: { resolution: "unique" | "ambiguous" | "canonical-collision"; candidateRefs: string[] };
-  destination: { instructionRef: string; householdRef: string; ownerRefs: string[]; ownership: "same-household" | "cross-household" };
-  liquidity: { sources: Array<{ accountRef: string }>; reserveState: "modeled-scalar" | "modeled-segmented" | "missing"; reserveRequiredMinor: number | null; withdrawalSegmentsMinor: number[]; pendingAction: PendingReplay };
+  destination: { instructionRef: string; householdRef: string; ownerRefs: string[]; ownership: "same-household" | "cross-household"; verificationState: "verified" | "unverified" | "missing"; discriminatorState: "unique" | "collision" | "missing" };
+  liquidity: { sources: Array<{ accountRef: string; availableMinor: number; sourceTaxClass: "taxable" | "retirement" | "trust" | "entity" | "unknown" }>; reserveState: "modeled-scalar" | "modeled-segmented" | "missing"; reserveRequiredMinor: number | null; withdrawalSegmentsMinor: number[]; pendingAction: PendingReplay };
   authority: { grantRef: string | null; authorityScope: "distribution-request" | "other" | "missing"; authorityState: "effective" | "expired" | "not-yet-effective" | "wrong-scope" | "missing"; validFrom: string | null; validTo: string | null };
   policy: { thresholdMinor: number; thresholdComparison: "below" | "equal" | "above"; restrictionRef: string | null; restrictionState: "absent" | "in-force" | "expired" | "future"; legalHoldRef: string | null; legalHoldScope: "none" | "account" | "position" };
   instructionConflict: { conflictState: "none" | "present" | "resolved"; instructionRefs: string[]; impactedSubjectRefs: string[] };
-  temporal: { eventAt: string };
+  taxReviewState: "not-required" | "required-pending" | "completed" | "unavailable";
+  temporal: { eventAt: string; transitionState: "standard" | "daylight" | "boundary" };
   evidenceRefs: string[];
   execution: { reservationKeys: string[]; preconditions: string[] };
 };
 type RealDerivedCase = {
-  caseId: string;
-  corpusVersion: string;
+  caseId: string; corpusVersion: string; occurredAt: string;
   scrubAttestation: { extractedAt: string; extractedBy: string; scrubbedBy: string; scrubbedAt: string; reviewedBy: string; reviewedAt: string; recordsBefore: number; recordsAfter: number };
   label: { kind: "defect"; defectClassId: string } | { kind: "clean-control"; controlRationaleId: string };
-  occurredAt: string;
   evaluation: { asOf: string; freshnessPolicyVersion: string };
-  subjects: string[];
-  replayPayload: ReplayPayload;
+  subjects: string[]; replayPayload: ReplayPayload;
   evidence: Array<
-    | { id: string; evidenceKind: RealDerivedEvidenceKind; subjectRef: string; observationState: "observed"; observedAt: string; retrievedAt: string; freshness: "fresh" | "stale" }
-    | { id: string; evidenceKind: RealDerivedEvidenceKind; subjectRef: string; observationState: "missing"; observedAt: null; retrievedAt: string; freshness: "unknown" }
-  >;
+    { id: string; evidenceKind: RealDerivedEvidenceKind; subjectRef: string; observationState: "observed"; observedAt: string; retrievedAt: string; freshness: "fresh" | "stale" } |
+    { id: string; evidenceKind: RealDerivedEvidenceKind; subjectRef: string; observationState: "missing"; observedAt: null; retrievedAt: string; freshness: "unknown" }>;
   reservations: Array<{ family: string; conflictKey: string }>;
 };
 const schemaFromSpec = (name: string): Record<string, unknown> =>
   JSON.parse(readFileSync(join(SPEC_DIR, name), "utf8")) as Record<string, unknown>;
-const ReplayPayloadSchema = z.fromJSONSchema(
-  schemaFromSpec(REPLAY_SCHEMA_FILE),
-) as z.ZodType<ReplayPayload>;
-export const RealDerivedCaseSchema = z
-  .fromJSONSchema(schemaFromSpec("real-derived-case-schema.json"))
+const ReplayPayloadSchema = z.fromJSONSchema(schemaFromSpec(REPLAY_SCHEMA_FILE)) as z.ZodType<ReplayPayload>;
+export const RealDerivedCaseSchema = z.fromJSONSchema(schemaFromSpec("real-derived-case-schema.json"))
   .superRefine((value, context) => {
-    const replay = ReplayPayloadSchema.safeParse(
-      (value as { replayPayload?: unknown }).replayPayload,
-    );
+    const replay = ReplayPayloadSchema.safeParse((value as { replayPayload?: unknown }).replayPayload);
     if (!replay.success) {
-      for (const issue of replay.error.issues) {
+      for (const issue of replay.error.issues)
         context.addIssue({ ...issue, path: ["replayPayload", ...issue.path] });
-      }
     }
   }) as unknown as z.ZodType<RealDerivedCase>;
+
+const hasEvidence = (item: RealDerivedCase, kind: RealDerivedEvidenceKind): boolean =>
+  item.evidence.some((evidence) => evidence.evidenceKind === kind);
+const intervalCollapse = (item: RealDerivedCase): boolean => {
+  const validTo = item.replayPayload.authority.validTo;
+  return validTo !== null && item.evidence.some((evidence) =>
+    evidence.evidenceKind === "authority" && evidence.observedAt !== null
+    && evidence.observedAt < validTo && validTo <= evidence.retrievedAt);
+};
+const pendingMiscount = (item: RealDerivedCase): boolean => {
+  const action = item.replayPayload.liquidity.pendingAction;
+  return action.actionRef !== null && (["blocked", "cancelled", "rejected"].includes(action.actionState ?? "")
+    || ["unknown", "unclassified"].includes(action.actionKind ?? ""));
+};
+const deadlineInfeasible = (item: RealDerivedCase): boolean => {
+  const request = item.replayPayload.request;
+  return request.deadlineAt !== null && (request.deadlineAt < item.evaluation.asOf
+    || (request.settlementEarliestAt !== null && request.deadlineAt < request.settlementEarliestAt));
+};
+const taxBlindness = (item: RealDerivedCase): boolean => {
+  const payload = item.replayPayload;
+  const action = payload.liquidity.pendingAction;
+  const required = payload.request.amountMinor + (payload.liquidity.reserveRequiredMinor ?? 0)
+    + (action.reducesEffectiveLiquidity ? action.amountMinor ?? 0 : 0);
+  const sufficient = payload.liquidity.sources.filter((source) => source.availableMinor >= required);
+  return sufficient.length > 0 && sufficient.every((source) => source.sourceTaxClass === "retirement")
+    && payload.taxReviewState !== "completed";
+};
+const defectSignatures: Readonly<Record<string, (item: RealDerivedCase) => boolean>> = {
+  "identity-resolution-ambiguity": (item) => item.replayPayload.identity.resolution === "ambiguous",
+  "authority-scope-error": (item) => item.replayPayload.authority.authorityState !== "effective",
+  "destination-integrity-defect": (item) => item.replayPayload.destination.ownership === "cross-household" ||
+    item.replayPayload.destination.verificationState !== "verified" ||
+    item.replayPayload.destination.discriminatorState !== "unique",
+  "instruction-conflict-unresolved": (item) => item.replayPayload.instructionConflict.conflictState === "present",
+  "liquidity-reserve-miscalculation": (item) => item.replayPayload.liquidity.reserveState !== "modeled-scalar",
+  "evidence-staleness-unnoticed": (item) => item.evidence.some((evidence) => evidence.freshness === "stale"),
+  "evidence-interval-collapse": intervalCollapse,
+  "restriction-lifecycle-error": (item) => ["expired", "future"].includes(item.replayPayload.policy.restrictionState),
+  "hold-scope-error": (item) => item.replayPayload.policy.legalHoldScope === "position",
+  "pending-activity-miscount": pendingMiscount,
+  "temporal-rendering-defect": (item) => item.replayPayload.temporal.transitionState === "boundary",
+  "canonical-identity-defect": (item) => item.replayPayload.identity.resolution === "canonical-collision",
+  "threshold-boundary-error": (item) => item.replayPayload.policy.thresholdComparison === "equal",
+  "deadline-feasibility-error": deadlineInfeasible,
+  "blast-radius-underestimation": (item) => hasEvidence(item, "recent-change") &&
+    item.replayPayload.instructionConflict.conflictState === "resolved" &&
+    item.replayPayload.instructionConflict.impactedSubjectRefs.length > 1,
+  "tax-consequence-blindness": taxBlindness,
+};
+
+export function realDerivedSemanticContractProblems(defectClassIds: ReadonlySet<string>): string[] {
+  const supported = new Set(Object.keys(defectSignatures));
+  return [
+    ...[...defectClassIds].filter((id) => !supported.has(id))
+      .map((id) => `real-derived replay semantics missing defect class "${id}"`),
+    ...[...supported].filter((id) => !defectClassIds.has(id))
+      .map((id) => `real-derived replay semantics reference unknown defect class "${id}"`),
+  ];
+}
 
 export function realDerivedCaseProblems(
   value: unknown,
@@ -255,6 +302,20 @@ export function realDerivedCaseProblems(
     "subjects must exactly inventory replay and evidence token references",
   );
   reject(parsed.data.label.kind === "defect" && !defectClassIds.has(parsed.data.label.defectClassId), "label.defectClassId is not in the closed defect taxonomy");
+  const semanticDefects = Object.entries(defectSignatures)
+    .filter(([, matches]) => matches(parsed.data))
+    .map(([id]) => id);
+  if (parsed.data.label.kind === "defect") {
+    reject(
+      !semanticDefects.includes(parsed.data.label.defectClassId),
+      "label.defectClassId does not match replay semantics",
+    );
+  } else {
+    reject(
+      semanticDefects.length > 0,
+      `clean-control carries replay defect signatures: ${semanticDefects.join(", ")}`,
+    );
+  }
   return problems;
 }
 
@@ -272,15 +333,18 @@ export function loadRealDerivedDelivery(
   );
   const files: GeneratedFile[] = [];
   const problems: string[] = [];
-  for (const entry of entries) {
-    if (entry.kind !== "file" || entry.bytes === null) {
+  for (const [index, entry] of entries.entries()) {
+    const delivery = `real-derived delivery ${index + 1}`;
+    if (!/^real-derived\/RD-[0-9a-f]{16}\.json$/.test(entry.relPath)) {
       problems.push(
-        `${entry.relPath}: unsupported filesystem entry in real-derived intake`,
+        `${delivery}: filename must be a top-level RD-<16 lowercase hex>.json`,
       );
       continue;
     }
-    if (!entry.relPath.endsWith(".json")) {
-      problems.push(`${entry.relPath}: only JSON case files are permitted`);
+    if (entry.kind !== "file" || entry.bytes === null) {
+      problems.push(
+        `${delivery}: unsupported filesystem entry in real-derived intake`,
+      );
       continue;
     }
     try {

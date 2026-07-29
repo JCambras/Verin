@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { canonicalJson, type JsonValue } from "../../src/contracts/decision-core/serialization";
 import type { Taxonomy } from "./defects";
 import type { GeneratedFile } from "./generate";
@@ -7,21 +9,19 @@ import {
   REAL_DERIVED_FRESHNESS_POLICY_VERSION,
 } from "./real-derived-policy";
 import { CORPUS_SEED } from "./seed";
-import { SPEC_FILES, type LoadedSpec } from "./world";
+import { SPEC_DIR, SPEC_FILES, type LoadedSpec } from "./world";
 
-export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.3.0";
+export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.4.0";
 export const TAXONOMY_DIGEST_PREIMAGE_VERSION = "verin-defect-taxonomy/1.0.0";
-
+export const REAL_DERIVED_SCHEMA_DIGEST_PREIMAGE_VERSION = "verin-real-derived-schema-digest/1.0.0";
+export const REAL_DERIVED_SCHEMA_FILES = ["real-derived-case-schema.json", "real-derived-replay-schema.json"] as const;
 const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
-
 const canonicalBytes = (value: JsonValue, what: string): string => {
   const result = canonicalJson(value);
   if (!result.ok) throw new Error(`corpus manifest: ${what} is not canonically serializable: ${result.error.message}`);
   return result.value;
 };
-
 export const caseDigest = (bytes: string): string => sha256(bytes);
-
 export interface CaseInventoryEntry {
   readonly caseId: string;
   readonly file: string;
@@ -30,17 +30,30 @@ export interface CaseInventoryEntry {
   readonly labelKind: "defect" | "clean-control";
   readonly labelId: string;
 }
-
-export interface FreshnessPolicyBinding {
-  readonly version: string;
-  readonly digest: string;
-}
-
+export interface FreshnessPolicyBinding { readonly version: string; readonly digest: string }
+export interface RealDerivedSchemaBinding { readonly id: string; readonly digest: string }
 export const currentFreshnessPolicyBinding = (): FreshnessPolicyBinding => ({
-  version: REAL_DERIVED_FRESHNESS_POLICY_VERSION,
-  digest: freshnessPolicySemanticDigest(),
+  version: REAL_DERIVED_FRESHNESS_POLICY_VERSION, digest: freshnessPolicySemanticDigest(),
 });
 
+export function realDerivedSchemaBindings(
+  rawBytes: Readonly<Record<string, string>> = Object.fromEntries(
+    REAL_DERIVED_SCHEMA_FILES.map((name) => [name, readFileSync(join(SPEC_DIR, name), "utf8")]),
+  ),
+): RealDerivedSchemaBinding[] {
+  return REAL_DERIVED_SCHEMA_FILES.map((name) => {
+    const bytes = rawBytes[name];
+    if (bytes === undefined) throw new Error(`missing real-derived schema bytes for ${name}`);
+    const schema = JSON.parse(bytes) as JsonValue & { $id?: unknown };
+    if (typeof schema.$id !== "string" || schema.$id.length === 0)
+      throw new Error(`${name}: real-derived schema requires a non-empty $id`);
+    const preimage: JsonValue = {
+      hashKind: "verin-real-derived-json-schema", preimageVersion: REAL_DERIVED_SCHEMA_DIGEST_PREIMAGE_VERSION,
+      payload: { id: schema.$id, bytesDigest: sha256(bytes), schema },
+    };
+    return { id: schema.$id, digest: sha256(canonicalBytes(preimage, `${name} semantic preimage`)) };
+  });
+}
 export function taxonomySemanticDigest(taxonomy: Taxonomy): string {
   const semanticProjection: JsonValue = {
     hashKind: "verin-defect-taxonomy",
@@ -55,14 +68,13 @@ export function taxonomySemanticDigest(taxonomy: Taxonomy): string {
   };
   return sha256(canonicalBytes(semanticProjection, "taxonomy semantic preimage"));
 }
-
 export function corpusDigest(
   corpusVersion: string,
   seed: string,
   taxonomyDigest: string,
   entries: readonly CaseInventoryEntry[],
-  freshnessPolicy: FreshnessPolicyBinding =
-    currentFreshnessPolicyBinding(),
+  freshnessPolicy: FreshnessPolicyBinding = currentFreshnessPolicyBinding(),
+  realDerivedSchemas: readonly RealDerivedSchemaBinding[] = realDerivedSchemaBindings(),
 ): string {
   const preimage: JsonValue = {
     hashKind: "verin-corpus",
@@ -72,6 +84,7 @@ export function corpusDigest(
       seed,
       taxonomyDigest,
       freshnessPolicy: { ...freshnessPolicy },
+      realDerivedSchemas: realDerivedSchemas.map((schema) => ({ ...schema })),
       cases: [...entries]
         .sort((left, right) => (left.caseId < right.caseId ? -1 : left.caseId > right.caseId ? 1 : 0))
         .map((entry) => [
@@ -81,7 +94,6 @@ export function corpusDigest(
   };
   return sha256(canonicalBytes(preimage, "corpusDigest preimage"));
 }
-
 export function generatorDigest(seed: string, rawBytes: Readonly<Record<string, string>>): string {
   const preimage: JsonValue = {
     hashKind: "verin-corpus-generator",
@@ -93,7 +105,6 @@ export function generatorDigest(seed: string, rawBytes: Readonly<Record<string, 
   };
   return sha256(canonicalBytes(preimage, "generatorDigest preimage"));
 }
-
 export const buildInventory = (
   files: readonly GeneratedFile[],
   partition: CaseInventoryEntry["partition"] = "synthetic",
@@ -110,9 +121,7 @@ export const buildInventory = (
       labelId: label.kind === "defect" ? String(label.defectClassId) : "clean-control",
     };
   });
-
 const SIGNATURE_FIELDS = new Set(["signedBy", "signedAt", "signedDigest"]);
-
 export function generatedSignatureProblems(
   files: readonly GeneratedFile[],
 ): string[] {
@@ -145,7 +154,6 @@ export function generatedSignatureProblems(
   }
   return problems;
 }
-
 export const REAL_DERIVED_DEFERRAL: {
   readonly status: string;
   readonly unDeferTrigger: string;
@@ -160,7 +168,6 @@ export const REAL_DERIVED_DEFERRAL: {
   adr: "docs/adr/0034-synthetic-corpus-and-provenance-split.md",
   procedure: "docs/corpus-scrub-procedure.md",
 } as const;
-
 export function buildManifest(
   spec: LoadedSpec,
   taxonomy: Taxonomy,
@@ -177,6 +184,7 @@ export function buildManifest(
   const generator = generatorDigest(seed, spec.rawBytes);
   const taxonomyDigest = taxonomySemanticDigest(taxonomy);
   const freshnessPolicy = currentFreshnessPolicyBinding();
+  const realDerivedSchemas = realDerivedSchemaBindings();
   const value: JsonValue = {
     __generated: {
       generator: "scripts/corpus-generate.ts",
@@ -197,11 +205,15 @@ export function buildManifest(
       taxonomyDigest,
       inventory,
       freshnessPolicy,
+      realDerivedSchemas,
     ),
     taxonomyDigest,
     taxonomyDigestPreimageVersion: TAXONOMY_DIGEST_PREIMAGE_VERSION,
     freshnessPolicyVersion: freshnessPolicy.version,
     freshnessPolicyDigest: freshnessPolicy.digest,
+    realDerivedSchemaDigestPreimageVersion:
+      REAL_DERIVED_SCHEMA_DIGEST_PREIMAGE_VERSION,
+    realDerivedSchemas: realDerivedSchemas.map((schema) => ({ ...schema })),
     generatorDigest: generator,
     signoffRef: {
       file: "fixtures/corpus/spec/SIGNOFF.md",

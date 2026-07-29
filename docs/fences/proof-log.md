@@ -7165,3 +7165,75 @@ both a value and an unrecognized key.
 canonical regeneration, and the full repository gates are green.
 
 **Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 4).
+
+---
+
+## PF-099 · real-derived truth, diagnostics, signoff, schema, denominator, and determinism boundaries · `src/__tests__/fitness/corpus-{provenance-split,determinism}.test.ts`
+
+**Invariant (D-084, ADR-0034):** real-derived labels match closed replay semantics; clean controls carry
+no supported defect signature; unsafe filenames never enter diagnostics; signoff YAML is unambiguous;
+both schema meanings and bytes are signed; an active real-derived partition has both measurement
+denominators; and callable clocks or crypto randomness cannot bypass deterministic generation.
+
+**Injection 1 - semantic relabeling.** Disabled the defect-label signature check.
+
+**Observed failure:**
+```
+a real-derived defect label must match its closed replay semantics
+expected '' to contain 'label.defectClassId does not match replay semantics'
+```
+
+The standing table companion also exercised all 16 taxonomy signatures and refused each relabel as a
+clean control.
+
+**Injection 2 - raw delivery path disclosure.** Used the raw relative path as the intake diagnostic
+identity before canonical filename validation.
+
+**Observed failure:**
+```
+unsafe delivery filenames never enter intake diagnostics
+expected 'real-derived/Robert-Smith/account-1234.json...' not to contain 'Robert-Smith'
+```
+
+**Injection 3 - permissive YAML recovery.** Ignored the YAML parser's duplicate-key errors before
+interpreting the signoff record.
+
+**Observed failure:**
+```
+signoff parsing rejects duplicate keys, aliases, unexpected keys, and multiple blocks
+expected '' to contain 'parse error'
+```
+
+**Injection 4 - unsigned schema semantics.** Removed both real-derived schema bindings from the corpus
+digest payload.
+
+**Observed failure:**
+```
+the signed digest covers both real-derived schema ids and bytes
+expected changed schema digest not to equal corpusDigest
+```
+
+**Injection 5 - one-sided real-derived inventory.** Disabled the active-partition requirement for at
+least one defect and one clean control.
+
+**Observed failure:**
+```
+an active real-derived partition requires both measurement denominators
+expected '' to contain 'no labeled clean controls'
+```
+
+**Injection 6 - callable clock and crypto randomness laundering.** Removed callable `Date` and the
+expanded crypto origins from the AST detector.
+
+**Observed failure:**
+```
+flags callable Date and every supported crypto randomness form
+Expected: Date() (callable), generateKey, getRandomValues, randomBytes, randomFill, randomFillSync, randomInt
+Received: none
+```
+
+**Revert:** all six injections were reverted with patch edits. The focused fences passed
+(`Tests 102 passed (102)`), typecheck passed, and canonical corpus validation reported regenerated
+byte-identical with every rule holding.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 5).

@@ -54,9 +54,9 @@ const CEILINGS = {
   // substring resolution with structured parses), then 4254 after D-081 closed
   // the graph, intake, signoff, and measurement review findings. ADR-0034 raises
   // the ceiling from 4000 to 4300 with 46 lines of explicit headroom. D-082
-  // raises it to 4900 against 4818 measured lines. The ratchet-down after the
-  // corpus generator's first post-prompt-19 simplification pass now has real
-  // work to do. Tooling is REPORTED SEPARATELY,
+  // raises it to 4900; D-084 records 4900 measured lines after the final
+  // replay-intake review. The ratchet-down after the corpus generator's first
+  // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,
   // never averaged into a platform layer.
   tooling: 4900,
 } as const;

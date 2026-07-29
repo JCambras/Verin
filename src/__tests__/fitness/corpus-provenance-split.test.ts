@@ -21,6 +21,8 @@ import {
   corpusDigest,
   currentFreshnessPolicyBinding,
   generatedSignatureProblems,
+  REAL_DERIVED_SCHEMA_FILES,
+  realDerivedSchemaBindings,
   taxonomySemanticDigest,
 } from "../../../scripts/corpus/manifest";
 import {
@@ -45,9 +47,11 @@ import * as corpusReportRuntime from "../../../scripts/corpus/report";
 import {
   loadRealDerivedDelivery,
   realDerivedCaseProblems,
+  realDerivedSemanticContractProblems,
 } from "../../../scripts/corpus/scrub-contract";
 import {
   CAPTAIN_SIGNING_AUTHORITY,
+  parseSignoff,
   signoffProblems,
   type CorpusSignoff,
 } from "../../../scripts/corpus/signoff";
@@ -158,7 +162,7 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
       ownerRefs: [OPAQUE],
       ownership: "same-household",
       verificationState: "verified",
-      discriminatorState: "unique",
+      discriminatorState: "collision",
     },
     liquidity: {
       sources: [
@@ -233,6 +237,114 @@ const realDerivedCase = (overrides: Record<string, unknown> = {}): Record<string
   reservations: [{ family: "liquidity", conflictKey: "conflict:tok:0123456789abcdef:liquidity" }],
   ...overrides,
 });
+
+const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> => {
+  const item = realDerivedCase({
+    label: { kind: "defect", defectClassId },
+  });
+  const payload = item.replayPayload as Record<string, any>;
+  payload.destination.discriminatorState = "unique";
+  switch (defectClassId) {
+    case "identity-resolution-ambiguity":
+      payload.identity.resolution = "ambiguous";
+      payload.identity.candidateRefs.push(OPAQUE_REVIEWER);
+      (item.subjects as string[]).push(OPAQUE_REVIEWER);
+      break;
+    case "authority-scope-error":
+      payload.authority.authorityScope = "other";
+      payload.authority.authorityState = "wrong-scope";
+      break;
+    case "destination-integrity-defect":
+      payload.destination.discriminatorState = "collision";
+      break;
+    case "instruction-conflict-unresolved":
+      payload.instructionConflict = {
+        conflictState: "present",
+        instructionRefs: [OPAQUE, OPAQUE_REVIEWER],
+        impactedSubjectRefs: [OPAQUE],
+      };
+      (item.subjects as string[]).push(OPAQUE_REVIEWER);
+      break;
+    case "liquidity-reserve-miscalculation":
+      payload.liquidity.reserveState = "modeled-segmented";
+      payload.liquidity.withdrawalSegmentsMinor = [500, 1_000];
+      break;
+    case "evidence-staleness-unnoticed":
+      (item.evidence as Array<Record<string, unknown>>)[0]!.observedAt =
+        "2026-04-26T05:00:00.000Z";
+      (item.evidence as Array<Record<string, unknown>>)[0]!.freshness = "stale";
+      break;
+    case "evidence-interval-collapse": {
+      payload.authority.authorityState = "expired";
+      payload.authority.validTo = "2026-04-28T10:00:00.000Z";
+      const evidence = (item.evidence as Array<Record<string, unknown>>)[0]!;
+      evidence.id = "evs:tok:0123456789abcdef:authority";
+      evidence.evidenceKind = "authority";
+      payload.evidenceRefs = [evidence.id];
+      break;
+    }
+    case "restriction-lifecycle-error":
+      payload.policy.restrictionRef = OPAQUE;
+      payload.policy.restrictionState = "expired";
+      break;
+    case "hold-scope-error":
+      payload.policy.legalHoldRef = OPAQUE;
+      payload.policy.legalHoldScope = "position";
+      break;
+    case "pending-activity-miscount":
+      payload.liquidity.pendingAction = {
+        actionRef: OPAQUE,
+        actionKind: "outgoing-distribution",
+        actionState: "blocked",
+        direction: "outgoing",
+        liquidityClass: "distribution",
+        amountMinor: 500,
+        reducesEffectiveLiquidity: false,
+        increasesAvailableLiquidity: false,
+      };
+      break;
+    case "temporal-rendering-defect":
+      payload.temporal.transitionState = "boundary";
+      break;
+    case "canonical-identity-defect":
+      payload.identity.resolution = "canonical-collision";
+      payload.identity.candidateRefs.push(OPAQUE_REVIEWER);
+      (item.subjects as string[]).push(OPAQUE_REVIEWER);
+      break;
+    case "threshold-boundary-error":
+      payload.request.amountMinor = payload.policy.thresholdMinor;
+      payload.policy.thresholdComparison = "equal";
+      break;
+    case "deadline-feasibility-error":
+      payload.request.deadlineAt = "2026-04-27T13:00:00.000Z";
+      break;
+    case "blast-radius-underestimation": {
+      payload.instructionConflict = {
+        conflictState: "resolved",
+        instructionRefs: [OPAQUE, OPAQUE_REVIEWER],
+        impactedSubjectRefs: [OPAQUE, OPAQUE_REVIEWER],
+      };
+      const evidence = {
+        id: "evs:tok:fedcba9876543210:recent-change",
+        evidenceKind: "recent-change",
+        subjectRef: OPAQUE_REVIEWER,
+        observationState: "observed",
+        observedAt: "2026-04-28T05:00:00.000Z",
+        retrievedAt: "2026-04-28T13:00:03.000Z",
+        freshness: "fresh",
+      };
+      (item.evidence as Array<Record<string, unknown>>).push(evidence);
+      payload.evidenceRefs.push(evidence.id);
+      (item.subjects as string[]).push(OPAQUE_REVIEWER);
+      break;
+    }
+    case "tax-consequence-blindness":
+      payload.liquidity.sources[0].sourceTaxClass = "retirement";
+      payload.taxReviewState = "required-pending";
+      break;
+  }
+  return item;
+};
 
 const outcomes = (
   defects: number,
@@ -499,6 +611,50 @@ describe("corpus-provenance-split fence", () => {
     expect(problems.some((problem) => problem.includes("duplicate caseId"))).toBe(true);
   });
 
+  it("(d) enforces: an active real-derived partition requires both measurement denominators", () => {
+    const value = realDerivedCase();
+    const defect = {
+      relPath: "real-derived/RD-00112233445566aa.json",
+      bytes: canonicalFixtureBytes(value),
+      value: value as any,
+    };
+    const controlValue = realDerivedCase({
+      caseId: "RD-aabbccddeeff0011",
+      label: {
+        kind: "clean-control",
+        controlRationaleId: "no-defect-present",
+      },
+    });
+    ((controlValue.replayPayload as Record<string, any>).destination).discriminatorState =
+      "unique";
+    const control = {
+      relPath: "real-derived/RD-aabbccddeeff0011.json",
+      bytes: canonicalFixtureBytes(controlValue),
+      value: controlValue as any,
+    };
+    expect(
+      realDerivedCollectionProblems(
+        [defect],
+        real.spec.world.corpusVersion,
+        null,
+      ).join("\n"),
+    ).toContain("no labeled clean controls");
+    expect(
+      realDerivedCollectionProblems(
+        [control],
+        real.spec.world.corpusVersion,
+        null,
+      ).join("\n"),
+    ).toContain("no labeled defect cases");
+    expect(
+      realDerivedCollectionProblems(
+        [defect, control],
+        real.spec.world.corpusVersion,
+        null,
+      ),
+    ).toEqual([]);
+  });
+
   it("(d) enforces: generated and real-derived trees are recursively inventoried, including hidden and nested files", () => {
     const root = mkdtempSync(join(tmpdir(), "verin-corpus-tree-"));
     try {
@@ -534,14 +690,11 @@ describe("corpus-provenance-split fence", () => {
       ).toBe(true);
       expect(
         problems.some((problem) =>
-          problem.includes("real-derived/.hidden: only JSON"),
+          problem.includes("filename must be a top-level RD-<16 lowercase hex>.json"),
         ),
       ).toBe(true);
-      expect(
-        problems.some((problem) =>
-          problem.includes("canonical filename"),
-        ),
-      ).toBe(true);
+      expect(problems.join("\n")).not.toContain(".hidden");
+      expect(problems.join("\n")).not.toContain("nested");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -606,6 +759,37 @@ describe("corpus-provenance-split fence", () => {
         CORPUS_SEED,
         taxonomySemanticDigest(real.taxonomy),
         real.inventory,
+        changed,
+      ),
+    ).not.toBe(real.corpusDigest);
+  });
+
+  it("(d) enforces: the signed digest covers both real-derived schema ids and bytes", () => {
+    const raw = Object.fromEntries(
+      REAL_DERIVED_SCHEMA_FILES.map((name) => [
+        name,
+        readFileSync(join(REPO_ROOT, "fixtures/corpus/spec", name), "utf8"),
+      ]),
+    );
+    const original = realDerivedSchemaBindings(raw);
+    const replay = JSON.parse(raw["real-derived-replay-schema.json"]!) as Record<string, unknown>;
+    replay.title = `${String(replay.title)} changed`;
+    const changed = realDerivedSchemaBindings({
+      ...raw,
+      "real-derived-replay-schema.json": `${JSON.stringify(replay, null, 2)}\n`,
+    });
+    expect(changed).not.toEqual(original);
+    expect(original.map((binding) => binding.id)).toEqual([
+      "verin-real-derived-case/1.0.0",
+      "verin-real-derived-replay/1.0.0",
+    ]);
+    expect(
+      corpusDigest(
+        real.spec.world.corpusVersion,
+        CORPUS_SEED,
+        taxonomySemanticDigest(real.taxonomy),
+        real.inventory,
+        currentFreshnessPolicyBinding(),
         changed,
       ),
     ).not.toBe(real.corpusDigest);
@@ -1042,6 +1226,78 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(realDerivedCaseProblems(realDerivedCase(), classes, "real-derived/RD-ok.json")).toEqual([]);
   });
 
+  it("a real-derived defect label must match its closed replay semantics", () => {
+    const mislabeled = realDerivedCase();
+    ((mislabeled.replayPayload as Record<string, any>).destination).discriminatorState =
+      "unique";
+    const problems = realDerivedCaseProblems(
+      mislabeled,
+      classes,
+      "real-derived/RD-mislabeled-defect.json",
+    );
+    expect(problems.join("\n")).toContain(
+      "label.defectClassId does not match replay semantics",
+    );
+  });
+
+  it("the real-derived semantic registry exactly covers the signed taxonomy", () => {
+    expect(realDerivedSemanticContractProblems(classes)).toEqual([]);
+    const missing = new Set(classes);
+    missing.delete("destination-integrity-defect");
+    expect(realDerivedSemanticContractProblems(missing).join("\n")).toContain(
+      "reference unknown defect class",
+    );
+    expect(
+      realDerivedSemanticContractProblems(
+        new Set([...classes, "invented-defect"]),
+      ).join("\n"),
+    ).toContain("missing defect class");
+  });
+
+  it("a semantically clean real-derived control is accepted", () => {
+    const control = realDerivedCase({
+      label: {
+        kind: "clean-control",
+        controlRationaleId: "no-defect-present",
+      },
+    });
+    ((control.replayPayload as Record<string, any>).destination).discriminatorState =
+      "unique";
+    expect(
+      realDerivedCaseProblems(
+        control,
+        classes,
+        "real-derived/RD-clean.json",
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([...classes])(
+    "the %s signature is live and cannot pass as a clean control",
+    (defectClassId) => {
+      const defect = realDerivedDefectCase(defectClassId);
+      expect(
+        realDerivedCaseProblems(
+          defect,
+          classes,
+          `real-derived/RD-${defectClassId}.json`,
+        ),
+      ).toEqual([]);
+      const control = structuredClone(defect);
+      control.label = {
+        kind: "clean-control",
+        controlRationaleId: "defect-class-absent",
+      };
+      expect(
+        realDerivedCaseProblems(
+          control,
+          classes,
+          `real-derived/RD-${defectClassId}-control.json`,
+        ).join("\n"),
+      ).toContain("clean-control carries replay defect signatures");
+    },
+  );
+
   it("the real-derived replay payload is versioned, complete, strict, and internally consistent", () => {
     const missing = realDerivedCase();
     delete missing.replayPayload;
@@ -1132,6 +1388,22 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "canonical JSON with unique object keys",
       );
       expect(delivery.problems.join("\n")).not.toContain("Robert Smith");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("unsafe delivery filenames never enter intake diagnostics", () => {
+    const dir = mkdtempSync(join(tmpdir(), "verin-corpus-unsafe-path-"));
+    try {
+      mkdirSync(join(dir, "Robert-Smith"));
+      writeFileSync(
+        join(dir, "Robert-Smith", "account-1234.json"),
+        canonicalFixtureBytes(realDerivedCase()),
+      );
+      const diagnostics = loadRealDerivedDelivery(dir).problems.join("\n");
+      expect(diagnostics).not.toContain("Robert-Smith");
+      expect(diagnostics).not.toContain("account-1234");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1370,5 +1642,20 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         real.corpusDigest,
       ).join("\n"),
     ).toContain("canonical ISO-8601 UTC instant");
+  });
+
+  it("signoff parsing rejects duplicate keys, aliases, unexpected keys, and multiple blocks", () => {
+    const yaml = (body: string) => `\`\`\`yaml\n${body}\n\`\`\``;
+    const malformed: Array<[string, string]> = [
+      [yaml("corpusVersion: x\nstatus: signed\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null"), "parse error"],
+      [yaml("corpusVersion: &v x\nstatus: pending-captain\nsignedBy: *v\nsignedAt: null\nsignedDigest: null"), "aliases are forbidden"],
+      [yaml("corpusVersion: x\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null\nextra: value"), "unexpected top-level keys"],
+      [`${yaml("corpusVersion: x\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null")}\n${yaml("corpusVersion: x\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null")}`, "exactly one YAML signoff block"],
+    ];
+    for (const [text, expected] of malformed) {
+      expect(
+        signoffProblems(parseSignoff(text), "x", "digest").join("\n"),
+      ).toContain(expected);
+    }
   });
 });

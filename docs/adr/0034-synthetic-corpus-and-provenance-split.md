@@ -129,8 +129,10 @@ including hidden, nested, non-JSON, and unsupported entries. Generated-tree owne
 recursive inventory, so no nested or hidden file can evade regenerate-and-compare. After the deferral is
 explicitly lifted, files must be top-level canonical `RD-<token>.json` names, case ids must be unique
 across the collection, and every case must name the active corpus version before it can enter inventory.
-Each valid real-derived case is then inventoried in the generated manifest, bound into `corpusDigest`,
-and fed to the real-derived reporting path.
+The intake validates that canonical filename before it can appear in a diagnostic; an invalid delivery is
+identified only by its bounded ordinal. The active collection must include at least one valid labeled
+defect and at least one valid clean control. Each valid real-derived case is then inventoried in the
+generated manifest, bound into `corpusDigest`, and fed to the real-derived reporting path.
 
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
@@ -151,6 +153,11 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
+The closed semantic registry derives every supported defect signature from the replay payload. A defect
+case is accepted only when its label names an actually present signature. A clean control is accepted
+only when every supported signature is absent. The registry is checked for exact equality with the signed
+taxonomy, so an unsupported class cannot enter either denominator by relabeling a structurally valid case.
+
 Each real-derived case records `evaluation.asOf` and the closed
 `verin-real-derived-freshness/1.0.0` policy version. The policy has one freshness window per supported
 evidence kind. Observed evidence enforces `observedAt <= retrievedAt <= evaluation.asOf` and its supplied
@@ -169,13 +176,17 @@ The captain signs a **corpus version**, not each case, and the signature is boun
 re-signing (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes -
 this ADR, `docs/corpus.md`, the signoff file's own prose - never invalidates a signature. What is
 signed is the **labels and their closed semantic vocabulary**, because they are the denominator of every
-figure the corpus can report. The `verin-corpus/1.3.0` preimage covers every inventory entry's partition,
+figure the corpus can report. The `verin-corpus/1.4.0` preimage covers every inventory entry's partition,
 case id, byte digest, label kind, and label id, plus versioned semantic digests of the taxonomy definitions
-and citations and the real-derived freshness policy. Relabeling inventory, redefining a class, or changing
-a freshness window invalidates prior signoff even if no case bytes change.
+and citations, the real-derived freshness policy, and both versioned real-derived JSON Schemas. Schema
+bindings include identifiers, exact-byte digests, and canonical semantic projections. Relabeling
+inventory, redefining a class, changing a freshness window, or changing either schema's bytes or meaning
+invalidates prior signoff even if no case bytes change.
 
 A signed record accepts only the closed authority `signedBy: "captain"` and a canonical millisecond UTC
-`signedAt` instant.
+`signedAt` instant. Its hand-owned YAML is parsed fail-closed before those fields are read: parser errors,
+duplicate or unexpected keys, aliases, non-mapping shapes, missing keys, multiple blocks, and ambiguous
+values are rejected.
 
 **Agents never sign.** No generated file carries a signature: the manifest holds a `signoffRef`
 pointer, not a signature block, and validation recursively rejects `signedBy`, `signedAt`, or
@@ -198,9 +209,10 @@ dropping its envelope. D-081 raises the tooling ceiling from 4000 to 4300 for th
 intake, signoff, and measurement boundaries, with 46 lines of measured headroom rather than deleting
 existing design documentation to conceal the growth. **Ratchet-down point:** after the corpus
 generator's first post-prompt-19 simplification pass, once replay has shown which generator surface
-is actually load-bearing. D-082 raises the ceiling from 4300 to 4900 against 4818 measured lines, with
-82 lines of headroom, for the inventory-bound report, recursive tree intake, direction-aware actions,
-referenced-household topology, generated-signature scan, and versioned real-derived freshness policy.
+is actually load-bearing. D-082 raises the ceiling from 4300 to 4900 for the inventory-bound report,
+recursive tree intake, direction-aware actions, referenced-household topology, generated-signature scan,
+and versioned real-derived freshness policy. D-084 records the completed review boundary at exactly 4900
+measured lines, with no unmeasured headroom and no ceiling increase.
 
 ## What this PR explicitly does NOT claim
 

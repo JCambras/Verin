@@ -71,16 +71,33 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       ["crypto", "crypto"],
       ["Intl", "Intl"],
     ]);
-    const banned = new Set([
+    const cryptoRandomMembers = new Set([
+      "randomUUID",
+      "randomBytes",
+      "randomFill",
+      "randomFillSync",
+      "randomInt",
+      "getRandomValues",
+      "generateKey",
+      "generateKeySync",
+      "generateKeyPair",
+      "generateKeyPairSync",
+    ]);
+    const bannedCalls = new Set([
       "Math.random",
       "Date.now",
       "performance.now",
       "process.hrtime",
       "process.env",
-      "crypto.randomUUID",
-      "randomUUID",
-      "Intl",
+      ...[...cryptoRandomMembers].flatMap((name) => [
+        `crypto.${name}`,
+        `crypto.webcrypto.${name}`,
+        `crypto.subtle.${name}`,
+        `crypto.webcrypto.subtle.${name}`,
+      ]),
     ]);
+    const apiName = (origin: string): string =>
+      origin.startsWith("crypto.") ? origin.split(".").at(-1)! : origin;
     const originOf = (input: Node | undefined): string | undefined => {
       if (input === undefined) return undefined;
       let node = input;
@@ -125,14 +142,16 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         const imported = specifier.getName();
         const local = specifier.getAliasNode()?.getText() ?? imported;
         const origin =
-          moduleName === "crypto" && imported === "randomUUID" ? "crypto.randomUUID" :
+          moduleName === "crypto" &&
+            (cryptoRandomMembers.has(imported) || imported === "webcrypto")
+            ? `crypto.${imported}` :
             moduleName === "process" && (imported === "hrtime" || imported === "env") ?
               `process.${imported}` :
               moduleName === "perf_hooks" && imported === "performance" ? "performance" :
                 undefined;
         if (origin === undefined) continue;
         origins.set(local, origin);
-        if (banned.has(origin)) record(specifier, imported, sf);
+        if (bannedCalls.has(origin)) record(specifier, imported, sf);
       }
     }
     for (const declaration of sf.getVariableDeclarations()) {
@@ -140,7 +159,9 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       const name = declaration.getNameNode();
       if (Node.isIdentifier(name) && initializerOrigin !== undefined) {
         origins.set(name.getText(), initializerOrigin);
-        if (banned.has(initializerOrigin)) record(name, initializerOrigin, sf);
+        if (bannedCalls.has(initializerOrigin)) {
+          record(name, apiName(initializerOrigin), sf);
+        }
       } else if (
         Node.isObjectBindingPattern(name) &&
         initializerOrigin !== undefined
@@ -152,23 +173,36 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
             element.getPropertyNameNode()?.getText() ?? local.getText();
           const origin = `${initializerOrigin}.${property}`;
           origins.set(local.getText(), origin);
-          if (banned.has(origin)) record(element, origin, sf);
+          if (bannedCalls.has(origin)) {
+            record(element, apiName(origin), sf);
+          }
         }
       }
     }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.NewExpression)) {
-      if (call.getExpression().getText() === "Date" && call.getArguments().length === 0) {
+      if (originOf(call.getExpression()) === "Date" && call.getArguments().length === 0) {
         record(call, "new Date() (argless)", sf);
       }
     }
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const origin = originOf(call.getExpression());
+      if (origin === "Date") {
+        record(call, "Date() (callable)", sf);
+      } else if (origin !== undefined && bannedCalls.has(origin)) {
+        record(call, apiName(origin), sf);
+      } else if (origin?.startsWith("process.hrtime.") === true) {
+        record(call, "process.hrtime", sf);
+      }
+    }
     for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
-      const text = access.getText();
       const name = access.getName();
-      if (/^(Math\.random|Date\.now|performance\.now|process\.hrtime)$/.test(text)) record(access, text, sf);
-      if (text === "process.env" || access.getExpression().getText() === "process.env") {
+      const origin = originOf(access);
+      if (origin !== undefined && bannedCalls.has(origin)) {
+        record(access, apiName(origin), sf);
+      }
+      if (origin === "process.env" || origin?.startsWith("process.env.") === true) {
         record(access, "process.env", sf);
       }
-      if (name === "randomUUID") record(access, "randomUUID", sf);
       if (/^toLocale(String|DateString|TimeString)$/.test(name) || name === "localeCompare") {
         record(access, name, sf);
       }
@@ -412,6 +446,22 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     );
     expect(new Set(uses.map((use) => use.api))).toEqual(
       new Set(["Math.random", "Date.now", "process.hrtime", "randomUUID"]),
+    );
+  });
+
+  it("flags callable Date and every supported crypto randomness form", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject({
+        "/src/contracts/direct.ts":
+          "void Date();\nvoid crypto.randomBytes(8);\nvoid crypto.randomFill(new Uint8Array(8), () => undefined);\nvoid crypto.randomInt(10);\nvoid crypto.getRandomValues(new Uint8Array(8));\nvoid crypto.subtle.generateKey({ name: \"AES-GCM\", length: 256 }, true, [\"encrypt\"]);\n",
+        "/src/contracts/aliases.ts":
+          "const clock = Date;\nconst { randomBytes: bytes, randomInt: integer } = crypto;\nvoid clock();\nvoid bytes(8);\nvoid integer(10);\n",
+        "/src/contracts/imported.ts":
+          'import { randomFillSync as fill } from "node:crypto";\nvoid fill(new Uint8Array(8));\n',
+      }),
+    );
+    expect(new Set(uses.map((use) => use.api))).toEqual(
+      new Set(["Date() (callable)", "randomBytes", "randomFill", "randomInt", "getRandomValues", "generateKey", "randomFillSync"]),
     );
   });
 

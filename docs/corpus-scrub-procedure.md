@@ -101,7 +101,9 @@ and unrecognized key text are never printed to CLI or CI output.
 The filesystem boundary is recursive and exact. While deferral is active, hidden, nested, non-JSON, and
 unsupported entries all count as delivery and are rejected. After un-deferral, a case must be a top-level
 `RD-<16 hex>.json` file whose filename matches its case id; case ids are unique across the collection and
-every case names the active corpus version before any case enters manifest inventory.
+every case names the active corpus version before any case enters manifest inventory. A delivery path is
+printed only after it passes that canonical filename check. Invalid names are represented by a bounded
+delivery ordinal, never their raw filesystem text.
 
 Adversarially proven in `corpus-provenance-split.test.ts`: a valid case is accepted; duplicate JSON keys,
 a free-text subject, a free-text field or key, a missing attestation, a self-reviewed scrub, an inflated
@@ -151,8 +153,13 @@ digest are included in the captain-signed corpus preimage.
 Clean controls carry a `controlRationaleId` from a closed list, not prose - the same rule that keeps free
 text out of defect cases.
 
-**Deliver labeled clean controls alongside defect cases.** Without them no false-positive rate is
-computable, and a coverage figure without one is reported `interpretable: false`.
+Each supported defect class has one closed signature derived from this payload. The declared label must
+match a present signature, and a clean control must satisfy the absence signature for every supported
+class. The signature registry must exactly equal the signed taxonomy.
+
+**Deliver labeled clean controls alongside defect cases.** After the deferral is lifted, the collection
+must contain at least one valid defect and at least one valid clean control. A one-sided collection is
+incomplete, cannot enter inventory, cannot be signed, and cannot be measured.
 
 ---
 
@@ -166,8 +173,9 @@ computable, and a coverage figure without one is reported `interpretable: false`
    fence asserts it. Files delivered while the deferral is active fail validation.
 4. `pnpm corpus:validate` must pass. It runs the whole contract over the delivered files.
 5. The generated manifest inventories every real-derived case and binds its bytes into `corpusDigest`.
-   The captain re-signs the corpus version: the digest changes, which invalidates the prior signature by
-   design (see [`docs/corpus.md`](./corpus.md) §9).
+   It also binds the exact bytes and semantic projections of both versioned intake schemas. The captain
+   re-signs the corpus version: the digest changes, which invalidates the prior signature by design
+   (see [`docs/corpus.md`](./corpus.md) §9).
 6. Update `fixtures/corpus/real-derived/README.md`, the `corpus_deferral` record in
    `config/demo/scenarios.yaml`, and ADR-0034's status to record that the deferral has been lifted.
 

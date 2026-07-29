@@ -14,9 +14,14 @@ ADR-0034). Two legal states exist and nothing in between:
 **Regeneration that changes `corpusDigest` invalidates the signature.** `pnpm corpus:validate` fails with
 `signed-but-regenerated` rather than carrying a stale attestation forward. Narrative wording outside the
 signed corpus - this document's prose, `docs/corpus.md`, the ADR - does not invalidate a signature. The
-`verin-corpus/1.3.0` digest covers each inventory entry's partition, case id, bytes, label kind, and label
-id. It also covers the versioned semantic digests of the defect taxonomy and the real-derived per-kind
-freshness policy.
+`verin-corpus/1.4.0` digest covers each inventory entry's partition, case id, bytes, label kind, and label
+id. It also covers the versioned semantic digests of the defect taxonomy, the real-derived per-kind
+freshness policy, and both real-derived JSON Schemas, including each schema's identifier, exact bytes, and
+canonical semantic projection.
+
+This YAML block is parsed fail-closed. Parser errors, duplicate or unexpected keys, aliases, unsupported
+shapes, missing keys, multiple blocks, and ambiguous values invalidate the signoff record before its
+authority or digest is interpreted.
 
 **What signing means here.** The captain signs the corpus version's **labels**: that each defect case's
 `defectClassId` and each clean control's control status are correct product truth. The labels are the

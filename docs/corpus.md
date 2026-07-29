@@ -242,11 +242,12 @@ current `corpusDigest`, `signedBy: "captain"`, and a canonical millisecond-preci
 (`signed-but-regenerated` fails the build). Narrative wording outside the signed bytes never invalidates
 one.
 
-`corpusDigest` uses the versioned `verin-corpus/1.3.0` preimage. It covers each case's partition, id,
+`corpusDigest` uses the versioned `verin-corpus/1.4.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
-defect-taxonomy definitions and the real-derived per-kind freshness policy. Relabeling an inventory entry,
-changing what a defect class means, or changing a freshness window therefore invalidates the prior captain
-signoff even when no case bytes change.
+defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
+JSON Schemas. Each schema binding covers its identifier, exact bytes, and canonical semantic projection.
+Relabeling an inventory entry, changing what a defect class means, changing a freshness window, or changing
+either schema therefore invalidates the prior captain signoff even when no case bytes change.
 
 **Agents never sign.** No generated file contains a signature: the manifest holds a `signoffRef` pointer,
 validation recursively rejects `signedBy`, `signedAt`, and `signedDigest` keys in actual generated

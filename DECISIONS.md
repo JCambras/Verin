@@ -4671,3 +4671,25 @@ lines of headroom without deleting existing design documentation.
 **Why:** a signed measurement cannot depend on a lossy JSON parse, a case-level boolean, caller-supplied
 labels, foreign household data, input ordering, or diagnostics that disclose the value being rejected.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-084 · 2026-07-28 · captain-decision · Replay truth, signoff, and schema semantics fail closed
+
+The real-derived intake derives a closed defect signature for every taxonomy class. A defect label must
+name a present signature, while a clean control must satisfy every class's absence signature. After the
+deferral is lifted, the partition must include at least one valid defect and one valid clean control before
+it can enter inventory, signoff, or measurement. Invalid delivery paths are represented only by bounded
+ordinals in diagnostics.
+
+The `verin-corpus/1.4.0` signed preimage binds both versioned real-derived JSON Schemas by identifier,
+exact-byte digest, and canonical semantic projection beside taxonomy, freshness policy, labels, and case
+bytes. Hand-owned signoff YAML rejects parser errors, duplicate or unexpected keys, aliases, unsupported
+shapes, missing keys, multiple blocks, and ambiguity before interpreting captain authority. Determinism
+enforcement includes callable `Date` and the supported crypto randomness surface through direct,
+destructured, imported, and aliased origins.
+
+The tooling bucket is exactly 4900 measured lines under the existing 4900 ceiling. No ceiling increase or
+unmeasured headroom is introduced; the post-prompt-19 ratchet-down point remains unchanged.
+
+**Why:** signed corpus truth cannot depend on a caller's label, a stale schema version string, permissive
+YAML recovery, a one-sided denominator, a sensitive filename, or a nondeterministic API spelling.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
