@@ -83,6 +83,33 @@ const schemaIndexes = async (db: SqlDb): Promise<unknown[]> => {
   return result.rows;
 };
 
+const managedSchemaSnapshot = async (db: SqlDb): Promise<unknown[]> => {
+  const result = await db.query(`
+    SELECT 'relation' AS kind, c.relname AS name, c.relkind::text AS definition FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = current_schema() AND c.relkind IN ('r','i','v','m','S','p')
+    UNION ALL
+    SELECT 'column', cols.table_name || '.' || cols.column_name,
+      concat_ws('|', cols.data_type, cols.is_nullable, cols.column_default)
+      FROM information_schema.columns cols
+      WHERE cols.table_schema = current_schema()
+    UNION ALL
+    SELECT 'trigger', t.tgname, pg_get_triggerdef(t.oid) FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE NOT t.tgisinternal AND n.nspname = current_schema()
+    UNION ALL
+    SELECT 'routine', p.proname, pg_get_functiondef(p.oid) FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = current_schema()
+    UNION ALL
+    SELECT 'constraint', con.conname, pg_get_constraintdef(con.oid) FROM pg_constraint con
+      JOIN pg_namespace n ON n.oid = con.connamespace
+      WHERE n.nspname = current_schema()
+    ORDER BY 1, 2
+  `);
+  return result.rows;
+};
+
 /** Every planted orphan class, each keyed to the ONE relationship it must trip. */
 const ORPHANS: ReadonlyArray<{
   readonly relationship: string;
@@ -299,6 +326,48 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
   });
 });
 
+describe("migration ledger prefix validation", () => {
+  it.each([
+    ["gap", (db: SqlDb) => db.query("DELETE FROM schema_migrations WHERE version = 2")],
+    ["extra version", (db: SqlDb) => db.query("INSERT INTO schema_migrations (version, name) VALUES (4, 'unknown')")],
+    ["renamed row", (db: SqlDb) => db.query("UPDATE schema_migrations SET name = 'renamed' WHERE version = 2")],
+    ["reordered names", (db: SqlDb) => db.query(`
+      UPDATE schema_migrations SET name = CASE version
+        WHEN 1 THEN 'sessions-expires-index'
+        WHEN 2 THEN 'baseline'
+        ELSE name
+      END
+    `)],
+  ])("refuses a %s before changing any managed object", async (_label, corrupt) => {
+    const db = await createMemoryDb();
+    await seed(db);
+    await corrupt(db);
+    const schemaBefore = await managedSchemaSnapshot(db);
+    const indexesBefore = await schemaIndexes(db);
+    const ledgerBefore = await db.query(
+      "SELECT version, name, applied_at FROM schema_migrations ORDER BY version",
+    );
+    const rowsBefore = await db.query(
+      "SELECT id, org_id, name FROM households ORDER BY id",
+    );
+
+    const message = await runMigrations(db).then(
+      () => "",
+      (error: { message?: string }) => error.message ?? "",
+    );
+
+    expect(message).toContain("migration ledger is not an exact contiguous prefix");
+    expect(await managedSchemaSnapshot(db)).toEqual(schemaBefore);
+    expect(await schemaIndexes(db)).toEqual(indexesBefore);
+    expect(await db.query(
+      "SELECT version, name, applied_at FROM schema_migrations ORDER BY version",
+    )).toEqual(ledgerBefore);
+    expect(await db.query(
+      "SELECT id, org_id, name FROM households ORDER BY id",
+    )).toEqual(rowsBefore);
+  });
+});
+
 /**
  * AN EMPTY LEDGER IS A CLAIM, NOT A FACT. The bootstrap path trusts an empty
  * schema_migrations enough to apply version 1 and RECORD it before any later
@@ -310,23 +379,7 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
  */
 describe("virgin-store proof (restored dump with a missing ledger)", () => {
   /** Every object in the schema, so "nothing changed" means the whole surface. */
-  const schemaSnapshot = async (db: SqlDb): Promise<unknown[]> => {
-    const result = await db.query(`
-      SELECT 'relation' AS kind, c.relname AS name FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = current_schema() AND c.relkind IN ('r','i','v','m','S','p')
-      UNION ALL
-      SELECT 'trigger', t.tgname FROM pg_trigger t
-        JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE NOT t.tgisinternal AND n.nspname = current_schema()
-      UNION ALL
-      SELECT 'routine', p.proname FROM pg_proc p
-        JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = current_schema()
-      ORDER BY 1, 2
-    `);
-    return result.rows;
-  };
+  const schemaSnapshot = managedSchemaSnapshot;
 
   it("refuses a store whose managed tables exist while the ledger is empty, changing nothing", async () => {
     const db = await createMemoryDb();
@@ -531,7 +584,10 @@ describe("migration failure diagnostics", () => {
       if (stage === "preflight" && queryCount > 1) throw driverError;
       return {
         rows: stage === "preflight"
-          ? [{ version: 1 }, { version: 2 }]
+          ? [
+            { version: 1, name: "baseline" },
+            { version: 2, name: "sessions-expires-index" },
+          ]
           : [],
       } as never;
     };

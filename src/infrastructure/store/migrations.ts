@@ -458,15 +458,25 @@ export async function runMigrations(db: SqlDb): Promise<void> {
       stage = "ledger-bootstrap";
       await tx.exec(SCHEMA_MIGRATIONS_DDL);
       stage = "applied-version-read";
-      const recorded = await tx.query<{ version: number }>(
-        "SELECT version FROM schema_migrations",
+      const recorded = await tx.query<{ version: number; name: string }>(
+        "SELECT version, name FROM schema_migrations ORDER BY version",
       );
-      const applied = new Set(recorded.rows.map((row) => Number(row.version)));
-      if (applied.size === 0 && ledgerExisted) {
+      if (recorded.rows.length === 0 && ledgerExisted) {
         stage = "virginity-check";
         await assertManagedSchemaEmpty(tx);
       }
-      const pending = MIGRATIONS.filter((migration) => !applied.has(migration.version));
+      const mismatch = recorded.rows.findIndex((row, index) =>
+        Number(row.version) !== MIGRATIONS[index]?.version ||
+        String(row.name) !== MIGRATIONS[index]?.name
+      );
+      if (mismatch >= 0) {
+        throw appError(
+          "INTERNAL",
+          "the migration ledger is not an exact contiguous prefix of the shipped migration plan; no schema change was made",
+          { stage: "applied-version-read", recordedCount: recorded.rows.length },
+        );
+      }
+      const pending = MIGRATIONS.slice(recorded.rows.length);
       for (const migration of pending) {
         activeMigration = migration;
         stage = "preflight";

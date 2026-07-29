@@ -1135,6 +1135,11 @@ describe("llm-pii-boundary fence (v3 invariant 1)", () => {
     it.each([
       `const copy = { ...nodeModule };
           const req = copy.createRequire(import.meta.url);`,
+      `let copy = nodeModule;
+          if (Date.now() > 0) copy = { createRequire: undefined };
+          const req = copy.createRequire(import.meta.url);`,
+      `const copy = Object.fromEntries(Object.entries(nodeModule));
+          const req = copy.createRequire(import.meta.url);`,
       `const req = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);`,
     ])("rejects createRequire reached through copied or applied module provenance", (loader) => {
       const project = inMemoryProject({

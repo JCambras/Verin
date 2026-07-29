@@ -2526,3 +2526,70 @@ can leak or throw).
 
 **Revert path:** revert this changeset to restore wrapped SQL, carrier-copy,
 namespace-copy, opaque-factory, formatted-account, and accessor-backed error gaps.
+
+## D-088 - Migration, authority, and failure provenance remains structural
+
+**Date:** 2026-07-29 · **Reversible** · Relates to: D-083, D-085, D-087,
+ADR-0036, v3 §15.1/§15.2/§15.3/§15.4, charter #1/#4/#7/#13/#14
+
+All seven review findings were legitimate symptoms of shared history-validation,
+semantic-provenance, and failure-boundary gaps.
+
+Migration startup now proves the applied version and name rows are an exact
+contiguous prefix of `MIGRATIONS` before any pending preflight, DDL, or ledger
+write. Gapped, extra, renamed, and reordered restored ledgers fail without
+changing managed relations, indexes, triggers, routines, constraints, rows, or
+ledger contents.
+
+Governed sink discovery retains one requirement for every distinct
+`ActionGrant` and governed-output action. Route matching and deduplication preserve
+the action, so `startAccountOpening` requires both `execution.initiate` and
+`pii.view`, and each authorized value must reach its own grant position.
+
+The shared module walker uses every potentially reaching source for aliases across
+conditional and logical control flow. Namespace provenance survives spread,
+`Object.assign`, and `Object.fromEntries(Object.entries(...))` copies. The layer,
+LLM PII, sealed-factory, and secret-containment fences therefore refuse each
+indirect `node:module.createRequire` path.
+
+SQL executor normalization follows direct, destructured, and later-assigned
+aliases for both executors and ambient `Reflect.apply`. App-layer SQL refusal,
+repository discovery, tenant enforcement, and governed-action classification all
+consume the normalized call.
+
+Repeated-authority analysis preserves every potentially reaching carrier source
+through conditional, logical, copy, destructuring, and later-assignment aliases.
+A stateful wrapped authority cannot be read again under a binding that inherited
+the original prologue's trust.
+
+Unknown-error metadata is captured once behind guarded reads. Audited writes,
+safe reasons, and duplicate-submit handling share one frozen classification, so
+proxy traps and throwing or stateful accessors cannot escape or replace the typed
+failure. Raw captured fields never leave that boundary; callers receive only a
+normalized AppError, validated SQLSTATE, boolean PII-violation classification,
+and safe reason.
+
+The authoritative line-budget metric after these corrections is:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| contracts | 4,017 | 4,050 | 33 |
+| domain | 1,250 | 1,250 | 0 |
+| infrastructure | 3,437 | 3,450 | 13 |
+| presentation | 918 | 6,000 | 5,082 |
+
+ADR-0036 raises only infrastructure from 3,400 to 3,450. The new exact-prefix
+validation and shared read-once failure boundary account for the measured growth.
+No useful code or documentation was removed or compressed to manufacture room.
+
+**Alternatives rejected:** trust ledger versions without names or ordering
+(restored history can silently skip tenant constraints); collapse a multi-action
+sink to one action (the second authority disappears from route enforcement);
+choose only the latest textual alias assignment (conditional reaching sources are
+lost); enumerate reported loader and SQL spellings (equivalent aliases remain
+open); and classify hostile errors separately at each catch site (implementations
+drift and attacker-controlled accessors are reread).
+
+**Revert path:** revert this changeset to restore non-prefix migration acceptance,
+single-action sink derivation, ambiguous alias provenance, and repeated hostile
+error metadata reads.

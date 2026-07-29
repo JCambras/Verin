@@ -1,4 +1,4 @@
-import { isErrorCode } from "@contracts/errors";
+import { isErrorCode, normalizeAppError, type AppError } from "@contracts/errors";
 import { SQLSTATE_SOURCE } from "@domain/observability/safe-values";
 
 /**
@@ -15,17 +15,64 @@ import { SQLSTATE_SOURCE } from "@domain/observability/safe-values";
  */
 const SQLSTATE_RE = new RegExp(`^${SQLSTATE_SOURCE}$`);
 
-export function safeReason(error: unknown): string {
-  if (typeof error !== "object" || error === null) return "unexpected-error";
-  let code: unknown;
-  let appErrorShape: boolean;
+export interface ErrorMetadataClassification {
+  readonly appError: AppError | null;
+  readonly sqlState: string | null;
+  readonly piiViolation: boolean;
+  readonly reason: string;
+}
+
+const UNEXPECTED_ERROR_METADATA: ErrorMetadataClassification = Object.freeze({
+  appError: null,
+  sqlState: null,
+  piiViolation: false,
+  reason: "unexpected-error",
+});
+
+function readErrorProperty(
+  error: object,
+  property: "code" | "name" | "message" | "context",
+): { readonly ok: boolean; readonly value: unknown } {
   try {
-    code = Reflect.get(error, "code");
-    appErrorShape = "message" in error;
+    return { ok: true, value: Reflect.get(error, property) };
   } catch {
-    return "unexpected-error";
+    return { ok: false, value: undefined };
   }
-  if (appErrorShape && isErrorCode(code)) return `app-error:${code}`;
-  if (typeof code === "string" && SQLSTATE_RE.test(code)) return `driver-error:${code}`;
-  return "unexpected-error";
+}
+
+export function classifyErrorMetadata(error: unknown): ErrorMetadataClassification {
+  if (typeof error !== "object" || error === null) return UNEXPECTED_ERROR_METADATA;
+  const code = readErrorProperty(error, "code");
+  if (!code.ok) return UNEXPECTED_ERROR_METADATA;
+  const name = readErrorProperty(error, "name");
+  const appCandidate = isErrorCode(code.value)
+    ? {
+      message: readErrorProperty(error, "message"),
+      context: readErrorProperty(error, "context"),
+    }
+    : null;
+  const appError = appCandidate?.message.ok && appCandidate.context.ok
+    ? normalizeAppError({
+      code: code.value,
+      message: appCandidate.message.value,
+      context: appCandidate.context.value,
+    })
+    : null;
+  const sqlState = typeof code.value === "string" && SQLSTATE_RE.test(code.value)
+    ? code.value
+    : null;
+  return Object.freeze({
+    appError,
+    sqlState,
+    piiViolation: name.ok && name.value === "PIIViolation",
+    reason: appError
+      ? `app-error:${appError.code}`
+      : sqlState
+      ? `driver-error:${sqlState}`
+      : "unexpected-error",
+  });
+}
+
+export function safeReason(error: unknown): string {
+  return classifyErrorMetadata(error).reason;
 }

@@ -15,7 +15,7 @@ import {
   readObservabilityId,
   safeLogMessage,
 } from "@domain/observability/safe-values";
-export { safeReason } from "./safe-reason";
+export { classifyErrorMetadata, safeReason } from "./safe-reason";
 
 const cfg = getConfig();
 

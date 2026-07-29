@@ -4642,3 +4642,105 @@ pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
 APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
 pnpm test:e2e                                                # 17 tests passed
 ```
+
+**Date:** 2026-07-29 (twenty-sixth review-fix round on v3 build-sequence prompt 6).
+
+### PF-145 migration ledgers are exact shipped prefixes
+
+Migration startup treated recorded versions as an unordered set and ignored
+recorded names. A restored ledger with a gap, extra version, swapped name, or
+renamed row could skip a shipped migration while startup succeeded.
+
+**Adversarial proof:** test-first restored PGlite stores corrupted the ledger in
+all four ways and retained sentinel managed rows. Each case previously reached
+startup without an exact-history refusal. Startup now compares every ordered
+version and name to the same position in `MIGRATIONS` before pending work. The
+regression snapshots relations, indexes, triggers, routines, constraints, rows,
+and ledger contents and proves each refusal changes none of them.
+
+### PF-146 multi-action sinks retain every authorization
+
+Governed sink derivation selected only the first `ActionGrant` action and allowed
+a governed output to replace it. `startAccountOpening` therefore surfaced only
+`execution.initiate`, dropping `pii.view` from route enforcement.
+
+**Adversarial proof:** a test-first two-grant sink and route omitted each
+authorization in turn. The omitted second action initially produced no route
+violation. Derivation now emits and deduplicates by action, and each permutation
+produces exactly one missing-action violation. A route passes only when both
+authorized values reach their respective grant parameters.
+
+### PF-147 node module aliases retain every reaching source
+
+Namespace provenance followed the latest textual assignment. A conditionally
+replaced alias could therefore look safe even on paths retaining `node:module`,
+and `Object.fromEntries(Object.entries(namespace))` copies were invisible.
+
+**Adversarial proof:** test-first conditional-replacement and `fromEntries`
+loaders initially disappeared from the module-reference result. Both now emit a
+`create-require` reference in the dependency, LLM PII, sealed-factory, and
+secret-containment companions.
+
+### PF-148 SQL aliases retain executor and builtin provenance
+
+SQL normalization recognized direct wrappers but not destructured
+`Reflect.apply` or executor aliases introduced by later assignments and
+destructuring assignments.
+
+**Adversarial proof:** test-first SELECT and UPDATE fixtures called later-bound
+executor aliases through a destructured ambient `apply`. App-layer SQL refusal
+and repository discovery initially produced no findings for those calls. The
+shared normalizer now finds them, preserves the effective SQL argument, and feeds
+tenant and governed mutation classification.
+
+### PF-149 authority aliases retain every carrier provenance
+
+Repeated-authority detection converted non-identifier sources to written text and
+selected one assignment. Conditional, logical, and later-assigned aliases could
+therefore invoke a stateful carrier getter again without matching the captured
+authority path.
+
+**Adversarial proof:** test-first aliases using conditional, logical, and later
+assignment forms initially produced no repeat-evaluation finding after a valid
+capture. The shared source resolver now retains every reaching carrier source,
+and each planted getter read fails while the stable captured binding remains
+accepted.
+
+### PF-150 unknown driver metadata is captured once
+
+Audited writes and account-opening duplicate handling read untrusted driver
+properties independently. Proxy traps and stateful or throwing accessors could
+escape a catch, change classification, or replace the original failure.
+
+**Adversarial proof:** test-first stateful and throwing `code` accessors exercised
+both end-user paths. Each accessor is now read exactly once behind a guarded
+classification whose raw fields never leave the boundary. Audited writes return
+`STORE_CONSTRAINT` or `INTERNAL` as appropriate, and account opening returns a
+typed INTERNAL failure without throwing or performing replay work.
+
+### PF-151 line-budget growth is measured and bounded
+
+The first complete correction measured 3,413 lines against the 3,400 ceiling.
+A genuine simplification of ledger-row comparison removed duplication, while the
+final boundary audit replaced exported raw error fields with a safe closed
+classification. The final 3,437-line measurement still required an amendment.
+
+**Adversarial proof:** the unchanged ceiling failed both the authoritative real
+check and its companion. ADR-0036 raises only infrastructure to the smallest
+rounded envelope, 3,450. Final measurements are contracts 4,017/4,050, domain
+1,250/1,250, infrastructure 3,437/3,450, and presentation 918/6,000.
+
+### PF-145 - PF-151 verification
+
+```
+pnpm exec vitest run --maxWorkers=1 --fileParallelism=false  # 56 files, 1,107 tests passed
+pnpm typecheck                                               # clean
+pnpm lint                                                    # clean
+pnpm knip                                                    # clean
+pnpm v3:invariants                                           # 6 active-pass, 0 active-fail
+pnpm golden:validate                                         # all 16 signed cases passed
+pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # contracts 4,017/4,050; domain 1,250/1,250; infrastructure 3,437/3,450
+APP_ENV=development <test-only placeholder env> pnpm build   # compiled and generated all routes
+pnpm test:e2e                                                # 17 tests passed
+```

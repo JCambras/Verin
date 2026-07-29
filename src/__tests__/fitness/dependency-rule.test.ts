@@ -217,6 +217,8 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nconst args = Math.random() ? [nodeModule, "createRequire"] : [];\nconst load = Reflect.get.apply(Reflect, args)(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst copy = { ...nodeModule };\nconst load = copy.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst copy = Object.assign({}, nodeModule);\nconst load = copy.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nlet copy: unknown = nodeModule;\nif (Math.random()) copy = {};\nconst load = (copy as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst copy = Object.fromEntries(Object.entries(nodeModule));\nconst load = copy.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst load = Reflect.apply(Reflect.get, undefined, [nodeModule, "createRequire"])(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst { getOwnPropertyDescriptor: read } = Object;\nconst load = read(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,

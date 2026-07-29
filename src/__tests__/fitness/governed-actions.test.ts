@@ -157,16 +157,16 @@ function resolveCallTargets(expression: Node, seen = new Set<string>()): Node[] 
   return out;
 }
 
-function governedSinkForCall(
+function governedSinksForCall(
   call: CallExpression,
   sinks: readonly GovernedSink[],
-): GovernedSink | null {
+): GovernedSink[] {
   const targets = resolveCallTargets(call.getExpression());
-  return sinks.find((sink) =>
+  return sinks.filter((sink) =>
     targets.some((declaration) =>
       sink.anchors.some((anchor) => nodeKey(declaration) === nodeKey(anchor))
     )
-  ) ?? null;
+  );
 }
 
 /**
@@ -236,7 +236,8 @@ function actionGrantParameter(
     actionType.getLiteralValue() === action);
 }
 
-function governedOutputAction(type: Type): string | null {
+function governedOutputActions(type: Type): string[] {
+  const actions = new Set<string>();
   const queue = [type];
   const seen = new Set<string>();
   while (queue.length) {
@@ -248,7 +249,7 @@ function governedOutputAction(type: Type): string | null {
       const action = current.getTypeArguments()[0];
       if (action?.isStringLiteral()) {
         const value = action.getLiteralValue();
-        return typeof value === "string" ? value : null;
+        if (typeof value === "string") actions.add(value);
       }
     }
     queue.push(
@@ -268,7 +269,7 @@ function governedOutputAction(type: Type): string | null {
       if (declaration) queue.push(property.getTypeAtLocation(declaration));
     }
   }
-  return null;
+  return [...actions];
 }
 
 /** The parameter POSITION of the sink's `ActionGrant<action>`, or null if it has none. */
@@ -280,24 +281,32 @@ function actionGrantParameterIndex(
   for (const [index, parameter] of parameters.entries()) {
     const declaration = parameter.getValueDeclaration() ??
       parameter.getDeclarations()[0];
-    if (
-      declaration &&
-      actionGrantParameter(parameter.getTypeAtLocation(declaration), action)
-    ) {
+    if (!declaration) continue;
+    if (actionGrantParameter(parameter.getTypeAtLocation(declaration), action)) {
       return index;
     }
+    const name = Node.isParameterDeclaration(declaration)
+      ? declaration.getNameNode().getText()
+      : parameter.getName();
+    const nested = sealedAuthorityParameters(signature).some((authority) =>
+      authority.kind === "grant" &&
+      grantAction(authority) === action &&
+      (authority.argument === name ||
+        authority.argument.startsWith(`${name}.`) ||
+        authority.argument.startsWith(`${name}[`))
+    );
+    if (nested) return index;
   }
   return null;
 }
 
-function actionGrantAction(signature: Signature): string | null {
-  const actions = sealedAuthorityParameters(signature)
+function actionGrantActions(signature: Signature): string[] {
+  return [...new Set(sealedAuthorityParameters(signature)
     .filter((authority) => authority.kind === "grant")
     .map(grantAction)
     .filter((action): action is string =>
       action !== null && V3_15_3_ACTIONS.includes(action as never)
-    );
-  return actions[0] ?? null;
+    ))];
 }
 
 function hasTenantBoundaryParameter(signature: Signature): boolean {
@@ -629,7 +638,7 @@ function unresolvedReturnedCallableViolations(project: Project): string[] {
       }
     }
   }
-  return [...new Set(out)];
+  return out;
 }
 
 /**
@@ -650,8 +659,8 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
     const file = normalizedPath(sf.getFilePath());
     if (!file.startsWith("src/infrastructure/")) continue;
     for (const callable of exportedCallables(sf)) {
-      const grantAction = actionGrantAction(callable.signature);
-      const outputAction = governedOutputAction(callable.signature.getReturnType());
+      const grantActions = actionGrantActions(callable.signature);
+      const outputActions = governedOutputActions(callable.signature.getReturnType());
       const returnsCallableMembers =
         returnedCallableMembers(callable.declaration, callable.name).length > 0;
       const returnsPii = structuralPiiExposures(
@@ -659,19 +668,23 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
         {
           path: `${callable.name}.return`,
           includeMarked: !returnsCallableMembers,
-          opaqueIsExposure: !grantAction && !outputAction,
+          opaqueIsExposure: grantActions.length === 0 && outputActions.length === 0,
           inspectCallSignatures: !returnsCallableMembers,
           isEscaped: isGovernedNonPiiField,
         },
       ).length > 0;
-      const inferredAction = outputAction ??
-        (returnsPii &&
+      const inferredAction = returnsPii &&
           hasTenantBoundaryParameter(callable.signature) &&
           !mutatesPersistence(callable.declaration)
           ? "pii.view"
-          : null);
-      const action = inferredAction ?? grantAction;
-      if (action) sinks.push({ file, action, ...callable });
+          : null;
+      for (const action of new Set([
+        ...grantActions,
+        ...outputActions,
+        ...(inferredAction ? [inferredAction] : []),
+      ])) {
+        sinks.push({ file, action, ...callable });
+      }
     }
   }
   GOVERNED_SINKS.set(project, sinks);
@@ -757,8 +770,8 @@ export function unboundedPiiReads(project: Project): string[] {
       const returnsCallableMembers =
         returnedCallableMembers(callable.declaration, callable.name).length > 0;
       if (
-        actionGrantAction(callable.signature) ||
-        governedOutputAction(callable.signature.getReturnType()) ||
+        actionGrantActions(callable.signature).length > 0 ||
+        governedOutputActions(callable.signature.getReturnType()).length > 0 ||
         hasTenantBoundaryParameter(callable.signature) ||
         mutatesPersistence(callable.declaration) ||
         structuralPiiExposures(
@@ -800,21 +813,27 @@ export function detectUnreviewedPreAuthPiiReads(
 
 export function detectUnguardedGovernedSinks(project: Project): string[] {
   const out = unresolvedReturnedCallableViolations(project);
+  const groups = new Map<string, GovernedSink[]>();
   for (const sink of deriveGovernedSinks(project)) {
-    const grant = sealedAuthorityParameters(sink.signature).find((authority) =>
-      authority.kind === "grant" && grantAction(authority) === sink.action
-    );
-    if (!grant) {
-      out.push(
-        `${sink.file} :: ${sink.name}: boundary must require ActionGrant<"${sink.action}">`,
+    const key = `${sink.file}:${nodeKey(sink.declaration)}`;
+    groups.set(key, [...(groups.get(key) ?? []), sink]);
+  }
+  for (const sinks of groups.values()) {
+    const [sink] = sinks;
+    if (!sink) continue;
+    let missingGrant = false;
+    for (const action of new Set(sinks.map((candidate) => candidate.action))) {
+      const grant = sealedAuthorityParameters(sink.signature).find((authority) =>
+        authority.kind === "grant" && grantAction(authority) === action
       );
-      continue;
+      if (!grant) {
+        missingGrant = true;
+        out.push(
+          `${sink.file} :: ${sink.name}: boundary must require ActionGrant<"${action}">`,
+        );
+      }
     }
-    // ONE derivation, shared with the tenant-scope fence: an assertion per sealed
-    // authority the signature carries - a tenant WRAPPED in an object parameter
-    // included, and in whatever order they are declared - plus every tenant-to-grant
-    // and grant-to-grant scope proof. Deriving it separately here is what let the two
-    // fences demand incompatible prologues for the same signature.
+    if (missingGrant) continue;
     const { required, captures, unfenceable } = requiredAuthorityPrologue(sink.signature);
     out.push(
       ...[
@@ -1094,31 +1113,30 @@ export function discoverGovernedRoutes(
     const unsupported = unsupportedSurfaceKind(sf, file);
     violations.push(...detectEscapedGovernedSinks(sf, file, sinks));
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-      const sink = governedSinkForCall(call, sinks);
-      if (!sink) continue;
-      if (unsupported) {
-        violations.push(
-          `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' on an unsupported surface (${unsupported}) — ${UNSUPPORTED_SURFACE_RULE}`,
-        );
-        continue;
-      }
-      const handlers = enclosingHandlerNames(call);
-      if (handlers.length === 0) {
-        violations.push(
-          `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' must be called inside an exported app-surface handler`,
-        );
-        continue;
-      }
-      // One entry PER reaching handler: each verb owes its own prologue.
-      for (const handler of handlers) {
-        entries.push({
-          file,
-          handler,
-          action: sink.action,
-          sink: sink.name,
-          sinkFile: sink.file,
-          grantIndex: actionGrantParameterIndex(sink.signature, sink.action),
-        });
+      for (const sink of governedSinksForCall(call, sinks)) {
+        if (unsupported) {
+          violations.push(
+            `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' on an unsupported surface (${unsupported}) - ${UNSUPPORTED_SURFACE_RULE}`,
+          );
+          continue;
+        }
+        const handlers = enclosingHandlerNames(call);
+        if (handlers.length === 0) {
+          violations.push(
+            `${file}:${call.getStartLineNumber()}: governed sink '${sink.name}' must be called inside an exported app-surface handler`,
+          );
+          continue;
+        }
+        for (const handler of handlers) {
+          entries.push({
+            file,
+            handler,
+            action: sink.action,
+            sink: sink.name,
+            sinkFile: sink.file,
+            grantIndex: actionGrantParameterIndex(sink.signature, sink.action),
+          });
+        }
       }
     }
   }
@@ -1127,6 +1145,7 @@ export function discoverGovernedRoutes(
       entries.findIndex((candidate) =>
         candidate.file === entry.file &&
         candidate.handler === entry.handler &&
+        candidate.action === entry.action &&
         candidate.sink === entry.sink &&
         candidate.sinkFile === entry.sinkFile
       ) === index
@@ -1561,6 +1580,12 @@ describe("governed-actions fence (v3 §15.3)", () => {
     for (const name of ["listHouseholds", "listOrgUserEmails"]) {
       expect(sinks.some((sink) => sink.name === name), name).toBe(true);
     }
+    expect(
+      sinks
+        .filter((sink) => sink.name === "startAccountOpening")
+        .map((sink) => sink.action)
+        .sort(),
+    ).toEqual(["execution.initiate", "pii.view"]);
   });
 
   it("enforces: every surfaced governed action is wired through requireActionGrant in its route", () => {
@@ -1576,6 +1601,12 @@ describe("governed-actions fence (v3 §15.3)", () => {
         V3_15_3_ACTIONS.includes(entry.action as never)
       ),
     ).toBe(true);
+    expect(
+      discovered.entries
+        .filter((entry) => entry.sink === "startAccountOpening")
+        .map((entry) => entry.action)
+        .sort(),
+    ).toEqual(["execution.initiate", "pii.view"]);
     const unwired = detectUnwiredGovernedRoutes(project, discovered.entries);
     expect(unwired, `unwired governed routes:\n${unwired.join("\n")}`).toEqual([]);
   });
@@ -2374,6 +2405,28 @@ ${body}
       });
       expect(detectUnguardedGovernedSinks(project)).toEqual([]);
     });
+
+    it("keeps mutation classification through destructured builtins and later executor aliases", () => {
+      const project = inMemoryProject({
+        "/src/contracts/pii.ts": `export interface PIIBearing { readonly pii?: "bearing" }`,
+        "/src/contracts/tenant.ts": `export interface TenantContext { orgId: string }`,
+        "/src/infrastructure/crm/contacts.ts": `
+          import type { PIIBearing } from "../../contracts/pii";
+          import type { TenantContext } from "../../contracts/tenant";
+          interface Contact extends PIIBearing { fullName: string }
+          declare const db: { query(sql: string, params?: unknown[]): Promise<void> };
+          export async function renameContact(tenant: TenantContext): Promise<Contact> {
+            const { apply } = Reflect;
+            let run: typeof db.query;
+            run = db.query;
+            await apply(run, db, ["UPDATE contacts SET full_name = $1"]);
+            return { fullName: tenant.orgId };
+          }
+        `,
+      });
+      expect(detectUnguardedGovernedSinks(project)).toEqual([]);
+    });
+
     it.each([
       `db.query.call(db, "UPDATE contacts SET full_name = $1")`,
       `db.query.apply(db, ["UPDATE contacts SET full_name = $1"])`,
@@ -2599,13 +2652,20 @@ ${body}
             await db.query.apply(db, ["SELECT email FROM users"]);
             await db.query.bind(db)("SELECT email FROM users");
             await Reflect.apply(db.query, db, ["SELECT email FROM users"]);
+            const { apply } = Reflect;
+            let run: typeof db.query;
+            run = db.query;
+            await apply(run, db, ["SELECT email FROM users"]);
+            let later: typeof db.query;
+            ({ query: later } = db);
+            await later("SELECT email FROM users");
             return null;
           }
         `,
       });
       const hits = detectAppLayerSqlAccess(project);
-      expect(hits, hits.join("\n")).toHaveLength(4);
-      for (const line of [5, 6, 7, 8]) {
+      expect(hits, hits.join("\n")).toHaveLength(6);
+      for (const line of [5, 6, 7, 8, 12, 15]) {
         expect(hits.some((hit) => hit.includes(`route.ts:${line}`)), `line ${line}`).toBe(true);
       }
     });
@@ -3299,6 +3359,103 @@ ${body}
             assertSameTenant(executionGrant.tenant, piiGrant.tenant);
             return [];
       `))).toHaveLength(1);
+    });
+
+    const multiActionRoute = (
+      executionAuthorization: string,
+      piiAuthorization: string,
+    ): Project =>
+      inMemoryProject({
+        "/src/app/_server/context.ts": `
+          export async function requireActionGrant(req: Request, action: string): Promise<any> {
+            return { ok: true };
+          }
+          export function errorResponse(error: unknown): Response {
+            return new Response();
+          }
+        `,
+        "/src/contracts/tenant.ts": `
+          export interface TenantContext { orgId: string }
+          export function assertSameTenant(a: unknown, b: unknown): void { void a; void b; }
+        `,
+        "/src/contracts/authz.ts": `
+          import type { TenantContext } from "./tenant";
+          export interface ActionGrant<A extends string> { action: A; tenant: TenantContext }
+          export function assertActionGrant<A extends string>(
+            value: unknown,
+            action: A,
+          ): asserts value is ActionGrant<A> {
+            void value;
+            void action;
+          }
+        `,
+        "/src/infrastructure/wire.ts": `
+          import { assertActionGrant, type ActionGrant } from "../contracts/authz";
+          import { assertSameTenant } from "../contracts/tenant";
+          export function startAccountOpening(
+            db: unknown,
+            executionGrant: ActionGrant<"execution.initiate">,
+            piiGrant: ActionGrant<"pii.view">,
+          ): unknown {
+            assertActionGrant(executionGrant, "execution.initiate");
+            assertActionGrant(piiGrant, "pii.view");
+            assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+            return { db, executionGrant, piiGrant };
+          }
+        `,
+        "/src/app/api/accounts/route.ts": `
+          import { requireActionGrant, errorResponse } from "@app/_server/context";
+          import { startAccountOpening } from "@infra/wire";
+          export async function POST(req: Request) {
+            ${executionAuthorization}
+            ${piiAuthorization}
+            return startAccountOpening({}, execution.value, pii.value);
+          }
+        `,
+      });
+
+    it.each([
+      {
+        missing: "pii.view",
+        execution: `const execution = await requireActionGrant(req, "execution.initiate");
+            if (!execution.ok) return errorResponse(execution.error);`,
+        pii: "",
+      },
+      {
+        missing: "execution.initiate",
+        execution: "",
+        pii: `const pii = await requireActionGrant(req, "pii.view");
+            if (!pii.ok) return errorResponse(pii.error);`,
+      },
+    ])("retains every action when a multi-action route omits $missing", ({
+      missing,
+      execution,
+      pii,
+    }) => {
+      const project = multiActionRoute(execution, pii);
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.entries.map((entry) => entry.action).sort()).toEqual([
+        "execution.initiate",
+        "pii.view",
+      ]);
+      const violations = detectUnwiredGovernedRoutes(project, discovered.entries);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain(`"${missing}"`);
+    });
+
+    it("passes a multi-action route only when both grants reach their positions", () => {
+      const project = multiActionRoute(
+        `const execution = await requireActionGrant(req, "execution.initiate");
+            if (!execution.ok) return errorResponse(execution.error);`,
+        `const pii = await requireActionGrant(req, "pii.view");
+            if (!pii.ok) return errorResponse(pii.error);`,
+      );
+      const discovered = discoverGovernedRoutes(project);
+      expect(discovered.entries.map((entry) => entry.action).sort()).toEqual([
+        "execution.initiate",
+        "pii.view",
+      ]);
+      expect(detectUnwiredGovernedRoutes(project, discovered.entries)).toEqual([]);
     });
 
     it("requires all three grant pairs before work", () => {

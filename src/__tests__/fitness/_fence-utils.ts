@@ -361,6 +361,58 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       ? expression
       : expressionProvenance(source, seen);
   };
+  const expressionSources = (
+    node: Node | undefined,
+    seen: ReadonlySet<object> = new Set(),
+  ): Node[] => {
+    const expression = unwrapExpression(node);
+    if (!expression) return [];
+    if (Node.isConditionalExpression(expression)) {
+      return [
+        ...expressionSources(expression.getWhenTrue(), seen),
+        ...expressionSources(expression.getWhenFalse(), seen),
+      ];
+    }
+    if (Node.isBinaryExpression(expression)) {
+      const operator = expression.getOperatorToken().getKind();
+      if (operator === SyntaxKind.CommaToken) {
+        return expressionSources(expression.getRight(), seen);
+      }
+      if (
+        operator === SyntaxKind.BarBarToken ||
+        operator === SyntaxKind.AmpersandAmpersandToken ||
+        operator === SyntaxKind.QuestionQuestionToken
+      ) {
+        return [
+          ...expressionSources(expression.getLeft(), seen),
+          ...expressionSources(expression.getRight(), seen),
+        ];
+      }
+    }
+    if (!Node.isIdentifier(expression)) return [expression];
+    const symbol = expression.getSymbol();
+    const key = (symbol ?? expression) as unknown as object;
+    if (seen.has(key)) return [expression];
+    const nested = new Set(seen).add(key);
+    const sources = [
+      ...(symbol?.getDeclarations() ?? []).flatMap((declaration) =>
+        Node.isVariableDeclaration(declaration) && declaration.getInitializer()
+          ? [declaration.getInitializerOrThrow()]
+          : []
+      ),
+      ...sf.getDescendantsOfKind(SyntaxKind.BinaryExpression)
+        .filter((candidate) =>
+          candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+          candidate.getStart() < expression.getStart() &&
+          Node.isIdentifier(unwrapExpression(candidate.getLeft())) &&
+          unwrapExpression(candidate.getLeft())?.getSymbol() === symbol
+        )
+        .map((candidate) => candidate.getRight()),
+    ];
+    return sources.length > 0
+      ? sources.flatMap((source) => expressionSources(source, nested))
+      : [expression];
+  };
   const literalPropertyKey = (node: Node | undefined): string | null => {
     const expression = expressionProvenance(node);
     return Node.isStringLiteral(expression) ||
@@ -432,29 +484,36 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     node: Node | undefined,
     seen: ReadonlySet<Node> = new Set(),
   ): boolean => {
-    const expression = expressionProvenance(node);
-    if (!expression || seen.has(expression)) return false;
-    if (
-      (Node.isIdentifier(expression) &&
-        createRequireNamespaces.has(expression.getText())) ||
-      isNodeModuleSpecifier(loaderSpecifier(expression))
-    ) return true;
-    const visited = new Set(seen).add(expression);
-    if (Node.isObjectLiteralExpression(expression)) {
-      return expression.getProperties().some((property) =>
-        Node.isSpreadAssignment(property) &&
-        isCreateRequireNamespace(property.getExpression(), visited)
-      );
-    }
-    if (
-      Node.isCallExpression(expression) &&
-      isAmbientBuiltinMethod(expression.getExpression(), "Object", "assign")
-    ) {
-      return expression.getArguments().slice(1).some((argument) =>
-        isCreateRequireNamespace(argument, visited)
-      );
-    }
-    return false;
+    return expressionSources(node).some((expression) => {
+      if (seen.has(expression)) return false;
+      const visited = new Set(seen).add(expression);
+      if (
+        (Node.isIdentifier(expression) &&
+          createRequireNamespaces.has(expression.getText())) ||
+        isNodeModuleSpecifier(loaderSpecifier(expression))
+      ) return true;
+      if (Node.isObjectLiteralExpression(expression)) {
+        return expression.getProperties().some((property) =>
+          Node.isSpreadAssignment(property) &&
+          isCreateRequireNamespace(property.getExpression(), visited)
+        );
+      }
+      if (Node.isCallExpression(expression)) {
+        if (isAmbientBuiltinMethod(expression.getExpression(), "Object", "assign")) {
+          return expression.getArguments().slice(1).some((argument) =>
+            isCreateRequireNamespace(argument, visited)
+          );
+        }
+        if (isAmbientBuiltinMethod(expression.getExpression(), "Object", "fromEntries")) {
+          return expressionSources(expression.getArguments()[0]).some((entries) =>
+            Node.isCallExpression(entries) &&
+            isAmbientBuiltinMethod(entries.getExpression(), "Object", "entries") &&
+            isCreateRequireNamespace(entries.getArguments()[0], visited)
+          );
+        }
+      }
+      return false;
+    });
   };
   const isAmbientBuiltinReference = (
     node: Node | undefined,
@@ -2294,71 +2353,99 @@ function repeatedAuthorityEvaluations(
     .filter((candidate) =>
       candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken
     );
-  const resolvedText = (
+  const resolvedTexts = (
     node: Node | undefined,
     seen: ReadonlySet<object> = new Set(),
-  ): string | null => {
+  ): string[] => {
     const expression = unwrap(node);
-    if (!expression) return null;
+    if (!expression) return [];
     if (Node.isPropertyAccessExpression(expression)) {
-      const owner = resolvedText(expression.getExpression(), seen);
-      return owner ? memberText(owner, expression.getName()) : null;
+      return resolvedTexts(expression.getExpression(), seen)
+        .map((owner) => memberText(owner, expression.getName()));
     }
     if (Node.isElementAccessExpression(expression)) {
-      const owner = resolvedText(expression.getExpression(), seen);
       const name = propertyText(expression.getArgumentExpression(), "");
-      return owner && name !== null ? memberText(owner, name) : null;
+      return name === null
+        ? []
+        : resolvedTexts(expression.getExpression(), seen)
+          .map((owner) => memberText(owner, name));
+    }
+    if (Node.isConditionalExpression(expression)) {
+      return [...new Set([
+        ...resolvedTexts(expression.getWhenTrue(), seen),
+        ...resolvedTexts(expression.getWhenFalse(), seen),
+      ])];
+    }
+    if (Node.isBinaryExpression(expression)) {
+      const operator = expression.getOperatorToken().getKind();
+      if (operator === SyntaxKind.CommaToken) {
+        return resolvedTexts(expression.getRight(), seen);
+      }
+      if (
+        operator === SyntaxKind.BarBarToken ||
+        operator === SyntaxKind.AmpersandAmpersandToken ||
+        operator === SyntaxKind.QuestionQuestionToken
+      ) {
+        return [...new Set([
+          ...resolvedTexts(expression.getLeft(), seen),
+          ...resolvedTexts(expression.getRight(), seen),
+        ])];
+      }
     }
     if (!Node.isIdentifier(expression)) {
-      return canonicalAuthorityText(expression.getText());
+      return [canonicalAuthorityText(expression.getText())];
     }
-    if (stableBindings.has(expression.getText())) return expression.getText();
+    if (stableBindings.has(expression.getText())) return [expression.getText()];
     const symbol = expression.getSymbol();
     const key = (symbol ?? expression) as unknown as object;
-    if (seen.has(key)) return expression.getText();
+    if (seen.has(key)) return [expression.getText()];
     const nested = new Set(seen).add(key);
-    const latestAssignment = assignments
+    const reachingAssignments = assignments
       .filter((candidate) =>
         candidate.getStart() < expression.getStart() &&
         Node.isIdentifier(unwrap(candidate.getLeft())) &&
         unwrap(candidate.getLeft())?.getSymbol() === symbol
-      )
-      .sort((left, right) => right.getStart() - left.getStart())[0];
+      );
     const declaration = symbol?.getDeclarations().find(Node.isVariableDeclaration);
-    const source = latestAssignment?.getRight() ?? declaration?.getInitializer();
-    return source ? resolvedText(source, nested) : expression.getText();
+    const initializer = declaration?.getInitializer();
+    const sources: Node[] = [
+      ...(initializer ? [initializer] : []),
+      ...reachingAssignments.map((assignment) => assignment.getRight()),
+    ];
+    return sources.length > 0
+      ? [...new Set(sources.flatMap((source) => resolvedTexts(source, nested)))]
+      : [expression.getText()];
   };
-  const bindingSource = (element: Node): string | null => {
-    if (!Node.isBindingElement(element)) return null;
+  const bindingSourcesOf = (element: Node): string[] => {
+    if (!Node.isBindingElement(element)) return [];
     const pattern = element.getParent();
     const owner = pattern.getParent();
-    const base = Node.isVariableDeclaration(owner) ||
+    const bases = Node.isVariableDeclaration(owner) ||
         Node.isParameterDeclaration(owner)
-      ? resolvedText(owner.getInitializer())
+      ? resolvedTexts(owner.getInitializer())
       : Node.isBindingElement(owner)
-      ? bindingSource(owner)
-      : null;
-    if (!base) return null;
-    if (element.getDotDotDotToken()) return base;
+      ? bindingSourcesOf(owner)
+      : [];
+    if (element.getDotDotDotToken()) return bases;
     if (Node.isObjectBindingPattern(pattern)) {
       const name = propertyText(
         element.getPropertyNameNode(),
         element.getName(),
       );
-      return name === null ? null : memberText(base, name);
+      return name === null ? [] : bases.map((base) => memberText(base, name));
     }
     if (Node.isArrayBindingPattern(pattern)) {
       const index = pattern.getElements().indexOf(element);
-      return index < 0 ? null : `${base}[${index}]`;
+      return index < 0 ? [] : bases.map((base) => `${base}[${index}]`);
     }
-    return null;
+    return [];
   };
   const authorityRead = (
     node: Node,
-    source: string | null,
+    sources: readonly string[],
     expands = false,
   ): Array<{ readonly node: Node; readonly source: string; readonly expands: boolean }> =>
-    source === null ? [] : [{ node, source, expands }];
+    sources.map((source) => ({ node, source, expands }));
   const ambientCopyMethod = (
     node: Node,
     builtin: "Object" | "structuredClone",
@@ -2442,21 +2529,21 @@ function repeatedAuthorityEvaluations(
     readonly expands: boolean;
   }> = [
     ...body.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)
-      .flatMap((node) => authorityRead(node, resolvedText(node))),
+      .flatMap((node) => authorityRead(node, resolvedTexts(node))),
     ...body.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
-      .flatMap((node) => authorityRead(node, resolvedText(node))),
+      .flatMap((node) => authorityRead(node, resolvedTexts(node))),
     ...body.getDescendantsOfKind(SyntaxKind.BindingElement)
       .flatMap((node) =>
-        authorityRead(node, bindingSource(node), node.getDotDotDotToken() !== undefined)
+        authorityRead(node, bindingSourcesOf(node), node.getDotDotDotToken() !== undefined)
       ),
     ...body.getDescendantsOfKind(SyntaxKind.SpreadAssignment)
       .flatMap((node) =>
-        authorityRead(node, resolvedText(node.getExpression()), true)
+        authorityRead(node, resolvedTexts(node.getExpression()), true)
       ),
     ...body.getDescendantsOfKind(SyntaxKind.CallExpression)
       .flatMap((call) =>
         copyCallSources(call).flatMap((source) =>
-          authorityRead(call, resolvedText(source), true)
+          authorityRead(call, resolvedTexts(source), true)
         )
       ),
   ];
@@ -2511,8 +2598,9 @@ function repeatedAuthorityEvaluations(
       !Node.isObjectLiteralExpression(left) &&
       !Node.isArrayLiteralExpression(left)
     ) continue;
-    const base = resolvedText(assignment.getRight());
-    if (base) collectAssignmentReads(left, base);
+    for (const base of resolvedTexts(assignment.getRight())) {
+      collectAssignmentReads(left, base);
+    }
   }
   const stableSymbols = new Map<object, string>();
   const stableDeclarations = [
@@ -2727,17 +2815,93 @@ function declaredCalleeNames(type: Type): string[] {
 /** The expression a widened local was BOUND from: `const run: Function = db.query`. */
 function bindingSources(expression: Node, depth = 0): Node[] {
   if (depth > 4 || !Node.isIdentifier(expression)) return [];
-  const out: Node[] = [];
-  for (const declaration of expression.getSymbol()?.getDeclarations() ?? []) {
+  const symbol = expression.getSymbol();
+  const direct: Node[] = [];
+  for (const declaration of symbol?.getDeclarations() ?? []) {
     if (!Node.isVariableDeclaration(declaration)) continue;
     const initializer = declaration.getInitializer();
     if (!initializer) continue;
-    let source: Node = initializer;
-    while (
-      Node.isParenthesizedExpression(source) || Node.isAsExpression(source) ||
-      Node.isTypeAssertion(source) || Node.isSatisfiesExpression(source)
-    ) source = source.getExpression();
-    out.push(source, ...bindingSources(source, depth + 1));
+    direct.push(initializer);
+  }
+  direct.push(
+    ...expression.getSourceFile()
+      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      .filter((candidate) =>
+        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
+        candidate.getStart() < expression.getStart() &&
+        Node.isIdentifier(unwrapSqlExpression(candidate.getLeft())) &&
+        unwrapSqlExpression(candidate.getLeft()).getSymbol() === symbol
+      )
+      .map((candidate) => candidate.getRight()),
+  );
+  const expand = (node: Node): Node[] => {
+    const source = unwrapSqlExpression(node);
+    if (Node.isConditionalExpression(source)) {
+      return [
+        ...expand(source.getWhenTrue()),
+        ...expand(source.getWhenFalse()),
+      ];
+    }
+    if (Node.isBinaryExpression(source)) {
+      const operator = source.getOperatorToken().getKind();
+      if (operator === SyntaxKind.CommaToken) return expand(source.getRight());
+      if (
+        operator === SyntaxKind.BarBarToken ||
+        operator === SyntaxKind.AmpersandAmpersandToken ||
+        operator === SyntaxKind.QuestionQuestionToken
+      ) return [...expand(source.getLeft()), ...expand(source.getRight())];
+    }
+    return [source, ...bindingSources(source, depth + 1)];
+  };
+  return direct.flatMap(expand);
+}
+
+function bindingMemberSources(
+  expression: Node,
+): Array<{ readonly receiver: Node; readonly member: string }> {
+  if (!Node.isIdentifier(expression)) return [];
+  const symbol = expression.getSymbol();
+  const out: Array<{ receiver: Node; member: string }> = [];
+  const memberName = (node: Node | undefined, fallback: string): string | null => {
+    if (!node) return fallback;
+    if (Node.isIdentifier(node)) return node.getText();
+    if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+      return node.getLiteralText();
+    }
+    return null;
+  };
+  for (const declaration of symbol?.getDeclarations() ?? []) {
+    if (!Node.isBindingElement(declaration)) continue;
+    const pattern = declaration.getParent();
+    const owner = pattern.getParent();
+    const receiver = Node.isObjectBindingPattern(pattern) &&
+        Node.isVariableDeclaration(owner)
+      ? owner.getInitializer()
+      : undefined;
+    const member = memberName(
+      declaration.getPropertyNameNode(),
+      declaration.getName(),
+    );
+    if (receiver && member) out.push({ receiver, member });
+  }
+  for (const assignment of expression.getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    if (
+      assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken ||
+      assignment.getStart() >= expression.getStart()
+    ) continue;
+    const left = unwrapSqlExpression(assignment.getLeft());
+    if (!Node.isObjectLiteralExpression(left)) continue;
+    for (const property of left.getProperties()) {
+      if (!Node.isPropertyAssignment(property)) continue;
+      const initializer = property.getInitializer();
+      if (!initializer) continue;
+      const target = unwrapSqlExpression(initializer);
+      const member = memberName(property.getNameNode(), property.getName());
+      if (Node.isIdentifier(target) && target.getSymbol() === symbol && member) {
+        out.push({ receiver: assignment.getRight(), member });
+      }
+    }
   }
   return out;
 }
@@ -2788,6 +2952,12 @@ function isSqlExecutorExpression(
   arguments_: readonly Node[],
 ): boolean {
   const expression = unwrapSqlExpression(source);
+  if (
+    Node.isIdentifier(expression) &&
+    bindingMemberSources(expression).some(({ member }) =>
+      SQL_EXECUTOR_METHODS.has(member)
+    )
+  ) return true;
   const calleeType = expression.getType();
   if (declaresExecutorSignature(calleeType)) return true;
   if (declaredCalleeNames(calleeType).length > 0) return false;
@@ -2837,13 +3007,20 @@ function staticArrayElements(node: Node | undefined): readonly Node[] | null {
 function isAmbientReflectApply(node: Node): boolean {
   const expression = unwrapSqlExpression(node);
   if (Node.isIdentifier(expression)) {
-    return bindingSources(expression).some(isAmbientReflectApply);
+    return bindingSources(expression).some(isAmbientReflectApply) ||
+      bindingMemberSources(expression).some(({ receiver, member }) =>
+        member === "apply" && isAmbientReflect(receiver)
+      );
   }
   if (
     !Node.isPropertyAccessExpression(expression) ||
     expression.getName() !== "apply"
   ) return false;
-  const receiver = unwrapSqlExpression(expression.getExpression());
+  return isAmbientReflect(expression.getExpression());
+}
+
+function isAmbientReflect(node: Node): boolean {
+  const receiver = unwrapSqlExpression(node);
   return Node.isIdentifier(receiver) &&
     receiver.getText() === "Reflect" &&
     (receiver.getSymbol()?.getDeclarations() ?? []).every((declaration) =>

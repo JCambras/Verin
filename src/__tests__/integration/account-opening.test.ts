@@ -402,6 +402,37 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect(result.token).toBeUndefined();
   });
 
+  it("a hostile driver-code accessor cannot escape double-submit classification", async () => {
+    let codeReads = 0;
+    const hostile = new Proxy({}, {
+      get(_target, property) {
+        if (property === "code") {
+          codeReads += 1;
+          throw new Error("alice@example.test");
+        }
+        return undefined;
+      },
+    });
+    const failing: SqlDb = {
+      ...db,
+      query: <T,>(sql: string, params?: unknown[]) =>
+        sql.startsWith("UPDATE flow_executions")
+          ? Promise.reject(hostile)
+          : db.query<T>(sql, params),
+    };
+    const result = await startAccountOpening(failing, advisor, advisorPii, {
+      householdName: "Guarded Household",
+      firstName: "Gu",
+      lastName: "Arded",
+      email: null,
+      accountType: "individual",
+      clientRequestId: "7e4d3c2b-1a0f-4e9d-8c7b-6a5f4e3d2c1b",
+    });
+    expect(result.status).toBe("failed");
+    expect(result.error?.code).toBe("INTERNAL");
+    expect(codeReads).toBe(1);
+  });
+
   it("a client request id colliding with ANOTHER org's execution fails clean and leaks nothing", async () => {
     const clientRequestId = "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e";
     const started = await startAccountOpening(db, advisor, advisorPii, {

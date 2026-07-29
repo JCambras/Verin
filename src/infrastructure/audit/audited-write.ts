@@ -11,9 +11,9 @@
  */
 import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { type Result, ok, err } from "@contracts/result";
-import { appError, normalizeAppError, logLevelFor, type AppError } from "@contracts/errors";
+import { appError, logLevelFor, type AppError } from "@contracts/errors";
 import { assertWriteActor, type WriteActor } from "@contracts/principal";
-import { log, safeReason } from "@infra/observability/logger";
+import { classifyErrorMetadata, log, safeReason } from "@infra/observability/logger";
 import {
   observabilityIdOrRedacted,
   type ObservabilityAction,
@@ -22,15 +22,6 @@ import {
 import { enqueueAudit, drainOutbox, type AuditIntent } from "./audit-store";
 
 const REPLAY = Symbol("idempotency-replay");
-
-/** SQLSTATE class 23 = integrity constraint violation (23502/23503/23505/23514…). */
-function isDriverConstraintError(e: unknown): boolean {
-  return (
-    typeof e === "object" && e !== null && "code" in e &&
-    typeof (e as { code: unknown }).code === "string" &&
-    /^23\d{3}$/.test((e as { code: string }).code)
-  );
-}
 
 export interface AuditedWriteOpts<T> {
   db: SqlDb;
@@ -117,7 +108,8 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     // Genuine failure: business rolled back. Log the REAL error before mapping —
     // this helper is the single write chokepoint, the worst place to fly blind
     // (a swallowed TypeError here once surfaced as a generic 409 "write failed").
-    const known: AppError | null = normalizeAppError(e);
+    const metadata = classifyErrorMetadata(e);
+    const known: AppError | null = metadata.appError;
     // EVERY id minted on this path degrades rather than throws: a throw would escape
     // before the failure-audit entry below is enqueued, costing the write both its log
     // line and its "[attempt failed]" chain entry. entityId is the obvious case
@@ -131,7 +123,7 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
           ? observabilityIdOrRedacted("entityId", opts.entityId)
           : null,
         code: known?.code ?? null,
-        reason: safeReason(known ?? e),
+        reason: metadata.reason,
       },
       "audited write failed",
     );
@@ -168,9 +160,9 @@ export async function auditedWrite<T>(opts: AuditedWriteOpts<T>): Promise<Result
     // perform is never mislabeled as a client-resolvable conflict.
     const error: AppError = known
       ? known
-      : e instanceof Error && e.name === "PIIViolation"
+      : metadata.piiViolation
         ? appError("PII_VIOLATION", "write refused: PII would have reached the audit boundary")
-        : isDriverConstraintError(e)
+        : metadata.sqlState?.startsWith("23")
           ? appError("STORE_CONSTRAINT", "write failed: store constraint violated")
           : appError("INTERNAL", "write failed");
     return err(error);

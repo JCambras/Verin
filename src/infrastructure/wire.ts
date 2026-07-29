@@ -29,7 +29,7 @@ import { createHousehold, createContact, createFinancialAccount, createTask } fr
 import { createApplication, setEsignRequested, completeApplication, getApplicationByToken } from "@infra/crm/application-store";
 import { newEsignToken, signCallback, verifyCallback } from "@infra/esign/esign";
 import { withSpan } from "@infra/observability/tracer";
-import { log } from "@infra/observability/logger";
+import { classifyErrorMetadata, log } from "@infra/observability/logger";
 import {
   observabilityId,
   observabilityIdOrRedacted,
@@ -41,11 +41,6 @@ import {
 function must<T>(r: Result<T>): T {
   if (r.ok) return r.value;
   throw r.error as AppError;
-}
-
-/** SQLSTATE 23505 unique_violation — the flow_executions PK conflict of a double-submit race. */
-function isUniqueViolation(e: unknown): boolean {
-  return typeof e === "object" && e !== null && "code" in e && (e as { code: unknown }).code === "23505";
 }
 
 /**
@@ -253,13 +248,16 @@ export async function startAccountOpening(
       // INSERT hitting the flow_executions PK (SQLSTATE 23505) resolves as the
       // same replay. Any other throw is a real storage failure and surfaces as a
       // typed failure — never masked as a started flow, never an unenveloped 500.
-      const raced = input.clientRequestId && isUniqueViolation(e) ? await loadOwnExecution() : null;
+      const metadata = classifyErrorMetadata(e);
+      const raced = input.clientRequestId && metadata.sqlState === "23505"
+        ? await loadOwnExecution()
+        : null;
       if (raced && !inputMatchesExecution(input, raced)) {
         result = editedReplayConflict(executionId);
       } else if (raced) {
         result = raced.status === "failed" ? await retryFailedStart(store, deps, raced, tenant) : replayedRunResult(raced);
       } else {
-        const error = normalizeAppError(e) ??
+        const error = metadata.appError ??
           appError("INTERNAL", "The account-opening flow could not be started.");
         result = { executionId, status: "failed", error, data: {} };
       }

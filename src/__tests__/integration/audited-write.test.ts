@@ -82,6 +82,47 @@ describe("auditedWrite failure paths (finding #3)", () => {
     if (!result.ok) expect(result.error.code).toBe("STORE_CONSTRAINT");
   });
 
+  it("classifies stateful and throwing driver metadata from one guarded snapshot", async () => {
+    const db = await seed();
+    let codeReads = 0;
+    const stateful = {
+      get code() {
+        codeReads += 1;
+        return codeReads === 1 ? "23505" : "alice@example.test";
+      },
+      name: "DriverError",
+      message: "safe",
+    };
+    const constraint = await auditedWrite<{ id: string }>({
+      db, ...base,
+      perform: async () => {
+        throw stateful;
+      },
+    });
+    expect(constraint.ok).toBe(false);
+    if (!constraint.ok) expect(constraint.error.code).toBe("STORE_CONSTRAINT");
+    expect(codeReads).toBe(1);
+
+    let throwingReads = 0;
+    const throwing = {
+      get code(): string {
+        throwingReads += 1;
+        throw new Error("alice@example.test");
+      },
+      name: "DriverError",
+      message: "safe",
+    };
+    const internal = await auditedWrite<{ id: string }>({
+      db, ...base,
+      perform: async () => {
+        throw throwing;
+      },
+    });
+    expect(internal.ok).toBe(false);
+    if (!internal.ok) expect(internal.error.code).toBe("INTERNAL");
+    expect(throwingReads).toBe(1);
+  });
+
   it("a typed AppError thrown by perform passes through unchanged", async () => {
     const db = await seed();
     const result = await auditedWrite<{ id: string }>({

@@ -534,6 +534,27 @@ describe("tenant-context-required fence", () => {
       ]);
     });
 
+    it("discovers SQL repositories through destructured builtins and later executor aliases", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        export async function listAll(db: SqlDb) {
+          const { apply } = Reflect;
+          let run: typeof db.query;
+          run = db.query;
+          await apply(run, db, ["SELECT email FROM users"]);
+          let later: typeof db.query;
+          ({ query: later } = db);
+          return later("SELECT email FROM users");
+        }
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: "src/infrastructure/crm/subject.ts :: listAll",
+          detail: "repository callable has no sealed tenant context",
+        },
+      ]);
+    });
+
     /**
      * THE AUTHORITY PROLOGUE, from the tenant side. Both this fence and the
      * governed-actions fence used to demand their own assertion be literally
@@ -897,6 +918,34 @@ ${body}
       const params = `db: SqlDb,
           executionGrant: ActionGrant<"execution.initiate">,
           carrier: GrantCarrier,`;
+      expect(dualAuthorityViolations(`
+          const piiGrant = carrier.piiGrant;
+          assertActionGrant(executionGrant, "execution.initiate");
+          assertActionGrant(piiGrant, "pii.view");
+          assertSameTenant(executionGrant.tenant, piiGrant.tenant);
+          ${laterRead}
+      `, params, prelude)).toHaveLength(1);
+    });
+
+    it.each([
+      `const alias = flag ? carrier : carrier;
+          return db.query(alias.piiGrant.tenant.orgId);`,
+      `const alias = carrier || carrier;
+          return db.query(alias.piiGrant.tenant.orgId);`,
+      `let alias = carrier;
+          if (flag) alias = carrier;
+          return db.query(alias.piiGrant.tenant.orgId);`,
+    ])("rejects authority re-reads through conditional, logical, and assigned aliases", (laterRead) => {
+      const prelude = `
+        class GrantCarrier {
+          get piiGrant(): ActionGrant<"pii.view"> {
+            throw new Error("stateful getter");
+          }
+        }`;
+      const params = `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          carrier: GrantCarrier,
+          flag: boolean,`;
       expect(dualAuthorityViolations(`
           const piiGrant = carrier.piiGrant;
           assertActionGrant(executionGrant, "execution.initiate");
