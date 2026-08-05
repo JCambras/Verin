@@ -8,14 +8,15 @@
 copy. If one of them legitimately changes, update its pin **in the same PR** and review the invariant
 registry for drift. **This index page is the one file here that is NOT pinned** - it is navigation, not
 ratified content, so nothing normative may live in it; normative statements belong in a pinned document,
-an ADR, or the charter.
+an ADR, or the charter (D-099).
 
 There is exactly ONE constitution: [`CHARTER.md`](../../CHARTER.md). The v3 architecture doc's own
 "supersedes prior documents" header is read through ADR-0023: v3 is ratified INTO the charter machinery,
 never beside it. Where v3 and the charter conflict, the resolution is recorded in an ADR below - never
 resolved silently (v3's own rule, §0.5 and orchestrator rule 4).
 
-The standing product thesis that all v3 work serves is [`docs/product-guide.md`](../product-guide.md).
+The standing product thesis is [`docs/product-guide.md`](../product-guide.md) (D-098). It binds nothing
+on its own and is subordinate to the ratified documents below.
 
 ## The documents
 

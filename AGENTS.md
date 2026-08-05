@@ -11,9 +11,9 @@ governed decision and execution layer; ADRs 0023-0028). The 30 v3 invariants are
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
 stores activation only - pass/fail is computed, never fake green). The five ratified documents listed in
 `v3-invariants.json` are SHA-256-pinned (arch-version fence): editing one requires updating its pin in
-the same PR. `docs/v3/README.md` is the unpinned index, so nothing normative lives there. Salesforce
-work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system, not v3
-§18's visuals (ADR-0028); UI prompts read `docs/demo-design-language.md` first (now authored -
+the same PR. `docs/v3/README.md` is the unpinned index, so nothing normative may live there (D-099).
+Salesforce work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system,
+not v3 §18's visuals (ADR-0028); UI prompts read `docs/demo-design-language.md` first (now authored -
 the ADR-0028 gate is satisfied).
 
 Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what was decided and why.

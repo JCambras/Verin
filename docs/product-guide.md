@@ -5,8 +5,9 @@ standing statement of what makes Verin different - the thesis every design decis
 demo choice is tested against.
 
 **Authority chain:** subordinate to [`CHARTER.md`](../CHARTER.md) (the constitution), to the ratified v3
-direction ([`docs/v3/README.md`](./v3/README.md)), and to the two normative demo documents -
-[`docs/demo-contract.md`](./demo-contract.md) (the Phase 1 investor-demo contract, D-034) and
+direction ([`docs/v3/verin-architecture-v3.md`](./v3/verin-architecture-v3.md), the SHA-256-pinned
+architecture document; indexed at [`docs/v3/README.md`](./v3/README.md)), and to the two normative demo
+documents - [`docs/demo-contract.md`](./demo-contract.md) (the Phase 1 investor-demo contract, D-034) and
 [`docs/demo-design-language.md`](./demo-design-language.md) (normative for every demo/UI surface,
 ADR-0028). It is the differentiating thesis *inside* the one existing north-star chain, not a rival to
 [`PRODUCT-DIRECTION.md`](../PRODUCT-DIRECTION.md): PRODUCT-DIRECTION.md remains the product north star
@@ -48,4 +49,4 @@ If you have the willpower to configure everything yourself, you can get to amazi
 
 Configuration in Verin is not a one-time operator setup surface. The **directional design principle** - direction, deliberately not a normative rule, and not something a review can hold anyone to today - is that configuration surfaces should be shaped so the system can PROPOSE refinements from observed operation and a human APPROVES them. It becomes machine-enforced when the self-configuration capability is actually designed: the PR that introduces it states the invariant and fences it in the same PR (charter #1), alongside the already-registered policy-lifecycle invariants 15-17 that govern policy mutability, executable configuration, and LLM-driven activation.
 
-Where that path ends is fixed by the ratified v3 direction (see [`docs/v3/README.md`](./v3/README.md)), and it is directional on the same terms: activation of any configuration is to be a governed, attributed act - the system may learn and suggest, but what runs the business is something a human signed off on, with full provenance of who activated what and when. Ratified is not enforced. Every invariant that would hold this is registered `not-yet-active` in [`v3-invariants.json`](../v3-invariants.json) - 14, 15 and 17 (policy lifecycle, Wave E) and 18, 19 and 21 (approval and execution, Wave F) - so no mechanism enforces it in the build today. It stops being directional when those invariants activate with live mechanisms behind them, not when this doc asserts it.
+Where that path ends is fixed by the ratified v3 direction - [`docs/v3/verin-architecture-v3.md`](./v3/verin-architecture-v3.md) §3 non-negotiables 1, 4 and 11, and its §17 invariants 14, 15, 17, 18, 19 and 21 (the pinned document; indexed at [`docs/v3/README.md`](./v3/README.md)) - and it is directional on the same terms: activation of any configuration is to be a governed, attributed act - the system may learn and suggest, but what runs the business is something a human signed off on, with full provenance of who activated what and when. Ratified is not enforced. Every invariant that would hold this is registered `not-yet-active` in [`v3-invariants.json`](../v3-invariants.json) - 14, 15 and 17 (policy lifecycle, Wave E) and 18, 19 and 21 (approval and execution, Wave F) - so no mechanism enforces it in the build today. It stops being directional when those invariants activate with live mechanisms behind them, not when this doc asserts it.

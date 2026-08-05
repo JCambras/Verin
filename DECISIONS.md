@@ -3055,8 +3055,10 @@ directional design principle, explicitly NOT a normative rule, precisely so it i
 a prose-only invariant. It is fenced in the PR that designs the self-configuration
 capability, beside the already-registered policy-lifecycle invariants 15-17 (Wave E).
 Governed, attributed activation is recorded on the same directional terms and cited to
-`docs/v3/README.md`: it is ratified v3 direction, but the invariants that would hold it
-(14, 15, 17 in Wave E; 18, 19, 21 in Wave F) are all registered `not-yet-active`, so the
+the SHA-256-pinned `docs/v3/verin-architecture-v3.md` (§3 non-negotiables 1, 4 and 11;
+§17 invariants 14, 15, 17, 18, 19 and 21), not to the unpinned index (D-099): it is
+ratified v3 direction, but the invariants that would hold it (14, 15, 17 in Wave E;
+18, 19, 21 in Wave F) are all registered `not-yet-active`, so the
 doc says no mechanism enforces it today rather than calling it settled. Ratified is not
 enforced; a claim with no live mechanism behind it is labeled directional (charter #5).
 
@@ -3068,4 +3070,40 @@ self-configuration capability is designed, leaving the directive unrecorded.
 
 **Revert path:** delete `docs/product-guide.md` and remove the four one-line pointers
 (`README.md` item 8, `AGENTS.md`, `PRODUCT-DIRECTION.md` header, `docs/v3/README.md`).
-No code, fixture, fence, or pinned document depends on it.
+No code, fixture, fence, or pinned document depends on it. D-099 stands independently of
+this revert.
+
+## D-099 - The v3 pin covers five documents; the index carries nothing normative
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: D-098, ADR-0023, ADR-0018,
+charter #1/#5, DO-NOT-PORT #8
+
+`README.md`, `AGENTS.md`, and `docs/v3/README.md` each stated the SHA-256 pin as a
+universal rule over `docs/v3/`. It never was one: `v3-invariants.json` pins exactly five
+documents - `verin-architecture-v3.md`, `verin-prompt-sequence-v3.md`,
+`verin-demo-contract-v1.md`, `verin-core-contracts.ts`, and `marriage-map.md` - and the
+arch-version fence (`src/__tests__/fitness/arch-version.test.ts`) verifies only the pins
+listed there. `docs/v3/README.md` itself is the exception, and the exception was written
+down nowhere, so a session adding content to the index would believe it byte-protected
+when it is not. All three documents now name the actual pinned set and state the
+exception.
+
+That exception carries a rule: `docs/v3/README.md` is navigation, not ratified content,
+so nothing normative may live in it - normative statements belong in a pinned document,
+an ADR, or the charter. This is deliberately recorded as prose with a stated owner rather
+than as an invariant, because no mechanism can detect normativity in a file the fence does
+not cover; a fenced-sounding claim with no fence behind it is the DO-NOT-PORT #8 failure.
+It is a review obligation on any PR touching that index. The rule was applied on entry:
+the D-098 pointer added to the index is a pure pointer, and the product guide's own
+authority-chain and governed-activation citations resolve to the pinned
+`docs/v3/verin-architecture-v3.md` with the index as a secondary hop.
+
+**Alternatives rejected:** pin `docs/v3/README.md` too (a navigation index would then
+demand a pin bump for every link edit, and the pin would assert ratified status it does
+not have); leave the overbroad phrasing and rely on the fence to be discovered by
+reading; or state the index rule as a normative invariant with no enforcing mechanism.
+
+**Revert path:** restore the "every doc under `docs/v3/` is pinned" phrasing in the three
+documents and delete this entry. No code, fixture, fence, or pinned document changes;
+`v3-invariants.json` and the arch-version fence are untouched, since this corrects the
+prose describing them, not their behavior.
