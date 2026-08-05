@@ -1,3 +1,8 @@
+import { DurationSchema } from "@contracts/decision-core/v1-7/ids";
+import {
+  SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST,
+} from "@contracts/decision-core/v1-7/time-zone";
+
 const MACHINE_NAMESPACES = new Set([
   "actor", "blob", "bundle", "causal", "conflict", "corr", "correlation",
   "dec", "decision", "event", "evidence", "evs", "handle", "idem",
@@ -13,8 +18,11 @@ const SYSTEM_IDENTIFIERS = new Set([
   "verin-decision-engine",
 ]);
 
-const REGISTERED_ACTOR_IDENTIFIERS = new Set(["actor:ops:1"]);
-const REGISTERED_CORRELATION_IDENTIFIERS = new Set(["corr:ledger-test"]);
+const REGISTERED_ACTOR_IDENTIFIERS = new Set(["actor:2", "actor:ops:1"]);
+const REGISTERED_CORRELATION_IDENTIFIERS = new Set([
+  "corr:ledger-test",
+  "seed:1",
+]);
 
 const REGISTERED_MACHINE_TOKENS = new Set([
   "account-balance",
@@ -76,13 +84,16 @@ const FIRM_IDENTIFIER = /^(?:firm-[a-z0-9]+|org(?:-[a-z0-9]+)*)$/;
 const NAMESPACED_IDENTIFIER = /^([a-z][a-z0-9-]*):([A-Za-z0-9][A-Za-z0-9._:@/+~-]*)$/;
 const VERSIONED_IDENTIFIER = /^([a-z0-9]+(?:-[a-z0-9]+)+)@(?:v)?\d[0-9a-z.-]*$/;
 const EVIDENCE_SCHEMA_VERSION = /^evidence\/\d+(?:\.\d+){2}$/;
-const IANA_TIME_ZONE = /^[A-Za-z_+-]+\/[A-Za-z_+-]+(?:\/[A-Za-z_+-]+)?$/;
-const TIME_ZONE_DATA_VERSION = /^iana-tzdb\/\d{4}[a-z]$/;
-const ISO_DURATION = /^P(?=\d|T\d)(?:\d+[YMWD])*(?:T(?:\d+[HMS])*)?$/;
-const ACTOR_IDENTIFIER = /^actor:(?:\d+|[a-f0-9]{32,})$/;
-const CORRELATION_IDENTIFIER = /^(?:corr|correlation|seed):(?:\d+|[a-f0-9]{32,})$/;
-const OPAQUE_SEGMENT = /^(?:\d+|GC-\d+|[a-f0-9]{32,})$/;
+const ACTOR_IDENTIFIER = /^actor:(?:[a-f0-9]{64}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const CORRELATION_IDENTIFIER = /^(?:corr|correlation|seed):(?:[a-f0-9]{64}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const OPAQUE_SEGMENT = /^(?:\d{1,4}|GC-\d{2}|[a-f0-9]{32,}|[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
 const REGISTERED_STAGE_IDS = new Set(["ops-dual-approval"]);
+const RECORDED_TIME_ZONES = new Set<string>(
+  SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST.flatMap((release) => release.zones),
+);
+const RECORDED_TIME_ZONE_DATA_VERSIONS = new Set<string>(
+  SUPPORTED_IANA_TIME_ZONE_RELEASE_LIST.map((release) => release.dataVersion),
+);
 
 function isRegisteredMachineSegment(value: string): boolean {
   const versioned = value.match(/^([a-z0-9-]+)@(?:v)?\d[0-9a-z.-]*$/);
@@ -116,7 +127,8 @@ export function isOpaqueLedgerIdentifier(
     return REGISTERED_STAGE_IDS.has(value) || hasMachineNamespace(value);
   }
   const versioned = value.match(VERSIONED_IDENTIFIER);
-  return hasMachineNamespace(value) ||
+  return OPAQUE_SEGMENT.test(value) ||
+    hasMachineNamespace(value) ||
     (versioned !== null && REGISTERED_VERSION_BASES.has(versioned[1]!)) ||
     REGISTERED_MACHINE_TOKENS.has(value);
 }
@@ -125,10 +137,10 @@ export function isOpaqueLedgerToken(path: string, value: string): boolean {
   if (path.endsWith(".schemaVersion")) {
     return EVIDENCE_SCHEMA_VERSION.test(value) || /^\d+(?:\.\d+){2}$/.test(value);
   }
-  if (path.endsWith(".timeZone")) return IANA_TIME_ZONE.test(value);
+  if (path.endsWith(".timeZone")) return RECORDED_TIME_ZONES.has(value);
   if (path.endsWith(".timeZoneDataVersion")) {
-    return TIME_ZONE_DATA_VERSION.test(value);
+    return RECORDED_TIME_ZONE_DATA_VERSIONS.has(value);
   }
-  if (path.endsWith(".after")) return ISO_DURATION.test(value);
+  if (path.endsWith(".after")) return DurationSchema.safeParse(value).success;
   return REGISTERED_MACHINE_TOKENS.has(value);
 }

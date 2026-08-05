@@ -46,6 +46,27 @@ function badgeLabel(provenance: RecordProvenance | DerivedProvenance): string | 
     : DEV_BADGE_TEXT["synthetic-fixture"];
 }
 
+function countObservationProvenance(
+  inputs: readonly RecordProvenance[],
+  observedAt: string,
+  complete: boolean,
+): DerivedProvenance {
+  const provenances = complete
+    ? inputs.length > 0
+      ? inputs
+      : [{
+          source: "verin-crm",
+          asOf: observedAt,
+          confidence: "high",
+        } as const]
+    : [{
+        source: "default",
+        asOf: observedAt,
+        confidence: "low",
+      } as const];
+  return deriveArtifactProvenance(provenances, observedAt);
+}
+
 /** Read-only, tenant-scoped register. No decision state is computed here. */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const principal = await requirePrincipalWithRole(
@@ -59,7 +80,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     rows,
     decisions,
     decisionsTotal,
-    rowProvenance,
+    rowProvenance = new Map(),
     replaySourceReason,
   } = await readVerifiedDecisionRegister(
     db,
@@ -69,27 +90,49 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   );
   const trusted = verification.ok;
   const observedAt = new Date().toISOString();
-  const countProvenance = deriveArtifactProvenance(
-    trusted && rowProvenance.size > 0
-      ? [...rowProvenance.values()]
-      : [{
-          source: trusted ? "verin-crm" : "default",
-          asOf: observedAt,
-          confidence: trusted ? "high" : "low",
-        }],
-    observedAt,
-  );
   const visibleDecisions = trusted ? decisions : [];
   const visibleEntries = trusted
     ? rows.slice(-MAX_ENTRIES).reverse()
     : [];
+  const visibleEntryProvenance = visibleEntries.flatMap((row) => {
+    const provenance = rowProvenance.get(row.id);
+    return provenance ? [provenance] : [];
+  });
+  const visibleDecisionProvenance = visibleDecisions.map(
+    ({ provenance }) => provenance,
+  );
+  const verificationProvenance = countObservationProvenance(
+    [...rowProvenance.values()],
+    observedAt,
+    trusted && rowProvenance.size === verification.entriesChecked,
+  );
+  const eventsTotalProvenance = countObservationProvenance(
+    [...rowProvenance.values()],
+    observedAt,
+    trusted && rowProvenance.size === verification.entriesStored,
+  );
+  const eventsShownProvenance = countObservationProvenance(
+    visibleEntryProvenance,
+    observedAt,
+    trusted && visibleEntryProvenance.length === visibleEntries.length,
+  );
+  const decisionsTotalProvenance = countObservationProvenance(
+    visibleDecisionProvenance,
+    observedAt,
+    trusted && visibleDecisions.length === decisionsTotal,
+  );
+  const decisionsShownProvenance = countObservationProvenance(
+    visibleDecisionProvenance,
+    observedAt,
+    trusted,
+  );
   const body = {
     verification: {
       ok: verification.ok,
       entriesCheckedMetric: metric(
         verification.entriesChecked,
         "count",
-        countProvenance,
+        verificationProvenance,
       ),
       levels: verification.levels.map((level) => ({
         level: level.level,
@@ -97,7 +140,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         entriesCheckedMetric: metric(
           level.entriesChecked,
           "count",
-          countProvenance,
+          verificationProvenance,
         ),
         reason: level.reason,
       })),
@@ -106,22 +149,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     eventsTotalMetric: metric(
       verification.entriesStored,
       "count",
-      countProvenance,
+      eventsTotalProvenance,
     ),
     eventsShownMetric: metric(
       visibleEntries.length,
       "count",
-      countProvenance,
+      eventsShownProvenance,
     ),
     decisionsTotalMetric: metric(
       trusted ? decisionsTotal : 0,
       "count",
-      countProvenance,
+      decisionsTotalProvenance,
     ),
     decisionsShownMetric: metric(
       visibleDecisions.length,
       "count",
-      countProvenance,
+      decisionsShownProvenance,
     ),
     verificationWindowed:
       verification.entriesChecked < verification.entriesStored,

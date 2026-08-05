@@ -73,7 +73,7 @@ export interface ComputedProvenanceTrace {
   };
   readonly producer: {
     readonly kind: "algorithm";
-    readonly id: string;
+    readonly id: "verin.test.decision-score";
     readonly version: string;
   };
   readonly inputs: readonly ComputedProvenanceInput[];
@@ -112,23 +112,43 @@ function canonicalTimestamp(value: unknown): value is string {
   return new Date(value).toISOString() === value;
 }
 
-function lexicalId(value: unknown): value is string {
-  return typeof value === "string" &&
-    /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(value);
-}
-
 function hash(value: unknown): value is string {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 }
 
+function firmIdentifier(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^(?:firm-[a-z0-9]+|org(?:-[a-z0-9]+)*)$/.test(value);
+}
+
+function issuedIdentifier(value: unknown): value is string {
+  return hash(value) || (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  );
+}
+
+function traceIdentifier(value: unknown): value is string {
+  return typeof value === "string" &&
+    value.startsWith("trace:") &&
+    issuedIdentifier(value.slice("trace:".length));
+}
+
+function algorithmIdentifier(value: unknown): value is string {
+  return value === "verin.test.decision-score";
+}
+
 function scopedRef(
   value: unknown,
+  kind: "ledger-entry" | "trace",
 ): value is { readonly firmId: string; readonly id: string } {
   return value !== null &&
     typeof value === "object" &&
     exactKeys(value, ["firmId", "id"]) &&
-    lexicalId(Reflect.get(value, "firmId")) &&
-    lexicalId(Reflect.get(value, "id"));
+    firmIdentifier(Reflect.get(value, "firmId")) &&
+    (kind === "trace"
+      ? traceIdentifier(Reflect.get(value, "id"))
+      : issuedIdentifier(Reflect.get(value, "id")));
 }
 
 export function computedProvenanceTrace(
@@ -181,7 +201,7 @@ export function parseLedgerProducerProvenance(
       COMPUTED_LEDGER_PROVENANCE_VERSION ||
     Reflect.get(derivation, "serializerVersion") !==
       LEDGER_PROVENANCE_SERIALIZER_VERSION ||
-    !scopedRef(Reflect.get(derivation, "traceRef")) ||
+    !scopedRef(Reflect.get(derivation, "traceRef"), "trace") ||
     Reflect.get(derivation, "observedAt") !== asOf ||
     Reflect.get(derivation, "confidence") !== confidence ||
     !hash(Reflect.get(derivation, "traceDigest"))
@@ -195,7 +215,7 @@ export function parseLedgerProducerProvenance(
     typeof producer !== "object" ||
     !exactKeys(producer, ["kind", "id", "version"]) ||
     Reflect.get(producer, "kind") !== "algorithm" ||
-    !lexicalId(Reflect.get(producer, "id")) ||
+    !algorithmIdentifier(Reflect.get(producer, "id")) ||
     typeof Reflect.get(producer, "version") !== "string" ||
     !/^[0-9]+(?:\.[0-9]+){1,3}(?:-[a-z0-9.-]+)?$/.test(
       Reflect.get(producer, "version") as string,
@@ -212,7 +232,7 @@ export function parseLedgerProducerProvenance(
       typeof input !== "object" ||
       !exactKeys(input, ["kind", "entryRef", "entryHash"]) ||
       Reflect.get(input, "kind") !== "ledger-entry" ||
-      !scopedRef(Reflect.get(input, "entryRef")) ||
+      !scopedRef(Reflect.get(input, "entryRef"), "ledger-entry") ||
       !hash(Reflect.get(input, "entryHash"))
     ) {
       return null;

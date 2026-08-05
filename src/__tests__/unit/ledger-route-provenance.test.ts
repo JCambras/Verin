@@ -236,6 +236,48 @@ describe("ledger route provenance", () => {
     expect(JSON.stringify(body)).not.toMatch(/"entriesChecked":\d/);
   });
 
+  it("marks historical totals untrusted when bounded provenance coverage is incomplete", async () => {
+    const asOf = "2026-07-26T13:30:00.000Z";
+    const row = {
+      id: "ledger:recent-real",
+      sequence: 2,
+      occurredAt: asOf,
+      eventType: "DecisionRecorded",
+      actorJson: JSON.stringify({ systemId: "verin-decision-engine" }),
+      correlationId: "corr:recent-real",
+      decisionId: "decision:recent-real",
+      entryHash: "1".repeat(64),
+    };
+    const real = deriveArtifactProvenance([{
+      source: "verin-crm",
+      asOf,
+      confidence: "high",
+    }], asOf);
+    readVerifiedDecisionRegister.mockResolvedValueOnce({
+      verification: {
+        ok: true,
+        entriesChecked: 1,
+        entriesStored: 2,
+        levels: [],
+      },
+      rows: [row],
+      rowProvenance: new Map([[row.id, real]]),
+      decisions: [],
+      decisionsTotal: 1,
+      replaySourceReason: null,
+    });
+
+    const response = await GET(new NextRequest("http://localhost/api/ledger"));
+    const body = await response.json() as {
+      eventsTotalMetric: { provenance: { demonstration: boolean } };
+      decisionsTotalMetric: { provenance: { demonstration: boolean } };
+      eventsShownMetric: { provenance: { demonstration: boolean } };
+    };
+    expect(body.eventsTotalMetric.provenance.demonstration).toBe(true);
+    expect(body.decisionsTotalMetric.provenance.demonstration).toBe(true);
+    expect(body.eventsShownMetric.provenance.demonstration).toBe(false);
+  });
+
   it.each([
     { source: "unknown", asOf: "2026-07-26T13:30:00.000Z", confidence: "high" },
     { source: "verin-crm", asOf: "invalid", confidence: "high" },

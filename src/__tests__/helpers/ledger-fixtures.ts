@@ -53,9 +53,11 @@ const fixture = (name: string): unknown =>
 
 const actor = { firmId: LEDGER_ORG, systemId: "ledger-test" };
 const decisionRef = { firmId: LEDGER_ORG, id: "dec:GC-01:0001" };
+const ledgerEntryId = (label: string): string =>
+  createHash("sha256").update(`ledger-entry:${label}`, "utf8").digest("hex");
 const base = (id: string, occurredAt = LEDGER_TIME) => ({
   firmId: LEDGER_ORG,
-  id,
+  id: id === "ledger:evidence:0" ? ledgerEntryId(id) : id,
   schemaVersion: LEDGER_SCHEMA_VERSION,
   serializerVersion: CANONICAL_SERIALIZER_VERSION,
   occurredAt,

@@ -12,13 +12,16 @@ import {
   deriveArtifactProvenance,
   parseLedgerProducerProvenance,
   type ComputedLedgerProducerProvenance,
+  type ComputedProvenanceTrace,
   type DerivedProvenance,
   type LedgerProducerProvenance,
   type RecordProvenance,
 } from "@contracts/provenance";
 import { canonical, canonicalDigest } from "./ledger-canonical";
 import {
+  deriveRecordedLegacyComputedProvenance,
   parseRecordedLedgerProvenance,
+  recordedComputedProvenanceSemantics,
   type RecordedLedgerProvenanceFields,
 } from "./ledger-schema-registry";
 
@@ -156,6 +159,9 @@ async function verifiedInputProvenances(
   verifiedEntryIds: ReadonlySet<string> | undefined,
   activeTraces: Set<string>,
   cache: Map<string, Promise<RecordProvenance>>,
+  inputCanFeedComplianceDecision: (
+    provenance: RecordProvenance,
+  ) => boolean,
 ): Promise<RecordProvenance[]> {
   const inputs: RecordProvenance[] = [];
   for (const input of provenance.derivation.inputs) {
@@ -211,11 +217,22 @@ async function verifiedInputProvenances(
             activeTraces,
             cache,
           )
-        : Promise.resolve(
-            parsed.source === "computed"
-              ? deriveArtifactProvenance([parsed], parsed.asOf)
-              : parsed,
-          );
+        : Promise.resolve(parsed.source === "computed"
+            ? deriveRecordedLegacyComputedProvenance(
+                row.prov_schema_version,
+                row.prov_serializer_version,
+                parsed,
+              )
+            : parsed)
+            .then((verified) => {
+              if (!verified) {
+                throw appError(
+                  "STORE_CONSTRAINT",
+                  "computed provenance input is invalid",
+                );
+              }
+              return verified;
+            });
       cache.set(key, pending);
     }
     let verified;
@@ -225,7 +242,7 @@ async function verifiedInputProvenances(
       cache.delete(key);
       throw error;
     }
-    if (!canFeedComplianceDecision(verified)) {
+    if (!inputCanFeedComplianceDecision(verified)) {
       throw appError(
         "STORE_CONSTRAINT",
         "computed provenance input is not compliance-eligible",
@@ -240,12 +257,13 @@ async function traceMatches(
   tx: SqlQueryable,
   tenant: TenantContext,
   provenance: ComputedLedgerProducerProvenance,
+  material: {
+    readonly trace: ComputedProvenanceTrace;
+    readonly canonicalBytes: string;
+    readonly digest: string;
+  },
 ): Promise<boolean> {
   if (provenance.derivation.traceRef.firmId !== tenant.orgId) return false;
-  const trace = computedProvenanceTrace(provenance);
-  const expectedJson = canonical(trace, "computed provenance trace");
-  const expectedDigest = canonicalDigest(trace, "computed provenance trace");
-  if (!expectedJson.ok || !expectedDigest.ok) return false;
   const result = await tx.query<{
     schema_version: string;
     serializer_version: string;
@@ -255,15 +273,15 @@ async function traceMatches(
     `SELECT schema_version, serializer_version, canonical_json, trace_digest
        FROM decision_provenance_traces
       WHERE org_id = $1 AND id = $2`,
-    [trace.traceRef.firmId, trace.traceRef.id],
+    [material.trace.traceRef.firmId, material.trace.traceRef.id],
   );
   const row = result.rows[0];
   return row !== undefined &&
-    row.schema_version === trace.schemaVersion &&
-    row.serializer_version === trace.serializerVersion &&
-    row.canonical_json === expectedJson.value &&
-    row.trace_digest === expectedDigest.value &&
-    expectedDigest.value === provenance.derivation.traceDigest;
+    row.schema_version === material.trace.schemaVersion &&
+    row.serializer_version === material.trace.serializerVersion &&
+    row.canonical_json === material.canonicalBytes &&
+    row.trace_digest === material.digest &&
+    material.digest === provenance.derivation.traceDigest;
 }
 
 async function verifyComputedProvenance(
@@ -275,6 +293,14 @@ async function verifyComputedProvenance(
   activeTraces: Set<string>,
   cache: Map<string, Promise<RecordProvenance>>,
 ): Promise<DerivedProvenance> {
+  const semantics = recordedComputedProvenanceSemantics(provenance);
+  const material = semantics?.traceMaterial(provenance) ?? null;
+  if (!semantics || !material) {
+    throw appError(
+      "STORE_CONSTRAINT",
+      "computed provenance encoding is unsupported",
+    );
+  }
   const traceId = provenance.derivation.traceRef.id;
   if (activeTraces.has(traceId)) {
     throw appError(
@@ -284,7 +310,7 @@ async function verifyComputedProvenance(
   }
   activeTraces.add(traceId);
   try {
-    if (!await traceMatches(tx, tenant, provenance)) {
+    if (!await traceMatches(tx, tenant, provenance, material)) {
       throw appError(
         "STORE_CONSTRAINT",
         "computed provenance trace is invalid",
@@ -298,12 +324,13 @@ async function verifyComputedProvenance(
       verifiedEntryIds,
       activeTraces,
       cache,
+      semantics.canFeedComplianceDecision,
     );
-    const derived = deriveArtifactProvenance(inputs, provenance.asOf);
+    const derived = semantics.derive(inputs, provenance.asOf);
     if (provenance.confidence !== derived.confidence) {
       throw appError("STORE_CONSTRAINT", COMPUTED_CONFIDENCE_MISMATCH);
     }
-    if (!canFeedComplianceDecision(derived)) {
+    if (!semantics.canFeedComplianceDecision(derived)) {
       throw appError(
         "STORE_CONSTRAINT",
         "computed provenance ancestry is not compliance-eligible",
@@ -331,6 +358,7 @@ export async function verifyPreparedLedgerProducerProvenance(
     undefined,
     new Set(),
     new Map(),
+    canFeedComplianceDecision,
   );
   const derived = deriveArtifactProvenance(inputs, prepared.value.asOf);
   if (prepared.value.confidence !== derived.confidence) {
@@ -423,9 +451,19 @@ async function verifyRecordedLedgerProvenanceUncached(
       cache,
     );
   }
-  return parsed.source === "computed"
-    ? deriveArtifactProvenance([parsed], parsed.asOf)
-    : parsed;
+  if (parsed.source !== "computed") return parsed;
+  const derived = deriveRecordedLegacyComputedProvenance(
+    row.provenanceSchemaVersion,
+    row.provenanceSerializerVersion,
+    parsed,
+  );
+  if (!derived) {
+    throw appError(
+      "STORE_CONSTRAINT",
+      "ledger replay provenance encoding is unsupported",
+    );
+  }
+  return derived;
 }
 
 export async function assertNoOrphanComputedProvenanceTraces(

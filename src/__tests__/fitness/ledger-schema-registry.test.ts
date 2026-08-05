@@ -123,9 +123,13 @@ const LIVE_CODEC_DEPENDENCIES = new Set([
   "LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION",
   "COMPUTED_LEDGER_PROVENANCE_VERSION",
   "LEDGER_PROVENANCE_SERIALIZER_VERSION",
+  "canFeedComplianceDecision",
+  "computedProvenanceTrace",
+  "deriveArtifactProvenance",
 ]);
 const FROZEN_CODEC_FILES = [
   "src/contracts/decision-core/ledger-v1/ledger.ts",
+  "src/contracts/decision-core/ledger-v1/provenance.ts",
   "src/contracts/decision-core/v1-7/actor.ts",
   "src/contracts/decision-core/v1-7/authority.ts",
   "src/contracts/decision-core/v1-7/decision.ts",
@@ -319,6 +323,7 @@ describe("decision-ledger schema registry fence", () => {
   it("enforces: retained codecs import only explicit versioned behavior", () => {
     const project = realProject();
     for (const file of [
+      "src/infrastructure/ledger/ledger-provenance-v1.ts",
       "src/infrastructure/ledger/ledger-schema-registry.ts",
       "src/infrastructure/ledger/ledger-source-registry.ts",
     ]) {
@@ -334,6 +339,22 @@ describe("decision-ledger schema registry fence", () => {
         frozenDependencyViolations(project.getSourceFileOrThrow(file)),
       ).toEqual([]);
     }
+  });
+
+  it("enforces: retained computed replay dispatches frozen trace and trust semantics", () => {
+    const source = realProject().getSourceFileOrThrow(
+      "src/infrastructure/ledger/ledger-producer-provenance.ts",
+    );
+    const verification = source.getFunctionOrThrow(
+      "verifyComputedProvenance",
+    ).getText();
+    const traceComparison = source.getFunctionOrThrow("traceMatches").getText();
+    expect(verification).toContain("recordedComputedProvenanceSemantics");
+    expect(verification).not.toContain("deriveArtifactProvenance(");
+    expect(verification).not.toMatch(
+      /(?:^|[^.])canFeedComplianceDecision\(/,
+    );
+    expect(traceComparison).not.toContain("computedProvenanceTrace(");
   });
 
   it.each([...LEDGER_SCHEMA_VERSIONS])(
@@ -429,11 +450,13 @@ describe("decision-ledger schema registry fence", () => {
       const project = inMemoryProject({
         "/src/infrastructure/ledger/registry.ts":
           `import { LedgerEntrySchema } from "@contracts/decision-core/ledger";\n` +
-          `import { canonicalJson } from "@contracts/decision-core/serialization";`,
+          `import { canonicalJson } from "@contracts/decision-core/serialization";\n` +
+          `import { deriveArtifactProvenance } from "@contracts/provenance";`,
       });
       expect(liveCodecDependencies(project.getSourceFiles()[0]!)).toEqual([
         "LedgerEntrySchema",
         "canonicalJson",
+        "deriveArtifactProvenance",
       ]);
       expect(unversionedRuntimeImports(project.getSourceFiles()[0]!)).toHaveLength(2);
     });

@@ -66,6 +66,7 @@ import {
   canFeedComplianceDecision,
   computedProvenanceTrace,
   deriveArtifactProvenance,
+  parseLedgerProducerProvenance,
   type ComputedLedgerProducerProvenance,
 } from "@contracts/provenance";
 import {
@@ -95,6 +96,10 @@ function hashPreimage(value: unknown): string {
   return createHash("sha256").update(canonical.value, "utf8").digest("hex");
 }
 
+function issuedTraceId(label: string): string {
+  return `trace:${createHash("sha256").update(label, "utf8").digest("hex")}`;
+}
+
 function computedProvenance(
   input: Awaited<ReturnType<typeof listDecisionLedger>>[number],
   traceId: string,
@@ -103,7 +108,7 @@ function computedProvenance(
   const trace = {
     schemaVersion: COMPUTED_LEDGER_PROVENANCE_VERSION,
     serializerVersion: LEDGER_PROVENANCE_SERIALIZER_VERSION,
-    traceRef: { firmId: LEDGER_ORG, id: traceId },
+    traceRef: { firmId: LEDGER_ORG, id: issuedTraceId(traceId) },
     producer: {
       kind: "algorithm",
       id: "verin.test.decision-score",
@@ -159,7 +164,7 @@ async function appendComputedExpiry(
   )!;
   const event = LedgerEntrySchema.parse({
     ...sample,
-    id: `ledger:computed:${traceId}`,
+    id: `ledger:computed:${issuedTraceId(traceId)}`,
     priorDecisionHash: input.decisionRecord.decisionHash,
   });
   await db.transaction((tx) => appendDecisionEvents(
@@ -449,7 +454,8 @@ describe("decision ledger storage and L1-L4 verification", () => {
     );
     expect(sourceProvenance.rows).toHaveLength(6);
     expect(sourceProvenance.rows.every((row) =>
-      row.recording_entry_id.startsWith("ledger:"))).toBe(true);
+      row.recording_entry_id.startsWith("ledger:") ||
+      /^[a-f0-9]{64}$/.test(row.recording_entry_id))).toBe(true);
     const replayMetadata = await db.query<{
       schema_version: string;
       serializer_version: string;
@@ -1405,6 +1411,18 @@ describe("decision ledger storage and L1-L4 verification", () => {
       ...event,
       correlationId: "123456789012",
     })],
+    ["namespaced numeric correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      correlationId: "corr:123456789012",
+    })],
+    ["namespaced numeric actor", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      actor: {
+        firmId: LEDGER_ORG,
+        actorId: "actor:123456789012",
+        roleIds: [],
+      },
+    })],
     ["prefixed account correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
       ...event,
       correlationId: "account:123456789012",
@@ -1424,6 +1442,10 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ["namespaced lowercase reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
       ...event,
       decisionRef: { firmId: LEDGER_ORG, id: "subject:robert-smith" },
+    })],
+    ["namespaced numeric reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      decisionRef: { firmId: LEDGER_ORG, id: "decision:123456789012" },
     })],
     ["approval stage", "ApprovalRecorded", (event: Record<string, unknown>) => ({
       ...event,
@@ -1499,6 +1521,38 @@ describe("decision ledger storage and L1-L4 verification", () => {
         assertReplaySourcePiiBoundary("decision", record)
       ).toThrowError(/unclassified retained text/);
     }
+  });
+
+  it("accepts schema-valid time zones and fractional durations at the PII boundary", () => {
+    const input = decisionRecordingInput();
+    const bundle = DecisionInputBundleSchema.parse({
+      ...input.inputBundle,
+      timeZone: "Etc/GMT+5",
+    });
+    expect(() => assertReplaySourcePiiBoundary("bundle", bundle)).not.toThrow();
+    expect(input.decisionRecord.result.kind).toBe("proceed");
+    if (input.decisionRecord.result.kind !== "proceed") return;
+    const authority = input.decisionRecord.result.authority;
+    if (authority.mode === "automatic") throw new Error("expected staged authority");
+    const decision = DecisionRecordSchema.parse({
+      ...input.decisionRecord,
+      result: {
+        ...input.decisionRecord.result,
+        authority: {
+          ...authority,
+          stages: authority.stages.map((stage, stageIndex) => ({
+            ...stage,
+            escalationPath: stage.escalationPath.map((step, stepIndex) => ({
+              ...step,
+              after: stageIndex === 0 && stepIndex === 0
+                ? "PT0.5S"
+                : step.after,
+            })),
+          })),
+        },
+      },
+    });
+    expect(() => assertReplaySourcePiiBoundary("decision", decision)).not.toThrow();
   });
 
   it.each([
@@ -2547,6 +2601,56 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(await listDecisionLedger(db, LEDGER_TENANT)).toEqual([]);
   });
 
+  it("rejects human identifiers in every computed provenance identity path", async () => {
+    expect((await recordDecision(
+      db,
+      LEDGER_TENANT,
+      decisionRecordingInput(),
+    )).ok).toBe(true);
+    const inputRow = (await listDecisionLedger(db, LEDGER_TENANT))[0]!;
+    const valid = computedProvenance(inputRow, "trace:real-input");
+    expect(parseLedgerProducerProvenance(valid)).not.toBeNull();
+    const attempts = [
+      {
+        ...valid,
+        derivation: {
+          ...valid.derivation,
+          producer: { ...valid.derivation.producer, id: "robert-smith" },
+        },
+      },
+      {
+        ...valid,
+        derivation: {
+          ...valid.derivation,
+          producer: {
+            ...valid.derivation.producer,
+            id: "verin.robert.smith",
+          },
+        },
+      },
+      {
+        ...valid,
+        derivation: {
+          ...valid.derivation,
+          traceRef: { firmId: LEDGER_ORG, id: "trace:robert-smith" },
+        },
+      },
+      {
+        ...valid,
+        derivation: {
+          ...valid.derivation,
+          inputs: [{
+            ...valid.derivation.inputs[0]!,
+            entryRef: { firmId: LEDGER_ORG, id: "ledger:robert-smith" },
+          }],
+        },
+      },
+    ];
+    for (const attempt of attempts) {
+      expect(parseLedgerProducerProvenance(attempt)).toBeNull();
+    }
+  });
+
   it("retains and verifies canonical computed provenance from real ledger inputs", async () => {
     const input = decisionRecordingInput();
     const recorded = await recordDecision(db, LEDGER_TENANT, {
@@ -2560,13 +2664,14 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(recorded.ok).toBe(true);
     const inputRow = (await listDecisionLedger(db, LEDGER_TENANT))[0]!;
     await appendComputedExpiry(db, inputRow, "trace:real-input");
+    const traceId = issuedTraceId("trace:real-input");
 
     const rows = await listDecisionLedger(db, LEDGER_TENANT);
     const computed = rows.at(-1)!;
     expect(computed.provenanceSchemaVersion).toBe(
       COMPUTED_LEDGER_PROVENANCE_VERSION,
     );
-    expect(computed.provenanceTraceId).toBe("trace:real-input");
+    expect(computed.provenanceTraceId).toBe(traceId);
     expect(JSON.parse(computed.provenanceJson!)).toMatchObject({
       source: "computed",
       derivation: {
@@ -2588,7 +2693,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       `SELECT canonical_json, trace_digest
          FROM decision_provenance_traces
         WHERE org_id = $1 AND id = $2`,
-      [LEDGER_ORG, "trace:real-input"],
+      [LEDGER_ORG, traceId],
     );
     expect(hashPreimage(JSON.parse(trace.rows[0]!.canonical_json))).toBe(
       trace.rows[0]!.trace_digest,
@@ -2623,12 +2728,12 @@ describe("decision ledger storage and L1-L4 verification", () => {
       `UPDATE decision_provenance_traces
           SET trace_digest = $3
         WHERE org_id = $1 AND id = $2`,
-      [LEDGER_ORG, "trace:real-input", "0".repeat(64)],
+      [LEDGER_ORG, traceId, "0".repeat(64)],
     )).rejects.toThrow(/append-only/i);
     await expect(db.query(
       `DELETE FROM decision_provenance_traces
         WHERE org_id = $1 AND id = $2`,
-      [LEDGER_ORG, "trace:real-input"],
+      [LEDGER_ORG, traceId],
     )).rejects.toThrow(/append-only/i);
     await expect(db.exec(
       "TRUNCATE decision_provenance_traces CASCADE",
@@ -2844,7 +2949,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       `UPDATE decision_provenance_traces
           SET canonical_json = $3
         WHERE org_id = $1 AND id = $2`,
-      [LEDGER_ORG, "trace:tampered", "{}"],
+      [LEDGER_ORG, issuedTraceId("trace:tampered"), "{}"],
     );
     await db.exec(
       "ALTER TABLE decision_provenance_traces ENABLE TRIGGER decision_provenance_traces_no_update",
@@ -2883,7 +2988,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
       `UPDATE decision_provenance_traces
           SET trace_digest = $3
         WHERE org_id = $1 AND id = $2`,
-      [LEDGER_ORG, "trace:bad-replay-digest", "0".repeat(64)],
+      [
+        LEDGER_ORG,
+        issuedTraceId("trace:bad-replay-digest"),
+        "0".repeat(64),
+      ],
     );
     await db.exec(
       "ALTER TABLE decision_provenance_traces ENABLE TRIGGER decision_provenance_traces_no_update",

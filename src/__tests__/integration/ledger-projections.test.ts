@@ -385,6 +385,36 @@ describe("deterministic decision-ledger projections", () => {
     }]);
   });
 
+  it("preserves a known execution handle across handle-less failure events", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const succeeded = samples.find(
+      (event) => event.type === "ExecutionSucceeded",
+    )!;
+    const failed = samples.find(
+      (event) => event.type === "ExecutionFailed",
+    )!;
+    const observedSample = samples.find(
+      (event) => event.type === "StatusObserved",
+    )!;
+    if (observedSample.type !== "StatusObserved") {
+      throw new Error("expected status observation fixture");
+    }
+    const observedWithoutEvidence = { ...observedSample };
+    delete observedWithoutEvidence.evidenceSnapshotRef;
+    const observed = LedgerEntrySchema.parse(observedWithoutEvidence);
+    await expect(append(db, [succeeded, failed, observed])).resolves.toHaveLength(3);
+    const projection = (await listDecisionProjections(db, LEDGER_TENANT))[0]!
+      .projection;
+    expect(projection.executionSteps).toEqual([{
+      stepId: succeeded.type === "ExecutionSucceeded" ? succeeded.stepId : "",
+      status: "observed",
+      sourceStatus: observedSample.sourceStatus,
+      executionHandleId: "handle:1",
+    }]);
+  });
+
   it("represents blocked decisions with no authority mode", async () => {
     const input = blockedRecordingInput();
     const recorded = await recordDecision(db, LEDGER_TENANT, input);

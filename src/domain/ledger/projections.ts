@@ -118,14 +118,20 @@ function upsertExecution(
   state: DecisionProjection,
   next: ProjectedExecutionStep,
 ): DecisionProjection {
+  const prior = state.executionSteps.find((step) => step.stepId === next.stepId);
+  const merged = {
+    ...next,
+    executionHandleId:
+      next.executionHandleId ?? prior?.executionHandleId ?? null,
+  };
   const without = state.executionSteps.filter((step) =>
-    step.stepId !== next.stepId &&
+    step.stepId !== merged.stepId &&
     !(
-      next.executionHandleId !== null &&
-      step.executionHandleId === next.executionHandleId &&
+      merged.executionHandleId !== null &&
+      step.executionHandleId === merged.executionHandleId &&
       step.stepId.startsWith("observed:")
     ));
-  return { ...state, executionSteps: [...without, next] };
+  return { ...state, executionSteps: [...without, merged] };
 }
 
 /**
