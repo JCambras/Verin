@@ -40,11 +40,35 @@ const REGISTERED_RETAINED_CODES = new Set([
 ]);
 const RETAINED_TEXT_REFERENCE = /^retained-text:v1:[a-f0-9]{64}$/;
 const BUNDLE_VERSION_CODES = new Set(["0", "0.0.0"]);
+const REGISTERED_RETAINED_IDENTIFIERS = new Set([
+  "crm-record",
+  "custodian-submit",
+  "firm-a-cash-reserve",
+  "firm-a-source-selection",
+  "firm_policy",
+  "household_instruction",
+  "ledger-test",
+  "operations",
+  "operations-manager",
+  "ops-dual-approval",
+  "org-verin-demo",
+  "regulatory",
+  "seed-decision-ledger",
+  "smiths-cash-floor",
+  "verin-decision-engine",
+]);
 const IDENTIFIER_FIELD =
   /(?:^id$|Id$|Ids$|Ref$|Refs$|Key$|Keys$|Hash$|Hashes$|Parts$|^attribution$)/;
 const ACCOUNT_PATTERN_EXEMPT_FIELD =
   /(?:Hash$|Hashes$|^attribution$|^idempotencyKey$)/;
-const OPAQUE_IDENTIFIER = /^[A-Za-z0-9]+(?:[._:/@-][A-Za-z0-9]+)*$/;
+const CANONICAL_UUID =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+const MACHINE_HASH = /^[a-f0-9]{64}$/;
+const FIRM_IDENTIFIER = /^firm-[a-z0-9]+$/;
+const NAMESPACED_IDENTIFIER =
+  /^[A-Za-z][A-Za-z0-9._-]*:[A-Za-z0-9][A-Za-z0-9._@-]*(?::[A-Za-z0-9][A-Za-z0-9._@-]*)*$/;
+const VERSIONED_IDENTIFIER =
+  /^[a-z][a-z0-9-]*@(?:v?\d+|\d+(?:\.\d+)+)$/;
 const TITLE_CASE_IDENTIFIER_SEGMENT =
   /(?:^|[._:/@-])\p{Lu}\p{Ll}{1,}(?:['-][\p{Lu}]?\p{Ll}+)?(?:$|[._:/@-])/u;
 
@@ -78,9 +102,16 @@ function requireOpaqueIdentifier(
   value: string,
   checkAccountPattern: boolean,
 ): void {
+  const machineIdentifier =
+    CANONICAL_UUID.test(value) ||
+    MACHINE_HASH.test(value) ||
+    FIRM_IDENTIFIER.test(value) ||
+    NAMESPACED_IDENTIFIER.test(value) ||
+    VERSIONED_IDENTIFIER.test(value) ||
+    REGISTERED_RETAINED_IDENTIFIERS.has(value);
   if (
     value.length > 256 ||
-    !OPAQUE_IDENTIFIER.test(value) ||
+    !machineIdentifier ||
     looksLikePIIValue(value) ||
     (checkAccountPattern && hasSensitiveAccountReference(value)) ||
     TITLE_CASE_IDENTIFIER_SEGMENT.test(value)
@@ -209,6 +240,12 @@ export function assertReplaySourcePiiBoundary(
 
 export function assertLedgerEventPiiBoundary(event: LedgerEntry): void {
   requireRetainedValueBoundary(event);
+  if ("reasonCode" in event && event.reasonCode !== undefined) {
+    requireRegisteredCode(event.reasonCode);
+  }
+  if ("failureCode" in event) {
+    requireRegisteredCode(event.failureCode);
+  }
   if (event.type === "ApprovalRecorded" && event.structuredReason !== undefined) {
     requireRetainedToken(event.structuredReason);
   }

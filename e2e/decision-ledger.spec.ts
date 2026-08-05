@@ -38,3 +38,35 @@ test("advisor cannot read the decision ledger", async ({ page }) => {
     page.getByRole("alert").filter({ hasText: "do not have permission" }),
   ).toBeVisible();
 });
+
+test("failed verification presents a dedicated entries-withheld state", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.route("**/api/ledger", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        verification: {
+          ok: false,
+          entriesChecked: 0,
+          entriesStored: 5,
+          levels: [{
+            level: "L1",
+            ok: false,
+            entriesChecked: 0,
+            reason: "entry hash differs",
+          }],
+        },
+        total: 5,
+        decisionsTotal: 0,
+        decisions: [],
+        entries: [],
+      }),
+    });
+  });
+  await page.goto("/app/ledger");
+  await expect(page.getByTestId("ledger-verdict")).toContainText(
+    "Verification failed",
+  );
+  await expect(page.getByTestId("ledger-entries-withheld")).toBeVisible();
+  await expect(page.getByText("No decision events have been recorded")).toHaveCount(0);
+});

@@ -5856,3 +5856,41 @@ x suppresses every register row when stored actor metadata fails verification
 ADR-0042 line ceiling also pass.
 
 **Date:** 2026-08-04 (review corrections F1-F9, ADR-0041/0042, D-112).
+### PF-199 decision-ledger retention and constructed-SQL anti-fork coverage
+
+**Invariants:** derived producer provenance cannot lose its demonstration trace before
+immutable persistence; retained event codes and references are closed machine
+vocabularies; immutable-table inserts have one exact owner even when SQL is assembled;
+failed verification discloses no rows and does not present an empty-ledger state.
+
+The focused regression tests first reproduced all three storage failures:
+
+```text
+× refuses derived producer provenance that immutable rows cannot retain
+  expected false, received true
+× refuses an unregistered retained failureCode
+  promise resolved instead of rejecting
+× refuses a PII-shaped immutable source identifier (robert-smith)
+  expected false, received true
+```
+
+Two in-memory source injections then assembled the raw insert through concatenation
+and a dynamic template table. Before the fence correction both companions failed:
+
+```text
+× detects an immutable insert assembled from concatenated fragments
+  expected [] to have a length of 1
+× fails closed when an INSERT uses a dynamic table identifier
+  expected [] to have a length of 1
+```
+
+After the correction, both planted sources resolve to the exact diagnostic
+`src/infrastructure/evil.ts:2`, and the focused fence and ledger integration suites
+pass. The Playwright register companion supplies a failed L1 response with five stored
+entries and proves the page renders `ledger-entries-withheld` while the empty-ledger
+copy is absent.
+
+**Revert:** no planted production source remains. The companion fixtures stay in the
+test suites as the detection-is-not-verification proof.
+
+**Date:** 2026-08-05 (review corrections F1-F4, D-113).

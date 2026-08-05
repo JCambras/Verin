@@ -148,7 +148,17 @@ export default function DecisionLedgerPage() {
             </section>
           ) : null}
 
-          {model.entries.length === 0 ? (
+          {!model.verification.ok ? (
+            <p
+              role="alert"
+              data-testid="ledger-entries-withheld"
+              className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            >
+              Decision entries are withheld because integrity verification
+              failed. Restore and verify the ledger before inspecting its
+              recorded data.
+            </p>
+          ) : model.total === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600">
               No decision events have been recorded for this firm.
             </p>
@@ -209,7 +219,7 @@ export default function DecisionLedgerPage() {
               </table>
             </div>
           )}
-          {model.total > model.entries.length ? (
+          {model.verification.ok && model.total > model.entries.length ? (
             <p className="text-sm text-slate-600">
               Showing the latest {model.entries.length} of {model.total} events.
               {model.verification.entriesChecked < model.verification.entriesStored

@@ -3624,3 +3624,37 @@ authorize disclosure of the bytes that failed verification.
 **Revert path:** restore the raw-org boundaries and single-grant register only if the
 sealed-authority, PII-retention, governed-disclosure, and metric-provenance invariants
 are withdrawn together.
+
+### D-113 · 2026-08-05 · reversible · Ledger retention and anti-fork boundaries fail closed
+
+Decision-ledger producer provenance now rejects `computed` and derived values because
+the immutable row and chain envelope retain only source, time, and confidence. A
+demonstration trace can no longer be discarded before hashing and replay. Persisting
+derived producer provenance remains a future versioned-schema choice rather than a
+silent reinterpretation of existing bytes.
+
+Every retained ledger reason and failure code must belong to the reviewed code
+registry. Structural identifiers accept only canonical UUIDs, hashes, firm ids,
+namespaced references, versioned references, or reviewed code identifiers, so a
+lowercase human-shaped slug cannot enter immutable history as a reference.
+
+The append-only fence now resolves SQL executor calls, static concatenation, template
+interpolation, and bound constants before assigning immutable-table insert ownership.
+An `INSERT` with a dynamic table target fails closed. The register presents failed
+verification as an explicit entries-withheld incident and reserves its empty state for
+a verified ledger with zero stored events.
+
+The measured implementation remains inside the existing ceilings at contracts
+4,542/4,600, domain 1,584/1,600, infrastructure 6,544/6,550, and presentation
+917/6,000.
+
+**Why:** immutable history cannot safely strip derivation trust, accept open code or
+identifier vocabularies, rely on source-fragment matching for write ownership, or
+represent withheld evidence as an empty record.
+**Alternatives:** adding provenance columns and a new chain envelope was rejected for
+this correction because no current producer requires derived provenance and prior
+bytes must remain stable. A broader lowercase-name heuristic was rejected because it
+would reject legitimate machine codes without proving identity.
+**Revert path:** restore the permissive provenance parser, retained-value traversal,
+literal-fragment fence, and shared empty UI state together only if their trust and
+disclosure claims are withdrawn.

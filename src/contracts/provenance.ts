@@ -43,9 +43,12 @@ export function parseRecordProvenance(value: unknown): RecordProvenance | null {
   const candidate = value as Partial<RecordProvenance>;
   if (
     !SOURCE_SYSTEMS.some((source) => source === candidate.source) ||
+    candidate.source === "computed" ||
     !CONFIDENCES.some((confidence) => confidence === candidate.confidence) ||
     typeof candidate.asOf !== "string" ||
-    Number.isNaN(Date.parse(candidate.asOf))
+    Number.isNaN(Date.parse(candidate.asOf)) ||
+    "demonstration" in value ||
+    "derivedFrom" in value
   ) {
     return null;
   }

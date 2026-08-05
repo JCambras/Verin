@@ -36,6 +36,7 @@ import {
 } from "@contracts/decision-core/serialization";
 import { DecisionInputBundleSchema } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
+import { deriveArtifactProvenance } from "@contracts/provenance";
 import {
   LEDGER_EXPORT_GRANT,
   LEDGER_LATER,
@@ -322,6 +323,40 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.levels.at(-1)?.level).toBe("L1");
   });
 
+  it("refuses derived producer provenance that immutable rows cannot retain", async () => {
+    const provenance = deriveArtifactProvenance(
+      [LEDGER_PROVENANCE],
+      LEDGER_PROVENANCE.asOf,
+    );
+    const result = await recordDecision(db, LEDGER_TENANT, {
+      ...decisionRecordingInput(),
+      provenance,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? null : result.error.code).toBe("VALIDATION");
+    expect((await sourceCounts(db)).decision_ledger).toBe(0);
+  });
+
+  it("refuses derived provenance on later event appends", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const provenance = deriveArtifactProvenance(
+      [LEDGER_PROVENANCE],
+      LEDGER_PROVENANCE.asOf,
+    );
+    const event = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (sample) => sample.type === "ApprovalInvalidated",
+      )!,
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    await expect(
+      db.transaction((tx) =>
+        appendDecisionEvents(tx, LEDGER_TENANT, [event], provenance)),
+    ).rejects.toMatchObject({ code: "VALIDATION" });
+    expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
+  });
+
   it("holds the tenant lock before reading any verification snapshot", async () => {
     await recordFixture(db);
     const statements: string[] = [];
@@ -548,6 +583,31 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
   });
 
+  it.each([
+    ["reasonCode", "ApprovalInvalidated"],
+    ["failureCode", "ExecutionFailed"],
+  ] as const)(
+    "refuses an unregistered retained %s",
+    async (field, type) => {
+      const input = decisionRecordingInput();
+      expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+      const sample = allLedgerEventSamples().find(
+        (event) => event.type === type,
+      )!;
+      const event = LedgerEntrySchema.parse({
+        ...sample,
+        ...(type === "ApprovalInvalidated"
+          ? { priorDecisionHash: input.decisionRecord.decisionHash }
+          : {}),
+        [field]: "robert-smith",
+      });
+      await expect(append(db, [event])).rejects.toMatchObject({
+        code: "PII_VIOLATION",
+      });
+      expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
+    },
+  );
+
   it("refuses PII in every immutable replay source", async () => {
     const snapshotInput = decisionRecordingInput();
     const snapshotResult = await recordDecision(db, LEDGER_TENANT, {
@@ -671,7 +731,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
   });
 
-  it.each(["unsafe@firm.test", "123456789012"])(
+  it.each(["unsafe@firm.test", "123456789012", "robert-smith"])(
     "refuses a PII-shaped immutable source identifier (%s)",
     async (id) => {
       const input = decisionRecordingInput();
