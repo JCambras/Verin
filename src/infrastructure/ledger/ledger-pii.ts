@@ -103,8 +103,6 @@ const REGISTERED_VERSIONED_IDENTIFIER_PREFIXES = new Set([
 ]);
 const IDENTIFIER_FIELD =
   /(?:^id$|Id$|Ids$|Ref$|Refs$|Key$|Keys$|Hash$|Hashes$|Parts$|^attribution$)/;
-const ACCOUNT_PATTERN_EXEMPT_FIELD =
-  /(?:Hash$|Hashes$|^attribution$|^idempotencyKey$)/;
 const CANONICAL_UUID =
   /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 const MACHINE_HASH = /^[a-f0-9]{64}$/;
@@ -153,10 +151,7 @@ function isRegisteredMachineIdentifier(value: string): boolean {
   ) && VERSION_SUFFIX.test(value.slice(versionSeparator + 1));
 }
 
-function requireOpaqueIdentifier(
-  value: string,
-  checkAccountPattern: boolean,
-): void {
+function requireOpaqueIdentifier(value: string): void {
   const machineIdentifier =
     CANONICAL_UUID.test(value) ||
     MACHINE_HASH.test(value) ||
@@ -166,8 +161,7 @@ function requireOpaqueIdentifier(
   if (
     value.length > 256 ||
     !machineIdentifier ||
-    looksLikePIIValue(value) ||
-    (checkAccountPattern && hasSensitiveAccountReference(value))
+    looksLikePIIValue(value)
   ) {
     refuse();
   }
@@ -177,16 +171,15 @@ function requireOpaqueIdentifiers(value: unknown): void {
   const pending: Array<{
     readonly value: unknown;
     readonly identifier: boolean;
-    readonly checkAccountPattern: boolean;
   }> = [
-    { value, identifier: false, checkAccountPattern: false },
+    { value, identifier: false },
   ];
   const seen = new WeakMap<object, boolean>();
   while (pending.length > 0) {
     const item = pending.pop()!;
     if (typeof item.value === "string") {
       if (item.identifier) {
-        requireOpaqueIdentifier(item.value, item.checkAccountPattern);
+        requireOpaqueIdentifier(item.value);
       } else if (looksLikeAmbiguousSensitiveText(item.value)) {
         refuse();
       }
@@ -207,7 +200,6 @@ function requireOpaqueIdentifiers(value: unknown): void {
         pending.push({
           value: nested,
           identifier: item.identifier,
-          checkAccountPattern: item.checkAccountPattern,
         });
       }
       continue;
@@ -218,9 +210,6 @@ function requireOpaqueIdentifiers(value: unknown): void {
       pending.push({
         value: nested,
         identifier,
-        checkAccountPattern: item.identifier
-          ? item.checkAccountPattern
-          : identifier && !ACCOUNT_PATTERN_EXEMPT_FIELD.test(key),
       });
     }
   }

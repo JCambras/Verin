@@ -5,7 +5,7 @@
 **Deciders:** Founding architect (executing v3 prompt 7 and its accepted design report)
 **Relates to:** Charter non-negotiables #1, #2, #7, #13; v3 invariants 2, 4, 5, 23, 30
 **Informed by:** `docs/v3/verin-architecture-v3.md` §§5, 12, 15, 16, 18; prompt 7; `verin-ledgerdesign-l7/report.md`
-**Amended by:** ADR-0042
+**Amended by:** ADR-0042, ADR-0043, ADR-0044
 
 ## Context
 
@@ -75,19 +75,20 @@ settle now.
   identity. A release cites that exact generation. Reuse is allowed after release
   only through a new creation identity, and a delayed old-generation release cannot
   affect the new generation. Projection rows persist derived provenance for repair and
-  operator reads, but the register never trusts them: it replays the exact verified
-  event window and verifies the immutable sources needed by every state it displays.
+  operator reads, but the register never trusts them: it replays the exact displayed
+  event window from a full-chain verified snapshot and verifies the immutable sources
+  needed by every state it displays.
 - Verification is layered: L1 checks gaps, links, and hashes over stored bytes; L2
   dispatches recorded schema/serializer versions and proves canonical round-trip;
   L3 re-derives promoted columns from the typed payload; L4 compares count,
   sequence, and head hash with the anchor. The existing CI chain gate verifies
   both audit-class stores unbounded, dispatches immutable evidence, bundle, and
   decision rows through recorded source codecs, and refuses a zero-entry pass.
-- A request path may verify a bounded window: the most recent entries, anchored to
-  the stored hash of the row preceding them, with L4 still compared against tenant
-  totals. The register verifies, reads, and replays that window under one tenant-locked
-  transaction and displays only decisions whose complete replay sources fall inside
-  it. Only the gate's unbounded run is examiner-grade.
+- The request path verifies the complete tenant chain under one tenant-locked
+  transaction, then returns and replays only the bounded event window. It displays
+  only decisions whose complete replay sources fall inside that window and reports
+  the number withheld. The register remains an operator view; only the gate's
+  unbounded source verification is examiner-grade.
 - The seeded `/app/ledger` register is read-only, uses typed view models, and shows
   both the raw event register and replayed decision state, so the projection fold is
   reachable in the PR that lands it. Rows produced by a synthetic source carry the
@@ -98,8 +99,8 @@ settle now.
   now applies to both chains.
 - Amend the ADR-0018 ceilings, re-measured on the composed tree that already
   carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 6,050,
-  domain 1,350 to 1,650, and infrastructure 3,550 to 7,200. Measured state is
-  contracts 5,991 (59 headroom), domain 1,584 (66), and infrastructure 7,173 (27) -
+  domain 1,350 to 1,650, and infrastructure 3,550 to 7,300. Measured state is
+  contracts 5,991 (59 headroom), domain 1,584 (66), and infrastructure 7,231 (69) -
   bounded correction room, per the ADR-0033 rule that a zero-headroom ceiling just
   converts review findings into documentation deletions. The presentation envelope and
   the per-file 500-line limit are unchanged: the repository is split into the chain
@@ -127,9 +128,10 @@ settle now.
 
 ## Consequences
 
-Migration version 4 adds the decision-ledger foundation, and version 5 adds recorded
-replay-source schema identity plus generation-bound reservation ownership. Both are
-additive. Existing audit DDL, rows, preimages, outbox, and verification remain
+Migration version 4 adds the decision-ledger foundation, version 5 adds recorded
+replay-source schema identity plus generation-bound reservation ownership, and version
+6 adds history access-path indexes. All are additive. Existing audit DDL, rows,
+preimages, outbox, and verification remain
 byte-compatible. Future event schema versions add dispatch
 entries and pure upcasts for projection use. They never rewrite an old row or
 hash. Prompt 19 owns decision re-evaluation, and prompts 18/23/25 own authority,

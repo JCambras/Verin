@@ -25,7 +25,7 @@ import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
-import { DECISION_LEDGER_GENERATIONS_SQL, DECISION_LEDGER_SQL } from "./decision-ledger-migration";
+import { DECISION_LEDGER_GENERATIONS_SQL, DECISION_LEDGER_HISTORY_INDEXES_SQL, DECISION_LEDGER_SQL } from "./decision-ledger-migration";
 export interface Migration {
   /** Monotonic, gap-free version, recorded once applied. */
   readonly version: number;
@@ -344,11 +344,8 @@ export const MIGRATIONS: readonly Migration[] = [
     })),
   },
   { version: 4, name: "decision-ledger-foundation", sql: DECISION_LEDGER_SQL },
-  {
-    version: 5,
-    name: "decision-ledger-reservation-generations",
-    sql: DECISION_LEDGER_GENERATIONS_SQL,
-  },
+  { version: 5, name: "decision-ledger-reservation-generations", sql: DECISION_LEDGER_GENERATIONS_SQL },
+  { version: 6, name: "decision-ledger-history-indexes", sql: DECISION_LEDGER_HISTORY_INDEXES_SQL },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free

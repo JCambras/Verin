@@ -266,3 +266,22 @@ CREATE UNIQUE INDEX decision_reservation_one_active
   ON decision_reservation_index(org_id, reservation_id)
   WHERE status = 'active';
 `;
+
+export const DECISION_LEDGER_HISTORY_INDEXES_SQL = `
+CREATE INDEX decision_ledger_evidence_origins
+  ON decision_ledger(org_id, evidence_snapshot_id, sequence)
+  WHERE event_type = 'EvidenceSnapshotRecorded';
+CREATE INDEX decision_ledger_bundle_origins
+  ON decision_ledger(org_id, decision_id, sequence)
+  WHERE event_type = 'DecisionRecorded';
+CREATE INDEX decision_ledger_reservation_creations
+  ON decision_ledger(
+    org_id,
+    ((payload_json::jsonb #>> '{reservationRef,id}')),
+    sequence
+  )
+  WHERE event_type = 'ReservationCreated';
+CREATE INDEX decision_ledger_reservation_releases
+  ON decision_ledger(org_id, reservation_creation_id, sequence)
+  WHERE event_type = 'ReservationReleased';
+`;

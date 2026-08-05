@@ -58,6 +58,7 @@ test("failed verification presents a dedicated entries-withheld state", async ({
         },
         total: 5,
         decisionsTotal: 0,
+        decisionsWithheld: null,
         decisions: [],
         entries: [],
       }),
@@ -68,5 +69,47 @@ test("failed verification presents a dedicated entries-withheld state", async ({
     "Verification failed",
   );
   await expect(page.getByTestId("ledger-entries-withheld")).toBeVisible();
+  await expect(page.getByText("No decision events have been recorded")).toHaveCount(0);
+});
+
+test("bounded replay identifies decisions withheld outside its trust window", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.route("**/api/ledger", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        verification: {
+          ok: true,
+          entriesChecked: 12,
+          entriesStored: 12,
+          levels: ["L1", "L2", "L3", "L4"].map((level) => ({
+            level,
+            ok: true,
+            entriesChecked: 12,
+            reason: null,
+          })),
+        },
+        total: 12,
+        decisionsTotal: 0,
+        decisionsWithheld: {
+          value: 1,
+          format: "count",
+          provenance: {
+            source: "computed",
+            asOf: "2026-08-05T12:00:00.000Z",
+            confidence: "high",
+            demonstration: false,
+            derivedFrom: ["verin-crm"],
+          },
+        },
+        decisions: [],
+        entries: [],
+      }),
+    });
+  });
+  await page.goto("/app/ledger");
+  await expect(page.getByTestId("ledger-decisions-withheld")).toContainText(
+    "Withheld decisions: 1",
+  );
   await expect(page.getByText("No decision events have been recorded")).toHaveCount(0);
 });

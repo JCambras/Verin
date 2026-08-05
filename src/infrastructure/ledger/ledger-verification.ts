@@ -135,12 +135,6 @@ export async function listDecisionLedger(
   return listDecisionLedgerForTenant(db, exportGrant.tenant, tail);
 }
 
-/**
- * Reading and verifying the whole chain is O(entries) work under the store's single
- * connection, so callers on a request path pass `window` to verify the most recent
- * entries against the stored hash of their predecessor. The unbounded form stays the
- * examiner-grade check and is what the audit-chain-verify gate runs.
- */
 export async function verifyAndListDecisionLedger(
   db: SqlDb,
   exportGrant: ActionGrant<"audit.export">,
@@ -185,32 +179,18 @@ async function verifySnapshotTransaction(
     [orgId],
   );
   const base = { anchor: anchor.rows[0], stored, headSequence };
-  let snapshot: LedgerSnapshot;
-  if (window === undefined || window < 1 || stored <= window) {
-    snapshot = {
-      ...base,
-      rows: await listDecisionLedgerForTenant(tx, tenant),
-      start: undefined,
-    };
-  } else {
-    const rows = await listDecisionLedgerForTenant(tx, tenant, window);
-    const first = rows[0]!;
-    const predecessor = await tx.query<{ entry_hash: string }>(
-      "SELECT entry_hash FROM decision_ledger WHERE org_id = $1 AND sequence = $2",
-      [orgId, first.sequence - 1],
-    );
-    snapshot = {
-      ...base,
-      rows,
-      start: {
-        sequence: first.sequence,
-        prevHash: predecessor.rows[0]?.entry_hash ?? "",
-      },
-    };
-  }
+  const verificationRows = await listDecisionLedgerForTenant(tx, tenant);
+  const snapshot: LedgerSnapshot = {
+    ...base,
+    rows: verificationRows,
+    start: undefined,
+  };
+  const rows = window !== undefined && window > 0 && stored > window
+    ? verificationRows.slice(-window)
+    : verificationRows;
   return {
     verification: await verifyLedgerSnapshot(tx, tenant, snapshot),
-    rows: snapshot.rows,
+    rows,
   };
 }
 

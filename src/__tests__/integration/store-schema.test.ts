@@ -163,6 +163,20 @@ describe("store schema hardening (integration)", () => {
       );
       expect(new Set(idx.rows.map((r) => r.indexname))).toEqual(new Set(["contacts_household", "financial_accounts_household", "sessions_user"]));
     });
+
+    it("creates indexes for ledger origins and reservation history", async () => {
+      const expected = new Set([
+        "decision_ledger_evidence_origins",
+        "decision_ledger_bundle_origins",
+        "decision_ledger_reservation_creations",
+        "decision_ledger_reservation_releases",
+      ]);
+      const indexes = await db.query<{ indexname: string }>(
+        "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = ANY($1::text[])",
+        [[...expected]],
+      );
+      expect(new Set(indexes.rows.map((row) => row.indexname))).toEqual(expected);
+    });
   });
 });
 

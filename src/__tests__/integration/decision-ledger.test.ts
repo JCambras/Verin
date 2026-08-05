@@ -485,6 +485,42 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(bounded.verification.levels.at(-1)?.level).toBe("L2");
   });
 
+  it("does not trust a tampered historical prerequisite outside the requested tail", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const approval = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (event) => event.type === "ApprovalRecorded",
+      )!,
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    });
+    await expect(append(db, [approval])).resolves.toHaveLength(1);
+    await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
+    await db.query(
+      `UPDATE decision_ledger
+          SET event_type = 'DecisionRecorded', decision_id = $2
+        WHERE org_id = $1 AND sequence = 0`,
+      [LEDGER_ORG, input.decisionRecord.id],
+    );
+    await db.query(
+      `UPDATE decision_ledger
+          SET event_type = 'EvidenceSnapshotRecorded', decision_id = NULL
+        WHERE org_id = $1 AND sequence = 4`,
+      [LEDGER_ORG],
+    );
+    await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+
+    const bounded = await verifyAndListDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      1,
+    );
+    expect(bounded.verification.ok).toBe(false);
+    expect(bounded.verification.levels.at(-1)?.level).toBe("L2");
+  });
+
   it("refuses an unregistered recorded schema or serializer version", async () => {
     await recordFixture(db);
     await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
@@ -622,7 +658,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.levels.at(-1)?.level).toBe("L3");
   });
 
-  it("a windowed verification checks its own entries and their link to the stored predecessor", async () => {
+  it("a windowed register authenticates the full chain before returning its tail", async () => {
     await recordFixture(db);
     const windowed = await verifyAndListDecisionLedger(
       db,
@@ -631,7 +667,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       2,
     );
     expect(windowed.verification.ok).toBe(true);
-    expect(windowed.verification.entriesChecked).toBe(2);
+    expect(windowed.verification.entriesChecked).toBe(5);
     expect(windowed.verification.entriesStored).toBe(5);
     expect(windowed.rows.map((row) => row.sequence)).toEqual([3, 4]);
 
@@ -650,7 +686,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(broken.verification.ok).toBe(false);
     expect(broken.verification.levels.at(-1)).toMatchObject({
       level: "L1",
-      reason: "prev_hash does not match preceding entry_hash",
+      reason: "entry_hash does not match stored canonical bytes",
     });
     expect((await verifyDecisionLedger(db, LEDGER_TENANT)).ok).toBe(false);
   });
@@ -930,6 +966,27 @@ describe("decision ledger storage and L1-L4 verification", () => {
       decision_records: 0,
       decision_ledger: 0,
     });
+  });
+
+  it("accepts a canonical machine UUID that contains account-like digit runs", async () => {
+    const input = decisionRecordingInput();
+    const snapshot = {
+      ...input.evidenceSnapshots[0]!,
+      sourceRef: {
+        ...input.evidenceSnapshots[0]!.sourceRef,
+        id: "12345678-1234-4123-8123-123456789012",
+      },
+    };
+    const evidenceEvent = LedgerEntrySchema.parse({
+      ...input.events[0]!,
+      snapshotHash: hashPreimage(snapshot),
+    });
+    const result = await recordDecision(db, LEDGER_TENANT, {
+      ...input,
+      evidenceSnapshots: [snapshot, ...input.evidenceSnapshots.slice(1)],
+      events: [evidenceEvent, ...input.events.slice(1)],
+    });
+    expect(result.ok, result.ok ? "" : result.error.message).toBe(true);
   });
 
   it("refuses a person name used only as an immutable source identifier", async () => {
@@ -1425,6 +1482,35 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const verdict = await verifyDecisionLedger(db, LEDGER_TENANT);
     expect(verdict.ok, verdict.levels.at(-1)?.reason ?? "").toBe(true);
     expect(verdict.entriesChecked).toBe(5);
+  });
+
+  it("updates the ledger anchor and projection checkpoint once per committed batch", async () => {
+    const statements: string[] = [];
+    const measured: SqlDb = {
+      ...db,
+      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        return db.transaction((tx) => fn({
+          ...tx,
+          async query<U>(sql: string, params?: unknown[]) {
+            statements.push(sql);
+            return tx.query<U>(sql, params);
+          },
+        }));
+      },
+    };
+    const result = await recordDecision(
+      measured,
+      LEDGER_TENANT,
+      decisionRecordingInput(),
+    );
+    expect(result.ok, result.ok ? "" : result.error.message).toBe(true);
+    expect(
+      statements.filter((sql) => sql.includes("INSERT INTO decision_ledger_anchor")),
+    ).toHaveLength(1);
+    expect(
+      statements.filter((sql) =>
+        sql.includes("INSERT INTO decision_projection_checkpoint")),
+    ).toHaveLength(1);
   });
 
   it("rejects a direct database handle where a transaction capability is required", async () => {

@@ -102,7 +102,7 @@ export default function DecisionLedgerPage() {
                 Folded from the recorded events below, in ledger order. Nothing
                 here is evaluated or inferred.
                 {model.decisionsTotal > model.decisions.length
-                  ? ` Showing ${model.decisions.length} of ${model.decisionsTotal} replayable decisions in this verified window.`
+                  ? ` Showing ${model.decisions.length} of ${model.decisionsTotal} replayable decisions in this displayed event window.`
                   : null}
               </p>
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -146,6 +146,18 @@ export default function DecisionLedgerPage() {
                 ))}
               </ul>
             </section>
+          ) : null}
+
+          {model.verification.ok && model.decisionsWithheld ? (
+            <p
+              role="status"
+              data-testid="ledger-decisions-withheld"
+              className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            >
+              Withheld decisions: <Metric metric={model.decisionsWithheld} />.
+              Required source-origin events fall outside the displayed event
+              window, so those decisions are not replayed here.
+            </p>
           ) : null}
 
           {!model.verification.ok ? (
@@ -222,9 +234,7 @@ export default function DecisionLedgerPage() {
           {model.verification.ok && model.total > model.entries.length ? (
             <p className="text-sm text-slate-600">
               Showing the latest {model.entries.length} of {model.total} events.
-              {model.verification.entriesChecked < model.verification.entriesStored
-                ? ` Integrity above covers the latest ${model.verification.entriesChecked} entries and their link to the preceding stored hash; the full chain is verified by the audit-chain-verify gate.`
-                : " Verification covers the full chain."}
+              {" "}Verification covers the full chain.
             </p>
           ) : null}
         </>

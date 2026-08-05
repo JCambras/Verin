@@ -221,31 +221,31 @@ async function appendPrepared(
       projectionProvenance,
       event.type === "DecisionRecorded" ? decisionRecord : undefined,
     );
-    // Per entry, never once per batch: if a later event of this batch throws and a
-    // future producer swallows it inside its own transaction, the rows that DID
-    // commit still have an anchor that matches them, so L4 stays repairable.
-    await tx.query(
-      `INSERT INTO decision_ledger_anchor
-        (org_id,max_sequence,entry_count,head_hash,updated_at)
-       VALUES ($1,$2,1,$3,$4)
-       ON CONFLICT (org_id) DO UPDATE
-         SET max_sequence = EXCLUDED.max_sequence,
-             entry_count = decision_ledger_anchor.entry_count + 1,
-             head_hash = EXCLUDED.head_hash,
-             updated_at = EXCLUDED.updated_at`,
-      [orgId, sequence, entryHash, event.recordedAt],
-    );
-    await tx.query(
-      `INSERT INTO decision_projection_checkpoint (org_id,last_sequence,rebuilt_at)
-       VALUES ($1,$2,$3)
-       ON CONFLICT (org_id) DO UPDATE
-         SET last_sequence = EXCLUDED.last_sequence, rebuilt_at = EXCLUDED.rebuilt_at`,
-      [orgId, sequence, event.recordedAt],
-    );
     appended.push({ id: event.id, sequence, entryHash });
     prevHash = entryHash;
     sequence += 1;
   }
+  const last = appended.at(-1);
+  const recordedAt = events.at(-1)?.event.recordedAt;
+  if (!last || !recordedAt) return appended;
+  await tx.query(
+    `INSERT INTO decision_ledger_anchor
+      (org_id,max_sequence,entry_count,head_hash,updated_at)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (org_id) DO UPDATE
+       SET max_sequence = EXCLUDED.max_sequence,
+           entry_count = decision_ledger_anchor.entry_count + EXCLUDED.entry_count,
+           head_hash = EXCLUDED.head_hash,
+           updated_at = EXCLUDED.updated_at`,
+    [orgId, last.sequence, appended.length, last.entryHash, recordedAt],
+  );
+  await tx.query(
+    `INSERT INTO decision_projection_checkpoint (org_id,last_sequence,rebuilt_at)
+     VALUES ($1,$2,$3)
+     ON CONFLICT (org_id) DO UPDATE
+       SET last_sequence = EXCLUDED.last_sequence, rebuilt_at = EXCLUDED.rebuilt_at`,
+    [orgId, last.sequence, recordedAt],
+  );
   return appended;
 }
 

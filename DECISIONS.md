@@ -3734,3 +3734,27 @@ the infrastructure ceiling to 7,250 around the measured 7,174 lines while retain
 outside the verified snapshot cannot authenticate immutable history or disclosure.
 **Revert path:** none while L1-L4 authorizes disclosure, reusable source trust belongs to
 the first recording edge, and transaction capabilities cross Next.js bundle boundaries.
+
+### D-117 · 2026-08-05 · reversible · Register verification authenticates complete ledger history
+
+The request-path register now runs L1-L4 over the complete tenant chain before it
+selects the bounded event rows and replay window. Historical decision and reservation
+prerequisites consumed by L2 are therefore part of the authenticated snapshot rather
+than unchecked inputs to a tail verdict.
+
+Replay-source corruption becomes a safe L2 failure that withholds all entries. A
+provenance-bound count identifies decisions omitted because their source origins fall
+outside the displayed event window. Exact machine identifiers no longer receive a
+second partial account-number scan after their grammar and general PII checks pass.
+
+Migration version 6 adds partial indexes for source origins and reservation history.
+Savepoint-protected batches advance their anchor and checkpoint once at the batch head.
+The corrected infrastructure layer measures 7,231/7,250, so the existing ADR-0043
+ceiling remains unchanged.
+
+**Why:** a predecessor hash cannot authenticate arbitrary promoted facts outside a
+verified tail, and integrity failures or bounded omissions must never appear as missing
+history.
+**Relates to:** ADR-0039, ADR-0043, ADR-0044.
+**Revert path:** none while historical facts authorize L2 ordering and the register
+returns a verified integrity verdict.

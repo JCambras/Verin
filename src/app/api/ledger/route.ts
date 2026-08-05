@@ -73,6 +73,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     rows,
     decisions,
     decisionsTotal,
+    decisionsWithheld,
+    decisionsWithheldProvenance,
   } = await readVerifiedDecisionRegister(
     db,
     auth.value,
@@ -89,6 +91,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     },
     total: verification.entriesStored,
     decisionsTotal,
+    decisionsWithheld: decisionsWithheldProvenance
+      ? metric(decisionsWithheld, "count", decisionsWithheldProvenance)
+      : null,
     decisions: decisions.map(({ projection, provenance }) => ({
       decisionId: projection.decisionId,
       disposition: projection.disposition,

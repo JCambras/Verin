@@ -44,6 +44,7 @@ export interface VerifiedReplayDecisionSource {
 
 export interface VerifiedReplaySources {
   readonly decisions: ReadonlyMap<string, VerifiedReplayDecisionSource>;
+  readonly withheldDecisionIds: ReadonlySet<string>;
   readonly sourcesChecked: number;
 }
 
@@ -341,6 +342,7 @@ async function loadReplaySources(
     evidenceSequences.set(entry.event.evidenceSnapshotRef.id, sequences);
   }
   const decisions = new Map<string, VerifiedReplayDecisionSource>();
+  const withheldDecisionIds = new Set<string>();
   for (const entry of decisionEntries) {
     if (entry.event.type !== "DecisionRecorded") continue;
     const row = sourceRows.get(entry.event.decisionRef.id)!;
@@ -384,7 +386,10 @@ async function loadReplaySources(
       memberIds.some((id, index) => id !== expectedIds[index])
     ) replaySourceError("decision replay source binding differs during replay");
     if (expectedIds.some((id) => !origins.snapshots.has(id))) {
-      if (windowed) continue;
+      if (windowed) {
+        withheldDecisionIds.add(entry.event.decisionRef.id);
+        continue;
+      }
       replaySourceError("decision evidence has no recording ledger fact");
     }
     expectedIds.forEach((id) => verifyEvidenceRow(
@@ -394,12 +399,18 @@ async function loadReplaySources(
     const completeWindow = expectedIds.every((id) =>
       evidenceSequences.get(id)?.some((sequence) => sequence < entry.sequence));
     if (!completeWindow) {
-      if (windowed) continue;
+      if (windowed) {
+        withheldDecisionIds.add(entry.event.decisionRef.id);
+        continue;
+      }
       replaySourceError("decision evidence is missing before its recording event");
     }
     const bundleOrigin = origins.bundles.get(source.bundle.id);
     if (!bundleOrigin) {
-      if (windowed) continue;
+      if (windowed) {
+        withheldDecisionIds.add(entry.event.decisionRef.id);
+        continue;
+      }
       replaySourceError("decision input bundle has no recording ledger fact");
     }
     decisions.set(entry.event.decisionRef.id, {
@@ -416,6 +427,7 @@ async function loadReplaySources(
   if (windowed) {
     return {
       decisions,
+      withheldDecisionIds,
       sourcesChecked: evidenceRows.size + sourceRows.size +
         bundleIds.length + [...memberships.values()].flat().length,
     };
@@ -461,6 +473,7 @@ async function loadReplaySources(
   ) replaySourceError("immutable replay source has no recording ledger fact");
   return {
     decisions,
+    withheldDecisionIds,
     sourcesChecked: Number(summary.source_count),
   };
 }

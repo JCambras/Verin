@@ -1,5 +1,5 @@
 import type { SqlDb, SqlTx } from "@infra/store/db";
-import { appError } from "@contracts/errors";
+import { appError, normalizeAppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import {
   assertActionGrant,
@@ -40,6 +40,8 @@ export interface VerifiedRegisterSnapshot extends PIIBearing {
   readonly rows: readonly DecisionLedgerRow[];
   readonly decisions: readonly VerifiedRegisterDecision[];
   readonly decisionsTotal: number;
+  readonly decisionsWithheld: number;
+  readonly decisionsWithheldProvenance: DerivedProvenance | null;
 }
 
 function parseEvent(row: DecisionLedgerRow): LedgerEntry {
@@ -73,6 +75,8 @@ async function replayRegisterWindow(
 ): Promise<{
   readonly decisions: readonly VerifiedRegisterDecision[];
   readonly decisionsTotal: number;
+  readonly decisionsWithheld: number;
+  readonly decisionsWithheldProvenance: DerivedProvenance | null;
 }> {
   const entries: RecordedReplayEvent[] = rows.map((row) => {
     const provenance = parseRecordProvenance({
@@ -121,9 +125,43 @@ async function replayRegisterWindow(
   const ordered = [...decisions.values()].sort((left, right) =>
     right.projection.lastSequence - left.projection.lastSequence ||
     left.projection.decisionId.localeCompare(right.projection.decisionId));
+  const withheldInputs = entries.filter(({ event }) =>
+    event.type === "DecisionRecorded" &&
+    sources.withheldDecisionIds.has(event.decisionRef.id));
+  const withheldAsOf = withheldInputs.reduce(
+    (latest, entry) => entry.provenance.asOf > latest
+      ? entry.provenance.asOf
+      : latest,
+    "",
+  );
   return {
     decisions: ordered.slice(0, decisionLimit),
     decisionsTotal: ordered.length,
+    decisionsWithheld: sources.withheldDecisionIds.size,
+    decisionsWithheldProvenance: withheldInputs.length > 0
+      ? deriveArtifactProvenance(
+          withheldInputs.map((entry) => entry.provenance),
+          withheldAsOf,
+        )
+      : null,
+  };
+}
+
+function replaySourceFailure(
+  verification: LedgerVerification,
+): LedgerVerification {
+  const failed = {
+    level: "L2" as const,
+    ok: false,
+    entriesChecked: 0,
+    brokenAtSequence: null,
+    reason: "immutable replay source verification failed",
+  };
+  return {
+    ok: false,
+    entriesChecked: 0,
+    entriesStored: verification.entriesStored,
+    levels: [verification.levels[0]!, failed],
   };
 }
 
@@ -146,9 +184,31 @@ export async function readVerifiedDecisionRegister(
       eventWindow,
     );
     const rows = checked.verification.ok ? checked.rows : [];
-    const replayed = checked.verification.ok
-      ? await replayRegisterWindow(tx, tenant, rows, decisionLimit)
-      : { decisions: [], decisionsTotal: 0 };
+    if (!checked.verification.ok) {
+      return {
+        verification: checked.verification,
+        rows,
+        decisions: [],
+        decisionsTotal: 0,
+        decisionsWithheld: 0,
+        decisionsWithheldProvenance: null,
+      };
+    }
+    let replayed;
+    try {
+      replayed = await replayRegisterWindow(tx, tenant, rows, decisionLimit);
+    } catch (error: unknown) {
+      const normalized = normalizeAppError(error, "trusted-only");
+      if (normalized?.code !== "STORE_CONSTRAINT") throw error;
+      return {
+        verification: replaySourceFailure(checked.verification),
+        rows: [],
+        decisions: [],
+        decisionsTotal: 0,
+        decisionsWithheld: 0,
+        decisionsWithheldProvenance: null,
+      };
+    }
     return {
       verification: checked.verification,
       rows,

@@ -616,17 +616,6 @@ describe("deterministic decision-ledger projections", () => {
         { ...second, provenance: currentProvenance },
       )).ok,
     ).toBe(true);
-    await db.exec(
-      "ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update",
-    );
-    await db.query(
-      "UPDATE decision_ledger SET prov_source = 'verin-crm' WHERE org_id = $1 AND sequence < 5",
-      [LEDGER_ORG],
-    );
-    await db.exec(
-      "ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update",
-    );
-
     const snapshot = await readVerifiedDecisionRegister(
       db,
       LEDGER_EXPORT_GRANT,
@@ -636,6 +625,40 @@ describe("deterministic decision-ledger projections", () => {
     );
     expect(snapshot.verification.ok).toBe(true);
     expect(snapshot.rows).toHaveLength(5);
+    expect(snapshot.decisions).toEqual([]);
+    expect(snapshot.decisionsWithheld).toBe(1);
+  });
+
+  it("returns an integrity failure when a replay source is corrupt", async () => {
+    expect(
+      (await recordDecision(db, LEDGER_TENANT, decisionRecordingInput())).ok,
+    ).toBe(true);
+    await db.exec(
+      "ALTER TABLE evidence_snapshots DISABLE TRIGGER evidence_snapshots_no_update",
+    );
+    await db.query(
+      `UPDATE evidence_snapshots
+          SET canonical_json = canonical_json || ' '
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "evs:GC-01:balance"],
+    );
+    await db.exec(
+      "ALTER TABLE evidence_snapshots ENABLE TRIGGER evidence_snapshots_no_update",
+    );
+
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      200,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(false);
+    expect(snapshot.verification.levels.at(-1)).toMatchObject({
+      level: "L2",
+      reason: "immutable replay source verification failed",
+    });
+    expect(snapshot.rows).toEqual([]);
     expect(snapshot.decisions).toEqual([]);
   });
 
