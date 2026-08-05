@@ -6095,3 +6095,44 @@ large-inventory payloads fails its paired companion while local lookalikes and c
 tenant constraints remain green.
 
 **Date:** 2026-08-05 (review corrections, D-114).
+
+## F121 · mutable order, prototype reflection, and tenant closure fail closed (D-115)
+
+**Invariants:** every standard mutable-array transition retains loader and ambient
+capability provenance; reflected host prototypes remain nondeterministic; large tenant
+inventories have runtime closure rather than sampled behavioral evidence.
+
+The adversarial companions were added before the shared authorities changed. The first
+focused red runs failed eight planted cases: direct and bound array reordering, a
+descriptor-getter carrier, three host-prototype reflection forms, a reordered
+`node:module` carrier, and an eleven-path boundary that rejected the reviewed triple but
+accepted a different foreign-tenant triple. The retained matrix expands those cases
+through call, apply, bind, and Reflect invocation forms, every standard array mutator,
+Object and Reflect descriptor writes, and project-owned mutable or reflected controls.
+
+Container provenance now resolves reordered values and descriptor accessors through the
+same path authority as direct assignments. Host prototype acquisition is classified
+before a reflected method invocation can erase its origin. `withTenantClosure` installs
+an iterative parser guard that visits objects, arrays, maps, and sets, then privately
+registers the exact guarded schema. Every legal fixture above ten tenant paths requires
+that structural certificate; reviewed higher-order payloads remain supplementary.
+
+The first complete suite exposed a stack overflow when a cloned refinement bypassed the
+existing iterative explanation parser. The final factory guards the supplied schema in
+place, and the retained 12,000-level explanation test proves both parsing and hashing
+remain stack-safe.
+
+The focused dependency, tenant, and line-budget suites pass 412 tests. Serialized
+fitness passes 1,145 tests, and the complete serialized Vitest suite passes 1,500.
+Typecheck, lint, knip, the CI-configured production build, `v3:invariants` (6
+active-pass, 0 active-fail), and `golden:validate` (16 signed cases) pass.
+Production-server Playwright passes 17 tests on the isolated port override. Contracts
+measure 4,101/4,150 under ADR-0040; all other layer and runtime-data measurements are
+unchanged.
+
+**Revert:** the adversarial companions remain continuous tests. Removing mutation
+reordering, descriptor getter sources, reflected prototype acquisition, the structural
+tenant certificate, or its stack-safe parser integration fails a paired companion while
+project-owned controls and complete legal tenant fixtures remain green.
+
+**Date:** 2026-08-05 (review corrections, D-115).

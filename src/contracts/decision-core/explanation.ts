@@ -13,6 +13,7 @@ import {
   hasUniqueScopedReferences,
   normalizeScopedReferences,
   normalizeVersionedScopedReferences,
+  withTenantClosure,
 } from "./ids";
 
 export const VersionedSourceRefSchema = z
@@ -120,7 +121,7 @@ export type ExplanationNode = Readonly<{
   childNodes: readonly ExplanationNode[];
 }>;
 
-export const ExplanationNodeSchema: z.ZodType<ExplanationNode> = z
+const RecursiveExplanationNodeSchema: z.ZodType<ExplanationNode> = z
   .strictObject({
     ...explanationNodeFields,
     get childNodes(): z.ZodReadonly<
@@ -148,9 +149,11 @@ const materializePath = (
 };
 
 const recursiveExplanationRun =
-  ExplanationNodeSchema._zod.run.bind(ExplanationNodeSchema._zod);
+  RecursiveExplanationNodeSchema._zod.run.bind(
+    RecursiveExplanationNodeSchema._zod,
+  );
 
-ExplanationNodeSchema._zod.run = ((payload, ctx) => {
+RecursiveExplanationNodeSchema._zod.run = ((payload, ctx) => {
   if (ctx.direction === "backward") {
     return recursiveExplanationRun(payload, ctx);
   }
@@ -194,7 +197,7 @@ ExplanationNodeSchema._zod.run = ((payload, ctx) => {
         code: "custom",
         message: "circular explanation reference",
         input: task.input,
-        inst: ExplanationNodeSchema,
+        inst: RecursiveExplanationNodeSchema,
         path: materializePath(task.path),
       });
       continue;
@@ -255,4 +258,7 @@ ExplanationNodeSchema._zod.run = ((payload, ctx) => {
   }
   payload.value = output;
   return payload;
-}) as typeof ExplanationNodeSchema._zod.run;
+}) as typeof RecursiveExplanationNodeSchema._zod.run;
+
+export const ExplanationNodeSchema: z.ZodType<ExplanationNode> =
+  withTenantClosure(RecursiveExplanationNodeSchema);

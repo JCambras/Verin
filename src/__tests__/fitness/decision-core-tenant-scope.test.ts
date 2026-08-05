@@ -463,7 +463,6 @@ const ALLOWED_OPAQUE_SCHEMA_NODE_PATHS = [
   "authority.ts:EscalationStepSchema.roleIds.check[2]",
   "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].check[0]",
   "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].suppliableBy.check[1]",
-  "decision.ts:BlockedDecisionSchema.check[0]",
   "decision.ts:DecisionRecordSchema.check[0]",
   "decision.ts:DecisionRecordSchema.check[1]",
   "decision.ts:DecisionRecordSchema.check[2]",
@@ -593,11 +592,6 @@ const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
     "trigger.ts:EvidenceRequestSchema.suppliableBy.check[1]",
     "trigger.ts:ResolutionStateSchema.gaps.[].suppliableBy.check[1]",
     "trigger.ts:ResolvableBlockerSchema.resolvingEvidence.[].suppliableBy.check[1]",
-  ],
-  "decision.ts:BlockedDecisionSchema.check[0]": [
-    "decision.ts:BlockedDecisionSchema.check[0]",
-    "decision.ts:DecisionRecordSchema.result.check[0]",
-    "decision.ts:DecisionResultSchema.check[0]",
   ],
   "decision.ts:DecisionRecordSchema.check[0]": [
     "decision.ts:DecisionRecordSchema.check[0]",
@@ -2042,7 +2036,10 @@ const tenantBoundaryAudit = (
     const largeInventoryCases = cases.filter((legal) =>
       tenantFirmIdPathsIn(legal).paths.length > 10
     );
+    const lacksStructuralTenantClosure =
+      largeInventoryCases.length > 0 && !idSchemas.hasTenantClosure(schema);
     const invalidLargeInventoryProbe =
+      lacksStructuralTenantClosure ||
       reviewedLargeInventoryProbes.some((probe) =>
         !cases.includes(probe.legal) ||
         tenantFirmIdPathsIn(probe.legal).paths.length <= 10 ||
@@ -2541,6 +2538,44 @@ describe("decision-core tenant-scope fence", () => {
       ref1: { firmId: "firm-b", id: "ref:1" },
       ref2: { firmId: "firm-b", id: "ref:2" },
     };
+    const unreviewedMixed = {
+      ...legal,
+      ref3: { firmId: "firm-b", id: "ref:3" },
+      ref4: { firmId: "firm-b", id: "ref:4" },
+      ref5: { firmId: "firm-b", id: "ref:5" },
+    };
+    const SampledTripleGap = z.strictObject(shape).refine((value) => {
+      const foreign = Object.entries(value)
+        .filter(([, ref]) => ref.firmId === "firm-b")
+        .map(([key]) => key)
+        .sort();
+      return foreign.length !== 1 &&
+        foreign.length !== 2 &&
+        foreign.join(",") !== "ref0,ref1,ref2";
+    });
+    expect(SampledTripleGap.safeParse(unreviewedMixed).success).toBe(true);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { SampledTripleGap }]],
+      {
+        "probe.ts:SampledTripleGap": largeInventoryTenantProbeSet({
+          legal,
+          mixed: [mixed],
+        }),
+      },
+    ).failed).toEqual(["probe.ts:SampledTripleGap"]);
+    const ClosedSampledTripleGap = idSchemas.withTenantClosure(
+      SampledTripleGap,
+    );
+    expect(ClosedSampledTripleGap.safeParse(unreviewedMixed).success).toBe(false);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { ClosedSampledTripleGap }]],
+      {
+        "probe.ts:ClosedSampledTripleGap": largeInventoryTenantProbeSet({
+          legal,
+          mixed: [mixed],
+        }),
+      },
+    ).failed).toEqual([]);
     expect(tenantBoundaryAudit(
       [["probe.ts", { TripleGap }]],
       {
@@ -2558,8 +2593,11 @@ describe("decision-core tenant-scope fence", () => {
       [["probe.ts", { Complete }]],
       { "probe.ts:Complete": legal },
     ).failed).toEqual(["probe.ts:Complete"]);
+    const ClosedComplete = idSchemas.withTenantClosure(Complete);
     expect(tenantBoundaryAudit(
-      [["probe.ts", { Complete }]],
+      [["probe.ts", {
+        Complete: ClosedComplete,
+      }]],
       {
         "probe.ts:Complete": largeInventoryTenantProbeSet({
           legal,
@@ -2568,7 +2606,7 @@ describe("decision-core tenant-scope fence", () => {
       },
     ).failed).toEqual(["probe.ts:Complete"]);
     expect(tenantBoundaryAudit(
-      [["probe.ts", { Complete }]],
+      [["probe.ts", { Complete: ClosedComplete }]],
       {
         "probe.ts:Complete": largeInventoryTenantProbeSet({
           legal,

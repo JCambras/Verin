@@ -3749,3 +3749,30 @@ sampling cannot erase a capability or mixed-tenant state from a charter-critical
 adopted; add its reviewed adversarial payload before relying on it.
 **Revert path:** none while dependency, deterministic replay, and tenant-boundary
 completeness must fail closed across ordinary TypeScript and schema associations.
+
+### D-115 · 2026-08-05 · reversible · Mutable provenance and large tenant closure are structural
+
+Mutable array provenance now models every standard mutating method, including reordered
+values, across direct, call, apply, bind, and Reflect invocation forms. Descriptor writes
+retain both value and getter-return sources through Object and Reflect APIs. Host prototype
+reflection through prototype lookup, object creation, and prototype mutation is classified
+at acquisition, while project-owned mutable and reflected capabilities remain legal.
+
+Large tenant inventories no longer rely on sampled higher-order payloads. The shared
+`withTenantClosure` factory recursively enforces one `firmId` across objects, arrays, maps,
+and sets through an iterative parser guard, and privately registers the exact guarded schema.
+The completeness audit requires that structural certificate whenever a legal fixture has
+more than ten tenant paths. Reviewed higher-order payloads remain supplementary adversarial
+cases. Existing large approval, decision, explanation, and execution boundaries use the
+factory, consolidating their duplicated partial tenant checks.
+
+Contracts measure 4,101/4,150 under ADR-0040. Domain, infrastructure, presentation,
+runtime registry data, fixtures, and recorded hashes do not move.
+
+**Why:** mutation order, descriptor accessors, prototype reflection, and a selected sample
+cannot erase a loader, host capability, or untested cross-tenant subset from a
+charter-critical fence.
+**Revisit-When:** a new mutable carrier, reflection API, collection kind, or tenant-bearing
+runtime value is adopted; extend the shared authority and its adversarial matrix first.
+**Revert path:** none while dependency, deterministic replay, and tenant-boundary
+completeness must fail closed for ordinary TypeScript and every accepted payload.

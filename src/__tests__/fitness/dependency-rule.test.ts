@@ -247,9 +247,15 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nclass Holder { constructor(public module = nodeModule) {} }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { constructor(public module: typeof nodeModule) {} }\nconst load = new Holder(nodeModule).module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst modules: Array<typeof nodeModule> = [];\nmodules.push(nodeModule);\nconst load = modules[0]!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst modules: Array<typeof nodeModule | { safe: true }> = [nodeModule, { safe: true }];\nmodules.reverse();\nconst load = (modules[1] as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst modules: Array<typeof nodeModule | { safe: true }> = [nodeModule, { safe: true }];\nconst reverse = modules.reverse.bind(modules);\nreverse();\nconst load = (modules[1] as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst modules: Array<typeof nodeModule | { safe: true }> = [nodeModule, { safe: true }];\nArray.prototype.reverse.call(modules);\nconst load = (modules[1] as typeof nodeModule).createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst modules = new Map<string, typeof nodeModule>();\nmodules.set("loader", nodeModule);\nconst load = modules.get("loader")!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nObject.assign(holder, { module: nodeModule });\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nObject.defineProperty(holder, "module", { value: nodeModule });\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nObject.defineProperty(holder, "module", { get: () => nodeModule });\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nObject.defineProperties(holder, { module: { get() { return nodeModule; } } });\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nReflect.defineProperty(holder, "module", { get: () => nodeModule });\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nReflect.set(holder, "module", nodeModule);\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { static module: typeof nodeModule; static { this.module = nodeModule; } }\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loader %# fails closed", (source) => {
@@ -1378,6 +1384,43 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "clock moved by an array reversal",
+        [
+          "const safe = { now: () => 1 };",
+          "const clocks: Array<DateConstructor | typeof safe> = [Date, safe];",
+          "clocks.reverse();",
+          "export const value = clocks[1]!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock moved by a bound array reversal",
+        [
+          "const safe = { now: () => 1 };",
+          "const clocks: Array<DateConstructor | typeof safe> = [Date, safe];",
+          "const reverse = clocks.reverse.bind(clocks);",
+          "reverse();",
+          "export const value = clocks[1]!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock moved by Array.prototype.reverse.call",
+        [
+          "const safe = { now: () => 1 };",
+          "const clocks: Array<DateConstructor | typeof safe> = [Date, safe];",
+          "Array.prototype.reverse.call(clocks);",
+          "export const value = clocks[1]!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock moved by Reflect.apply sort",
+        [
+          "const safe = { now: () => 1 };",
+          "const clocks: Array<DateConstructor | typeof safe> = [Date, safe];",
+          "Reflect.apply(clocks.sort, clocks, []);",
+          "export const value = clocks[1]!.now();",
+        ].join("\n"),
+      ],
+      [
         "clock stored through Map.set",
         [
           "const clocks = new Map<string, DateConstructor>();",
@@ -1398,6 +1441,30 @@ describe("dependency-rule fence", () => {
         [
           "const holder: { Clock?: DateConstructor } = {};",
           `Object.defineProperty(holder, "Clock", { value: Date });`,
+          "export const value = holder.Clock!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock installed through an accessor descriptor",
+        [
+          "const holder: { Clock?: DateConstructor } = {};",
+          `Object.defineProperty(holder, "Clock", { get: () => Date });`,
+          "export const value = holder.Clock!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock installed through Object.defineProperties",
+        [
+          "const holder: { Clock?: DateConstructor } = {};",
+          `Object.defineProperties(holder, { Clock: { get() { return Date; } } });`,
+          "export const value = holder.Clock!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock installed through Reflect.defineProperty",
+        [
+          "const holder: { Clock?: DateConstructor } = {};",
+          `Reflect.defineProperty(holder, "Clock", { get: () => Date });`,
           "export const value = holder.Clock!.now();",
         ].join("\n"),
       ],
@@ -1687,6 +1754,18 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "Date prototype acquired through Object.getPrototypeOf",
+        "export const value = Object.getPrototypeOf(new Date(0)).getFullYear.call(new Date(0));",
+      ],
+      [
+        "Date prototype acquired through Reflect.getPrototypeOf",
+        "export const value = Reflect.getPrototypeOf(new Date(0)).getFullYear.call(new Date(0));",
+      ],
+      [
+        "Date prototype inherited through Object.create",
+        "export const value = Object.create(Date.prototype).getFullYear.call(new Date(0));",
+      ],
+      [
         "typed Intl number formatter",
         "export function format(value: Intl.NumberFormat) { return value.format(1000); }",
       ],
@@ -1729,6 +1808,26 @@ describe("dependency-rule fence", () => {
       expect(v.map((violation) => violation.specifier)).toContain(
         "<nondeterministic platform-global>",
       );
+    });
+
+    it("allows project-owned mutable and reflected capabilities", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/fine.ts": [
+            "const first = { now: () => 1 };",
+            "const second = { now: () => 2 };",
+            "const clocks = [first, second];",
+            "clocks.reverse();",
+            "const holder: { Clock?: typeof first } = {};",
+            `Object.defineProperty(holder, "Clock", { get: () => first });`,
+            "class LocalDate { getFullYear() { return 2026; } }",
+            "const inherited = Object.getPrototypeOf(new LocalDate()).getFullYear.call(new LocalDate());",
+            "const created = Object.create({ getFullYear: () => 2026 }).getFullYear();",
+            "export const values = [clocks[0]!.now(), holder.Clock!.now(), inherited, created];",
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
     });
 
     it.each([

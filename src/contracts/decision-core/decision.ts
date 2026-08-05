@@ -27,6 +27,7 @@ import {
   ScopeRefSchema,
   SubjectRefSchema,
   TimestampSchema,
+  withTenantClosure,
 } from "./ids";
 import {
   AnyActorRefSchema,
@@ -201,37 +202,15 @@ export const ProhibitionSchema = z.strictObject({
 ).readonly();
 export type Prohibition = z.infer<typeof ProhibitionSchema>;
 
-const proceedDecisionFirmIds = (decision: {
-  recommendation: z.infer<typeof RecommendationSchema>;
-  authority: z.infer<typeof AuthorityRequirementSchema>;
-  executionPlan: z.infer<typeof ExecutionPlanSchema>;
-}): string[] => [
-  ...recommendationSubjectRefs(decision.recommendation.parameters).map(
-    (subjectRef) => subjectRef.firmId,
-  ),
-  ...(decision.authority.mode === "automatic"
-    ? []
-    : decision.authority.stages.map((stage) => stage.templateRef.firmId)),
-  ...decision.executionPlan.steps.map((step) => step.targetRef.firmId),
-];
-
-const hasOneTenant = (firmIds: readonly string[]): boolean =>
-  firmIds.every((firmId) => firmId === firmIds[0]);
-
 /** Proceed: recommendation + authority + plan, all REQUIRED (v3 invariant 7). */
-export const ProceedDecisionSchema = z.strictObject({
-  kind: z.literal("proceed"),
-  recommendation: RecommendationSchema,
-  authority: AuthorityRequirementSchema,
-  executionPlan: ExecutionPlanSchema,
-}).superRefine((decision, ctx) => {
-  if (!hasOneTenant(proceedDecisionFirmIds(decision))) {
-    ctx.addIssue({
-      code: "custom",
-      message: "proceed decision references must belong to one tenant",
-    });
-  }
-}).readonly();
+export const ProceedDecisionSchema = withTenantClosure(
+  z.strictObject({
+    kind: z.literal("proceed"),
+    recommendation: RecommendationSchema,
+    authority: AuthorityRequirementSchema,
+    executionPlan: ExecutionPlanSchema,
+  }).readonly(),
+);
 export type ProceedDecision = z.infer<typeof ProceedDecisionSchema>;
 
 /**
@@ -239,12 +218,12 @@ export type ProceedDecision = z.infer<typeof ProceedDecisionSchema>;
  * resolves the block is DERIVED from blockers[].resolvingEvidence - never stored
  * twice; two sources of truth would drift.
  */
-export const BlockedDecisionSchema = z.strictObject({
-  kind: z.literal("blocked"),
-  blockers: z.array(ResolvableBlockerSchema).min(1).readonly(),
-}).refine((decision) => hasOneTenant(decision.blockers.flatMap((blocker) =>
-  blocker.resolvingEvidence.map((request) => request.subjectRef.firmId)
-)), "blocked decision references must belong to one tenant").readonly();
+export const BlockedDecisionSchema = withTenantClosure(
+  z.strictObject({
+    kind: z.literal("blocked"),
+    blockers: z.array(ResolvableBlockerSchema).min(1).readonly(),
+  }).readonly(),
+);
 export type BlockedDecision = z.infer<typeof BlockedDecisionSchema>;
 
 /** Prohibited: the prohibition, nothing else (v3 invariant 9). */
@@ -254,39 +233,14 @@ export const ProhibitedDecisionSchema = z.strictObject({
 }).readonly();
 export type ProhibitedDecision = z.infer<typeof ProhibitedDecisionSchema>;
 
-const requireDecisionResultTenant = (
-  result:
-    | z.infer<typeof ProceedDecisionSchema>
-    | z.infer<typeof BlockedDecisionSchema>
-    | z.infer<typeof ProhibitedDecisionSchema>,
-  ctx: z.RefinementCtx,
-): void => {
-  const firmIds = result.kind === "proceed"
-    ? proceedDecisionFirmIds(result)
-    : result.kind === "blocked"
-      ? result.blockers.flatMap((blocker) =>
-          blocker.resolvingEvidence.map((request) => request.subjectRef.firmId)
-        )
-      : [
-          result.prohibition.source.sourceRef.firmId,
-          result.prohibition.scopeRef.firmId,
-        ];
-  if (!hasOneTenant(firmIds)) {
-    ctx.addIssue({
-      code: "custom",
-      message: "decision result references must belong to one tenant",
-    });
-  }
-};
-
-export const DecisionResultSchema = z
-  .discriminatedUnion("kind", [
+export const DecisionResultSchema = withTenantClosure(
+  z.discriminatedUnion("kind", [
     ProceedDecisionSchema.unwrap(),
     BlockedDecisionSchema.unwrap(),
     ProhibitedDecisionSchema.unwrap(),
   ])
-  .superRefine(requireDecisionResultTenant)
-  .readonly();
+    .readonly(),
+);
 export type DecisionResult = z.infer<typeof DecisionResultSchema>;
 
 export function isProceedDecision(result: DecisionResult): result is ProceedDecision {
@@ -336,7 +290,8 @@ export type RevaluationCondition = z.infer<typeof RevaluationConditionSchema>;
  * tenant-consistent by construction; a prohibited record carries no revaluation
  * conditions (see the module header).
  */
-export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
+export const DecisionRecordSchema = withTenantClosure(
+  TenantContextSchema.unwrap().extend({
   id: DecisionIdSchema,
   intentRef: IntentRefSchema,
   inputBundleRef: DecisionInputBundleRefSchema,
@@ -494,5 +449,6 @@ export const DecisionRecordSchema = TenantContextSchema.unwrap().extend({
       path: ["derivedFromDecisionRef"],
     },
   )
-  .readonly();
+    .readonly(),
+);
 export type DecisionRecord = z.infer<typeof DecisionRecordSchema>;

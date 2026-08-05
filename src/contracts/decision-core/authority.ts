@@ -19,6 +19,7 @@ import {
   ReasonCodeSchema,
   TimestampSchema,
   normalizeScopedReferences,
+  withTenantClosure,
 } from "./ids";
 import { TenantContextSchema } from "./actor";
 import { isPlainRecord } from "./normalization";
@@ -211,18 +212,14 @@ const ApprovalStageTemplateListSchema = z
   .readonly();
 
 /** A reusable, referencable stack of stage templates. */
-export const ApprovalTemplateSchema = z
-  .strictObject({
+export const ApprovalTemplateSchema = withTenantClosure(
+  z.strictObject({
     ...TenantContextSchema.unwrap().shape,
     id: ApprovalTemplateIdSchema,
     stages: ApprovalStageTemplateListSchema,
   })
-  .superRefine((template, ctx) =>
-    template.stages.forEach((stage, index) =>
-      requireStageRoleTenant(stage, template.firmId, ctx, ["stages", index]),
-    ),
-  )
-  .readonly();
+    .readonly(),
+);
 export type ApprovalTemplate = z.infer<typeof ApprovalTemplateSchema>;
 
 /**
@@ -253,42 +250,17 @@ const ApprovalStageListSchema = z
  * stages are non-empty by construction in BOTH non-automatic modes, and every
  * stage stack keeps stageId and order distinct, so the modes stay honest.
  */
-export const AuthorityRequirementSchema = z.discriminatedUnion("mode", [
-  z.strictObject({ mode: z.literal("automatic") }),
-  z.strictObject({ mode: z.literal("approval"), stages: ApprovalStageListSchema }),
-  z.strictObject({
-    mode: z.literal("specialist_review"),
-    specialistRoleIds: NonEmptyRoleRefSetSchema,
-    stages: ApprovalStageListSchema,
-  }),
-])
-  .superRefine((requirement, ctx) => {
-    if (requirement.mode === "automatic") return;
-    const firstStage = requirement.stages[0];
-    if (!firstStage) return;
-    const firmId = firstStage.templateRef.firmId;
-    requirement.stages.forEach((stage, index) => {
-      if (stage.templateRef.firmId !== firmId) {
-        ctx.addIssue({
-          code: "custom",
-          message: "approval stages must belong to one tenant",
-          path: ["stages", index, "templateRef", "firmId"],
-        });
-      }
-    });
-    if (requirement.mode === "specialist_review") {
-      requirement.specialistRoleIds.forEach((role, index) => {
-        if (role.firmId !== firmId) {
-          ctx.addIssue({
-            code: "custom",
-            message: "specialist role must belong to the authority tenant",
-            path: ["specialistRoleIds", index, "firmId"],
-          });
-        }
-      });
-    }
-  })
-  .readonly();
+export const AuthorityRequirementSchema = withTenantClosure(
+  z.discriminatedUnion("mode", [
+    z.strictObject({ mode: z.literal("automatic") }),
+    z.strictObject({ mode: z.literal("approval"), stages: ApprovalStageListSchema }),
+    z.strictObject({
+      mode: z.literal("specialist_review"),
+      specialistRoleIds: NonEmptyRoleRefSetSchema,
+      stages: ApprovalStageListSchema,
+    }),
+  ]).readonly(),
+);
 export type AuthorityRequirement = z.infer<typeof AuthorityRequirementSchema>;
 
 type NormalizableAuthorityRequirement = {

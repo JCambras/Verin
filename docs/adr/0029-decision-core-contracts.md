@@ -135,16 +135,15 @@ parse time, not by reviewer discipline. Three constraints meet here:
   tenant-scoped records. Firm-configured roles use the same structured reference shape, and role
   collections reject duplicates and normalize by firm then opaque ID. Ambiguity candidates are a
   duplicate-free canonical set constrained to one tenant. The tenant-scope fence inventories every
-  exported Zod value, regardless of its name, whose runtime schema graph contains a scoped-reference
-  collection. Every discovered export must have an exact registry entry whose legal and mixed-tenant
-  payloads are parsed through that exported schema; a new alias or wrapper fails until its behavior is
-  registered and rejects the mixed payload. Decision-record refinements iteratively
-  check precedence, explanation children, blockers, revaluation conditions, prohibitions, authority stages,
-  actor roles, authority roles, and evidence-supplier roles, rejecting every cross-tenant link. For the
-  execution plan the record binds ONE edge per step - the step's `targetRef` - because the action and plan
-  refinements below already bind every reference inside an action to that action's target and every
-  step's and compensation's target to the first step's; re-walking them here would be a second copy of
-  the same rule to keep in sync by hand. Approval-stage arrays normalize by their explicit `order`.
+  exported Zod value, regardless of its name, whose runtime schema graph contains a scoped reference.
+  Every discovered export must have an exact registry entry whose legal and mixed-tenant payloads are
+  parsed through that exported schema; a new alias or wrapper fails until its behavior is registered
+  and rejects the mixed payload. Bounded inventories receive exhaustive proper-subset probes. Boundaries
+  with larger inventories must carry the structural closure minted by `withTenantClosure`; its iterative
+  parser guard visits every object, array, map, and set value and refuses any second `firmId`. The fence
+  recognizes only the exact guarded schema privately registered by that factory, so reviewed sample
+  payloads supplement the proof but cannot substitute for runtime closure. Approval-stage arrays
+  normalize by their explicit `order`.
   Every parsed decision-core object and nested collection is recursively readonly and frozen, so a
   validated decision cannot be mutated into an illegal or hash-divergent state.
 - **Retry-safe external actions:** execution steps and their non-recursive compensating actions share one
@@ -262,8 +261,9 @@ parse time, not by reviewer discipline. Three constraints meet here:
 - `charter-map.json` #7 and `v3-invariants.json` invariant 2 execute
   `decision-core-tenant-scope`, which proves the registered prompt-5 reference boundaries reject
   their executable mixed-tenant probes and the registry exactly matches every exported Zod value
-  whose runtime schema graph contains a scoped-reference collection, independently of export naming,
-  aliasing, or wrapper reuse. Its exact module inventory prevents a newly added decision-core source
+  whose runtime schema graph contains a scoped reference, independently of export naming, aliasing,
+  wrapper reuse, or collection shape. Large inventories additionally require the structural tenant
+  closure owned by `ids.ts`. Its exact module inventory prevents a newly added decision-core source
   module from escaping that graph walk.
 - `charter-map.json` #16 executes `decision-core-external-action-safety`, which rejects incomplete
   compensating actions and idempotency-key aliasing.

@@ -25,6 +25,7 @@ import {
   normalizeCanonicalStrings,
   normalizeExecutionPreconditions,
   normalizeScopedReferences,
+  withTenantClosure,
 } from "./ids";
 import { isPlainRecord } from "./normalization";
 
@@ -185,8 +186,8 @@ export const CompensatingActionSchema = z
   .readonly();
 export type CompensatingAction = z.infer<typeof CompensatingActionSchema>;
 
-export const ExecutionStepSchema = z
-  .strictObject({
+export const ExecutionStepSchema = withTenantClosure(
+  z.strictObject({
     id: ExecutionStepIdSchema,
     ...retrySafeExternalActionShape,
     dependsOn: z
@@ -230,7 +231,8 @@ export const ExecutionStepSchema = z
       });
     }
   })
-  .readonly();
+    .readonly(),
+);
 export type ExecutionStep = z.infer<typeof ExecutionStepSchema>;
 
 type NormalizableExecutionPlan = {
@@ -267,15 +269,14 @@ export const normalizeExecutionPlan = <T extends NormalizableExecutionPlan>(
  * A non-empty plan with unique identities, resolvable dependency edges, and an
  * acyclic dependency graph.
  */
-export const ExecutionPlanSchema = z
-  .strictObject({
+export const ExecutionPlanSchema = withTenantClosure(
+  z.strictObject({
     id: ExecutionPlanIdSchema,
     steps: z.array(ExecutionStepSchema).min(1).readonly(),
   })
   .superRefine((plan, ctx) => {
     const ids = new Set<string>();
     const idemKeys = new Set<string>();
-    const firmId = plan.steps[0]?.targetRef.firmId;
     let dependenciesValid = true;
     const registerIdempotencyKey = (key: string, path: (string | number)[]) => {
       if (idemKeys.has(key)) {
@@ -284,30 +285,6 @@ export const ExecutionPlanSchema = z
       idemKeys.add(key);
     };
     for (const [index, step] of plan.steps.entries()) {
-      if (firmId !== undefined && step.targetRef.firmId !== firmId) {
-        ctx.addIssue({
-          code: "custom",
-          message: "all execution-plan steps must belong to one tenant",
-          path: ["steps", index, "targetRef", "firmId"],
-        });
-      }
-      if (
-        step.compensatingAction &&
-        firmId !== undefined &&
-        step.compensatingAction.targetRef.firmId !== firmId
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          message: "all execution-plan actions must belong to one tenant",
-          path: [
-            "steps",
-            index,
-            "compensatingAction",
-            "targetRef",
-            "firmId",
-          ],
-        });
-      }
       if (ids.has(step.id)) ctx.addIssue({ code: "custom", message: `duplicate step id "${step.id}"`, path: ["steps"] });
       ids.add(step.id);
       registerIdempotencyKey(step.idempotencyKey, ["steps", index, "idempotencyKey"]);
@@ -350,5 +327,6 @@ export const ExecutionPlanSchema = z
       }
     }
   })
-  .readonly();
+    .readonly(),
+);
 export type ExecutionPlan = z.infer<typeof ExecutionPlanSchema>;

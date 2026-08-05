@@ -101,6 +101,66 @@ export type ScopeId = z.infer<typeof ScopeIdSchema>;
 const tenantScopedReference = <T>(id: z.ZodType<T>) =>
   z.strictObject({ firmId: FirmIdSchema, id }).readonly();
 
+const tenantClosedSchemas = new WeakSet<z.ZodType>();
+
+const belongsToOneTenant = (value: unknown): boolean => {
+  const pending = [value];
+  const seen = new WeakSet<object>();
+  let firmId: string | undefined;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === null || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    if (Object.hasOwn(current, "firmId")) {
+      const candidate = (current as { firmId?: unknown }).firmId;
+      if (typeof candidate === "string") {
+        firmId ??= candidate;
+        if (candidate !== firmId) {
+          return false;
+        }
+      }
+    }
+    if (current instanceof Map) {
+      for (const [key, child] of current) pending.push(key, child);
+    } else if (current instanceof Set) {
+      pending.push(...current);
+    } else {
+      pending.push(...Object.values(current));
+    }
+  }
+  return true;
+};
+
+export const withTenantClosure = <T extends z.ZodType>(schema: T): T => {
+  if (tenantClosedSchemas.has(schema)) return schema;
+  const run = schema._zod.run.bind(schema._zod);
+  schema._zod.run = ((payload, ctx) => {
+    const close = (parsed: typeof payload): typeof payload => {
+      if (
+        !ctx.skipChecks &&
+        parsed.issues.length === 0 &&
+        !belongsToOneTenant(parsed.value)
+      ) {
+        parsed.issues.push({
+          code: "custom",
+          message: "references must belong to one tenant",
+          input: parsed.value,
+          inst: schema,
+          continue: true,
+        });
+      }
+      return parsed;
+    };
+    const parsed = run(payload, ctx);
+    return parsed instanceof Promise ? parsed.then(close) : close(parsed);
+  }) as typeof schema._zod.run;
+  tenantClosedSchemas.add(schema);
+  return schema;
+};
+
+export const hasTenantClosure = (schema: z.ZodType): boolean =>
+  tenantClosedSchemas.has(schema);
+
 export const DomainConfigVersionRefSchema = tenantScopedReference(DomainConfigVersionIdSchema);
 export type DomainConfigVersionRef = z.infer<typeof DomainConfigVersionRefSchema>;
 
