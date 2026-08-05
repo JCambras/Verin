@@ -107,7 +107,7 @@ const TreatmentSelectorSchema = z.enum([
 ]);
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.12.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.13.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -143,7 +143,9 @@ const SemanticContractSchema = z.strictObject({
     syntheticIdentity: z.literal(
       "typed-raw-bytes-candidates-and-household-bindings",
     ),
-    sourceAccount: z.literal("must-resolve-in-liquidity-sources"),
+    sourceAccount: z.literal(
+      "must-resolve-once-to-request-household",
+    ),
     selectedFunding: z.literal(
       "must-resolve-once-to-request-household",
     ),
@@ -163,7 +165,7 @@ const SemanticContractSchema = z.strictObject({
       "derived-from-effective-instants-at-evaluation",
     ),
     realDerivedTemporal: z.literal(
-      "derive-zone-state-and-local-rendering-from-pinned-transition-rules",
+      "derive-zone-state-and-local-rendering-from-recorded-iana-registry-and-transition-rules",
     ),
     syntheticTemporal: z.literal(
       "cited-zone-bound-records-cross-declared-transition",

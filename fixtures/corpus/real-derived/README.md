@@ -57,10 +57,11 @@ enforced contract. In short, every case must carry:
   temporal state, reservations, and execution preconditions. The explicit funding set must resolve once,
   stay within the request household and source-account ownership, and cover the request and reserve after
   applying each pending action exactly once according to `availableMinorIncludesAction`. Restriction
-  lifecycle state is recomputed from effectivity instants at `evaluation.asOf`. Temporal state and local
-  rendering are recomputed from the supplied zone, tzdb version, standard offset, and chronological
-  transition rules. Every supported class records typed expected and observed
-  treatment. Extra, absent, ambiguous, or incompatible inputs are rejected;
+  lifecycle state is recomputed from effectivity instants at `evaluation.asOf`. The request source
+  account must resolve exactly once to the request household even when it is not selected. Temporal state
+  and local rendering are recomputed only after the supplied zone and tzdb version match the recorded IANA
+  registry, using the standard offset and chronological transition rules. Every supported class records
+  typed expected and observed treatment. Extra, absent, ambiguous, or incompatible inputs are rejected;
 - one exact opaque `firmRef` shared by the case, request, and every reservation, with reservation
   identity defined by `(firmRef, conflictKey)`;
 - exactly one matching evidence record by kind, subject, source, and permitted observation state for
@@ -71,7 +72,7 @@ enforced contract. In short, every case must carry:
   satisfy `observedAt <= retrievedAt <= evaluation.asOf` and match the derived per-kind freshness.
   `unknown` is legal only for the typed missing-observation state. The policy version and semantic digest
   are bound into captain signoff through `corpusDigest`;
-- semantic contract `verin-real-derived-semantics/1.12.0`; its declarative bytes and the complete
+- semantic contract `verin-real-derived-semantics/1.13.0`; its declarative bytes and the complete
   repository-local runtime dependency closure of its executable cross-field authorities are bound into
   `corpusDigest`.
 

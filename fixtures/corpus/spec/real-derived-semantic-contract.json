@@ -1,5 +1,5 @@
 {
-  "contractVersion": "verin-real-derived-semantics/1.12.0",
+  "contractVersion": "verin-real-derived-semantics/1.13.0",
   "defectRules": [
     { "id": "authority-scope-error", "contextRule": "authority-boundary", "treatmentSelector": "authority-state", "treatments": [
       { "selectorValue": "effective", "expectedTreatment": "accept-effective-authority", "defectTreatment": "reject-effective-authority-by-membership" },
@@ -86,7 +86,7 @@
     "tenantScope": "case-request-reservations-share-one-firm-reference",
     "genericSubjects": "exclude-firm-references",
     "syntheticIdentity": "typed-raw-bytes-candidates-and-household-bindings",
-    "sourceAccount": "must-resolve-in-liquidity-sources",
+    "sourceAccount": "must-resolve-once-to-request-household",
     "selectedFunding": "must-resolve-once-to-request-household",
     "realDerivedSelectedFundingOwner": "must-share-owner-with-request-source",
     "pendingAction": "must-resolve-to-request-household-and-selected-funding",
@@ -95,7 +95,7 @@
     "instructionConflict": "derived-from-request-bound-typed-instruction-terms",
     "instructionOwners": "target-specific-normalized-destination-owner-set",
     "restrictionLifecycle": "derived-from-effective-instants-at-evaluation",
-    "realDerivedTemporal": "derive-zone-state-and-local-rendering-from-pinned-transition-rules",
+    "realDerivedTemporal": "derive-zone-state-and-local-rendering-from-recorded-iana-registry-and-transition-rules",
     "syntheticTemporal": "cited-zone-bound-records-cross-declared-transition",
     "syntheticBlastRadius": "one-cited-instruction-change-reaches-multiple-topology-subjects"
   },

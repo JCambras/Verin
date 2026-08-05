@@ -178,6 +178,15 @@ function relationshipProblems(item: RealDerivedCase): string[] {
       `request sourceAccountRef resolves to ${sourceMatches} liquidity sources, expected exactly one`,
     );
   }
+  const sourceAccount = payload.liquidity.sources.find(
+    (source) => source.accountRef === payload.request.sourceAccountRef,
+  );
+  if (
+    sourceAccount !== undefined &&
+    sourceAccount.householdRef !== payload.request.householdRef
+  ) {
+    problems.push("request source account must belong to the request household");
+  }
   if (
     payload.request.actorRef !== payload.identity.subjectRef ||
     payload.request.actorRef !== payload.authority.actorRef

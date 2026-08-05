@@ -2,6 +2,7 @@ import {
   pendingActionLiquidityTreatment,
   pendingAvailabilitySelector,
 } from "./pending-actions";
+import { isTimeZoneInRecordedRegistry } from "../../src/contracts/time-zone";
 import {
   localOffsetMinutes,
   renderLocal,
@@ -46,6 +47,14 @@ const temporalTransitionState = (
   item: RealDerivedCase,
 ): "standard" | "daylight" | "boundary" | null => {
   const temporal = item.replayPayload.temporal;
+  if (
+    !isTimeZoneInRecordedRegistry(
+      temporal.timeZoneDataVersion,
+      temporal.timeZone,
+    )
+  ) {
+    return null;
+  }
   const transitions = temporal.timeZoneTransitions;
   if (
     transitions.length < 2 ||
@@ -84,7 +93,12 @@ export function realDerivedTopologyProblems(
   item: RealDerivedCase,
 ): string[] {
   const policy = item.replayPayload.policy;
+  const temporal = item.replayPayload.temporal;
   const derived = restrictionLifecycleState(item);
+  const recordedTimeZone = isTimeZoneInRecordedRegistry(
+    temporal.timeZoneDataVersion,
+    temporal.timeZone,
+  );
   return [
     ...topologyProblems(item, evidenceKindByPlane),
     ...(derived === null ||
@@ -94,8 +108,9 @@ export function realDerivedTopologyProblems(
           policy.restrictionEffectiveTo < policy.restrictionEffectiveFrom)
       ? ["restriction lifecycle state must match effective instants at evaluation.asOf"]
       : []),
-    ...(temporalTransitionState(item) !==
-        item.replayPayload.temporal.transitionState
+    ...(!recordedTimeZone
+      ? ["time zone must belong to its recorded tzdb registry"]
+      : temporalTransitionState(item) !== temporal.transitionState
       ? ["temporal transition state must match replayable time-zone rules"]
       : []),
   ];

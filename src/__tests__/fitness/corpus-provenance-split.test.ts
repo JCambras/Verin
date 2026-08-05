@@ -566,6 +566,33 @@ export function blendingViolations(project: Project, root = ""): string[] {
     }
     return changed;
   };
+  const addContainerMutationTaints = (call: Node): boolean => {
+    if (!Node.isCallExpression(call)) return false;
+    const expression = unwrap(call.getExpression());
+    const method = Node.isPropertyAccessExpression(expression)
+      ? expression.getName()
+      : Node.isElementAccessExpression(expression)
+        ? propertyName(expression.getArgumentExpression())
+        : undefined;
+    const target = Node.isPropertyAccessExpression(expression) ||
+        Node.isElementAccessExpression(expression)
+      ? expression.getExpression()
+      : undefined;
+    if (method === undefined || target === undefined) return false;
+    const arguments_ = call.getArguments();
+    const sources =
+      method === "splice" ? arguments_.slice(2) :
+      ["push", "unshift", "add", "fill", "set"].includes(method)
+        ? arguments_
+        : [];
+    if (sources.length === 0) return false;
+    const reads = new Set(
+      sources.flatMap((source) => [...readsOf(source)]),
+    );
+    return taintTargets(target).map((entry) =>
+      addTaints(entry, reads)
+    ).some(Boolean);
+  };
   const assignmentOperators = new Set([
     SyntaxKind.EqualsToken,
     SyntaxKind.PlusEqualsToken,
@@ -625,7 +652,8 @@ export function blendingViolations(project: Project, root = ""): string[] {
         }
       }
       for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-        changed = addObjectMutationTaints(call) || changed;
+        changed = addObjectMutationTaints(call) ||
+          addContainerMutationTaints(call) || changed;
       }
     }
     if (!changed) break;
@@ -2109,6 +2137,14 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ]));
   });
 
+  it("partition values remain tainted through container mutations", () => {
+    const project = inMemoryProject({
+      "/src/domain/mutated-array-blend.ts":
+        "declare const r: any; const values: any[] = []; values.push(r.synthetic.defectCases); values.push(r.realDerived.defectCases); export const score = values.reduce((sum, value) => sum + value, 0);",
+    });
+    expect(blendingViolations(project).length).toBeGreaterThan(0);
+  });
+
   it("member assignment taint stays on the assigned path", () => {
     expect(
       blendingViolations(
@@ -2690,6 +2726,20 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "real-derived/RD-unordered-zone-rules.json",
       ).join("\n"),
     ).toContain("temporal transition state must match replayable time-zone rules");
+
+    const unknownRegistry = realDerivedCase();
+    const unknownTemporal = (
+      unknownRegistry.replayPayload as Record<string, any>
+    ).temporal;
+    unknownTemporal.timeZone = "Mars/Olympus";
+    unknownTemporal.timeZoneDataVersion = "iana-tzdb/9999z";
+    expect(
+      realDerivedCaseProblems(
+        unknownRegistry,
+        classes,
+        "real-derived/RD-unknown-zone-registry.json",
+      ).join("\n"),
+    ).toContain("time zone must belong to its recorded tzdb registry");
   });
 
   it("a real-derived defect label must match its closed replay semantics", () => {
@@ -2800,7 +2850,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.12.0",
+      "verin-real-derived-semantics/1.13.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -3290,6 +3340,38 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "real-derived/RD-missing-source.json",
       ).join("\n"),
     ).toContain("sourceAccountRef resolves to 0");
+
+    const foreignSource = realDerivedCase() as any;
+    const foreignPayload = foreignSource.replayPayload as Record<string, any>;
+    foreignPayload.liquidity.sources[0].householdRef = HOUSEHOLD_REF_ALT;
+    foreignPayload.liquidity.sources.push({
+      accountRef: ACCOUNT_REF_ALT,
+      householdRef: HOUSEHOLD_REF,
+      ownerRefs: [OWNER_REF],
+      evidenceSourceRef: EVIDENCE_SOURCE_REF_ALT,
+      availableMinor: 20_000,
+      sourceTaxClass: "taxable",
+    });
+    foreignPayload.liquidity.selectedFundingRefs = [ACCOUNT_REF_ALT];
+    foreignSource.subjects.push(ACCOUNT_REF_ALT);
+    foreignSource.evidence.push(
+      observedEvidence(
+        "balance",
+        ACCOUNT_REF_ALT,
+        EVIDENCE_SOURCE_REF_ALT,
+        TOKEN_ALT,
+      ) as any,
+    );
+    foreignPayload.evidenceRefs = foreignSource.evidence.map(
+      (entry: Record<string, unknown>) => entry.id,
+    );
+    expect(
+      realDerivedCaseProblems(
+        foreignSource,
+        classes,
+        "real-derived/RD-foreign-source-household.json",
+      ).join("\n"),
+    ).toContain("request source account must belong to the request household");
 
     for (const mutate of [
       (evidence: Record<string, unknown>) => {

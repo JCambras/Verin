@@ -160,7 +160,7 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.12.0` registry separates awkward context from outcome in both
+The closed `verin-real-derived-semantics/1.13.0` registry separates awkward context from outcome in both
 corpus partitions. A defect case is accepted only when its label is the exact singleton context-bound
 treatment mismatch. Detector attribution for a defect is either an empty miss or the exact signed-label
 singleton. A clean control records the
@@ -187,8 +187,9 @@ policy, restriction, hold, pending-action, and time-zone identities cannot be sa
 token. Every material plane has exactly one evidence tuple matching kind, subject, source, and permitted
 observation state. Missing evidence supports only an explicit absence or unavailable payload of the same
 typed plane; every concrete value requires observed evidence. The
-request source account resolves in the liquidity collection, and the explicit selected funding set is
-unique, same-household, source-owner-aligned, supported, and sufficient in aggregate. Tax risk is
+request source account resolves exactly once to the request household in the liquidity collection, and
+the explicit selected funding set is unique, same-household, source-owner-aligned, supported, and
+sufficient in aggregate. Tax risk is
 evaluated against exactly that set, including every selected source's tax character and review state.
 Aggregate sufficiency uses exact `bigint` arithmetic after rejecting any unsafe integer boundary.
 Each pending action names the request household and one selected account, and its action evidence matches
@@ -300,6 +301,9 @@ separate fence and schema owners.
 D-128 raises the ceiling to 8300 against 8112 measured lines for complete structured-write provenance,
 declared repository-input boundaries, and derivable real-derived time-zone rules. The 188-line buffer
 preserves the separate fence, schema, and semantic owners under the unchanged 500-line file ceiling.
+D-129 keeps the ceiling at 8300 against 8138 measured lines after closing dynamic-code and compound-flow
+origins plus recorded time-zone and request-source topology. The 162-line buffer preserves the separate
+fence, semantic, and topology owners under the unchanged 500-line file ceiling.
 
 ## What this PR explicitly does NOT claim
 

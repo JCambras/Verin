@@ -108,9 +108,10 @@ Funding is never inferred from available accounts in either partition. Every syn
 real-derived payload names an explicit, duplicate-free `selectedFundingRefs` set. Synthetic selections
 resolve exactly once to the request household, and every pending action or pending model assignment used
 by synthetic semantics names an account in that exact set. Every cited pending action is bound before
-its reducing or nonreducing treatment is selected. Each real-derived selected account resolves
-exactly once, belongs to the
-request household, shares an owner with the request source account, carries a supported tax class, and
+its reducing or nonreducing treatment is selected. The real-derived request source account resolves
+exactly once to the request household, even when it is not selected for funding. Each selected account
+resolves exactly once, belongs to the request household, shares an owner with the request source account,
+carries a supported tax class, and
 contributes to one aggregate sufficiency check over the request amount, required reserve, and the
 exact-once availability adjustment for any cited action. A pending action carries entity-kind-scoped
 household and account references, names a
@@ -197,8 +198,9 @@ blast radius requires one cited changed instruction whose emitted account edges 
 distinct governed accounts. Assumption ids, same-offset timestamps, arbitrary changes, disconnected
 subjects, or distinct instruction identities prove neither context. Real-derived temporal context carries
 the event's UTC and local renderings, zone identity, tzdb version, standard offset, and chronological
-transition rules. The validator derives standard, daylight, or exact transition-boundary state from those
-facts and rejects a claimed state or local rendering that disagrees. Joint destinations retain their
+transition rules. The zone and version must belong to the recorded IANA registry before the validator
+derives standard, daylight, or exact transition-boundary state from those facts. A claimed state or local
+rendering that disagrees is rejected. Joint destinations retain their
 explicit duplicate-free owner set; owner cardinality is evaluated only for the term kind that consumes it.
 
 ---
@@ -312,7 +314,7 @@ one.
 `corpusDigest` uses the versioned `verin-corpus/1.12.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.12.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.13.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
 its exact bytes, and exact digests for the complete repository-local runtime dependency closure rooted at

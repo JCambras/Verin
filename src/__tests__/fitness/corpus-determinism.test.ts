@@ -7,7 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { Node, Project, SyntaxKind, ts, type SourceFile } from "ts-morph";
 import {
@@ -59,17 +59,325 @@ interface BannedUse {
 
 const REPOSITORY_INPUT_BOUNDARIES = [
   { file: "/scripts/golden-cases.lib.ts", owner: "loadScenarioRefs", inputs: { "fs.readFileSync": ["SCENARIOS_YAML"] } },
-  { file: "/scripts/golden-cases.lib.ts", owner: "loadGoldenCases", inputs: { "fs.existsSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["join(dir,f)"] } },
+  { file: "/scripts/golden-cases.lib.ts", owner: "loadGoldenCases", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["join(dir,f)"] } },
   { file: "/scripts/corpus/scrub-contract.ts", owner: "schemaFromSpec", inputs: { "fs.readFileSync": ["join(SPEC_DIR,name)"] } },
-  { file: "/scripts/corpus/world.ts", owner: "readSpecFile", inputs: { "fs.readFileSync": ["join(dir,name)"] } },
-  { file: "/scripts/corpus/tree.ts", owner: "readTree", inputs: { "fs.existsSync": ["dir"], "fs.lstatSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["fullPath"] } },
+  { file: "/scripts/corpus/world.ts", owner: "readSpecFile", rootParameters: [1], inputs: { "fs.readFileSync": ["join(dir,name)"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "readTree", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.lstatSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["fullPath"] } },
   { file: "/scripts/corpus/manifest.ts", owner: "realDerivedSchemaBindings", inputs: { "fs.readFileSync": ["join(SPEC_DIR,name)"] } },
   { file: "/scripts/corpus/semantic-contract.ts", owner: "loadRealDerivedSemanticContract", inputs: { "fs.readFileSync": ["join(SPEC_DIR,REAL_DERIVED_SEMANTIC_CONTRACT_FILE)"] } },
   { file: "/scripts/corpus/semantic-contract.ts", owner: "realDerivedSemanticContractBinding", inputs: { "fs.readFileSync": ["join(SPEC_DIR,REAL_DERIVED_SEMANTIC_CONTRACT_FILE)", "join(REPO_ROOT,file)"] } },
-  { file: "/scripts/corpus/defects.ts", owner: "taxonomyProblems", inputs: { "fs.realpathSync": ["repoRoot", "resolve(repoRoot,entry.sourceCitation.file)"], "fs.statSync": ["canonicalTarget"] } },
-  { file: "/scripts/corpus/defects.ts", owner: "loadTaxonomy", inputs: { "fs.readFileSync": ["join(dir,\"defect-taxonomy.json\")"] } },
-  { file: "/scripts/corpus/signoff.ts", owner: "loadSignoff", inputs: { "fs.readFileSync": ["join(dir,SIGNOFF_FILE)"] } },
+  { file: "/scripts/corpus/defects.ts", owner: "taxonomyProblems", rootParameters: [1], inputs: { "fs.realpathSync": ["repoRoot", "resolve(repoRoot,entry.sourceCitation.file)"], "fs.statSync": ["canonicalTarget"] } },
+  { file: "/scripts/corpus/defects.ts", owner: "loadTaxonomy", rootParameters: [0], inputs: { "fs.readFileSync": ["join(dir,\"defect-taxonomy.json\")"] } },
+  { file: "/scripts/corpus/signoff.ts", owner: "loadSignoff", rootParameters: [0], inputs: { "fs.readFileSync": ["join(dir,SIGNOFF_FILE)"] } },
 ] as const;
+
+const repositoryInputRootUses = (
+  project: Project,
+  root: string,
+): BannedUse[] => {
+  type TrackedSymbol = NonNullable<ReturnType<Node["getSymbol"]>>;
+  type ParameterOwner = { readonly key: string; readonly index: number };
+  const resolvedSymbol = (symbol: TrackedSymbol): TrackedSymbol => {
+    try {
+      return symbol.getAliasedSymbol() ?? symbol;
+    } catch {
+      return symbol;
+    }
+  };
+  const callableName = (node: Node): string | undefined => {
+    if (Node.isFunctionDeclaration(node) || Node.isMethodDeclaration(node)) {
+      return node.getName();
+    }
+    if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) {
+      const declaration = node.getParentIfKind(SyntaxKind.VariableDeclaration);
+      return declaration !== undefined && Node.isIdentifier(declaration.getNameNode())
+        ? declaration.getName()
+        : undefined;
+    }
+    return undefined;
+  };
+  const callableParameters = (node: Node): Node[] =>
+    Node.isFunctionDeclaration(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isArrowFunction(node) ||
+      Node.isFunctionExpression(node)
+      ? node.getParameters()
+      : [];
+  const callableKey = (node: Node): string | undefined => {
+    const name = callableName(node);
+    return name === undefined
+      ? undefined
+      : `${node.getSourceFile().getFilePath().replace(/\\/g, "/")}:${name}`;
+  };
+  const callables = project.getSourceFiles().flatMap((source) =>
+    source.getDescendants().filter((node) =>
+      Node.isFunctionDeclaration(node) ||
+      Node.isMethodDeclaration(node) ||
+      Node.isArrowFunction(node) ||
+      Node.isFunctionExpression(node)
+    )
+  );
+  const callableByKey = new Map<string, Node>();
+  const parameterOwners = new Map<TrackedSymbol, ParameterOwner>();
+  for (const callable of callables) {
+    const key = callableKey(callable);
+    if (key === undefined) continue;
+    callableByKey.set(key, callable);
+    for (const [index, parameter] of callableParameters(callable).entries()) {
+      const name = parameter.getFirstChildByKind(SyntaxKind.Identifier);
+      const symbol = name?.getSymbol();
+      if (symbol !== undefined) {
+        parameterOwners.set(resolvedSymbol(symbol), { key, index });
+      }
+    }
+  }
+  const required = new Map<string, Set<number>>();
+  for (const boundary of REPOSITORY_INPUT_BOUNDARIES) {
+    if (!("rootParameters" in boundary)) continue;
+    for (const [key, callable] of callableByKey) {
+      if (
+        key.endsWith(`${boundary.file}:${boundary.owner}`) &&
+        callableName(callable) === boundary.owner
+      ) {
+        required.set(key, new Set(boundary.rootParameters));
+      }
+    }
+  }
+  const nodeKey = (node: Node): string =>
+    `${node.getSourceFile().getFilePath()}:${node.getKind()}:${node.getStart()}`;
+  const callableKeysFrom = (
+    input: Node,
+    trail: ReadonlySet<string> = new Set(),
+  ): Set<string> => {
+    const key = nodeKey(input);
+    if (trail.has(key)) return new Set();
+    const next = new Set(trail);
+    next.add(key);
+    const keys = new Set<string>();
+    const direct = callableKey(input);
+    if (direct !== undefined) keys.add(direct);
+    const symbol = input.getSymbol();
+    for (const declaration of symbol === undefined
+      ? []
+      : resolvedSymbol(symbol).getDeclarations()) {
+      const declarationKey = callableKey(declaration);
+      if (declarationKey !== undefined) keys.add(declarationKey);
+      if (Node.isVariableDeclaration(declaration)) {
+        const initializer = declaration.getInitializer();
+        if (initializer !== undefined) {
+          for (const nested of callableKeysFrom(initializer, next)) keys.add(nested);
+        }
+      }
+    }
+    return keys;
+  };
+  const referencedParameters = (
+    input: Node,
+    trail: ReadonlySet<string> = new Set(),
+  ): ParameterOwner[] => {
+    const key = nodeKey(input);
+    if (trail.has(key)) return [];
+    const next = new Set(trail);
+    next.add(key);
+    const owners = new Map<string, ParameterOwner>();
+    const identifiers = Node.isIdentifier(input)
+      ? [input]
+      : input.getDescendantsOfKind(SyntaxKind.Identifier);
+    for (const identifier of identifiers) {
+      const symbol = identifier.getSymbol();
+      if (symbol === undefined) continue;
+      const resolved = resolvedSymbol(symbol);
+      const owner = parameterOwners.get(resolved);
+      if (owner !== undefined) {
+        owners.set(`${owner.key}:${owner.index}`, owner);
+        continue;
+      }
+      for (const declaration of resolved.getDeclarations()) {
+        if (!Node.isVariableDeclaration(declaration)) continue;
+        const initializer = declaration.getInitializer();
+        if (
+          initializer === undefined ||
+          Node.isArrowFunction(initializer) ||
+          Node.isFunctionExpression(initializer)
+        ) {
+          continue;
+        }
+        for (const nested of referencedParameters(initializer, next)) {
+          owners.set(`${nested.key}:${nested.index}`, nested);
+        }
+      }
+    }
+    return [...owners.values()];
+  };
+  const pathIsInsideRoot = (path: string): boolean => {
+    const pathFromRoot = relative(resolve(REPO_ROOT), resolve(path));
+    return pathFromRoot !== ".." &&
+      !pathFromRoot.startsWith(`..${sep}`) &&
+      !isAbsolute(pathFromRoot);
+  };
+  type PathTransform = "dirname" | "join" | "resolve";
+  const nodePathTransform = (input: Node): PathTransform | undefined => {
+    const importedNames = new Set<PathTransform>(["dirname", "join", "resolve"]);
+    const importModule = (declaration: Node): string | undefined =>
+      declaration.getFirstAncestorByKind(
+        SyntaxKind.ImportDeclaration,
+      )?.getModuleSpecifierValue();
+    if (Node.isIdentifier(input)) {
+      const declaration = input.getSymbol()?.getDeclarations().find(
+        (declaration) =>
+          Node.isImportSpecifier(declaration) &&
+          ["node:path", "path"].includes(
+            importModule(declaration) ?? "",
+          ) &&
+          importedNames.has(declaration.getName() as PathTransform),
+      );
+      return declaration !== undefined && Node.isImportSpecifier(declaration)
+        ? declaration.getName() as PathTransform
+        : undefined;
+    }
+    if (!Node.isPropertyAccessExpression(input)) return undefined;
+    const owner = input.getExpression();
+    return importedNames.has(input.getName() as PathTransform) &&
+      Node.isIdentifier(owner) &&
+      owner.getSymbol()?.getDeclarations().some(
+        (declaration) =>
+          Node.isNamespaceImport(declaration) &&
+          ["node:path", "path"].includes(
+            importModule(declaration) ?? "",
+          ),
+      ) === true
+      ? input.getName() as PathTransform
+      : undefined;
+  };
+  const staticRepositoryPath = (
+    input: Node,
+    trail: ReadonlySet<string> = new Set(),
+  ): string | undefined => {
+    const key = nodeKey(input);
+    if (trail.has(key)) return undefined;
+    const next = new Set(trail);
+    next.add(key);
+    if (Node.isStringLiteral(input) || Node.isNoSubstitutionTemplateLiteral(input)) {
+      const value = input.getLiteralText();
+      return isAbsolute(value) && pathIsInsideRoot(value)
+        ? resolve(value)
+        : undefined;
+    }
+    if (
+      Node.isPropertyAccessExpression(input) &&
+      input.getText() === "import.meta.dirname"
+    ) {
+      return dirname(input.getSourceFile().getFilePath());
+    }
+    if (Node.isIdentifier(input)) {
+      const symbol = input.getSymbol();
+      if (symbol === undefined) return undefined;
+      for (const declaration of resolvedSymbol(symbol).getDeclarations()) {
+        if (!Node.isVariableDeclaration(declaration)) continue;
+        const initializer = declaration.getInitializer();
+        if (initializer === undefined) continue;
+        const value = staticRepositoryPath(initializer, next);
+        if (value !== undefined) return value;
+      }
+      return undefined;
+    }
+    if (Node.isCallExpression(input)) {
+      const transform = nodePathTransform(input.getExpression());
+      const [first, ...rest] = input.getArguments();
+      if (transform === undefined || first === undefined) return undefined;
+      const base = staticRepositoryPath(first, next);
+      if (base === undefined) return undefined;
+      if (transform === "dirname") {
+        const value = dirname(base);
+        return pathIsInsideRoot(value) ? value : undefined;
+      }
+      const parts = rest.map((part) =>
+        Node.isStringLiteral(part) || Node.isNoSubstitutionTemplateLiteral(part)
+          ? part.getLiteralText()
+          : undefined
+      );
+      if (parts.some((part) => part === undefined)) return undefined;
+      const value = transform === "join"
+        ? join(base, ...parts as string[])
+        : resolve(base, ...parts as string[]);
+      return pathIsInsideRoot(value) ? value : undefined;
+    }
+    return undefined;
+  };
+  const isRepositoryPath = (input: Node): boolean => {
+    if (Node.isConditionalExpression(input)) {
+      return isRepositoryPath(input.getWhenTrue()) &&
+        isRepositoryPath(input.getWhenFalse());
+    }
+    return staticRepositoryPath(input) !== undefined;
+  };
+  const effectiveArgument = (
+    call: Node,
+    callable: Node,
+    index: number,
+  ): Node | undefined => {
+    if (!Node.isCallExpression(call)) return undefined;
+    const supplied = call.getArguments()[index];
+    if (supplied !== undefined) return supplied;
+    const parameter = callableParameters(callable)[index];
+    return parameter !== undefined && Node.isParameterDeclaration(parameter)
+      ? parameter.getInitializer()
+      : undefined;
+  };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const source of project.getSourceFiles()) {
+      for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+        for (const calleeKey of callableKeysFrom(call.getExpression())) {
+          const callee = callableByKey.get(calleeKey);
+          if (callee === undefined) continue;
+          for (const index of required.get(calleeKey) ?? []) {
+            const argument = effectiveArgument(call, callee, index);
+            if (argument === undefined) continue;
+            for (const owner of referencedParameters(argument)) {
+              const current = required.get(owner.key) ?? new Set<number>();
+              if (!current.has(owner.index)) {
+                current.add(owner.index);
+                required.set(owner.key, current);
+                changed = true;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  const uses: BannedUse[] = [];
+  const seen = new Set<string>();
+  const record = (node: Node): void => {
+    const file = node.getSourceFile().getFilePath().replace(root, "");
+    const line = node.getStartLineNumber();
+    const key = `${file}:${line}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    uses.push({ file, line, api: "repository input outside REPO_ROOT" });
+  };
+  for (const source of project.getSourceFiles()) {
+    for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      for (const calleeKey of callableKeysFrom(call.getExpression())) {
+        const callee = callableByKey.get(calleeKey);
+        if (callee === undefined) continue;
+        for (const index of required.get(calleeKey) ?? []) {
+          const argument = effectiveArgument(call, callee, index);
+          if (
+            argument !== undefined &&
+            referencedParameters(argument).length === 0 &&
+            !isRepositoryPath(argument)
+          ) {
+            record(call);
+          }
+        }
+      }
+    }
+  }
+  return uses;
+};
 
 /**
  * AST, not grep: `Date.now`, an ARGLESS `new Date()`, `Math.random`,
@@ -172,6 +480,8 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       ["Intl", new Set(["Intl"])],
       ["globalThis", new Set(["globalThis"])],
       ["global", new Set(["global"])],
+      ["eval", new Set(["eval"])],
+      ["Function", new Set(["Function"])],
       ["fetch", new Set(["fetch"])],
       ["WebSocket", new Set(["WebSocket"])],
       ["EventSource", new Set(["EventSource"])],
@@ -206,6 +516,7 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       origin.startsWith("crypto.") ? origin.split(".").at(-1)! : origin;
     const sensitiveOriginApi = (origin: string): string | undefined => {
       if (origin.endsWith(".[computed]")) return origin;
+      if (origin === "eval" || origin === "Function") return origin;
       if (bannedCalls.has(origin)) return apiName(origin);
       if (origin.startsWith("process.env")) return "process.env";
       if (origin.startsWith("process.hrtime")) return "process.hrtime";
@@ -265,6 +576,8 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       "process",
       "crypto",
       "Intl",
+      "eval",
+      "Function",
       "fetch",
       "WebSocket",
       "EventSource",
@@ -980,10 +1293,21 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       for (const assignment of sf.getDescendantsOfKind(
         SyntaxKind.BinaryExpression,
       )) {
-        if (assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) {
+        const operator = assignment.getOperatorToken().getKind();
+        if (![
+          SyntaxKind.EqualsToken,
+          SyntaxKind.BarBarEqualsToken,
+          SyntaxKind.AmpersandAmpersandEqualsToken,
+          SyntaxKind.QuestionQuestionEqualsToken,
+        ].includes(operator)) {
           continue;
         }
-        const value = originOf(assignment.getRight());
+        const value = mergeOrigins(
+          operator === SyntaxKind.EqualsToken
+            ? undefined
+            : originOf(assignment.getLeft()),
+          originOf(assignment.getRight()),
+        );
         if (value !== undefined) {
           changed =
             bindOrigins(
@@ -1017,7 +1341,7 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           continue;
         }
         const api = sensitiveOriginApi(origin);
-        if (api !== undefined && hostIoApi(api)) record(call, api, sf);
+        if (api !== undefined) record(call, api, sf);
       }
     }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
@@ -1083,6 +1407,7 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       record(identifier, "Intl", sf);
     }
   }
+  uses.push(...repositoryInputRootUses(project, root));
   return uses;
 }
 
@@ -1351,6 +1676,19 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     expect(uses.some((u) => u.api === "process.env")).toBe(true);
   });
 
+  it("flags dynamic code construction", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject(
+        file(
+          'const run = eval; void run("Date.now()");\nconst build = globalThis.Function; void new build("return process.env.SEED");\n',
+        ),
+      ),
+    );
+    expect(new Set(uses.map((use) => use.api))).toEqual(
+      new Set(["eval", "Function"]),
+    );
+  });
+
   it("flags nondeterministic APIs through globalThis and global roots", () => {
     const uses = bannedNondeterminismUses(
       inMemoryProject(
@@ -1427,6 +1765,42 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     expect(new Set(uses.map((use) => use.api))).toEqual(
       new Set(["Date() (callable)", "randomBytes"]),
     );
+  });
+
+  it("flags nondeterministic origins through logical compound assignments", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject(
+        file(
+          "let runtime;\nruntime ??= process;\nvoid runtime.env.SEED;\n",
+        ),
+      ),
+    );
+    expect(uses.some((use) => use.api === "process.env")).toBe(true);
+  });
+
+  it("rejects approved repository loaders called with external roots", () => {
+    const project = generatorProject();
+    project.createSourceFile(
+      join(CORPUS_SRC, "external-root-probe.ts"),
+      'import { loadSpec } from "./world";\nexport const external = loadSpec("/tmp/external-corpus");\n',
+    );
+    project.createSourceFile(
+      join(CORPUS_SRC, "shadowed-path-probe.ts"),
+      'import { loadSpec, REPO_ROOT } from "./world";\nconst join = (_root: string) => "/tmp/external-corpus";\nexport const external = loadSpec(join(REPO_ROOT));\n',
+    );
+    project.createSourceFile(
+      join(CORPUS_SRC, "traversal-root-probe.ts"),
+      'import { resolve } from "node:path";\nimport { loadSpec, REPO_ROOT } from "./world";\nexport const external = loadSpec(resolve(REPO_ROOT, ".."));\n',
+    );
+    project.createSourceFile(
+      join(CORPUS_SRC, "forwarded-root-probe.ts"),
+      'import { loadSpec } from "./world";\nconst load = (root: string) => loadSpec(root);\nexport const external = load("/tmp/external-corpus");\n',
+    );
+    expect(
+      bannedNondeterminismUses(project, REPO_ROOT).filter(
+        (use) => use.api === "repository input outside REPO_ROOT",
+      ),
+    ).toHaveLength(4);
   });
 
   it("flags local-module and container-member nondeterministic origins", () => {
