@@ -3677,3 +3677,30 @@ receipt, and setup-version preimages advance with the changed semantics.
 locked predicate cannot be evaluated as though it satisfied that predicate.
 **Revert path:** none while GC-16 keeps stage 2 unarmed and the setup UI advertises a locked P7D
 bank-change predicate.
+
+### D-107 · 2026-08-05 · captain-decision · Setup truth and authority timing restore ratified ownership
+
+The canonical setup-version projection now derives each firm from setup-resolved semantics, so
+requester participation is unbound for both firms before hashing. The preimage validates that rule
+and advances its version. Firm A's base journey exclusion cannot enter a setup attestation or
+activation identity that the setup evaluator and exported records describe as unbound.
+
+Attributed distinct-human policy approval remains open. The current setup activation records one
+authenticated demonstration Principal acknowledging a labeled synthetic lifecycle preview; it does
+not authenticate a separate proposer and approver. The demo contract, acceptance checklist, and
+design language state that gap and its un-defer trigger: the real policy lifecycle must persist
+separately authenticated proposer and approver identities.
+
+Decision authority again binds each instantiated stage's absolute `expiresAt`, computed from the
+decision creation time as required by the ratified v3 architecture and D-076. Sequential state is
+represented by the stage status, not by delaying decision instantiation. GC-16's operations stage
+remains pending and never approves, while its original absolute expiration stays immutable. The
+re-armed specialist escalation remains separate receipt state with its fresh runtime expiration.
+D-106's authority-clock reinterpretation is superseded; its evidence chronology and seven-day
+recency corrections remain in force.
+
+**Why:** setup acknowledgment, contract status, and decision authority must bind the same semantics
+the evaluator, runtime, and export claim. A later stage becoming eligible after its recorded expiry
+requires invalidation or a derived decision, not retroactive extension of the approved decision.
+**Revert path:** none while requester participation remains unbound in setup, the real policy
+lifecycle remains deferred, and v3 authority instantiation remains ratified.

@@ -8,7 +8,6 @@ import {
   DEMO_REQUEST_REF,
   DEMO_TIME_ZONE,
   DEMO_TIMELINE,
-  FIRMS,
 } from "./data";
 import type { DecisionEvidenceSnapshot } from "./decision-evidence";
 import {
@@ -27,6 +26,7 @@ import {
   FRESHNESS_DAYS,
   RESERVE_MONTHS,
   THRESHOLD_MINOR,
+  setupDefinitionFirmFor,
 } from "./setup-policy";
 
 export const SETUP_SCENARIO_ID = "recent-bank-change-block";
@@ -35,6 +35,16 @@ export function setupVersionPreimageFor(
   definition: MoneyMovementSetupDefinitionVM,
   evidence: DecisionEvidenceSnapshot,
 ): JsonValue {
+  const firms = SETUP_FIRM_IDS.map(setupDefinitionFirmFor);
+  if (
+    firms.some(
+      (firm) => firm.requesterParticipation.mode !== "unbound",
+    )
+  ) {
+    throw new Error(
+      "Setup definition must preserve unbound requester participation",
+    );
+  }
   const presentation: MoneyMovementSetupDefinitionVM = {
     steps: definition.steps,
     profiles: definition.profiles,
@@ -52,7 +62,7 @@ export function setupVersionPreimageFor(
 
   return toJsonValue({
     hashKind: "money-movement-demo-setup-version",
-    preimageVersion: "money-movement-demo-setup-version/2.0.0",
+    preimageVersion: "money-movement-demo-setup-version/3.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -66,7 +76,7 @@ export function setupVersionPreimageFor(
       scenarioId: SETUP_SCENARIO_ID,
       requestRef: DEMO_REQUEST_REF,
       evidence,
-      firms: SETUP_FIRM_IDS.map((firmId) => FIRMS[firmId]!),
+      firms,
       evaluatorTables: {
         reserveMonths: RESERVE_MONTHS,
         freshnessDays: FRESHNESS_DAYS,

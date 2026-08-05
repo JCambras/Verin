@@ -6448,3 +6448,28 @@ creation. The focused semantic-truth run failed eight paths at
 prerequisite completed`. Removing the nonnegative age guard made the future planned-withdrawal
 case fail at semantic-truth line 3665. Removing the seven-day upper bound made the outside-window
 case fail at line 3725. Reverting each injection returned the 93-test focused fence to green.
+
+## PF-setup-45 · setup and decision identity preserve ratified authority semantics
+
+**Date:** 2026-08-05.
+
+**Invariant:** the setup-version preimage uses the setup evaluator's unbound requester semantics;
+the normative demo documents do not claim a second human approval the runtime does not establish;
+and every original decision authority stage binds the absolute expiration computed from decision
+creation. A re-armed escalation remains separate receipt state and does not rewrite the decision.
+This supersedes PF-setup-44's authority-clock interpretation; PF-setup-44's evidence chronology and
+seven-day recency proof remain active.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` inspects the canonical setup-version
+preimage for both firm requester modes, requires the contract, checklist, design language, and
+runtime notice to agree that distinct-human policy approval is open, compares both GC-03 authority
+stages to their absolute decision-time expirations, and changes every stage field independently
+while requiring a different decision hash. `e2e/demo-journey.spec.ts` requires the GC-16 printable
+record to show the pending operations stage's recorded absolute expiration and reject the later-arm
+copy.
+
+**Adversarial proof:** before correction, the focused semantic run failed because Firm A's setup
+preimage contained `requesterParticipation.mode = excluded` and both authority requirements carried
+only `expiresAfter`. The production-browser path failed after receiving `P3D after this stage arms`
+instead of `2026-07-31T14:05:00.000Z`. The corrected focused semantic fence and the same production
+browser path pass with the setup and decision identities aligned to their governing semantics.

@@ -28,6 +28,10 @@ export const FRESHNESS_DAYS: Readonly<Record<string, number>> = {
 
 export const BANK_CHANGE_RECENCY_DAYS = 7;
 
+export const SETUP_REQUESTER_PARTICIPATION = Object.freeze({
+  mode: "unbound",
+} as const);
+
 export const BANK_HANDLING: Readonly<
   Record<string, FirmData["bankChangeHandling"]>
 > = {
@@ -98,6 +102,15 @@ export interface SetupPolicyEvidence {
   readonly bankInstruction: SetupPolicyEvidenceValue<{
     readonly independentlyVerified: boolean;
   }>;
+}
+
+export function setupDefinitionFirmFor(
+  firmId: SetupFirmId,
+): FirmData {
+  return {
+    ...FIRMS[firmId]!,
+    requesterParticipation: SETUP_REQUESTER_PARTICIPATION,
+  };
 }
 
 export function setupRuntimeFirm(
@@ -250,7 +263,7 @@ export function evaluateSetupPolicy(
     dualApproval,
     requiresSpecialist,
     authority,
-    requesterParticipation: { mode: "unbound" },
+    requesterParticipation: SETUP_REQUESTER_PARTICIPATION,
     projection,
   };
 }

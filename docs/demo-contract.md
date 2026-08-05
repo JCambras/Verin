@@ -13,9 +13,8 @@ end-to-end journey.
 
 ## How to read this document
 
-The body below is the captain-authored v1 contract, adopted in full; its substance is unchanged
-(formatting normalized to house style). Two captain directives dated 2026-07-26 are integrated as
-annotations. Nothing else is altered:
+The body below is the captain-authored v1 contract, adopted in full; later captain decisions are
+integrated as annotations rather than silently changing the original body:
 
 1. **Salesforce deferral (captain ruling, 2026-07-26).** Sandbox access does not yet exist. Every
    step, surface item, or completion-test item that requires the REAL managed-Salesforce invocation
@@ -43,6 +42,11 @@ annotations. Nothing else is altered:
    input is deliberately not carried over: a closed choice set replaces it so the demo cannot imply
    a rule builder no evaluator backs. Requirements the replacement does not meet stay marked open,
    never quietly dropped.
+4. **Single-Principal setup acknowledgment (captain decision D-107, 2026-08-05).** The current
+   setup activation binds one authenticated demonstration Principal to the reviewed setup bytes. It
+   does not authenticate a separate policy proposer and approver. Attributed distinct-human policy
+   approval therefore remains open until the real policy lifecycle supplies separately
+   authenticated proposer and approver identities.
 
 This contract is amended only by captain decision, recorded in the PR that changes it.
 
@@ -219,7 +223,11 @@ activation, and changed rerun result.
 > after it, through the setup journey's five closed choice groups. Preserved: deterministic
 > interpretation (a chosen horizon derives its reserve dollars through
 > `src/domain/money-movement/reserve-projection.ts`), simulation delta (the signed-case impact
-> step), attributed distinct-human approval, version activation, and the changed rerun result.
+> step), version activation, and the changed rerun result.
+> **Not met, and open:** attributed distinct-human policy approval. The current path records one
+> authenticated demonstration Principal acknowledging a synthetic proposer-and-approver preview;
+> it does not authenticate a second human. Un-defer trigger: the real policy lifecycle persists
+> separately authenticated proposer and approver attribution.
 > **Not met, and open:** the free-text draft and its `llm-proposed-draft` provenance. No evaluator
 > or policy AST backs a free-form rule today, so offering the input would be mock theater
 > (charter #5). Un-defer trigger: the closed policy AST and deterministic evaluator land.

@@ -226,23 +226,12 @@ export interface AuthorityStageRequirementVM {
   readonly approvalsRequired: number;
   readonly distinctActorsRequired: boolean;
   readonly requesterMayApprove: RequesterApprovalEligibility;
-  readonly expiresAfter: string;
+  readonly expiresAt: string;
   readonly escalationPath: readonly [
     AuthorityEscalationStepVM,
     ...AuthorityEscalationStepVM[],
   ];
 }
-export type AuthorityStageInstanceVM =
-  | {
-      readonly mode: "not-armed";
-    }
-  | {
-      readonly mode: "armed";
-      readonly instanceId: string;
-      readonly sourceStageId: string;
-      readonly activatedAt: string;
-      readonly expiresAt: string;
-    };
 export interface RearmedAuthorityStageVM {
   readonly instanceId: string;
   readonly sourceStageId: string;
@@ -256,7 +245,6 @@ export interface RearmedAuthorityStageVM {
 }
 export interface ApprovalStageVM {
   readonly decisionRequirement: AuthorityStageRequirementVM;
-  readonly stageInstance: AuthorityStageInstanceVM;
   readonly rearmedStage?: RearmedAuthorityStageVM;
   readonly title: string;
   readonly requirement: string;

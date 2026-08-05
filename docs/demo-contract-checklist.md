@@ -25,7 +25,8 @@ milestone, never Phase 1 completion.
 **Setup-first replacement (D-061).** Surfaces 10 and 11 are now reached through the setup journey at
 `/app/demo/setup` rather than as two standalone screens (contract §3/§4 annotation 3). The moment map
 and the two sections below record which of their required items the replacement meets and which stay
-open; nothing was dropped by deleting the old files.
+open; nothing was dropped by deleting the old files. D-107 records that the current single-Principal
+demonstration acknowledgment does not satisfy distinct-human policy approval.
 
 ---
 
@@ -49,10 +50,11 @@ open; nothing was dropped by deleting the old files.
 - **Intent capture has no dedicated `LedgerEntry` type.** The intent is pinned by the later
   `DecisionRecorded` entry through `DecisionRecord.intentRef`. Whether intake deserves its own ledger
   event is an open architecture question for the ledger prompt (build-sequence prompt 7).
-- **Policy-version activation has no dedicated `LedgerEntry` type.** The draft's approval,
-  activation, and the changed rerun are proven by the rerun's `DecisionRecorded`, whose input bundle
-  pins the new `policyVersionRef`. Whether policy lifecycle transitions get their own ledger events
-  is an open architecture question for the policy-lifecycle prompt (build-sequence prompt 20).
+- **Policy-version activation has no dedicated `LedgerEntry` type.** The current setup path records
+  one authenticated demonstration acknowledgment outside the ledger and proves the changed rerun by
+  its `DecisionRecorded`, whose input bundle pins the new `policyVersionRef`. It does not prove a
+  separate proposer and approver. Whether future policy lifecycle transitions get their own ledger
+  events is an open architecture question for the policy-lifecycle prompt (build-sequence prompt 20).
 
 ---
 
@@ -176,7 +178,10 @@ choice, signed-case impact, and activation steps (D-061), not a standalone scree
       dollars).
 - [ ] Simulation delta shown (which prior decisions would change - the signed-case impact step, and
       every card whose selection leaves the captain-signed option is labeled as a variation).
-- [ ] Attributed human approval required and shown (a distinct proposer and approver).
+- [ ] Attributed human approval required and shown (a distinct proposer and approver) - **open under
+      D-107.** The current path has one authenticated demonstration Principal and a labeled synthetic
+      lifecycle preview, not a separately authenticated second human. Un-defer trigger: the real
+      policy lifecycle persists distinct proposer and approver attribution.
 - [ ] Version activation shown.
 - [ ] Changed rerun result shown.
 

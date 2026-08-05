@@ -784,9 +784,6 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(rearmedStage).toContainText("operations-manager");
   await expect(rearmedStage).toContainText("2026-07-30T14:15:00.000Z");
   await expect(rearmedStage).toContainText("2026-08-01T14:15:00.000Z");
-  await expect(
-    page.getByText("P3D expiry starts when this stage arms"),
-  ).toBeVisible();
   const rearmedStageText = await rearmedStage.textContent();
   await checkAxe(page, "authority-specialist-rearmed");
   await snap(page, 18, "authority-specialist-rearmed");
@@ -799,15 +796,10 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
     "authority-requirement-ops-dual-approval",
   );
   await expect(pendingOperationsRequirement).toContainText(
-    "P3D after this stage arms",
-  );
-  await expect(
-    page.getByTestId("authority-instance-ops-dual-approval"),
-  ).toContainText(
-    "Not armed. Its expiration clock starts only after the prerequisite stage completes.",
+    "2026-07-31T14:05:00.000Z",
   );
   await expect(pendingOperationsRequirement).not.toContainText(
-    "2026-07-31T14:05:00.000Z",
+    "P3D after this stage arms",
   );
   await checkAxe(page, "record-specialist-rearmed");
   await snap(page, 19, "record-specialist-rearmed");

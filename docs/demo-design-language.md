@@ -112,7 +112,7 @@ same grammar stretched across a pipeline. Every one of the twelve required surfa
 | 8 | Execution timeline | Outcome | `ExecutionTimeline` (built, §8) in the register idiom; honest `StatusBadge` states; idempotency made visible in plain words |
 | 9 | Verification state | Outcome (honest) | "Proven / not yet proven" lists, next-poll label, NIGO and stuck rows first-class (§8) |
 | 10 | Firm A / Firm B comparison | Reasoning (policy difference) | Delivered inside the setup journey (§10): peer `OutcomeCard` firm cards under one shared comparison question, shared row labels, receded agreement, `StatusBadge` per disposition |
-| 11 | Policy draft and simulation impact | Recommendation + Action | Delivered inside the setup journey (§10): five closed choice groups, signed-case impact cards, distinct-human activation gate per §7. The free-text draft and its `llm-proposed-draft` treatment stay open pending the policy AST (demo contract §3 annotation, D-061) |
+| 11 | Policy draft and simulation impact | Recommendation + Action | Delivered inside the setup journey (§10): five closed choice groups, signed-case impact cards, and one authenticated demonstration-Principal acknowledgment. Distinct-human policy approval remains open under D-107, and the free-text draft plus its `llm-proposed-draft` treatment stay open pending the real policy lifecycle and policy AST (demo contract §3 annotation) |
 | 12 | Printable examiner-grade decision artifact | Outcome (proof) | Document-styled surface (§9), all reasoning expanded, hashes in full, ADR-0022 watermark rules |
 
 Two standing rules across all twelve:

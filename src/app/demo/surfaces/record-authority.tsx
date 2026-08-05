@@ -88,7 +88,6 @@ export function RecordAuthority({
           <p className="text-sm text-slate-600">{stage.requirement}</p>
           <AuthorityRequirementDetails
             requirement={stage.decisionRequirement}
-            instance={stage.stageInstance}
           />
           {stage.rearmedStage ? (
             <RearmedAuthorityStage stage={stage.rearmedStage} />
