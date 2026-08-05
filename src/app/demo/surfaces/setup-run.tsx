@@ -6,7 +6,6 @@ import { Metric } from "@app/presentation/metric";
 import { StatusBadge } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, DISPOSITION_LABELS } from "../model";
 import {
-  type MoneyMovementSetupVM,
   type SetupActivatedSnapshotVM,
   type SetupFirmId,
   type SetupFactVM,
@@ -30,12 +29,11 @@ function RequestFact({ fact }: { fact: SetupFactVM }) {
 }
 
 export function RequestBody({
-  vm,
   snapshot,
 }: {
-  vm: MoneyMovementSetupVM;
   snapshot: SetupActivatedSnapshotVM;
 }) {
+  const { request, fakeClass } = snapshot.presentation;
   return (
     <>
       <section aria-labelledby="request-summary-title" className="rounded-lg border border-slate-200 bg-white p-5">
@@ -43,16 +41,16 @@ export function RequestBody({
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-600">One immutable request</p>
             <h2 id="request-summary-title" className="mt-1 text-base font-semibold text-slate-900">
-              {vm.request.title}
+              {request.title}
             </h2>
           </div>
           <StatusBadge status="running" label="Ready to evaluate" />
         </div>
-        <p className="mt-2 text-sm text-slate-700">{vm.request.summary}</p>
+        <p className="mt-2 text-sm text-slate-700">{request.summary}</p>
         <dl className="mt-4 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <dt className="text-xs text-slate-600">Request identity</dt>
-            <dd className="break-all font-mono text-xs text-slate-800">{vm.request.requestRef}</dd>
+            <dd className="break-all font-mono text-xs text-slate-800">{request.requestRef}</dd>
           </div>
           <div>
             <dt className="text-xs text-slate-600">Pinned evidence</dt>
@@ -149,7 +147,7 @@ export function RequestBody({
           Same facts for both profiles
         </h2>
         <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {vm.request.facts.map((fact) => (
+          {request.facts.map((fact) => (
             <RequestFact key={fact.label} fact={fact} />
           ))}
         </div>
@@ -174,7 +172,7 @@ export function RequestBody({
       </section>
 
       <DemoNotice
-        vm={vm}
+        fakeClass={fakeClass}
         text="The active labels above are local demonstration state. The fake adapter cannot establish Salesforce parity or a production policy lifecycle."
       />
     </>
@@ -313,19 +311,18 @@ function OutcomeCard({
 }
 
 export function OutcomesBody({
-  vm,
   snapshot,
 }: {
-  vm: MoneyMovementSetupVM;
   snapshot: SetupActivatedSnapshotVM;
 }) {
+  const { comparison, fakeClass } = snapshot.presentation;
   return (
     <>
       <section aria-label="Outcome comparison" className="flex flex-col gap-4">
         <div className="rounded-lg border border-slate-200 bg-surface p-4" data-testid="outcome-question">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Comparison question</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">{vm.comparison.question}</p>
-          <p className="mt-1 text-xs text-slate-600">{vm.comparison.fairness}</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">{comparison.question}</p>
+          <p className="mt-1 text-xs text-slate-600">{comparison.fairness}</p>
         </div>
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
           <OutcomeCard snapshot={snapshot} firmId="firm-a" />
@@ -333,7 +330,7 @@ export function OutcomesBody({
         </div>
       </section>
       <DemoNotice
-        vm={vm}
+        fakeClass={fakeClass}
         text="Requester participation remains awaiting captain decision. This is a projected demonstration comparison and does not bind that unresolved rule."
       />
     </>

@@ -176,7 +176,7 @@ export interface FirmData {
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
   readonly distinctActorsRequired: boolean;
-  readonly eligibleRole: "operations" | null;
+  readonly standardApprovalRole: "operations" | null;
   readonly requesterParticipation: RequesterParticipation;
   readonly bankChangeHandling: "specialist-review" | "block-until-independently-verified";
   readonly policyVersion: string;
@@ -189,7 +189,7 @@ export const FIRMS: Record<string, FirmData> = {
     dualApprovalThresholdMinor: 2_500_000, // $25,000
     approvalsRequired: 2,
     distinctActorsRequired: true,
-    eligibleRole: "operations",
+    standardApprovalRole: "operations",
     requesterParticipation: {
       mode: "excluded",
       constraint: "may-not-satisfy-both-approvals",
@@ -204,7 +204,7 @@ export const FIRMS: Record<string, FirmData> = {
     dualApprovalThresholdMinor: 10_000_000, // $100,000
     approvalsRequired: 2,
     distinctActorsRequired: true,
-    eligibleRole: null, // contract silence - not invented (scenarios.yaml firms note)
+    standardApprovalRole: null, // contract silence - not invented (scenarios.yaml firms note)
     requesterParticipation: { mode: "unbound" },
     bankChangeHandling: "block-until-independently-verified",
     policyVersion: "FB-2.1",
@@ -348,7 +348,7 @@ export interface DecisionConfiguration {
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
   readonly distinctActorsRequired: boolean;
-  readonly eligibleRole: FirmData["eligibleRole"];
+  readonly standardApprovalRole: FirmData["standardApprovalRole"];
   readonly requesterParticipation: RequesterParticipation;
   readonly approvalClockId: string;
   readonly activatedSnapshotHash: string | null;
@@ -358,6 +358,7 @@ export interface DecisionConfiguration {
     readonly attestationStatementVersion: string;
     readonly draftGeneration: number;
     readonly selectionsHash: string;
+    readonly setupVersionDigest: string;
   } | null;
 }
 
@@ -486,7 +487,7 @@ export function decisionConfigurationFor(firm: FirmData): DecisionConfiguration 
     dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
     approvalsRequired: firm.approvalsRequired,
     distinctActorsRequired: firm.distinctActorsRequired,
-    eligibleRole: firm.eligibleRole,
+    standardApprovalRole: firm.standardApprovalRole,
     requesterParticipation: firm.requesterParticipation,
     approvalClockId: DEFAULT_APPROVAL_CLOCK.id,
     activatedSnapshotHash: null,

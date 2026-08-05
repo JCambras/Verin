@@ -57,12 +57,12 @@ export function RecordAuthority({
       <dl className="grid min-w-0 gap-2 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-xs text-slate-600">
-            Eligible approval role
+            Configured standard-approval role
           </dt>
           <dd className="text-slate-800">
-            {authority.eligibleRole === "operations"
+            {authority.standardApprovalRole === "operations"
               ? "Operations"
-              : authority.eligibleRole}
+              : authority.standardApprovalRole}
           </dd>
         </div>
         <div>

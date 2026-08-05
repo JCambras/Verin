@@ -42,15 +42,15 @@ export const THRESHOLD_MINOR: Readonly<Record<string, number>> = {
 export type SetupAuthorityResolution =
   | {
       readonly mode: "not-reached";
-      readonly eligibleRole: null;
+      readonly standardApprovalRole: null;
     }
   | {
       readonly mode: "automatic";
-      readonly eligibleRole: null;
+      readonly standardApprovalRole: null;
     }
   | {
       readonly mode: "staged";
-      readonly eligibleRole: "operations";
+      readonly standardApprovalRole: "operations";
     };
 
 export interface SetupPolicyEvaluation {
@@ -77,7 +77,7 @@ export interface SetupResolvedConfiguration {
   readonly approvalsRequired: number;
   readonly distinctActorsRequired: boolean;
   readonly authorityMode: SetupAuthorityResolution["mode"];
-  readonly eligibleRole: SetupAuthorityResolution["eligibleRole"];
+  readonly standardApprovalRole: SetupAuthorityResolution["standardApprovalRole"];
   readonly requesterParticipation: RequesterParticipation;
   readonly approvalClock: ApprovalClock;
 }
@@ -109,7 +109,7 @@ export function setupRuntimeFirm(
     dualApprovalThresholdMinor:
       evaluation.dualApprovalThresholdMinor,
     bankChangeHandling: evaluation.bankChangeHandling,
-    eligibleRole: evaluation.authority.eligibleRole,
+    standardApprovalRole: evaluation.authority.standardApprovalRole,
     requesterParticipation: evaluation.requesterParticipation,
     policyVersion,
   };
@@ -130,7 +130,7 @@ export function setupResolvedConfiguration(
     distinctActorsRequired:
       FIRMS[firmId]!.distinctActorsRequired,
     authorityMode: evaluation.authority.mode,
-    eligibleRole: evaluation.authority.eligibleRole,
+    standardApprovalRole: evaluation.authority.standardApprovalRole,
     requesterParticipation: evaluation.requesterParticipation,
     approvalClock: APPROVAL_CLOCKS[selections[firmId].expiry]!,
   };
@@ -208,10 +208,10 @@ export function evaluateSetupPolicy(
     bankChangeHandling === "specialist-review";
   const authority: SetupAuthorityResolution =
     dispositionKind !== "proceed"
-      ? { mode: "not-reached", eligibleRole: null }
+      ? { mode: "not-reached", standardApprovalRole: null }
       : !requiresSpecialist && !dualApproval
-        ? { mode: "automatic", eligibleRole: null }
-        : { mode: "staged", eligibleRole: "operations" };
+        ? { mode: "automatic", standardApprovalRole: null }
+        : { mode: "staged", standardApprovalRole: "operations" };
   return {
     reserveMonths,
     freshnessDays,

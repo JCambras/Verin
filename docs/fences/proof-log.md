@@ -6376,3 +6376,28 @@ line 253. The first staged-record 200 percent run exposed a 408-pixel document i
 viewport through the record's long safety and execution identifiers. Adding minimum-width
 containment and identifier wrapping returned the same overflow and axe run to green. Every
 injection was reverted before the focused green runs.
+
+## PF-setup-42 · acknowledgment, frozen projections, and authority labels share exact identities
+
+**Date:** 2026-08-05.
+
+**Invariant:** setup attestation binds the exact visible setup definition, evaluator inputs,
+evidence, statement, and selections. Post-activation request, comparison, proof, steps, and
+provenance come only from the frozen activated snapshot. A configured standard-approval role is
+not presented as the role eligible for every current stage.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` changes the visible attestation
+statement and proof copy independently and requires a different setup-version digest, then proves
+the server rejects the stale digest. `src/__tests__/unit/setup-attestation-store.test.ts` rejects a
+challenge, validated draft, or command with a different setup version.
+`src/__tests__/unit/setup-activation-store.test.ts` requires the registry to return the exact deeply
+frozen presentation object. `e2e/demo-journey.spec.ts` drives the specialist-only path and requires
+its stage to remain specialist-only while Operations is labeled as the configured standard role.
+
+**Adversarial proof:** the setup-version projection was temporarily changed to erase the visible
+attestation statement before hashing. The focused semantic fence failed at line 1699 because the
+changed statement retained the original digest. Reverting the injection returned 101 focused
+semantic, attestation-store, and activation-store tests to green. Before the authority-label fix,
+the production-browser specialist-only journey failed because it rendered `Eligible approval role`
+beside a specialist-only stage. The same journey now requires `Configured standard-approval role`
+and Operations as separate facts.

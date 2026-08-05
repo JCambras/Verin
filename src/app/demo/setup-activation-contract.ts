@@ -6,6 +6,7 @@ import type {
 export interface SetupActivationDraft {
   readonly generation: number;
   readonly selections: SetupSelections;
+  readonly setupVersionDigest: string;
 }
 
 export type SetupAttestationResult =
@@ -15,6 +16,7 @@ export type SetupAttestationResult =
 export interface SetupActivationCommand {
   readonly draftGeneration: number;
   readonly selections: SetupSelections;
+  readonly setupVersionDigest: string;
   readonly attestationToken: string;
   readonly statementVersion: SetupAttestationChallengeVM["statementVersion"];
 }

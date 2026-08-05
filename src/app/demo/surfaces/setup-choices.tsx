@@ -67,7 +67,7 @@ export function ChoicesBody({
       </section>
 
       <DemoNotice
-        vm={vm}
+        fakeClass={vm.fakeClass}
         text="Each choice is closed and presentation-ready. No free-form rule, script, regex, precedence editor, or unsupported adapter toggle exists in this path."
       />
     </>
@@ -121,7 +121,7 @@ export function ImpactBody({
   return (
     <>
       <DemoNotice
-        vm={vm}
+        fakeClass={vm.fakeClass}
         text="Signed-case impact is a labeled presentation preview until the deterministic evaluator and policy simulation lifecycle land."
       />
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
@@ -338,6 +338,12 @@ export function ActivationBody({
             <div>
               <dt className="text-slate-600">Authenticated role</dt>
               <dd className="text-slate-800">{attestation.actor.role}</dd>
+            </div>
+            <div className="min-w-0 sm:col-span-2">
+              <dt className="text-slate-600">Reviewed setup version digest</dt>
+              <dd className="break-all font-mono text-slate-800">
+                {attestation.setupVersionDigest}
+              </dd>
             </div>
           </dl>
         ) : null}

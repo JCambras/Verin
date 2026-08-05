@@ -196,7 +196,7 @@ export function buildAuthorityPlan(
       prov("synthetic-fixture", OBSERVED_RECENT),
     );
   }
-  if (firm.eligibleRole !== "operations") {
+  if (firm.standardApprovalRole !== "operations") {
     throw new Error(
       "Staged authority requires the Operations eligible role",
     );
@@ -213,7 +213,7 @@ export function buildAuthorityPlan(
         : "Specialist review; no dual approval at this amount"
       : "Two distinct operations approvers",
     detail: `${DEFAULT_APPROVAL_CLOCK.escalation}. ${DEFAULT_APPROVAL_CLOCK.expiry}.`,
-    eligibleRole: firm.eligibleRole,
+    standardApprovalRole: firm.standardApprovalRole,
     requesterParticipation: firm.requesterParticipation,
     stages: [stages[0]!, ...stages.slice(1)],
   };

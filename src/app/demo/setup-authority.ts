@@ -34,9 +34,9 @@ export function automaticAuthorityPlan(
   firm: FirmData,
   thresholdProvenance: RecordProvenance,
 ): AutomaticAuthorityVM {
-  if (firm.eligibleRole !== null) {
+  if (firm.standardApprovalRole !== null) {
     throw new Error(
-      "Automatic authority cannot carry an eligible approval role",
+      "Automatic authority cannot carry a standard approval role",
     );
   }
   const amount = `$${(
@@ -73,7 +73,8 @@ export function evaluateAuthorityPlan(
   thresholdProvenance: RecordProvenance,
 ): AuthorityPlanVM {
   if (
-    firm.eligibleRole !== evaluation.authority.eligibleRole ||
+    firm.standardApprovalRole !==
+      evaluation.authority.standardApprovalRole ||
     JSON.stringify(firm.requesterParticipation) !==
       JSON.stringify(evaluation.requesterParticipation)
   ) {
@@ -89,9 +90,9 @@ export function evaluateAuthorityPlan(
   if (evaluation.authority.mode === "automatic") {
     return automaticAuthorityPlan(firm, thresholdProvenance);
   }
-  if (firm.eligibleRole !== "operations") {
+  if (firm.standardApprovalRole !== "operations") {
     throw new Error(
-      "Staged authority requires the Operations eligible role",
+      "Staged authority requires the Operations standard approval role",
     );
   }
   const requiresSpecialist = evaluation.requiresSpecialist;
@@ -119,7 +120,7 @@ export function evaluateAuthorityPlan(
       mode: "staged",
       summary: "Specialist review; no dual approval at this amount",
       detail: "The evaluator creates no standard approval below the configured threshold.",
-      eligibleRole: firm.eligibleRole,
+      standardApprovalRole: firm.standardApprovalRole,
       requesterParticipation: firm.requesterParticipation,
       stages: [specialistStage],
     };
@@ -176,7 +177,7 @@ export function evaluateAuthorityPlan(
       ? "Specialist review, then two distinct operations approvers"
       : "Two distinct operations approvers",
     detail: `${approvalClock.escalation}. ${approvalClock.expiry}.`,
-    eligibleRole: firm.eligibleRole,
+    standardApprovalRole: firm.standardApprovalRole,
     requesterParticipation: firm.requesterParticipation,
     stages,
   };

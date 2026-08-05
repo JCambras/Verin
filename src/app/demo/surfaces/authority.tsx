@@ -120,11 +120,11 @@ export function AuthoritySurface({
 
       <dl className="grid min-w-0 gap-2 rounded-md border border-slate-200 bg-surface p-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-xs text-slate-600">Eligible approval role</dt>
+          <dt className="text-xs text-slate-600">Configured standard-approval role</dt>
           <dd className="text-slate-800">
-            {vm.eligibleRole === "operations"
+            {vm.standardApprovalRole === "operations"
               ? "Operations"
-              : vm.eligibleRole}
+              : vm.standardApprovalRole}
           </dd>
         </div>
         <div>

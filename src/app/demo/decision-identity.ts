@@ -277,12 +277,13 @@ export function decisionBundlePreimageFor(
 ): JsonValue {
   if (
     (authority.mode === "automatic" &&
-      configuration.eligibleRole !== null) ||
+      configuration.standardApprovalRole !== null) ||
     (authority.mode === "staged" &&
-      configuration.eligibleRole !== authority.eligibleRole)
+      configuration.standardApprovalRole !==
+        authority.standardApprovalRole)
   ) {
     throw new Error(
-      `Authority mode ${authority.mode} conflicts with eligible role ${String(configuration.eligibleRole)}`,
+      `Authority mode ${authority.mode} conflicts with standard approval role ${String(configuration.standardApprovalRole)}`,
     );
   }
   if (
@@ -301,7 +302,7 @@ export function decisionBundlePreimageFor(
   );
   return toJsonValue({
     hashKind: "money-movement-demo-bundle",
-    preimageVersion: "money-movement-demo-bundle/5.0.0",
+    preimageVersion: "money-movement-demo-bundle/6.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -331,7 +332,7 @@ export function decisionRecordPreimageFor(
   );
   return toJsonValue({
     hashKind: "money-movement-demo-record",
-    preimageVersion: "money-movement-demo-record/5.0.0",
+    preimageVersion: "money-movement-demo-record/6.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,

@@ -9,7 +9,6 @@ import {
   DEMO_REQUEST_REF,
   DEMO_TIME_ZONE,
   DEMO_TIMELINE,
-  FIRMS,
   scenarioById,
 } from "./data";
 import {
@@ -40,6 +39,7 @@ import {
   RESERVE_MONTHS,
   THRESHOLD_MINOR,
 } from "./setup-policy";
+import { setupVersionPreimageFor } from "./setup-version";
 
 export const SETUP_SCENARIO_ID = "recent-bank-change-block";
 
@@ -51,6 +51,7 @@ export interface SetupActivationAuthorityBinding {
   readonly statementVersion: typeof SETUP_ATTESTATION_STATEMENT_VERSION;
   readonly draftGeneration: number;
   readonly selectionsHash: string;
+  readonly setupVersionDigest: string;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -164,6 +165,7 @@ export type ValidatedSetupDraft =
       readonly selections: SetupSelections;
       readonly canonicalConfiguration: string;
       readonly selectionsHash: string;
+      readonly setupVersionDigest: string;
     }
   | { readonly ok: false; readonly error: string };
 
@@ -186,6 +188,7 @@ export function selectionPreimage(selections: SetupSelections): JsonValue {
 export function validateSetupActivationDraft(
   generation: unknown,
   value: unknown,
+  setupVersionDigest: unknown,
 ): ValidatedSetupDraft {
   if (
     typeof generation !== "number" ||
@@ -205,10 +208,18 @@ export function validateSetupActivationDraft(
       error: `Unsupported setup combination: ${combinationName(value)}. Both firms and all five closed choice groups are required.`,
     };
   }
-  const validationError = validateSelections(
-    buildMoneyMovementSetup(),
-    selections,
-  );
+  const vm = buildMoneyMovementSetup();
+  if (
+    typeof setupVersionDigest !== "string" ||
+    setupVersionDigest !== vm.setupVersionDigest
+  ) {
+    return {
+      ok: false,
+      error:
+        "The setup definition changed. Reload and review the current rules and acknowledgment before trying again.",
+    };
+  }
+  const validationError = validateSelections(vm, selections);
   if (validationError) return { ok: false, error: validationError };
   return {
     ok: true,
@@ -216,111 +227,8 @@ export function validateSetupActivationDraft(
     selections,
     canonicalConfiguration: canonicalConfiguration(selections),
     selectionsHash: hashCanonicalPreimage(selectionPreimage(selections)),
+    setupVersionDigest,
   };
-}
-
-function fixedSetupConfiguration(vm: MoneyMovementSetupVM): JsonValue {
-  return toJsonValue({
-    scenarioId: SETUP_SCENARIO_ID,
-    firms: SETUP_FIRM_IDS.map((firmId) => {
-      const runtime = FIRMS[firmId]!;
-      return {
-        firmId,
-        profile: vm.profiles.find(
-          (candidate) => candidate.firmId === firmId,
-        )!,
-        runtime: {
-          id: runtime.id,
-          name: runtime.name,
-          reserveMonths: runtime.reserveMonths,
-          dualApprovalThresholdMinor:
-            runtime.dualApprovalThresholdMinor,
-          approvalsRequired: runtime.approvalsRequired,
-          distinctActorsRequired:
-            runtime.distinctActorsRequired,
-          bankChangeHandling: runtime.bankChangeHandling,
-          policyVersion: runtime.policyVersion,
-          authorityBinding: "derived-from-complete-selection",
-          requesterParticipation: { mode: "unbound" },
-        },
-      };
-    }),
-    controls: vm.controls,
-    roles: vm.roles,
-    baseline: vm.baseline.map((entry) => ({
-      label: entry.label,
-      value: entry.value,
-      detail: entry.detail ?? null,
-    })),
-    policyGroups: vm.policyGroups.map((group) => ({
-      id: group.id,
-      title: group.title,
-      question: group.question,
-      rationale: group.rationale,
-      caseRef: group.caseRef,
-      firms: group.firms.map((firm) => ({
-        firmId: firm.firmId,
-        initialOptionId: firm.initialOptionId,
-        options: firm.options.map((option) => ({
-          id: option.id,
-          label: option.label,
-          detail: option.detail ?? null,
-          truthLabel: option.truthLabel,
-          reserveMetric: option.reserveMetric ?? null,
-          smithsEffect: {
-            ...option.smithsEffect,
-            reachesAuthority: option.smithsEffect.reachesAuthority ?? null,
-          },
-          signedCaseEffect: option.signedCaseEffect
-            ? {
-                ...option.signedCaseEffect,
-                reachesAuthority:
-                  option.signedCaseEffect.reachesAuthority ?? null,
-              }
-            : null,
-        })),
-      })),
-    })),
-    impacts: vm.impacts.map((impact) => ({
-      id: impact.id,
-      title: impact.title,
-      caseRef: impact.caseRef,
-      attributionKind: impact.attributionKind,
-      facts: impact.facts,
-      groupId:
-        impact.attributionKind === "exact-case"
-          ? impact.groupId
-          : null,
-      universalEffect:
-        impact.attributionKind === "universal-rule"
-          ? impact.universalEffect
-          : null,
-      attribution:
-        impact.attributionKind === "exact-case"
-          ? impact.attribution
-          : null,
-      selectionEffects:
-        impact.attributionKind === "exact-case"
-          ? impact.selectionEffects ?? null
-          : null,
-    })),
-    evaluatorTables: {
-      reserveMonths: RESERVE_MONTHS,
-      freshnessDays: FRESHNESS_DAYS,
-      bankHandling: BANK_HANDLING,
-      thresholdMinor: THRESHOLD_MINOR,
-      approvalClocks: APPROVAL_CLOCKS,
-    },
-    activation: {
-      lifecyclePreview: vm.activation.lifecyclePreview,
-      effectiveAt: vm.activation.effectiveAt,
-      simulationRef: vm.activation.simulationRef,
-      requesterDecisionNotice:
-        vm.activation.requesterDecisionNotice,
-      demonstrationNotice: vm.activation.demonstrationNotice,
-      attestationStatement: vm.activation.attestationStatement,
-    },
-  });
 }
 
 export function setupActivationPreimageFor(
@@ -330,16 +238,26 @@ export function setupActivationPreimageFor(
   authorityPlans: readonly {
     readonly firmId: SetupFirmId;
     readonly authority: DecisionAuthorityClaim;
-    readonly eligibleRole: "operations" | null;
+    readonly standardApprovalRole: "operations" | null;
     readonly requesterParticipation: { readonly mode: "unbound" };
   }[],
   evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(
     scenarioById(SETUP_SCENARIO_ID),
   ),
 ): JsonValue {
+  const setupVersion = setupVersionPreimageFor(vm, evidence);
+  if (
+    hashCanonicalPreimage(setupVersion) !== vm.setupVersionDigest ||
+    authority.setupVersionDigest !== vm.setupVersionDigest ||
+    draft.setupVersionDigest !== vm.setupVersionDigest
+  ) {
+    throw new Error(
+      "Setup activation inputs do not match the reviewed setup version",
+    );
+  }
   return toJsonValue({
     hashKind: "money-movement-demo-activation",
-    preimageVersion: "money-movement-demo-activation/3.0.0",
+    preimageVersion: "money-movement-demo-activation/4.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -357,10 +275,12 @@ export function setupActivationPreimageFor(
         {},
         evidence,
       ),
-      fixedConfiguration: fixedSetupConfiguration(vm),
+      setupVersionDigest: vm.setupVersionDigest,
+      setupVersion,
       draft: {
         generation: draft.generation,
         selectionsHash: draft.selectionsHash,
+        setupVersionDigest: draft.setupVersionDigest,
         canonicalConfiguration: draft.canonicalConfiguration,
         selections: selectionPreimage(draft.selections),
       },

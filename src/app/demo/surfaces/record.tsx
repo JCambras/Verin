@@ -16,6 +16,7 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, DISPOSITION_LABELS, type EvidenceRowVM, type ExecutionRowVM, type RecordVM, type WhyVM } from "../model";
 import { JourneyNav, SurfaceShell } from "./shared";
 import { PrintButton } from "./print-button";
+import { RecordActivatedConfiguration } from "./record-activated-configuration";
 import { RecordAuthority } from "./record-authority";
 function DocSection({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -167,105 +168,9 @@ export function RecordSurface({ vm }: { vm: RecordVM }) {
                     </div>
                   ) : null}
                   {vm.activatedConfiguration ? (
-                    <>
-                      <div className="flex flex-col">
-                        <dt className="text-xs text-slate-600">Activated snapshot version</dt>
-                        <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-snapshot-version">
-                          {vm.activatedConfiguration.snapshotVersion}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col">
-                        <dt className="text-xs text-slate-600">Configuration provenance</dt>
-                        {/* Three postures read as three distinct states, so an export
-                            can never look captain-signed when its constituent choices
-                            are not - the badge carries the state, the line the claim. */}
-                        <dd className="flex flex-col items-start gap-1 text-xs text-slate-800">
-                          <StatusBadge
-                            status={vm.activatedConfiguration.configurationPostureStatus}
-                            label={vm.activatedConfiguration.configurationPostureLabel}
-                          />
-                          <span data-testid="record-identity-configuration-provenance">
-                            {vm.activatedConfiguration.configurationProvenance}
-                          </span>
-                        </dd>
-                      </div>
-                      <div className="flex flex-col sm:col-span-2">
-                        <dt className="text-xs text-slate-600">Activated snapshot hash</dt>
-                        <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-snapshot-hash">
-                          {vm.activatedConfiguration.snapshotHash}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col sm:col-span-2">
-                        <dt className="text-xs text-slate-600">Configuration hash</dt>
-                        <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-configuration-hash">
-                          {vm.activatedConfiguration.configurationHash}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col">
-                        <dt className="text-xs text-slate-600">
-                          Eligible approval role
-                        </dt>
-                        <dd
-                          className="text-xs text-slate-800"
-                          data-testid="record-identity-eligible-role"
-                        >
-                          {vm.activatedConfiguration.eligibleRole ===
-                          "operations"
-                            ? "Operations"
-                            : "None - automatic or not reached"}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col">
-                        <dt className="text-xs text-slate-600">
-                          Requester participation
-                        </dt>
-                        <dd
-                          className="text-xs text-slate-800"
-                          data-testid="record-identity-requester-participation"
-                        >
-                          {vm.activatedConfiguration
-                            .requesterParticipation === "unbound"
-                            ? "Unbound in this demonstration"
-                            : "Requester excluded"}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col">
-                        <dt className="text-xs text-slate-600">Authenticated activation actor</dt>
-                        <dd className="break-all font-mono text-xs text-slate-800" data-testid="record-identity-activation-actor">
-                          {vm.activatedConfiguration.activationActorId}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col">
-                        <dt className="text-xs text-slate-600">Authenticated role</dt>
-                        <dd className="text-xs text-slate-800">
-                          {vm.activatedConfiguration.activationActorRole}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col sm:col-span-2">
-                        <dt className="text-xs text-slate-600">Demonstration acknowledgment</dt>
-                        <dd className="text-xs text-slate-800">
-                          {vm.activatedConfiguration.attestationStatement}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col sm:col-span-2">
-                        <dt className="text-xs text-slate-600">Attestation statement version</dt>
-                        <dd className="break-all font-mono text-xs text-slate-800">
-                          {vm.activatedConfiguration.attestationStatementVersion}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col">
-                        <dt className="text-xs text-slate-600">Acknowledged draft generation</dt>
-                        <dd className="font-mono text-xs text-slate-800">
-                          {vm.activatedConfiguration.attestedDraftGeneration}
-                        </dd>
-                      </div>
-                      <div className="flex flex-col sm:col-span-2">
-                        <dt className="text-xs text-slate-600">Acknowledged selections hash</dt>
-                        <dd className="break-all font-mono text-xs text-slate-800">
-                          {vm.activatedConfiguration.attestedSelectionsHash}
-                        </dd>
-                      </div>
-                    </>
+                    <RecordActivatedConfiguration
+                      configuration={vm.activatedConfiguration}
+                    />
                   ) : null}
                 </dl>
                 <PrintButton />

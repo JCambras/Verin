@@ -66,6 +66,7 @@ export function issueSetupAttestation(
   draft: {
     readonly generation: number;
     readonly selectionsHash: string;
+    readonly setupVersionDigest: string;
   },
 ): SetupAttestationChallengeVM {
   const token = randomBytes(32).toString("hex");
@@ -73,6 +74,7 @@ export function issueSetupAttestation(
     token,
     draftGeneration: draft.generation,
     selectionsHash: draft.selectionsHash,
+    setupVersionDigest: draft.setupVersionDigest,
     statementVersion: SETUP_ATTESTATION_STATEMENT_VERSION,
     actor: Object.freeze({
       opaqueId: scope.userId,
@@ -98,7 +100,10 @@ export function issueSetupAttestation(
 export function consumeSetupAttestation(
   scope: SetupAttestationScope,
   command: SetupActivationCommand,
-  selectionsHash: string,
+  validated: {
+    readonly selectionsHash: string;
+    readonly setupVersionDigest: string;
+  },
 ): SetupAttestationChallengeVM | null {
   if (!ATTESTATION_TOKEN.test(command.attestationToken)) return null;
   const key = scopeKey(scope);
@@ -117,7 +122,9 @@ export function consumeSetupAttestation(
       SETUP_ATTESTATION_STATEMENT_VERSION ||
     challenge.statementVersion !== command.statementVersion ||
     challenge.draftGeneration !== command.draftGeneration ||
-    challenge.selectionsHash !== selectionsHash ||
+    challenge.selectionsHash !== validated.selectionsHash ||
+    challenge.setupVersionDigest !== validated.setupVersionDigest ||
+    challenge.setupVersionDigest !== command.setupVersionDigest ||
     challenge.actor.opaqueId !== scope.userId ||
     challenge.actor.role !== scope.role
   ) {

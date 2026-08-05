@@ -75,6 +75,7 @@ import {
   setupActivationPreimageFor,
   validateSetupActivationDraft,
 } from "@app/demo/setup-activation-input";
+import { setupVersionDigestFor } from "@app/demo/setup-version";
 import {
   POSTURE_CONFIGURATION_LABEL,
   POSTURE_OPTION_LABEL,
@@ -1570,7 +1571,12 @@ describe("demo semantic-truth fence", () => {
 
   it("enforces: every material activation field changes the snapshot hash", () => {
     const selections = setupSelections();
-    const draft = validateSetupActivationDraft(7, selections);
+    const setupVm = buildMoneyMovementSetup();
+    const draft = validateSetupActivationDraft(
+      7,
+      selections,
+      setupVm.setupVersionDigest,
+    );
     expect(draft.ok).toBe(true);
     if (!draft.ok) return;
     const authority = setupActivationAuthority(
@@ -1578,7 +1584,6 @@ describe("demo semantic-truth fence", () => {
       draft.generation,
       "principal-a",
     );
-    const setupVm = buildMoneyMovementSetup();
     const preimage = setupActivationPreimageFor(
       setupVm,
       draft,
@@ -1612,20 +1617,32 @@ describe("demo semantic-truth fence", () => {
       }),
       changedPreimageHash(preimage, (copy) => {
         const payload = jsonObject(jsonField(copy, "payload"));
-        const fixed = jsonObject(
-          jsonField(payload, "fixedConfiguration"),
+        const setupVersion = jsonObject(
+          jsonField(payload, "setupVersion"),
         );
-        const controls = fixed.controls;
+        const setupPayload = jsonObject(
+          jsonField(setupVersion, "payload"),
+        );
+        const presentation = jsonObject(
+          jsonField(setupPayload, "presentation"),
+        );
+        const controls = presentation.controls;
         if (!Array.isArray(controls)) throw new Error("controls missing");
         jsonObject(controls[0]!).proof = "changed proof rule";
       }),
       changedPreimageHash(preimage, (copy) => {
         const payload = jsonObject(jsonField(copy, "payload"));
-        const fixed = jsonObject(
-          jsonField(payload, "fixedConfiguration"),
+        const setupVersion = jsonObject(
+          jsonField(payload, "setupVersion"),
+        );
+        const setupPayload = jsonObject(
+          jsonField(setupVersion, "payload"),
+        );
+        const presentation = jsonObject(
+          jsonField(setupPayload, "presentation"),
         );
         jsonObject(
-          jsonField(fixed, "activation"),
+          jsonField(presentation, "activation"),
         ).attestationStatement = "changed attestation statement";
       }),
       changedPreimageHash(preimage, (copy) => {
@@ -1652,6 +1669,46 @@ describe("demo semantic-truth fence", () => {
     ];
     expect(changed).not.toContain(unchanged);
     expect(new Set(changed).size).toBe(changed.length);
+  });
+
+  it("enforces: acknowledgment binds the exact visible setup definition", () => {
+    const scenario = scenarioById("recent-bank-change-block");
+    const evidence = decisionEvidenceSnapshotFor(scenario);
+    const setupVm = buildMoneyMovementSetup(evidence);
+    const changedStatementDigest = setupVersionDigestFor(
+      {
+        ...setupVm,
+        activation: {
+          ...setupVm.activation,
+          attestationStatement: "changed attestation statement",
+        },
+      },
+      evidence,
+    );
+    const changedProofDigest = setupVersionDigestFor(
+      {
+        ...setupVm,
+        proof: {
+          ...setupVm.proof,
+          exportError: "changed visible proof copy",
+        },
+      },
+      evidence,
+    );
+
+    expect(changedStatementDigest).not.toBe(setupVm.setupVersionDigest);
+    expect(changedProofDigest).not.toBe(setupVm.setupVersionDigest);
+    expect(
+      validateSetupActivationDraft(
+        0,
+        setupSelections(),
+        changedStatementDigest,
+      ),
+    ).toEqual({
+      ok: false,
+      error:
+        "The setup definition changed. Reload and review the current rules and acknowledgment before trying again.",
+    });
   });
 
   it("enforces: versioned input and decision claims are identity-bearing", () => {
@@ -2195,7 +2252,7 @@ describe("demo semantic-truth fence", () => {
     expect(changed).not.toBe(base);
   });
 
-  it("enforces: automatic authority has no role while every setup stage binds Operations", () => {
+  it("enforces: standard approval role is distinct from current stage eligibility", () => {
     const automaticJourney = getJourney(
       "safe-proceed",
       "firm-b",
@@ -2203,7 +2260,7 @@ describe("demo semantic-truth fence", () => {
     expect(automaticJourney.record.authority?.mode).toBe(
       "automatic",
     );
-    expect(decisionConfigurationFor(firmById("firm-b")).eligibleRole)
+    expect(decisionConfigurationFor(firmById("firm-b")).standardApprovalRole)
       .toBeNull();
     expect(
       JSON.stringify(automaticJourney.record.authority),
@@ -2214,12 +2271,17 @@ describe("demo semantic-truth fence", () => {
     });
     const staged = stagedSnapshot.firms[1];
     expect(staged.authorityPlan.mode).toBe("staged");
-    expect(staged.eligibleRole).toBe("operations");
+    expect(staged.standardApprovalRole).toBe("operations");
     expect(staged.requesterParticipation).toEqual({
       mode: "unbound",
     });
     if (staged.authorityPlan.mode !== "staged") return;
-    expect(staged.authorityPlan.eligibleRole).toBe("operations");
+    expect(staged.authorityPlan.standardApprovalRole).toBe("operations");
+    expect(
+      staged.authorityPlan.stages.map(
+        (stage) => stage.authorityRequirement.eligibleRoleIds,
+      ),
+    ).toEqual([["bank-change-specialist"]]);
     expect(staged.authorityPlan.requesterParticipation).toEqual({
       mode: "unbound",
     });
@@ -2227,7 +2289,7 @@ describe("demo semantic-truth fence", () => {
       stagedSnapshot,
       "firm-b",
     );
-    expect(record.activatedConfiguration?.eligibleRole).toBe(
+    expect(record.activatedConfiguration?.standardApprovalRole).toBe(
       "operations",
     );
     expect(
@@ -2248,11 +2310,11 @@ describe("demo semantic-truth fence", () => {
         automaticFirm,
         {
           ...decisionConfigurationFor(automaticFirm),
-          eligibleRole: "operations",
+          standardApprovalRole: "operations",
         },
         decisionAuthorityClaimFor(automaticAuthority),
       ),
-    ).toThrow("conflicts with eligible role");
+    ).toThrow("conflicts with standard approval role");
 
     const stagedJourney = getJourney("safe-proceed", "firm-a");
     const stagedAuthority = stagedJourney.record.authority;
@@ -2264,18 +2326,18 @@ describe("demo semantic-truth fence", () => {
         firmById("firm-a"),
         {
           ...decisionConfigurationFor(firmById("firm-a")),
-          eligibleRole: null,
+          standardApprovalRole: null,
         },
         decisionAuthorityClaimFor(stagedAuthority),
       ),
-    ).toThrow("conflicts with eligible role");
+    ).toThrow("conflicts with standard approval role");
 
     expect(() =>
       decisionAuthorityClaimFor({
         ...stagedAuthority,
-        eligibleRole: null,
+        standardApprovalRole: null,
       } as unknown as AuthorityPlanVM),
-    ).toThrow("Operations eligible role");
+    ).toThrow("Operations standard approval role");
   });
 
   it("enforces: setup requester participation stays unbound through hashes and receipts", () => {
@@ -2760,7 +2822,7 @@ describe("demo semantic-truth fence", () => {
       mode: "staged",
       summary: "Staged",
       detail: "No stages",
-      eligibleRole: "operations",
+      standardApprovalRole: "operations",
       requesterParticipation: { mode: "unbound" },
       stages: [],
     } as unknown as AuthorityPlanVM;
@@ -3767,7 +3829,7 @@ describe("demo semantic-truth fence", () => {
         approvalsRequired: 2,
         distinctActorsRequired: true,
         authorityMode: "staged",
-        eligibleRole: "operations",
+        standardApprovalRole: "operations",
         requesterParticipation: {
           mode: "excluded",
           constraint: "may-not-satisfy-both-approvals",
@@ -3777,7 +3839,7 @@ describe("demo semantic-truth fence", () => {
       authority: {
         claim: {
           mode: "staged",
-          eligibleRole: "operations",
+          standardApprovalRole: "operations",
           requesterParticipation: {
             mode: "excluded",
             constraint: "may-not-satisfy-both-approvals",
@@ -3877,7 +3939,7 @@ describe("demo semantic-truth fence", () => {
         resolvedConfiguration: {
           ...input.resolvedConfiguration,
           authorityMode: "automatic" as const,
-          eligibleRole: null,
+          standardApprovalRole: null,
         },
       },
       {

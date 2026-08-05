@@ -92,6 +92,11 @@ describe("activated setup snapshot registry", () => {
     const read = activatedSetupSnapshot(principal, snapshot.snapshotHash);
     expect(read).toBe(snapshot);
     expect(Object.isFrozen(read)).toBe(true);
+    expect(read?.presentation).toBe(snapshot.presentation);
+    expect(Object.isFrozen(read?.presentation)).toBe(true);
+    expect(Object.isFrozen(read?.presentation.request)).toBe(true);
+    expect(Object.isFrozen(read?.presentation.comparison)).toBe(true);
+    expect(Object.isFrozen(read?.presentation.proof)).toBe(true);
   });
 
   it("serves the exact frozen per-firm records materialized at activation", () => {

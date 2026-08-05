@@ -48,7 +48,7 @@ export function operationsStageRequirementFor(
   approvalClock: ApprovalClock,
   order: number,
 ): AuthorityStageRequirementVM {
-  if (firm.eligibleRole !== "operations") {
+  if (firm.standardApprovalRole !== "operations") {
     throw new Error(
       "Operations authority requires the Operations eligible role",
     );
@@ -57,7 +57,7 @@ export function operationsStageRequirementFor(
     stageId: "ops-dual-approval",
     order,
     executionMode: "parallel",
-    eligibleRoleIds: [firm.eligibleRole],
+    eligibleRoleIds: [firm.standardApprovalRole],
     approvalsRequired: firm.approvalsRequired,
     distinctActorsRequired: firm.distinctActorsRequired,
     requesterMayApprove: requesterMayApprove(firm),

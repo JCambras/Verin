@@ -50,7 +50,7 @@ function configurationHash(
   return hashCanonicalPreimage(toJsonValue({
     hashKind: "money-movement-demo-profile-configuration",
     preimageVersion:
-      "money-movement-demo-profile-configuration/3.0.0",
+      "money-movement-demo-profile-configuration/4.0.0",
     payload: {
       firmId,
       resolvedConfiguration,

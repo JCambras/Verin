@@ -20,7 +20,7 @@ export type DecisionAuthorityClaim =
     }
   | {
       readonly mode: "staged";
-      readonly eligibleRole: "operations";
+      readonly standardApprovalRole: "operations";
       readonly requesterParticipation: RequesterParticipation;
       readonly requirements: readonly AuthorityStageRequirementVM[];
     };
@@ -122,10 +122,10 @@ export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
           ]
         : [
             "detail",
-            "eligibleRole",
             "mode",
             "requesterParticipation",
             "stages",
+            "standardApprovalRole",
             "summary",
           ];
   const actualKeys = Object.keys(plan).sort();
@@ -151,9 +151,9 @@ export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
   plan.stages.forEach((stage, index) =>
     assertStageRequirement(stage.authorityRequirement, index),
   );
-  if (plan.eligibleRole !== "operations") {
+  if (plan.standardApprovalRole !== "operations") {
     throw new Error(
-      "Staged authority requires the Operations eligible role",
+      "Staged authority requires the Operations standard approval role",
     );
   }
   const requesterActors = plan.stages
@@ -220,7 +220,7 @@ export function decisionAuthorityClaimFor(
     case "staged":
       return {
         mode: plan.mode,
-        eligibleRole: plan.eligibleRole,
+        standardApprovalRole: plan.standardApprovalRole,
         requesterParticipation: plan.requesterParticipation,
         requirements: decisionAuthorityRequirementsFor(plan.stages),
       };

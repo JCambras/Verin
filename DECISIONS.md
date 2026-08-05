@@ -3560,3 +3560,20 @@ or a stale opaque digest. Canonical mirrors and product labels must make the sam
 or trust an opaque payload hash without committed bytes. Both leave the same drift class open.
 **Revert path:** none while interactive setup produces staged authority and the canonical fixtures
 remain replay and parity evidence.
+
+### D-099 · 2026-08-05 · reversible · Setup acknowledgment and activated presentation share one frozen version
+
+Setup activation now binds the authenticated challenge, command, canonical setup definition,
+evaluator inputs, evidence, selections, and visible acknowledgment statement to one setup-version
+digest. Stale or mismatched clients fail before a token is issued or consumed. The activated
+snapshot owns the complete request, comparison, proof, step, and provenance projection used after
+activation, and the in-process registry returns that frozen projection without recomputation.
+
+The Operations value is the configured standard-approval role, not a claim that every current
+stage admits Operations. Stage requirements remain the authority for path-specific role eligibility,
+including specialist-only paths, and hashes and exports use the explicit standard-role name.
+
+**Why:** acknowledgment, decision identity, and visible proof must describe the same reviewed bytes,
+while firm configuration and current-stage eligibility are different authority facts.
+**Revert path:** replace the setup-version digest and frozen projection together only when a persisted
+policy version provides equivalent client binding and immutable replay.

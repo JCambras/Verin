@@ -70,6 +70,7 @@ describe("setup activation", () => {
             token: "a".repeat(64),
             draftGeneration: authority.draftGeneration,
             selectionsHash: authority.selectionsHash,
+            setupVersionDigest: authority.setupVersionDigest,
             statementVersion: authority.statementVersion,
             actor: authority.actor,
           },
@@ -119,13 +120,47 @@ describe("setup activation", () => {
 
   it("rejects a response when either the generation or exact selections changed", () => {
     const selections = setupSelections();
-    const captured = captureSetupActivationDraft(4, selections);
+    const setupVersionDigest = buildMoneyMovementSetup().setupVersionDigest;
+    const captured = captureSetupActivationDraft(
+      4,
+      selections,
+      setupVersionDigest,
+    );
     const changed = setupSelections();
     changed["firm-a"].reserve = "9-months";
 
-    expect(activationResponseMatchesDraft(captured, 5, selections)).toBe(false);
-    expect(activationResponseMatchesDraft(captured, 4, changed)).toBe(false);
-    expect(activationResponseMatchesDraft(captured, 4, selections)).toBe(true);
+    expect(
+      activationResponseMatchesDraft(
+        captured,
+        5,
+        selections,
+        setupVersionDigest,
+      ),
+    ).toBe(false);
+    expect(
+      activationResponseMatchesDraft(
+        captured,
+        4,
+        changed,
+        setupVersionDigest,
+      ),
+    ).toBe(false);
+    expect(
+      activationResponseMatchesDraft(
+        captured,
+        4,
+        selections,
+        "0".repeat(64),
+      ),
+    ).toBe(false);
+    expect(
+      activationResponseMatchesDraft(
+        captured,
+        4,
+        selections,
+        setupVersionDigest,
+      ),
+    ).toBe(true);
   });
 
   it("pairs accountable roles to firm labels by identity after profile reordering", () => {

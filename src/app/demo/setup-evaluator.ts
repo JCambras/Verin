@@ -84,7 +84,7 @@ function decisionConfiguration(
     dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
     approvalsRequired: firm.approvalsRequired,
     distinctActorsRequired: firm.distinctActorsRequired,
-    eligibleRole: firm.eligibleRole,
+    standardApprovalRole: firm.standardApprovalRole,
     requesterParticipation: firm.requesterParticipation,
     approvalClockId: selections[firm.id as SetupFirmId].expiry,
     activatedSnapshotHash: snapshotHash,
@@ -94,6 +94,7 @@ function decisionConfiguration(
       attestationStatementVersion: authority.statementVersion,
       draftGeneration: authority.draftGeneration,
       selectionsHash: authority.selectionsHash,
+      setupVersionDigest: authority.setupVersionDigest,
     },
   };
 }
@@ -203,7 +204,8 @@ function evaluateFirm(
       : `Projected demonstration configuration · differs from ${profile.activeVersion}`,
     disposition,
     authorityPlan: evaluatedAuthority,
-    eligibleRole: policyEvaluation.authority.eligibleRole,
+    standardApprovalRole:
+      policyEvaluation.authority.standardApprovalRole,
     requesterParticipation:
       policyEvaluation.requesterParticipation,
     reserveMetric: derivedMetric(
@@ -260,7 +262,7 @@ export function setupActivationAuthorityClaims(
       authority: decisionAuthorityClaimFor(
         evaluated.authorityPlan,
       ),
-      eligibleRole: evaluated.eligibleRole,
+      standardApprovalRole: evaluated.standardApprovalRole,
       requesterParticipation: evaluated.requesterParticipation,
     };
   });
@@ -296,13 +298,15 @@ export function activateMoneyMovementSetup(
   const draft = validateSetupActivationDraft(
     authority.draftGeneration,
     value,
+    authority.setupVersionDigest,
   );
   if (!draft.ok) return draft;
   if (
     authority.actor.role !== "principal" ||
     authority.statementVersion !==
       SETUP_ATTESTATION_STATEMENT_VERSION ||
-    authority.selectionsHash !== draft.selectionsHash
+    authority.selectionsHash !== draft.selectionsHash ||
+    authority.setupVersionDigest !== draft.setupVersionDigest
   ) {
     return {
       ok: false,
@@ -352,6 +356,7 @@ export function activateMoneyMovementSetup(
     statementVersion: authority.statementVersion,
     draftGeneration: authority.draftGeneration,
     selectionsHash: authority.selectionsHash,
+    setupVersionDigest: authority.setupVersionDigest,
     statement: vm.activation.attestationStatement,
   };
   const firms: SetupActivatedSnapshotVM["firms"] = [
@@ -373,6 +378,13 @@ export function activateMoneyMovementSetup(
     evidence,
     selections: draft.selections,
     firms,
+    presentation: {
+      steps: vm.steps,
+      request: vm.request,
+      comparison: vm.comparison,
+      proof: vm.proof,
+      fakeClass: vm.fakeClass,
+    },
   });
   return deepFreeze({
     ok: true,

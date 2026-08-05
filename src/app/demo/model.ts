@@ -272,7 +272,7 @@ export interface StagedAuthorityVM {
   readonly mode: "staged";
   readonly summary: string;
   readonly detail: string;
-  readonly eligibleRole: "operations";
+  readonly standardApprovalRole: "operations";
   readonly requesterParticipation: RequesterParticipation;
   readonly stages: readonly [ApprovalStageVM, ...ApprovalStageVM[]];
 }
@@ -396,13 +396,14 @@ export interface ActivatedConfigurationRecordVM {
   readonly configurationPostureStatus: string;
   readonly configurationPostureLabel: string;
   readonly configurationProvenance: string;
-  readonly eligibleRole: "operations" | null;
+  readonly standardApprovalRole: "operations" | null;
   readonly requesterParticipation: RequesterParticipation["mode"];
   readonly activationActorId: string;
   readonly activationActorRole: Role;
   readonly attestationStatementVersion: string;
   readonly attestedDraftGeneration: number;
   readonly attestedSelectionsHash: string;
+  readonly attestedSetupVersionDigest: string;
   readonly attestationStatement: string;
 }
 

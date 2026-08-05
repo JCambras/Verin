@@ -11,6 +11,7 @@ import {
 import type { SetupActivationCommand } from "@app/demo/setup-activation-contract";
 
 let scopeSequence = 0;
+const SETUP_VERSION_DIGEST = "a".repeat(64);
 
 function scope(): SetupAttestationScope {
   scopeSequence += 1;
@@ -25,6 +26,7 @@ function scope(): SetupAttestationScope {
 function command(
   token: string,
   generation = 4,
+  setupVersionDigest = SETUP_VERSION_DIGEST,
 ): SetupActivationCommand {
   return {
     draftGeneration: generation,
@@ -44,9 +46,14 @@ function command(
         expiry: "1d-3d",
       },
     },
+    setupVersionDigest,
     attestationToken: token,
     statementVersion: SETUP_ATTESTATION_STATEMENT_VERSION,
   };
+}
+
+function validated(selectionsHash: string, setupVersionDigest = SETUP_VERSION_DIGEST) {
+  return { selectionsHash, setupVersionDigest };
 }
 
 afterEach(() => {
@@ -60,6 +67,7 @@ describe("setup attestation registry", () => {
     const challenge = issueSetupAttestation(owner, {
       generation: 4,
       selectionsHash,
+      setupVersionDigest: SETUP_VERSION_DIGEST,
     });
     expect(
       consumeSetupAttestation(
@@ -68,14 +76,14 @@ describe("setup attestation registry", () => {
           sessionLineageId: `${owner.sessionLineageId}-other`,
         },
         command(challenge.token),
-        selectionsHash,
+        validated(selectionsHash),
       ),
     ).toBeNull();
     expect(
-      consumeSetupAttestation(owner, command(challenge.token), selectionsHash),
+      consumeSetupAttestation(owner, command(challenge.token), validated(selectionsHash)),
     ).toBe(challenge);
     expect(
-      consumeSetupAttestation(owner, command(challenge.token), selectionsHash),
+      consumeSetupAttestation(owner, command(challenge.token), validated(selectionsHash)),
     ).toBeNull();
   });
 
@@ -86,31 +94,59 @@ describe("setup attestation registry", () => {
       consumeSetupAttestation(
         owner,
         command("f".repeat(64)),
-        selectionsHash,
+        validated(selectionsHash),
       ),
     ).toBeNull();
 
     const staleDraft = issueSetupAttestation(owner, {
       generation: 4,
       selectionsHash,
+      setupVersionDigest: SETUP_VERSION_DIGEST,
     });
     expect(
       consumeSetupAttestation(
         owner,
         command(staleDraft.token, 5),
-        selectionsHash,
+        validated(selectionsHash),
       ),
     ).toBeNull();
 
     const changedSelections = issueSetupAttestation(owner, {
       generation: 4,
       selectionsHash,
+      setupVersionDigest: SETUP_VERSION_DIGEST,
     });
     expect(
       consumeSetupAttestation(
         owner,
         command(changedSelections.token),
-        "3".repeat(64),
+        validated("3".repeat(64)),
+      ),
+    ).toBeNull();
+
+    const changedSetup = issueSetupAttestation(owner, {
+      generation: 4,
+      selectionsHash,
+      setupVersionDigest: SETUP_VERSION_DIGEST,
+    });
+    expect(
+      consumeSetupAttestation(
+        owner,
+        command(changedSetup.token, 4, "b".repeat(64)),
+        validated(selectionsHash),
+      ),
+    ).toBeNull();
+
+    const changedValidatedSetup = issueSetupAttestation(owner, {
+      generation: 4,
+      selectionsHash,
+      setupVersionDigest: SETUP_VERSION_DIGEST,
+    });
+    expect(
+      consumeSetupAttestation(
+        owner,
+        command(changedValidatedSetup.token),
+        validated(selectionsHash, "b".repeat(64)),
       ),
     ).toBeNull();
   });
@@ -122,10 +158,11 @@ describe("setup attestation registry", () => {
     const challenge = issueSetupAttestation(owner, {
       generation: 4,
       selectionsHash,
+      setupVersionDigest: SETUP_VERSION_DIGEST,
     });
     vi.advanceTimersByTime(SETUP_ATTESTATION_TTL_MS + 1);
     expect(
-      consumeSetupAttestation(owner, command(challenge.token), selectionsHash),
+      consumeSetupAttestation(owner, command(challenge.token), validated(selectionsHash)),
     ).toBeNull();
   });
 
@@ -135,12 +172,13 @@ describe("setup attestation registry", () => {
     const challenge = issueSetupAttestation(owner, {
       generation: 4,
       selectionsHash,
+      setupVersionDigest: SETUP_VERSION_DIGEST,
     });
     expect(
       consumeSetupAttestation(
         { ...owner },
         command(challenge.token),
-        selectionsHash,
+        validated(selectionsHash),
       ),
     ).toBe(challenge);
   });

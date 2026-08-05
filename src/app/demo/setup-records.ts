@@ -59,7 +59,7 @@ function materializeActivatedRecord(
         configurationPostureLabel:
           evaluated.configurationPostureLabel,
         configurationProvenance: evaluated.configurationProvenance,
-        eligibleRole: evaluated.eligibleRole,
+        standardApprovalRole: evaluated.standardApprovalRole,
         requesterParticipation:
           evaluated.requesterParticipation.mode,
         activationActorId:
@@ -72,6 +72,8 @@ function materializeActivatedRecord(
           snapshot.activationAcknowledgment.draftGeneration,
         attestedSelectionsHash:
           snapshot.activationAcknowledgment.selectionsHash,
+        attestedSetupVersionDigest:
+          snapshot.activationAcknowledgment.setupVersionDigest,
         attestationStatement:
           snapshot.activationAcknowledgment.statement,
       },

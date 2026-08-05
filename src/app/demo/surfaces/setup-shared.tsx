@@ -4,12 +4,11 @@ import type { ReactNode } from "react";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { Metric } from "@app/presentation/metric";
 import { Button, StatusBadge } from "@app/presentation/ui";
-import { DEV_BADGE_TEXT } from "../model";
+import { DEV_BADGE_TEXT, type FakeClass } from "../model";
 import {
   POSTURE_OPTION_LABEL,
   POSTURE_STATUS,
   optionPosture,
-  type MoneyMovementSetupVM,
   type SetupChoiceOptionVM,
   type SetupFirmId,
   type SetupPolicyGroupVM,
@@ -117,10 +116,10 @@ export function SetupActionRow({
   );
 }
 
-export function DemoNotice({ vm, text }: { vm: MoneyMovementSetupVM; text: string }) {
+export function DemoNotice({ fakeClass, text }: { fakeClass: FakeClass; text: string }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-surface p-3 text-xs text-slate-700">
-      <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
+      <DevProvenanceBadge label={DEV_BADGE_TEXT[fakeClass]} />
       <span>{text}</span>
     </div>
   );

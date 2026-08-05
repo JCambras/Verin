@@ -44,7 +44,7 @@ export function ProfilesBody({ vm }: { vm: MoneyMovementSetupVM }) {
         ))}
       </div>
       <DemoNotice
-        vm={vm}
+        fakeClass={vm.fakeClass}
         text="Drafts in this replacement are presentation-only. Nothing here governs a production request until the real policy lifecycle lands."
       />
     </>

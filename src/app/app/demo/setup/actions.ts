@@ -55,6 +55,7 @@ export async function attestSetupDraft(
   const validated = validateSetupActivationDraft(
     draft?.generation,
     draft?.selections,
+    draft?.setupVersionDigest,
   );
   if (!validated.ok) return validated;
   return {
@@ -62,6 +63,7 @@ export async function attestSetupDraft(
     challenge: issueSetupAttestation(activationScope(principal.value), {
       generation: validated.generation,
       selectionsHash: validated.selectionsHash,
+      setupVersionDigest: validated.setupVersionDigest,
     }),
   };
 }
@@ -83,13 +85,17 @@ export async function activateSetup(
   const validated = validateSetupActivationDraft(
     command?.draftGeneration,
     command?.selections,
+    command?.setupVersionDigest,
   );
   if (!validated.ok) return validated;
   const scope = activationScope(principal.value);
   const challenge = consumeSetupAttestation(
     scope,
     command,
-    validated.selectionsHash,
+    {
+      selectionsHash: validated.selectionsHash,
+      setupVersionDigest: validated.setupVersionDigest,
+    },
   );
   if (!challenge) {
     return {
@@ -106,6 +112,7 @@ export async function activateSetup(
     statementVersion: challenge.statementVersion,
     draftGeneration: challenge.draftGeneration,
     selectionsHash: challenge.selectionsHash,
+    setupVersionDigest: challenge.setupVersionDigest,
   });
   if (!result.ok) return result;
   registerActivatedSetupSnapshot(scope, result.snapshot, result.records);

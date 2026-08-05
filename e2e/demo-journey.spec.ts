@@ -264,11 +264,11 @@ test("the setup-first journey is clickable end-to-end on labeled fakes", async (
   await expect(page.getByRole("heading", { name: "Every outcome has a proof trail" })).toBeVisible();
   await expect(page.getByTestId("proof-firm-a")).toBeVisible();
   await expect(page.getByTestId("proof-firm-b")).toBeVisible();
-  await expect(page.getByTestId("proof-firm-a-eligible-role")).toHaveText(
+  await expect(page.getByTestId("proof-firm-a-standard-approval-role")).toHaveText(
     "Operations",
   );
-  await expect(page.getByTestId("proof-firm-b-eligible-role")).toHaveText(
-    "None - automatic or not reached",
+  await expect(page.getByTestId("proof-firm-b-standard-approval-role")).toHaveText(
+    "None configured for this authority mode",
   );
   await expect(
     page.getByTestId("proof-firm-a-requester-participation"),
@@ -351,6 +351,46 @@ test("bank-change impact follows the complete Firm B authority selection", async
   await checkAxe(page, "setup-threshold-sensitive-impact");
 });
 
+test("specialist-only proof distinguishes path eligibility from the standard role", async ({
+  page,
+}) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/demo/setup");
+  for (const label of [
+    "Continue with both firms",
+    "Confirm required controls",
+    "Use this starting posture",
+  ]) {
+    await page.getByRole("button", { name: label }).click();
+  }
+  await page
+    .getByTestId("choice-bank-change-firm-b")
+    .getByRole("radio", { name: /Specialist review/ })
+    .check();
+  await page
+    .getByTestId("choice-threshold-firm-b")
+    .getByRole("radio", { name: /Above \$100,000/ })
+    .check();
+  for (const label of ["Review signed impact", "Send for approval"]) {
+    await page.getByRole("button", { name: label }).click();
+  }
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Acknowledge and activate demonstration" })
+    .click();
+  await page.getByRole("button", { name: "Run under both profiles" }).click();
+  await page
+    .getByRole("button", { name: "View complete proof trail" })
+    .click();
+
+  const proof = page.getByTestId("proof-firm-b");
+  await expect(proof).toContainText(
+    "Specialist review; no dual approval at this amount",
+  );
+  await expect(proof).toContainText("Configured standard-approval role");
+  await expect(proof).toContainText("Operations");
+});
+
 /** The proof step claims hash-bound identity. Following each export must land on a
  * record carrying the SAME identifiers - and each firm must have its own export, so a
  * two-firm proof cannot be funnelled into one firm's record. */
@@ -405,11 +445,11 @@ test("each firm's export lands on the record whose identifiers the proof step sh
         : "Recommended configuration · pending captain signoff",
     );
     await expect(
-      page.getByTestId("record-identity-eligible-role"),
+      page.getByTestId("record-identity-standard-approval-role"),
     ).toHaveText(
       firmId === "firm-a"
         ? "Operations"
-        : "None - automatic or not reached",
+        : "None configured for this authority mode",
     );
     await expect(
       page.getByTestId("record-identity-requester-participation"),

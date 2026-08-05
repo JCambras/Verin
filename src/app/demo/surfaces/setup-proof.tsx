@@ -12,18 +12,15 @@ import { DEV_BADGE_TEXT, DISPOSITION_LABELS } from "../model";
 import {
   POSTURE_OPTION_LABEL,
   POSTURE_STATUS,
-  type MoneyMovementSetupVM,
   type SetupActivatedSnapshotVM,
   type SetupFirmId,
 } from "../setup-model";
 import { CategoryLabel, DemoNotice } from "./setup-shared";
 
 function Trail({
-  vm,
   snapshot,
   firmId,
 }: {
-  vm: MoneyMovementSetupVM;
   snapshot: SetupActivatedSnapshotVM;
   firmId: SetupFirmId;
 }) {
@@ -44,7 +41,7 @@ function Trail({
         <li className="rounded-md border border-slate-200 bg-surface p-3">
           <CategoryLabel>User-entered demo input</CategoryLabel>
           <p className="mt-2 text-sm font-medium text-slate-900">1. Request pinned</p>
-          <p className="mt-1 break-all font-mono text-xs text-slate-600">{vm.request.requestRef}</p>
+          <p className="mt-1 break-all font-mono text-xs text-slate-600">{snapshot.presentation.request.requestRef}</p>
           <p className="mt-2">
             <DevProvenanceBadge
               label={DEV_BADGE_TEXT["user-entered-demo-input"]}
@@ -54,7 +51,7 @@ function Trail({
         <li className="rounded-md border border-slate-200 bg-surface p-3">
           <CategoryLabel>Synthetic fixture</CategoryLabel>
           <p className="mt-2 text-sm font-medium text-slate-900">2. Evidence pinned</p>
-          <p className="mt-1 break-all font-mono text-xs text-slate-600">{vm.request.evidenceRef}</p>
+          <p className="mt-1 break-all font-mono text-xs text-slate-600">{snapshot.presentation.request.evidenceRef}</p>
         </li>
         <li className="rounded-md border border-slate-200 bg-surface p-3">
           <CategoryLabel>Firm policy</CategoryLabel>
@@ -103,14 +100,14 @@ function Trail({
           </p>
           <dl className="mt-2 grid min-w-0 gap-2 text-xs sm:grid-cols-2">
             <div>
-              <dt className="text-slate-600">Eligible approval role</dt>
+              <dt className="text-slate-600">Configured standard-approval role</dt>
               <dd
                 className="text-slate-800"
-                data-testid={`proof-${firmId}-eligible-role`}
+                data-testid={`proof-${firmId}-standard-approval-role`}
               >
-                {identity.eligibleRole === "operations"
+                {identity.standardApprovalRole === "operations"
                   ? "Operations"
-                  : "None - automatic or not reached"}
+                  : "None configured for this authority mode"}
               </dd>
             </div>
             <div>
@@ -267,23 +264,22 @@ function Trail({
 }
 
 export function ProofBody({
-  vm,
   snapshot,
   exportFirmId,
   onExportFirm,
   exportError,
 }: {
-  vm: MoneyMovementSetupVM;
   snapshot: SetupActivatedSnapshotVM;
   exportFirmId: SetupFirmId | null;
   onExportFirm: (firmId: SetupFirmId) => void;
   exportError: string | null;
 }) {
+  const { proof, fakeClass } = snapshot.presentation;
   return (
     <>
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
-        <Trail vm={vm} snapshot={snapshot} firmId="firm-a" />
-        <Trail vm={vm} snapshot={snapshot} firmId="firm-b" />
+        <Trail snapshot={snapshot} firmId="firm-a" />
+        <Trail snapshot={snapshot} firmId="firm-b" />
       </div>
       <section aria-labelledby="immutable-identifiers-title" className="rounded-lg border border-slate-200 bg-surface p-4">
         <h2 id="immutable-identifiers-title" className="text-base font-semibold text-slate-900">
@@ -292,11 +288,11 @@ export function ProofBody({
         <dl className="mt-3 grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <dt className="text-xs text-slate-600">Evaluation source</dt>
-            <dd className="text-sm text-slate-800">{vm.proof.engineLabel}</dd>
+            <dd className="text-sm text-slate-800">{proof.engineLabel}</dd>
           </div>
           <div>
             <dt className="text-xs text-slate-600">Data provenance</dt>
-            <dd className="text-sm text-slate-800">{vm.proof.dataProvenance}</dd>
+            <dd className="text-sm text-slate-800">{proof.dataProvenance}</dd>
           </div>
           <div>
             <dt className="text-xs text-slate-600">Execution provenance</dt>
@@ -337,6 +333,12 @@ export function ProofBody({
             </dd>
           </div>
           <div className="md:col-span-2">
+            <dt className="text-xs text-slate-600">Acknowledged setup version digest</dt>
+            <dd className="break-all font-mono text-xs text-slate-800">
+              {snapshot.activationAcknowledgment.setupVersionDigest}
+            </dd>
+          </div>
+          <div className="md:col-span-2">
             <dt className="text-xs text-slate-600">Demonstration acknowledgment</dt>
             <dd className="text-sm text-slate-800">
               {snapshot.activationAcknowledgment.statement}
@@ -357,8 +359,8 @@ export function ProofBody({
         </dl>
       </section>
       <fieldset className="rounded-lg border border-slate-200 bg-white p-4" data-testid="export-choice">
-        <legend className="px-1 text-base font-semibold text-slate-900">{vm.proof.exportQuestion}</legend>
-        <p className="text-sm text-slate-700">{vm.proof.exportHint}</p>
+        <legend className="px-1 text-base font-semibold text-slate-900">{proof.exportQuestion}</legend>
+        <p className="text-sm text-slate-700">{proof.exportHint}</p>
         <div className="mt-3 grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2">
           {snapshot.firms.map((firm) => (
             <label
@@ -391,7 +393,7 @@ export function ProofBody({
         ) : null}
       </fieldset>
       <DemoNotice
-        vm={vm}
+        fakeClass={fakeClass}
         text="The export remains watermarked demonstration evidence. It cannot enter the real examiner export or feed a compliance decision."
       />
     </>

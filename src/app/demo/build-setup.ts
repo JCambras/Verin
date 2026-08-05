@@ -10,6 +10,7 @@ import { projectReserve } from "@domain/money-movement/reserve-projection";
 import type {
   ChoiceEffectVM,
   FirmChoiceVM,
+  MoneyMovementSetupDefinitionVM,
   MoneyMovementSetupVM,
   SetupChoiceOptionVM,
   SetupFirmId,
@@ -37,6 +38,7 @@ import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
 } from "./decision-evidence";
+import { setupVersionDigestFor } from "./setup-version";
 
 /** Whole dollars from integer minor units, for the one place a signed liquidity basis
  * is stated as prose. The numbers are never restated by hand. */
@@ -266,7 +268,7 @@ export function buildMoneyMovementSetup(
     expiryOption("2d-5d", "Escalate after 2 days · expire after 5 days", "Supported"),
   ];
 
-  return {
+  const definition: MoneyMovementSetupDefinitionVM = {
     steps: [
       { id: "profiles", shortLabel: "Profiles", kicker: "Step 1 · Governance profiles", title: "Start with the policy, not the request", description: "Create two governed money-movement profiles from one safe baseline, then make only legitimate firm differences visible.", primaryLabel: "Continue with both firms" },
       { id: "controls", shortLabel: "Controls", kicker: "Step 2 · Same for every firm", title: "Confirm the controls no firm can weaken", description: "Universal safety stays locked. Where accountability is required, each profile names the responsible role.", primaryLabel: "Confirm required controls" },
@@ -352,5 +354,9 @@ export function buildMoneyMovementSetup(
       exportError: "Choose which profile's decision record to export.",
     },
     fakeClass: "deterministic-engine-output",
+  };
+  return {
+    ...definition,
+    setupVersionDigest: setupVersionDigestFor(definition, evidence),
   };
 }

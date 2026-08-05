@@ -96,7 +96,7 @@ function StepBody({
       );
     case "request":
       return snapshot ? (
-        <RequestBody vm={vm} snapshot={snapshot} />
+        <RequestBody snapshot={snapshot} />
       ) : (
         <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
           No immutable activated configuration is available. Return to activation and acknowledge the current draft.
@@ -104,7 +104,7 @@ function StepBody({
       );
     case "outcomes":
       return snapshot ? (
-        <OutcomesBody vm={vm} snapshot={snapshot} />
+        <OutcomesBody snapshot={snapshot} />
       ) : (
         <p role="alert" className="rounded-lg border border-destructive bg-white p-4 text-sm text-destructive">
           Outcomes are unavailable because the current choices have not been activated.
@@ -113,7 +113,6 @@ function StepBody({
     case "proof":
       return snapshot ? (
         <ProofBody
-          vm={vm}
           snapshot={snapshot}
           exportFirmId={exportFirmId}
           onExportFirm={onExportFirm}
@@ -145,7 +144,7 @@ export function MoneyMovementSetupSurface({
   // render pass React discarded (StrictMode double-invoke, an interrupted concurrent
   // render), which is why the updater below is pure and the mirror is an effect.
   const [draft, setDraft] = useState<SetupActivationDraft>(() =>
-    captureSetupActivationDraft(0, initial),
+    captureSetupActivationDraft(0, initial, vm.setupVersionDigest),
   );
   const committedDraft = useRef(draft);
   useEffect(() => {
@@ -160,7 +159,9 @@ export function MoneyMovementSetupSurface({
   const [activationError, setActivationError] = useState<string | null>(null);
   const [exportFirmId, setExportFirmId] = useState<SetupFirmId | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
-  const step = vm.steps[stepIndex]!;
+  const activePresentation = activeSnapshot?.presentation;
+  const steps = activePresentation?.steps ?? vm.steps;
+  const step = steps[stepIndex]!;
   const activationIndex = vm.steps.findIndex((candidate) => candidate.id === "activation");
 
   function move(nextIndex: number) {
@@ -174,7 +175,7 @@ export function MoneyMovementSetupSurface({
       captureSetupActivationDraft(current.generation + 1, {
         ...current.selections,
         [firmId]: { ...current.selections[firmId], [groupId]: optionId },
-      }),
+      }, vm.setupVersionDigest),
     );
     setAttested(false);
     setAttestation(null);
@@ -201,11 +202,13 @@ export function MoneyMovementSetupSurface({
       const captured = captureSetupActivationDraft(
         committedDraft.current.generation,
         committedDraft.current.selections,
+        vm.setupVersionDigest,
       );
       try {
         const result: SetupActivationResult = await activate({
           draftGeneration: captured.generation,
           selections: captured.selections,
+          setupVersionDigest: captured.setupVersionDigest,
           attestationToken: attestation.token,
           statementVersion: attestation.statementVersion,
         });
@@ -214,6 +217,7 @@ export function MoneyMovementSetupSurface({
             captured,
             committedDraft.current.generation,
             committedDraft.current.selections,
+            vm.setupVersionDigest,
           )
         ) {
           setActiveSnapshot(null);
@@ -231,6 +235,18 @@ export function MoneyMovementSetupSurface({
           setActivationError(result.error);
           return;
         }
+        if (
+          result.snapshot.activationAcknowledgment.setupVersionDigest !==
+          captured.setupVersionDigest
+        ) {
+          setActiveSnapshot(null);
+          setAttested(false);
+          setAttestation(null);
+          setActivationError(
+            "The activated setup version does not match the rules you reviewed. Reload and acknowledge the current setup.",
+          );
+          return;
+        }
         setActiveSnapshot(result.snapshot);
         setAttested(false);
         setAttestation(null);
@@ -244,6 +260,7 @@ export function MoneyMovementSetupSurface({
             captured,
             committedDraft.current.generation,
             committedDraft.current.selections,
+            vm.setupVersionDigest,
           )
             ? "Activation failed closed before any configuration or decision identity was created."
             : "The draft changed during activation. Review and acknowledge the current selections before trying again.",
@@ -256,7 +273,7 @@ export function MoneyMovementSetupSurface({
     if (step.id === "proof") {
       const target = activeSnapshot?.firms.find((candidate) => candidate.firmId === exportFirmId);
       if (!target) {
-        setExportError(activeSnapshot ? vm.proof.exportError : "Activate the current draft before export.");
+        setExportError(activeSnapshot ? activeSnapshot.presentation.proof.exportError : "Activate the current draft before export.");
         return;
       }
       setExportError(null);
@@ -276,9 +293,9 @@ export function MoneyMovementSetupSurface({
       className="relative left-1/2 flex w-[calc(100vw-2rem)] max-w-[1180px] -translate-x-1/2 flex-col gap-6 animate-fade-in"
       data-testid="setup-journey"
     >
-      <SetupProgress steps={vm.steps} activeIndex={stepIndex} />
+      <SetupProgress steps={steps} activeIndex={stepIndex} />
       <p className="sr-only" aria-live="polite">
-        Step {stepIndex + 1} of {vm.steps.length}: {step.title}
+        Step {stepIndex + 1} of {steps.length}: {step.title}
       </p>
       <SetupHeading step={step} />
       <StepBody
@@ -299,6 +316,7 @@ export function MoneyMovementSetupSurface({
           const captured = captureSetupActivationDraft(
             committedDraft.current.generation,
             committedDraft.current.selections,
+            vm.setupVersionDigest,
           );
           setAttested(true);
           setActivating(true);
@@ -310,6 +328,7 @@ export function MoneyMovementSetupSurface({
                   captured,
                   committedDraft.current.generation,
                   committedDraft.current.selections,
+                  vm.setupVersionDigest,
                 )
               ) {
                 setAttested(false);
@@ -323,6 +342,17 @@ export function MoneyMovementSetupSurface({
                 setAttested(false);
                 setAttestation(null);
                 setActivationError(result.error);
+                return;
+              }
+              if (
+                result.challenge.setupVersionDigest !==
+                captured.setupVersionDigest
+              ) {
+                setAttested(false);
+                setAttestation(null);
+                setActivationError(
+                  "The server verified a different setup version. Reload and review the current setup.",
+                );
                 return;
               }
               setAttestation(result.challenge);

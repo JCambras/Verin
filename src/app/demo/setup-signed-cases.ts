@@ -304,7 +304,7 @@ export function signedCaseResolvedConfiguration(
         : caseFile.expectedAuthority.mode === "automatic"
           ? "automatic"
           : "staged",
-    eligibleRole: configuration.eligibleRole,
+    standardApprovalRole: configuration.eligibleRole,
     requesterParticipation:
       configuration.requesterConstraint === null
         ? { mode: "unbound" as const }

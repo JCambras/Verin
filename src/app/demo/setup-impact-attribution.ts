@@ -92,7 +92,7 @@ export function signedImpactMaterialInputHash(
     toJsonValue({
       hashKind: "money-movement-signed-impact-input",
       preimageVersion:
-        "money-movement-signed-impact-input/3.0.0",
+        "money-movement-signed-impact-input/4.0.0",
       phase: value.phase,
       impactId: value.impactId,
       caseRef: value.caseRef,

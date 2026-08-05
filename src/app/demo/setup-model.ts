@@ -52,12 +52,13 @@ export type SignedImpactAttributionVM = Readonly<
 >;
 
 export const SETUP_ATTESTATION_STATEMENT_VERSION =
-  "money-movement-demo-attestation/1.0.0";
+  "money-movement-demo-attestation/2.0.0";
 
 export interface SetupAttestationChallengeVM {
   readonly token: string;
   readonly draftGeneration: number;
   readonly selectionsHash: string;
+  readonly setupVersionDigest: string;
   readonly statementVersion: typeof SETUP_ATTESTATION_STATEMENT_VERSION;
   readonly actor: {
     readonly opaqueId: string;
@@ -327,7 +328,7 @@ export interface SetupProofFirmVM {
   readonly configurationProvenance: string;
   readonly disposition: DispositionVM;
   readonly authorityPlan: AuthorityPlanVM;
-  readonly eligibleRole: "operations" | null;
+  readonly standardApprovalRole: "operations" | null;
   readonly requesterParticipation: Extract<
     RequesterParticipation,
     { readonly mode: "unbound" }
@@ -382,19 +383,29 @@ export interface SetupActivatedSnapshotVM {
     readonly statementVersion: typeof SETUP_ATTESTATION_STATEMENT_VERSION;
     readonly draftGeneration: number;
     readonly selectionsHash: string;
+    readonly setupVersionDigest: string;
     readonly statement: string;
   };
   readonly evidence: DecisionEvidenceSnapshot;
   readonly selections: SetupSelections;
   readonly firms: readonly [SetupProofFirmVM, SetupProofFirmVM];
+  readonly presentation: SetupActivatedPresentationVM;
 }
 
 export type SetupActivationResult =
   | { readonly ok: true; readonly snapshot: SetupActivatedSnapshotVM }
   | { readonly ok: false; readonly error: string };
 
-export interface MoneyMovementSetupVM {
+export interface SetupActivatedPresentationVM {
   readonly steps: readonly SetupStepVM[];
+  readonly request: SetupRequestVM;
+  readonly comparison: SetupComparisonVM;
+  readonly proof: SetupProofVM;
+  readonly fakeClass: FakeClass;
+}
+
+export interface MoneyMovementSetupVM
+  extends SetupActivatedPresentationVM {
   readonly profiles: readonly [SetupProfileVM, SetupProfileVM];
   readonly controls: readonly RequiredControlVM[];
   readonly roles: readonly AccountableRoleVM[];
@@ -402,8 +413,10 @@ export interface MoneyMovementSetupVM {
   readonly policyGroups: readonly SetupPolicyGroupVM[];
   readonly impacts: readonly SignedImpactVM[];
   readonly activation: SetupActivationVM;
-  readonly request: SetupRequestVM;
-  readonly comparison: SetupComparisonVM;
-  readonly proof: SetupProofVM;
-  readonly fakeClass: FakeClass;
+  readonly setupVersionDigest: string;
 }
+
+export type MoneyMovementSetupDefinitionVM = Omit<
+  MoneyMovementSetupVM,
+  "setupVersionDigest"
+>;
