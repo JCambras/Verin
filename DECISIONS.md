@@ -3041,8 +3041,11 @@ itself around you - is now a committed document, `docs/product-guide.md`, pointe
 from `README.md`, `AGENTS.md`, `PRODUCT-DIRECTION.md`, and `docs/v3/README.md`.
 
 It carries an explicit authority chain so the repo keeps ONE north-star chain rather
-than two rival ones: subordinate to `CHARTER.md` and the ratified v3 direction, and
-stating the thesis that `PRODUCT-DIRECTION.md` serves rather than competing with it.
+than two rival ones: subordinate to `CHARTER.md`, the ratified v3 direction, and the
+two normative demo documents (`docs/demo-contract.md`, `docs/demo-design-language.md`),
+and stating the thesis that `PRODUCT-DIRECTION.md` serves rather than competing with
+it. Every one of those wins on conflict, so a session told to test demo choices against
+the thesis has stated precedence instead of an apparent override.
 It does not satisfy ADR-0023's open C7 item (a `PRODUCT-DIRECTION.md` v2 under the v3
 framing), which stays open. The thesis carries a build-honesty label: it is the
 product aim, and no continuous-learning or self-configuration subsystem exists today.
@@ -3051,8 +3054,11 @@ The PROPOSE/APPROVE shaping of configuration surfaces is recorded there as a
 directional design principle, explicitly NOT a normative rule, precisely so it is not
 a prose-only invariant. It is fenced in the PR that designs the self-configuration
 capability, beside the already-registered policy-lifecycle invariants 15-17 (Wave E).
-Governed, attributed activation is not directional - it is already covered by the
-ratified invariants.
+Governed, attributed activation is recorded on the same directional terms and cited to
+`docs/v3/README.md`: it is ratified v3 direction, but the invariants that would hold it
+(14, 15, 17 in Wave E; 18, 19, 21 in Wave F) are all registered `not-yet-active`, so the
+doc says no mechanism enforces it today rather than calling it settled. Ratified is not
+enforced; a claim with no live mechanism behind it is labeled directional (charter #5).
 
 **Alternatives rejected:** leave the thesis in session history only (it would be
 re-derived or lost); state it as a second north star competing with

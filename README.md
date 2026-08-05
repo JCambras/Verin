@@ -8,7 +8,8 @@ Practice intelligence for registered investment advisers. The third and final bu
    by an ADR, and its enforcement is self-checked by the charter-drift fence.
 2. **[`AGENTS.md`](./AGENTS.md)** — how to work in this repo (every session).
 3. **[`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 architecture direction (ADRs
-   0023-0028; every doc under `docs/v3/` is SHA-256-pinned by the arch-version fence).
+   0023-0028; the five ratified documents listed in [`v3-invariants.json`](./v3-invariants.json) are
+   SHA-256-pinned by the arch-version fence - that index page itself is not pinned).
 4. **[`PLAN.md`](./PLAN.md)** — the foundation plan and pre-mortem.
 5. **[`DECISIONS.md`](./DECISIONS.md)** — the decision journal.
 6. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).

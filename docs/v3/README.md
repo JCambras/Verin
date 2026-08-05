@@ -1,11 +1,14 @@
 # docs/v3 - the ratified Verin v3 architecture direction
 
 **Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
-**ADR-0023 through ADR-0028** (`docs/adr/`). These documents are committed **verbatim** from the ratified
-sources; each file's SHA-256 is pinned in [`v3-invariants.json`](../../v3-invariants.json) and verified by
-the arch-version fence (`src/__tests__/fitness/arch-version.test.ts`), so build work can never silently
-target a stale or edited copy. If a document legitimately changes, update its pin **in the same PR** and
-review the invariant registry for drift.
+**ADR-0023 through ADR-0028** (`docs/adr/`). The five ratified documents in the table below are committed
+**verbatim** from the ratified sources; each of those five has its SHA-256 pinned in
+[`v3-invariants.json`](../../v3-invariants.json) and verified by the arch-version fence
+(`src/__tests__/fitness/arch-version.test.ts`), so build work can never silently target a stale or edited
+copy. If one of them legitimately changes, update its pin **in the same PR** and review the invariant
+registry for drift. **This index page is the one file here that is NOT pinned** - it is navigation, not
+ratified content, so nothing normative may live in it; normative statements belong in a pinned document,
+an ADR, or the charter.
 
 There is exactly ONE constitution: [`CHARTER.md`](../../CHARTER.md). The v3 architecture doc's own
 "supersedes prior documents" header is read through ADR-0023: v3 is ratified INTO the charter machinery,

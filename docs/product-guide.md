@@ -4,12 +4,16 @@
 standing statement of what makes Verin different - the thesis every design decision, prompt brief, and
 demo choice is tested against.
 
-**Authority chain:** subordinate to [`CHARTER.md`](../CHARTER.md) (the constitution) and to the ratified
-v3 direction ([`docs/v3/README.md`](./v3/README.md)). It is the differentiating thesis *inside* the one
-existing north-star chain, not a rival to [`PRODUCT-DIRECTION.md`](../PRODUCT-DIRECTION.md):
-PRODUCT-DIRECTION.md remains the product north star for the demo build and describes what Verin feels
-like to use; this doc states the thesis that direction serves. Where this doc and the charter or the
-ratified v3 documents appear to conflict, they win and the conflict is a defect here.
+**Authority chain:** subordinate to [`CHARTER.md`](../CHARTER.md) (the constitution), to the ratified v3
+direction ([`docs/v3/README.md`](./v3/README.md)), and to the two normative demo documents -
+[`docs/demo-contract.md`](./demo-contract.md) (the Phase 1 investor-demo contract, D-034) and
+[`docs/demo-design-language.md`](./demo-design-language.md) (normative for every demo/UI surface,
+ADR-0028). It is the differentiating thesis *inside* the one existing north-star chain, not a rival to
+[`PRODUCT-DIRECTION.md`](../PRODUCT-DIRECTION.md): PRODUCT-DIRECTION.md remains the product north star
+for the demo build and describes what Verin feels like to use; this doc states the thesis that direction
+serves. This doc binds nothing on its own. Where it appears to conflict with any document named here -
+including PRODUCT-DIRECTION.md - that document wins, and the conflict is a defect here to be fixed or
+escalated to the captain, never resolved by overriding them.
 
 **Relation to ADR-0023 C7:** orthogonal. This doc does **not** satisfy the open C7 item (a
 `PRODUCT-DIRECTION.md` v2 restating the product story under the v3 framing). That item stays open.
@@ -44,4 +48,4 @@ If you have the willpower to configure everything yourself, you can get to amazi
 
 Configuration in Verin is not a one-time operator setup surface. The **directional design principle** - direction, deliberately not a normative rule, and not something a review can hold anyone to today - is that configuration surfaces should be shaped so the system can PROPOSE refinements from observed operation and a human APPROVES them. It becomes machine-enforced when the self-configuration capability is actually designed: the PR that introduces it states the invariant and fences it in the same PR (charter #1), alongside the already-registered policy-lifecycle invariants 15-17 that govern policy mutability, executable configuration, and LLM-driven activation.
 
-What is already settled, and not directional, is where that path ends: activation of any configuration is a governed, attributed act. The system may learn and suggest, but what runs the business is always something a human signed off on, with full provenance of who activated what and when.
+Where that path ends is fixed by the ratified v3 direction (see [`docs/v3/README.md`](./v3/README.md)), and it is directional on the same terms: activation of any configuration is to be a governed, attributed act - the system may learn and suggest, but what runs the business is something a human signed off on, with full provenance of who activated what and when. Ratified is not enforced. Every invariant that would hold this is registered `not-yet-active` in [`v3-invariants.json`](../v3-invariants.json) - 14, 15 and 17 (policy lifecycle, Wave E) and 18, 19 and 21 (approval and execution, Wave F) - so no mechanism enforces it in the build today. It stops being directional when those invariants activate with live mechanisms behind them, not when this doc asserts it.
