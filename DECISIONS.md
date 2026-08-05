@@ -3046,8 +3046,12 @@ two normative demo documents (`docs/demo-contract.md`, `docs/demo-design-languag
 and stating the thesis that `PRODUCT-DIRECTION.md` serves rather than competing with
 it. Every one of those - `PRODUCT-DIRECTION.md` included - wins on conflict, so a session
 told to test demo choices against the thesis has stated precedence instead of an apparent
-override. The `README.md` and `AGENTS.md` pointers name that same set, so the precedence
-reads identically at all three entry points.
+override. The `README.md`, `AGENTS.md`, and `PRODUCT-DIRECTION.md` pointers name that same
+set, so the precedence reads identically at every entry point that states it - including
+`PRODUCT-DIRECTION.md` itself, the document the guide is most likely to collide with,
+whose pointer would otherwise read as ranking the guide above it. The `docs/v3/README.md`
+pointer stays deliberately shorter (the guide binds nothing and is subordinate to the
+ratified documents there), since that index originates nothing normative (D-099).
 It does not satisfy ADR-0023's open C7 item (a `PRODUCT-DIRECTION.md` v2 under the v3
 framing), which stays open. The thesis carries a build-honesty label: it is the
 product aim, and no continuous-learning or self-configuration subsystem exists today.
@@ -3070,8 +3074,9 @@ re-derived or lost); state it as a second north star competing with
 "must" with no fence behind it (DO-NOT-PORT #8, charter #1); or hold the doc until the
 self-configuration capability is designed, leaving the directive unrecorded.
 
-**Revert path:** delete `docs/product-guide.md` and remove the four one-line pointers
-(`README.md` item 8, `AGENTS.md`, `PRODUCT-DIRECTION.md` header, `docs/v3/README.md`).
+**Revert path:** delete `docs/product-guide.md` and remove the four pointers with their
+precedence clauses (`README.md` item 8, `AGENTS.md`, `PRODUCT-DIRECTION.md` header,
+`docs/v3/README.md`).
 No code, fixture, fence, or pinned document depends on it. D-099 stands independently of
 this revert.
 
@@ -3100,12 +3105,18 @@ statements now track the registry.
 
 That exception carries a rule: `docs/v3/README.md` is navigation, not ratified content,
 so it ORIGINATES nothing normative - every rule it states restates a registered document,
-an ADR, or the charter, and a new normative statement originates in one of those instead.
-The originates-nothing formulation is the accurate one: the index visibly carries
-normative statements today (the registration and pin rules, the charter-supremacy
-conflict rule, "What a build session must do"), all restatements of ADR-0023 and the
-charter, so a flat "nothing normative lives here" would make the document non-compliant on
-entry and leave a reviewer no consistent way to attest it. This is deliberately recorded
+an ADR, the charter, or a `DECISIONS.md` entry, and a new normative statement originates
+in one of those instead. The originates-nothing formulation is the accurate one: the index
+visibly carries normative statements today (the registration and pin rules, the
+charter-supremacy conflict rule, "What a build session must do", the product-thesis
+subordination), so a flat "nothing normative lives here" would make the document
+non-compliant on entry and leave a reviewer no consistent way to attest it. The permitted
+origins name `DECISIONS.md` because two of those restatements resolve there rather than to
+a ratified document: the register-a-new-document-in-the-adding-PR rule originates in this
+entry (ADR-0023 decision 2 pins the five documents and does not state it), and the
+product-thesis subordination originates in D-098. A three-origin list would have left the
+index failing its own rule on entry - the same unattestable checkbox the
+originates-nothing wording exists to close. This is deliberately recorded
 as prose with a stated owner rather than as an invariant, because no mechanism can detect
 normativity in a file the fence does not cover; a fenced-sounding claim with no fence
 behind it is the DO-NOT-PORT #8 failure. The rule was applied on entry: the D-098 pointer

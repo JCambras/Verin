@@ -13,8 +13,8 @@ stores activation only - pass/fail is computed, never fake green). The ratified 
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
 whole directory: editing a registered document requires updating its pin in the same PR, and a new
 ratified document must be registered in the PR that adds it. `docs/v3/README.md` is the unregistered
-index: it originates nothing normative, only restating registered documents, ADRs, and the charter, so a
-new normative statement originates in one of those instead (D-099).
+index: it originates nothing normative, only restating registered documents, ADRs, the charter, and
+`DECISIONS.md` entries, so a new normative statement originates in one of those instead (D-099).
 Salesforce work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system,
 not v3 §18's visuals (ADR-0028); UI prompts read `docs/demo-design-language.md` first (now authored -
 the ADR-0028 gate is satisfied).

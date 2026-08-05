@@ -30,7 +30,7 @@ pipeline). Fill this out honestly — a false checkbox is a control failure.
 
 ## v3 index (only if `docs/v3/README.md` changed)
 
-- [ ] This PR changes `docs/v3/README.md`. The change is navigation only - the index originates nothing normative; every rule it states restates a registered document, an ADR, or the charter (D-099). That index is not registered in `v3-invariants.json`, so the arch-version fence does not byte-protect it, and a NEW normative statement originates in a registered document, an ADR, or the charter instead.
+- [ ] This PR changes `docs/v3/README.md`. The change is navigation only - the index originates nothing normative; every rule it states restates a registered document, an ADR, the charter, or a `DECISIONS.md` entry (D-099). That index is not registered in `v3-invariants.json`, so the arch-version fence does not byte-protect it, and a NEW normative statement originates in a registered document, an ADR, the charter, or a `DECISIONS.md` entry instead.
 
 ## New `docs/v3/` document (only if a file was ADDED under `docs/v3/`)
 

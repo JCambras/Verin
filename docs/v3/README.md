@@ -10,8 +10,9 @@ directory: a file under `docs/v3/` that is absent from `v3-invariants.json` is n
 new ratified document must be registered there in the PR that adds it. If a registered document
 legitimately changes, update its pin **in the same PR** and review the invariant registry for drift.
 **This index page is deliberately not registered** - it is navigation, not ratified content, so it
-originates nothing normative: every rule stated here restates a registered document, an ADR, or the
-charter, and a new normative statement originates in one of those instead (D-099).
+originates nothing normative: every rule stated here restates a registered document, an ADR, the
+charter, or a [`DECISIONS.md`](../../DECISIONS.md) entry, and a new normative statement originates in one
+of those instead (D-099).
 
 There is exactly ONE constitution: [`CHARTER.md`](../../CHARTER.md). The v3 architecture doc's own
 "supersedes prior documents" header is read through ADR-0023: v3 is ratified INTO the charter machinery,
