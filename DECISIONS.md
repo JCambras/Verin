@@ -3577,3 +3577,16 @@ including specialist-only paths, and hashes and exports use the explicit standar
 while firm configuration and current-stage eligibility are different authority facts.
 **Revert path:** replace the setup-version digest and frozen projection together only when a persisted
 policy version provides equivalent client binding and immutable replay.
+
+### D-100 · 2026-08-05 · reversible · Expired authority projects a distinct re-armed stage
+
+The specialist decision requirement remains the immutable stage bound to the decision hash. Its
+two-day window expires at 2026-07-30 14:05Z. GC-16 detects that expiration and re-arms the configured
+escalation at 14:15Z for the operations-manager role with a fresh two-day expiry at 2026-08-01
+14:15Z. The re-armed instance is current approval-receipt state and appears identically on the live
+authority surface and printable record.
+
+**Why:** replacing the original requirement would rewrite decision history, while showing an
+escalation actor without a distinct current role and expiry contradicts the signed GC-16 outcome.
+**Revert path:** replace this projection only when a persisted authority workflow supplies equivalent
+immutable decision requirements and versioned runtime stage instances.

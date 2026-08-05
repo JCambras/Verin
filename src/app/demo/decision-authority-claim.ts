@@ -28,7 +28,7 @@ export type DecisionAuthorityClaim =
 export function decisionAuthorityRequirementsFor(
   stages: readonly ApprovalStageVM[],
 ): readonly AuthorityStageRequirementVM[] {
-  return stages.map((stage) => stage.authorityRequirement);
+  return stages.map((stage) => stage.decisionRequirement);
 }
 
 function assertStageRequirement(
@@ -97,6 +97,39 @@ function assertStageRequirement(
   }
 }
 
+function assertRearmedStage(
+  stage: ApprovalStageVM,
+  index: number,
+): void {
+  const rearmed = stage.rearmedStage;
+  if (!rearmed) return;
+  const matchingEscalation =
+    stage.decisionRequirement.escalationPath.find(
+      (step) =>
+        step.reasonCode === rearmed.reasonCode &&
+        JSON.stringify(step.eligibleRoleIds) ===
+          JSON.stringify(rearmed.eligibleRoleIds),
+    );
+  if (
+    stage.stepState !== "active" ||
+    rearmed.instanceId.trim().length === 0 ||
+    rearmed.sourceStageId !== stage.decisionRequirement.stageId ||
+    rearmed.eligibleRoleIds.length === 0 ||
+    new Set(rearmed.eligibleRoleIds).size !==
+      rearmed.eligibleRoleIds.length ||
+    !matchingEscalation ||
+    !Number.isFinite(Date.parse(rearmed.activatedAt)) ||
+    !Number.isFinite(Date.parse(rearmed.expiresAt)) ||
+    Date.parse(rearmed.activatedAt) <
+      Date.parse(stage.decisionRequirement.expiresAt) ||
+    Date.parse(rearmed.expiresAt) <= Date.parse(rearmed.activatedAt)
+  ) {
+    throw new Error(
+      `Authority stage ${index + 1} has an invalid re-armed instance`,
+    );
+  }
+}
+
 export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
   const mode: unknown = plan.mode;
   if (
@@ -148,9 +181,10 @@ export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
     throw new Error("Staged authority requires at least one stage");
   }
   if (plan.mode !== "staged") return;
-  plan.stages.forEach((stage, index) =>
-    assertStageRequirement(stage.authorityRequirement, index),
-  );
+  plan.stages.forEach((stage, index) => {
+    assertStageRequirement(stage.decisionRequirement, index);
+    assertRearmedStage(stage, index);
+  });
   if (plan.standardApprovalRole !== "operations") {
     throw new Error(
       "Staged authority requires the Operations standard approval role",
@@ -171,7 +205,7 @@ export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
     plan.requesterParticipation.mode === "unbound" &&
     plan.stages.some(
       (stage) =>
-        stage.authorityRequirement.requesterMayApprove !==
+        stage.decisionRequirement.requesterMayApprove !==
         "unbound",
     )
   ) {
@@ -191,7 +225,7 @@ export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
     plan.requesterParticipation.mode === "excluded" &&
     plan.stages.some(
       (stage) =>
-        stage.authorityRequirement.requesterMayApprove !==
+        stage.decisionRequirement.requesterMayApprove !==
         false,
     )
   ) {

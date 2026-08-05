@@ -98,7 +98,7 @@ export function evaluateAuthorityPlan(
   const requiresSpecialist = evaluation.requiresSpecialist;
   const dualApproval = evaluation.dualApproval;
   const specialistStage = {
-    authorityRequirement:
+    decisionRequirement:
       specialistStageRequirementFor(firm, 1),
     title: "Stage 1 - Bank-instruction specialist review",
     requirement:
@@ -152,7 +152,7 @@ export function evaluateAuthorityPlan(
         ]),
   ];
   const operationsStage: ApprovalStageVM = {
-    authorityRequirement: operationsStageRequirementFor(
+    decisionRequirement: operationsStageRequirementFor(
       firm,
       approvalClock,
       requiresSpecialist ? 2 : 1,

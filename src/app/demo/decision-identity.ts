@@ -255,14 +255,17 @@ export function approvalReceiptHashFor(
   return hashCanonicalPreimage(toJsonValue({
     hashKind: "money-movement-demo-approval-receipt",
     preimageVersion:
-      "money-movement-demo-approval-receipt/2.0.0",
+      "money-movement-demo-approval-receipt/3.0.0",
     payload: {
       decisionHash,
       stages: authority.stages.map((stage) => ({
-        stageId: stage.authorityRequirement.stageId,
-        order: stage.authorityRequirement.order,
+        stageId: stage.decisionRequirement.stageId,
+        order: stage.decisionRequirement.order,
         stepState: stage.stepState,
         actors: stage.actors,
+        ...(stage.rearmedStage
+          ? { rearmedStage: stage.rearmedStage }
+          : {}),
       })),
     },
   }));

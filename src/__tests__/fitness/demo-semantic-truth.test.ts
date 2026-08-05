@@ -32,6 +32,7 @@ import {
   demoTimestampLabel,
   pendingDistributionDeltaSentence,
 } from "@app/demo/data";
+import { SPECIALIST_REARMED_EXPIRES_AT } from "@app/demo/authority-stage-requirements";
 import {
   SIGNED_SETUP_CASES,
   signedCaseEvaluationEvidence,
@@ -2115,7 +2116,7 @@ describe("demo semantic-truth fence", () => {
       (changedRequirement) => {
         const changedStage: ApprovalStageVM = {
           ...authorityPlan.stages[0]!,
-          authorityRequirement: changedRequirement,
+          decisionRequirement: changedRequirement,
         };
         return decisionAuthorityClaimFor({
           ...authorityPlan,
@@ -2136,15 +2137,15 @@ describe("demo semantic-truth fence", () => {
     ] = [
       {
         ...secondStage!,
-        authorityRequirement: {
-          ...secondStage!.authorityRequirement,
+        decisionRequirement: {
+          ...secondStage!.decisionRequirement,
           order: 1,
         },
       },
       {
         ...firstStage!,
-        authorityRequirement: {
-          ...firstStage!.authorityRequirement,
+        decisionRequirement: {
+          ...firstStage!.decisionRequirement,
           order: 2,
         },
       },
@@ -2179,8 +2180,8 @@ describe("demo semantic-truth fence", () => {
         stages: [
           {
             ...authorityPlan.stages[0]!,
-            authorityRequirement: {
-              ...authorityPlan.stages[0]!.authorityRequirement,
+            decisionRequirement: {
+              ...authorityPlan.stages[0]!.decisionRequirement,
               requesterMayApprove: true,
             },
           },
@@ -2279,7 +2280,7 @@ describe("demo semantic-truth fence", () => {
     expect(staged.authorityPlan.standardApprovalRole).toBe("operations");
     expect(
       staged.authorityPlan.stages.map(
-        (stage) => stage.authorityRequirement.eligibleRoleIds,
+        (stage) => stage.decisionRequirement.eligibleRoleIds,
       ),
     ).toEqual([["bank-change-specialist"]]);
     expect(staged.authorityPlan.requesterParticipation).toEqual({
@@ -2922,7 +2923,28 @@ describe("demo semantic-truth fence", () => {
     ).record.authority;
     expect(expiredAuthority?.mode).toBe("staged");
     if (expiredAuthority?.mode !== "staged") return;
-    expect(expiredAuthority.stages[0]?.stepState).toBe("active");
+    const expiredStage = expiredAuthority.stages[0]!;
+    expect(expiredStage.decisionRequirement.expiresAt).toBe(
+      "2026-07-30T14:05:00.000Z",
+    );
+    expect(expiredStage.decisionRequirement).toEqual(
+      journeyAuthority.stages[0]!.decisionRequirement,
+    );
+    expect(expiredStage.rearmedStage).toEqual({
+      instanceId: "bank-change-specialist-review:rearm-1",
+      sourceStageId: "bank-change-specialist-review",
+      activatedAt: DEMO_TIMELINE.specialistRearmedAt,
+      eligibleRoleIds: ["operations-manager"],
+      expiresAt: SPECIALIST_REARMED_EXPIRES_AT,
+      reasonCode: "specialist-review-idle",
+    });
+    expect(expiredStage.actors[0]?.statusLabel).toBe(
+      `Expired · ${demoTimestampLabel(expiredStage.decisionRequirement.expiresAt)}`,
+    );
+    expect(expiredStage.actors[1]?.statusLabel).toBe(
+      `Awaiting review · expires ${demoTimestampLabel(SPECIALIST_REARMED_EXPIRES_AT)}`,
+    );
+    expect(expiredStage.stepState).toBe("active");
     expect(expiredAuthority.stages[1]?.stepState).toBe("pending");
     expect(expiredAuthority.stages[1]?.actors.every((actor) => actor.status !== "done")).toBe(
       true,
@@ -2936,6 +2958,55 @@ describe("demo semantic-truth fence", () => {
         { label: "operations approval", at: "2026-07-28T14:31:00.000Z" },
       ]),
     ).toEqual(["operations approval occurs before specialist review"]);
+  });
+
+  it("enforces: re-armed authority is receipt state, not rewritten decision truth", () => {
+    const journey = getJourney(
+      "specialist-review-expiration",
+      "firm-a",
+    );
+    const authority = journey.record.authority;
+    expect(authority?.mode).toBe("staged");
+    if (authority?.mode !== "staged") return;
+    const stage = authority.stages[0]!;
+    expect(stage.rearmedStage).toBeDefined();
+    const receiptHash = approvalReceiptHashFor(
+      journey.record.identity.decisionHash,
+      authority,
+    );
+    expect(receiptHash).toBe(
+      journey.record.hashes.approvalReceiptHash,
+    );
+    expect(
+      approvalReceiptHashFor(journey.record.identity.decisionHash, {
+        ...authority,
+        stages: [
+          {
+            ...stage,
+            rearmedStage: {
+              ...stage.rearmedStage!,
+              expiresAt: "2026-08-02T14:15:00.000Z",
+            },
+          },
+          ...authority.stages.slice(1),
+        ],
+      }),
+    ).not.toBe(receiptHash);
+    expect(() =>
+      approvalReceiptHashFor(journey.record.identity.decisionHash, {
+        ...authority,
+        stages: [
+          {
+            ...stage,
+            rearmedStage: {
+              ...stage.rearmedStage!,
+              eligibleRoleIds: ["operations"],
+            },
+          },
+          ...authority.stages.slice(1),
+        ],
+      }),
+    ).toThrow("invalid re-armed instance");
   });
 
   it("enforces: Firm B mutations add neither a standard approval nor a requester rule", () => {

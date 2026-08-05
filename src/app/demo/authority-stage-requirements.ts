@@ -6,8 +6,17 @@ import {
 } from "./data";
 import type {
   AuthorityStageRequirementVM,
+  RearmedAuthorityStageVM,
   RequesterApprovalEligibility,
 } from "./model";
+
+const SPECIALIST_REVIEW_ESCALATES_AFTER = "P1D";
+const SPECIALIST_REVIEW_EXPIRES_AFTER = "P2D";
+
+export const SPECIALIST_REARMED_EXPIRES_AT = approvalExpiryAt(
+  DEMO_TIMELINE.specialistRearmedAt,
+  SPECIALIST_REVIEW_EXPIRES_AFTER,
+);
 
 function requesterMayApprove(
   firm: FirmData,
@@ -31,15 +40,34 @@ export function specialistStageRequirementFor(
     requesterMayApprove: requesterMayApprove(firm),
     expiresAt: approvalExpiryAt(
       DEMO_TIMELINE.decisionCreatedAt,
-      "P2D",
+      SPECIALIST_REVIEW_EXPIRES_AFTER,
     ),
     escalationPath: [
       {
-        after: "P1D",
+        after: SPECIALIST_REVIEW_ESCALATES_AFTER,
         eligibleRoleIds: ["operations-manager"],
         reasonCode: "specialist-review-idle",
       },
     ],
+  };
+}
+
+export function rearmedSpecialistStageFor(
+  decisionRequirement: AuthorityStageRequirementVM,
+): RearmedAuthorityStageVM {
+  const escalation = decisionRequirement.escalationPath[0];
+  if (!escalation) {
+    throw new Error(
+      "Specialist authority requires an escalation path",
+    );
+  }
+  return {
+    instanceId: `${decisionRequirement.stageId}:rearm-1`,
+    sourceStageId: decisionRequirement.stageId,
+    activatedAt: DEMO_TIMELINE.specialistRearmedAt,
+    eligibleRoleIds: escalation.eligibleRoleIds,
+    expiresAt: SPECIALIST_REARMED_EXPIRES_AT,
+    reasonCode: escalation.reasonCode,
   };
 }
 

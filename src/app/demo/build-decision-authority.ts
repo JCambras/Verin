@@ -20,6 +20,7 @@ import {
 } from "./setup-authority";
 import {
   operationsStageRequirementFor,
+  rearmedSpecialistStageFor,
   specialistStageRequirementFor,
 } from "./authority-stage-requirements";
 
@@ -41,63 +42,61 @@ function buildStages(
     !hasSpecialist ||
     (phase === "final" && !spec.specialistExpired);
   if (hasSpecialist) {
-    const authorityRequirement =
+    const decisionRequirement =
       specialistStageRequirementFor(firm, 1);
-    stages.push(
-      spec.specialistExpired
-        ? {
-            authorityRequirement,
-            title:
-              "Stage 1 - Bank-instruction specialist review",
-            requirement:
-              "The changed bank instruction requires review by a banking specialist before execution.",
-            stepState: "active",
-            actors: [
-              {
+    if (spec.specialistExpired) {
+      const rearmedStage =
+        rearmedSpecialistStageFor(decisionRequirement);
+      stages.push({
+        decisionRequirement,
+        rearmedStage,
+        title: "Stage 1 - Bank-instruction specialist review",
+        requirement:
+          "The original specialist window expired. The re-armed stage now requires one operations-manager review before stage 2 can arm.",
+        stepState: "active",
+        actors: [
+          {
+            name: CAST.specialist,
+            role: "Banking specialist",
+            status: "expired",
+            statusLabel: `Expired · ${demoTimestampLabel(decisionRequirement.expiresAt)}`,
+          },
+          {
+            name: CAST.operationsManager,
+            role: "Operations manager (escalation)",
+            status: "pending",
+            statusLabel: `Awaiting review · expires ${demoTimestampLabel(rearmedStage.expiresAt)}`,
+          },
+        ],
+        expiry: `Original stage expired ${demoTimestampLabel(decisionRequirement.expiresAt)}`,
+        escalation: `Escalates to: operations manager · re-armed ${demoTimestampLabel(rearmedStage.activatedAt)} · fresh expiry ${demoTimestampLabel(rearmedStage.expiresAt)}`,
+      });
+    } else {
+      stages.push({
+        decisionRequirement,
+        title: "Stage 1 - Bank-instruction specialist review",
+        requirement:
+          "The changed bank instruction requires review by a banking specialist before execution.",
+        stepState: phase === "final" ? "done" : "active",
+        actors: [
+          phase === "final"
+            ? {
                 name: CAST.specialist,
                 role: "Banking specialist",
-                status: "expired",
-                statusLabel: `Expired · ${demoTimestampLabel(DEMO_TIMELINE.specialistExpiredAt)}`,
-              },
-              {
-                name: CAST.operationsManager,
-                role: "Operations manager (escalation)",
+                status: "done",
+                statusLabel: `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
+              }
+            : {
+                name: CAST.specialist,
+                role: "Banking specialist",
                 status: "pending",
                 statusLabel: "Awaiting review",
               },
-            ],
-            expiry: `Expired ${demoTimestampLabel(DEMO_TIMELINE.specialistExpiredAt)}`,
-            escalation:
-              "Escalates to: operations manager",
-          }
-        : {
-            authorityRequirement,
-            title:
-              "Stage 1 - Bank-instruction specialist review",
-            requirement:
-              "The changed bank instruction requires review by a banking specialist before execution.",
-            stepState:
-              phase === "final" ? "done" : "active",
-            actors: [
-              phase === "final"
-                ? {
-                    name: CAST.specialist,
-                    role: "Banking specialist",
-                    status: "done",
-                    statusLabel: `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
-                  }
-                : {
-                    name: CAST.specialist,
-                    role: "Banking specialist",
-                    status: "pending",
-                    statusLabel: "Awaiting review",
-                  },
-            ],
-            expiry: "Expires after 2 days",
-            escalation:
-              "Escalates after 1 day to operations manager",
-          },
-    );
+        ],
+        expiry: "Expires after 2 days",
+        escalation: "Escalates after 1 day to operations manager",
+      });
+    }
   }
   const operationsStage = stages.length + 1;
   if (dualApproval) {
@@ -118,7 +117,7 @@ function buildStages(
             statusLabel: "Awaiting approval",
           };
     stages.push({
-      authorityRequirement: operationsStageRequirementFor(
+      decisionRequirement: operationsStageRequirementFor(
         firm,
         approvalClock,
         operationsStage,

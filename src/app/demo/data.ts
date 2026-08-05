@@ -59,7 +59,7 @@ export const DEMO_TIMELINE = {
   duplicateSuppressedAt: "2026-07-28T18:03:00.000Z",
   executionVerifiedAt: "2026-07-28T19:40:00.000Z",
   nextPollAt: "2026-07-29T10:00:00.000Z",
-  specialistExpiredAt: "2026-07-30T14:15:00.000Z",
+  specialistRearmedAt: "2026-07-30T14:15:00.000Z",
   delayedNigoAt: "2026-07-30T11:12:00.000Z",
   stuckAt: "2026-07-30T18:02:00.000Z",
 } as const;

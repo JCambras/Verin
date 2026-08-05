@@ -232,8 +232,20 @@ export interface AuthorityStageRequirementVM {
     ...AuthorityEscalationStepVM[],
   ];
 }
+export interface RearmedAuthorityStageVM {
+  readonly instanceId: string;
+  readonly sourceStageId: string;
+  readonly activatedAt: string;
+  readonly eligibleRoleIds: readonly [
+    AuthorityRoleId,
+    ...AuthorityRoleId[],
+  ];
+  readonly expiresAt: string;
+  readonly reasonCode: string;
+}
 export interface ApprovalStageVM {
-  readonly authorityRequirement: AuthorityStageRequirementVM;
+  readonly decisionRequirement: AuthorityStageRequirementVM;
+  readonly rearmedStage?: RearmedAuthorityStageVM;
   readonly title: string;
   readonly requirement: string;
   readonly stepState: StationState;

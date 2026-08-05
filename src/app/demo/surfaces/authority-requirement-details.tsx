@@ -21,7 +21,7 @@ export function AuthorityRequirementDetails({
       data-testid={`authority-requirement-${requirement.stageId}`}
     >
       <p className="text-xs font-medium uppercase tracking-wide text-slate-600">
-        Immutable stage requirement
+        Original decision requirement
       </p>
       <dl className="mt-2 grid min-w-0 gap-2 text-xs sm:grid-cols-2">
         <div>

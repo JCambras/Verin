@@ -780,6 +780,20 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-a");
   await expect(page.getByText(/^Expired ·/)).toBeVisible();
   await expect(page.getByText(/Escalates to: operations manager/)).toBeVisible();
+  const rearmedStage = page.getByTestId("rearmed-authority-stage");
+  await expect(rearmedStage).toContainText("operations-manager");
+  await expect(rearmedStage).toContainText("2026-07-30T14:15:00.000Z");
+  await expect(rearmedStage).toContainText("2026-08-01T14:15:00.000Z");
+  const rearmedStageText = await rearmedStage.textContent();
+  await checkAxe(page, "authority-specialist-rearmed");
+  await snap(page, 18, "authority-specialist-rearmed");
+
+  await page.goto("/app/demo/record?scenario=specialist-review-expiration&firm=firm-a");
+  await expect(page.getByTestId("rearmed-authority-stage")).toHaveText(
+    rearmedStageText ?? "",
+  );
+  await checkAxe(page, "record-specialist-rearmed");
+  await snap(page, 19, "record-specialist-rearmed");
 });
 
 test("print posture: the record's identity header prints complete; app chrome and buttons do not", async ({ page }) => {

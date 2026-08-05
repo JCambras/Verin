@@ -1,6 +1,7 @@
 import { Metric } from "@app/presentation/metric";
 import type { RecordVM } from "../model";
 import { AuthorityRequirementDetails } from "./authority-requirement-details";
+import { RearmedAuthorityStage } from "./rearmed-authority-stage";
 
 export function RecordAuthority({
   authority,
@@ -86,8 +87,11 @@ export function RecordAuthority({
           </p>
           <p className="text-sm text-slate-600">{stage.requirement}</p>
           <AuthorityRequirementDetails
-            requirement={stage.authorityRequirement}
+            requirement={stage.decisionRequirement}
           />
+          {stage.rearmedStage ? (
+            <RearmedAuthorityStage stage={stage.rearmedStage} />
+          ) : null}
           <ul className="flex flex-col gap-1">
             {stage.actors.map((actor) => (
               <li

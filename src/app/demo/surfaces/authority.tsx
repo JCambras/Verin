@@ -10,6 +10,7 @@ import { ApprovalStagePanel } from "@app/presentation/approval-stage-panel";
 import { Metric } from "@app/presentation/metric";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type ApprovalVM } from "../model";
+import { RearmedAuthorityStage } from "./rearmed-authority-stage";
 import { JourneyNav, NotReached, PrimaryLink, SurfaceShell, demoHref } from "./shared";
 
 function shortHash(h: string): string {
@@ -138,16 +139,20 @@ export function AuthoritySurface({
       </dl>
 
       {vm.stages.map((s) => (
-        <ApprovalStagePanel
-          key={s.title}
-          stage={{
-            title: s.title,
-            requirement: s.requirement,
-            actors: s.actors,
-            ...(s.expiry ? { expiry: s.expiry } : {}),
-            ...(s.escalation ? { escalation: s.escalation } : {}),
-          }}
-        />
+        <div key={s.title} className="flex flex-col gap-2">
+          <ApprovalStagePanel
+            stage={{
+              title: s.title,
+              requirement: s.requirement,
+              actors: s.actors,
+              ...(s.expiry ? { expiry: s.expiry } : {}),
+              ...(s.escalation ? { escalation: s.escalation } : {}),
+            }}
+          />
+          {s.rearmedStage ? (
+            <RearmedAuthorityStage stage={s.rearmedStage} />
+          ) : null}
+        </div>
       ))}
 
       <p className="font-mono text-xs text-slate-500">
