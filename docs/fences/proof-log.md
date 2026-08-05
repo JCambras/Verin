@@ -6020,3 +6020,36 @@ coverage, nested multi-value paths, or fallback opacity fails its paired compani
 pinned Date constructions and project-owned capability controls remain green.
 
 **Date:** 2026-08-05 (review corrections, D-112).
+
+## F119 · constructor, primitive-locale, and tenant-subset provenance fail closed (D-113)
+
+**Invariants:** instance capabilities retain constructor provenance; contracts never
+observe host-sensitive primitive locale behavior; tenant probes reject coherent mixed
+subsets across sibling collections.
+
+The adversarial companions were added before the shared authorities changed. The first
+focused red run failed nine planted cases: two constructor-held `node:module`
+namespaces, a constructor-held `Date`, five String, Number, and BigInt locale methods,
+and one matching-index tenant boundary that accepted a coherent cross-sibling subset.
+The retained matrix expands those cases through explicit parameter-property arguments,
+cross-module constructor state, a three-way matching-index association, and
+project-owned locale-shaped controls.
+
+Constructed-instance traversal now reads parameter properties and path-resolved `this`
+assignments through the same selector authority as other provenance containers. Locale
+method detection uses primitive and ambient wrapper types rather than method spelling
+alone. Tenant mutation generates every proper subset for bounded probes and pairwise
+plus structurally corresponding sibling groups for larger fixtures.
+
+The focused dependency and tenant suites pass 363 tests. Full fitness passes 1,109
+tests, and the complete serialized Vitest suite passes 1,464. Typecheck, lint, knip,
+the CI-configured production build, `v3:invariants` (6 active-pass, 0 active-fail), and
+`golden:validate` (16 signed cases) pass. No production contract, runtime schema,
+fixture byte, registry byte, recorded hash, or platform line measurement changed.
+
+**Revert:** the adversarial companions remain continuous tests. Removing constructor
+arguments, parameter properties, `this` assignment sources, primitive locale types, or
+coherent tenant subsets fails its paired companion while project-owned lookalikes and
+complete legal tenant probes remain green.
+
+**Date:** 2026-08-05 (review corrections, D-113).

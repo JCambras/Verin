@@ -1002,10 +1002,10 @@ const selectorCandidatesForAccessIn = (
   };
 };
 
-const assignmentPathsForSymbolIn = (
+const assignmentPathsForRootIn = (
   sf: SourceFile,
   targetNode: Node,
-  symbol: MorphSymbol,
+  isRoot: (target: Node) => boolean,
 ): {
   readonly paths: readonly (readonly ProvenanceSelector[])[];
   readonly unresolved: boolean;
@@ -1025,10 +1025,35 @@ const assignmentPathsForSymbolIn = (
     unresolved ||= candidates.unresolved;
     target = unwrapExpression(target.getExpression());
   }
-  return Node.isIdentifier(target) && target.getSymbol() === symbol
+  return target !== undefined && isRoot(target)
     ? { paths, unresolved }
     : { paths: [], unresolved: false };
 };
+
+const assignmentPathsForSymbolIn = (
+  sf: SourceFile,
+  targetNode: Node,
+  symbol: MorphSymbol,
+): {
+  readonly paths: readonly (readonly ProvenanceSelector[])[];
+  readonly unresolved: boolean;
+} => assignmentPathsForRootIn(
+  sf,
+  targetNode,
+  (target) => Node.isIdentifier(target) && target.getSymbol() === symbol,
+);
+
+const assignmentPathsForThisIn = (
+  sf: SourceFile,
+  targetNode: Node,
+): {
+  readonly paths: readonly (readonly ProvenanceSelector[])[];
+  readonly unresolved: boolean;
+} => assignmentPathsForRootIn(
+  sf,
+  targetNode,
+  (target) => target.getKind() === SyntaxKind.ThisKeyword,
+);
 
 const CONTAINER_ASSIGNMENTS_CACHE = new WeakMap<
   SourceFile,
@@ -1171,7 +1196,13 @@ const classInstanceValueSourcesAtPathIn = (
 ): readonly ContainerValueSource[] => {
   const selector = path[0];
   if (selector === undefined) return [];
-  const expression = unwrapExpression(constructor);
+  const construction = unwrapExpression(constructor);
+  const newExpression = Node.isNewExpression(construction)
+    ? construction
+    : undefined;
+  const expression = unwrapExpression(
+    newExpression?.getExpression() ?? construction,
+  );
   const classLikes: Array<ClassDeclaration | ClassExpression> = [];
   if (Node.isClassDeclaration(expression) || Node.isClassExpression(expression)) {
     classLikes.push(expression);
@@ -1247,6 +1278,91 @@ const classInstanceValueSourcesAtPathIn = (
           remaining: path.slice(1),
           uncertain: true,
         });
+      }
+    }
+    for (const declaration of classLike.getConstructors()) {
+      for (const [index, parameter] of declaration.getParameters().entries()) {
+        if (!parameter.isParameterProperty()) continue;
+        const nameNode = parameter.getNameNode();
+        const name = Node.isIdentifier(nameNode) ? nameNode.getText() : null;
+        if (
+          selector.kind !== "property" ||
+          !(
+            name === null ||
+            selector.name === null ||
+            name === selector.name
+          )
+        ) continue;
+        const argument = newExpression?.getArguments()[index];
+        if (argument !== undefined) {
+          sources.push({
+            receiver: Node.isSpreadElement(argument)
+              ? argument.getExpression()
+              : argument,
+            remaining: path.slice(1),
+            uncertain:
+              Node.isSpreadElement(argument) ||
+              name === null ||
+              selector.name === null,
+          });
+        }
+        const initializer = parameter.getInitializer();
+        if (initializer !== undefined) {
+          sources.push({
+            receiver: initializer,
+            remaining: path.slice(1),
+            uncertain: name === null || selector.name === null,
+          });
+        }
+      }
+      for (const assignment of declaration.getDescendantsOfKind(
+        SyntaxKind.BinaryExpression,
+      )) {
+        if (
+          !PROVENANCE_ASSIGNMENT_OPERATORS.has(
+            assignment.getOperatorToken().getKind(),
+          )
+        ) continue;
+        const ancestors = assignment.getAncestors();
+        const declarationIndex = ancestors.findIndex(
+          (ancestor) => ancestor.compilerNode === declaration.compilerNode,
+        );
+        const nestedThisScope = (
+          declarationIndex < 0
+            ? ancestors
+            : ancestors.slice(0, declarationIndex)
+        ).some((ancestor) =>
+            (Node.isFunctionLikeDeclaration(ancestor) &&
+              !Node.isArrowFunction(ancestor)) ||
+            Node.isClassDeclaration(ancestor) ||
+            Node.isClassExpression(ancestor)
+          );
+        if (nestedThisScope) continue;
+        const targets = assignmentPathsForThisIn(
+          sourceFile,
+          assignment.getLeft(),
+        );
+        if (targets.paths.length === 0 && !targets.unresolved) continue;
+        if (targets.unresolved) {
+          sources.push({
+            receiver: assignment.getRight(),
+            remaining: [],
+            uncertain: true,
+          });
+        }
+        for (const targetPath of targets.paths) {
+          if (
+            targetPath.length > path.length ||
+            !targetPath.every((candidate, index) =>
+              selectorsEqual(candidate, path[index]!),
+            )
+          ) continue;
+          sources.push({
+            receiver: assignment.getRight(),
+            remaining: path.slice(targetPath.length),
+            uncertain: false,
+          });
+        }
       }
     }
     const heritage = classLike.getExtends()?.getExpression();
@@ -1513,7 +1629,7 @@ const ambientGlobalNamesAtPathIn = (
   if (Node.isNewExpression(expression)) {
     const names = new Set<string>();
     for (const source of classInstanceValueSourcesAtPathIn(
-      expression.getExpression(),
+      expression,
       path,
     )) {
       for (const name of ambientGlobalNamesAtPathIn(
@@ -2344,7 +2460,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     }
     if (Node.isNewExpression(expression) && path.length > 0) {
       return classInstanceValueSourcesAtPathIn(
-        expression.getExpression(),
+        expression,
         path,
       ).some((source) =>
         (failOnUnknown && source.uncertain) ||
@@ -3424,6 +3540,54 @@ function contractCapabilityReferences(
       typeHasAmbientSymbol(candidate, names, nextSeen)
     );
   };
+  const typeHasPrimitiveKind = (
+    type: Type | undefined,
+    flags: ts.TypeFlags,
+    wrapperName: string,
+    seen: ReadonlySet<string> = new Set(),
+  ): boolean => {
+    if (type === undefined || type.isAny() || type.isUnknown()) return true;
+    const key = typeKey(type);
+    if (seen.has(key)) return false;
+    const nextSeen = new Set(seen).add(key);
+    if ((type.getFlags() & flags) !== 0) return true;
+    const alternatives = type.isUnion()
+      ? type.getUnionTypes()
+      : type.isIntersection()
+        ? type.getIntersectionTypes()
+        : [];
+    if (alternatives.some((candidate) =>
+      typeHasPrimitiveKind(candidate, flags, wrapperName, nextSeen)
+    )) return true;
+    const symbol = type.getSymbol();
+    const declarations = symbol?.getDeclarations() ?? [];
+    if (
+      symbol?.getName() === wrapperName &&
+      declarations.length > 0 &&
+      declarations.every((declaration) =>
+        declaration.getSourceFile().isDeclarationFile()
+      )
+    ) return true;
+    return [type.getConstraint(), ...type.getBaseTypes()].some((candidate) =>
+      candidate !== undefined &&
+      typeHasPrimitiveKind(candidate, flags, wrapperName, nextSeen)
+    );
+  };
+  const isLocaleSensitivePrimitiveMethod = (
+    node: Node | undefined,
+    name: string,
+  ): boolean => {
+    const type = unwrapExpression(node)?.getType();
+    if (
+      (name === "localeCompare" ||
+        name === "toLocaleLowerCase" ||
+        name === "toLocaleUpperCase") &&
+      typeHasPrimitiveKind(type, ts.TypeFlags.StringLike, "String")
+    ) return true;
+    return name === "toLocaleString" &&
+      (typeHasPrimitiveKind(type, ts.TypeFlags.NumberLike, "Number") ||
+        typeHasPrimitiveKind(type, ts.TypeFlags.BigIntLike, "BigInt"));
+  };
   const isAmbientDateInstance = (node: Node | undefined): boolean =>
     typeHasAmbientSymbol(unwrapExpression(node)?.getType(), new Set(["Date"]));
   const isAmbientIntlInstance = (node: Node | undefined): boolean =>
@@ -3705,7 +3869,7 @@ function contractCapabilityReferences(
     }
     if (Node.isNewExpression(expression) && path.length > 0) {
       const capabilities = classInstanceValueSourcesAtPathIn(
-        expression.getExpression(),
+        expression,
         path,
       ).flatMap((source) =>
         source.uncertain
@@ -4069,7 +4233,7 @@ function contractCapabilityReferences(
     }
     if (Node.isNewExpression(expression) && path.length > 0) {
       const capabilities = classInstanceValueSourcesAtPathIn(
-        expression.getExpression(),
+        expression,
         path,
       ).flatMap((source) =>
         source.uncertain
@@ -4278,7 +4442,8 @@ function contractCapabilityReferences(
         hasAmbientName(receiver, "Math", ambientReceiverNames)) ||
       hasKnownAmbientName(receiver, "Intl", ambientReceiverNames) ||
       (dateHostTimeMethodNames.has(name) && isAmbientDateInstance(receiver)) ||
-      isAmbientIntlInstance(receiver)
+      isAmbientIntlInstance(receiver) ||
+      isLocaleSensitivePrimitiveMethod(receiver, name)
     ) {
       return "<nondeterministic platform-global>";
     }

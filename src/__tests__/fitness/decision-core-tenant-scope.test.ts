@@ -1688,6 +1688,50 @@ const mixedTenantProbes = (legal: unknown): unknown[] => {
       }
     }
   }
+  const maximumCombinationSize = tenantFirmIdPaths.length <= 10
+    ? tenantFirmIdPaths.length - 1
+    : 2;
+  const addCombinations = (
+    size: number,
+    start: number,
+    selected: readonly ValuePath[],
+  ): void => {
+    if (selected.length === size) {
+      addGroup(selected);
+      return;
+    }
+    for (
+      let index = start;
+      index <= tenantFirmIdPaths.length - (size - selected.length);
+      index += 1
+    ) {
+      addCombinations(size, index + 1, [
+        ...selected,
+        tenantFirmIdPaths[index]!,
+      ]);
+    }
+  };
+  for (let size = 2; size <= maximumCombinationSize; size += 1) {
+    addCombinations(size, 0, []);
+  }
+  const structuralGroups = new Map<string, ValuePath[]>();
+  for (const path of tenantFirmIdPaths) {
+    const key = path.map((segment) =>
+      typeof segment === "string"
+        ? "*"
+        : typeof segment === "number"
+          ? `array:${segment}`
+          : `${segment.collection}:${segment.index}`
+    ).join("/");
+    const grouped = structuralGroups.get(key) ?? [];
+    grouped.push(path);
+    structuralGroups.set(key, grouped);
+  }
+  for (const grouped of structuralGroups.values()) {
+    if (grouped.length > 1 && grouped.length < tenantFirmIdPaths.length) {
+      addGroup(grouped);
+    }
+  }
   return [...groups.values()].map((paths) => {
     let mixed = structuredClone(legal);
     for (const path of paths) {
@@ -2204,6 +2248,39 @@ describe("decision-core tenant-scope fence", () => {
       [["probe.ts", { PartiallyConstrained }]],
       { "probe.ts:PartiallyConstrained": legal },
     ).failed).toEqual(["probe.ts:PartiallyConstrained"]);
+  });
+
+  it("mutates coherent subsets across parallel tenant collections", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const IndexMatched = z.strictObject({
+      left: z.array(reference).length(2),
+      middle: z.array(reference).length(2),
+      right: z.array(reference).length(2),
+    }).refine((value) => value.left.every((ref, index) =>
+      ref.firmId === value.middle[index]?.firmId &&
+      ref.firmId === value.right[index]?.firmId
+    ));
+    const legal = {
+      left: [
+        { firmId: "firm-a", id: "left:one" },
+        { firmId: "firm-a", id: "left:two" },
+      ],
+      middle: [
+        { firmId: "firm-a", id: "middle:one" },
+        { firmId: "firm-a", id: "middle:two" },
+      ],
+      right: [
+        { firmId: "firm-a", id: "right:one" },
+        { firmId: "firm-a", id: "right:two" },
+      ],
+    };
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { IndexMatched }]],
+      { "probe.ts:IndexMatched": legal },
+    ).failed).toEqual(["probe.ts:IndexMatched"]);
   });
 
   it("requires probes to cover optional scoped-reference edges", () => {

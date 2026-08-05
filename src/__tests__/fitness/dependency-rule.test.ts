@@ -243,6 +243,9 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nclass Holder { static get module() { return nodeModule; } }\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { module = nodeModule; }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { get module() { return nodeModule; } }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { module: typeof nodeModule; constructor() { this.module = nodeModule; } }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { constructor(public module = nodeModule) {} }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { constructor(public module: typeof nodeModule) {} }\nconst load = new Holder(nodeModule).module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -315,6 +318,25 @@ describe("dependency-rule fence", () => {
           "src/domain/loader.ts": [
             `import * as nodeModule from "node:module";`,
             "export class Holder { module = nodeModule; }",
+          ].join("\n"),
+          "src/domain/evil.ts": [
+            `import { Holder } from "./loader";`,
+            "const load = new Holder().module.createRequire(import.meta.url);",
+            `export const value = load("@infra/store");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
+    it("follows a node:module namespace assigned by an exported constructor", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/loader.ts": [
+            `import * as nodeModule from "node:module";`,
+            "export class Holder { module: typeof nodeModule; constructor() { this.module = nodeModule; } }",
           ].join("\n"),
           "src/domain/evil.ts": [
             `import { Holder } from "./loader";`,
@@ -1350,6 +1372,20 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "clock assigned in an instance constructor",
+        [
+          "class Holder { Clock: DateConstructor; constructor() { this.Clock = Date; } }",
+          "export const value = new Holder().Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "formatter retained in a parameter property",
+        [
+          "class Holder { constructor(public formatter = new Intl.DateTimeFormat()) {} }",
+          "export const value = new Holder().formatter.format();",
+        ].join("\n"),
+      ],
+      [
         "formatter retained through Object.freeze",
         [
           "const formatter = Object.freeze(new Intl.DateTimeFormat());",
@@ -1569,6 +1605,26 @@ describe("dependency-rule fence", () => {
         "Date subclass timezone offset",
         "class LocalDate extends Date {} export const value = new LocalDate(0).getTimezoneOffset();",
       ],
+      [
+        "string locale comparison",
+        `export const value = "ä".localeCompare("z");`,
+      ],
+      [
+        "number locale formatting",
+        "export const value = (1234).toLocaleString();",
+      ],
+      [
+        "bigint locale formatting",
+        "export const value = 1234n.toLocaleString();",
+      ],
+      [
+        "string locale lowercasing",
+        `export const value = "I".toLocaleLowerCase("tr");`,
+      ],
+      [
+        "string locale uppercasing",
+        `export const value = "i".toLocaleUpperCase("tr");`,
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -1671,6 +1727,26 @@ describe("dependency-rule fence", () => {
         inMemoryProject({
           "src/contracts/capability.ts":
             "export class Holder { formatter = new Intl.DateTimeFormat(); }",
+          "src/contracts/evil.ts": [
+            `import { Holder } from "./capability";`,
+            "export const value = new Holder().formatter.format();",
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it("follows an exported constructor-assigned formatter across modules", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts": [
+            "export class Holder {",
+            "  formatter: Intl.DateTimeFormat;",
+            "  constructor() { this.formatter = new Intl.DateTimeFormat(); }",
+            "}",
+          ].join("\n"),
           "src/contracts/evil.ts": [
             `import { Holder } from "./capability";`,
             "export const value = new Holder().formatter.format();",
@@ -1855,10 +1931,14 @@ describe("dependency-rule fence", () => {
             "  NumberFormat: class { format() { return 'safe'; } },",
             "  Collator: class { compare() { return 0; } },",
             "};",
+            "const text = { localeCompare: () => 0, toLocaleLowerCase: () => 'safe' };",
+            "const localNumberLike = { toLocaleString: () => '1000' };",
             `export const descriptor = Object.getOwnPropertyDescriptor({}, "constructor")!.value();`,
             "export const formatted = new Intl.DateTimeFormat().format();",
             "export const number = new Intl.NumberFormat().format();",
             "export const compared = new Intl.Collator().compare();",
+            "export const localText = [text.localeCompare(), text.toLocaleLowerCase()];",
+            "export const localNumber = localNumberLike.toLocaleString();",
           ].join("\n"),
         }),
       );

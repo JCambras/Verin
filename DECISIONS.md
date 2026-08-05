@@ -3686,3 +3686,36 @@ wrapper, collection type, or schema fallback is adopted; extend the shared autho
 and its adversarial matrix before relying on it.
 **Revert path:** none while contracts require byte-identical replay and every exported
 tenant boundary must remain behaviorally complete.
+
+### D-113 · 2026-08-05 · reversible · Constructor capabilities, primitive locale methods, and tenant subsets fail closed
+
+Constructed instance provenance now retains the complete `new` expression so
+constructor arguments remain visible. Parameter properties contribute both their
+supplied argument and default initializer, while path-resolved `this` assignments
+contribute every reaching constructor source. The same authority serves local,
+inherited, imported, and re-exported classes without attributing nested non-lexical
+`this` writes to the constructed instance.
+
+String locale comparison and case conversion plus Number and BigInt locale formatting
+are host-sensitive contract capabilities. Detection follows primitive, literal,
+union, intersection, constrained-generic, and ambient wrapper types while leaving
+project-owned methods with the same names legal.
+
+Tenant mutation probes now exercise coherent subsets rather than only one reference or
+one structural-prefix subtree. Boundaries with at most ten tenant paths receive every
+proper nonempty subset; larger fixtures receive every pair plus structurally matched
+cross-sibling groups. This catches parallel collections whose local refinements compare
+matching positions while still allowing the real completeness audit to run inside its
+unchanged timeout.
+
+These are fence-only corrections. No production contract, runtime schema, fixture byte,
+recorded hash, source ceiling, or runtime registry envelope changed.
+
+**Why:** constructor syntax, primitive locale APIs, and cross-sibling associations cannot
+erase a loader, nondeterministic operation, or mixed-tenant state from a charter-critical
+fence.
+**Revisit-When:** a new constructor carrier, host-sensitive primitive method, or tenant
+association shape is adopted; extend the shared authority and its adversarial matrix
+before relying on it.
+**Revert path:** none while dependency, deterministic replay, and tenant-boundary
+completeness must fail closed across ordinary TypeScript and schema associations.
