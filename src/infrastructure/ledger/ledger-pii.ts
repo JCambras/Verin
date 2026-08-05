@@ -7,10 +7,13 @@ import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import {
   looksLikePIIValue,
-  PERSON_WORD_SOURCE,
   sensitiveAccountReferences,
 } from "@contracts/pii";
 import { isMachineRecordId } from "@contracts/record-id";
+import {
+  isOpaqueLedgerIdentifier,
+  isOpaqueLedgerToken,
+} from "./ledger-string-rules";
 
 const REGISTERED_RETAINED_CODES = new Set([
   "active-legal-hold",
@@ -44,7 +47,6 @@ const VERSION_IDENTIFIER = /^\d{1,6}(\.\d{1,6}){0,3}(-[0-9a-z]+(\.[0-9a-z]+)*)?$
 const VERSION_IDENTIFIER_MAX_LENGTH = 32;
 const LEXICAL_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:@/+~-]*$/;
 const LEXICAL_IDENTIFIER_MAX_LENGTH = 160;
-const HUMAN_IDENTIFIER = new RegExp(`^(?:${PERSON_WORD_SOURCE})$`, "u");
 const ACCOUNT_IDENTIFIER_LABEL = /(?:account|acct|routing|iban|number)[.:@/+~-]*$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -298,14 +300,14 @@ function requireLexicalShape(value: string): void {
   }
 }
 
-function requireOpaqueIdentifier(value: string): void {
+function requireOpaqueIdentifier(path: string, value: string): void {
   requireLexicalShape(value);
   if (
     isMachineRecordId(value) ||
     (
       !looksLikePIIValue(value) &&
       !hasValidAccountReference(value) &&
-      !HUMAN_IDENTIFIER.test(value)
+      isOpaqueLedgerIdentifier(path, value)
     )
   ) {
     return;
@@ -313,12 +315,12 @@ function requireOpaqueIdentifier(value: string): void {
   refuse();
 }
 
-function requireOpaqueToken(value: string): void {
+function requireOpaqueToken(path: string, value: string): void {
   requireLexicalShape(value);
   if (
     looksLikePIIValue(value) ||
     hasValidAccountReference(value) ||
-    HUMAN_IDENTIFIER.test(value)
+    !isOpaqueLedgerToken(path, value)
   ) {
     refuse();
   }
@@ -388,9 +390,11 @@ function requireClassifiedStrings(root: string, value: unknown): void {
       }
       if (classification === "hash") requireHash(current.value);
       if (classification === "identifier") {
-        requireOpaqueIdentifier(current.value);
+        requireOpaqueIdentifier(current.path, current.value);
       }
-      if (classification === "token") requireOpaqueToken(current.value);
+      if (classification === "token") {
+        requireOpaqueToken(current.path, current.value);
+      }
       if (classification === "retained-reference" &&
           !RETAINED_TEXT_REFERENCE.test(current.value)) refuse();
       if (classification === "retained-token") {

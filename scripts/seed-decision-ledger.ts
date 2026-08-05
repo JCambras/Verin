@@ -24,6 +24,17 @@ import { unwrap } from "../src/contracts/result";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/decision-core");
 
+const RETAINED_IDENTIFIER_REPLACEMENTS = new Map([
+  ["smiths-destination-restriction@v2", "instruction:demo:1"],
+  ["smiths-liquidity-preference@v1", "instruction:demo:2"],
+  ["smiths-cash-floor", "instruction:demo:3"],
+  ["subject:smiths-joint-taxable", "subject:demo:1"],
+  ["subject:smiths-household", "subject:demo:2"],
+  ["conflict:smiths-liquidity", "conflict:demo:1"],
+  ["idem:GC-01:smiths-75000-2026-08-15", "idem:GC-01:0001"],
+  ["scope:account:smiths-joint-taxable", "scope:demo:1"],
+]);
+
 function retenant(value: unknown, firmId: string): unknown {
   if (Array.isArray(value)) return value.map((item) => retenant(item, firmId));
   if (value === null || typeof value !== "object") return value;
@@ -47,6 +58,9 @@ function fixture(name: string, firmId: string): Record<string, unknown> {
  */
 export function retainedTextProjection(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(retainedTextProjection);
+  if (typeof value === "string") {
+    return RETAINED_IDENTIFIER_REPLACEMENTS.get(value) ?? value;
+  }
   if (value === null || typeof value !== "object") return value;
   const projected = Object.fromEntries(
     Object.entries(value).map(([key, nested]) => [
@@ -88,7 +102,9 @@ export async function seedDecisionLedger(
   if (existing.rows.length > 0) return;
 
   const bundleCandidate = DecisionInputBundleSchema.parse({
-    ...fixture("decision-input-bundle", firmId),
+    ...(retainedTextProjection(
+      fixture("decision-input-bundle", firmId),
+    ) as Record<string, unknown>),
     bundleHash: "0".repeat(64),
   });
   const inputBundle = DecisionInputBundleSchema.parse({
@@ -110,7 +126,7 @@ export async function seedDecisionLedger(
       firmId,
       id: ref.id,
       kind: index === 0 ? "account-balance" : "household-instruction",
-      sourceRef: { firmId, id: "source:synthetic-seed" },
+      sourceRef: { firmId, id: "source:synthetic:1" },
       subjectRef: { firmId, id: `subject:synthetic:${index}` },
       observedAt: inputBundle.asOf,
       retrievedAt: inputBundle.asOf,
@@ -128,7 +144,7 @@ export async function seedDecisionLedger(
     occurredAt: inputBundle.asOf,
     recordedAt: inputBundle.asOf,
     actor: { firmId, systemId: "seed-decision-ledger" },
-    correlationId: "seed:synthetic-decision-ledger",
+    correlationId: "seed:1",
   });
   const events = [
     ...evidenceSnapshots.map((snapshot, index) =>

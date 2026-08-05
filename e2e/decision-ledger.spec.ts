@@ -11,6 +11,9 @@ test("principal can inspect the seeded decision ledger and its L1-L4 verdict", a
   for (const level of ["L1", "L2", "L3", "L4"]) {
     await expect(page.getByTestId("ledger-verdict").getByText(level, { exact: true })).toBeVisible();
   }
+  await expect(
+    page.getByTestId("ledger-verdict").getByText(/Computed · as of/),
+  ).toHaveCount(4);
   await expect(page.getByRole("cell", { name: "DecisionRecorded" })).toBeVisible();
   await expect(page.getByTestId("dev-provenance-badge").first()).toHaveText(
     DEV_BADGE_TEXT["synthetic-fixture"],

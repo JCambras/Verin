@@ -3,8 +3,15 @@ import type { DisplayMetric } from "@contracts/metric";
 export interface LedgerLevelView {
   readonly level: "L1" | "L2" | "L3" | "L4";
   readonly ok: boolean;
-  readonly entriesChecked: number;
+  readonly entriesCheckedMetric: DisplayMetric<number>;
   readonly reason: string | null;
+}
+
+export interface LedgerVerificationView {
+  readonly ok: boolean;
+  readonly entriesCheckedMetric: DisplayMetric<number>;
+  readonly levels: readonly LedgerLevelView[];
+  readonly replaySourceReason: string | null;
 }
 
 export interface LedgerEntryView {
@@ -36,16 +43,14 @@ export interface DecisionStateView {
 }
 
 export interface LedgerRegisterViewModel {
-  readonly verification: {
-    readonly ok: boolean;
-    readonly entriesChecked: number;
-    readonly entriesStored: number;
-    readonly levels: readonly LedgerLevelView[];
-    readonly replaySourceReason: string | null;
-  };
-  readonly total: number;
-  /** Replayable decisions in the verified window; larger than `decisions` when limited. */
-  readonly decisionsTotal: number;
+  readonly verification: LedgerVerificationView;
+  readonly eventsTotalMetric: DisplayMetric<number>;
+  readonly eventsShownMetric: DisplayMetric<number>;
+  readonly decisionsTotalMetric: DisplayMetric<number>;
+  readonly decisionsShownMetric: DisplayMetric<number>;
+  readonly verificationWindowed: boolean;
+  readonly eventsWindowTruncated: boolean;
+  readonly decisionsWindowTruncated: boolean;
   readonly decisions: readonly DecisionStateView[];
   readonly entries: readonly LedgerEntryView[];
 }

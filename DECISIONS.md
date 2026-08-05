@@ -3781,17 +3781,21 @@ The ledger-total mutation trigger compromises both distinct tenant witnesses whe
 an attempted update moves a row between tenants. Deletion and same-tenant updates
 continue to compromise the one affected witness.
 
-Immutable source validation classifies string paths as machine identifiers, open
-tokens, closed tokens, retained codes, references, versions, timestamps, or hashes.
-Machine identifiers and open tokens reject PII-shaped values, complete account
-references when standalone or account-labeled, and human-name shapes before SQL.
-Closed schema tokens retain their versioned enum vocabulary while rejecting PII
-and account references.
+Immutable source validation classifies every string by its complete path. Machine
+identifiers admit only path-specific firm, actor, system, correlation, namespace,
+versioned-reference, or registered machine-code formats. Open configuration tokens
+admit only their registered vocabulary or explicit schema-version, IANA-time-zone,
+tzdb-release, and ISO-duration forms. These rules reject lowercase single- and
+hyphenated-name identifiers without relying on capitalization. Closed schema tokens
+retain their versioned enum vocabulary while rejecting PII and account references.
 
-Replayed reservation and execution counts are provenance-bearing display metrics
-derived from the verified decision projection. The metric-provenance fence registers
-these view-model fields, asserts their `DisplayMetric` contract, and rejects naked
-renders without misclassifying sanctioned metrics nested inside JSX expressions.
+Every count on the ledger register is a provenance-bearing display metric. Replayed
+reservation and execution counts derive from the verified decision projection;
+verification-level, window, decision, and event counts derive from the verified
+register observation. The metric-provenance fence registers every count field,
+rejects raw numeric view-model counts, asserts the `DisplayMetric` contract, and
+rejects naked renders without misclassifying sanctioned metrics nested inside JSX
+expressions.
 
 **Why:** a cross-tenant mutation must invalidate both integrity claims, immutable
 identifiers must not become a raw-PII escape, and every displayed count must retain

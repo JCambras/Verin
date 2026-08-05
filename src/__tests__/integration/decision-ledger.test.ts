@@ -948,7 +948,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const invalid = LedgerEntrySchema.parse({
       ...sample,
       id: "ledger:approval:missing-stage",
-      stageId: "missing-stage",
+      stageId: "stage:1",
       decisionHash: input.decisionRecord.decisionHash,
       inputBundleHash: input.inputBundle.bundleHash,
     });
@@ -1294,7 +1294,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       ...input.decisionRecord,
       createdBy: {
         firmId: LEDGER_ORG,
-        actorId: "actor:optional-paths",
+        actorId: "actor:2",
         roleIds: authority.stages[0]!.requirements[0]!.eligibleRoleIds,
       },
       derivedFromDecisionRef: {
@@ -1341,7 +1341,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       id: "event:optional-paths",
       actor: {
         firmId: LEDGER_ORG,
-        actorId: "actor:optional-paths",
+        actorId: "actor:2",
         roleIds: authority.stages[0]!.requirements[0]!.eligibleRoleIds,
       },
       causationRef: { firmId: LEDGER_ORG, id: "event:prior" },
@@ -1369,6 +1369,38 @@ describe("decision ledger storage and L1-L4 verification", () => {
       ...event,
       correlationId: "Alice-Smith",
     })],
+    ["lowercase actor", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      actor: {
+        firmId: LEDGER_ORG,
+        actorId: "robert-smith",
+        roleIds: [],
+      },
+    })],
+    ["namespaced lowercase actor", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      actor: {
+        firmId: LEDGER_ORG,
+        actorId: "actor:robert-smith",
+        roleIds: [],
+      },
+    })],
+    ["suffixed lowercase actor", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      actor: {
+        firmId: LEDGER_ORG,
+        actorId: "actor:robert-smith:1",
+        roleIds: [],
+      },
+    })],
+    ["lowercase correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      correlationId: "john",
+    })],
+    ["namespaced lowercase correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      correlationId: "corr:john",
+    })],
     ["account correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
       ...event,
       correlationId: "123456789012",
@@ -1384,6 +1416,14 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ["hyphenated-name reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
       ...event,
       decisionRef: { firmId: LEDGER_ORG, id: "Alice-Smith" },
+    })],
+    ["lowercase reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      decisionRef: { firmId: LEDGER_ORG, id: "robert-smith" },
+    })],
+    ["namespaced lowercase reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      decisionRef: { firmId: LEDGER_ORG, id: "subject:robert-smith" },
     })],
     ["approval stage", "ApprovalRecorded", (event: Record<string, unknown>) => ({
       ...event,
@@ -1432,6 +1472,10 @@ describe("decision ledger storage and L1-L4 verification", () => {
       {
         ...step,
         command: { ...step.command, commandType: "Robert Smith" },
+      },
+      {
+        ...step,
+        command: { ...step.command, commandType: "robert-smith" },
       },
       {
         ...step,
@@ -1806,7 +1850,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
                 source: regulatory,
                 scopeRef: {
                   firmId: LEDGER_ORG,
-                  id: "scope:account:smiths-joint-taxable",
+                  id: "scope:demo:1",
                 },
                 reasonCode: "active-legal-hold",
                 explanation: "active-legal-hold",
@@ -2921,7 +2965,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     )!;
     const event = LedgerEntrySchema.parse({
       ...sample,
-      id: `ledger:append:${method}-failure`,
+      id: `ledger:append:${method === "query" ? "1" : "2"}`,
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     await expect(db.transaction((tx) => {

@@ -9,6 +9,7 @@ import { tenantOf } from "@contracts/tenant";
 import {
   canFeedComplianceDecision,
   DEV_BADGE_TEXT,
+  deriveArtifactProvenance,
   type DerivedProvenance,
   type RecordProvenance,
 } from "@contracts/provenance";
@@ -67,17 +68,68 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     MAX_DECISIONS,
   );
   const trusted = verification.ok;
+  const observedAt = new Date().toISOString();
+  const countProvenance = deriveArtifactProvenance(
+    trusted && rowProvenance.size > 0
+      ? [...rowProvenance.values()]
+      : [{
+          source: trusted ? "verin-crm" : "default",
+          asOf: observedAt,
+          confidence: trusted ? "high" : "low",
+        }],
+    observedAt,
+  );
+  const visibleDecisions = trusted ? decisions : [];
+  const visibleEntries = trusted
+    ? rows.slice(-MAX_ENTRIES).reverse()
+    : [];
   const body = {
     verification: {
       ok: verification.ok,
-      entriesChecked: verification.entriesChecked,
-      entriesStored: verification.entriesStored,
-      levels: verification.levels,
+      entriesCheckedMetric: metric(
+        verification.entriesChecked,
+        "count",
+        countProvenance,
+      ),
+      levels: verification.levels.map((level) => ({
+        level: level.level,
+        ok: level.ok,
+        entriesCheckedMetric: metric(
+          level.entriesChecked,
+          "count",
+          countProvenance,
+        ),
+        reason: level.reason,
+      })),
       replaySourceReason,
     },
-    total: verification.entriesStored,
-    decisionsTotal: trusted ? decisionsTotal : 0,
-    decisions: (trusted ? decisions : []).map(({ projection, provenance }) => ({
+    eventsTotalMetric: metric(
+      verification.entriesStored,
+      "count",
+      countProvenance,
+    ),
+    eventsShownMetric: metric(
+      visibleEntries.length,
+      "count",
+      countProvenance,
+    ),
+    decisionsTotalMetric: metric(
+      trusted ? decisionsTotal : 0,
+      "count",
+      countProvenance,
+    ),
+    decisionsShownMetric: metric(
+      visibleDecisions.length,
+      "count",
+      countProvenance,
+    ),
+    verificationWindowed:
+      verification.entriesChecked < verification.entriesStored,
+    eventsWindowTruncated:
+      verification.entriesStored > visibleEntries.length,
+    decisionsWindowTruncated:
+      trusted && decisionsTotal > visibleDecisions.length,
+    decisions: visibleDecisions.map(({ projection, provenance }) => ({
       decisionId: projection.decisionId,
       disposition: projection.disposition,
       approvalMode: projection.approvalMode,
@@ -102,7 +154,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       lastSequence: projection.lastSequence,
       provenanceLabel: badgeLabel(provenance),
     })),
-    entries: (trusted ? rows : []).slice(-MAX_ENTRIES).reverse().map((row) => ({
+    entries: visibleEntries.map((row) => ({
       sequence: row.sequence,
       occurredAt: row.occurredAt,
       eventType: row.eventType,

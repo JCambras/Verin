@@ -53,10 +53,39 @@ const SANCTIONED_TAGS = new Set(SANCTIONED_RENDERERS.map((r) => r.component));
 const VIEW_METRICS = [
   {
     file: "src/app/ledger/model.ts",
+    interfaceName: "LedgerLevelView",
+    fields: ["entriesCheckedMetric"],
+  },
+  {
+    file: "src/app/ledger/model.ts",
+    interfaceName: "LedgerVerificationView",
+    fields: ["entriesCheckedMetric"],
+  },
+  {
+    file: "src/app/ledger/model.ts",
     interfaceName: "DecisionStateView",
     fields: ["activeReservations", "executionSteps"],
   },
+  {
+    file: "src/app/ledger/model.ts",
+    interfaceName: "LedgerRegisterViewModel",
+    fields: [
+      "eventsTotalMetric",
+      "eventsShownMetric",
+      "decisionsTotalMetric",
+      "decisionsShownMetric",
+    ],
+  },
 ] as const;
+
+export function rawNumericViewModelFields(sf: SourceFile): string[] {
+  return sf.getInterfaces().flatMap((view) =>
+    view.getProperties().flatMap((field) =>
+      field.getTypeNode()?.getText() === "number" &&
+      !["sequence", "lastSequence", "order"].includes(field.getName())
+        ? [`${view.getName()}.${field.getName()}`]
+        : []));
+}
 
 /** The metric-class field registry, DERIVED from the dictionary's `display` flag (not hand-listed). */
 export function metricFieldNames(dictionary: Record<string, Record<string, FieldSpec>>): Set<string> {
@@ -205,6 +234,20 @@ describe("metric-provenance fence", () => {
     expect(offenders, `view metrics lost DisplayMetric provenance:\n${offenders.join("\n")}`).toEqual([]);
   });
 
+  it("keeps raw numeric counts out of app view models", () => {
+    const project = new Project({
+      useInMemoryFileSystem: false,
+      skipAddingFilesFromTsConfig: true,
+    });
+    const offenders = walk(`${REPO_ROOT}src/app`, (file) =>
+      file.endsWith("/model.ts"))
+      .flatMap((file) => rawNumericViewModelFields(
+        project.addSourceFileAtPath(file),
+      ));
+    expect(offenders, `numeric view fields lack provenance:\n${offenders.join("\n")}`)
+      .toEqual([]);
+  });
+
   it("RULE B: no metric field is rendered in JSX without provenance", () => {
     const offenders: string[] = [];
     for (const sf of appProject().getSourceFiles()) {
@@ -282,6 +325,12 @@ describe("metric-provenance fence", () => {
     });
     it("derives the balanceMinorUnits registry from the real dictionary", () => {
       expect(metricFieldNames(DATA_DICTIONARY).has("balanceMinorUnits")).toBe(true);
+    });
+    it("rejects a new raw count while allowing positional identifiers", () => {
+      const sf = inMemoryProject({
+        "/model.ts": "interface VM { total: number; sequence: number; }",
+      }).getSourceFiles()[0]!;
+      expect(rawNumericViewModelFields(sf)).toEqual(["VM.total"]);
     });
   });
 });

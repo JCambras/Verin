@@ -6570,6 +6570,20 @@ string classifier. The source tenant remained uncompromised after an ownership m
 and email, hyphenated human-name, and complete account identifiers were accepted.
 The route companion also observed plain numbers for both replayed state counts.
 
+A follow-up reproduction showed `actorId: "robert-smith"` and
+`correlationId: "john"` were still accepted, while the complete metric-provenance
+suite passed with per-level, verification-window, decision-total, and event-total
+counts rendered as raw numbers. Permanent companions now reject lowercase actor,
+correlation, reference, and open-token names and fail any raw numeric count added to
+an app view model outside the exact positional-identifier vocabulary.
+
+After the correction, the L1 count was planted as a naked `.value` render:
+
+```text
+× RULE B: no metric field is rendered in JSX without provenance
+src/app/app/ledger/page.tsx:81 :: metric field 'entriesCheckedMetric' rendered without provenance
+```
+
 The metric fence was then proved against the real application tree by replacing one
 sanctioned ledger metric with a naked `.value` render:
 
@@ -6579,7 +6593,8 @@ src/app/app/ledger/page.tsx:136 :: metric field 'activeReservations' rendered wi
 ```
 
 **Revert:** the planted render was removed. Permanent companions retain the
-cross-tenant trigger probe, immutable identifier attacks, view-model metric contract,
-nested sanctioned-render control, and route provenance assertions.
+cross-tenant trigger probe, lowercase immutable identifier and token attacks, raw
+numeric view-model attack, nested sanctioned-render control, complete register-count
+contract, and route provenance assertions.
 
 **Date:** 2026-08-05 (review corrections, D-124).

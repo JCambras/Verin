@@ -77,9 +77,16 @@ export function retainedDecisionSourceFixtures() {
 }
 
 export function decisionRecordingInput(): RecordDecisionInput {
-  const inputBundle = DecisionInputBundleSchema.parse(
-    fixture("decision-input-bundle"),
-  );
+  const bundleCandidate = DecisionInputBundleSchema.parse({
+    ...(retainedTextProjection(
+      fixture("decision-input-bundle"),
+    ) as Record<string, unknown>),
+    bundleHash: "0".repeat(64),
+  });
+  const inputBundle = DecisionInputBundleSchema.parse({
+    ...bundleCandidate,
+    bundleHash: canonicalHash(bundleHashPreimage(bundleCandidate)),
+  });
   const recorded = DecisionRecordSchema.parse({
     ...(retainedTextProjection(
       fixture("decision-record-proceed"),
@@ -135,7 +142,7 @@ export function decisionRecordingInput(): RecordDecisionInput {
       firmId: ref.firmId,
       id: ref.id,
       kind: index === 0 ? "account-balance" : "household-instruction",
-      sourceRef: { firmId: ref.firmId, id: "source:test" },
+      sourceRef: { firmId: ref.firmId, id: "source:test:1" },
       subjectRef: { firmId: ref.firmId, id: `subject:test:${index}` },
       observedAt: LEDGER_TIME,
       retrievedAt: LEDGER_TIME,
@@ -280,7 +287,7 @@ export function laterEvidenceRecording(id: string): {
     firmId: LEDGER_ORG,
     id,
     kind: "external-status",
-    sourceRef: { firmId: LEDGER_ORG, id: "source:test" },
+    sourceRef: { firmId: LEDGER_ORG, id: "source:test:1" },
     subjectRef: { firmId: LEDGER_ORG, id: "subject:test:status" },
     observedAt: LEDGER_LATER,
     retrievedAt: LEDGER_LATER,

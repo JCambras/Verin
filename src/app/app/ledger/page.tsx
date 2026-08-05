@@ -78,7 +78,7 @@ export default function DecisionLedgerPage() {
                   </p>
                   <p className="mt-1 text-xs text-slate-600">
                     {level.ok
-                      ? `${level.entriesChecked} checked`
+                      ? <><Metric metric={level.entriesCheckedMetric} /> checked</>
                       : level.reason ?? "Failed"}
                   </p>
                 </li>
@@ -106,8 +106,8 @@ export default function DecisionLedgerPage() {
               <p className="mt-1 text-xs text-slate-600">
                 Folded from the recorded events below, in ledger order. Nothing
                 here is evaluated or inferred.
-                {model.decisionsTotal > model.decisions.length
-                  ? ` Showing ${model.decisions.length} of ${model.decisionsTotal} replayable decisions in this verified window.`
+                {model.decisionsWindowTruncated
+                  ? <> Showing <Metric metric={model.decisionsShownMetric} /> of <Metric metric={model.decisionsTotalMetric} /> replayable decisions in this verified window.</>
                   : null}
               </p>
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -220,11 +220,11 @@ export default function DecisionLedgerPage() {
               </table>
             </div>
           )}
-          {model.total > model.entries.length ? (
+          {model.eventsWindowTruncated ? (
             <p className="text-sm text-slate-600">
-              Showing the latest {model.entries.length} of {model.total} events.
-              {model.verification.entriesChecked < model.verification.entriesStored
-                ? ` Integrity above covers the latest ${model.verification.entriesChecked} entries and their link to the preceding stored hash; the full chain is verified by the audit-chain-verify gate.`
+              Showing the latest <Metric metric={model.eventsShownMetric} /> of <Metric metric={model.eventsTotalMetric} /> events.
+              {model.verificationWindowed
+                ? <> Integrity above covers the latest <Metric metric={model.verification.entriesCheckedMetric} /> entries and their link to the preceding stored hash; the full chain is verified by the audit-chain-verify gate.</>
                 : " Verification covers the full chain."}
             </p>
           ) : null}

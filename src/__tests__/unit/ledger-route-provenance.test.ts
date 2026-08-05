@@ -76,11 +76,15 @@ describe("ledger route provenance", () => {
     const body = await response.json() as {
       entries: unknown[];
       decisions: unknown[];
-      decisionsTotal: number;
+      decisionsTotalMetric: {
+        value: number;
+        provenance: { demonstration: boolean };
+      };
     };
     expect(body.entries).toEqual([]);
     expect(body.decisions).toEqual([]);
-    expect(body.decisionsTotal).toBe(0);
+    expect(body.decisionsTotalMetric.value).toBe(0);
+    expect(body.decisionsTotalMetric.provenance.demonstration).toBe(true);
     expect(JSON.stringify(body)).not.toContain("victim@example.com");
   });
 
@@ -180,6 +184,56 @@ describe("ledger route provenance", () => {
       activeReservations: { value: 1, format: "count", provenance },
       executionSteps: { value: 1, format: "count", provenance },
     });
+  });
+
+  it("binds every register count to one observation provenance", async () => {
+    const asOf = "2026-07-26T13:30:00.000Z";
+    const row = {
+      id: "ledger:counted",
+      sequence: 1,
+      occurredAt: asOf,
+      eventType: "DecisionRecorded",
+      actorJson: JSON.stringify({ systemId: "seed-decision-ledger" }),
+      correlationId: "corr:counted",
+      decisionId: "decision:counted",
+      entryHash: "1".repeat(64),
+    };
+    const provenance = deriveArtifactProvenance([{
+      source: "fixture",
+      asOf,
+      confidence: "high",
+    }], asOf);
+    readVerifiedDecisionRegister.mockResolvedValueOnce({
+      verification: {
+        ok: true,
+        entriesChecked: 1,
+        entriesStored: 2,
+        levels: [{ level: "L1", ok: true, entriesChecked: 1, reason: null }],
+      },
+      rows: [row],
+      rowProvenance: new Map([[row.id, provenance]]),
+      decisions: [],
+      decisionsTotal: 2,
+      replaySourceReason: null,
+    });
+
+    const response = await GET(new NextRequest("http://localhost/api/ledger"));
+    const body = await response.json() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      eventsTotalMetric: { value: 2, format: "count" },
+      eventsShownMetric: { value: 1, format: "count" },
+      decisionsTotalMetric: { value: 2, format: "count" },
+      decisionsShownMetric: { value: 0, format: "count" },
+      verificationWindowed: true,
+      eventsWindowTruncated: true,
+      decisionsWindowTruncated: true,
+      verification: {
+        entriesCheckedMetric: { value: 1, format: "count" },
+        levels: [{ entriesCheckedMetric: { value: 1, format: "count" } }],
+      },
+    });
+    expect(JSON.stringify(body)).toContain('"demonstration":true');
+    expect(JSON.stringify(body)).not.toMatch(/"entriesChecked":\d/);
   });
 
   it.each([

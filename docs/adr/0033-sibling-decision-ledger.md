@@ -66,8 +66,9 @@ settle now.
   storage boundary. Attribution is an opaque retained-text reference; hashes and
   timestamps keep their canonical forms; decision explanations, summaries, reasons,
   and external statuses are closed-registry codes or opaque references; every
-  remaining string is a bounded lexical identifier. An unclassified path fails
-  closed even if its leaf name is already used elsewhere. A schema traversal
+  remaining string must match the complete path's registered machine identifier
+  or configuration-token form. An unclassified path fails closed even if its leaf
+  name is already used elsewhere. A schema traversal
   companion requires every declared string path to exist in that inventory, and
   submitted immutable bytes are never rewritten.
 - Every ledger row stores versioned provenance for the producer that appended it.

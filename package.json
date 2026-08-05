@@ -16,7 +16,7 @@
     "test": "vitest run --maxWorkers=1 --fileParallelism=false",
     "test:unit": "vitest run src/__tests__/unit",
     "test:integration": "vitest run src/__tests__/integration",
-    "test:fitness": "vitest run src/__tests__/fitness",
+    "test:fitness": "vitest run src/__tests__/fitness --maxWorkers=1 --fileParallelism=false",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "knip": "knip",
