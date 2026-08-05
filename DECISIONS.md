@@ -5037,3 +5037,28 @@ captain signoff remains pending.
 measurement cannot evade provenance separation by changing its spelling; and signed synthetic evidence
 cannot rely on an impossible interval or an order-sensitive schedule with no valid ordering.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-127 · 2026-08-05 · reversible · Mutable keys and assignment provenance fail closed
+
+Computed member resolution now trusts an initializer only for a `const` binding. A mutable key is treated
+as dynamic sensitive access even when its declaration initializer is harmless, so a later assignment
+cannot hide `Math.random`, `process.env`, or another forbidden origin.
+
+The no-blending fence propagates partition taint to a fixed point across all analyzed source files. Direct
+variable assignments, imported assigned values, and exact property or element assignments retain their
+partition provenance. Member taint remains path-specific, so assigning a synthetic value to one property
+does not contaminate an unrelated property.
+
+Four review reports about identity cardinality, authority nullability, legal-hold scope, and reserve shape
+were stale. The signed replay schema already rejects each contradictory state before topology or semantic
+attribution. One explicit regression now exercises both identity cardinalities, missing authority facts,
+an absent hold with an active scope, and missing or segmented reserves with incompatible schedule facts.
+
+The corpus regenerates byte-identically with digest
+`67dadb0ecd3eed8c7b9ae0e52fc5c78fd1aa0eca4836b187f0d84e56b20a5f3f`; the signed semantic authority and
+pending captain signoff remain unchanged.
+
+**Why:** a declaration initializer does not prove the reaching value of a mutable key, assignment cannot
+erase measurement provenance, and already-enforced signed schema rules should be proven rather than
+duplicated in a downstream semantic owner.
+**Revert path:** none while the determinism and no-blending fences claim to cover mutable dataflow.

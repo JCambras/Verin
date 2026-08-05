@@ -8013,3 +8013,42 @@ the real-derived partition remains empty, captain signoff remains pending, and t
 8035 lines under its unchanged 8100-line ceiling. All 1,459 unit, integration, and fitness tests pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-126 review hardening).
+
+---
+
+## PF-213 · mutable member keys, assignment taint, and replay-state coherence · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-127, ADR-0034):** mutable computed keys cannot hide a sensitive runtime origin,
+partition provenance survives assignment and exact member storage across modules, and contradictory
+replay states fail at the signed schema boundary before semantic attribution.
+
+**Injection 1 - mutable computed key.** Initialized a `let` key to `"fixed"`, reassigned it to
+`"random"`, and invoked `Math[key]()`.
+
+**Injection 2 - assignment provenance loss.** Assigned synthetic and real-derived values into
+uninitialized locals, exact object members, and exported variables consumed through imported aliases,
+then combined each pair.
+
+**Injection 3 - contradictory replay states.** Supplied two candidates for a unique identity, one
+candidate for an ambiguous identity, a non-missing authority without grant or start facts, an absent
+legal hold with position scope, a missing reserve with schedule facts, and a segmented reserve without
+segments.
+
+**Observed failure:**
+```
+expected [] to deeply equal [ 'Math.[computed]' ]
+expected [] to have a length of 2 but got 0
+```
+
+The replay-state injections already returned `schema validation failed` before the analyzer fixes, proving
+the four semantic review reports were not live bypasses.
+
+**Standing companions:** mutable sensitive member access fails closed; local, member, and imported
+assignment chains retain partition taint to a fixed point; an unrelated member stays untainted; and all
+six contradictory replay shapes fail at schema validation.
+
+**Revert:** the injections remain as standing companions. Canonical regeneration stayed byte-identical at
+`67dadb0ecd3eed8c7b9ae0e52fc5c78fd1aa0eca4836b187f0d84e56b20a5f3f`, the real-derived partition remains
+empty, captain signoff remains pending, and all 1,463 unit, integration, and fitness tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-127 review hardening).

@@ -154,7 +154,7 @@ export function blendingViolations(project: Project, root = ""): string[] {
           new RegExp(`\\b${accessor}(?:Outcomes|PartitionReport)\\b`).test(text),
       ),
     );
-  const staticPartitionAccessors = (node: Node | undefined): Set<string> => {
+  const staticStringValues = (node: Node | undefined): Set<string> => {
     if (node === undefined) return new Set();
     const type = node.getType();
     const alternatives = type.isUnion() ? type.getUnionTypes() : [type];
@@ -162,16 +162,28 @@ export function blendingViolations(project: Project, root = ""): string[] {
       alternatives.flatMap((alternative) => {
         if (!alternative.isStringLiteral()) return [];
         const value = alternative.getLiteralValue();
-        if (typeof value !== "string") return [];
-        return PARTITION_ACCESSORS.includes(
-          value as typeof PARTITION_ACCESSORS[number],
-        ) ? [value] : [];
+        return typeof value === "string" ? [value] : [];
       }),
     );
   };
+  const staticPartitionAccessors = (node: Node | undefined): Set<string> =>
+    new Set(
+      [...staticStringValues(node)].filter((value) =>
+        PARTITION_ACCESSORS.includes(
+          value as typeof PARTITION_ACCESSORS[number],
+        )
+      ),
+    );
+  const resolvedSymbol = (symbol: TrackedSymbol): TrackedSymbol => {
+    try {
+      return symbol.getAliasedSymbol() ?? symbol;
+    } catch {
+      return symbol;
+    }
+  };
   const symbolReads = (symbol: TrackedSymbol): Set<string> => {
     try {
-      const resolved = symbol.getAliasedSymbol() ?? symbol;
+      const resolved = resolvedSymbol(symbol);
       const reads = directReads(
         resolved.getDeclarations().map((declaration) => declaration.getText()).join("\n"),
       );
@@ -194,7 +206,7 @@ export function blendingViolations(project: Project, root = ""): string[] {
     if (symbol === undefined) return false;
     let resolved: TrackedSymbol;
     try {
-      resolved = symbol.getAliasedSymbol() ?? symbol;
+      resolved = resolvedSymbol(symbol);
     } catch {
       return false;
     }
@@ -205,62 +217,197 @@ export function blendingViolations(project: Project, root = ""): string[] {
         .endsWith("/scripts/corpus/report.ts")
     );
   };
-  for (const sf of project.getSourceFiles()) {
-    const taints = new Map<TrackedSymbol, Set<string>>();
-    const readsOf = (node: Node): Set<string> => {
-      if (isReportBoundaryCall(node)) return new Set();
-      const reads = directReads(node.getText());
-      const elementAccesses = Node.isElementAccessExpression(node)
-        ? [node]
-        : node.getDescendantsOfKind(SyntaxKind.ElementAccessExpression);
-      for (const access of elementAccesses) {
-        for (const accessor of staticPartitionAccessors(
-          access.getArgumentExpression(),
-        )) {
-          reads.add(accessor);
-        }
+  const unwrap = (input: Node): Node => {
+    let node = input;
+    while (
+      Node.isParenthesizedExpression(node) ||
+      Node.isAsExpression(node) ||
+      Node.isTypeAssertion(node) ||
+      Node.isNonNullExpression(node)
+    ) {
+      node = node.getExpression();
+    }
+    return node;
+  };
+  type TaintTarget = {
+    readonly symbol: TrackedSymbol;
+    readonly path: readonly string[] | null;
+  };
+  const taintTargets = (input: Node): TaintTarget[] => {
+    const node = unwrap(input);
+    if (Node.isIdentifier(node)) {
+      const symbol = node.getSymbol();
+      return symbol === undefined
+        ? []
+        : [{ symbol: resolvedSymbol(symbol), path: [] }];
+    }
+    if (Node.isPropertyAccessExpression(node)) {
+      return taintTargets(node.getExpression()).map((target) => ({
+        symbol: target.symbol,
+        path: target.path === null
+          ? null
+          : [...target.path, node.getName()],
+      }));
+    }
+    if (Node.isElementAccessExpression(node)) {
+      const targets = taintTargets(node.getExpression());
+      const members = staticStringValues(node.getArgumentExpression());
+      return members.size === 0
+        ? targets.map((target) => ({ ...target, path: null }))
+        : targets.flatMap((target) => [...members].map((member) => ({
+            symbol: target.symbol,
+            path: target.path === null
+              ? null
+              : [...target.path, member],
+          })));
+    }
+    return [];
+  };
+  const taints = new Map<TrackedSymbol, Set<string>>();
+  const memberTaints = new Map<TrackedSymbol, Map<string, Set<string>>>();
+  const addTaints = (
+    target: TaintTarget,
+    reads: ReadonlySet<string>,
+  ): boolean => {
+    if (reads.size === 0) return false;
+    if (target.path === null || target.path.length === 0) {
+      const before = taints.get(target.symbol);
+      if (before !== undefined && [...reads].every((entry) => before.has(entry))) {
+        return false;
       }
-      for (const identifier of node.getDescendantsOfKind(SyntaxKind.Identifier)) {
-        const symbol = identifier.getSymbol();
-        if (symbol === undefined) continue;
+      taints.set(target.symbol, new Set([...(before ?? []), ...reads]));
+      return true;
+    }
+    const members = memberTaints.get(target.symbol) ?? new Map();
+    memberTaints.set(target.symbol, members);
+    const key = JSON.stringify(target.path);
+    const before = members.get(key);
+    if (before !== undefined && [...reads].every((entry) => before.has(entry))) {
+      return false;
+    }
+    members.set(key, new Set([...(before ?? []), ...reads]));
+    return true;
+  };
+  const pathsOverlap = (
+    left: readonly string[],
+    right: readonly string[],
+  ): boolean => {
+    const length = Math.min(left.length, right.length);
+    return left.slice(0, length).every((part, index) => part === right[index]);
+  };
+  const memberReads = (target: TaintTarget): Set<string> => {
+    const reads = new Set<string>();
+    const members = memberTaints.get(target.symbol);
+    if (members === undefined) return reads;
+    for (const [key, values] of members) {
+      const assignedPath = JSON.parse(key) as string[];
+      if (
+        target.path === null ||
+        target.path.length === 0 ||
+        pathsOverlap(assignedPath, target.path)
+      ) {
+        for (const value of values) reads.add(value);
+      }
+    }
+    return reads;
+  };
+  const readsOf = (node: Node): Set<string> => {
+    if (isReportBoundaryCall(node)) return new Set();
+    const reads = directReads(node.getText());
+    const elementAccesses = Node.isElementAccessExpression(node)
+      ? [node]
+      : node.getDescendantsOfKind(SyntaxKind.ElementAccessExpression);
+    for (const access of elementAccesses) {
+      for (const accessor of staticPartitionAccessors(
+        access.getArgumentExpression(),
+      )) {
+        reads.add(accessor);
+      }
+    }
+    const memberAccesses = [
+      ...(Node.isPropertyAccessExpression(node) ||
+          Node.isElementAccessExpression(node) ? [node] : []),
+      ...node.getDescendants().filter((descendant) =>
+        Node.isPropertyAccessExpression(descendant) ||
+        Node.isElementAccessExpression(descendant)
+      ),
+    ];
+    for (const access of memberAccesses) {
+      for (const target of taintTargets(access)) {
+        for (const accessor of memberReads(target)) reads.add(accessor);
+      }
+    }
+    for (const identifier of node.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      const symbol = identifier.getSymbol();
+      if (symbol === undefined) continue;
+      for (const accessor of symbolReads(symbol)) reads.add(accessor);
+      for (const accessor of taints.get(resolvedSymbol(symbol)) ?? []) {
+        reads.add(accessor);
+      }
+    }
+    if (Node.isIdentifier(node)) {
+      const symbol = node.getSymbol();
+      if (symbol !== undefined) {
         for (const accessor of symbolReads(symbol)) reads.add(accessor);
-        for (const accessor of taints.get(symbol) ?? []) reads.add(accessor);
+        const target = { symbol: resolvedSymbol(symbol), path: [] };
+        for (const accessor of taints.get(target.symbol) ?? []) reads.add(accessor);
+        for (const accessor of memberReads(target)) reads.add(accessor);
       }
-      if (Node.isIdentifier(node)) {
-        const symbol = node.getSymbol();
-        if (symbol !== undefined) {
-          for (const accessor of symbolReads(symbol)) reads.add(accessor);
-          for (const accessor of taints.get(symbol) ?? []) reads.add(accessor);
-        }
-      }
-      return reads;
-    };
-    for (let pass = 0; pass < 8; pass += 1) {
-      let changed = false;
+    }
+    return reads;
+  };
+  const assignmentOperators = new Set([
+    SyntaxKind.EqualsToken,
+    SyntaxKind.PlusEqualsToken,
+    SyntaxKind.MinusEqualsToken,
+    SyntaxKind.AsteriskEqualsToken,
+    SyntaxKind.AsteriskAsteriskEqualsToken,
+    SyntaxKind.SlashEqualsToken,
+    SyntaxKind.PercentEqualsToken,
+    SyntaxKind.LessThanLessThanEqualsToken,
+    SyntaxKind.GreaterThanGreaterThanEqualsToken,
+    SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+    SyntaxKind.AmpersandEqualsToken,
+    SyntaxKind.BarEqualsToken,
+    SyntaxKind.CaretEqualsToken,
+    SyntaxKind.BarBarEqualsToken,
+    SyntaxKind.AmpersandAmpersandEqualsToken,
+    SyntaxKind.QuestionQuestionEqualsToken,
+  ]);
+  for (;;) {
+    let changed = false;
+    for (const sf of project.getSourceFiles()) {
       for (const declaration of sf.getDescendantsOfKind(
         SyntaxKind.VariableDeclaration,
       )) {
-        const symbol = declaration.getNameNode().getSymbol();
         const initializer = declaration.getInitializer();
-        if (
-          initializer === undefined ||
-          symbol === undefined ||
-          isReportBoundaryCall(initializer)
-        ) {
+        if (initializer === undefined || isReportBoundaryCall(initializer)) {
           continue;
         }
-        const reads = readsOf(initializer);
-        const before = taints.get(symbol);
-        if (
-          reads.size > 0 &&
-          (before === undefined || [...reads].some((entry) => !before.has(entry)))
-        ) {
-          taints.set(symbol, new Set([...(before ?? []), ...reads]));
-          changed = true;
+        const target = taintTargets(declaration.getNameNode())[0];
+        if (target !== undefined) {
+          changed = addTaints(target, readsOf(initializer)) || changed;
         }
       }
-      if (!changed) break;
+      for (const assignment of sf.getDescendantsOfKind(
+        SyntaxKind.BinaryExpression,
+      )) {
+        const operator = assignment.getOperatorToken().getKind();
+        if (!assignmentOperators.has(operator)) continue;
+        const reads = readsOf(assignment.getRight());
+        if (operator !== SyntaxKind.EqualsToken) {
+          for (const accessor of readsOf(assignment.getLeft())) {
+            reads.add(accessor);
+          }
+        }
+        for (const target of taintTargets(assignment.getLeft())) {
+          changed = addTaints(target, reads) || changed;
+        }
+      }
     }
+    if (!changed) break;
+  }
+  for (const sf of project.getSourceFiles()) {
     const record = (expression: Node): void => {
       violations.push(
         `${sf.getFilePath().replace(root, "")}:${expression.getStartLineNumber()}: combines the synthetic and real-derived partitions into one figure`,
@@ -1668,6 +1815,33 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         'declare const r: any; const leftKey = "synthetic"; const rightKey = "realDerived"; export const score = r[leftKey].defectCases + r[rightKey].defectCases;',
     });
     expect(blendingViolations(project).length).toBeGreaterThan(0);
+  });
+
+  it("partition values remain tainted through assignments", () => {
+    const project = inMemoryProject({
+      "/src/domain/blend.ts":
+        "declare const r: any; let left; let right; left = r.synthetic.defectCases; right = r.realDerived.defectCases; export const score = left + right;",
+      "/src/domain/member-blend.ts":
+        "declare const r: any; const values: any = {}; values.left = r.synthetic.defectCases; values.right = r.realDerived.defectCases; export const score = values.left + values.right;",
+      "/src/domain/assigned-synthetic.ts":
+        "declare const r: any; export let value; value = r.synthetic.defectCases;",
+      "/src/domain/assigned-real.ts":
+        "declare const r: any; export let value; value = r.realDerived.defectCases;",
+      "/src/domain/imported-blend.ts":
+        'import { value as left } from "./assigned-synthetic"; import { value as right } from "./assigned-real"; export const score = left + right;',
+    });
+    expect(blendingViolations(project)).toHaveLength(3);
+  });
+
+  it("member assignment taint stays on the assigned path", () => {
+    expect(
+      blendingViolations(
+        inMemoryProject({
+          "/src/domain/synthetic.ts":
+            "declare const r: any; const values: any = {}; values.left = r.synthetic.defectCases; export const score = values.right + r.realDerived.defectCases;",
+        }),
+      ),
+    ).toEqual([]);
   });
 
   it("arithmetic confined to one partition remains legal", () => {
@@ -3947,6 +4121,54 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "real-derived/RD-forged-restriction-state.json",
       ).join("\n"),
     ).toContain("restriction lifecycle state");
+  });
+
+  it("replay states require coherent supporting facts", () => {
+    const uniqueWithTwoCandidates = realDerivedCase();
+    (uniqueWithTwoCandidates.replayPayload as Record<string, any>)
+      .identity.candidateRefs.push(ACTOR_REF_ALT);
+
+    const ambiguousWithOneCandidate = realDerivedCase();
+    (ambiguousWithOneCandidate.replayPayload as Record<string, any>)
+      .identity.resolution = "ambiguous";
+
+    const authorityWithoutGrant = realDerivedCase();
+    Object.assign(
+      (authorityWithoutGrant.replayPayload as Record<string, any>).authority,
+      { grantRef: null, validFrom: null },
+    );
+
+    const absentHoldWithScope = realDerivedCase();
+    (absentHoldWithScope.replayPayload as Record<string, any>)
+      .policy.legalHoldScope = "position";
+
+    const missingReserveWithSchedule = realDerivedCase();
+    (missingReserveWithSchedule.replayPayload as Record<string, any>)
+      .liquidity.reserveState = "missing";
+
+    const segmentedReserveWithoutSegments = realDerivedCase();
+    Object.assign(
+      (segmentedReserveWithoutSegments.replayPayload as Record<string, any>)
+        .liquidity,
+      { reserveState: "modeled-segmented", withdrawalSegmentsMinor: [] },
+    );
+
+    for (const candidate of [
+      uniqueWithTwoCandidates,
+      ambiguousWithOneCandidate,
+      authorityWithoutGrant,
+      absentHoldWithScope,
+      missingReserveWithSchedule,
+      segmentedReserveWithoutSegments,
+    ]) {
+      expect(
+        realDerivedCaseProblems(
+          candidate,
+          classes,
+          "real-derived/RD-incoherent-state.json",
+        ).join("\n"),
+      ).toContain("schema validation failed");
+    }
   });
 
   it("the real-derived replay payload is versioned, complete, strict, and internally consistent", () => {

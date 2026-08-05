@@ -571,9 +571,9 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       if (Node.isIdentifier(node)) {
         const names = symbolDeclarations(node).flatMap((declaration) => {
           if (
-            Node.isVariableDeclaration(declaration) ||
-            Node.isPropertyAssignment(declaration) ||
-            Node.isPropertyDeclaration(declaration)
+            Node.isVariableDeclaration(declaration) &&
+            declaration.getParentIfKind(SyntaxKind.VariableDeclarationList)
+                ?.getDeclarationKind() === "const"
           ) {
             return [...(staticMemberNames(declaration.getInitializer(), next) ?? [])];
           }
@@ -1402,6 +1402,17 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     expect(new Set(uses.map((use) => use.api))).toEqual(
       new Set(["process.env", "Math.random", "process.[computed]"]),
     );
+  });
+
+  it("flags mutable computed member keys on sensitive origins", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject(
+        file(
+          'let key = "fixed";\nkey = "random";\nvoid Math[key]();\n',
+        ),
+      ),
+    );
+    expect(uses.map((use) => use.api)).toEqual(["Math.[computed]"]);
   });
 
   it("flags process properties and operating-system APIs", () => {
