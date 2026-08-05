@@ -86,8 +86,11 @@ const TRUSTED_FACTORY_CALLS = [
     declaration: "src/contracts/tenant.ts",
     allowed: [
       { file: "scripts/audit-chain-verify.ts", owner: "main" },
+      { file: "scripts/backup-restore-drill.ts", owner: "main" },
       { file: "scripts/db-seed.ts", owner: "seed" },
+      { file: "scripts/ledger-rebuild.ts", owner: "main" },
       { file: "scripts/load-smoke.ts", owner: "main" },
+      { file: "scripts/seed-decision-ledger.ts", owner: "seedDecisionLedger" },
       { file: "src/contracts/principal.ts", owner: "systemWriteActor" },
       { file: "src/infrastructure/audit/audit-store.ts", owner: "discardedAuditEventWork" },
     ],

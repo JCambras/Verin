@@ -1,4 +1,9 @@
 import { appError } from "@contracts/errors";
+import {
+  hasSensitiveAccountReference,
+  looksLikeAmbiguousSensitiveText,
+  looksLikePIIValue,
+} from "@contracts/pii";
 import type {
   EvidenceSnapshotRef,
   DecisionInputBundle,
@@ -35,6 +40,13 @@ const REGISTERED_RETAINED_CODES = new Set([
 ]);
 const RETAINED_TEXT_REFERENCE = /^retained-text:v1:[a-f0-9]{64}$/;
 const BUNDLE_VERSION_CODES = new Set(["0", "0.0.0"]);
+const IDENTIFIER_FIELD =
+  /(?:^id$|Id$|Ids$|Ref$|Refs$|Key$|Keys$|Hash$|Hashes$|Parts$|^attribution$)/;
+const ACCOUNT_PATTERN_EXEMPT_FIELD =
+  /(?:Hash$|Hashes$|^attribution$|^idempotencyKey$)/;
+const OPAQUE_IDENTIFIER = /^[A-Za-z0-9]+(?:[._:/@-][A-Za-z0-9]+)*$/;
+const TITLE_CASE_IDENTIFIER_SEGMENT =
+  /(?:^|[._:/@-])\p{Lu}\p{Ll}{1,}(?:['-][\p{Lu}]?\p{Ll}+)?(?:$|[._:/@-])/u;
 
 function refuse(): never {
   throw appError(
@@ -60,6 +72,74 @@ function requireRetainedToken(value: string): void {
   ) {
     refuse();
   }
+}
+
+function requireOpaqueIdentifier(
+  value: string,
+  checkAccountPattern: boolean,
+): void {
+  if (
+    value.length > 256 ||
+    !OPAQUE_IDENTIFIER.test(value) ||
+    looksLikePIIValue(value) ||
+    (checkAccountPattern && hasSensitiveAccountReference(value)) ||
+    TITLE_CASE_IDENTIFIER_SEGMENT.test(value)
+  ) {
+    refuse();
+  }
+}
+
+function requireOpaqueIdentifiers(value: unknown): void {
+  const pending: Array<{
+    readonly value: unknown;
+    readonly identifier: boolean;
+    readonly checkAccountPattern: boolean;
+  }> = [
+    { value, identifier: false, checkAccountPattern: false },
+  ];
+  const seen = new WeakMap<object, boolean>();
+  while (pending.length > 0) {
+    const item = pending.pop()!;
+    if (typeof item.value === "string") {
+      if (item.identifier) {
+        requireOpaqueIdentifier(item.value, item.checkAccountPattern);
+      } else if (looksLikeAmbiguousSensitiveText(item.value)) {
+        refuse();
+      }
+      continue;
+    }
+    if (item.value === null || typeof item.value !== "object") continue;
+    const seenAsIdentifier = seen.get(item.value);
+    if (seenAsIdentifier === true || seenAsIdentifier === item.identifier) {
+      continue;
+    }
+    seen.set(item.value, item.identifier);
+    if (Array.isArray(item.value)) {
+      for (const nested of item.value) {
+        pending.push({
+          value: nested,
+          identifier: item.identifier,
+          checkAccountPattern: item.checkAccountPattern,
+        });
+      }
+      continue;
+    }
+    for (const [key, nested] of Object.entries(item.value)) {
+      if (looksLikeAmbiguousSensitiveText(key)) refuse();
+      const identifier = item.identifier || IDENTIFIER_FIELD.test(key);
+      pending.push({
+        value: nested,
+        identifier,
+        checkAccountPattern: item.identifier
+          ? item.checkAccountPattern
+          : identifier && !ACCOUNT_PATTERN_EXEMPT_FIELD.test(key),
+      });
+    }
+  }
+}
+
+function requireRetainedValueBoundary(value: unknown): void {
+  requireOpaqueIdentifiers(value);
 }
 
 function requireExplanationCodes(
@@ -110,6 +190,7 @@ export function assertReplaySourcePiiBoundary(
   kind: "evidence" | "bundle" | "decision",
   value: EvidenceSnapshotRef | DecisionInputBundle | DecisionRecord,
 ): void {
+  requireRetainedValueBoundary(value);
   if (kind === "evidence") {
     const snapshot = value as EvidenceSnapshotRef;
     if (!RETAINED_TEXT_REFERENCE.test(snapshot.attribution)) refuse();
@@ -127,6 +208,7 @@ export function assertReplaySourcePiiBoundary(
 }
 
 export function assertLedgerEventPiiBoundary(event: LedgerEntry): void {
+  requireRetainedValueBoundary(event);
   if (event.type === "ApprovalRecorded" && event.structuredReason !== undefined) {
     requireRetainedToken(event.structuredReason);
   }

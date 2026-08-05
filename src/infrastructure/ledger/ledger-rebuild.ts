@@ -1,6 +1,10 @@
 import type { SqlDb } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import { parseRecordProvenance, type RecordProvenance } from "@contracts/provenance";
+import {
+  assertTenantContext,
+  type TenantContext,
+} from "@contracts/tenant";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { verifyDecisionLedgerTransaction } from "./ledger-verification";
@@ -13,19 +17,51 @@ import {
 } from "./ledger-projection-store";
 import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
 
+export interface RebuiltDecisionProjections {
+  readonly entriesReplayed: number;
+  readonly projections: readonly ProjectedDecision[];
+}
+
 export async function rebuildDecisionProjections(
   db: SqlDb,
-  orgId: string,
-): Promise<ProjectedDecision[]> {
-  await db.transaction(async (tx) => {
-    const checked = await verifyDecisionLedgerTransaction(tx, orgId);
-    if (!checked.verification.ok) {
+  tenant: TenantContext,
+): Promise<RebuiltDecisionProjections> {
+  assertTenantContext(tenant);
+  return db.transaction(async (tx) => {
+    const verification = await verifyDecisionLedgerTransaction(tx, tenant);
+    if (!verification.ok) {
       throw appError(
         "STORE_CONSTRAINT",
-        `decision ledger integrity failed at ${checked.verification.levels.at(-1)?.level ?? "unknown"}`,
+        `decision ledger integrity failed at ${verification.levels.at(-1)?.level ?? "unknown"}`,
       );
     }
-    const rows = checked.rows;
+    const stored = await tx.query<{
+      sequence: number | string;
+      event_type: string;
+      schema_version: string;
+      serializer_version: string;
+      payload_json: string;
+      prov_source: string;
+      prov_asof: string;
+      prov_confidence: string;
+    }>(
+      `SELECT sequence, event_type, schema_version, serializer_version,
+              payload_json, prov_source, prov_asof, prov_confidence
+         FROM decision_ledger
+        WHERE org_id = $1
+        ORDER BY sequence ASC`,
+      [tenant.orgId],
+    );
+    const rows = stored.rows.map((row) => ({
+      sequence: Number(row.sequence),
+      eventType: row.event_type,
+      schemaVersion: row.schema_version,
+      serializerVersion: row.serializer_version,
+      payloadJson: row.payload_json,
+      provSource: row.prov_source,
+      provAsOf: row.prov_asof,
+      provConfidence: row.prov_confidence,
+    }));
     const replay: Array<{
       row: (typeof rows)[number];
       event: LedgerEntry;
@@ -62,16 +98,17 @@ export async function rebuildDecisionProjections(
     }
     const sources = await verifyReplaySources(
       tx,
-      orgId,
+      tenant,
       replay.map((item) => item.event),
     );
-    await clearDerivedState(tx, orgId);
+    await clearDerivedState(tx, tenant);
     for (const item of replay) {
       const record = item.event.type === "DecisionRecorded"
         ? sources.decisions.get(item.event.decisionRef.id)
         : undefined;
       await applyProjection(
         tx,
+        tenant,
         item.event,
         item.row.sequence,
         item.provenance,
@@ -83,9 +120,12 @@ export async function rebuildDecisionProjections(
       await tx.query(
         `INSERT INTO decision_projection_checkpoint (org_id,last_sequence,rebuilt_at)
          VALUES ($1,$2,$3)`,
-        [orgId, head.sequence, new Date().toISOString()],
+        [tenant.orgId, head.sequence, new Date().toISOString()],
       );
     }
+    return {
+      entriesReplayed: rows.length,
+      projections: await listDecisionProjections(tx, tenant),
+    };
   });
-  return listDecisionProjections(db, orgId);
 }

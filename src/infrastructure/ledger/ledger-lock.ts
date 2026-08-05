@@ -1,15 +1,20 @@
 import type { SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
+import {
+  assertTenantContext,
+  type TenantContext,
+} from "@contracts/tenant";
 
 export async function lockDecisionLedgerTenant(
   tx: SqlTx,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<void> {
-  const tenant = await tx.query<{ id: string }>(
+  assertTenantContext(tenant);
+  const row = await tx.query<{ id: string }>(
     "SELECT id FROM orgs WHERE id = $1 FOR UPDATE",
-    [orgId],
+    [tenant.orgId],
   );
-  if (tenant.rows.length !== 1) {
+  if (row.rows.length !== 1) {
     throw appError("NOT_FOUND", "decision ledger tenant does not exist");
   }
 }

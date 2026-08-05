@@ -10,9 +10,9 @@ import { countOrgChain, verifyOrgChain } from "../src/infrastructure/audit/audit
 import { systemWriteActor } from "../src/contracts/principal";
 import { errorMessage } from "./error-message";
 import {
-  listDecisionLedger,
   verifyDecisionLedgerIntegrity,
 } from "../src/infrastructure/ledger/ledger-verification";
+import { systemTenant } from "../src/contracts/tenant";
 import { seedDecisionLedger } from "./seed-decision-ledger";
 
 async function main(): Promise<void> {
@@ -42,8 +42,9 @@ async function main(): Promise<void> {
   const beforeHouseholds = Number((await src.query<{ n: string }>("SELECT count(*) AS n FROM households")).rows[0]!.n);
   const beforeChain = await verifyOrgChain(src, tenant);
   const beforeAudit = await countOrgChain(src, tenant);
-  const beforeDecision = (await listDecisionLedger(src, "org")).length;
-  const beforeDecisionChain = await verifyDecisionLedgerIntegrity(src, "org");
+  const beforeTenant = systemTenant("backup-restore-drill", "org");
+  const beforeDecisionChain = await verifyDecisionLedgerIntegrity(src, beforeTenant);
+  const beforeDecision = beforeDecisionChain.ledger.entriesStored;
   if (!beforeChain.ok || !beforeDecisionChain.ok) {
     throw new Error("pre-backup audit-class chain invalid");
   }
@@ -63,8 +64,9 @@ async function main(): Promise<void> {
   const afterHouseholds = Number((await restored.query<{ n: string }>("SELECT count(*) AS n FROM households")).rows[0]!.n);
   const afterAudit = await countOrgChain(restored, tenant);
   const afterChain = await verifyOrgChain(restored, tenant);
-  const afterDecision = (await listDecisionLedger(restored, "org")).length;
-  const afterDecisionChain = await verifyDecisionLedgerIntegrity(restored, "org");
+  const afterTenant = systemTenant("backup-restore-drill", "org");
+  const afterDecisionChain = await verifyDecisionLedgerIntegrity(restored, afterTenant);
+  const afterDecision = afterDecisionChain.ledger.entriesStored;
   await restored.close();
 
   const ok =

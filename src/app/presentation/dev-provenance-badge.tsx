@@ -10,7 +10,7 @@ export function DevProvenanceBadge({ label }: { label: string }) {
   return (
     <span
       data-testid="dev-provenance-badge"
-      className="inline-flex items-center rounded border border-dashed border-slate-400 px-1.5 py-0.5 text-xs text-slate-600"
+      className="inline-flex items-center whitespace-nowrap rounded border border-dashed border-slate-400 px-1.5 py-0.5 text-xs text-slate-600"
     >
       {label}
     </span>

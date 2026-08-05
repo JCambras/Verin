@@ -9,7 +9,7 @@
  */
 import { createDb } from "../src/infrastructure/store/db";
 import { rebuildDecisionProjections } from "../src/infrastructure/ledger/ledger-store";
-import { verifyDecisionLedger } from "../src/infrastructure/ledger/ledger-verification";
+import { systemTenant } from "../src/contracts/tenant";
 
 async function main(): Promise<void> {
   const db = await createDb();
@@ -17,21 +17,21 @@ async function main(): Promise<void> {
   let decisions = 0;
   let broken = 0;
   for (const { id } of orgs.rows) {
-    // Replaying a chain that does not verify would launder a corrupted source into
-    // derived state, so integrity is checked BEFORE the fold, not after.
-    const verdict = await verifyDecisionLedger(db, id);
-    if (!verdict.ok) {
+    try {
+      const rebuilt = await rebuildDecisionProjections(
+        db,
+        systemTenant("ledger-rebuild", id),
+      );
+      decisions += rebuilt.projections.length;
+      process.stdout.write(
+        `org ${id}: replayed ${rebuilt.entriesReplayed} entries into ${rebuilt.projections.length} decision projection(s)\n`,
+      );
+    } catch {
       broken += 1;
       process.stderr.write(
-        `ledger-rebuild: org ${id} SKIPPED - ledger does not verify (${verdict.levels.at(-1)?.reason ?? "unknown"})\n`,
+        `ledger-rebuild: org ${id} SKIPPED - ledger or retained replay sources do not verify\n`,
       );
-      continue;
     }
-    const rebuilt = await rebuildDecisionProjections(db, id);
-    decisions += rebuilt.length;
-    process.stdout.write(
-      `org ${id}: replayed ${verdict.entriesChecked} entries into ${rebuilt.length} decision projection(s)\n`,
-    );
   }
   await db.close();
   if (broken > 0) {

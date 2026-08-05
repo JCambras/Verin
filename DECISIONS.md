@@ -3464,17 +3464,17 @@ optional and defaults to the full chain.
 
 **Date:** 2026-07-28 · **Reversible** · Relates to: D-105, D-106, ADR-0041, charter #4/#5
 
-Review of D-062 surfaced four gaps in the ledger's failure and labeling behavior. All are
+Review of D-099 surfaced four gaps in the ledger's failure and labeling behavior. All are
 fixed in place; none needs a new migration.
 
 **A failed append is diagnosable.** `recordDecision` used to map every non-`AppError`
 thrown inside its transaction to one generic `STORE_CONSTRAINT` and logged nothing, so an
 outage, a programming bug, and a genuine unique/FK violation were indistinguishable 409s
 with no trail - the exact failure `auditedWrite` already learned ("a swallowed TypeError
-here once surfaced as a generic 409"). The classification and PII-safe reason builder that
-lesson produced now live in `infrastructure/store/driver-errors.ts` and are shared by both
-write chokepoints, so only a real SQLSTATE class-23 violation is the non-retryable conflict
-and anything else is `INTERNAL` - logged, with the driver's own message.
+here once surfaced as a generic 409"). Both write chokepoints use the hardened error
+metadata classifier, so only a real SQLSTATE class-23 violation is the non-retryable
+conflict and anything else is `INTERNAL`. Logs retain only closed error codes,
+fixed-shape SQLSTATE categories, and registered reasons, never driver prose.
 
 **Post-decision evidence has a write path.** `StatusObserved.evidenceSnapshotRef` promotes
 a foreign-keyed `evidence_snapshot_id`, but the only writer of `evidence_snapshots` was
@@ -3515,7 +3515,7 @@ limit are all additive; the per-entry anchor upsert changes write frequency, not
 
 ### D-108 · 2026-07-28 · reversible · Ledger replay trust and projection ownership are structural
 
-**Reservation-ownership portion superseded by D-066.**
+**Reservation-ownership portion superseded by D-103.**
 
 Projection preconditions are evaluated before immutable insertion, and reservation identifiers
 remain permanently owned by their first decision because release events carry no owner reference.
@@ -3529,7 +3529,7 @@ source. Derived projection provenance is persisted with the cache, including own
 events, so request-path reads are bounded by selected decisions rather than event history.
 
 The post-review implementation measures contracts at 3875 lines and infrastructure at 4187 lines.
-ADR-0033 amends ADR-0018 ceilings to 4000 and 4300 respectively, retaining explicit headroom without
+ADR-0039 amends ADR-0018 ceilings to 4000 and 4300 respectively, retaining explicit headroom without
 changing the 500-line file cap.
 
 **Why:** append-only history cannot rely on mutable caches, unbound provenance, reusable ownerless
@@ -3569,7 +3569,7 @@ later generation. Status observations that precede step mapping are reconciled b
 execution handle when the real step arrives.
 
 The complete implementation measures contracts at 3884 lines and infrastructure at
-4736 lines. ADR-0033 amends ADR-0018's infrastructure ceiling to 4800 while keeping
+4736 lines. ADR-0039 amends ADR-0018's infrastructure ceiling to 4800 while keeping
 the 500-line file cap.
 
 **Why:** append-only truth cannot tolerate structural transaction ambiguity,
@@ -3591,10 +3591,36 @@ verified replay sources instead of trusting mutable projection rows. The anti-fo
 fence assigns every immutable table to one exact insert owner.
 
 The completed implementation measures contracts at 3927 lines and infrastructure at
-5003 lines. ADR-0033 amends ADR-0018's infrastructure ceiling to 5100 while preserving
+5003 lines. ADR-0039 amends ADR-0018's infrastructure ceiling to 5100 while preserving
 the 500-line file cap.
 
 **Why:** a cryptographic claim must bind the exact bundle and the exact state displayed,
 and retained text cannot become safe merely by duplicating an untrusted value.
 **Revert path:** none while Prompt 7 promises cryptographically bound replay inputs,
 causal event order, fail-closed retention, and an honestly verified register.
+
+### D-112 · 2026-08-04 · reversible · Ledger review boundaries require sealed authority and verified disclosure
+
+Decision-ledger repositories now require sealed tenant authority before SQL and
+compare every source and event tenant with that authority. Retained ledger values use
+a ledger-specific iterative boundary: structural identifiers and hashes must use
+opaque machine syntax, while unclassified text retains the ambiguous-sensitive-text
+refusal. Evidence references are no longer mistaken for free text.
+
+The register is governed by both `audit.export` and `pii.view`, proves both grants
+name the same tenant, and returns no rows or derived state when L1-L4 verification
+fails. Displayed projection counts carry provenance through `Metric`. Append failures
+use registered, PII-safe error metadata, and projection rebuild reports its entry count
+from the single atomic verification-and-replay transaction.
+
+The completed implementation measures contracts at 4,539 lines, domain at 1,584,
+and infrastructure at 6,507. ADR-0040 raises only the infrastructure ceiling to
+6,550 with bounded headroom and leaves the 500-line file cap unchanged.
+
+**Why:** transaction capability alone does not prove tenant ownership, immutable
+identifiers cannot accept human-shaped text, and failed integrity verification cannot
+authorize disclosure of the bytes that failed verification.
+**Relates to:** ADR-0039, ADR-0040.
+**Revert path:** restore the raw-org boundaries and single-grant register only if the
+sealed-authority, PII-retention, governed-disclosure, and metric-provenance invariants
+are withdrawn together.

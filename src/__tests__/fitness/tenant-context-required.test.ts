@@ -27,6 +27,7 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/store/db.ts :: createDb", why: "global database connection factory" },
   { ref: "src/infrastructure/store/db.ts :: getDb", why: "global database singleton factory" },
   { ref: "src/infrastructure/store/db.ts :: createMemoryDb", why: "isolated test database factory" },
+  { ref: "src/infrastructure/store/db.ts :: isSqlTransaction", why: "pure transaction-capability predicate that reads no tenant data" },
   { ref: "src/infrastructure/store/migration-support.ts :: migrationLedgerExists", why: "read-only global migration ledger discovery" },
   { ref: "src/infrastructure/store/migrations.ts :: runMigrations", why: "global schema management" },
   { ref: "src/infrastructure/store/readiness.ts :: readStoreReadiness", why: "cross-tenant deployment probe that reads no tenant rows" },
@@ -52,6 +53,7 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
 ];
 
 const PORT_ESCAPES = new Set([
+  "src/domain/ledger/projections.ts :: foldDecisionProjection.<call>",
   "src/domain/observability/safe-values.ts :: isSafeObservabilityPrimitive.<call>",
   "src/domain/observability/safe-values.ts :: generatedObservabilityId.<call>",
   "src/domain/observability/safe-values.ts :: keyedDigestObservabilityId.<call>",

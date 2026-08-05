@@ -71,6 +71,7 @@ const LOG_MESSAGES = new Set([
   "audit outbox row parked after repeated delivery failures (dead-letter; requires operator intervention)",
   "audited write failed",
   "constant-work audit mirror failed",
+  "decision ledger append failed",
   "failed sign-in attempt for an unknown email",
   "failure-audit entry could not be recorded",
   "flow retried",

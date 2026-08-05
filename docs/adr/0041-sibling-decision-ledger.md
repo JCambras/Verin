@@ -94,14 +94,14 @@ settle now.
   now applies to both chains.
 - Amend the ADR-0018 ceilings, re-measured on the composed tree that already
   carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 6,000,
-  domain 1,350 to 1,650, and infrastructure 3,550 to 6,300. Measured state is
-  contracts 5,947 (53 headroom), domain 1,583 (67), and infrastructure 6,278 (22) -
+  domain 1,350 to 1,650, and infrastructure 3,550 to 6,550. Measured state is
+  contracts 5,951 (49 headroom), domain 1,584 (66), and infrastructure 6,507 (43) -
   bounded correction room, per the ADR-0033 rule that a zero-headroom ceiling just
   converts review findings into documentation deletions. The presentation envelope and
   the per-file 500-line limit are unchanged: the repository is split into the chain
   writer (`ledger-store.ts`), the immutable content-addressed source rows
   (`ledger-sources.ts`), and derived projection and reservation state
-  (`ledger-projection-store.ts`), with replay orchestration in `ledger-rebuild.ts`.
+  (`ledger-projection-store.ts`), with replay orchestration in `ledger-rebuild.ts`. Verified request replay lives in `ledger-register.ts`.
 
 ## Alternatives Rejected
 

@@ -19,6 +19,18 @@ import {
 } from "@contracts/decision-core/serialization";
 import type { RecordProvenance } from "@contracts/provenance";
 import { unwrap } from "@contracts/result";
+import {
+  actorRefOf,
+  authorizeGovernedAction,
+} from "@contracts/authz";
+import {
+  principalFromIdentity,
+  systemWriteActor,
+} from "@contracts/principal";
+import {
+  registerTestSystemActor,
+  systemTenant,
+} from "@contracts/tenant";
 import type { RecordDecisionInput } from "@infra/ledger/ledger-store";
 import { retainedTextReference } from "@infra/ledger/ledger-pii";
 
@@ -32,6 +44,31 @@ export const LEDGER_PROVENANCE: RecordProvenance = {
   asOf: LEDGER_TIME,
   confidence: "high",
 };
+const LEDGER_TEST_ACTOR = registerTestSystemActor("test.ledger");
+export const LEDGER_TENANT = systemTenant(LEDGER_TEST_ACTOR, LEDGER_ORG);
+export const LEDGER_OTHER_TENANT = systemTenant(
+  LEDGER_TEST_ACTOR,
+  LEDGER_OTHER_ORG,
+);
+export const LEDGER_WRITE_ACTOR = systemWriteActor(
+  LEDGER_TEST_ACTOR,
+  LEDGER_ORG,
+);
+const LEDGER_TEST_ACTOR_REF = actorRefOf(principalFromIdentity({
+  userId: "test-ledger-user",
+  orgId: LEDGER_ORG,
+  role: "cco",
+  actor: "ledger-user@example.test",
+  sessionId: "test-ledger-session",
+}));
+export const LEDGER_EXPORT_GRANT = unwrap(authorizeGovernedAction(
+  LEDGER_TEST_ACTOR_REF,
+  "audit.export",
+));
+export const LEDGER_PII_GRANT = unwrap(authorizeGovernedAction(
+  LEDGER_TEST_ACTOR_REF,
+  "pii.view",
+));
 
 const ROOT = join(import.meta.dirname, "../../..");
 const fixture = (name: string): unknown =>

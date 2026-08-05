@@ -5,6 +5,7 @@
  * tenant boundary carries firmId and is checked against the enclosing event.
  */
 import { z } from "zod";
+import type { PIIBearing } from "@contracts/pii";
 import {
   ConflictKeySchema,
   DecisionRefSchema,
@@ -424,7 +425,7 @@ export const LedgerEntrySchema = z.discriminatedUnion("type", [
   ExceptionDecisionRequestedSchema,
 ]).readonly();
 
-export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;
+export type LedgerEntry = z.infer<typeof LedgerEntrySchema> & PIIBearing;
 export type DecisionRecorded = Extract<LedgerEntry, { type: "DecisionRecorded" }>;
 export type EvidenceSnapshotRecorded = Extract<LedgerEntry, { type: "EvidenceSnapshotRecorded" }>;
 export type ApprovalRecorded = Extract<LedgerEntry, { type: "ApprovalRecorded" }>;

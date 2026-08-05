@@ -20,6 +20,7 @@ import {
 import { recordDecision } from "../src/infrastructure/ledger/ledger-store";
 import { retainedTextReference } from "../src/infrastructure/ledger/ledger-pii";
 import { unwrap } from "../src/contracts/result";
+import { systemTenant } from "../src/contracts/tenant";
 
 const FIXTURES = join(import.meta.dirname, "../fixtures/decision-core");
 
@@ -74,6 +75,7 @@ export async function seedDecisionLedger(
   db: SqlDb,
   firmId: string,
 ): Promise<void> {
+  const tenant = systemTenant("seed", firmId);
   const existing = await db.query<{ id: string }>(
     "SELECT id FROM decision_records WHERE org_id = $1 AND id = $2",
     [firmId, "dec:GC-01:0001"],
@@ -140,7 +142,7 @@ export async function seedDecisionLedger(
       bundleHash: inputBundle.bundleHash,
     }),
   ];
-  const result = await recordDecision(db, {
+  const result = await recordDecision(db, tenant, {
     evidenceSnapshots,
     inputBundle,
     decisionRecord,

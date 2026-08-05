@@ -1,58 +1,20 @@
 /** Immutable content-addressed replay inputs and their verification. */
 import { createHash } from "node:crypto";
 import type { SqlQueryable, SqlTx } from "@infra/store/db";
-import { appError, type AppError } from "@contracts/errors";
-import { err, type Result } from "@contracts/result";
-import { assertNoPIIValues } from "@contracts/pii";
-import {
-  type EvidenceSnapshotRef,
-  type DecisionInputBundle,
-} from "@contracts/decision-core/evidence";
-import {
-  type DecisionRecord,
-} from "@contracts/decision-core/decision";
-import type {
-  DecisionRecorded,
-  EvidenceSnapshotRecorded,
-  LedgerEntry,
-} from "@contracts/decision-core/ledger";
+import { appError } from "@contracts/errors";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
+import type { EvidenceSnapshotRef, DecisionInputBundle } from "@contracts/decision-core/evidence";
+import type { DecisionRecord } from "@contracts/decision-core/decision";
+import type { DecisionRecorded, EvidenceSnapshotRecorded, LedgerEntry } from "@contracts/decision-core/ledger";
 import {
   CANONICAL_SERIALIZER_VERSION,
   DECISION_CORE_SCHEMA_VERSION,
   bundleHashPreimage,
-  canonicalJson,
   decisionHashPreimage,
-  type JsonValue,
 } from "@contracts/decision-core/serialization";
 import { parseRecordedReplaySource } from "./ledger-source-registry";
 import { assertReplaySourcePiiBoundary } from "./ledger-pii";
-
-export function canonical(value: unknown, label: string): Result<string, AppError> {
-  const serialized = canonicalJson(value as JsonValue);
-  return serialized.ok
-    ? serialized
-    : err(appError("VALIDATION", `${label} is not canonically serializable`));
-}
-
-export function canonicalDigest(value: unknown, label: string): Result<string, AppError> {
-  const bytes = canonical(value, label);
-  return bytes.ok
-    ? {
-        ok: true,
-        value: createHash("sha256").update(bytes.value, "utf8").digest("hex"),
-      }
-    : bytes;
-}
-
-export function replaySourcesContainPII(values: readonly unknown[]): boolean {
-  try {
-    values.forEach((value) =>
-      assertNoPIIValues(value, "decision ledger replay source"));
-    return false;
-  } catch {
-    return true;
-  }
-}
+import { canonical, canonicalDigest } from "./ledger-canonical";
 
 async function reuseStoredBytes(
   tx: SqlQueryable,
@@ -78,8 +40,13 @@ async function reuseStoredBytes(
 
 export async function preflightEvidenceSnapshots(
   tx: SqlTx,
+  tenant: TenantContext,
   snapshots: readonly EvidenceSnapshotRef[],
 ): Promise<void> {
+  assertTenantContext(tenant);
+  if (snapshots.some((snapshot) => snapshot.firmId !== tenant.orgId)) {
+    throw appError("AUTH_FAILED", "evidence tenant does not match write authority");
+  }
   const ids = new Set<string>();
   for (const snapshot of snapshots) {
     if (ids.has(snapshot.id)) {
@@ -100,9 +67,14 @@ export async function preflightEvidenceSnapshots(
 
 export async function insertEvidenceSnapshots(
   tx: SqlTx,
+  tenant: TenantContext,
   snapshots: readonly EvidenceSnapshotRef[],
   recordedAt: string,
 ): Promise<void> {
+  assertTenantContext(tenant);
+  if (snapshots.some((snapshot) => snapshot.firmId !== tenant.orgId)) {
+    throw appError("AUTH_FAILED", "evidence tenant does not match write authority");
+  }
   for (const snapshot of snapshots) {
     const bytes = canonical(snapshot, "evidence snapshot");
     if (!bytes.ok) throw bytes.error;
@@ -168,12 +140,21 @@ async function insertBundle(
 
 export async function insertDecisionSources(
   tx: SqlTx,
+  tenant: TenantContext,
   snapshots: readonly EvidenceSnapshotRef[],
   bundle: DecisionInputBundle,
   record: DecisionRecord,
   recordedAt: string,
 ): Promise<void> {
-  await insertEvidenceSnapshots(tx, snapshots, recordedAt);
+  assertTenantContext(tenant);
+  if (
+    bundle.firmId !== tenant.orgId ||
+    record.firmId !== tenant.orgId ||
+    snapshots.some((snapshot) => snapshot.firmId !== tenant.orgId)
+  ) {
+    throw appError("AUTH_FAILED", "decision source tenant does not match write authority");
+  }
+  await insertEvidenceSnapshots(tx, tenant, snapshots, recordedAt);
   await insertBundle(tx, bundle, recordedAt);
   const recordBytes = canonical(record, "decision record");
   if (!recordBytes.ok) throw recordBytes.error;
@@ -220,9 +201,6 @@ function requireCanonicalSource<
   if (parsed.canonicalBytes !== bytes) {
     return replaySourceError(`${label} bytes are not canonical during replay`);
   }
-  if (replaySourcesContainPII([parsed.value])) {
-    return replaySourceError(`${label} contains prohibited PII during replay`);
-  }
   try {
     assertReplaySourcePiiBoundary(kind, parsed.value);
   } catch {
@@ -233,8 +211,13 @@ function requireCanonicalSource<
 
 export async function verifyReplayEvidence(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: EvidenceSnapshotRecorded,
 ): Promise<string> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("AUTH_FAILED", "evidence event tenant does not match read authority");
+  }
   const result = await tx.query<{
     canonical_json: string;
     schema_version: string;
@@ -285,9 +268,14 @@ export async function verifyReplayEvidence(
 
 export async function loadVerifiedReplayDecision(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: DecisionRecorded,
   verifiedEvidence: ReadonlySet<string>,
 ): Promise<DecisionRecord> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("AUTH_FAILED", "decision event tenant does not match read authority");
+  }
   const decisions = await tx.query<{
     input_bundle_id: string;
     canonical_json: string;
@@ -398,11 +386,16 @@ export async function loadVerifiedReplayDecision(
 
 export async function listReplayDecisionEvidenceCoverage(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: DecisionRecorded,
 ): Promise<Array<{
   readonly id: string;
   readonly recordedSequence: number | null;
 }>> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("AUTH_FAILED", "decision event tenant does not match read authority");
+  }
   const result = await tx.query<{
     evidence_snapshot_id: string;
     recorded_sequence: number | string | null;
@@ -435,18 +428,23 @@ export interface VerifiedReplaySources {
 
 export async function verifyReplaySources(
   tx: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
   events: readonly LedgerEntry[],
 ): Promise<VerifiedReplaySources> {
+  assertTenantContext(tenant);
+  if (events.some((event) => event.firmId !== tenant.orgId)) {
+    throw appError("AUTH_FAILED", "replay event tenant does not match read authority");
+  }
+  const orgId = tenant.orgId;
   const evidence = new Set<string>();
   const decisions = new Map<string, DecisionRecord>();
   for (const event of events) {
     if (event.type === "EvidenceSnapshotRecorded") {
-      evidence.add(await verifyReplayEvidence(tx, event));
+      evidence.add(await verifyReplayEvidence(tx, tenant, event));
     } else if (event.type === "DecisionRecorded") {
       decisions.set(
         event.decisionRef.id,
-        await loadVerifiedReplayDecision(tx, event, evidence),
+        await loadVerifiedReplayDecision(tx, tenant, event, evidence),
       );
     }
   }

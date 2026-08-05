@@ -5,16 +5,22 @@
  */
 import type { SqlDb, SqlQueryable, SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
+import type { PIIBearing } from "@contracts/pii";
 import { type LedgerEntry } from "@contracts/decision-core/ledger";
-import {
-  canonicalJson,
-  type JsonValue,
-} from "@contracts/decision-core/serialization";
+import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
 import {
   verifyStoredByteChain,
   type ChainVerdict,
 } from "@infra/audit/hash-chain";
 import { parseRecordProvenance } from "@contracts/provenance";
+import {
+  assertTenantContext,
+  type TenantContext,
+} from "@contracts/tenant";
+import {
+  assertActionGrant,
+  type ActionGrant,
+} from "@contracts/authz";
 import {
   decisionLedgerChainPreimage,
   parseRecordedLedgerEvent,
@@ -22,7 +28,7 @@ import {
 import { lockDecisionLedgerTenant } from "./ledger-lock";
 import { verifyReplaySources } from "./ledger-sources";
 
-export interface DecisionLedgerRow {
+export interface DecisionLedgerRow extends PIIBearing {
   readonly orgId: string;
   readonly id: string;
   readonly sequence: number;
@@ -65,7 +71,7 @@ export interface DecisionLedgerIntegrityVerification {
   readonly replaySourceReason: string | null;
 }
 
-interface DbLedgerRow {
+interface DbLedgerRow extends PIIBearing {
   org_id: string;
   id: string;
   sequence: number | string;
@@ -116,11 +122,13 @@ function toRow(row: DbLedgerRow): DecisionLedgerRow {
 }
 
 /** Ordered by sequence. `tail` reads only the most recent N entries. */
-export async function listDecisionLedger(
+async function listDecisionLedgerForTenant(
   db: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
   tail?: number,
 ): Promise<DecisionLedgerRow[]> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   if (tail === undefined) {
     const result = await db.query<DbLedgerRow>(
       "SELECT * FROM decision_ledger WHERE org_id = $1 ORDER BY sequence ASC",
@@ -133,6 +141,15 @@ export async function listDecisionLedger(
     [orgId, tail],
   );
   return result.rows.map(toRow).reverse();
+}
+
+export async function listDecisionLedger(
+  db: SqlQueryable,
+  grant: ActionGrant<"pii.view">,
+  tail?: number,
+): Promise<DecisionLedgerRow[]> {
+  assertActionGrant(grant, "pii.view");
+  return listDecisionLedgerForTenant(db, grant.tenant, tail);
 }
 
 function level(
@@ -254,7 +271,7 @@ interface AnchorRow {
   head_hash: string;
 }
 
-interface LedgerSnapshot {
+interface LedgerSnapshot extends PIIBearing {
   readonly rows: DecisionLedgerRow[];
   readonly anchor: AnchorRow | undefined;
   readonly stored: number;
@@ -353,19 +370,22 @@ function verifyRows(snapshot: LedgerSnapshot): LedgerVerification {
  */
 export async function verifyAndListDecisionLedger(
   db: SqlDb,
-  orgId: string,
+  grant: ActionGrant<"pii.view">,
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
+  assertActionGrant(grant, "pii.view");
   return db.transaction((tx) =>
-    verifyDecisionLedgerTransaction(tx, orgId, window));
+    verifyDecisionLedgerTransactionSnapshot(tx, grant.tenant, window));
 }
 
-export async function verifyDecisionLedgerTransaction(
+async function verifyDecisionLedgerTransactionSnapshot(
   tx: SqlTx,
-  orgId: string,
+  tenant: TenantContext,
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
-  await lockDecisionLedgerTenant(tx, orgId);
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
+  await lockDecisionLedgerTenant(tx, tenant);
   const totals = await tx.query<{ n: number | string; head: number | string | null }>(
     "SELECT count(*) AS n, max(sequence) AS head FROM decision_ledger WHERE org_id = $1",
     [orgId],
@@ -384,11 +404,11 @@ export async function verifyDecisionLedgerTransaction(
   if (window === undefined || window < 1 || stored <= window) {
     snapshot = {
       ...base,
-      rows: await listDecisionLedger(tx, orgId),
+      rows: await listDecisionLedgerForTenant(tx, tenant),
       start: undefined,
     };
   } else {
-    const rows = await listDecisionLedger(tx, orgId, window);
+    const rows = await listDecisionLedgerForTenant(tx, tenant, window);
     const first = rows[0]!;
     const predecessor = await tx.query<{ entry_hash: string }>(
       "SELECT entry_hash FROM decision_ledger WHERE org_id = $1 AND sequence = $2",
@@ -409,19 +429,33 @@ export async function verifyDecisionLedgerTransaction(
   };
 }
 
+export async function verifyDecisionLedgerTransaction(
+  tx: SqlTx,
+  tenant: TenantContext,
+  window?: number,
+): Promise<LedgerVerification> {
+  assertTenantContext(tenant);
+  return (
+    await verifyDecisionLedgerTransactionSnapshot(tx, tenant, window)
+  ).verification;
+}
+
 export async function verifyDecisionLedger(
   db: SqlDb,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<LedgerVerification> {
-  return (await verifyAndListDecisionLedger(db, orgId)).verification;
+  assertTenantContext(tenant);
+  return db.transaction((tx) =>
+    verifyDecisionLedgerTransaction(tx, tenant));
 }
 
 export async function verifyDecisionLedgerIntegrity(
   db: SqlDb,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<DecisionLedgerIntegrityVerification> {
+  assertTenantContext(tenant);
   return db.transaction(async (tx) => {
-    const checked = await verifyDecisionLedgerTransaction(tx, orgId);
+    const checked = await verifyDecisionLedgerTransactionSnapshot(tx, tenant);
     if (!checked.verification.ok) {
       return {
         ok: false,
@@ -445,7 +479,7 @@ export async function verifyDecisionLedgerIntegrity(
         }
         events.push(parsed.event);
       }
-      const sources = await verifyReplaySources(tx, orgId, events);
+      const sources = await verifyReplaySources(tx, tenant, events);
       return {
         ok: true,
         ledger: checked.verification,

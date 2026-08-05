@@ -1,5 +1,14 @@
 import type { SqlDb, SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
+import type { PIIBearing } from "@contracts/pii";
+import {
+  assertActionGrant,
+  type ActionGrant,
+} from "@contracts/authz";
+import {
+  assertSameTenant,
+  type TenantContext,
+} from "@contracts/tenant";
 import {
   deriveArtifactProvenance,
   parseRecordProvenance,
@@ -12,6 +21,7 @@ import {
 } from "@domain/ledger/projections";
 import {
   verifyDecisionLedgerTransaction,
+  listDecisionLedger,
   type DecisionLedgerRow,
   type LedgerVerification,
 } from "./ledger-verification";
@@ -27,7 +37,7 @@ export interface VerifiedRegisterDecision {
   readonly provenance: DerivedProvenance;
 }
 
-export interface VerifiedRegisterSnapshot {
+export interface VerifiedRegisterSnapshot extends PIIBearing {
   readonly verification: LedgerVerification;
   readonly rows: readonly DecisionLedgerRow[];
   readonly decisions: readonly VerifiedRegisterDecision[];
@@ -59,6 +69,7 @@ function eventDecisionId(event: LedgerEntry): string | undefined {
 
 async function replayRegisterWindow(
   tx: SqlTx,
+  tenant: TenantContext,
   rows: readonly DecisionLedgerRow[],
   decisionLimit: number,
 ): Promise<{
@@ -70,12 +81,12 @@ async function replayRegisterWindow(
   for (const row of rows) {
     const event = parseEvent(row);
     if (event.type === "EvidenceSnapshotRecorded") {
-      verifiedEvidence.add(await verifyReplayEvidence(tx, event));
+      verifiedEvidence.add(await verifyReplayEvidence(tx, tenant, event));
       continue;
     }
     let decisionRecord;
     if (event.type === "DecisionRecorded") {
-      const coverage = await listReplayDecisionEvidenceCoverage(tx, event);
+      const coverage = await listReplayDecisionEvidenceCoverage(tx, tenant, event);
       if (coverage.some((item) => item.recordedSequence === null)) {
         throw appError(
           "STORE_CONSTRAINT",
@@ -96,6 +107,7 @@ async function replayRegisterWindow(
       }
       decisionRecord = await loadVerifiedReplayDecision(
         tx,
+        tenant,
         event,
         verifiedEvidence,
       );
@@ -140,21 +152,30 @@ async function replayRegisterWindow(
 
 export async function readVerifiedDecisionRegister(
   db: SqlDb,
-  orgId: string,
+  exportGrant: ActionGrant<"audit.export">,
+  piiGrant: ActionGrant<"pii.view">,
   eventWindow: number,
   decisionLimit: number,
 ): Promise<VerifiedRegisterSnapshot> {
+  assertActionGrant(exportGrant, "audit.export");
+  assertActionGrant(piiGrant, "pii.view");
+  assertSameTenant(exportGrant.tenant, piiGrant.tenant);
+  const tenant = exportGrant.tenant;
   return db.transaction(async (tx) => {
-    const checked = await verifyDecisionLedgerTransaction(
+    const verification = await verifyDecisionLedgerTransaction(
       tx,
-      orgId,
+      tenant,
       eventWindow,
     );
-    const replayed = checked.verification.ok
-      ? await replayRegisterWindow(tx, checked.rows, decisionLimit)
+    const rows = verification.ok
+      ? await listDecisionLedger(tx, piiGrant, eventWindow)
+      : [];
+    const replayed = verification.ok
+      ? await replayRegisterWindow(tx, tenant, rows, decisionLimit)
       : { decisions: [], decisionsTotal: 0 };
     return {
-      ...checked,
+      verification,
+      rows,
       ...replayed,
     };
   });

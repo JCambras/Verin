@@ -8,6 +8,7 @@
  * remains the field-level label on operational rows - they coexist, never merge.
  */
 import { z } from "zod";
+import type { PIIBearing } from "@contracts/pii";
 import {
   DecisionInputBundleIdSchema,
   DomainConfigVersionRefSchema,
@@ -93,7 +94,8 @@ export const EvidenceSnapshotRefSchema = TenantContextSchema.unwrap().extend({
     }
   })
   .readonly();
-export type EvidenceSnapshotRef = z.infer<typeof EvidenceSnapshotRefSchema>;
+export type EvidenceSnapshotRef =
+  z.infer<typeof EvidenceSnapshotRefSchema> & PIIBearing;
 
 /**
  * Everything an evaluation reads, pinned (replay metadata). schemaVersion,

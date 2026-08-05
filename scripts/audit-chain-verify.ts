@@ -32,7 +32,10 @@ async function main(): Promise<void> {
     process.stdout.write(`${line}\n`);
     if (!v.ok) broken += 1;
     entriesTotal += v.entriesChecked;
-    const decision = await verifyDecisionLedgerIntegrity(db, id);
+    const decision = await verifyDecisionLedgerIntegrity(
+      db,
+      systemTenant("audit-chain-verify", id),
+    );
     const decisionLine = `org ${id} decision ledger: ${decision.ok ? "OK" : "BROKEN"} (${decision.ledger.entriesChecked} entries, ${decision.replaySourcesChecked} replay sources)`;
     process.stdout.write(`${decisionLine}\n`);
     if (!decision.ok) broken += 1;

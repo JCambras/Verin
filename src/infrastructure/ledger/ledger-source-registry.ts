@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { PIIBearing } from "@contracts/pii";
 import {
   EvidenceSnapshotRefSchema,
   DecisionInputBundleSchema,
@@ -16,7 +17,7 @@ import {
   type JsonValue,
 } from "@contracts/decision-core/serialization";
 
-interface ReplaySourceTypes {
+interface ReplaySourceTypes extends PIIBearing {
   readonly evidence: EvidenceSnapshotRef;
   readonly bundle: DecisionInputBundle;
   readonly decision: DecisionRecord;
@@ -72,7 +73,7 @@ const REGISTRIES = {
 };
 
 export function parseRecordedReplaySource<
-  K extends keyof ReplaySourceTypes,
+  K extends Extract<keyof ReplaySourceTypes, string>,
 >(
   kind: K,
   schemaVersion: string,

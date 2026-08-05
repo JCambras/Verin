@@ -1,3 +1,5 @@
+import type { DisplayMetric } from "@contracts/metric";
+
 export interface LedgerLevelView {
   readonly level: "L1" | "L2" | "L3" | "L4";
   readonly ok: boolean;
@@ -25,8 +27,8 @@ export interface DecisionStateView {
     readonly stageId: string;
     readonly status: string;
   }[];
-  readonly activeReservations: number;
-  readonly executionSteps: number;
+  readonly activeReservations: DisplayMetric;
+  readonly executionSteps: DisplayMetric;
   readonly exceptionRequested: boolean;
   readonly lastEventType: string;
   readonly lastSequence: number;

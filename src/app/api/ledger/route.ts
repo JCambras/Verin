@@ -2,17 +2,18 @@ import { type NextRequest, NextResponse } from "next/server";
 import {
   errorResponse,
   getDb,
-  requirePrincipalWithRole,
+  requireActionGrant,
 } from "@app/_server/context";
 import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
 import {
   canFeedComplianceDecision,
   DEV_BADGE_TEXT,
-  type Confidence,
+  parseRecordProvenance,
   type DerivedProvenance,
   type RecordProvenance,
-  type SourceSystem,
 } from "@contracts/provenance";
+import { metric } from "@contracts/metric";
+import { appError } from "@contracts/errors";
 import type { LedgerRegisterViewModel } from "@app/ledger/model";
 
 export const runtime = "nodejs";
@@ -49,20 +50,23 @@ function rowProvenance(row: {
   provAsOf: string;
   provConfidence: string;
 }): RecordProvenance {
-  return {
-    source: row.provSource as SourceSystem,
+  const provenance = parseRecordProvenance({
+    source: row.provSource,
     asOf: row.provAsOf,
-    confidence: row.provConfidence as Confidence,
-  };
+    confidence: row.provConfidence,
+  });
+  if (!provenance) {
+    throw appError("STORE_CONSTRAINT", "verified ledger provenance is invalid");
+  }
+  return provenance;
 }
 
 /** Read-only, tenant-scoped register. No decision state is computed here. */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const principal = await requirePrincipalWithRole(
-    req,
-    ["ops", "cco", "principal", "admin"],
-  );
-  if (!principal.ok) return errorResponse(principal.error);
+  const auth = await requireActionGrant(req, "audit.export");
+  if (!auth.ok) return errorResponse(auth.error);
+  const pii = await requireActionGrant(req, "pii.view");
+  if (!pii.ok) return errorResponse(pii.error);
   const db = await getDb();
   const {
     verification,
@@ -71,7 +75,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     decisionsTotal,
   } = await readVerifiedDecisionRegister(
     db,
-    principal.value.orgId,
+    auth.value,
+    pii.value,
     MAX_ENTRIES,
     MAX_DECISIONS,
   );
@@ -92,10 +97,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         stageId: stage.stageId,
         status: stage.status,
       })),
-      activeReservations: projection.reservations.filter(
-        (reservation) => reservation.status === "active",
-      ).length,
-      executionSteps: projection.executionSteps.length,
+      activeReservations: metric(
+        projection.reservations.filter(
+          (reservation) => reservation.status === "active",
+        ).length,
+        "count",
+        provenance,
+      ),
+      executionSteps: metric(
+        projection.executionSteps.length,
+        "count",
+        provenance,
+      ),
       exceptionRequested: projection.exceptionRequested,
       lastEventType: projection.lastEventType,
       lastSequence: projection.lastSequence,

@@ -5705,7 +5705,7 @@ reproduces the online fold byte-identically.
 
 ### PF-196 a swallowed mid-batch refusal leaves a verifiable anchor
 
-**Superseded by D-101:** later appends are now savepoint-atomic, so a caught refusal
+**Superseded by D-103:** later appends are now savepoint-atomic, so a caught refusal
 commits no prefix. Per-entry anchors remain as defense in depth.
 
 **Invariant:** the ledger anchor covers exactly the entries that committed, even when a
@@ -5741,7 +5741,6 @@ AssertionError: expected false to be true
 **Revert:** restored the join over every contributing row.
 
 **Date:** 2026-07-28 (review follow-up to D-106, ADR-0041, D-107).
-**Date:** 2026-07-28 (review follow-up to D-099, ADR-0033, D-100).
 
 ### PF-198 decision-ledger residual review corrections
 
@@ -5819,3 +5818,41 @@ src/infrastructure/ledger/ledger-store.ts:56
 **Revert:** removed the planted raw insert. The focused correction suite passes.
 
 **Date:** 2026-07-28 (review corrections F1-F7, ADR-0041, D-111).
+## Decision-ledger authority, retention, and disclosure corrections (D-112)
+
+**Invariants:** every ledger SQL boundary receives sealed tenant authority and compares
+it before SQL; structural immutable identifiers refuse human-shaped text without
+misclassifying evidence references; the register requires `audit.export` and `pii.view`
+for one tenant and discloses no bytes after failed verification; displayed counts retain
+metric provenance.
+
+The original implementation reproduced the reported failures. A normal evidence-backed
+`recordDecision` returned `PII_VIOLATION`, the tenant and governed-action fences reported
+28 raw-org ledger repository boundaries plus the role-only register route, the metric
+fence reported both naked projection counts, and the observability fence rejected the
+unregistered raw-error log call.
+
+Three real-tree injections then proved the corrected runtime boundaries:
+
+```text
+# recordDecision validated against the self-asserted record firm instead of tenant.orgId
+x refuses a sealed authority for another tenant before opening a transaction
+  expected 'INTERNAL' to be 'AUTH_FAILED'
+  src/__tests__/integration/decision-ledger.test.ts:192
+
+# structural identifier leaves skipped requireOpaqueIdentifier
+x refuses a person name used only as an immutable source identifier
+  expected true to be false
+  src/__tests__/integration/decision-ledger.test.ts:663
+
+# readVerifiedDecisionRegister listed rows regardless of verification.ok
+x suppresses every register row when stored actor metadata fails verification
+  expected five ledger rows to deeply equal []
+  src/__tests__/integration/ledger-projections.test.ts:512
+```
+
+**Revert:** restored all three guards. The focused 164-test boundary suite and the full
+1,278-test non-UTC suite pass. Typecheck, lint, knip, the 500-line cap, and the measured
+ADR-0042 line ceiling also pass.
+
+**Date:** 2026-08-04 (review corrections F1-F9, ADR-0041/0042, D-112).

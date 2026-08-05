@@ -1,5 +1,9 @@
 import type { SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
+import {
+  assertTenantContext,
+  type TenantContext,
+} from "@contracts/tenant";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 
 interface DecisionHashes {
@@ -14,8 +18,13 @@ interface DecisionHashes {
  */
 export async function assertLedgerSourceBindings(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: LedgerEntry,
 ): Promise<void> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("AUTH_FAILED", "ledger event tenant does not match source authority");
+  }
   if (event.type === "EvidenceSnapshotRecorded") {
     const snapshot = await tx.query<{
       content_hash: string;

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { LedgerRegisterViewModel } from "@app/ledger/model";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { StatusBadge } from "@app/presentation/ui";
+import { Metric } from "@app/presentation/metric";
 
 export default function DecisionLedgerPage() {
   const [model, setModel] = useState<LedgerRegisterViewModel | null>(null);
@@ -126,9 +127,9 @@ export default function DecisionLedgerPage() {
                               .join(", ")}
                       </dd>
                       <dt>Active reservations</dt>
-                      <dd>{decision.activeReservations}</dd>
+                      <dd><Metric metric={decision.activeReservations} /></dd>
                       <dt>Execution steps</dt>
-                      <dd>{decision.executionSteps}</dd>
+                      <dd><Metric metric={decision.executionSteps} /></dd>
                       <dt>Exception requested</dt>
                       <dd>{decision.exceptionRequested ? "yes" : "no"}</dd>
                       <dt>Last event</dt>

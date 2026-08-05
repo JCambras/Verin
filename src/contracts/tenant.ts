@@ -39,6 +39,7 @@ export const SYSTEM_ACTOR_IDS = [
   "login-boundary",
   "login-constant-work",
   "load-smoke",
+  "ledger-rebuild",
   "seed",
 ] as const;
 
