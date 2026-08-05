@@ -72,6 +72,7 @@ async function rewriteLastLedgerEvent(
   transform: (event: LedgerEntry) => LedgerEntry,
 ): Promise<void> {
   const stored = await db.query<{
+    sequence: number | string;
     payload_json: string;
     prev_hash: string;
     schema_version: string;
@@ -80,7 +81,7 @@ async function rewriteLastLedgerEvent(
     prov_asof: string;
     prov_confidence: string;
   }>(
-    `SELECT payload_json, prev_hash, schema_version, serializer_version,
+    `SELECT sequence, payload_json, prev_hash, schema_version, serializer_version,
             prov_source, prov_asof, prov_confidence
        FROM decision_ledger
       WHERE org_id = $1
@@ -112,8 +113,8 @@ async function rewriteLastLedgerEvent(
   await db.query(
     `UPDATE decision_ledger
         SET payload_json = $2, actor_json = $3, entry_hash = $4
-      WHERE org_id = $1 AND sequence = 4`,
-    [LEDGER_ORG, payload.value, actor.value, entryHash],
+      WHERE org_id = $1 AND sequence = $5`,
+    [LEDGER_ORG, payload.value, actor.value, entryHash, Number(row.sequence)],
   );
   await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
   await db.query(
@@ -412,6 +413,64 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await rewriteLastLedgerEvent(db, (event) => LedgerEntrySchema.parse({
       ...event,
       decisionHash: "f".repeat(64),
+    }));
+    const result = await verifyDecisionLedger(db, LEDGER_TENANT);
+    expect(result.ok).toBe(false);
+    expect(result.levels.at(-1)?.level).toBe("L2");
+  });
+
+  it("refuses approval and execution identifiers absent from the immutable decision", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const approval = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ApprovalRecorded")!,
+      id: "22345678-1234-4123-8123-123456789012",
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+      stageId: "12345678-1234-4123-8123-123456789012",
+    });
+    await expect(append(db, [approval])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+    const execution = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ExecutionStarted")!,
+      id: "32345678-1234-4123-8123-123456789012",
+      stepId: "12345678-1234-4123-8123-123456789012",
+    });
+    await expect(append(db, [execution])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+    const escalation = LedgerEntrySchema.parse({
+      ...samples.find((event) => event.type === "ApprovalStageEscalated")!,
+      id: "42345678-1234-4123-8123-123456789012",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+      roleIds: [{ firmId: LEDGER_ORG, id: "operations" }],
+    });
+    await expect(append(db, [escalation])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(5);
+  });
+
+  it("L2 rejects a correctly rechained event with an unknown approval stage", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const approval = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (event) => event.type === "ApprovalRecorded",
+      )!,
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    });
+    await expect(append(db, [approval])).resolves.toHaveLength(1);
+    await rewriteLastLedgerEvent(db, (event) => LedgerEntrySchema.parse({
+      ...event,
+      stageId: "12345678-1234-4123-8123-123456789012",
     }));
     const result = await verifyDecisionLedger(db, LEDGER_TENANT);
     expect(result.ok).toBe(false);

@@ -76,6 +76,21 @@ interface DbLedgerRow extends PIIBearing {
   prov_confidence: string;
 }
 
+type DbRegisterSnapshotRow = PIIBearing & {
+  readonly tenant_id: string;
+  readonly anchor_max_sequence: number | string | null;
+  readonly anchor_entry_count: number | string | null;
+  readonly anchor_head_hash: string | null;
+} & {
+  readonly [K in keyof DbLedgerRow]: DbLedgerRow[K] | null;
+};
+
+function hasLedgerRow(
+  row: DbRegisterSnapshotRow,
+): row is DbRegisterSnapshotRow & DbLedgerRow {
+  return row.id !== null;
+}
+
 function toRow(row: DbLedgerRow): DecisionLedgerRow {
   return {
     orgId: row.org_id,
@@ -144,13 +159,47 @@ export async function verifyAndListDecisionLedger(
   assertActionGrant(exportGrant, "audit.export");
   assertActionGrant(piiGrant, "pii.view");
   assertSameTenant(exportGrant.tenant, piiGrant.tenant);
-  return db.transaction((tx) =>
-    verifyAndListDecisionLedgerTransaction(
-      tx,
-      exportGrant,
-      piiGrant,
-      window,
-    ));
+  const tenant = exportGrant.tenant;
+  const captured = await db.query<DbRegisterSnapshotRow>(
+    `SELECT tenant.id AS tenant_id,
+            anchor.max_sequence AS anchor_max_sequence,
+            anchor.entry_count AS anchor_entry_count,
+            anchor.head_hash AS anchor_head_hash,
+            ledger.*
+       FROM orgs tenant
+       LEFT JOIN decision_ledger_anchor anchor ON anchor.org_id = tenant.id
+       LEFT JOIN decision_ledger ledger ON ledger.org_id = tenant.id
+      WHERE tenant.id = $1
+      ORDER BY ledger.sequence ASC`,
+    [tenant.orgId],
+  );
+  const first = captured.rows[0];
+  if (!first) throw appError("NOT_FOUND", "decision ledger tenant does not exist");
+  const verificationRows = captured.rows.filter(hasLedgerRow).map(toRow);
+  const stored = verificationRows.length;
+  const headSequence = verificationRows.at(-1)?.sequence ?? null;
+  const anchor = first.anchor_max_sequence === null ||
+      first.anchor_entry_count === null || first.anchor_head_hash === null
+    ? undefined
+    : {
+        max_sequence: first.anchor_max_sequence,
+        entry_count: first.anchor_entry_count,
+        head_hash: first.anchor_head_hash,
+      };
+  const snapshot: LedgerSnapshot = {
+    anchor,
+    stored,
+    headSequence,
+    rows: verificationRows,
+    start: undefined,
+  };
+  const rows = window !== undefined && window > 0 && stored > window
+    ? verificationRows.slice(-window)
+    : verificationRows;
+  return {
+    verification: await verifyLedgerSnapshot(db, tenant, snapshot),
+    rows,
+  };
 }
 
 async function verifySnapshotTransaction(
@@ -192,18 +241,6 @@ async function verifySnapshotTransaction(
     verification: await verifyLedgerSnapshot(tx, tenant, snapshot),
     rows,
   };
-}
-
-export async function verifyAndListDecisionLedgerTransaction(
-  tx: SqlTx,
-  exportGrant: ActionGrant<"audit.export">,
-  piiGrant: ActionGrant<"pii.view">,
-  window?: number,
-): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
-  assertActionGrant(exportGrant, "audit.export");
-  assertActionGrant(piiGrant, "pii.view");
-  assertSameTenant(exportGrant.tenant, piiGrant.tenant);
-  return verifySnapshotTransaction(tx, exportGrant.tenant, window);
 }
 
 function parseReplayEvents(

@@ -493,7 +493,7 @@ describe("deterministic decision-ledger projections", () => {
     expect(largestResult).toBe(1);
   });
 
-  it("reads the verified register under one tenant lock without trusting projection rows", async () => {
+  it("verifies a consistent register snapshot without holding the tenant write lock", async () => {
     expect((await recordDecision(db, LEDGER_TENANT, decisionRecordingInput())).ok).toBe(true);
     expect(
       (await recordDecision(
@@ -503,6 +503,7 @@ describe("deterministic decision-ledger projections", () => {
       )).ok,
     ).toBe(true);
     let directQueries = 0;
+    let transactions = 0;
     const statements: string[] = [];
     const measured: SqlDb = {
       ...db,
@@ -511,9 +512,11 @@ describe("deterministic decision-ledger projections", () => {
         params?: unknown[],
       ): Promise<SqlResult<T>> {
         directQueries += 1;
+        statements.push(sql);
         return db.query<T>(sql, params);
       },
       transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        transactions += 1;
         return db.transaction((tx) =>
           fn({
             ...tx,
@@ -537,10 +540,12 @@ describe("deterministic decision-ledger projections", () => {
     expect(snapshot.verification.ok).toBe(true);
     expect(snapshot.decisions).toHaveLength(1);
     expect(snapshot.decisionsTotal).toBe(2);
-    expect(directQueries).toBe(0);
+    expect(directQueries).toBeGreaterThan(0);
+    expect(transactions).toBe(0);
     expect(statements[0]).toMatch(
-      /SELECT id FROM orgs WHERE id = \$1 FOR UPDATE/,
+      /LEFT JOIN decision_ledger_anchor[\s\S]*LEFT JOIN decision_ledger/,
     );
+    expect(statements.join("\n")).not.toMatch(/FOR UPDATE/);
     expect(
       statements.some((sql) => sql.includes("decision_state_projection")),
     ).toBe(false);
@@ -562,6 +567,13 @@ describe("deterministic decision-ledger projections", () => {
     const statements: string[] = [];
     const measured: SqlDb = {
       ...db,
+      async query<T>(
+        sql: string,
+        params?: unknown[],
+      ): Promise<SqlResult<T>> {
+        statements.push(sql);
+        return db.query<T>(sql, params);
+      },
       transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
         return db.transaction((tx) => fn({
           ...tx,
@@ -584,6 +596,7 @@ describe("deterministic decision-ledger projections", () => {
     );
     expect(snapshot.decisions).toHaveLength(1);
     expect(snapshot.decisionsTotal).toBe(14);
+    expect(statements.length).toBeGreaterThan(0);
     expect(statements.length).toBeLessThanOrEqual(13);
   });
 
@@ -627,6 +640,31 @@ describe("deterministic decision-ledger projections", () => {
     expect(snapshot.rows).toHaveLength(5);
     expect(snapshot.decisions).toEqual([]);
     expect(snapshot.decisionsWithheld).toBe(1);
+  });
+
+  it("withholds a recent event whose DecisionRecorded prerequisite is outside the window", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const approval = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (event) => event.type === "ApprovalRecorded",
+      )!,
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    });
+    await expect(append(db, [approval])).resolves.toHaveLength(1);
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      1,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.rows).toHaveLength(1);
+    expect(snapshot.decisions).toEqual([]);
+    expect(snapshot.decisionsWithheld).toBe(1);
+    expect(snapshot.decisionsWithheldProvenance).not.toBeNull();
   });
 
   it("returns an integrity failure when a replay source is corrupt", async () => {

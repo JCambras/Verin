@@ -1,8 +1,7 @@
-import type { SqlTx } from "@infra/store/db";
+import type { SqlQueryable } from "@infra/store/db";
 import type { PIIBearing } from "@contracts/pii";
 import type { GovernedOutput } from "@contracts/authz";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
-import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
 import {
   verifyStoredByteChain,
   type ChainVerdict,
@@ -15,6 +14,7 @@ import {
 import {
   decisionLedgerChainPreimage,
   parseRecordedLedgerEvent,
+  type RecordedLedgerColumns,
 } from "./ledger-schema-registry";
 import { verifyStoredLedgerEventAcceptance } from "./ledger-bindings";
 
@@ -82,38 +82,15 @@ function level(
   };
 }
 
-function promotedDecisionId(event: LedgerEntry): string | null {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return null;
-}
-
-function promotedEvidenceId(event: LedgerEntry): string | null {
-  if (event.type === "EvidenceSnapshotRecorded") {
-    return event.evidenceSnapshotRef.id;
-  }
-  if (event.type === "StatusObserved") {
-    return event.evidenceSnapshotRef?.id ?? null;
-  }
-  return null;
-}
-
-function promotedTriggeringEntryId(event: LedgerEntry): string | null {
-  return event.type === "ExceptionDecisionRequested"
-    ? event.triggeringEntryRef.id
-    : null;
-}
-
-function promotedReservationCreationId(event: LedgerEntry): string | null {
-  return event.type === "ReservationReleased"
-    ? event.reservationCreationRef.id
-    : null;
-}
-
 function verifyL2(
   rows: readonly DecisionLedgerRow[],
-): { verdict: LedgerVerificationLevel; events: LedgerEntry[] } {
+): {
+  verdict: LedgerVerificationLevel;
+  events: LedgerEntry[];
+  promoted: RecordedLedgerColumns[];
+} {
   const events: LedgerEntry[] = [];
+  const promoted: RecordedLedgerColumns[] = [];
   for (const row of rows) {
     let unknown: unknown;
     try {
@@ -122,6 +99,7 @@ function verifyL2(
       return {
         verdict: level("L2", false, events.length, row.sequence, "payload_json is not JSON"),
         events,
+        promoted,
       };
     }
     const parsed = parseRecordedLedgerEvent(
@@ -134,44 +112,48 @@ function verifyL2(
       return {
         verdict: level("L2", false, events.length, row.sequence, parsed.reason),
         events,
+        promoted,
       };
     }
-    const canonical = canonicalJson(parsed.event as unknown as JsonValue);
-    if (!canonical.ok || canonical.value !== row.payloadJson) {
+    if (parsed.canonicalBytes !== row.payloadJson) {
       return {
         verdict: level("L2", false, events.length, row.sequence, "payload bytes are not canonical for the recorded serializer"),
         events,
+        promoted,
       };
     }
     events.push(parsed.event);
+    promoted.push(parsed.promoted);
   }
-  return { verdict: level("L2", true, rows.length, null, null), events };
+  return {
+    verdict: level("L2", true, rows.length, null, null),
+    events,
+    promoted,
+  };
 }
 
 function verifyL3(
   rows: readonly DecisionLedgerRow[],
-  events: readonly LedgerEntry[],
+  promoted: readonly RecordedLedgerColumns[],
 ): LedgerVerificationLevel {
-  for (let index = 0; index < events.length; index += 1) {
+  for (let index = 0; index < promoted.length; index += 1) {
     const row = rows[index]!;
-    const event = events[index]!;
-    const actor = canonicalJson(event.actor as unknown as JsonValue);
+    const event = promoted[index]!;
     const matches =
       event.firmId === row.orgId &&
       event.id === row.id &&
-      event.type === row.eventType &&
+      event.eventType === row.eventType &&
       event.schemaVersion === row.schemaVersion &&
       event.serializerVersion === row.serializerVersion &&
       event.occurredAt === row.occurredAt &&
       event.recordedAt === row.recordedAt &&
-      actor.ok &&
-      actor.value === row.actorJson &&
+      event.actorJson === row.actorJson &&
       event.correlationId === row.correlationId &&
-      (event.causationRef?.id ?? null) === row.causationId &&
-      promotedDecisionId(event) === row.decisionId &&
-      promotedEvidenceId(event) === row.evidenceSnapshotId &&
-      promotedTriggeringEntryId(event) === row.triggeringEntryId &&
-      promotedReservationCreationId(event) === row.reservationCreationId;
+      event.causationId === row.causationId &&
+      event.decisionId === row.decisionId &&
+      event.evidenceSnapshotId === row.evidenceSnapshotId &&
+      event.triggeringEntryId === row.triggeringEntryId &&
+      event.reservationCreationId === row.reservationCreationId;
     if (!matches) {
       return level("L3", false, index, row.sequence, "promoted column differs from canonical payload");
     }
@@ -201,7 +183,7 @@ function verifyL4(
 }
 
 export async function verifyLedgerSnapshot(
-  tx: SqlTx,
+  tx: SqlQueryable,
   tenant: TenantContext,
   snapshot: LedgerSnapshot,
 ): Promise<LedgerVerification> {
@@ -278,7 +260,7 @@ export async function verifyLedgerSnapshot(
       ),
     ]);
   }
-  const l3 = verifyL3(rows, l2.events);
+  const l3 = verifyL3(rows, l2.promoted);
   if (!l3.ok) return fail([l1, l2.verdict, l3]);
   const l4 = verifyL4(snapshot, rows.length);
   return {

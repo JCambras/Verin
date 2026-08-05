@@ -121,7 +121,7 @@ const normalizeDecisionResult = <
   return result;
 };
 
-export const normalizeDecisionRecord = <T extends NormalizableDecisionRecord>(
+export const normalizeDecisionRecordV1_7 = <T extends NormalizableDecisionRecord>(
   record: T,
 ): T => {
   if (!isPlainRecord(record)) return record;

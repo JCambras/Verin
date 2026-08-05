@@ -5,11 +5,22 @@ import {
   type TenantContext,
 } from "@contracts/tenant";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import type { DecisionRecord } from "@contracts/decision-core/decision";
 import { assertLedgerEventPiiBoundary } from "./ledger-pii";
+import { parseRecordedReplaySource } from "./ledger-source-registry";
 
-interface DecisionHashes {
+interface DecisionSourceRow {
   decision_hash: string;
   bundle_hash: string;
+  canonical_json: string;
+  schema_version: string;
+  serializer_version: string;
+}
+
+interface DecisionBinding {
+  readonly decisionHash: string;
+  readonly bundleHash: string;
+  readonly record: DecisionRecord | null;
 }
 
 interface EvidenceHashes {
@@ -42,10 +53,93 @@ function referencedDecisionId(event: LedgerEntry): string | undefined {
   return undefined;
 }
 
+function parseDecisionBinding(row: DecisionSourceRow): DecisionBinding {
+  let value: unknown;
+  try {
+    value = JSON.parse(row.canonical_json);
+  } catch {
+    return {
+      decisionHash: row.decision_hash,
+      bundleHash: row.bundle_hash,
+      record: null,
+    };
+  }
+  const parsed = parseRecordedReplaySource(
+    "decision",
+    row.schema_version,
+    row.serializer_version,
+    value,
+  );
+  return {
+    decisionHash: row.decision_hash,
+    bundleHash: row.bundle_hash,
+    record: parsed.ok ? parsed.value : null,
+  };
+}
+
+function referencedStageId(event: LedgerEntry): string | undefined {
+  switch (event.type) {
+    case "ApprovalRecorded":
+    case "ApprovalStageExpired":
+    case "ApprovalStageEscalated":
+      return event.stageId;
+    default:
+      return undefined;
+  }
+}
+
+function referencedStepId(event: LedgerEntry): string | undefined {
+  switch (event.type) {
+    case "ExecutionStarted":
+    case "ExecutionSucceeded":
+    case "ExecutionPartiallySucceeded":
+    case "ExecutionFailed":
+      return event.stepId;
+    default:
+      return undefined;
+  }
+}
+
+function decisionStructureReason(
+  event: LedgerEntry,
+  record: DecisionRecord,
+): string | null {
+  const stageId = referencedStageId(event);
+  if (stageId !== undefined) {
+    const authority = record.result.kind === "proceed"
+      ? record.result.authority
+      : undefined;
+    const stage = authority && authority.mode !== "automatic"
+      ? authority.stages.find((candidate) => candidate.stageId === stageId)
+      : undefined;
+    if (!stage) return "ledger approval stage is absent from the immutable decision";
+    if (event.type === "ApprovalStageEscalated") {
+      const escalation = stage.escalationPath[event.escalationStepIndex];
+      if (!escalation) {
+        return "ledger approval escalation is absent from the immutable stage";
+      }
+      const recordedRoles = escalation.roleIds.map((role) => role.id);
+      if (
+        event.reasonCode !== escalation.reasonCode ||
+        event.roleIds.length !== recordedRoles.length ||
+        event.roleIds.some((role, index) => role.id !== recordedRoles[index])
+      ) return "ledger approval escalation differs from the immutable stage";
+    }
+  }
+  const stepId = referencedStepId(event);
+  if (stepId !== undefined) {
+    const step = record.result.kind === "proceed"
+      ? record.result.executionPlan.steps.find((candidate) => candidate.id === stepId)
+      : undefined;
+    if (!step) return "ledger execution step is absent from the immutable decision";
+  }
+  return null;
+}
+
 function sourceBindingReason(
   event: LedgerEntry,
   evidence: ReadonlyMap<string, EvidenceHashes>,
-  decisions: ReadonlyMap<string, DecisionHashes>,
+  decisions: ReadonlyMap<string, DecisionBinding>,
 ): string | null {
   if (event.type === "EvidenceSnapshotRecorded") {
     const stored = evidence.get(event.evidenceSnapshotRef.id);
@@ -63,6 +157,7 @@ function sourceBindingReason(
   if (!decisionId) return null;
   const stored = decisions.get(decisionId);
   if (!stored) return "ledger decision reference has no immutable record";
+  if (!stored.record) return "immutable decision record cannot be parsed";
   const claimedDecisionHash =
     event.type === "DecisionRecorded" || event.type === "ApprovalRecorded"
       ? event.decisionHash
@@ -71,15 +166,15 @@ function sourceBindingReason(
         : undefined;
   if (
     claimedDecisionHash !== undefined &&
-    claimedDecisionHash !== stored.decision_hash
+    claimedDecisionHash !== stored.decisionHash
   ) return "ledger event decision hash does not match immutable record";
   if (
     (event.type === "ApprovalRecorded" &&
-      event.inputBundleHash !== stored.bundle_hash) ||
+      event.inputBundleHash !== stored.bundleHash) ||
     (event.type === "DecisionRecorded" &&
-      event.bundleHash !== stored.bundle_hash)
+      event.bundleHash !== stored.bundleHash)
   ) return "ledger input bundle hash does not match immutable bundle";
-  return null;
+  return decisionStructureReason(event, stored.record);
 }
 
 async function verifyLedgerHistoryOrdering(
@@ -274,18 +369,21 @@ export async function assertLedgerSourceBindings(
     );
     if (snapshot.rows[0]) evidence.set(id, snapshot.rows[0]);
   }
-  const decisions = new Map<string, DecisionHashes>();
+  const decisions = new Map<string, DecisionBinding>();
   const decisionId = referencedDecisionId(event);
   if (decisionId) {
-    const hashes = await tx.query<DecisionHashes>(
-      `SELECT r.decision_hash, b.bundle_hash
+    const hashes = await tx.query<DecisionSourceRow>(
+      `SELECT r.decision_hash, b.bundle_hash, r.canonical_json,
+              r.schema_version, r.serializer_version
          FROM decision_records r
          JOIN decision_input_bundles b
            ON b.org_id = r.org_id AND b.id = r.input_bundle_id
         WHERE r.org_id = $1 AND r.id = $2`,
       [event.firmId, decisionId],
     );
-    if (hashes.rows[0]) decisions.set(decisionId, hashes.rows[0]);
+    if (hashes.rows[0]) {
+      decisions.set(decisionId, parseDecisionBinding(hashes.rows[0]));
+    }
   }
   const reason = sourceBindingReason(event, evidence, decisions);
   if (reason) throw appError("STORE_CONSTRAINT", reason);
@@ -361,17 +459,19 @@ export async function verifyStoredLedgerEventAcceptance(
     const id = referencedDecisionId(event);
     return id ? [id] : [];
   }))];
-  const decisions = new Map<string, DecisionHashes>();
+  const decisions = new Map<string, DecisionBinding>();
   if (decisionIds.length > 0) {
-    const rows = await tx.query<DecisionHashes & { id: string }>(
-      `SELECT r.id, r.decision_hash, b.bundle_hash
+    const rows = await tx.query<DecisionSourceRow & { id: string }>(
+      `SELECT r.id, r.decision_hash, b.bundle_hash, r.canonical_json,
+              r.schema_version, r.serializer_version
          FROM decision_records r
          JOIN decision_input_bundles b
            ON b.org_id = r.org_id AND b.id = r.input_bundle_id
         WHERE r.org_id = $1 AND r.id = ANY($2::text[])`,
       [tenant.orgId, decisionIds],
     );
-    rows.rows.forEach((row) => decisions.set(row.id, row));
+    rows.rows.forEach((row) =>
+      decisions.set(row.id, parseDecisionBinding(row)));
   }
   for (const { event, sequence } of entries) {
     const reason = sourceBindingReason(event, evidence, decisions);

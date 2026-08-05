@@ -10,9 +10,8 @@ import type {
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { deriveDecisionReplayProvenance } from "@contracts/decision-core/replay-provenance";
 import {
-  CANONICAL_SERIALIZER_VERSION,
-  bundleHashPreimage,
-  decisionHashPreimage,
+  type BundleHashPreimage,
+  type DecisionHashPreimage,
 } from "@contracts/decision-core/serialization";
 import type {
   DerivedProvenance,
@@ -27,9 +26,12 @@ import { assertReplaySourcePiiBoundary } from "./ledger-pii";
 import {
   loadReplaySourceOriginSequences,
   loadReplaySourceOrigins,
-  type ReplaySourceOrigins,
 } from "./ledger-source-provenance";
-import { parseRecordedReplaySource } from "./ledger-source-registry";
+import { verifiedReplayWindowOrigins } from "./ledger-replay-window";
+import {
+  parseRecordedReplaySource,
+  type ReplaySourceHashPreimage,
+} from "./ledger-source-registry";
 
 export interface RecordedReplayEvent {
   readonly event: LedgerEntry;
@@ -84,25 +86,31 @@ interface MembershipRow {
 interface ParsedDecisionSource extends PIIBearing {
   readonly record: DecisionRecord;
   readonly bundle: DecisionInputBundle;
+  readonly decisionHashPreimage: DecisionHashPreimage;
+  readonly bundleHashPreimage: BundleHashPreimage;
 }
 
 function replaySourceError(reason: string): never {
   throw appError("STORE_CONSTRAINT", reason);
 }
 
-function requireCanonicalSource<
-  K extends "evidence" | "bundle" | "decision",
->(
+type ReplaySourceValue<K extends "evidence" | "bundle" | "decision"> =
+  K extends "evidence"
+    ? EvidenceSnapshotRef
+    : K extends "bundle"
+      ? DecisionInputBundle
+      : DecisionRecord;
+
+function requireCanonicalSource<K extends "evidence" | "bundle" | "decision">(
   kind: K,
   bytes: string,
   schemaVersion: string,
   serializerVersion: string,
   label: string,
-): K extends "evidence"
-  ? EvidenceSnapshotRef
-  : K extends "bundle"
-    ? DecisionInputBundle
-    : DecisionRecord {
+): {
+  readonly value: ReplaySourceValue<K>;
+  readonly hashPreimage: ReplaySourceHashPreimage | null;
+} {
   let value: unknown;
   try {
     value = JSON.parse(bytes);
@@ -124,52 +132,28 @@ function requireCanonicalSource<
   } catch {
     return replaySourceError(`${label} contains unclassified text during replay`);
   }
-  return parsed.value as never;
+  return {
+    value: parsed.value as ReplaySourceValue<K>,
+    hashPreimage: parsed.hashPreimage,
+  };
 }
 
 function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
 }
 
-function verifiedWindowOrigins(
-  entries: readonly RecordedReplayEvent[],
-  parsed: ReadonlyMap<string, ParsedDecisionSource>,
-  sequences: {
-    readonly snapshots: ReadonlyMap<string, number>;
-    readonly bundles: ReadonlyMap<string, number>;
-  },
-): ReplaySourceOrigins {
-  const bySequence = new Map(entries.map((entry) => [entry.sequence, entry]));
-  const snapshots = new Map<string, RecordProvenance>();
-  for (const [id, sequence] of sequences.snapshots) {
-    const entry = bySequence.get(sequence);
-    if (
-      entry?.event.type === "EvidenceSnapshotRecorded" &&
-      entry.event.evidenceSnapshotRef.id === id
-    ) snapshots.set(id, entry.provenance);
-  }
-  const bundles = new Map<string, RecordProvenance>();
-  for (const [id, sequence] of sequences.bundles) {
-    const entry = bySequence.get(sequence);
-    if (
-      entry?.event.type === "DecisionRecorded" &&
-      parsed.get(entry.event.decisionRef.id)?.bundle.id === id
-    ) bundles.set(id, entry.provenance);
-  }
-  return { snapshots, bundles };
-}
-
 function verifyEvidenceRow(
   row: EvidenceRow,
   firmId: string,
 ): EvidenceSnapshotRef {
-  const snapshot = requireCanonicalSource(
+  const source = requireCanonicalSource(
     "evidence",
     row.canonical_json,
     row.contract_schema_version,
     row.serializer_version,
     "evidence snapshot",
   );
+  const snapshot = source.value;
   const snapshotHash = createHash("sha256")
     .update(row.canonical_json, "utf8")
     .digest("hex");
@@ -177,7 +161,6 @@ function verifyEvidenceRow(
     snapshot.firmId !== firmId ||
     snapshot.id !== row.id ||
     snapshot.schemaVersion !== row.schema_version ||
-    row.serializer_version !== CANONICAL_SERIALIZER_VERSION ||
     snapshot.contentHash !== row.content_hash ||
     snapshotHash !== row.snapshot_hash
   ) return replaySourceError("evidence snapshot binding differs during replay");
@@ -206,22 +189,34 @@ function verifyEvidenceEvent(
 function parseDecisionSources(row: DecisionSourceRow): {
   readonly record: DecisionRecord;
   readonly bundle: DecisionInputBundle;
+  readonly decisionHashPreimage: DecisionHashPreimage;
+  readonly bundleHashPreimage: BundleHashPreimage;
 } {
+  const decision = requireCanonicalSource(
+    "decision",
+    row.decision_json,
+    row.decision_schema_version,
+    row.decision_serializer_version,
+    "decision record",
+  );
+  const bundle = requireCanonicalSource(
+    "bundle",
+    row.bundle_json,
+    row.bundle_schema_version,
+    row.bundle_serializer_version,
+    "decision input bundle",
+  );
+  if (decision.hashPreimage?.hashKind !== "decision-record") {
+    return replaySourceError("decision hash codec is missing during replay");
+  }
+  if (bundle.hashPreimage?.hashKind !== "decision-input-bundle") {
+    return replaySourceError("bundle hash codec is missing during replay");
+  }
   return {
-    record: requireCanonicalSource(
-      "decision",
-      row.decision_json,
-      row.decision_schema_version,
-      row.decision_serializer_version,
-      "decision record",
-    ),
-    bundle: requireCanonicalSource(
-      "bundle",
-      row.bundle_json,
-      row.bundle_schema_version,
-      row.bundle_serializer_version,
-      "decision input bundle",
-    ),
+    record: decision.value,
+    bundle: bundle.value,
+    decisionHashPreimage: decision.hashPreimage,
+    bundleHashPreimage: bundle.hashPreimage,
   };
 }
 
@@ -318,9 +313,10 @@ async function loadReplaySources(
     }
   });
   const origins = windowed
-    ? verifiedWindowOrigins(
+    ? verifiedReplayWindowOrigins(
+        tenant,
         entries,
-        parsed,
+        new Map([...parsed].map(([id, source]) => [id, source.bundle.id])),
         await loadReplaySourceOriginSequences(
           tx,
           tenant,
@@ -352,11 +348,11 @@ async function loadReplaySources(
       Number(member.ordinal) === index ? member.source_id : "");
     const expectedIds = source.bundle.evidenceSnapshotRefs.map((ref) => ref.id);
     const decisionHash = canonicalDigest(
-      decisionHashPreimage(source.record),
+      source.decisionHashPreimage,
       "decision hash preimage",
     );
     const bundleHash = canonicalDigest(
-      bundleHashPreimage(source.bundle),
+      source.bundleHashPreimage,
       "bundle hash preimage",
     );
     if (
@@ -366,12 +362,8 @@ async function loadReplaySources(
       source.record.inputBundleRef.id !== source.bundle.id ||
       source.bundle.id !== row.input_bundle_id ||
       row.input_bundle_id !== source.bundle.id ||
-      row.decision_schema_version !== source.bundle.schemaVersion ||
-      row.decision_serializer_version !== source.bundle.canonicalSerializerVersion ||
       row.decision_hash !== source.record.decisionHash ||
       row.decision_created_at !== source.record.createdAt ||
-      row.bundle_schema_version !== source.bundle.schemaVersion ||
-      row.bundle_serializer_version !== source.bundle.canonicalSerializerVersion ||
       row.engine_version !== source.bundle.engineVersion ||
       row.primitive_set_version !== source.bundle.primitiveSetVersion ||
       row.time_zone_data_version !== source.bundle.timeZoneDataVersion ||

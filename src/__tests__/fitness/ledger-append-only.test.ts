@@ -27,7 +27,9 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
   decision_ledger: "src/infrastructure/ledger/ledger-store.ts",
 };
 const DYNAMIC_SQL = "\u0000dynamic-sql\u0000";
-const INSERT_TARGET = /\bINSERT\s+INTO\s+([^\s(;,]+)/gi;
+const INSERT_TARGET = /\bINSERT\s+INTO\s+(?:ONLY\s+)?([^\s(;,]+)/gi;
+const MERGE_TARGET = /\bMERGE\s+INTO\s+(?:ONLY\s+)?([^\s(;,]+)/gi;
+const COPY_FROM_TARGET = /\bCOPY\s+([^\s(;,]+)(?:\s*\([^;]*?\))?\s+FROM\b/gi;
 const REVIEWED_DYNAMIC_SQL_OWNERS = new Map([
   ["src/infrastructure/store/db.ts", new Set(["exec", "query"])],
   [
@@ -226,18 +228,36 @@ function isReviewedDynamicSql(call: Node, file: string): boolean {
     (REVIEWED_DYNAMIC_SQL_OWNERS.get(file)?.has(owner) ?? false);
 }
 
-function insertedTable(candidate: SqlCandidate): ImmutableTable | "dynamic" | null {
-  if (!candidate.complete) return "dynamic";
-  for (const match of candidate.text.matchAll(INSERT_TARGET)) {
-    const token = match[1] ?? "";
-    const table = token
-      .split(".")
-      .at(-1)
-      ?.replace(/^["'`]|["'`]$/g, "")
-      .toLowerCase() as ImmutableTable | undefined;
-    if (table && IMMUTABLE_TABLES.includes(table)) return table;
+function immutableWriteTargets(
+  candidate: SqlCandidate,
+): Array<ImmutableTable | "dynamic"> {
+  if (!candidate.complete) return ["dynamic"];
+  const targets: ImmutableTable[] = [];
+  let matchedWrite = false;
+  for (const pattern of [INSERT_TARGET, MERGE_TARGET, COPY_FROM_TARGET]) {
+    for (const match of candidate.text.matchAll(pattern)) {
+      matchedWrite = true;
+      const token = match[1] ?? "";
+      const table = token
+        .split(".")
+        .at(-1)
+        ?.replace(/^["'`]|["'`]$/g, "")
+        .toLowerCase() as ImmutableTable | undefined;
+      if (table && IMMUTABLE_TABLES.includes(table)) targets.push(table);
+    }
   }
-  return null;
+  if (targets.length > 0) return [...new Set(targets)];
+  if (matchedWrite) return [];
+  const unmatchedInsertOrMerge = /\b(?:INSERT|MERGE)\b/i.test(
+    candidate.text.replace(
+      /\bWHEN\s+NOT\s+MATCHED(?:\s+BY\s+TARGET)?\s+THEN\s+INSERT\b/gi,
+      "",
+    ),
+  );
+  const unmatchedCopyFrom = /\bCOPY\s+(?!\s*\()[\s\S]*?\bFROM\b/i.test(
+    candidate.text,
+  );
+  return unmatchedInsertOrMerge || unmatchedCopyFrom ? ["dynamic"] : [];
 }
 
 function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
@@ -253,15 +273,14 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       const normalized = normalizeSqlExecutorCall(call);
       if (!normalized) continue;
       for (const candidate of sqlCandidates(normalized.arguments[0])) {
-        const table = insertedTable(candidate);
-        if (table === "dynamic" && isReviewedDynamicSql(call, rel)) continue;
-        if (!table || (table !== "dynamic" && INSERT_ALLOWLIST[table] === rel)) {
-          continue;
-        }
-        const key = `${rel}:${call.getStartLineNumber()}:${table}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          violations.push({ file: rel, line: call.getStartLineNumber() });
+        for (const table of immutableWriteTargets(candidate)) {
+          if (table === "dynamic" && isReviewedDynamicSql(call, rel)) continue;
+          if (table !== "dynamic" && INSERT_ALLOWLIST[table] === rel) continue;
+          const key = `${rel}:${call.getStartLineNumber()}:${table}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            violations.push({ file: rel, line: call.getStartLineNumber() });
+          }
         }
       }
     }
@@ -313,8 +332,7 @@ describe("decision-ledger append-only fence", () => {
       migration.sql,
       ...(migration.preflight ?? []).map((probe) => probe.sql),
     ]).flatMap((sql) => {
-      const table = insertedTable({ text: sql, complete: true });
-      return table ? [table] : [];
+      return immutableWriteTargets({ text: sql, complete: true });
     });
     expect(violations).toEqual([]);
     expect(
@@ -342,6 +360,45 @@ describe("decision-ledger append-only fence", () => {
         "/src/infrastructure/evil.ts":
           `export async function evil(db: { query(sql: string): unknown }) {\n` +
           `  return db.query("INSERT " + "INTO decision_" + "ledger (id) VALUES ('x')");\n` +
+          `}`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([{
+        file: "src/infrastructure/evil.ts",
+        line: 2,
+      }]);
+    });
+
+    it("detects INSERT INTO ONLY against an immutable table", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts":
+          `export function evil(db: { query(sql: string): unknown }) {\n` +
+          `  return db.query("INSERT INTO ONLY decision_ledger (id) VALUES ('x')");\n` +
+          `}`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([{
+        file: "src/infrastructure/evil.ts",
+        line: 2,
+      }]);
+    });
+
+    it("detects COPY FROM against an immutable table", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts":
+          `export function evil(db: { query(sql: string): unknown }) {\n` +
+          `  return db.query("COPY decision_ledger (id) FROM STDIN");\n` +
+          `}`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([{
+        file: "src/infrastructure/evil.ts",
+        line: 2,
+      }]);
+    });
+
+    it("detects MERGE against an immutable table", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts":
+          `export function evil(db: { query(sql: string): unknown }) {\n` +
+          `  return db.query("MERGE INTO decision_ledger AS target USING source ON false WHEN NOT MATCHED THEN INSERT (id) VALUES ('x')");\n` +
           `}`,
       });
       expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([{

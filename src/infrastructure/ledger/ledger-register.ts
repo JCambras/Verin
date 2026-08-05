@@ -1,4 +1,4 @@
-import type { SqlDb, SqlTx } from "@infra/store/db";
+import type { SqlDb, SqlQueryable } from "@infra/store/db";
 import { appError, normalizeAppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import {
@@ -20,7 +20,7 @@ import {
   type DecisionProjection,
 } from "@domain/ledger/projections";
 import {
-  verifyAndListDecisionLedgerTransaction,
+  verifyAndListDecisionLedger,
   type DecisionLedgerRow,
   type LedgerVerification,
 } from "./ledger-verification";
@@ -68,7 +68,7 @@ function eventDecisionId(event: LedgerEntry): string | undefined {
 }
 
 async function replayRegisterWindow(
-  tx: SqlTx,
+  tx: SqlQueryable,
   tenant: TenantContext,
   rows: readonly DecisionLedgerRow[],
   decisionLimit: number,
@@ -125,9 +125,18 @@ async function replayRegisterWindow(
   const ordered = [...decisions.values()].sort((left, right) =>
     right.projection.lastSequence - left.projection.lastSequence ||
     left.projection.decisionId.localeCompare(right.projection.decisionId));
-  const withheldInputs = entries.filter(({ event }) =>
-    event.type === "DecisionRecorded" &&
-    sources.withheldDecisionIds.has(event.decisionRef.id));
+  const decisionIds = new Set(entries.flatMap(({ event }) => {
+    const id = eventDecisionId(event);
+    return id ? [id] : [];
+  }));
+  const withheldIds = new Set([
+    ...sources.withheldDecisionIds,
+    ...[...decisionIds].filter((id) => !decisions.has(id)),
+  ]);
+  const withheldInputs = entries.filter(({ event }) => {
+    const id = eventDecisionId(event);
+    return id !== undefined && withheldIds.has(id);
+  });
   const withheldAsOf = withheldInputs.reduce(
     (latest, entry) => entry.provenance.asOf > latest
       ? entry.provenance.asOf
@@ -137,7 +146,7 @@ async function replayRegisterWindow(
   return {
     decisions: ordered.slice(0, decisionLimit),
     decisionsTotal: ordered.length,
-    decisionsWithheld: sources.withheldDecisionIds.size,
+    decisionsWithheld: withheldIds.size,
     decisionsWithheldProvenance: withheldInputs.length > 0
       ? deriveArtifactProvenance(
           withheldInputs.map((entry) => entry.provenance),
@@ -176,43 +185,41 @@ export async function readVerifiedDecisionRegister(
   assertActionGrant(piiGrant, "pii.view");
   assertSameTenant(exportGrant.tenant, piiGrant.tenant);
   const tenant = exportGrant.tenant;
-  return db.transaction(async (tx) => {
-    const checked = await verifyAndListDecisionLedgerTransaction(
-      tx,
-      exportGrant,
-      piiGrant,
-      eventWindow,
-    );
-    const rows = checked.verification.ok ? checked.rows : [];
-    if (!checked.verification.ok) {
-      return {
-        verification: checked.verification,
-        rows,
-        decisions: [],
-        decisionsTotal: 0,
-        decisionsWithheld: 0,
-        decisionsWithheldProvenance: null,
-      };
-    }
-    let replayed;
-    try {
-      replayed = await replayRegisterWindow(tx, tenant, rows, decisionLimit);
-    } catch (error: unknown) {
-      const normalized = normalizeAppError(error, "trusted-only");
-      if (normalized?.code !== "STORE_CONSTRAINT") throw error;
-      return {
-        verification: replaySourceFailure(checked.verification),
-        rows: [],
-        decisions: [],
-        decisionsTotal: 0,
-        decisionsWithheld: 0,
-        decisionsWithheldProvenance: null,
-      };
-    }
+  const checked = await verifyAndListDecisionLedger(
+    db,
+    exportGrant,
+    piiGrant,
+    eventWindow,
+  );
+  const rows = checked.verification.ok ? checked.rows : [];
+  if (!checked.verification.ok) {
     return {
       verification: checked.verification,
       rows,
-      ...replayed,
+      decisions: [],
+      decisionsTotal: 0,
+      decisionsWithheld: 0,
+      decisionsWithheldProvenance: null,
     };
-  });
+  }
+  let replayed;
+  try {
+    replayed = await replayRegisterWindow(db, tenant, rows, decisionLimit);
+  } catch (error: unknown) {
+    const normalized = normalizeAppError(error, "trusted-only");
+    if (normalized?.code !== "STORE_CONSTRAINT") throw error;
+    return {
+      verification: replaySourceFailure(checked.verification),
+      rows: [],
+      decisions: [],
+      decisionsTotal: 0,
+      decisionsWithheld: 0,
+      decisionsWithheldProvenance: null,
+    };
+  }
+  return {
+    verification: checked.verification,
+    rows,
+    ...replayed,
+  };
 }

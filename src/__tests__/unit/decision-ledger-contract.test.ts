@@ -10,7 +10,19 @@ import {
   canonicalJson,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
-import { allLedgerEventSamples } from "../helpers/ledger-fixtures";
+import { parseRecordedLedgerEvent } from "@infra/ledger/ledger-schema-registry";
+import { parseRecordedReplaySource } from "@infra/ledger/ledger-source-registry";
+import { createRecordedVersionRegistry } from "@infra/ledger/recorded-version-registry";
+import {
+  recordedBundleV1_7,
+  recordedDecisionV1_7,
+  recordedEvidenceV1_7,
+  recordedLedgerV1_1,
+} from "@infra/ledger/recorded-schemas";
+import {
+  allLedgerEventSamples,
+  decisionRecordingInput,
+} from "../helpers/ledger-fixtures";
 
 const DIGESTS = JSON.parse(readFileSync(
   join(
@@ -19,6 +31,13 @@ const DIGESTS = JSON.parse(readFileSync(
   ),
   "utf8",
 )) as Record<string, string>;
+
+const RECORDED_SCHEMA_DIGESTS = {
+  bundle: [recordedBundleV1_7, "c370e321e347a804bc2e15788948e1df9c3373366ee07dd60f7645541f6b4926"],
+  decision: [recordedDecisionV1_7, "c52559a855402e995b1307a4f720ca38962a686f2d1fb99a9aae0f59c0156758"],
+  evidence: [recordedEvidenceV1_7, "5cf703d93c4d72342a5cd97cfada7b3d657cf9e33d7c8a3b4c38ff5f869f6847"],
+  ledger: [recordedLedgerV1_1, "122d6dcac1dbdeed8f9c7a76d4544c26098c8ee32f705acdeee9be8b1806d7ee"],
+} as const;
 
 describe("decision ledger contract", () => {
   it("locks the ratified 16-event discriminated union", () => {
@@ -39,6 +58,49 @@ describe("decision ledger contract", () => {
     }
     expect(actual).toEqual(DIGESTS);
     expect(Object.keys(DIGESTS).sort()).toEqual([...LEDGER_EVENT_TYPES].sort());
+  });
+
+  it("dispatches frozen ledger and replay-source codecs by recorded version", () => {
+    const event = allLedgerEventSamples()[0]!;
+    const ledger = parseRecordedLedgerEvent(
+      event.type,
+      "1.1.0",
+      "1.0.0",
+      event,
+    );
+    expect(ledger.ok).toBe(true);
+    const input = decisionRecordingInput();
+    const bundle = parseRecordedReplaySource(
+      "bundle",
+      "1.7.0",
+      "1.0.0",
+      input.inputBundle,
+    );
+    expect(bundle.ok && bundle.hashPreimage?.hashKind).toBe(
+      "decision-input-bundle",
+    );
+    expect(parseRecordedLedgerEvent(
+      event.type,
+      "1.2.0",
+      "1.0.0",
+      event,
+    ).ok).toBe(false);
+  });
+
+  it("keeps multiple recorded versions independently dispatchable", () => {
+    const registry = createRecordedVersionRegistry([
+      { schemaVersion: "1", serializerVersion: "1", codec: "first" },
+      { schemaVersion: "2", serializerVersion: "1", codec: "second" },
+    ]);
+    expect(registry.resolve("1", "1")).toBe("first");
+    expect(registry.resolve("2", "1")).toBe("second");
+  });
+
+  it("pins every frozen recorded schema by content digest", () => {
+    for (const [schema, digest] of Object.values(RECORDED_SCHEMA_DIGESTS)) {
+      const bytes = JSON.stringify(schema);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(digest);
+    }
   });
 
   it("rejects malformed cross-tenant attribution and references", () => {

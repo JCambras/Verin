@@ -1356,6 +1356,10 @@ export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why:
     callable: "src/infrastructure/ledger/ledger-schema-registry.ts :: parseRecordedLedgerEvent",
     why: "pure recorded-version parser over already-loaded immutable bytes; every repository that loads those bytes enforces its own tenant and action authority.",
   },
+  {
+    callable: "src/infrastructure/ledger/ledger-source-registry.ts :: parseRecordedReplaySource",
+    why: "pure recorded-version parser over already-loaded immutable source bytes; every repository that loads those bytes enforces its own tenant and action authority.",
+  },
 ];
 
 /** `file :: name` for every exported infrastructure callable returning PII with no tenant boundary. */

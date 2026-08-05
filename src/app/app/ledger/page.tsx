@@ -155,8 +155,8 @@ export default function DecisionLedgerPage() {
               className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
             >
               Withheld decisions: <Metric metric={model.decisionsWithheld} />.
-              Required source-origin events fall outside the displayed event
-              window, so those decisions are not replayed here.
+              Required recording or source-origin events fall outside the
+              displayed event window, so those decisions are not replayed here.
             </p>
           ) : null}
 

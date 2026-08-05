@@ -5997,3 +5997,45 @@ module reevaluation, and old-origin tamper remain as detection-is-not-verificati
 companions.
 
 **Date:** 2026-08-05 (review corrections F19-F23, ADR-0043, D-116).
+### PF-203 immutable write forms and ledger compatibility bindings
+
+**Invariants:** every PostgreSQL path that can add an immutable ledger row has one
+reviewed owner; recorded approval and execution identifiers belong to their immutable
+decision; historical encodings remain dispatchable; request verification does not hold
+the tenant append lock; bounded omissions are visible.
+
+The companions were added before the production corrections and reproduced the
+reported failures:
+
+```text
+× detects INSERT INTO ONLY against an immutable table
+  expected [] to deeply equal [{ file: "src/infrastructure/evil.ts", line: 2 }]
+× detects COPY FROM against an immutable table
+  expected [] to deeply equal [{ file: "src/infrastructure/evil.ts", line: 2 }]
+× detects MERGE against an immutable table
+  expected [] to deeply equal [{ file: "src/infrastructure/evil.ts", line: 2 }]
+× refuses approval and execution identifiers absent from the immutable decision
+  invalid stage and step events appended successfully
+× L2 rejects a correctly rechained event with an unknown approval stage
+  expected false, received true
+× verifies a consistent register snapshot without holding the tenant write lock
+  expected direct queries, received one tenant-locked transaction
+× withholds a recent event whose DecisionRecorded prerequisite is outside the window
+  expected one withheld decision, received zero
+```
+
+The corrected fence resolves all supported row-creation targets and keeps its dynamic
+SQL refusal. The structural regressions use real PGlite rows, including a privileged
+rechain for L2. Frozen-schema digests and a two-version registry companion protect the
+recorded compatibility path. Query instrumentation proves the register captures the
+anchor and complete ledger together without `FOR UPDATE` or a transaction.
+
+After correction, the focused append-only, contract, ledger, projection, and budget
+suites pass. The line-budget companion measures contracts at 4,598 lines and
+infrastructure at 7,652 under the ADR-0045 ceilings.
+
+**Revert:** no planted production SQL or invalid history remains. The in-memory write
+forms, privileged rechain, query harness, and frozen-schema pins remain as
+detection-is-not-verification companions.
+
+**Date:** 2026-08-05 (review corrections F30-F35, ADR-0045, D-118).

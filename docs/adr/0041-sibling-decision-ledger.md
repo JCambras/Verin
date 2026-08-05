@@ -84,8 +84,9 @@ settle now.
   sequence, and head hash with the anchor. The existing CI chain gate verifies
   both audit-class stores unbounded, dispatches immutable evidence, bundle, and
   decision rows through recorded source codecs, and refuses a zero-entry pass.
-- The request path verifies the complete tenant chain under one tenant-locked
-  transaction, then returns and replays only the bounded event window. It displays
+- The request path verifies the complete tenant chain from one MVCC-consistent
+  snapshot without holding the append lock, then returns and replays only the bounded
+  event window. It displays
   only decisions whose complete replay sources fall inside that window and reports
   the number withheld. The register remains an operator view; only the gate's
   unbounded source verification is examiner-grade.
@@ -99,8 +100,8 @@ settle now.
   now applies to both chains.
 - Amend the ADR-0018 ceilings, re-measured on the composed tree that already
   carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 6,050,
-  domain 1,350 to 1,650, and infrastructure 3,550 to 7,300. Measured state is
-  contracts 5,991 (59 headroom), domain 1,584 (66), and infrastructure 7,231 (69) -
+  domain 1,350 to 1,650, and infrastructure 3,550 to 7,700. Measured state is
+  contracts 6,010 (40 headroom), domain 1,584 (66), and infrastructure 7,652 (48) -
   bounded correction room, per the ADR-0033 rule that a zero-headroom ceiling just
   converts review findings into documentation deletions. The presentation envelope and
   the per-file 500-line limit are unchanged: the repository is split into the chain

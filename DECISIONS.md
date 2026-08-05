@@ -3758,3 +3758,33 @@ history.
 **Relates to:** ADR-0039, ADR-0043, ADR-0044.
 **Revert path:** none while historical facts authorize L2 ordering and the register
 returns a verified integrity verdict.
+
+### D-118 · 2026-08-05 · reversible · Ledger compatibility and register availability are explicit
+
+The immutable-write fence now recognizes PostgreSQL `INSERT INTO ONLY`, `COPY FROM`,
+and `MERGE INTO` targets in addition to ordinary inserts, while unresolved write SQL
+continues to fail closed. Append and L2 share immutable decision parsing that binds
+approval stages, escalation indexes, and execution steps to the authority and plan
+recorded by that decision.
+
+Ledger 1.1.0 and decision-core 1.7.0 recorded schemas are frozen as digest-pinned JSON
+Schema artifacts. Literal additive registry entries own their recorded parser, v1
+canonical serializer, hash and chain preimage handlers, and current upcast. A
+two-version companion proves entries remain independently dispatchable.
+
+The request register captures tenant, anchor, and complete chain in one consistent
+statement, then runs full-chain verification without holding the tenant append lock.
+Gate and rebuild retain the lock. Bounded replay counts every decision-scoped event it
+cannot materialize because a recording or source-origin prerequisite is outside the
+displayed window.
+
+ADR-0045 raises the contracts ceiling to 4,650 around the measured 4,598 lines and
+the infrastructure ceiling to 7,700 around 7,652. The domain and presentation ceilings
+are unchanged.
+
+**Why:** immutable history needs permanent decoders and structural semantic bindings,
+and a complete-chain operator read must not block tenant writes for retention-linear
+verification work.
+**Relates to:** ADR-0039, ADR-0044, ADR-0045.
+**Revert path:** none while retained ledger versions require replay and full-chain
+request verification remains the disclosure authority.

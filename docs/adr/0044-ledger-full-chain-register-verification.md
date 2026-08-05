@@ -4,6 +4,7 @@
 **Date:** 2026-08-05
 **Deciders:** Founding architect
 **Amends:** ADR-0039 and ADR-0043
+**Amended by:** ADR-0045
 **Relates to:** Charter non-negotiables #1, #2, #4, #7, #13; v3 invariants 2, 4, 5, 23, 30
 
 ## Context
@@ -24,8 +25,8 @@ anchor and projection checkpoint after every event.
 ## Decision
 
 - The request-path register authenticates the complete tenant ledger through L1-L4
-  under the tenant lock. The event rows returned to the route and the decision
-  replay window remain bounded.
+  from one MVCC-consistent snapshot without retaining the tenant append lock. The
+  event rows returned to the route and the decision replay window remain bounded.
 - Replay-source validation failures become a static L2 integrity failure. The
   register withholds all rows and derived state instead of returning a generic
   server error or disclosing failed bytes.
@@ -58,7 +59,8 @@ anchor and projection checkpoint after every event.
   corruption fails closed in the register, bounded omissions are visible, and
   history lookups use targeted indexes.
 - **Sacrificed:** request-path verification is linear in retained ledger entries
-  even though returned rows and replay remain bounded.
+  even though returned rows and replay remain bounded. The verification no longer
+  blocks an append while hashing and validating the captured rows.
 
 ## Consequences
 
