@@ -98,7 +98,7 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   avoiding the client Set-Cookie/navigate race and hydration race. Client forms are uncontrolled
   (FormData) and gate submit on `useHydrated()` so a pre-hydration click can't do a native submit.
 - **One identity per request:** `requirePrincipal` memoizes its in-flight promise on a `WeakMap` keyed
-  by the `NextRequest`. A route may bind several grants (`/api/audit` holds `audit.export` AND
+  by the request-owned cookie store. A route may bind several grants (`/api/audit` holds `audit.export` AND
   `pii.view`), and a second resolution would re-read the cookie the client SENT after renewal already
   rotated that id away - a 401 that only appears once the session passes its half-life.
 - **Session lifecycle: renewal/rotation happens ONLY in `requirePrincipal`, never `resolveSession`**

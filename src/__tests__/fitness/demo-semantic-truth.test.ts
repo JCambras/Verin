@@ -4256,6 +4256,19 @@ describe("demo semantic-truth fence", () => {
     ).toEqual([]);
   });
 
+  it("enforces: the setup request stays neutral about an unbound execution rail", () => {
+    const request = buildMoneyMovementSetup().request;
+    const executionCapability = request.facts.find(
+      (fact) => fact.label === "Execution capability",
+    );
+
+    expect(request.title).toBe("$75,000 one-time distribution");
+    expect(executionCapability?.value).toBe(
+      "Distribution through labeled fake adapter only",
+    );
+    expect(JSON.stringify(request)).not.toMatch(/\bach\b/i);
+  });
+
   it("detects: swapped GC-09 evidence timestamps cannot pass", () => {
     const truth = {
       availableCashAsOf: "2026-07-26",

@@ -1,7 +1,7 @@
 /**
  * App-layer server helpers. The app layer may import anything (ADR-0001). Every
  * authenticated request resolves its principal from the signed session cookie
- * here, once per NextRequest even when several grants are bound (charter #12;
+ * here, once per request cookie store even when several grants are bound (charter #12;
  * auth-enforcement fence). org_id and role come from the session, never a body or header.
  */
 import { type NextRequest, NextResponse } from "next/server";
@@ -33,13 +33,13 @@ interface SessionCookieSource {
  * keeps the fence-required prologue shape (one `requireActionGrant` per action) while
  * leaving rotation exactly where ADR-0008/D-030 put it: inside requirePrincipal.
  */
-const REQUEST_PRINCIPAL = new WeakMap<SessionCookieSource, Promise<Result<Principal, AppError>>>();
+const REQUEST_PRINCIPAL = new WeakMap<SessionCookieSource["cookies"], Promise<Result<Principal, AppError>>>();
 
 export function requirePrincipal(req: SessionCookieSource): Promise<Result<Principal, AppError>> {
-  const inFlight = REQUEST_PRINCIPAL.get(req);
+  const inFlight = REQUEST_PRINCIPAL.get(req.cookies);
   if (inFlight) return inFlight;
   const resolving = resolvePrincipalOnce(req);
-  REQUEST_PRINCIPAL.set(req, resolving);
+  REQUEST_PRINCIPAL.set(req.cookies, resolving);
   return resolving;
 }
 

@@ -6401,3 +6401,27 @@ semantic, attestation-store, and activation-store tests to green. Before the aut
 the production-browser specialist-only journey failed because it rendered `Eligible approval role`
 beside a specialist-only stage. The same journey now requires `Configured standard-approval role`
 and Operations as separate facts.
+
+## PF-setup-43 · request facts, principal reuse, and rotation timing stay scoped
+
+**Date:** 2026-08-05.
+
+**Invariant:** the setup request makes no execution-rail claim that is absent from its canonical
+identity and record. Every authenticated surface reuses one principal resolution for the same
+request-owned cookie store, even when callers construct distinct wrappers. The short session
+lifetime needed to exercise rotation cannot apply to unrelated browser scenarios.
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` requires the exact rail-neutral
+request title and adapter capability and rejects ACH anywhere in the request projection.
+`src/__tests__/integration/audit-route.test.ts` crosses the renewal half-life, calls the identity
+boundary through two wrappers sharing one cookie store, and requires one successful rotated
+principal and one cookie write. The default Playwright config excludes the rotation spec and uses
+the normal session lifetime; `playwright.rotation.config.ts` selects only that spec on its own
+server and store.
+
+**Adversarial proof:** ACH was temporarily restored to the setup title. The focused semantic test
+failed at line 4265 with the unbound request fact. Principal memoization was temporarily keyed by
+the disposable wrapper again. The focused integration test failed at line 119 because the second
+resolution re-read the rotated credential. Reverting both injections returned both focused tests
+to green. The complete browser command then passed 33 normal-lifetime tests and the isolated
+one-minute rotation test.

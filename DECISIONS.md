@@ -3636,3 +3636,23 @@ timeout as the demo grew, even though files outside that module-reachability set
 a trusted factory without first triggering the companion module-access violation.
 **Revert path:** restore whole-program identifier scanning if trusted factories gain an access path
 that is not covered by direct imports or the privileged-module analysis.
+
+### D-105 · 2026-08-05 · reversible · Request truth and session tests use exact ownership boundaries
+
+The setup request stays execution-rail neutral because neither the canonical request nor the signed
+golden cases bind ACH. The visible request and adapter capability now claim only a distribution.
+
+Principal memoization keys on the request-owned cookie store rather than a caller-created wrapper.
+Distinct wrappers created inside one Server Action therefore share the same in-flight resolution and
+cannot re-read a session credential after renewal rotates it.
+
+The normal browser suite uses the configured 60-minute session lifetime. The one-minute lifetime and
+two deliberate half-life crossings run only in a dedicated session-rotation Playwright suite with its
+own server, store, port, report, and test selection.
+
+**Why:** visible request facts, authenticated request identity, and test-only timing controls each need
+one stable owner. An unbound execution label, a disposable cache key, or a suite-wide short lifetime
+lets unrelated surfaces contradict that owner.
+**Revert path:** bind a rail only when the canonical request and export carry it, replace cookie-store
+memoization only with another request-scoped identity, and merge the browser suites only if rotation can
+be exercised without shortening unrelated sessions.

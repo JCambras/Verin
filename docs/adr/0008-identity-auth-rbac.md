@@ -24,7 +24,7 @@ list (logout), and **sliding renewal with id rotation** (below). Each login also
 `lineage_id` that survives those rotations while remaining distinct from every other login. Identity is
 resolved in exactly one place (the shared session-row resolver, exposed as read-only `resolveSession` and
 rotating `resolveAndRenewSession`) from the cookie, never from a client-supplied role/identity header.
-Each `NextRequest` memoizes one in-flight principal resolution so a route that binds several grants cannot
+Each request-owned cookie store memoizes one in-flight principal resolution so a surface that binds several grants cannot
 re-read a cookie whose session id was already rotated. **RBAC is enforced server-side at the port**: the
 roles enum lives in `contracts/roles.ts`; ordinary CRUD gates use `requireRole`. Governed actions use
 `authorizeGovernedAction` to mint a sealed, action-specific `ActionGrant` from the authenticated human,
@@ -56,7 +56,7 @@ identity-read chokepoint now does all three:
   `resolveAndRenewSession`, which returns the rotated cookie for the app layer to persist on the response
   (`cookies().set`, valid in a Route Handler / Server Action). Renewal + rotation stay entirely inside the
   identity chokepoint, so the auth-enforcement / org-id-required / audited-write fences hold unchanged.
-- **One identity per request.** `requirePrincipal` memoizes its in-flight result by `NextRequest`.
+- **One identity per request.** `requirePrincipal` memoizes its in-flight result by the request-owned cookie store.
   Multi-grant routes such as `/api/audit` therefore resolve and possibly rotate once, then derive both
   `audit.export` and `pii.view` grants from the same principal.
 - **Opportunistic cleanup.** A rotation also sweeps sessions that expired or were revoked more than one TTL

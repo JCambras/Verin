@@ -366,7 +366,7 @@ export function buildMoneyMovementSetup(
       attestationStatement: "I acknowledge that the distinct-human proposal and approval sequence shown above is a synthetic lifecycle preview. I am the single authenticated demonstration Principal recording this acknowledgment, and no production policy lifecycle or second human approval is established.",
     },
     request: {
-      title: `${usd(SMITHS_LIQUIDITY.requestMinor)} one-time ACH distribution`,
+      title: `${usd(SMITHS_LIQUIDITY.requestMinor)} one-time distribution`,
       summary: `Smith household · taxable account · household-titled destination · bank instruction changed ${BANK_INSTRUCTION.changedAgeDays} days ago`,
       requestRef: DEMO_REQUEST_REF,
       evidenceRef: evidence.ref,
@@ -377,7 +377,7 @@ export function buildMoneyMovementSetup(
         { label: "Planned monthly withdrawals", metric: metric(evidence.plannedMonthlyWithdrawal.value, "currency-minor", evidence.plannedMonthlyWithdrawal.provenance), category: "Household instruction", provenance: evidence.plannedMonthlyWithdrawal.provenance, fakeClass: "synthetic-fixture" },
         { label: "Destination restriction", value: evidence.destinationRestriction.value.text, category: "Household instruction", provenance: evidence.destinationRestriction.provenance, fakeClass: "synthetic-fixture" },
         { label: "Bank instruction", value: `Changed ${evidence.bankInstruction.provenance.asOf.slice(0, 10)} · ${BANK_INSTRUCTION.changedAgeDays} days ago · not independently verified`, category: "Synthetic fixture", provenance: evidence.bankInstruction.provenance, fakeClass: "synthetic-fixture" },
-        { label: "Execution capability", value: "ACH through labeled fake adapter only", category: "Adapter fact", provenance: prov("fake-adapter-response", DEMO_NOW), fakeClass: "fake-adapter-response" },
+        { label: "Execution capability", value: "Distribution through labeled fake adapter only", category: "Adapter fact", provenance: prov("fake-adapter-response", DEMO_NOW), fakeClass: "fake-adapter-response" },
         { label: "Authority invariant", value: "Blocked and prohibited decisions carry no approval authority", category: "Regulatory or product constraint", provenance: prov("deterministic-engine-output", DEMO_NOW), fakeClass: "deterministic-engine-output" },
       ],
     },

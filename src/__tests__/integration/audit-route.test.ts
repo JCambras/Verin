@@ -96,6 +96,32 @@ describe("GET /api/audit: two grants on one request (integration)", () => {
     expect(rows.rows[0]!.id).not.toBe("s-aging");
   });
 
+  it("shares one rotated identity across distinct wrappers for one Server Action cookie store", async () => {
+    await insertSession("s-action-aging", 20 * MIN);
+    const requestCookies = {
+      get: (name: string) =>
+        name === SESSION_COOKIE
+          ? { value: signSessionCookie("s-action-aging") }
+          : undefined,
+    };
+    const { requirePrincipalWithRole } = await import("@app/_server/context");
+
+    const first = await requirePrincipalWithRole(
+      { cookies: requestCookies },
+      ["ops"],
+    );
+    const second = await requirePrincipalWithRole(
+      { cookies: requestCookies },
+      ["ops"],
+    );
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(second.value.sessionId).toBe(first.value.sessionId);
+    expect(cookieStore.set).toHaveBeenCalledTimes(1);
+  });
+
   it("serves a fresh session with no rotation at all", async () => {
     await insertSession("s-fresh", 50 * MIN);
     const { GET } = await import("@app/api/audit/route");
