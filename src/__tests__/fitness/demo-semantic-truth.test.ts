@@ -3248,6 +3248,21 @@ describe("demo semantic-truth fence", () => {
       )?.result,
     ).toContain("Cannot evaluate");
 
+    const ambiguousRecord = getJourney(
+      "ambiguous-instruction",
+      "firm-a",
+    ).record;
+    const ambiguous = ambiguousRecord.reserve;
+    expect(ambiguous.kind).toBe("not-evaluated");
+    expect(reserveStateViolations({ kind: ambiguous.kind })).toEqual([]);
+    expect("floor" in ambiguous).toBe(false);
+    expect("headroom" in ambiguous).toBe(false);
+    expect(
+      ambiguousRecord.precedence.find((row) =>
+        row.rule.startsWith("Cash-reserve floor"),
+      )?.result,
+    ).toContain("funding source unresolved");
+
     const prohibitedRecord = getJourney(
       "permanent-prohibition",
       "firm-a",

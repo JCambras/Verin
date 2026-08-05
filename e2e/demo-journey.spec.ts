@@ -796,6 +796,32 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await snap(page, 19, "record-specialist-rearmed");
 });
 
+test("an ambiguous funding source does not produce reserve arithmetic", async ({ page }) => {
+  await login(page, PRINCIPAL);
+
+  await page.goto(
+    "/app/demo/evidence?scenario=ambiguous-instruction&firm=firm-a",
+  );
+  const conflict = page.getByText("Distribution funding instruction").locator("..");
+  await expect(conflict).toContainText("Joint Taxable");
+  await expect(conflict).toContainText("Smith Family Taxable");
+
+  await page.goto(
+    "/app/demo/record?scenario=ambiguous-instruction&firm=firm-a",
+  );
+  await expect(page.getByTestId("record-reserve-state")).toContainText(
+    "Reserve calculation not evaluated",
+  );
+  await expect(
+    page.getByTestId("record-reserve-state").locator(".."),
+  ).toContainText("funding source remains unresolved");
+  await expect(page.getByTestId("record-reserve-floor")).toHaveCount(0);
+  await expect(page.getByTestId("record-reserve-headroom")).toHaveCount(0);
+  await expect(
+    page.getByText("Cash-reserve floor (months of planned withdrawals)").locator(".."),
+  ).toContainText("Cannot evaluate");
+});
+
 test("print posture: the record's identity header prints complete; app chrome and buttons do not", async ({ page }) => {
   await login(page, PRINCIPAL);
   await page.goto("/app/demo/record?scenario=recent-bank-change-block&firm=firm-a");

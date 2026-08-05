@@ -8,7 +8,6 @@ import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
 import type {
   AuthorityPlanVM,
   DispositionVM,
-  RecordReserveVM,
   RecordVM,
 } from "./model";
 import { FIXTURE_RESERVE_HORIZON, prov, recordProvenance } from "./provenance";
@@ -17,9 +16,7 @@ import {
   buildAuthorityPlan,
   buildDisposition,
   buildPolicyTrace,
-  headroomMetric,
-  reserveFloorMetric,
-  reserveHorizonPhrase,
+  buildRecordReserve,
 } from "./build-decision";
 import { buildDecisionAuthorityPlan } from "./decision-authority";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
@@ -52,34 +49,6 @@ export interface RecordBuildOptions {
    * classes behind the printed floor and headroom, never the arithmetic. */
   readonly reserveHorizon?: RecordProvenance;
   readonly evidence?: DecisionEvidenceSnapshot;
-}
-
-function buildRecordReserve(
-  scenario: ScenarioData,
-  firm: FirmData,
-  disposition: DispositionVM,
-  reserveHorizon: RecordProvenance,
-): RecordReserveVM {
-  if (disposition.kind === "prohibited") {
-    return {
-      kind: "not-applicable",
-      reason:
-        "The household destination prohibition stopped precedence before reserve evaluation.",
-    };
-  }
-  if (scenario.spec.stalePlannedWithdrawals) {
-    return {
-      kind: "not-evaluated",
-      reason:
-        "Planned-withdrawal evidence is outside the active freshness window, so no reserve floor or headroom was calculated.",
-    };
-  }
-  return {
-    kind: "evaluated",
-    horizon: reserveHorizonPhrase(firm),
-    floor: reserveFloorMetric(firm, reserveHorizon),
-    headroom: headroomMetric(firm, reserveHorizon),
-  };
 }
 
 export function buildRecord(

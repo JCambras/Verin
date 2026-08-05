@@ -126,6 +126,10 @@ const TRUSTED_FACTORY_CALLS = [
   },
 ] as const;
 
+const TRUSTED_FACTORY_MODULE_PATHS = new Set<string>(
+  TRUSTED_FACTORY_CALLS.map((factory) => factory.declaration),
+);
+
 const REVIEWED_FACTORY_EXPORTS = new Map<string, ReadonlySet<string>>([
   ["src/contracts/authz.ts", new Set(["actorRefOf", "authorizeGovernedAction"])],
   ["src/contracts/principal.ts", new Set([
@@ -1136,7 +1140,7 @@ export function detectSealedTypeConstruction(project: Project): string[] {
   return out;
 }
 
-export function detectUntrustedFactoryCalls(project: Project): string[] {
+function detectDirectUntrustedFactoryCalls(project: Project): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const sf of project.getSourceFiles()) {
@@ -1145,6 +1149,16 @@ export function detectUntrustedFactoryCalls(project: Project): string[] {
       (!normalized.startsWith("src/") && !normalized.startsWith("scripts/")) ||
       normalized.includes("/__tests__/")
     ) continue;
+    const directlyReachesFactoryModule =
+      TRUSTED_FACTORY_MODULE_PATHS.has(normalized) ||
+      sf.getImportDeclarations().some((declaration) => {
+        const target = declaration.getModuleSpecifierSourceFile();
+        return target !== undefined &&
+          TRUSTED_FACTORY_MODULE_PATHS.has(
+            normalizedPath(target.getFilePath()),
+          );
+      });
+    if (!directlyReachesFactoryModule) continue;
     // Identifier covers a member access too — `ns.principalFromIdentity`'s NAME node
     // is itself an Identifier that resolves to the factory — so a separate
     // PropertyAccessExpression source could never fire alone, and unprovable
@@ -1186,9 +1200,15 @@ export function detectUntrustedFactoryCalls(project: Project): string[] {
       }
     }
   }
-  out.push(...detectPrivilegedFactoryModuleAccess(project));
-  out.push(...detectFactoryResultLaundering(project));
-  return [...new Set(out)];
+  return out;
+}
+
+export function detectUntrustedFactoryCalls(project: Project): string[] {
+  return [...new Set([
+    ...detectDirectUntrustedFactoryCalls(project),
+    ...detectPrivilegedFactoryModuleAccess(project),
+    ...detectFactoryResultLaundering(project),
+  ])];
 }
 
 function callableSignatures(
@@ -1328,7 +1348,15 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
   });
 
   it("enforces: identity and system minting factories are called only at reviewed boundaries", () => {
-    expect(detectUntrustedFactoryCalls(realSemanticProject())).toEqual([]);
+    expect(detectDirectUntrustedFactoryCalls(realSemanticProject())).toEqual([]);
+  });
+
+  it("enforces: privileged factory modules cannot bypass reviewed imports", () => {
+    expect(detectPrivilegedFactoryModuleAccess(realSemanticProject())).toEqual([]);
+  });
+
+  it("enforces: privileged factory results cannot be laundered by new exports", () => {
+    expect(detectFactoryResultLaundering(realSemanticProject())).toEqual([]);
   });
 
   it("enforces: every trusted factory callsite remains live", () => {

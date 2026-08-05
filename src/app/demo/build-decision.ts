@@ -10,7 +10,7 @@
 import { metric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
 import { projectReserve } from "@domain/money-movement/reserve-projection";
-import { DISPOSITION_LABELS, type ApprovalVM, type AuthorityPlanVM, type BlockerVM, type DispositionKind, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type WhyVM } from "./model";
+import { DISPOSITION_LABELS, type ApprovalVM, type AuthorityPlanVM, type BlockerVM, type DispositionKind, type DispositionVM, type PolicyTraceVM, type RecommendationVM, type RecordReserveVM, type WhyVM } from "./model";
 import {
   FIXTURE_RESERVE_HORIZON,
   derivedMetric,
@@ -77,6 +77,75 @@ export function amountMetric() {
  * number so the words, the floor, and the headroom cannot disagree. */
 export function reserveHorizonPhrase(firm: FirmData): string {
   return `${firm.reserveMonths} months of planned withdrawals`;
+}
+
+type ReserveEvaluationState =
+  | {
+      readonly kind: "evaluated";
+      readonly result: string;
+    }
+  | {
+      readonly kind: "not-evaluated" | "not-applicable";
+      readonly result: string;
+      readonly reason: string;
+    };
+
+function reserveEvaluationState(
+  scenario: ScenarioData,
+  kind: DispositionKind,
+): ReserveEvaluationState {
+  if (kind === "prohibited") {
+    return {
+      kind: "not-applicable",
+      result:
+        "Not applicable - precedence stopped at the household destination prohibition",
+      reason:
+        "The household destination prohibition stopped precedence before reserve evaluation.",
+    };
+  }
+  if (scenario.spec.stalePlannedWithdrawals) {
+    return {
+      kind: "not-evaluated",
+      result:
+        "Cannot evaluate - planned-withdrawal evidence is older than policy allows",
+      reason:
+        "Planned-withdrawal evidence is outside the active freshness window, so no reserve floor or headroom was calculated.",
+    };
+  }
+  if (scenario.spec.conflictingInstruction) {
+    return {
+      kind: "not-evaluated",
+      result:
+        "Cannot evaluate - conflicting instructions leave the funding source unresolved",
+      reason:
+        "Conflicting funding instructions mean the funding source remains unresolved, so no reserve floor or headroom was calculated.",
+    };
+  }
+  return {
+    kind: "evaluated",
+    result: "Satisfied after this movement",
+  };
+}
+
+export function buildRecordReserve(
+  scenario: ScenarioData,
+  firm: FirmData,
+  disposition: DispositionVM,
+  reserveHorizon: RecordProvenance,
+): RecordReserveVM {
+  const evaluation = reserveEvaluationState(scenario, disposition.kind);
+  if (evaluation.kind !== "evaluated") {
+    return {
+      kind: evaluation.kind,
+      reason: evaluation.reason,
+    };
+  }
+  return {
+    kind: "evaluated",
+    horizon: reserveHorizonPhrase(firm),
+    floor: reserveFloorMetric(firm, reserveHorizon),
+    headroom: headroomMetric(firm, reserveHorizon),
+  };
 }
 
 /** The §5 spine state-slot per disposition. */
@@ -224,6 +293,7 @@ export function buildPolicyTrace(
   kind: DispositionKind = dispositionFor(scenario, firm.id),
 ): PolicyTraceVM {
   const spec = scenario.spec;
+  const reserveEvaluation = reserveEvaluationState(scenario, kind);
   const reserveCite = firm.id === "firm-a" ? `${firm.policyVersion} §2` : `${firm.policyVersion} §3`;
   const rows = [
     {
@@ -236,22 +306,16 @@ export function buildPolicyTrace(
     {
       order: 2,
       rule: "Cash-reserve floor (months of planned withdrawals)",
-      result:
-        kind === "prohibited"
-          ? "Not applicable - precedence stopped at the household destination prohibition"
-          : spec.stalePlannedWithdrawals
-            ? "Cannot evaluate - planned-withdrawal evidence is older than policy allows"
-            : "Satisfied after this movement",
+      result: reserveEvaluation.result,
       version: reserveCite,
       why:
-        kind === "prohibited"
+        reserveEvaluation.kind === "evaluated"
           ? {
-              reason:
-                "The binding household instruction ended evaluation before firm reserve policy could apply.",
-            }
-          : {
               reason: `${firm.name} preserves ${reserveHorizonPhrase(firm)} in cash.`,
               regulation: `Firm policy ${reserveCite}`,
+            }
+          : {
+              reason: reserveEvaluation.reason,
             },
     },
     {

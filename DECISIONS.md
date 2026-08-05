@@ -3612,3 +3612,27 @@ cannot change during renewal when an identity projection omits lineage.
 
 **Why:** stable session ownership is a sealed identity invariant, not an optional adapter detail.
 **Revert path:** none while setup state remains scoped to logical login lineage across credential rotation.
+
+### D-103 · 2026-08-05 · reversible · Reserve evaluation requires a bound funding source
+
+The precedence trace and printable record now consume one reserve-evaluation state. Conflicting
+funding instructions keep that state not evaluated until a human binds the source account, so the
+record cannot print a reserve floor or headroom derived from one unresolved candidate.
+
+**Why:** a blocked source-selection question cannot coexist with arithmetic that assumes one of its
+answers. The evaluation state must own both the policy trace and exported figures.
+**Revert path:** replace this state only when a persisted evaluator provides an equivalent typed
+source-binding prerequisite for reserve calculation.
+
+### D-104 · 2026-08-05 · reversible · Trusted-factory analysis starts from module reachability
+
+The trusted-factory callsite fence now performs type-resolution only in factory declaration modules
+and source files that directly import those modules. Namespace, re-export, dynamic, CommonJS, and
+reflected access remain owned by the existing privileged-module analysis in the same detector. The
+three independent real-repository analyses run as separate tests under the unchanged timeout.
+
+**Why:** scanning every identifier in the full typed program pushed the blocking test past its fixed
+timeout as the demo grew, even though files outside that module-reachability set cannot directly name
+a trusted factory without first triggering the companion module-access violation.
+**Revert path:** restore whole-program identifier scanning if trusted factories gain an access path
+that is not covered by direct imports or the privileged-module analysis.
