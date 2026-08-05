@@ -75,7 +75,7 @@
   ],
   "funding": {
     "selection": "explicit-account-reference-set-in-both-partitions",
-    "sufficiency": "selected-aggregate-covers-request-reserve-and-reducing-pending",
+    "sufficiency": "selected-aggregate-covers-request-reserve-after-exact-once-pending-action-accounting",
     "taxRisk": "any-selected-retirement-source-requires-completed-review",
     "arithmetic": "exact-safe-integer-minor-units"
   },

@@ -121,7 +121,7 @@ const SemanticContractSchema = z.strictObject({
       "explicit-account-reference-set-in-both-partitions",
     ),
     sufficiency: z.literal(
-      "selected-aggregate-covers-request-reserve-and-reducing-pending",
+      "selected-aggregate-covers-request-reserve-after-exact-once-pending-action-accounting",
     ),
     taxRisk: z.literal(
       "any-selected-retirement-source-requires-completed-review",

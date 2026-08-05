@@ -3,6 +3,7 @@ import {
   instructionConflictAnalysis,
   type InstructionConflictAnalysis,
 } from "./instruction-conflicts";
+import { pendingAvailabilityAdjustmentMinor } from "./pending-actions";
 import type { RealDerivedEvidenceKind } from "./real-derived-policy";
 import type {
   LiquiditySource,
@@ -89,21 +90,30 @@ function fundingProblems(item: RealDerivedCase): string[] {
   } else {
     const actionAdjustment =
       action.amountMinor !== null &&
-        action.availableMinorIncludesAction === false
-        ? action.reducesEffectiveLiquidity
-          ? -BigInt(action.amountMinor)
-          : action.increasesAvailableLiquidity
-            ? BigInt(action.amountMinor)
-            : 0n
+        action.availableMinorIncludesAction !== null &&
+        action.actionKind !== null &&
+        action.actionState !== null
+        ? pendingAvailabilityAdjustmentMinor(
+            action.actionKind,
+            action.actionState,
+            action.availableMinorIncludesAction,
+            BigInt(action.amountMinor),
+          )
         : 0n;
-    if (availableParts.reduce(
-      (total, value) => total + BigInt(value),
-      0n,
-    ) + actionAdjustment <
-      requiredParts.reduce(
+    if (actionAdjustment === null) {
+      problems.push(
+        "an included pending action requires a known liquidity direction",
+      );
+    } else if (
+      availableParts.reduce(
         (total, value) => total + BigInt(value),
         0n,
-      )) {
+      ) + actionAdjustment <
+        requiredParts.reduce(
+          (total, value) => total + BigInt(value),
+          0n,
+        )
+    ) {
       problems.push(
         "selected funding aggregate does not cover request and reserve after exact-once pending-action accounting",
       );

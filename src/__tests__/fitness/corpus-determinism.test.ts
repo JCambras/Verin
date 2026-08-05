@@ -1,9 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
-import { REPO_ROOT, walk } from "./_fence-utils";
+import { REPO_ROOT, toolingSourceFiles } from "./_fence-utils";
 import { inMemoryProject } from "./_fence-utils";
 import { loadTaxonomy } from "../../../scripts/corpus/defects";
 import { generateSyntheticCases } from "../../../scripts/corpus/generate";
@@ -182,11 +188,220 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         registerFunction(name.getText(), initializer);
       }
     }
-    const originOf = (input: Node | undefined): string | undefined => {
+    type CallableShape = { parameters: Node[]; returns: Node[] };
+    const symbolDeclarations = (node: Node): Node[] => {
+      const symbol = node.getSymbol();
+      return (symbol?.getAliasedSymbol() ?? symbol)?.getDeclarations() ?? [];
+    };
+    const callableShapes = (target: Node): CallableShape[] => {
+      const direct = Node.isIdentifier(target)
+        ? localFunctions.get(target.getText())
+        : undefined;
+      const resolved = symbolDeclarations(target).flatMap((declaration) => {
+        if (Node.isFunctionDeclaration(declaration)) {
+          const body = declaration.getBody();
+          const returns: Node[] = declaration
+            .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+            .flatMap((statement) => statement.getExpression() ?? []);
+          if (body !== undefined && !Node.isBlock(body)) returns.push(body);
+          return [{ parameters: declaration.getParameters(), returns }];
+        }
+        const value =
+          Node.isVariableDeclaration(declaration)
+            ? declaration.getInitializer()
+            : Node.isPropertyAssignment(declaration)
+              ? declaration.getInitializer()
+              : undefined;
+        if (
+          value === undefined ||
+          (!Node.isArrowFunction(value) && !Node.isFunctionExpression(value))
+        ) {
+          return [];
+        }
+        const body = value.getBody();
+        const returns: Node[] = value
+          .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+          .flatMap((statement) => statement.getExpression() ?? []);
+        if (!Node.isBlock(body)) returns.push(body);
+        return [{ parameters: value.getParameters(), returns }];
+      });
+      return direct === undefined ? resolved : [direct, ...resolved];
+    };
+    const nodeKey = (node: Node): string =>
+      `${node.getSourceFile().getFilePath()}:${node.getKind()}:${node.getStart()}:${node.getEnd()}`;
+    const callBindings = (
+      callable: CallableShape,
+      call: Node,
+      trail: ReadonlySet<string>,
+      bindings: ReadonlyMap<string, string>,
+    ): ReadonlyMap<string, string> => {
+      const next = new Map(bindings);
+      const arguments_ = Node.isCallExpression(call) ? call.getArguments() : [];
+      for (const [index, parameter] of callable.parameters.entries()) {
+        const name = parameter.getFirstChildByKind(SyntaxKind.Identifier);
+        const origin = originOf(arguments_[index], trail, bindings);
+        if (name !== undefined && origin !== undefined) {
+          next.set(name.getText(), origin);
+        }
+      }
+      return next;
+    };
+    const memberValueOrigin = (
+      input: Node,
+      member: string,
+      trail: ReadonlySet<string>,
+      bindings: ReadonlyMap<string, string>,
+    ): string | undefined => {
+      const node = unwrap(input);
+      const key = `${nodeKey(node)}:${member}`;
+      if (trail.has(key)) return undefined;
+      const next = new Set(trail);
+      next.add(key);
+      if (Node.isObjectLiteralExpression(node)) {
+        for (const property of [...node.getProperties()].reverse()) {
+          if (
+            Node.isPropertyAssignment(property) &&
+            property.getName() === member
+          ) {
+            return originOf(property.getInitializer(), next, bindings);
+          }
+          if (
+            Node.isShorthandPropertyAssignment(property) &&
+            property.getName() === member
+          ) {
+            return originOf(property.getNameNode(), next, bindings);
+          }
+          if (Node.isSpreadAssignment(property)) {
+            const origin = memberValueOrigin(
+              property.getExpression(),
+              member,
+              next,
+              bindings,
+            );
+            if (origin !== undefined) return origin;
+          }
+        }
+      }
+      if (Node.isArrayLiteralExpression(node) && /^\d+$/.test(member)) {
+        return originOf(
+          node.getElements()[Number(member)],
+          next,
+          bindings,
+        );
+      }
+      if (Node.isConditionalExpression(node)) {
+        return memberValueOrigin(
+          node.getWhenTrue(),
+          member,
+          next,
+          bindings,
+        ) ?? memberValueOrigin(
+          node.getWhenFalse(),
+          member,
+          next,
+          bindings,
+        );
+      }
+      if (Node.isCallExpression(node)) {
+        const target = unwrap(node.getExpression());
+        for (const callable of callableShapes(target)) {
+          const nested = callBindings(callable, node, next, bindings);
+          for (const returned of callable.returns) {
+            const origin = memberValueOrigin(
+              returned,
+              member,
+              next,
+              nested,
+            );
+            if (origin !== undefined) return origin;
+          }
+        }
+      }
+      for (const declaration of symbolDeclarations(node)) {
+        const value =
+          Node.isVariableDeclaration(declaration) ||
+            Node.isPropertyAssignment(declaration)
+            ? declaration.getInitializer()
+            : Node.isExportAssignment(declaration)
+              ? declaration.getExpression()
+              : undefined;
+        if (value === undefined) continue;
+        const origin = memberValueOrigin(
+          value,
+          member,
+          next,
+          bindings,
+        );
+        if (origin !== undefined) return origin;
+      }
+      return undefined;
+    };
+    const declarationOrigin = (
+      declaration: Node,
+      trail: ReadonlySet<string>,
+      bindings: ReadonlyMap<string, string>,
+    ): string | undefined => {
+      if (
+        Node.isVariableDeclaration(declaration) ||
+        Node.isPropertyAssignment(declaration)
+      ) {
+        return originOf(declaration.getInitializer(), trail, bindings);
+      }
+      if (Node.isShorthandPropertyAssignment(declaration)) {
+        return originOf(declaration.getNameNode(), trail, bindings);
+      }
+      if (Node.isExportAssignment(declaration)) {
+        return originOf(declaration.getExpression(), trail, bindings);
+      }
+      if (Node.isBindingElement(declaration)) {
+        const pattern = declaration.getParent();
+        const variable = pattern.getParentIfKind(
+          SyntaxKind.VariableDeclaration,
+        );
+        const initializer = variable?.getInitializer();
+        if (initializer === undefined) return undefined;
+        if (Node.isObjectBindingPattern(pattern)) {
+          const property =
+            declaration.getPropertyNameNode()?.getText() ??
+            declaration.getNameNode().getText();
+          return memberValueOrigin(
+            initializer,
+            property,
+            trail,
+            bindings,
+          );
+        }
+        if (Node.isArrayBindingPattern(pattern)) {
+          const index = pattern.getElements().indexOf(declaration);
+          return index < 0
+            ? undefined
+            : memberValueOrigin(
+                initializer,
+                String(index),
+                trail,
+                bindings,
+              );
+        }
+      }
+      return undefined;
+    };
+    function originOf(
+      input: Node | undefined,
+      trail: ReadonlySet<string> = new Set(),
+      bindings: ReadonlyMap<string, string> = new Map(),
+    ): string | undefined {
       if (input === undefined) return undefined;
       const node = unwrap(input);
+      if (Node.isIdentifier(node)) {
+        const binding = bindings.get(node.getText());
+        if (binding !== undefined) return binding;
+      }
       const direct = origins.get(node.getText());
       if (direct !== undefined) return direct;
+      const key = nodeKey(node);
+      if (trail.has(key)) return undefined;
+      const next = new Set(trail);
+      next.add(key);
       if (
         Node.isCallExpression(node) &&
         node.getExpression().getKind() === SyntaxKind.ImportKeyword
@@ -200,32 +415,80 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       }
       if (Node.isCallExpression(node)) {
         const target = unwrap(node.getExpression());
-        const callable = Node.isIdentifier(target)
-          ? localFunctions.get(target.getText())
-          : undefined;
-        const returned = callable?.returns
-          .map((expression) => originOf(expression))
-          .find((origin) => origin !== undefined);
-        if (returned !== undefined) return returned;
+        for (const callable of callableShapes(target)) {
+          const nested = callBindings(callable, node, next, bindings);
+          const returned = callable.returns
+            .map((expression) => originOf(expression, next, nested))
+            .find((origin) => origin !== undefined);
+          if (returned !== undefined) return returned;
+        }
       }
-      if (Node.isIdentifier(node)) return origins.get(node.getText());
+      if (Node.isIdentifier(node)) {
+        return symbolDeclarations(node)
+          .map((declaration) =>
+            declarationOrigin(declaration, next, bindings)
+          )
+          .find((origin) => origin !== undefined);
+      }
       if (Node.isPropertyAccessExpression(node)) {
-        const base = originOf(node.getExpression());
-        return base === undefined ? undefined : memberOrigin(base, node.getName());
+        const base = originOf(node.getExpression(), next, bindings);
+        if (base !== undefined) return memberOrigin(base, node.getName());
+        return memberValueOrigin(
+          node.getExpression(),
+          node.getName(),
+          next,
+          bindings,
+        ) ?? symbolDeclarations(node.getNameNode())
+          .map((declaration) =>
+            declarationOrigin(declaration, next, bindings)
+          )
+          .find((origin) => origin !== undefined);
       }
       if (Node.isElementAccessExpression(node)) {
-        const base = originOf(node.getExpression());
+        const base = originOf(node.getExpression(), next, bindings);
         const argument = node.getArgumentExpression();
         if (
-          base !== undefined &&
           argument !== undefined &&
           (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
         ) {
-          return memberOrigin(base, argument.getLiteralText());
+          return base !== undefined
+            ? memberOrigin(base, argument.getLiteralText())
+            : memberValueOrigin(
+                node.getExpression(),
+                argument.getLiteralText(),
+                next,
+                bindings,
+              );
+        }
+        if (
+          argument !== undefined &&
+          Node.isNumericLiteral(argument)
+        ) {
+          return memberValueOrigin(
+            node.getExpression(),
+            argument.getLiteralText(),
+            next,
+            bindings,
+          );
         }
       }
+      if (Node.isConditionalExpression(node)) {
+        return originOf(node.getWhenTrue(), next, bindings) ??
+          originOf(node.getWhenFalse(), next, bindings);
+      }
+      if (
+        Node.isBinaryExpression(node) &&
+        [
+          SyntaxKind.BarBarToken,
+          SyntaxKind.AmpersandAmpersandToken,
+          SyntaxKind.QuestionQuestionToken,
+        ].includes(node.getOperatorToken().getKind())
+      ) {
+        return originOf(node.getLeft(), next, bindings) ??
+          originOf(node.getRight(), next, bindings);
+      }
       return undefined;
-    };
+    }
     const sensitive = (origin: string): boolean =>
       origin === "Date" ||
       origin === "Intl" ||
@@ -430,12 +693,14 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
   return uses;
 }
 
-const generatorProject = (): Project => {
+const generatorProject = (root: string = CORPUS_SRC): Project => {
   const project = new Project({
     tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
     skipAddingFilesFromTsConfig: true,
   });
-  for (const file of walk(CORPUS_SRC, (f) => f.endsWith(".ts"))) project.addSourceFileAtPath(file);
+  for (const file of toolingSourceFiles(root)) {
+    project.addSourceFileAtPath(file);
+  }
   return project;
 };
 
@@ -747,6 +1012,49 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     expect(new Set(uses.map((use) => use.api))).toEqual(
       new Set(["Date() (callable)", "randomBytes"]),
     );
+  });
+
+  it("flags local-module and container-member nondeterministic origins", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject({
+        "/src/contracts/helper.ts":
+          "export const runtime = process;\nexport const box = { runtime: process };\nexport const list = [process] as const;\n",
+        "/src/contracts/consumer.ts":
+          'import { runtime, box, list } from "./helper";\nvoid runtime.env.SEED;\nvoid box.runtime.env.SEED;\nvoid list[0].env.SEED;\nvoid ({ runtime: process }).runtime.env.SEED;\n',
+      }),
+    );
+    expect(uses.filter((use) => use.api === "process.env")).toHaveLength(4);
+  });
+
+  it("scans every supported executable source extension", () => {
+    const root = mkdtempSync(join(tmpdir(), "verin-corpus-determinism-"));
+    try {
+      const extensions = [
+        "ts",
+        "tsx",
+        "mts",
+        "cts",
+        "js",
+        "jsx",
+        "mjs",
+        "cjs",
+      ];
+      for (const extension of extensions) {
+        writeFileSync(
+          join(root, `proof.${extension}`),
+          "Math.random();\n",
+          "utf8",
+        );
+      }
+      const project = generatorProject(root);
+      expect(project.getSourceFiles()).toHaveLength(extensions.length);
+      expect(
+        bannedNondeterminismUses(project, root)
+          .filter((use) => use.api === "Math.random"),
+      ).toHaveLength(extensions.length);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("a hand edit to a generated file is caught by the byte comparison", () => {

@@ -7848,3 +7848,44 @@ semantic contract 1.9.0 carries both settled-credit treatments, canonical regene
 remains empty, captain signoff remains pending, and the focused companions pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-122 review hardening).
+
+---
+
+## PF-209 · executable provenance and exact availability reconciliation · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-123, ADR-0034):** every supported executable source enters determinism analysis; sensitive
+origins remain visible across local modules and fixed containers; pending-action funding reconciles the
+expected effect with any directional effect already reflected in reported availability; and the signed
+funding clause describes that exact accounting rule.
+
+**Injection 1 - non-TypeScript executable source.** Added
+`scripts/corpus/review-extension-proof.mjs:1` with `Math.random()`.
+
+**Injection 2 - local-module and container laundering.** Exported `process` from one local module, read
+its environment through an import in another, and placed the same origin in a direct object member.
+
+**Injection 3 - included zero-effect action left reflected.** Replaced the shared reconciliation with
+the old zero adjustment for every included action.
+
+**Injection 4 - stale funding authority.** Restored the reducing-only funding clause in the hand-owned
+semantic contract while the executable schema required exact-once reconciliation.
+
+**Observed failure:**
+```
+scripts/corpus/review-extension-proof.mjs:1 Math.random
+scripts/corpus/review-origin-consumer.ts:3 process.env
+scripts/corpus/review-origin-consumer.ts:4 process.env
+expected '' to contain 'exact-once pending-action accounting'
+funding.sufficiency: expected selected-aggregate-covers-request-reserve-after-exact-once-pending-action-accounting
+```
+
+**Standing companions:** all eight TypeScript and JavaScript source variants enter the project; imported
+values and fixed object or array members preserve sensitive origins; included unsettled inflows are
+removed before sufficiency, included blocked outflows are restored, included unknown directions fail
+closed, and the semantic contract literal cannot revert to reducing-only wording.
+
+**Revert:** every injection was reverted. Canonical regeneration restored `corpusDigest`
+`8d01240c5a65b36e2d80ab44d26dcc4e4b4314b6d750f833dd53923d98a33bbf`, the real-derived partition
+remains empty, captain signoff remains pending, and the focused companions pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-123 review hardening).

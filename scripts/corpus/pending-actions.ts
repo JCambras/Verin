@@ -79,3 +79,24 @@ export function pendingAvailabilitySelector(
     ? "settled-included"
     : "settled-excluded";
 }
+
+export function pendingAvailabilityAdjustmentMinor(
+  kind: PendingActionKind,
+  state: PendingActionState,
+  availableMinorIncludesAction: boolean,
+  amountMinor: bigint,
+): bigint | null {
+  const treatment = pendingActionLiquidityTreatment(kind, state);
+  const expectedEffect = treatment.reducesEffectiveLiquidity
+    ? -amountMinor
+    : treatment.increasesAvailableLiquidity
+      ? amountMinor
+      : 0n;
+  if (!availableMinorIncludesAction) return expectedEffect;
+  const reportedEffect = treatment.direction === "outgoing"
+    ? -amountMinor
+    : treatment.direction === "incoming"
+      ? amountMinor
+      : null;
+  return reportedEffect === null ? null : expectedEffect - reportedEffect;
+}

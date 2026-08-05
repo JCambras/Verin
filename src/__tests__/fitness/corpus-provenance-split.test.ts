@@ -3232,6 +3232,65 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ).toEqual([]);
   });
 
+  it("reconciles zero-effect actions already reflected in reported availability", () => {
+    const incoming = realDerivedDefectCase("pending-activity-miscount");
+    const incomingPayload = incoming.replayPayload as Record<string, any>;
+    Object.assign(incomingPayload.liquidity.pendingAction, {
+      actionKind: "incoming-transfer",
+      actionState: "settling",
+      direction: "incoming",
+      liquidityClass: "credit",
+      availableMinorIncludesAction: true,
+      reducesEffectiveLiquidity: false,
+      increasesAvailableLiquidity: false,
+    });
+    incomingPayload.liquidity.sources[0].availableMinor = 11_000;
+    incomingPayload.outcomes = treatmentOutcomes(
+      incomingPayload,
+      "pending-activity-miscount",
+    );
+    expect(
+      realDerivedCaseProblems(
+        incoming,
+        classes,
+        "real-derived/RD-included-settling-incoming.json",
+      ).join("\n"),
+    ).toContain("exact-once pending-action accounting");
+
+    const outgoing = realDerivedDefectCase("pending-activity-miscount");
+    const outgoingPayload = outgoing.replayPayload as Record<string, any>;
+    outgoingPayload.liquidity.pendingAction.availableMinorIncludesAction = true;
+    outgoingPayload.liquidity.sources[0].availableMinor = 10_500;
+    expect(
+      realDerivedCaseProblems(
+        outgoing,
+        classes,
+        "real-derived/RD-included-blocked-outgoing.json",
+      ),
+    ).toEqual([]);
+
+    const unknown = realDerivedDefectCase("pending-activity-miscount");
+    const unknownPayload = unknown.replayPayload as Record<string, any>;
+    Object.assign(unknownPayload.liquidity.pendingAction, {
+      actionKind: "unknown",
+      actionState: "blocked",
+      direction: "unknown",
+      liquidityClass: "unclassified",
+      availableMinorIncludesAction: true,
+    });
+    unknownPayload.outcomes = treatmentOutcomes(
+      unknownPayload,
+      "pending-activity-miscount",
+    );
+    expect(
+      realDerivedCaseProblems(
+        unknown,
+        classes,
+        "real-derived/RD-included-unknown-direction.json",
+      ).join("\n"),
+    ).toContain("requires a known liquidity direction");
+  });
+
   it("a settled incoming credit has a distinct availability treatment in both partitions", () => {
     const realDerived = realDerivedDefectCase("pending-activity-miscount");
     const payload = realDerived.replayPayload as Record<string, any>;

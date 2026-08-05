@@ -4939,3 +4939,26 @@ the same test passed alone in 9.4 seconds. Assertions and timeouts remain unchan
 same payload permits both adding and preserving the amount. A sensitive ambient origin must be recorded
 independently of whether source syntax uses dots or brackets.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-123 · 2026-08-05 · reversible · Executable provenance and availability reconciliation share complete authorities
+
+The corpus determinism project discovers source files through the same executable-source predicate as
+the tooling budgets, covering TypeScript and JavaScript variants. Nondeterministic origin tracing follows
+resolved declarations across local modules, fixed object and array members, callable returns, binding
+patterns, and fixed control-flow alternatives. A forbidden origin cannot become safe by crossing a file
+or a plain-data container.
+
+Pending-action funding now computes one adjustment as expected liquidity effect minus the directional
+effect already reflected in source-reported availability. This preserves included reducing outflows and
+settled credits, applies excluded effects once, and reverses included blocked outflows or unsettled
+inflows whose signed treatment requires no effect. An included action with unknown direction is refused.
+The semantic contract's funding clause names exact-once pending-action accounting rather than only
+reducing pending actions.
+
+The tooling bucket measures 7972 lines under the unchanged 8000 ceiling. Canonical regeneration produces
+`corpusDigest` `8d01240c5a65b36e2d80ab44d26dcc4e4b4314b6d750f833dd53923d98a33bbf`.
+The real-derived partition remains empty and deferred, and captain signoff remains pending.
+
+**Why:** executable coverage cannot depend on a filename suffix or module boundary, and source-reported
+availability must be reconciled with the signed action treatment before sufficiency can be evaluated.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
