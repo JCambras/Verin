@@ -126,7 +126,7 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.6.0 closed payload
+replayPayload   verin-real-derived-replay/1.7.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{firmRef, family, conflictKey}]
 ```
@@ -156,6 +156,8 @@ interval must cite the payload's grant, destination evidence must cite its instr
 evidence must cite the corresponding liquidity source. The selected funding set is explicit, unique,
 same-household, source-owner-aligned, and sufficient in aggregate for the request, reserve, and reducing
 pending actions. Unknown source tax classes fail, and tax risk is derived from every selected source.
+Settled incoming credits use the distinct `credit-settled-incoming-availability` outcome so a replay
+cannot treat failure to recognize settled value as correct exclusion of neutral pending activity.
 An instruction-conflict witness must name the exact request and household, every referenced instruction
 must belong to that household, and impacted subjects must intersect the request source account or
 destination instruction.

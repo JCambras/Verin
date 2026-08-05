@@ -90,7 +90,10 @@ import {
   realDerivedProblems,
   validateCorpus,
 } from "../../../scripts/corpus/validate";
-import { syntheticSemanticProblems } from "../../../scripts/corpus/synthetic-semantics";
+import {
+  syntheticSemanticProblems,
+  type EmittedCase,
+} from "../../../scripts/corpus/synthetic-semantics";
 import { specReferenceProblems } from "../../../scripts/corpus/world";
 
 /**
@@ -174,6 +177,10 @@ const treatmentSelectorValue = (
         : "ineffective";
     case "reserve-state":
       return payload.liquidity.reserveState;
+    case "pending-availability":
+      return payload.liquidity.pendingAction.increasesAvailableLiquidity
+        ? "increased"
+        : "unchanged";
     case "threshold-comparator":
       return payload.policy.thresholdComparator;
   }
@@ -211,20 +218,32 @@ const compilerOptions = ts.parseJsonConfigFileContent(
   ts.sys,
   REPO_ROOT,
 ).options;
+const authorityClosureCache = new Map<
+  string,
+  { closure: readonly string[]; problems: readonly string[] }
+>();
 
 const authorityClosureProblems = (
   roots: readonly string[],
   inventory: readonly string[],
   sourceOverrides: Readonly<Record<string, string>> = {},
 ): string[] => {
-  const problems: string[] = [];
-  const closure = new Set<string>();
-  const pending = [...roots];
-  const project = new Project({
-    tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
-    skipAddingFilesFromTsConfig: true,
-    skipFileDependencyResolution: true,
-  });
+  const cacheKey = Object.keys(sourceOverrides).length === 0
+    ? JSON.stringify(roots)
+    : null;
+  const cached = cacheKey === null
+    ? undefined
+    : authorityClosureCache.get(cacheKey);
+  const problems: string[] = [...(cached?.problems ?? [])];
+  const closure = new Set(cached?.closure ?? []);
+  const pending = cached === undefined ? [...roots] : [];
+  const project = pending.length === 0
+    ? null
+    : new Project({
+      tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
+      skipAddingFilesFromTsConfig: true,
+      skipFileDependencyResolution: true,
+    });
   while (pending.length > 0) {
     const file = pending.pop()!;
     if (closure.has(file)) continue;
@@ -288,7 +307,7 @@ const authorityClosureProblems = (
         );
       }
     }
-    const sourceFile = project.createSourceFile(
+    const sourceFile = project!.createSourceFile(
       absolute,
       bytes,
       { overwrite: true },
@@ -344,6 +363,12 @@ const authorityClosureProblems = (
       pending.push(pathFromRoot.replace(/\\/g, "/"));
     }
   }
+  if (cacheKey !== null && cached === undefined) {
+    authorityClosureCache.set(cacheKey, {
+      closure: [...closure],
+      problems: [...problems],
+    });
+  }
   const inventoried = new Set(inventory);
   for (const file of closure) {
     if (!inventoried.has(file)) {
@@ -360,6 +385,11 @@ const authorityClosureProblems = (
   }
   return problems;
 };
+
+const requiredGatewayRootProblems = (roots: readonly string[]): string[] =>
+  ["scripts/corpus/real-derived.ts", "scripts/corpus/validate.ts"]
+    .filter((file) => !roots.includes(file))
+    .map((file) => `missing executable authority gateway root ${file}`);
 
 const observedEvidence = (
   evidenceKind: string,
@@ -442,7 +472,7 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.6.0",
+    schemaVersion: "verin-real-derived-replay/1.7.0",
     request: {
       firmRef: FIRM_REF,
       requestRef: REQUEST_REF,
@@ -1279,7 +1309,7 @@ describe("corpus-provenance-split fence", () => {
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
       "verin-real-derived-case/1.4.0",
-      "verin-real-derived-replay/1.6.0",
+      "verin-real-derived-replay/1.7.0",
     ]);
     expect(
       corpusDigest(
@@ -1460,6 +1490,38 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(specReferenceProblems(world, cases).join("\n")).toContain(
       "AS-04 outside-household signer",
     );
+  });
+
+  it("foreign destination owners use an opaque projection while local parties stay complete", () => {
+    const spec = structuredClone(real.spec);
+    spec.world.bankInstructions.find(
+      (instruction) => instruction.key === "mira-primary",
+    )!.titledTo = "kessa-varn";
+    const foreignDestination = generateSyntheticCases(spec, CORPUS_SEED)
+      .find(
+        (file) =>
+          file.relPath ===
+            "synthetic/CS-beneficiary-versus-destination-restriction.json",
+      )!.value as unknown as EmittedCase;
+    expect(foreignDestination.records.parties).not.toContainEqual(
+      expect.objectContaining({ id: "subject:kessa-varn" }),
+    );
+    expect(foreignDestination.records.referencedOwners).toEqual([
+      { id: "subject:kessa-varn" },
+    ]);
+
+    const localDestination = real.cases.find(
+      (item) => item.caseId === "CS-clean-verified-destination",
+    )!;
+    const localOwner = localDestination.records.bankInstructions.find(
+      (instruction) => instruction.id === localDestination.request.destinationRef,
+    )!.titledTo;
+    expect(localDestination.records.parties).toContainEqual(
+      expect.objectContaining({ id: localOwner }),
+    );
+    expect(localDestination.records.referencedOwners).not.toContainEqual({
+      id: localOwner,
+    });
   });
 
   it("bank-instruction and pending-action account edges must match their declared households", () => {
@@ -1924,7 +1986,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.7.0",
+      "verin-real-derived-semantics/1.8.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -1975,6 +2037,16 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   });
 
   it("the executable authority inventory equals its complete runtime dependency closure", () => {
+    expect(
+      requiredGatewayRootProblems(
+        REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
+      ),
+    ).toEqual([]);
+    expect(requiredGatewayRootProblems(["scripts/corpus/semantic-contract.ts"]))
+      .toEqual([
+        "missing executable authority gateway root scripts/corpus/real-derived.ts",
+        "missing executable authority gateway root scripts/corpus/validate.ts",
+      ]);
     expect(
       authorityClosureProblems(
         REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
@@ -3143,6 +3215,76 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "real-derived/RD-settling-incoming.json",
       ),
     ).toEqual([]);
+  });
+
+  it("a settled incoming credit has a distinct availability treatment in both partitions", () => {
+    const realDerived = realDerivedDefectCase("pending-activity-miscount");
+    const payload = realDerived.replayPayload as Record<string, any>;
+    Object.assign(payload.liquidity.pendingAction, {
+      actionKind: "incoming-credit",
+      actionState: "settled",
+      direction: "incoming",
+      liquidityClass: "credit",
+      reducesEffectiveLiquidity: false,
+      increasesAvailableLiquidity: true,
+    });
+    expect(
+      realDerivedCaseProblems(
+        realDerived,
+        classes,
+        "real-derived/RD-settled-incoming-generic.json",
+      ).join("\n"),
+    ).toContain(
+      'outcome "pending-activity-miscount" is outside its closed treatment vocabulary',
+    );
+    payload.outcomes = treatmentOutcomes(
+      payload,
+      "pending-activity-miscount",
+    );
+    const realDerivedOutcome = payload.outcomes.find(
+      (outcome: Record<string, string>) =>
+        outcome.defectClassId === "pending-activity-miscount",
+    );
+    expect(realDerivedOutcome).toEqual({
+      defectClassId: "pending-activity-miscount",
+      expectedTreatment: "credit-settled-incoming-availability",
+      observedTreatment: "omit-settled-incoming-availability",
+    });
+    expect(
+      realDerivedCaseProblems(
+        realDerived,
+        classes,
+        "real-derived/RD-settled-incoming.json",
+      ),
+    ).toEqual([]);
+
+    const synthetic = structuredClone(
+      real.cases.find(
+        (item) => item.caseId === "CS-blocked-pending-action",
+      )!,
+    );
+    const syntheticAction = synthetic.records.pendingActions.find(
+      (action) => action.state === "blocked",
+    )!;
+    Object.assign(syntheticAction, {
+      kind: "incoming-credit",
+      state: "settled",
+      direction: "incoming",
+      liquidityClass: "credit",
+      reducesEffectiveLiquidity: false,
+      increasesAvailableLiquidity: true,
+    });
+    const syntheticOutcome = synthetic.outcomes.find(
+      (outcome) => outcome.defectClassId === "pending-activity-miscount",
+    )!;
+    expect(syntheticSemanticProblems([synthetic]).join("\n")).toContain(
+      'outcome "pending-activity-miscount" is outside its closed treatment vocabulary',
+    );
+    syntheticOutcome.expectedTreatment =
+      "credit-settled-incoming-availability";
+    syntheticOutcome.observedTreatment =
+      "omit-settled-incoming-availability";
+    expect(syntheticSemanticProblems([synthetic])).toEqual([]);
   });
 
   it("retirement treatment requires a completed review or an explicit mismatch", () => {

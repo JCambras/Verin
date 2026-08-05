@@ -1,5 +1,5 @@
 {
-  "contractVersion": "verin-real-derived-semantics/1.7.0",
+  "contractVersion": "verin-real-derived-semantics/1.8.0",
   "defectRules": [
     { "id": "authority-scope-error", "contextRule": "authority-boundary", "treatmentSelector": "authority-state", "treatments": [
       { "selectorValue": "effective", "expectedTreatment": "accept-effective-authority", "defectTreatment": "reject-effective-authority-by-membership" },
@@ -37,8 +37,9 @@
       { "selectorValue": "modeled-segmented", "expectedTreatment": "calculate-segmented-reserve", "defectTreatment": "calculate-scalar-reserve" },
       { "selectorValue": "missing", "expectedTreatment": "mark-reserve-unavailable", "defectTreatment": "invent-reserve-from-missing-schedule" }
     ] },
-    { "id": "pending-activity-miscount", "contextRule": "nonreducing-pending-action-present", "treatmentSelector": "fixed", "treatments": [
-      { "selectorValue": "fixed", "expectedTreatment": "exclude-nonreducing-pending", "defectTreatment": "count-nonreducing-pending" }
+    { "id": "pending-activity-miscount", "contextRule": "nonreducing-pending-action-present", "treatmentSelector": "pending-availability", "treatments": [
+      { "selectorValue": "unchanged", "expectedTreatment": "exclude-nonreducing-pending", "defectTreatment": "count-nonreducing-pending" },
+      { "selectorValue": "increased", "expectedTreatment": "credit-settled-incoming-availability", "defectTreatment": "omit-settled-incoming-availability" }
     ] },
     { "id": "restriction-lifecycle-error", "contextRule": "restriction-not-in-force", "treatmentSelector": "fixed", "treatments": [
       { "selectorValue": "fixed", "expectedTreatment": "apply-restriction-lifecycle", "defectTreatment": "ignore-restriction-lifecycle" }

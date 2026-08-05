@@ -15,6 +15,8 @@ export const REAL_DERIVED_SEMANTIC_CONTRACT_FILE =
 export const REAL_DERIVED_SEMANTIC_DIGEST_PREIMAGE_VERSION =
   "verin-real-derived-semantics-digest/1.0.0";
 export const REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES = [
+  "scripts/corpus/validate.ts",
+  "scripts/corpus/real-derived.ts",
   "scripts/corpus/semantic-contract.ts",
   "scripts/corpus/real-derived-semantics.ts",
   "scripts/corpus/evidence-observation.ts",
@@ -35,13 +37,17 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES = [
 export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/case-spec.ts",
   "scripts/corpus/clock.ts",
+  "scripts/corpus/conflict-keys.ts",
+  "scripts/corpus/defects.ts",
   "scripts/corpus/entities.ts",
   "scripts/corpus/evidence-observation.ts",
+  "scripts/corpus/generate.ts",
   "scripts/corpus/graph.ts",
   "scripts/corpus/instruction-conflicts.ts",
   "scripts/corpus/manifest.ts",
   "scripts/corpus/pending-actions.ts",
   "scripts/corpus/real-derived-policy.ts",
+  "scripts/corpus/real-derived.ts",
   "scripts/corpus/real-derived-semantics.ts",
   "scripts/corpus/real-derived-topology.ts",
   "scripts/corpus/report.ts",
@@ -54,11 +60,14 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/subgraph.ts",
   "scripts/corpus/synthetic-identity.ts",
   "scripts/corpus/synthetic-instruction-topology.ts",
+  "scripts/corpus/synthetic-pending.ts",
   "scripts/corpus/synthetic-semantics.ts",
   "scripts/corpus/synthetic-structural-context.ts",
   "scripts/corpus/tree.ts",
+  "scripts/corpus/validate.ts",
   "scripts/corpus/world-topology.ts",
   "scripts/corpus/world.ts",
+  "scripts/golden-cases.lib.ts",
   "src/contracts/decision-core/actor.ts",
   "src/contracts/decision-core/authority.ts",
   "src/contracts/decision-core/decision.ts",
@@ -79,6 +88,7 @@ export const TREATMENT_SELECTOR_VALUES = {
   fixed: ["fixed"],
   "authority-state": ["effective", "ineffective"],
   "reserve-state": ["modeled-scalar", "modeled-segmented", "missing"],
+  "pending-availability": ["unchanged", "increased"],
   "threshold-comparator": ["strict", "inclusive"],
 } as const;
 
@@ -86,11 +96,12 @@ const TreatmentSelectorSchema = z.enum([
   "fixed",
   "authority-state",
   "reserve-state",
+  "pending-availability",
   "threshold-comparator",
 ]);
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.7.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.8.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),

@@ -6,6 +6,7 @@ import {
   type SemanticDefectRule,
 } from "./semantic-contract";
 import { selectedFundingHasTaxClass } from "./selected-funding";
+import { selectedCitedPendingActions, syntheticPendingContext } from "./synthetic-pending";
 import {
   syntheticIdentityContext,
   type SyntheticIdentityInput,
@@ -42,6 +43,7 @@ export interface EmittedRecords {
     relationshipReasons: string[];
   }>;
   parties: Array<{ id: string }>;
+  referencedOwners: Array<{ id: string }>;
   accounts: Array<{
     id: string;
     householdRef: string;
@@ -213,33 +215,12 @@ const authorityEffective = (item: EmittedCase): boolean => {
     (signer.effectiveTo === null ||
       epochMs(signer.effectiveTo) > epochMs(item.trigger.asOf));
 };
-const pendingContext = (item: EmittedCase): boolean => {
-  const pending = evidenceSubjects(item, "pending-actions");
-  const models = evidenceSubjects(item, "model-assignment");
-  const selected = new Set(item.request.selectedFundingRefs);
-  const selectedAccount = (accountRef: string): boolean =>
-    selected.has(accountRef) &&
-    item.records.accounts.filter(
-      (account) =>
-        account.id === accountRef &&
-        account.householdRef === item.request.householdRef,
-    ).length === 1;
-  return item.records.pendingActions.some((row) =>
-    pending.has(row.id) &&
-    row.householdRef === item.request.householdRef &&
-    selectedAccount(row.accountRef) &&
-    !pendingActionLiquidityTreatment(
-      row.kind,
-      row.state,
-    ).reducesEffectiveLiquidity
-  ) ||
-    item.records.modelAssignments.some(
-      (row) =>
-        models.has(row.id) &&
-        row.pendingRebalance &&
-        selectedAccount(row.accountRef),
-    );
-};
+const pendingContext = (item: EmittedCase): boolean =>
+  syntheticPendingContext(
+    item,
+    evidenceSubjects(item, "pending-actions"),
+    evidenceSubjects(item, "model-assignment"),
+  );
 
 const selectedFundingProblems = (item: EmittedCase): string[] => {
   const selected = item.request.selectedFundingRefs;
@@ -383,6 +364,14 @@ const selectorValue = (
       const state = reserveState(item);
       return state === "inactive" ? null : state;
     }
+    case "pending-availability":
+      return selectedCitedPendingActions(
+        item,
+        evidenceSubjects(item, "pending-actions"),
+      ).some((row) => pendingActionLiquidityTreatment(row.kind, row.state)
+        .increasesAvailableLiquidity)
+        ? "increased"
+        : "unchanged";
     case "threshold-comparator":
       return item.thresholdPolicy?.comparator ?? "strict";
   }

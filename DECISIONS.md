@@ -4889,3 +4889,27 @@ partition, the unchanged 500-line file ceiling, and pending unsigned captain sig
 **Why:** signed defect context must come from emitted facts, joint ownership must not invalidate
 unrelated terms, and a local loader spelling cannot change signed semantics outside the digest.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-121 · 2026-08-05 · captain-decision · Corpus privacy, validation, determinism, and settled credits fail closed
+
+Cross-household destination owners are emitted only as opaque `referencedOwners` ids unless another
+request-household relationship independently makes the party local. Full roster names, kinds, and roles
+remain confined to local parties. The referenced-owner collection participates in exact graph resolution,
+so privacy minimization does not create dangling ownership edges.
+
+The signed executable-authority roots include both real-derived intake and corpus validation gateways.
+The nondeterminism fence resolves `globalThis` and `global` property roots through direct, aliased,
+destructured, and bracket access. The `verin-corpus/1.12.0` preimage now binds
+`verin-real-derived-replay/1.7.0` and `verin-real-derived-semantics/1.8.0`.
+
+A settled incoming credit selects the distinct expected treatment
+`credit-settled-incoming-availability`; omitting that credit is the signed mismatch
+`omit-settled-incoming-availability`. Synthetic and real-derived validation derive this selector from the
+same closed pending-action authority. The tooling ceiling remains 7900 against 7898 measured lines. The
+real-derived partition remains empty and deferred, generated-file ownership remains intact, and captain
+signoff remains pending.
+
+**Why:** foreign ownership cannot expand private roster data, acceptance gateways cannot sit outside
+signed semantics, ambient-global spellings cannot bypass determinism, and settled funds cannot disappear
+behind a generic nonreducing treatment.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

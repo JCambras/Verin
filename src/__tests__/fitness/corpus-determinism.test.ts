@@ -70,6 +70,8 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       ["process", "process"],
       ["crypto", "crypto"],
       ["Intl", "Intl"],
+      ["globalThis", "globalThis"],
+      ["global", "global"],
     ]);
     const cryptoRandomMembers = new Set([
       "randomUUID",
@@ -103,6 +105,21 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         moduleName.replace(/^node:/, "") === "process" ? "process" :
           moduleName.replace(/^node:/, "") === "perf_hooks" ? "performance" :
             undefined;
+    const ambientRoots = new Set([
+      "Math",
+      "Date",
+      "performance",
+      "process",
+      "crypto",
+      "Intl",
+    ]);
+    const memberOrigin = (
+      base: string,
+      member: string,
+    ): string | undefined =>
+      base === "globalThis" || base === "global"
+        ? ambientRoots.has(member) ? member : undefined
+        : `${base}.${member}`;
     const unwrap = (input: Node): Node => {
       let node = input;
       while (
@@ -194,7 +211,7 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       if (Node.isIdentifier(node)) return origins.get(node.getText());
       if (Node.isPropertyAccessExpression(node)) {
         const base = originOf(node.getExpression());
-        return base === undefined ? undefined : `${base}.${node.getName()}`;
+        return base === undefined ? undefined : memberOrigin(base, node.getName());
       }
       if (Node.isElementAccessExpression(node)) {
         const base = originOf(node.getExpression());
@@ -204,7 +221,7 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           argument !== undefined &&
           (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
         ) {
-          return `${base}.${argument.getLiteralText()}`;
+          return memberOrigin(base, argument.getLiteralText());
         }
       }
       return undefined;
@@ -248,25 +265,28 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           const local = element.getNameNode();
           const property =
             element.getPropertyNameNode()?.getText() ?? local.getText();
-          return bindOrigin(local, `${origin}.${property}`, element);
+          const bound = memberOrigin(origin, property);
+          return bound === undefined
+            ? false
+            : bindOrigin(local, bound, element);
         }).some(Boolean);
       }
       if (Node.isObjectLiteralExpression(name)) {
         return name.getProperties().map((property) => {
           if (Node.isPropertyAssignment(property)) {
+            const bound = memberOrigin(origin, property.getName());
+            if (bound === undefined) return false;
             return bindOrigin(
               property.getInitializer()!,
-              `${origin}.${property.getName()}`,
+              bound,
               property,
             );
           }
-          return Node.isShorthandPropertyAssignment(property)
-            ? bindOrigin(
-                property.getNameNode(),
-                `${origin}.${property.getName()}`,
-                property,
-              )
-            : false;
+          if (!Node.isShorthandPropertyAssignment(property)) return false;
+          const bound = memberOrigin(origin, property.getName());
+          return bound === undefined
+            ? false
+            : bindOrigin(property.getNameNode(), bound, property);
         }).some(Boolean);
       }
       return false;
@@ -633,6 +653,25 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
   it("flags a process.env read inside the generator", () => {
     const uses = bannedNondeterminismUses(inMemoryProject(file('export const s = process.env.SEED ?? "x";\n')));
     expect(uses.some((u) => u.api === "process.env")).toBe(true);
+  });
+
+  it("flags nondeterministic APIs through globalThis and global roots", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject(
+        file(
+          "export const a = globalThis.Date.now();\nconst root = globalThis;\nconst { crypto: rng, process: runtime } = root;\nvoid rng.randomUUID();\nvoid runtime.env.SEED;\nvoid global.performance.now();\nvoid global['Math'].random();\n",
+        ),
+      ),
+    );
+    expect(new Set(uses.map((use) => use.api))).toEqual(
+      new Set([
+        "Date.now",
+        "randomUUID",
+        "process.env",
+        "performance.now",
+        "Math.random",
+      ]),
+    );
   });
 
   it("flags destructured, aliased, and named-import nondeterministic APIs", () => {

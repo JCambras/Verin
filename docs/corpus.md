@@ -86,17 +86,19 @@ Seed: `verin-corpus/2026.07.0`. World clock: `2026-07-26T13:30:00.000Z`, `Americ
 Every evidence and request reference resolves to exactly one emitted record in its case subgraph. Every
 evidence-producing collection is required even when empty, collection keys are unique, and relationship
 fields such as restriction subjects are preserved. A cross-household destination is represented only by
-opaque projected account and bank-instruction nodes plus the ownership edges required for replay. Foreign
-balances, tax attributes, owner roster records, and unrelated household records are never imported by
-that expansion. Missing, dangling, or multi-resolving references fail validation for defect cases and
-controls alike.
+opaque projected account, bank-instruction, and referenced-owner nodes plus the ownership edges required
+for replay. A referenced owner carries only its opaque id. Foreign balances, tax attributes, owner roster
+records, and unrelated household records are never imported by that expansion. Missing, dangling, or
+multi-resolving references fail validation for defect cases and controls alike.
 
 Accounts and bank instructions retain `householdRef`. A non-primary household referenced by either appears
 exactly once in `records.referencedHouseholds`, carrying only an opaque derived id and closed relationship
 reasons. Pending-action kind is closed and maps to typed direction and liquidity class. Only live unresolved
 outgoing distributions or debits reduce effective liquidity; blocked, cancelled, rejected, incoming,
 credit, unknown, and unclassified actions do not, and incoming value cannot increase availability before
-settlement.
+settlement. A settled incoming credit has the distinct expected treatment
+`credit-settled-incoming-availability`; the source-reported `availableMinor` and that treatment must account
+for the settled value exactly once.
 
 Funding is never inferred from available accounts in either partition. Every synthetic request and
 real-derived payload names an explicit, duplicate-free `selectedFundingRefs` set. Synthetic selections
@@ -302,11 +304,12 @@ one.
 `corpusDigest` uses the versioned `verin-corpus/1.12.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.7.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.8.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
-its exact bytes, and exact digests for the complete repository-local runtime dependency closure of the
-executable cross-field authorities. Each schema binding covers its identifier, exact bytes, and canonical
+its exact bytes, and exact digests for the complete repository-local runtime dependency closure rooted at
+the real-derived inspection and corpus-validation gateways. Each schema binding covers its identifier,
+exact bytes, and canonical
 semantic projection. Relabeling an inventory entry, changing
 what a defect class means, changing a freshness window, changing either schema, or changing a replay
 predicate or topology rule therefore invalidates prior captain signoff even when no case bytes change.

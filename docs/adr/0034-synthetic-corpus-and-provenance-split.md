@@ -68,7 +68,7 @@ Every evidence and request reference resolves to exactly one emitted record in i
 Every evidence-producing collection is present, keyed collections reject duplicates, planned withdrawals
 and model assignments carry distinct prefixed derived ids, recent changes are emitted, restriction
 subjects are preserved, and an explicitly named cross-household destination is represented by minimal
-opaque projected account and bank-instruction nodes rather than filtered away. Accounts and bank
+opaque projected account, bank-instruction, and referenced-owner nodes rather than filtered away. Accounts and bank
 instructions preserve their `householdRef`; each non-primary referenced household appears exactly once as
 an opaque id with closed relationship reasons. Every household edge resolves without importing foreign
 balances, tax attributes, owner roster records, or unrelated household records through that expansion.
@@ -76,7 +76,8 @@ balances, tax attributes, owner roster records, or unrelated household records t
 Pending-action direction and liquidity class come from a closed kind registry. Only live unresolved
 outgoing distributions or debits reduce effective liquidity. Blocked, cancelled, rejected, incoming,
 credit, unknown, and unclassified actions do not. Incoming value is excluded until settlement and can
-increase availability only once settled.
+increase availability only once settled. The signed treatment vocabulary distinguishes that state as
+`credit-settled-incoming-availability`, so omitting settled value cannot pass as neutral exclusion.
 
 ### 2b. Evidence carries three instants, not one (D-078)
 
@@ -137,7 +138,7 @@ generated manifest, bound into `corpusDigest`, and fed to the real-derived repor
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
 before and after, method, with review by a second party) plus strict hand-owned JSON Schemas for the case
-envelope and `verin-real-derived-replay/1.6.0` payload. That payload contains only typed destination,
+envelope and `verin-real-derived-replay/1.7.0` payload. That payload contains only typed destination,
 ownership, liquidity, direction, authority, threshold, policy, tax-review, instruction-conflict,
 temporal, evidence, reservation, execution, and expected-versus-observed treatment inputs needed by
 supported defect classes. Pending actions carry account and household references bound to the request,
@@ -155,7 +156,7 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.7.0` registry separates awkward context from outcome in both
+The closed `verin-real-derived-semantics/1.8.0` registry separates awkward context from outcome in both
 corpus partitions. A defect case is accepted only when its label is the exact singleton context-bound
 treatment mismatch. Detector attribution for a defect is either an empty miss or the exact signed-label
 singleton. A clean control records the
@@ -277,6 +278,10 @@ D-092 raises the ceiling to 7900 against 7739 measured lines for emitted-record-
 instruction contexts, target-specific joint-owner analysis, and comprehensive executable-authority
 loader closure. The 161-line buffer preserves separate structural-context and fence owners under the
 unchanged 500-line file ceiling.
+D-093 keeps the ceiling at 7900 against 7898 measured lines after adding opaque referenced-owner
+projection, signed validation-gateway roots, ambient-global nondeterminism coverage, and distinct
+settled-credit treatment semantics. The 2-line buffer preserves those existing ownership boundaries
+under the unchanged 500-line file ceiling.
 
 ## What this PR explicitly does NOT claim
 

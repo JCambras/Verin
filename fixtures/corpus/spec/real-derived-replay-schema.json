@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.6.0",
+  "$id": "verin-real-derived-replay/1.7.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,7 @@
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.6.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.7.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
@@ -931,11 +931,13 @@
         "compare-canonical-identities",
         "compare-raw-identities",
         "count-nonreducing-pending",
+        "credit-settled-incoming-availability",
         "exclude-nonreducing-pending",
         "exclude-stale-evidence",
         "ignore-restriction-lifecycle",
         "invent-reserve-from-missing-schedule",
         "mark-reserve-unavailable",
+        "omit-settled-incoming-availability",
         "preserve-evidence-interval",
         "preserve-hold-scope",
         "proceed-without-completed-tax-review",

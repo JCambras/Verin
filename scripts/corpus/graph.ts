@@ -2,6 +2,7 @@ import type { EmittedCase } from "./synthetic-semantics";
 import { REFERENCED_HOUSEHOLD_RELATIONSHIP_REASONS } from "./subgraph";
 
 const RECORD_COLLECTIONS = [
+  "referencedOwners",
   "accounts",
   "referencedAccounts",
   "authorizedSigners",

@@ -7766,3 +7766,44 @@ remains empty, captain signoff remains pending, path-keyed generation changes on
 156 corpus-provenance companions pass.
 
 **Date:** 2026-07-29 (v3 prompt 11, D-092 review hardening).
+
+---
+
+## PF-207 · corpus privacy, gateway authority, determinism, and settled credits · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-093, ADR-0034):** foreign destination owners remain opaque, both acceptance gateways are
+signed executable-authority roots, ambient-global access cannot bypass nondeterminism detection, and a
+settled incoming credit has a distinct treatment in both corpus partitions.
+
+**Injection 1 - foreign owner expanded.** Changed a cross-household destination instruction to an
+otherwise unrelated party and attempted to resolve the owner through the full party collection.
+
+**Injection 2 - validation gateway omitted.** Removed each of `scripts/corpus/real-derived.ts` and
+`scripts/corpus/validate.ts` from the signed root set.
+
+**Injection 3 - ambient global clock.** Added
+`scripts/corpus/review-globalthis-proof.ts:1` with `globalThis.Date.now()`.
+
+**Injection 4 - settled credit omitted.** Supplied a settled incoming credit in synthetic and
+real-derived pending context while recording the generic nonreducing treatment.
+
+**Observed failure:**
+```
+scripts/corpus/review-globalthis-proof.ts:1 Date.now
+missing executable authority gateway root scripts/corpus/real-derived.ts
+missing executable authority gateway root scripts/corpus/validate.ts
+foreign destination owner appeared in records.parties
+expected credit-settled-incoming-availability, observed omit-settled-incoming-availability
+```
+
+**Standing companions:** an unrelated foreign owner resolves exactly once through `referencedOwners`
+and exposes only an opaque id; a local owner remains a complete party; omitting either gateway root fails;
+direct, aliased, destructured, and bracket access through `globalThis` and `global` is detected; and both
+partitions select the settled-credit expected-versus-observed pair from the shared pending-action
+authority.
+
+**Revert:** all temporary injections were reverted. The proof source was deleted, canonical regeneration
+restored `corpusDigest` `c6fe1a9292b5b653d0ae524244d9a5f73ba8c962893da9433169125ec6db773e`,
+the real-derived partition remains empty, captain signoff remains pending, and all 1,428 tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-093 review hardening).

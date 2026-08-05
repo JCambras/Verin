@@ -105,27 +105,27 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
     (row) => `${row.accountRef}/${row.partyRef}`,
   );
   const memberKeys = new Set(household.memberRefs);
-  const relevantParties = sortedBy(
-    world.parties.filter(
-      (party) =>
-        memberKeys.has(party.key) ||
-        party.key === household.advisorRef ||
-        householdAccounts.some((account) => account.ownerRefs.includes(party.key)) ||
-        beneficiaries.some((beneficiary) => beneficiary.partyRef === party.key) ||
-        selectedBankInstructions.some(
-          (instruction) => instruction.titledTo === party.key,
-        ) ||
-        world.restrictions.some(
-          (restriction) =>
-            restriction.householdRef === householdKey &&
-            restriction.term?.targetKind === "destination-subject" &&
-            restriction.term.targetRef === party.key,
-        ) ||
-        world.authorizedSigners.some(
-          (signer) =>
-            householdAccountKeys.has(signer.accountRef) && signer.partyRef === party.key,
-        ),
+  const localPartyKeys = new Set([
+    ...household.memberRefs,
+    household.advisorRef,
+    ...householdAccounts.flatMap((account) => account.ownerRefs),
+    ...beneficiaries.map((beneficiary) => beneficiary.partyRef),
+    ...bankInstructions.map((instruction) => instruction.titledTo),
+    ...world.authorizedSigners.flatMap((signer) =>
+      householdAccountKeys.has(signer.accountRef) ? [signer.partyRef] : []
     ),
+  ]);
+  const referencedOwnerKeys = new Set([
+    ...referencedBankInstructions.map((instruction) => instruction.titledTo),
+    ...world.restrictions.flatMap((restriction) =>
+      restriction.householdRef === householdKey &&
+        restriction.term?.targetKind === "destination-subject"
+        ? [restriction.term.targetRef]
+        : []
+    ),
+  ].filter((key) => !localPartyKeys.has(key)));
+  const relevantParties = sortedBy(
+    world.parties.filter((party) => localPartyKeys.has(party.key)),
     (party) => party.key,
   );
   const restrictionInScope = (row: WorldSpec["restrictions"][number]): boolean => {
@@ -167,6 +167,10 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
       rosterName: nfc(party.rosterName),
       roles: sortedBy(party.roles, (role) => role),
     })),
+    referencedOwners: sortedBy(
+      [...referencedOwnerKeys],
+      (key) => key,
+    ).map((key) => ({ id: subjectId(key) })),
     accounts: householdAccounts.map((account) => ({
       id: subjectId(account.key),
       householdRef: subjectId(account.householdRef),

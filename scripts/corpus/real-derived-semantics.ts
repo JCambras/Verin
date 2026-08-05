@@ -112,6 +112,16 @@ const TREATMENT_SELECTORS: Readonly<
       ? "effective"
       : "ineffective",
   "reserve-state": (item) => item.replayPayload.liquidity.reserveState,
+  "pending-availability": (item) => {
+    const action = item.replayPayload.liquidity.pendingAction;
+    return action.actionKind !== null && action.actionState !== null &&
+        pendingActionLiquidityTreatment(
+          action.actionKind,
+          action.actionState,
+        ).increasesAvailableLiquidity
+      ? "increased"
+      : "unchanged";
+  },
   "threshold-comparator": (item) =>
     item.replayPayload.policy.thresholdComparator,
 };
