@@ -19,9 +19,9 @@ Practice intelligence for registered investment advisers. The third and final bu
    subordinate to the charter and grounded in the foundation.
 8. **[`docs/product-guide.md`](./docs/product-guide.md)** - the captain-directed differentiating thesis
    (D-098) that the product direction serves; test every design, prompt, and demo choice against it. It
-   binds nothing on its own and is subordinate to the charter, v3, `PRODUCT-DIRECTION.md` (item 7), the
-   demo contract (item 9), and [`docs/demo-design-language.md`](./docs/demo-design-language.md) - on
-   conflict, they win.
+   binds nothing on its own and is subordinate to the charter, v3, `PRODUCT-DIRECTION.md`, the demo
+   contract, and [`docs/demo-design-language.md`](./docs/demo-design-language.md) - on conflict, they
+   win.
 9. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
    contract (D-034), with its scenario matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
    and acceptance checklist [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md).

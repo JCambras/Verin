@@ -3075,7 +3075,7 @@ re-derived or lost); state it as a second north star competing with
 self-configuration capability is designed, leaving the directive unrecorded.
 
 **Revert path:** delete `docs/product-guide.md` and remove the four pointers with their
-precedence clauses (`README.md` item 8, `AGENTS.md`, `PRODUCT-DIRECTION.md` header,
+precedence clauses (`README.md`, `AGENTS.md`, `PRODUCT-DIRECTION.md` header,
 `docs/v3/README.md`).
 No code, fixture, fence, or pinned document depends on it. D-099 stands independently of
 this revert.
