@@ -111,6 +111,11 @@ const BeneficiarySchema = z.strictObject({
   sharePercentBps: z.int().min(1).max(10000),
   tier: z.enum(["primary", "contingent"]),
 });
+const orderedEffectivity = (value: {
+  effectiveFrom: string;
+  effectiveTo: string | null;
+}): boolean =>
+  value.effectiveTo === null || value.effectiveFrom < value.effectiveTo;
 const SignerSchema = z.strictObject({
   key: Slug,
   accountRef: Slug,
@@ -119,6 +124,9 @@ const SignerSchema = z.strictObject({
   effectiveFrom: Instant,
   effectiveTo: Instant.nullable(),
   observedAt: ObservedAt,
+}).refine(orderedEffectivity, {
+  message: "effectiveTo must be later than effectiveFrom",
+  path: ["effectiveTo"],
 });
 const BankInstructionSchema = z.strictObject({
   key: Slug,
@@ -138,10 +146,16 @@ const PlannedWithdrawalSchema = z.strictObject({
   observedAt: ObservedAt,
   segments: z.array(
     z.strictObject({
-      fromMonth: z.string().regex(/^\d{4}-\d{2}$/),
+      fromMonth: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
       monthlyMinor: Money,
     }),
-  ).min(1),
+  ).min(1).refine(
+    (segments) => segments.every(
+      (segment, index) =>
+        index === 0 || segments[index - 1]!.fromMonth < segment.fromMonth,
+    ),
+    "withdrawal segment months must be strictly increasing",
+  ),
 });
 const RestrictionSchema = z.strictObject({
   key: Slug,
@@ -165,6 +179,9 @@ const RestrictionSchema = z.strictObject({
     targetRef: Slug,
     polarity: z.enum(INSTRUCTION_POLARITIES),
   }).optional(),
+}).refine(orderedEffectivity, {
+  message: "effectiveTo must be later than effectiveFrom",
+  path: ["effectiveTo"],
 });
 const RecentChangeSchema = z.strictObject({
   key: Slug,

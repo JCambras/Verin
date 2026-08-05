@@ -258,4 +258,29 @@ describe("detects (companion): unrealistic or mislabeled timestamps CANNOT pass"
     );
     expect(WorldSpecSchema.safeParse(duplicate).success).toBe(false);
   });
+
+  it("effective intervals must be ordered for restrictions and authorized signers", () => {
+    const restriction = structuredClone(real.spec.world);
+    restriction.restrictions[0]!.effectiveTo = "2025-01-01T00:00:00.000Z";
+    expect(WorldSpecSchema.safeParse(restriction).success).toBe(false);
+
+    const signer = structuredClone(real.spec.world);
+    signer.authorizedSigners[0]!.effectiveTo = "2025-01-01T00:00:00.000Z";
+    expect(WorldSpecSchema.safeParse(signer).success).toBe(false);
+  });
+
+  it("withdrawal schedules require valid, strictly increasing months", () => {
+    const descending = structuredClone(real.spec.world);
+    descending.plannedWithdrawals[0]!.segments.reverse();
+    expect(WorldSpecSchema.safeParse(descending).success).toBe(false);
+
+    const duplicateMonth = structuredClone(real.spec.world);
+    duplicateMonth.plannedWithdrawals[0]!.segments[1]!.fromMonth =
+      duplicateMonth.plannedWithdrawals[0]!.segments[0]!.fromMonth;
+    expect(WorldSpecSchema.safeParse(duplicateMonth).success).toBe(false);
+
+    const invalidMonth = structuredClone(real.spec.world);
+    invalidMonth.plannedWithdrawals[0]!.segments[0]!.fromMonth = "2026-13";
+    expect(WorldSpecSchema.safeParse(invalidMonth).success).toBe(false);
+  });
 });

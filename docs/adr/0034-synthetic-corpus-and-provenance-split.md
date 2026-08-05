@@ -293,6 +293,10 @@ D-124 keeps the ceiling at 8000 against 7989 measured lines after adding settled
 semantics. The 11-line headroom remains measured rather than implicit.
 D-125 raises the ceiling to 8100 against 8018 measured lines for transitive determinism provenance and
 restriction lifecycle recomputation. The 82-line buffer preserves the separate fence and semantic owners.
+D-126 keeps the ceiling at 8100 against 8035 measured lines after completing default-binding, callable
+alias, CommonJS, and computed-member provenance; restoring the repository-wide no-blending scan; and
+rejecting impossible synthetic effectivity and withdrawal schedules. The 65-line buffer preserves the
+separate fence and schema owners.
 
 ## What this PR explicitly does NOT claim
 

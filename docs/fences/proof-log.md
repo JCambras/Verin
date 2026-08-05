@@ -7967,3 +7967,49 @@ the real-derived partition remains empty, captain signoff remains pending, and t
 pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-125 review hardening).
+
+---
+
+## PF-212 · defaults, module origins, provenance separation, and synthetic schedule order · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`, `src/__tests__/fitness/corpus-timestamps.test.ts`
+
+**Invariant (D-126, ADR-0034):** every reachable host-state origin is rejected regardless of default
+evaluation, callable alias, module syntax, or computed member spelling; product and tooling code never
+combine provenance-partition measurements; and synthetic effectivity and withdrawal schedules are
+ordered evidence.
+
+**Injection 1 - default evaluation and callable aliases.** Passed explicit `undefined` to a parameter
+defaulted to `process`, omitted nested destructured members defaulted to `process`, and invoked a method
+returning `process` through a variable alias.
+
+**Injection 2 - module and member spelling.** Loaded operating-system and process built-ins through
+import-equals and CommonJS `require`, read `process.env` and `Math.random` through constant property-key
+aliases, and indexed `process` through a runtime key.
+
+**Injection 3 - provenance blending.** Added `scripts/corpus/review-blend-proof.ts` with a synthetic plus
+real-derived metric whose name did not contain `overallRate`.
+
+**Injection 4 - impossible synthetic evidence.** Set a restriction and an authorized signer to end
+before they began, then supplied descending, duplicate, and month-13 planned-withdrawal segments.
+
+**Observed failure:**
+```
+expected [] to have a length of 3 but got 0
+expected [] to have a length of 1 but got 0
+expected Set{} to deeply equal Set{ 'os.hostname', 'process.env', 'os.release' }
+expected Set{} to deeply equal Set{ 'process.env', 'Math.random', 'process.[computed]' }
+scripts/corpus/review-blend-proof.ts:7: combines the synthetic and real-derived partitions into one figure
+expected true to be false
+```
+
+**Standing companions:** explicit and nested defaults, callable method aliases, import-equals, ambient
+CommonJS loaders, local same-named loader controls, constant and dynamic computed members, arithmetic,
+reducers, helper calls, concatenation, report-boundary shadows, imported and destructured partition
+aliases, rendered templates, inverted effectivity intervals, and invalid or unordered withdrawal months
+all exercise the production detectors.
+
+**Revert:** every injection was removed or replaced by a standing in-memory companion. Canonical
+regeneration produced `corpusDigest` `67dadb0ecd3eed8c7b9ae0e52fc5c78fd1aa0eca4836b187f0d84e56b20a5f3f`,
+the real-derived partition remains empty, captain signoff remains pending, and the tooling bucket measures
+8035 lines under its unchanged 8100-line ceiling. All 1,459 unit, integration, and fitness tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-126 review hardening).

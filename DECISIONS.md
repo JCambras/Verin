@@ -5010,3 +5010,30 @@ captain signoff remains pending.
 stable API list, and a signed lifecycle defect cannot be replayed from a trusted enum without its
 effectivity facts.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-126 · 2026-08-05 · reversible · Determinism and synthetic schedules fail closed
+
+Corpus determinism provenance now models JavaScript default semantics conservatively, including an
+explicit `undefined` argument and nested object or array binding defaults. Callable aliases preserve
+method provenance, built-in origins enter through import-equals and ambient CommonJS loaders, constant
+computed members resolve to their actual origin, and dynamic access on a sensitive origin fails closed.
+
+The repository-wide no-blending fence again scans shipped product and tooling code. It follows local and
+imported partition aliases and rejects arithmetic, reducers, helper calls, concatenation, constructors,
+and rendered templates that combine synthetic and real-derived measurements. Only the symbol-resolved
+report owner may receive both partitions, so a same-named local shadow receives no exemption.
+
+Synthetic restriction and authorized-signer intervals now require `effectiveFrom` to precede a non-null
+`effectiveTo`. Planned-withdrawal months must be valid calendar months in strictly increasing order, so
+the hand-owned order is canonical and duplicate or descending segments cannot create ambiguous replay
+bytes. The world spec advances to `1.5.0`.
+
+The tooling bucket measures 8035 lines under the unchanged 8100 ceiling. Canonical regeneration produces
+`corpusDigest` `67dadb0ecd3eed8c7b9ae0e52fc5c78fd1aa0eca4836b187f0d84e56b20a5f3f`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** default evaluation, module syntax, and computed access cannot erase a host-state origin; a
+measurement cannot evade provenance separation by changing its spelling; and signed synthetic evidence
+cannot rely on an impossible interval or an order-sensitive schedule with no valid ordering.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

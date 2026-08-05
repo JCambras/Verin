@@ -12,10 +12,13 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 import { parseDocument } from "yaml";
-import { Project } from "ts-morph";
+import { Node, Project, SyntaxKind } from "ts-morph";
 import {
+  inMemoryProject,
   moduleReferences,
   REPO_ROOT,
+  shippedSourceFiles,
+  toolingSourceFiles,
 } from "./_fence-utils";
 import { canonicalJson } from "../../../src/contracts/decision-core/serialization";
 import { loadGoldenCases, loadScenarioRefs } from "../../../scripts/golden-cases.lib";
@@ -136,6 +139,204 @@ const SCENARIOS = join(REPO_ROOT, "config/demo/scenarios.yaml");
 
 const reportExportProblems = (names: readonly string[]): string[] =>
   names.filter((name) => name !== "renderCorpusReport");
+
+const PARTITION_ACCESSORS = ["synthetic", "realDerived"] as const;
+
+export function blendingViolations(project: Project, root = ""): string[] {
+  const violations: string[] = [];
+  type TrackedSymbol = NonNullable<ReturnType<Node["getSymbol"]>>;
+  const directReads = (text: string): Set<string> =>
+    new Set(
+      PARTITION_ACCESSORS.filter(
+        (accessor) =>
+          new RegExp(`\\.${accessor}\\b`).test(text) ||
+          new RegExp(`\\[\\s*["'\`]${accessor}["'\`]\\s*\\]`).test(text) ||
+          new RegExp(`\\b${accessor}(?:Outcomes|PartitionReport)\\b`).test(text),
+      ),
+    );
+  const staticPartitionAccessors = (node: Node | undefined): Set<string> => {
+    if (node === undefined) return new Set();
+    const type = node.getType();
+    const alternatives = type.isUnion() ? type.getUnionTypes() : [type];
+    return new Set(
+      alternatives.flatMap((alternative) => {
+        if (!alternative.isStringLiteral()) return [];
+        const value = alternative.getLiteralValue();
+        if (typeof value !== "string") return [];
+        return PARTITION_ACCESSORS.includes(
+          value as typeof PARTITION_ACCESSORS[number],
+        ) ? [value] : [];
+      }),
+    );
+  };
+  const symbolReads = (symbol: TrackedSymbol): Set<string> => {
+    try {
+      const resolved = symbol.getAliasedSymbol() ?? symbol;
+      const reads = directReads(
+        resolved.getDeclarations().map((declaration) => declaration.getText()).join("\n"),
+      );
+      for (const declaration of resolved.getDeclarations()) {
+        if (!Node.isBindingElement(declaration)) continue;
+        const name = declaration.getPropertyNameNode()?.getText() ??
+          declaration.getNameNode().getText();
+        if (PARTITION_ACCESSORS.includes(name as typeof PARTITION_ACCESSORS[number])) {
+          reads.add(name);
+        }
+      }
+      return reads;
+    } catch {
+      return new Set();
+    }
+  };
+  const isReportBoundaryCall = (node: Node): boolean => {
+    if (!Node.isCallExpression(node)) return false;
+    const symbol = node.getExpression().getSymbol();
+    if (symbol === undefined) return false;
+    let resolved: TrackedSymbol;
+    try {
+      resolved = symbol.getAliasedSymbol() ?? symbol;
+    } catch {
+      return false;
+    }
+    return ["buildCorpusReport", "renderCorpusReport"].includes(
+      resolved.getName(),
+    ) && resolved.getDeclarations().every((declaration) =>
+      declaration.getSourceFile().getFilePath().replace(/\\/g, "/")
+        .endsWith("/scripts/corpus/report.ts")
+    );
+  };
+  for (const sf of project.getSourceFiles()) {
+    const taints = new Map<TrackedSymbol, Set<string>>();
+    const readsOf = (node: Node): Set<string> => {
+      if (isReportBoundaryCall(node)) return new Set();
+      const reads = directReads(node.getText());
+      const elementAccesses = Node.isElementAccessExpression(node)
+        ? [node]
+        : node.getDescendantsOfKind(SyntaxKind.ElementAccessExpression);
+      for (const access of elementAccesses) {
+        for (const accessor of staticPartitionAccessors(
+          access.getArgumentExpression(),
+        )) {
+          reads.add(accessor);
+        }
+      }
+      for (const identifier of node.getDescendantsOfKind(SyntaxKind.Identifier)) {
+        const symbol = identifier.getSymbol();
+        if (symbol === undefined) continue;
+        for (const accessor of symbolReads(symbol)) reads.add(accessor);
+        for (const accessor of taints.get(symbol) ?? []) reads.add(accessor);
+      }
+      if (Node.isIdentifier(node)) {
+        const symbol = node.getSymbol();
+        if (symbol !== undefined) {
+          for (const accessor of symbolReads(symbol)) reads.add(accessor);
+          for (const accessor of taints.get(symbol) ?? []) reads.add(accessor);
+        }
+      }
+      return reads;
+    };
+    for (let pass = 0; pass < 8; pass += 1) {
+      let changed = false;
+      for (const declaration of sf.getDescendantsOfKind(
+        SyntaxKind.VariableDeclaration,
+      )) {
+        const symbol = declaration.getNameNode().getSymbol();
+        const initializer = declaration.getInitializer();
+        if (
+          initializer === undefined ||
+          symbol === undefined ||
+          isReportBoundaryCall(initializer)
+        ) {
+          continue;
+        }
+        const reads = readsOf(initializer);
+        const before = taints.get(symbol);
+        if (
+          reads.size > 0 &&
+          (before === undefined || [...reads].some((entry) => !before.has(entry)))
+        ) {
+          taints.set(symbol, new Set([...(before ?? []), ...reads]));
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    const record = (expression: Node): void => {
+      violations.push(
+        `${sf.getFilePath().replace(root, "")}:${expression.getStartLineNumber()}: combines the synthetic and real-derived partitions into one figure`,
+      );
+    };
+    for (const expression of sf.getDescendantsOfKind(
+      SyntaxKind.BinaryExpression,
+    )) {
+      if (
+        [
+          SyntaxKind.PlusToken,
+          SyntaxKind.MinusToken,
+          SyntaxKind.AsteriskToken,
+          SyntaxKind.SlashToken,
+          SyntaxKind.PercentToken,
+          SyntaxKind.AsteriskAsteriskToken,
+        ].includes(expression.getOperatorToken().getKind()) &&
+        PARTITION_ACCESSORS.every((accessor) => readsOf(expression).has(accessor))
+      ) {
+        record(expression);
+      }
+    }
+    for (const expression of sf.getDescendantsOfKind(
+      SyntaxKind.CallExpression,
+    )) {
+      if (isReportBoundaryCall(expression)) continue;
+      const argumentsRead = new Set(
+        expression.getArguments().flatMap((argument) => [...readsOf(argument)]),
+      );
+      const target = expression.getExpression();
+      if (
+        Node.isPropertyAccessExpression(target) &&
+        ["reduce", "reduceRight", "concat"].includes(target.getName())
+      ) {
+        for (const accessor of readsOf(target.getExpression())) {
+          argumentsRead.add(accessor);
+        }
+      }
+      if (
+        PARTITION_ACCESSORS.every((accessor) => argumentsRead.has(accessor))
+      ) {
+        record(expression);
+      }
+    }
+    for (const expression of sf.getDescendantsOfKind(
+      SyntaxKind.NewExpression,
+    )) {
+      const reads = new Set(
+        expression.getArguments().flatMap((argument) => [...readsOf(argument)]),
+      );
+      if (PARTITION_ACCESSORS.every((accessor) => reads.has(accessor))) {
+        record(expression);
+      }
+    }
+    for (const expression of [
+      ...sf.getDescendantsOfKind(SyntaxKind.TemplateExpression),
+      ...sf.getDescendantsOfKind(SyntaxKind.TaggedTemplateExpression),
+    ]) {
+      if (PARTITION_ACCESSORS.every((accessor) => readsOf(expression).has(accessor))) {
+        record(expression);
+      }
+    }
+  }
+  return violations;
+}
+
+const measuredCodeProject = (): Project => {
+  const project = new Project({
+    tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
+    skipAddingFilesFromTsConfig: true,
+  });
+  for (const file of [...shippedSourceFiles(), ...toolingSourceFiles()]) {
+    project.addSourceFileAtPath(file);
+  }
+  return project;
+};
 
 // ── shared fixtures for the companions ─────────────────────────────────────────
 
@@ -947,6 +1148,14 @@ describe("corpus-provenance-split fence", () => {
     expect(reportExportProblems(names)).toEqual([]);
   });
 
+  it("(c) enforces: product and tooling code never blend provenance partitions", () => {
+    const violations = blendingViolations(measuredCodeProject(), REPO_ROOT);
+    expect(
+      violations,
+      `blended provenance figures:\n${violations.join("\n")}`,
+    ).toEqual([]);
+  });
+
   it("(c) enforces: the report type has no aggregate key and the two figures have different names", () => {
     const report = renderCorpusReport(reportInput(outcomes(2, 1, true)));
     expect(report).toContain("syntheticDefectCoverage  100.00%");
@@ -1392,6 +1601,86 @@ describe("corpus-provenance-split fence", () => {
 });
 
 describe("detects (companion): a blended, mislabeled, unattested or self-congratulating corpus CANNOT pass", () => {
+  it.each([
+    [
+      "arithmetic",
+      "declare const r: any; export const score = r.synthetic.defectCases + r.realDerived.defectCases;",
+    ],
+    [
+      "a reducer",
+      "declare const r: any; export const score = [r.synthetic.defectCases, r.realDerived.defectCases].reduce((a, b) => a + b, 0);",
+    ],
+    [
+      "a helper call",
+      "declare const r: any; declare const combine: (...values: number[]) => number; const left = r.synthetic.defectCases; const right = r.realDerived.defectCases; export const score = combine(left, right);",
+    ],
+    [
+      "array concatenation",
+      "declare const r: any; export const score = [r.synthetic.defectCases].concat([r.realDerived.defectCases]);",
+    ],
+    [
+      "a shadow named like the report boundary",
+      "declare const r: any; const renderCorpusReport = (...values: number[]) => values.length; export const score = renderCorpusReport(r.synthetic.defectCases, r.realDerived.defectCases);",
+    ],
+    [
+      "a rendered template",
+      "declare const r: any; export const score = `${r.synthetic.defectCases}/${r.realDerived.defectCases}`;",
+    ],
+    [
+      "a tagged template",
+      "declare const r: any; export const score = String.raw`${r.synthetic.defectCases}/${r.realDerived.defectCases}`;",
+    ],
+    [
+      "a constructor",
+      "declare const r: any; declare class Combined { constructor(...values: number[]); } export const score = new Combined(r.synthetic.defectCases, r.realDerived.defectCases);",
+    ],
+  ])("a blended figure through %s is caught", (_name, source) => {
+    expect(
+      blendingViolations(
+        inMemoryProject({ "/src/domain/blend.ts": source }),
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("partition values remain tainted through imported aliases", () => {
+    const project = inMemoryProject({
+      "/src/domain/synthetic.ts":
+        "declare const r: any; export const value = r.synthetic.defectCases;",
+      "/src/domain/real.ts":
+        "declare const r: any; export const value = r.realDerived.defectCases;",
+      "/src/domain/blend.ts":
+        'import { value as left } from "./synthetic"; import { value as right } from "./real"; export const score = left + right;',
+    });
+    expect(blendingViolations(project).length).toBeGreaterThan(0);
+  });
+
+  it("partition values remain tainted through computed and destructured access", () => {
+    const project = inMemoryProject({
+      "/src/domain/blend.ts":
+        'declare const r: any; const { synthetic: left, realDerived: right } = r; export const score = left.defectCases + r["realDerived"].defectCases + right.cleanControls;',
+    });
+    expect(blendingViolations(project).length).toBeGreaterThan(0);
+  });
+
+  it("partition values remain tainted through constant computed keys", () => {
+    const project = inMemoryProject({
+      "/src/domain/blend.ts":
+        'declare const r: any; const leftKey = "synthetic"; const rightKey = "realDerived"; export const score = r[leftKey].defectCases + r[rightKey].defectCases;',
+    });
+    expect(blendingViolations(project).length).toBeGreaterThan(0);
+  });
+
+  it("arithmetic confined to one partition remains legal", () => {
+    expect(
+      blendingViolations(
+        inMemoryProject({
+          "/src/domain/synthetic.ts":
+            "declare const r: any; export const score = r.synthetic.defectCases + r.synthetic.cleanControls;",
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it("an unlabeled case, a label outside the vocabulary, and an off-taxonomy defect class are all flagged", () => {
     const base = JSON.parse(JSON.stringify(real.cases[0])) as (typeof real.cases)[number];
     const unlabeled = { ...base, caseId: "CS-x1", provenance: "" };
@@ -2113,7 +2402,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/subgraph.ts",
     );
-  });
+  }, 30_000);
 
   it("the executable authority closure follows import-equals and refuses indirect loaders", () => {
     const root = REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES[0];
