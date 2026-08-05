@@ -164,12 +164,6 @@ function parseVariant(value: unknown): SignedCaseVariant {
   ).map((entry, index) =>
     parseStage(entry, `${caseId}.expectedAuthority.stages[${index}]`),
   );
-  const inferredApprovalBindings = stages.flatMap((stage) =>
-    Array.from({ length: stage.approvalsRequired }, () => ({
-      stageId: stage.stageId,
-      lifecyclePass: "initial" as const,
-    })),
-  );
   return {
     caseId: caseId as SignedCaseId,
     scenarioId:
@@ -342,9 +336,6 @@ function parseVariant(value: unknown): SignedCaseVariant {
     ledgerEvents: parseLedgerEvents(
       fixture.expectedLedgerEvents,
       caseId,
-      authorityGap?.missingAuthorities.includes("approval-event-bindings")
-        ? inferredApprovalBindings
-        : [],
     ),
     explanations: asArray(
       fixture.expectedExplanationNodes,

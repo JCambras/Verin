@@ -143,7 +143,7 @@ export const V3_LEDGER_ENTRY_TYPES = [
   "ExceptionDecisionRequested",
 ] as const;
 
-/** The two authority-lapse events D-098 signed into GC-16 that the v3 union does
+/** The two authority-lapse events D-102 signed into GC-16 that the v3 union does
  * NOT yet carry. The extension is authorized by ADR-0040; prompt 7 adds both to the
  * canonical union when it lands the ledger, and this list empties back out. */
 export const AUTHORITY_LAPSE_EVENT_TYPES = ["ApprovalStageEscalated", "ApprovalStageExpired"] as const;

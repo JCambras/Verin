@@ -15,6 +15,7 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, DISPOSITION_LABELS, type EvidenceRowVM, type ExecutionRowVM, type RecordVM, type WhyVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 import { RecordHeader } from "./record-header";
+import { RecordLifecycleSections } from "./record-lifecycle-sections";
 
 function DocSection({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
@@ -400,38 +401,12 @@ export function RecordSurface({
                 )}
               </DocSection>
 
-              {vm.lifecycle.length > 0 ? (
-                <DocSection
-                  n={9}
-                  title={vm.lifecycleKind === "signed" ? "Signed lifecycle" : "Demonstration policy-rerun lifecycle"}
-                >
-                  {vm.lifecycleKind === "demonstration-policy-rerun" ? (
-                    <p className="flex items-center gap-2 text-xs text-slate-600">
-                      This lifecycle is demonstration provenance, not a captain-signed ledger.
-                      <DevProvenanceBadge label={DEV_BADGE_TEXT["deterministic-engine-output"]} />
-                    </p>
-                  ) : null}
-                  <ol className="flex flex-col gap-2">
-                    {vm.lifecycle.map((event, index) => (
-                      <li
-                        key={`${event.type}-${event.timestampIso}`}
-                        className="grid gap-1 text-sm sm:grid-cols-[2rem_13rem_1fr]"
-                        data-testid="signed-lifecycle-event"
-                        data-event-type={event.type}
-                        data-event-instant={event.timestampIso}
-                      >
-                        <span className="text-slate-500">{index + 1}.</span>
-                        <span className="font-mono text-xs text-slate-800">{event.type}</span>
-                        <span className="text-slate-700">
-                          <time dateTime={event.timestampIso}>{event.display}</time> · {event.note}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-                </DocSection>
-              ) : null}
+              <RecordLifecycleSections vm={vm} />
 
-              <DocSection n={vm.lifecycle.length > 0 ? 10 : 9} title="Provenance appendix">
+              <DocSection
+                n={9 + Number(vm.lifecycle.length > 0) + Number(vm.expectedLifecycle.length > 0)}
+                title="Provenance appendix"
+              >
                 <p className="text-sm text-slate-700">
                   This artifact derives from the following leaf sources (ADR-0022 flattened trace):{" "}
                   <span className="font-mono text-xs text-slate-800">{vm.provenanceAppendix.join(", ")}</span>

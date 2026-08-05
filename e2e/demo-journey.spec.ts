@@ -671,7 +671,13 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(page.getByText("$252,000.00", { exact: true })).toHaveCount(0);
 
   await page.goto(`/app/demo/record?${invalidationContext}`);
-  await expect(page.getByTestId("signed-lifecycle-event")).toHaveCount(6);
+  await expect(page.getByTestId("signed-lifecycle-event")).toHaveCount(2);
+  await expect(page.getByTestId("signed-expected-lifecycle-event")).toHaveCount(4);
+  await expect(
+    page.getByRole("region", {
+      name: "Signed expected outcomes beyond the reached stage",
+    }),
+  ).toContainText("They did not occur in this demo run");
   await expect(page.getByTestId("decision-binding")).toHaveCount(1);
   await expect(page.getByText("Derived decision hash", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/idem:GC-15/)).toHaveCount(0);
@@ -688,16 +694,19 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
 
   await page.goto(`/app/demo/record?${invalidationContext}&pass=revalidated`);
   const lifecycle = page.getByTestId("signed-lifecycle-event");
-  await expect(lifecycle).toHaveCount(9);
+  const expectedLifecycle = page.getByTestId("signed-expected-lifecycle-event");
+  await expect(lifecycle).toHaveCount(2);
+  await expect(expectedLifecycle).toHaveCount(11);
   await expect(page.getByTestId("decision-binding")).toHaveCount(2);
   await expect(page.getByText(/idem:GC-15/)).toHaveCount(0);
   await expect(page.getByText(/res:GC-15/)).toHaveCount(0);
   await expect(page.getByText("Original decision hash", { exact: true })).toBeVisible();
-  await expect(page.getByText("Derived decision hash", { exact: true })).toBeVisible();
-  await expect(page.getByText("Refreshed input-bundle hash", { exact: true })).toBeVisible();
-  await expect(lifecycle.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-event-type")))).resolves.toEqual([
-    "EvidenceSnapshotRecorded",
-    "DecisionRecorded",
+  await expect(page.getByText("Signed expected derived decision hash", { exact: true })).toBeVisible();
+  await expect(
+    page.locator('[data-testid="decision-binding"][data-binding-kind="derived"]'),
+  ).toHaveAttribute("data-binding-plane", "signed-expected");
+  await expect(page.getByText("Signed expected refreshed input-bundle hash", { exact: true })).toBeVisible();
+  await expect(expectedLifecycle.evaluateAll((rows) => rows.map((row) => row.getAttribute("data-event-type")))).resolves.toEqual([
     "ApprovalRecorded",
     "ApprovalRecorded",
     "EvidenceSnapshotRecorded",
@@ -705,6 +714,10 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
     "DecisionRecorded",
     "ApprovalRecorded",
     "ApprovalRecorded",
+    "ReservationCreated",
+    "ExecutionStarted",
+    "ExecutionSucceeded",
+    "StatusObserved",
   ]);
   await expect(
     page.getByRole("region", { name: "Execution" }),

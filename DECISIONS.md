@@ -3807,7 +3807,7 @@ currently execute.
 **Revert path:** remove the gap only when the captain signs replacement material that satisfies the
 later contract and preserves the must-hold execution proof.
 
-### D-123 · 2026-08-05 · reversible · Evidence gaps and comparison identities remain structurally stable
+### D-127 · 2026-08-05 · reversible · Evidence gaps and comparison identities remain structurally stable
 
 Every direct GC-03 Evidence projection appends the existing signed authority-gap reason even though
 the case has initial signed rows. Safety, execution reach, and the printable record continue to use
@@ -3825,10 +3825,10 @@ The product projection and raw-fixture semantic validator normalize these inputs
 
 **Why:** a present case is not proof that later execution authority exists, a mutable radix is not a
 stable audit identity, and evidence equality alone cannot justify a policy-only causality claim.
-**Revert path:** none while D-119, D-120, and D-122 require fail-closed execution truth and exact
+**Revert path:** none while D-123, D-124, and D-126 require fail-closed execution truth and exact
 examiner-facing identity.
 
-### D-124 · 2026-08-05 · captain-decision · Execution and policy proof require semantic authority
+### D-128 · 2026-08-05 · captain-decision · Execution and policy proof require semantic authority
 
 Execution reach now evaluates each supported must-hold code by meaning. Freshness requires fresh
 selected evidence and governed event order; approval binding requires the active decision and full
@@ -3854,7 +3854,7 @@ approval each allowed an examiner-facing claim without the authority that claim 
 **Revert path:** replace the labeled demo event store and selected-case simulation when the real
 policy lifecycle and corpus runner land, while preserving the same fail-closed proof boundaries.
 
-### D-125 · 2026-08-05 · captain-decision · Activated outcomes and approval authority are exact
+### D-129 · 2026-08-05 · captain-decision · Activated outcomes and approval authority are exact
 
 An activated policy rerun recomputes disposition, execution eligibility, and its candidate execution
 plan from the activated policy. The rerun decision hash binds that complete result. Its approval
@@ -3879,7 +3879,7 @@ authority.
 **Revert path:** none without captain-signed structured approval bindings and an activated-policy
 evaluator that preserves the same exact result and hash boundaries.
 
-### D-126 · 2026-08-05 · captain-decision · Approval authority remains terminal, scoped, and chronological
+### D-130 · 2026-08-05 · captain-decision · Approval authority remains terminal, scoped, and chronological
 
 `ApprovalStageExpired` is terminal even when complete approvals precede it. Product approval proof
 and the independent raw-fixture validator reject the expired plan. Missing signed actor, role, or
@@ -3901,7 +3901,7 @@ ownership, and absent identity must not erase signed chronology.
 **Revert path:** none without preserving the same terminal, tenant-scoped, hash-bound, and
 chronological authority semantics.
 
-### D-127 · 2026-08-05 · captain-decision · Execution authority requires exact signed event payloads
+### D-131 · 2026-08-05 · captain-decision · Execution authority requires exact signed event payloads
 
 Event order, event notes, and separate fixture metadata no longer prove execution authority. The
 active `DecisionRecorded`, pre-execution `EvidenceSnapshotRecorded`, `ReservationCreated`, and
@@ -3912,7 +3912,7 @@ raw-fixture semantic fence compare those payloads to independently derived expec
 
 No signed fixture currently carries the complete payload. Every affected execution path, including
 GC-02's automatic-authority path and the delayed-NIGO path, is therefore withheld without changing
-or re-signing historical outcomes. This supersedes D-125's statement that GC-02 is independently
+or re-signing historical outcomes. This supersedes D-129's statement that GC-02 is independently
 executable. Each surfaced stop identifies the exact signed event and missing
 fields. The GC-01 quick start preserves its identity and uses clickable withheld Safety, Execution,
 and Verification stations to continue into Comparison and Policy Authoring. A missing policy-rerun

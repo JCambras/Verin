@@ -59,15 +59,20 @@ export function RecordHeader({ vm }: { vm: RecordVM }) {
               className="flex flex-col sm:col-span-2"
               data-testid="decision-binding"
               data-binding-kind={binding.kind}
+              data-binding-plane={binding.lifecyclePlane}
             >
               <dt className="text-xs text-slate-600">
-                {qualifier}decision hash
+                {binding.lifecyclePlane === "signed-expected"
+                  ? `Signed expected ${qualifier.toLowerCase()}`
+                  : qualifier}decision hash
               </dt>
               <dd className="font-mono text-xs break-all text-slate-800">
                 {binding.decisionHash}
               </dd>
               <dt className="mt-1 text-xs text-slate-600">
-                {bundleQualifier}input-bundle hash
+                {binding.lifecyclePlane === "signed-expected"
+                  ? `Signed expected ${bundleQualifier.toLowerCase()}`
+                  : bundleQualifier}input-bundle hash
               </dt>
               <dd className="font-mono text-xs break-all text-slate-800">
                 {binding.bundleHash}

@@ -63,25 +63,17 @@ function parseOptionalArrays(
 export function parseLedgerEvents(
   value: unknown,
   caseId: string,
-  inferredBindings: readonly {
-    readonly stageId: string;
-    readonly lifecyclePass: "initial" | "revalidated";
-  }[],
 ): SignedLedgerEventData[] {
-  let inferredIndex = 0;
   return asArray(value, `${caseId}.expectedLedgerEvents`).map(
     (entry, index) => {
       const path = `${caseId}.expectedLedgerEvents[${index}]`;
       const ledger = asRecord(entry, path);
       const type = asString(ledger.type, `${path}.type`);
-      const inferred = type === "ApprovalRecorded"
-        ? inferredBindings[inferredIndex++]
-        : undefined;
       const stageId = ledger.stageId === undefined
-        ? (inferred?.stageId ?? null)
+        ? null
         : asString(ledger.stageId, `${path}.stageId`);
       const lifecyclePass = ledger.lifecyclePass === undefined
-        ? (inferred?.lifecyclePass ?? null)
+        ? null
         : asString(ledger.lifecyclePass, `${path}.lifecyclePass`);
       if (
         lifecyclePass !== null &&
@@ -89,12 +81,6 @@ export function parseLedgerEvents(
         lifecyclePass !== "revalidated"
       ) {
         throw new TypeError(`${path}.lifecyclePass is unsupported`);
-      }
-      if (
-        type === "ApprovalRecorded" &&
-        (stageId === null || lifecyclePass === null)
-      ) {
-        throw new TypeError(`${path} approval binding is incomplete`);
       }
       return {
         type,

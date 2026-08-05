@@ -45,7 +45,7 @@ import {
 } from "./comparison-evidence";
 import { formatDemoInstant } from "./timeline";
 import { auditPositionFor } from "./audit-position";
-import { signedLifecycle } from "./record-lifecycle";
+import { signedLifecycleProjection } from "./record-lifecycle";
 import {
   DEMO_NOW,
   FIRMS,
@@ -346,6 +346,41 @@ export function buildRecord(
         policyApproval,
       )
     : buildDisposition(scenario, effectiveFirm, pass);
+  const lifecycle = policyApproval
+    ? {
+        occurred: [
+          {
+            type: "PolicyApprovalRecorded",
+            timestampIso: policyApproval.approvedAtIso,
+            display: policyApproval.approvedAt,
+            note: `Attributed demo approval by ${policyApproval.actorId} (${policyApproval.actorRole}) for policy hash ${policyApproval.policyHash}.`,
+          },
+          {
+            type: "DecisionRecorded",
+            timestampIso: policyApproval.decisionRecordedAtIso,
+            display: policyApproval.decisionRecordedAt,
+            note: `Demonstration rerun recorded against active policy ${policyApproval.toVersion} with disposition ${policyApproval.rerun.disposition}, execution eligibility ${String(policyApproval.rerun.executionEligible)}, and ${policyApproval.rerun.executionPlan ? "a candidate execution plan" : "no execution plan"}.`,
+          },
+        ],
+        expected: [],
+      }
+    : signedLifecycleProjection(scenario, firm, pass);
+  const occurredDecisionCount = sourceCase
+    ? lifecycle.occurred.filter(
+        ({ type }) => type === "DecisionRecorded",
+      ).length
+    : 1;
+  const decisionBindings = recordDecisionBindings(
+    scenario,
+    firm,
+    pass,
+    policyRerun,
+  ).map((binding, index) => ({
+    ...binding,
+    lifecyclePlane: index < occurredDecisionCount
+      ? "occurred" as const
+      : "signed-expected" as const,
+  }));
   return {
     header: {
       decisionId: policyRerun
@@ -372,12 +407,7 @@ export function buildRecord(
         ? null
         : auditPositionFor(scenario, firm.id, pass),
     },
-    decisionBindings: recordDecisionBindings(
-      scenario,
-      firm,
-      pass,
-      policyRerun,
-    ),
+    decisionBindings,
     policyApproval,
     intent: buildIntent(scenario, firm),
     evidence: buildEvidence(scenario, firm, pass).rows,
@@ -398,22 +428,8 @@ export function buildRecord(
     safety: finalSafety,
     execution: execution?.rows ?? null,
     verification,
-    lifecycle: policyApproval
-      ? [
-          {
-            type: "PolicyApprovalRecorded",
-            timestampIso: policyApproval.approvedAtIso,
-            display: policyApproval.approvedAt,
-            note: `Attributed demo approval by ${policyApproval.actorId} (${policyApproval.actorRole}) for policy hash ${policyApproval.policyHash}.`,
-          },
-          {
-            type: "DecisionRecorded",
-            timestampIso: policyApproval.decisionRecordedAtIso,
-            display: policyApproval.decisionRecordedAt,
-            note: `Demonstration rerun recorded against active policy ${policyApproval.toVersion} with disposition ${policyApproval.rerun.disposition}, execution eligibility ${String(policyApproval.rerun.executionEligible)}, and ${policyApproval.rerun.executionPlan ? "a candidate execution plan" : "no execution plan"}.`,
-          },
-        ]
-      : signedLifecycle(scenario, firm, pass),
+    lifecycle: lifecycle.occurred,
+    expectedLifecycle: lifecycle.expected,
     lifecycleKind: policyApproval
       ? "demonstration-policy-rerun"
       : "signed",

@@ -72,7 +72,7 @@ Notes on the two structural choices in the matrix mapping:
   case, while the scenario matrix's `competing-liquidity` is the two-request variant (GC-10/GC-11).
   The matrix stays untouched (its ids are append-only, and adding a branch is a captain-approved
   demo-contract change); the fixture records the reason in `scenarioRefNote`.
-- **The `competing-liquidity` branch is firm-split** in the matrix (D-100). Both signed cases are
+- **The `competing-liquidity` branch is firm-split** in the matrix (D-104). Both signed cases are
   firm-a and run on a $160,000 pool: either $75,000 request alone clears Firm A's $48,000 six-month
   reserve, both together do not. Under Firm B's $96,000 twelve-month reserve the SAME single request
   is recorded as blocked before a live reservation matters. No signed numeric case binds that

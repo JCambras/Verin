@@ -27,7 +27,7 @@ import { relative } from "node:path";
 // absorb a correction buys no discipline; it just converts review findings into
 // documentation deletions.
 //
-// MEASURED after D-121, with this file's own algorithm: contracts 4111/4150
+// MEASURED after D-125, with this file's own algorithm: contracts 4111/4150
 // (39), domain 1298/1350 (52), infrastructure 3484/3550 (66). These are
 // the real figures, not a stale decision-table row. Any FURTHER increase is still a
 // measured ADR amendment, never a code change.

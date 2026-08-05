@@ -1,5 +1,6 @@
-import type { RecordVM } from "./record-model";
+import type { RecordLifecycleEvent } from "./record-model";
 import { executionReachFor } from "./execution-reach";
+import { approvalBindingProof } from "./execution-preconditions";
 import {
   formatDemoInstant,
   timelineFor,
@@ -43,27 +44,62 @@ function approvalInstantsFor(
     );
 }
 
-function withoutDownstreamExecution(
-  lifecycle: RecordVM["lifecycle"],
-): RecordVM["lifecycle"] {
-  return lifecycle.filter(
-    ({ type }) =>
-      type !== "ReservationCreated" &&
-      type !== "ExecutionStarted" &&
-      type !== "ExecutionSucceeded" &&
-      type !== "ExecutionPartiallySucceeded" &&
-      type !== "StatusObserved" &&
-      type !== "ExceptionDecisionRequested",
-  );
+export interface SignedLifecycleProjection {
+  readonly occurred: readonly RecordLifecycleEvent[];
+  readonly expected: readonly RecordLifecycleEvent[];
 }
 
-export function signedLifecycle(
+function postAuthorityBoundary(
+  lifecycle: readonly RecordLifecycleEvent[],
+): number {
+  let evidenceSeen = false;
+  for (const [index, event] of lifecycle.entries()) {
+    if (event.type !== "EvidenceSnapshotRecorded") continue;
+    if (evidenceSeen) return index;
+    evidenceSeen = true;
+  }
+  const downstream = lifecycle.findIndex(
+    ({ type }) =>
+      type === "ReservationCreated" || type === "ExecutionStarted",
+  );
+  return downstream < 0 ? lifecycle.length : downstream;
+}
+
+function splitAtExpectedBoundary(
+  sourceCase: SignedCaseVariant,
+  pass: JourneyPass,
+  lifecycle: readonly RecordLifecycleEvent[],
+  reached: boolean,
+  authorityReached: boolean,
+): SignedLifecycleProjection {
+  if (reached) return { occurred: lifecycle, expected: [] };
+  if (sourceCase.executionEligibility.eligible !== true) {
+    return { occurred: lifecycle, expected: [] };
+  }
+  if (authorityReached) {
+    const boundary = postAuthorityBoundary(lifecycle);
+    return {
+      occurred: lifecycle.slice(0, boundary),
+      expected: lifecycle.slice(boundary),
+    };
+  }
+  const boundary = lifecycle.findIndex(({ type }) => type === "ApprovalRecorded");
+  const expectedAt = boundary < 0
+    ? postAuthorityBoundary(lifecycle)
+    : boundary;
+  return {
+    occurred: lifecycle.slice(0, expectedAt),
+    expected: lifecycle.slice(expectedAt),
+  };
+}
+
+export function signedLifecycleProjection(
   scenario: ScenarioData,
   firm: FirmData,
   pass: JourneyPass,
-): RecordVM["lifecycle"] {
+): SignedLifecycleProjection {
   const sourceCase = sourceCaseFor(scenario, firm.id);
-  if (!sourceCase) return [];
+  if (!sourceCase) return { occurred: [], expected: [] };
   const timeline = timelineFor(scenario, firm);
   if (hasSignedInvalidationAuthority(scenario, firm.id)) {
     const instants = [
@@ -87,17 +123,19 @@ export function signedLifecycle(
       display: formatDemoInstant(instants[index]!, undefined, true),
       note: event.note,
     }));
-    if (pass === "revalidated") {
-      return executionReachFor(scenario, firm, pass).reached
-        ? lifecycle
-        : withoutDownstreamExecution(lifecycle);
-    }
     const invalidatedAt = lifecycle.findIndex(
       (event) => event.type === "ApprovalInvalidated",
     );
-    return invalidatedAt < 0
+    const selected = pass === "revalidated" || invalidatedAt < 0
       ? lifecycle
       : lifecycle.slice(0, invalidatedAt + 1);
+    return splitAtExpectedBoundary(
+      sourceCase,
+      pass,
+      selected,
+      executionReachFor(scenario, firm, pass).reached,
+      approvalBindingProof(scenario, firm, sourceCase, pass),
+    );
   }
   const approvalInstants = approvalInstantsFor(sourceCase, timeline, pass);
   let evidenceIndex = 0;
@@ -154,7 +192,11 @@ export function signedLifecycle(
       note: event.note,
     };
   });
-  return executionReachFor(scenario, firm, pass).reached
-    ? lifecycle
-    : withoutDownstreamExecution(lifecycle);
+  return splitAtExpectedBoundary(
+    sourceCase,
+    pass,
+    lifecycle,
+    executionReachFor(scenario, firm, pass).reached,
+    approvalBindingProof(scenario, firm, sourceCase, pass),
+  );
 }

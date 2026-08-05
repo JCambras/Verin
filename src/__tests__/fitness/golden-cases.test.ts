@@ -21,6 +21,7 @@ import {
 import { validateGoldenCaseArtifacts } from "../../../scripts/golden-cases-runner.lib";
 import {
   deriveIndependentDemoBinding,
+  rawBankPreconditionProof,
   readRenderedMajor,
   rendersAtCanonicalScale,
   validateGoldenDemoSemantics,
@@ -793,7 +794,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
 
     // A malformed figure is REPORTED, not thrown: a crash would discard every
-    // diagnostic already collected (the D-099 lesson, applied to this fence too).
+    // diagnostic already collected (the D-103 lesson, applied to this fence too).
     const malformed = demoClone();
     malformed.decisions[0]!.availableCashMinor = Number.NaN;
     const malformedProblems = validateGoldenDemoSemantics(clone(), realRefs, malformed);
@@ -971,6 +972,19 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         problem.includes(
           "printable record created-at does not match the active DecisionRecorded event",
         ),
+      ),
+    ).toBe(true);
+
+    const wrongHashPlane = demoClone();
+    const expectedBinding = wrongHashPlane.recordIdentities.find(
+      ({ routeSourceCaseId, routePass }) =>
+        routeSourceCaseId === "GC-15-approval-invalidation" &&
+        routePass === "revalidated",
+    )!.decisionBindings.at(-1)!;
+    expectedBinding.lifecyclePlane = "occurred";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, wrongHashPlane).some(
+        (problem) => problem.includes("decision hash lifecycle plane drifts"),
       ),
     ).toBe(true);
 
@@ -1821,6 +1835,113 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       guard.executionAtIso = "2026-07-26T20:04:00.000Z";
       return { source, guard };
     };
+    const bindStagedExecution = (
+      cases: LoadedCase[],
+      demo: DemoSemanticSnapshot,
+      sourceCaseId = "GC-01-firm-a-happy-path",
+    ) => {
+      const source = caseById(cases, sourceCaseId);
+      bindApprovalActors(source);
+      const evidence = source.householdEvidence as Array<Record<string, unknown>>;
+      const eligibility = source.expectedExecutionEligibility as Record<string, unknown>;
+      const preconditions = eligibility.preconditions as Array<Record<string, unknown>>;
+      const required = new Set(
+        preconditions.flatMap((precondition) =>
+          Array.isArray(precondition.requiredEvidence)
+            ? precondition.requiredEvidence.filter(
+                (value): value is string => typeof value === "string",
+              )
+            : [],
+        ),
+      );
+      const preExecution = evidence
+        .filter((entry) => required.has(String(entry.subjectRef)))
+        .map((entry, index) => ({
+          ...entry,
+          snapshotId: `signed-staged-snapshot-${index + 1}`,
+          liquidityPhase: "pre-execution-revalidation",
+          freshness: "fresh",
+          retrievedAt: "2026-07-26T20:02:00.000Z",
+        }));
+      evidence.push(...preExecution);
+      const record = demo.recordIdentities.find(
+        (candidate) =>
+          candidate.routeSourceCaseId === sourceCaseId &&
+          candidate.routePass === "initial",
+      )!;
+      const binding = deriveIndependentDemoBinding(
+        cases,
+        demo,
+        record,
+        "initial",
+      )!;
+      const reservation = (
+        eligibility.reservations as Array<Record<string, unknown>>
+      )[0]!;
+      const events = source.expectedLedgerEvents as Array<Record<string, unknown>>;
+      let snapshot = 0;
+      let approval = 0;
+      for (const event of events) {
+        if (event.type === "DecisionRecorded") {
+          Object.assign(event, {
+            lifecyclePass: "initial",
+            recordedAt: "2026-07-26T20:01:00.000Z",
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+          });
+        }
+        if (event.type === "ApprovalRecorded") {
+          approval += 1;
+          Object.assign(event, {
+            recordedAt: `2026-07-26T20:01:${String(approval * 15).padStart(2, "0")}.000Z`,
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+          });
+        }
+        if (event.type === "EvidenceSnapshotRecorded") {
+          snapshot += 1;
+          Object.assign(event, snapshot === 1
+            ? {
+                lifecyclePass: "initial",
+                evidencePhase: "initial-decision",
+                recordedAt: "2026-07-26T20:00:00.000Z",
+              }
+            : {
+                lifecyclePass: "initial",
+                evidencePhase: "pre-execution-revalidation",
+                recordedAt: "2026-07-26T20:02:00.000Z",
+                evidenceSnapshotIds: preExecution.map((entry) => entry.snapshotId),
+                decisionHash: binding.decisionHash,
+                inputBundleHash: binding.bundleHash,
+              });
+        }
+        if (event.type === "ReservationCreated") {
+          Object.assign(event, {
+            lifecyclePass: "initial",
+            recordedAt: "2026-07-26T20:03:00.000Z",
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+            reservationId: reservation.reservationId,
+            conflictKeys: reservation.conflictKeys,
+            reservationExpiresAt: "2026-07-26T20:33:00.000Z",
+          });
+        }
+        if (event.type === "ExecutionStarted") {
+          Object.assign(event, {
+            lifecyclePass: "initial",
+            recordedAt: "2026-07-26T20:04:00.000Z",
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+            idempotencyKey: eligibility.idempotencyKey,
+            reservationIds: [reservation.reservationId],
+          });
+        }
+      }
+      const guard = exposeGuard(demo, sourceCaseId);
+      guard.reservationAtIso = "2026-07-26T20:03:00.000Z";
+      guard.executionAtIso = "2026-07-26T20:04:00.000Z";
+      return { source, guard };
+    };
     const expectProofFailure = (
       cases: LoadedCase[],
       sourceCaseId: string,
@@ -1953,6 +2074,96 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ),
     ).toBe(true);
 
+    const evidenceBoundary = clone();
+    const evidenceBoundaryDemo = demoClone();
+    const { source: evidenceBoundarySource } = bindAutomaticExecution(
+      evidenceBoundary,
+      evidenceBoundaryDemo,
+    );
+    const evidenceBoundaryEvents =
+      evidenceBoundarySource.expectedLedgerEvents as Array<Record<string, unknown>>;
+    const reservationAtEvidence = evidenceBoundaryEvents.find(
+      (event) => event.type === "ReservationCreated",
+    )!;
+    reservationAtEvidence.recordedAt = "2026-07-26T20:02:00.000Z";
+    reservationAtEvidence.reservationExpiresAt = "2026-07-26T20:32:00.000Z";
+    evidenceBoundaryDemo.executionGuards.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-02-firm-b-happy-path",
+    )!.reservationAtIso = "2026-07-26T20:02:00.000Z";
+    expectProofFailure(
+      evidenceBoundary,
+      "GC-02-firm-b-happy-path",
+      evidenceBoundaryDemo,
+    );
+
+    const expiryBoundary = clone();
+    const expiryBoundaryDemo = demoClone();
+    const { source: expiryBoundarySource, guard: expiryBoundaryGuard } =
+      bindAutomaticExecution(expiryBoundary, expiryBoundaryDemo);
+    const expiryBoundaryEvents =
+      expiryBoundarySource.expectedLedgerEvents as Array<Record<string, unknown>>;
+    expiryBoundaryEvents.find(
+      (event) => event.type === "ExecutionStarted",
+    )!.recordedAt = "2026-07-26T20:33:00.000Z";
+    expiryBoundaryGuard.executionAtIso = "2026-07-26T20:33:00.000Z";
+    expectProofFailure(
+      expiryBoundary,
+      "GC-02-firm-b-happy-path",
+      expiryBoundaryDemo,
+    );
+
+    const releaseBoundary = clone();
+    const releaseBoundaryDemo = demoClone();
+    const { source: releaseBoundarySource } = bindAutomaticExecution(
+      releaseBoundary,
+      releaseBoundaryDemo,
+    );
+    const releaseBoundaryEvents =
+      releaseBoundarySource.expectedLedgerEvents as Array<Record<string, unknown>>;
+    releaseBoundaryEvents.push({
+      type: "ReservationReleased",
+      note: "Reservation released at execution.",
+      lifecyclePass: "initial",
+      recordedAt: "2026-07-26T20:04:00.000Z",
+      reservationId: "res:GC-02:liquidity",
+    });
+    expectProofFailure(
+      releaseBoundary,
+      "GC-02-firm-b-happy-path",
+      releaseBoundaryDemo,
+    );
+
+    const stagedComplete = clone();
+    const stagedCompleteDemo = demoClone();
+    bindStagedExecution(stagedComplete, stagedCompleteDemo);
+    expect(
+      validateGoldenDemoSemantics(
+        stagedComplete,
+        realRefs,
+        stagedCompleteDemo,
+      ).some(
+        (problem) =>
+          problem.includes("GC-01-firm-a-happy-path") &&
+          problem.includes("unresolved execution proof"),
+      ),
+    ).toBe(false);
+
+    const finalApprovalBoundary = clone();
+    const finalApprovalBoundaryDemo = demoClone();
+    const { source: finalApprovalBoundarySource } = bindStagedExecution(
+      finalApprovalBoundary,
+      finalApprovalBoundaryDemo,
+    );
+    const stagedApprovals = (
+      finalApprovalBoundarySource.expectedLedgerEvents as Array<Record<string, unknown>>
+    ).filter((event) => event.type === "ApprovalRecorded");
+    stagedApprovals.at(-1)!.recordedAt = "2026-07-26T20:02:00.000Z";
+    expectProofFailure(
+      finalApprovalBoundary,
+      "GC-01-firm-a-happy-path",
+      finalApprovalBoundaryDemo,
+    );
+
     for (const [eventType, field] of [
       ["DecisionRecorded", "decisionHash"],
       ["EvidenceSnapshotRecorded", "evidenceSnapshotIds"],
@@ -2043,6 +2254,48 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const bankDemo = demoClone();
     exposeGuard(bankDemo, "GC-03-recent-bank-change-firm-a");
     expectProofFailure(bankMeaning, "GC-03-recent-bank-change-firm-a", bankDemo);
+
+    const bankBinding = {
+      active: { decisionHash: "a".repeat(64), bundleHash: "b".repeat(64) },
+      initial: { decisionHash: "a".repeat(64), bundleHash: "b".repeat(64) },
+    };
+    const boundBank = {
+      householdEvidence: [{
+        evidenceKind: "bank-instruction",
+        subjectRef: "bank:primary",
+        liquidityPhase: "pre-execution-revalidation",
+        freshness: "fresh",
+        snapshotId: "snapshot:bank",
+        retrievedAt: "2026-07-26T20:01:00.000Z",
+        summary: "The instruction was independently verified unchanged.",
+      }],
+      expectedLedgerEvents: [{
+        type: "EvidenceSnapshotRecorded",
+        lifecyclePass: "initial",
+        evidencePhase: "pre-execution-revalidation",
+        recordedAt: "2026-07-26T20:02:00.000Z",
+        decisionHash: bankBinding.active.decisionHash,
+        inputBundleHash: bankBinding.active.bundleHash,
+        evidenceSnapshotIds: ["snapshot:bank"],
+      }],
+    };
+    expect(
+      rawBankPreconditionProof(
+        boundBank,
+        "initial",
+        ["bank:primary"],
+        bankBinding,
+      ),
+    ).toBe(true);
+    boundBank.expectedLedgerEvents[0]!.evidenceSnapshotIds = [];
+    expect(
+      rawBankPreconditionProof(
+        boundBank,
+        "initial",
+        ["bank:primary"],
+        bankBinding,
+      ),
+    ).toBe(false);
   });
 
   it("flags source-bound visible events that precede or misorder the signed request", () => {
@@ -2083,7 +2336,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const detachedRevalidation = demoClone();
     detachedRevalidation.sourceTimelines
       .find(({ sourceCaseId }) => sourceCaseId === "GC-15-approval-invalidation")!
-      .events.find(({ kind }) => kind === "revalidation")!.instant =
+      .expectedEvents.find(({ kind }) => kind === "revalidation")!.instant =
         "2026-07-26T22:10:00.000Z";
     expect(
       validateGoldenDemoSemantics(
@@ -2093,6 +2346,24 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ).some((p) =>
         p.includes("visible revalidation instant") &&
         p.includes("signed evidence retrieval"),
+      ),
+    ).toBe(true);
+
+    const promotedExpected = demoClone();
+    const promotedTimeline = promotedExpected.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-01-firm-a-happy-path",
+    )!;
+    const promotedIndex = promotedTimeline.expectedEvents.findIndex(
+      ({ kind }) => kind === "revalidation",
+    );
+    promotedTimeline.events.push(
+      ...promotedTimeline.expectedEvents.splice(promotedIndex, 1),
+    );
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, promotedExpected).some(
+        (problem) =>
+          problem.includes("GC-01-firm-a-happy-path") &&
+          problem.includes("occurred and signed expected lifecycle planes drift"),
       ),
     ).toBe(true);
 
@@ -2118,7 +2389,9 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ({ sourceCaseId }) => sourceCaseId === "GC-01-firm-a-happy-path",
     )!;
     const decision = staged.events.find(({ kind }) => kind === "DecisionRecorded")!;
-    const approval = staged.events.find(({ kind }) => kind === "ApprovalRecorded")!;
+    const approval = staged.expectedEvents.find(
+      ({ kind }) => kind === "ApprovalRecorded",
+    )!;
     [decision.kind, approval.kind] = [approval.kind, decision.kind];
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, approvalBeforeDecision)
@@ -2129,10 +2402,12 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const twoPass = approvalAfterRevalidation.sourceTimelines.find(
       ({ sourceCaseId }) => sourceCaseId === "GC-15-approval-invalidation",
     )!;
-    const originalApproval = twoPass.events.find(
+    const originalApproval = twoPass.expectedEvents.find(
       ({ kind }) => kind === "ApprovalRecorded",
     )!;
-    const revalidation = twoPass.events.find(({ kind }) => kind === "revalidation")!;
+    const revalidation = twoPass.expectedEvents.find(
+      ({ kind }) => kind === "revalidation",
+    )!;
     [originalApproval.kind, revalidation.kind] = [
       revalidation.kind,
       originalApproval.kind,
@@ -2146,7 +2421,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const collapsedTimeline = collapsedApprovals.sourceTimelines.find(
       ({ sourceCaseId }) => sourceCaseId === "GC-01-firm-a-happy-path",
     )!;
-    const visibleApprovals = collapsedTimeline.events.filter(
+    const visibleApprovals = collapsedTimeline.expectedEvents.filter(
       ({ kind }) => kind === "ApprovalRecorded",
     );
     visibleApprovals[1]!.instant = visibleApprovals[0]!.instant;
@@ -2162,14 +2437,14 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const invertedTimeline = plantedInversion.sourceTimelines.find(
       ({ sourceCaseId }) => sourceCaseId === "GC-12-duplicate-retry",
     )!;
-    const finalApproval = invertedTimeline.events.find(
+    const finalApproval = invertedTimeline.expectedEvents.find(
       ({ kind }, index) =>
         kind === "ApprovalRecorded" &&
-        !invertedTimeline.events
+        !invertedTimeline.expectedEvents
           .slice(index + 1)
           .some((event) => event.kind === "ApprovalRecorded"),
     )!;
-    const revalidationEvent = invertedTimeline.events.find(
+    const revalidationEvent = invertedTimeline.expectedEvents.find(
       ({ kind }) => kind === "revalidation",
     )!;
     [finalApproval.kind, revalidationEvent.kind] = [
@@ -2530,6 +2805,83 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         ),
       ),
     ).toBe(true);
+
+    const structuredCases = clone();
+    const structuredDemo = demoClone();
+    const structuredSource = caseById(
+      structuredCases,
+      "GC-02-firm-b-happy-path",
+    );
+    const structuredVariant = structuredDemo.signedCaseVariants.find(
+      (variant) =>
+        (variant as { caseId?: string }).caseId ===
+        "GC-02-firm-b-happy-path",
+    ) as unknown as Record<string, unknown>;
+    const sourceEvidence = (
+      structuredSource.householdEvidence as Array<Record<string, unknown>>
+    )[0]!;
+    const variantEvidence = (
+      structuredVariant.evidence as Array<Record<string, unknown>>
+    )[0]!;
+    sourceEvidence.snapshotId = "snapshot:normalizer";
+    (structuredVariant.evidence as Array<Record<string, unknown>>)[0] = {
+      snapshotId: "snapshot:normalizer",
+      ...variantEvidence,
+    };
+    const structuredFields: Record<string, unknown> = {
+      recordedAt: "2026-07-26T20:00:00.000Z",
+      evidencePhase: "initial-decision",
+      evidenceSnapshotIds: ["snapshot:normalizer"],
+      decisionHash: "a".repeat(64),
+      inputBundleHash: "b".repeat(64),
+      priorDecisionHash: "c".repeat(64),
+      priorInputBundleHash: "d".repeat(64),
+      replacementDecisionHash: "e".repeat(64),
+      replacementInputBundleHash: "f".repeat(64),
+      reservationId: "res:normalizer",
+      conflictKeys: ["conflict:normalizer"],
+      reservationExpiresAt: "2026-07-26T20:30:00.000Z",
+      idempotencyKey: "idem:normalizer",
+      reservationIds: ["res:normalizer"],
+    };
+    Object.assign(
+      (structuredSource.expectedLedgerEvents as Array<Record<string, unknown>>)[0]!,
+      structuredFields,
+    );
+    Object.assign(
+      (structuredVariant.ledgerEvents as Array<Record<string, unknown>>)[0]!,
+      structuredFields,
+    );
+    const typedVariantDrift = (demo: DemoSemanticSnapshot) =>
+      validateGoldenDemoSemantics(
+        structuredCases,
+        realRefs,
+        demo,
+      ).some((problem) =>
+        problem.includes("GC-02-firm-b-happy-path") &&
+        problem.includes("exact typed variant drifts"),
+      );
+    expect(typedVariantDrift(structuredDemo)).toBe(false);
+    for (const [field, value] of [
+      ["snapshotId", "snapshot:drift"],
+      ...Object.entries(structuredFields).map(([field, value]) => [
+        field,
+        Array.isArray(value) ? ["drift"] : "drift",
+      ]),
+    ] as Array<[string, unknown]>) {
+      const drifted = structuredClone(structuredDemo);
+      const variant = drifted.signedCaseVariants.find(
+        (candidate) =>
+          (candidate as { caseId?: string }).caseId ===
+          "GC-02-firm-b-happy-path",
+      ) as unknown as Record<string, unknown>;
+      if (field === "snapshotId") {
+        (variant.evidence as Array<Record<string, unknown>>)[0]![field] = value;
+      } else {
+        (variant.ledgerEvents as Array<Record<string, unknown>>)[0]![field] = value;
+      }
+      expect(typedVariantDrift(drifted), field).toBe(true);
+    }
 
     const leakedTriggerTime = demoClone();
     leakedTriggerTime.decisions.find(

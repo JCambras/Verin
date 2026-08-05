@@ -132,6 +132,7 @@ export interface SourceTimeline {
   firmId: string;
   requestAt: string;
   events: SourceTimelineEvent[];
+  expectedEvents: SourceTimelineEvent[];
 }
 
 export interface DemoSemanticSnapshot {
@@ -188,10 +189,13 @@ export interface DemoSemanticSnapshot {
     };
     headerCreatedAtIso: string;
     decisionEventInstants: string[];
+    occurredDecisionEventInstants: string[];
+    expectedDecisionEventInstants: string[];
     decisionBindings: Array<{
       kind: "original" | "derived";
       decisionHash: string;
       bundleHash: string;
+      lifecyclePlane: "occurred" | "signed-expected";
     }>;
     approvalBinding: {
       decisionHash: string;
@@ -428,7 +432,7 @@ function rawEventIndexes(source: Record<string, unknown>, type: string): number[
   );
 }
 
-interface RawExecutionBindings {
+export interface RawExecutionBindings {
   readonly active: { readonly decisionHash: string; readonly bundleHash: string };
   readonly initial: { readonly decisionHash: string; readonly bundleHash: string };
 }
@@ -514,6 +518,64 @@ function rawReservationProof(
     ? eligibility.reservations.filter(isObj)
     : [];
   const events = rawRows(source, "expectedLedgerEvents");
+  const authority = isObj(source.expectedAuthority)
+    ? source.expectedAuthority
+    : null;
+  const stages = authority && Array.isArray(authority.stages)
+    ? authority.stages.filter(isObj)
+    : [];
+  const decisionCandidates = events.filter(
+    (event) =>
+      event.type === "DecisionRecorded" &&
+      (event.lifecyclePass === pass || event.lifecyclePass == null),
+  );
+  const decisions = decisionCandidates.filter(
+    (event) =>
+      event.lifecyclePass === pass &&
+      event.decisionHash === bindings.active.decisionHash &&
+      event.inputBundleHash === bindings.active.bundleHash &&
+      rawEventInstant(event) !== null,
+  );
+  const decisionAt = decisionCandidates.length === 1 && decisions.length === 1
+    ? rawEventInstant(decisions[0]!)
+    : null;
+  const approvalInstants = stages.length === 0
+    ? []
+    : events.flatMap((event) =>
+        event.type === "ApprovalRecorded" &&
+        event.lifecyclePass === pass &&
+        stages.some((stage) => stage.stageId === event.stageId) &&
+        rawEventInstant(event) !== null
+          ? [rawEventInstant(event)!]
+          : [],
+      );
+  const finalApprovalAt = stages.length === 0 || approvalInstants.length === 0
+    ? null
+    : Math.max(...approvalInstants);
+  const evidenceCandidates = events.filter(
+    (event) =>
+      event.type === "EvidenceSnapshotRecorded" &&
+      (event.lifecyclePass === pass || event.lifecyclePass == null) &&
+      (event.evidencePhase === "pre-execution-revalidation" ||
+        event.evidencePhase == null),
+  );
+  const evidenceEvents = evidenceCandidates.filter(
+    (event) =>
+      event.lifecyclePass === pass &&
+      event.evidencePhase === "pre-execution-revalidation" &&
+      event.decisionHash === bindings.active.decisionHash &&
+      event.inputBundleHash === bindings.active.bundleHash &&
+      rawEventInstant(event) !== null,
+  );
+  const evidenceAt = evidenceCandidates.length === 1 &&
+      evidenceEvents.length === 1
+    ? rawEventInstant(evidenceEvents[0]!)
+    : null;
+  const evidenceOrderValid = evidenceAt !== null &&
+    decisionAt !== null &&
+    evidenceAt > decisionAt &&
+    (stages.length === 0 ||
+      (finalApprovalAt !== null && evidenceAt > finalApprovalAt));
   const startCandidates = events.filter(
     (event) =>
       event.type === "ExecutionStarted" &&
@@ -535,6 +597,13 @@ function rawReservationProof(
   );
   const startBound = start !== null &&
     startAt !== null &&
+    decisionAt !== null &&
+    startAt > decisionAt &&
+    evidenceOrderValid &&
+    startAt > evidenceAt &&
+    (stages.length === 0 ||
+      (finalApprovalAt !== null && startAt > finalApprovalAt)) &&
+    rawApprovalProof(source, pass, bindings) &&
     start.decisionHash === bindings.active.decisionHash &&
     start.inputBundleHash === bindings.active.bundleHash &&
     start.idempotencyKey === eligibility?.idempotencyKey &&
@@ -565,16 +634,22 @@ function rawReservationProof(
       const expectedExpiry = createdAt !== null && ttl !== null
         ? new Date(createdAt + ttl).toISOString()
         : null;
-      const releasedBeforeStart = events.some((event) => {
+      const releaseCandidates = events.filter(
+        (event) =>
+          event.type === "ReservationReleased" &&
+          (event.lifecyclePass === pass || event.lifecyclePass == null) &&
+          (event.reservationId === reservation.reservationId ||
+            event.reservationId == null),
+      );
+      const releasesValid = releaseCandidates.every((event) => {
         const releasedAt = rawEventInstant(event);
-        return event.type === "ReservationReleased" &&
-          event.lifecyclePass === pass &&
+        return event.lifecyclePass === pass &&
           event.reservationId === reservation.reservationId &&
           releasedAt !== null &&
           createdAt !== null &&
           startAt !== null &&
           releasedAt > createdAt &&
-          releasedAt < startAt;
+          releasedAt > startAt;
       });
       return isNonEmptyString(reservation.reservationId) &&
         keys.length > 0 &&
@@ -586,9 +661,15 @@ function rawReservationProof(
         rawStringMembers(created.conflictKeys, keys) &&
         created.reservationExpiresAt === expectedExpiry &&
         startAt !== null &&
-        createdAt <= startAt &&
-        startAt <= Date.parse(expectedExpiry ?? "") &&
-        !releasedBeforeStart;
+        decisionAt !== null &&
+        createdAt > decisionAt &&
+        evidenceOrderValid &&
+        createdAt > evidenceAt &&
+        (stages.length === 0 ||
+          (finalApprovalAt !== null && createdAt > finalApprovalAt)) &&
+        createdAt < startAt &&
+        startAt < Date.parse(expectedExpiry ?? "") &&
+        releasesValid;
     }) &&
     startBound;
 }
@@ -792,6 +873,20 @@ function rawVerifiedBankEvidence(entry: Record<string, unknown>): boolean {
     !/\b(?:not(?: yet)? verified|unverified|unavailable|pending|failed)\b/i.test(entry.summary);
 }
 
+export function rawBankPreconditionProof(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+  required: string[],
+  bindings: RawExecutionBindings | null,
+): boolean {
+  return rawEvidenceProof(source, pass, required, bindings) &&
+    required.every((ref) =>
+      rawRows(source, "householdEvidence").some(
+        (entry) =>
+          entry.subjectRef === ref && rawVerifiedBankEvidence(entry),
+      ));
+}
+
 function rawPreconditionHolds(
   source: Record<string, unknown>,
   pass: "initial" | "revalidated",
@@ -812,10 +907,7 @@ function rawPreconditionHolds(
     case "reservation-still-held":
       return required.length === 0 && rawReservationProof(source, pass, bindings);
     case "bank-instruction-independently-verified":
-      return required.length > 0 && required.every((ref) =>
-        rawRows(source, "householdEvidence").some(
-          (entry) => entry.subjectRef === ref && rawVerifiedBankEvidence(entry),
-        ));
+      return rawBankPreconditionProof(source, pass, required, bindings);
     case "input-bundle-hash-unchanged-since-approval": {
       if (!bindings) return false;
       const invalidationCandidates = rawRows(source, "expectedLedgerEvents").filter(
@@ -1337,18 +1429,6 @@ function expectedSignedCaseVariant(
     return null;
   }
   const revalidation = signed?.preExecutionRevalidation ?? null;
-  const stages = Array.isArray(authority.stages)
-    ? authority.stages.filter(isObj)
-    : [];
-  const inferredApprovalBindings = stages.flatMap((stage) =>
-    isMoneyQuantity(stage.approvalsRequired)
-      ? Array.from({ length: stage.approvalsRequired }, () => ({
-          stageId: stage.stageId,
-          lifecyclePass: "initial",
-        }))
-      : [],
-  );
-  let inferredApprovalIndex = 0;
   const verificationDetailMissing =
     authorityGap?.missingAuthorities.includes("verification-detail") === true &&
     verification.observedAt === undefined;
@@ -1392,6 +1472,9 @@ function expectedSignedCaseVariant(
         : null,
     },
     evidence: data.householdEvidence.filter(isObj).map((evidence) => ({
+      ...(evidence.snapshotId === undefined
+        ? {}
+        : { snapshotId: evidence.snapshotId }),
       evidenceKind: evidence.evidenceKind,
       subjectRef: evidence.subjectRef,
       observedAt: evidence.observedAt,
@@ -1477,21 +1560,53 @@ function expectedSignedCaseVariant(
     ledgerEvents: data.expectedLedgerEvents.filter(isObj).map((event) => ({
       type: event.type,
       note: event.note,
-      stageId:
-        event.stageId ??
-        (event.type === "ApprovalRecorded" &&
-        authorityGap?.missingAuthorities.includes("approval-event-bindings")
-          ? inferredApprovalBindings[inferredApprovalIndex]?.stageId
-          : null),
-      lifecyclePass:
-        event.lifecyclePass ??
-        (event.type === "ApprovalRecorded" &&
-        authorityGap?.missingAuthorities.includes("approval-event-bindings")
-          ? inferredApprovalBindings[inferredApprovalIndex++]?.lifecyclePass
-          : null),
+      stageId: event.stageId ?? null,
+      lifecyclePass: event.lifecyclePass ?? null,
       actorId: event.actorId ?? null,
       roleId: event.roleId ?? null,
       requesterId: event.requesterId ?? null,
+      ...(event.recordedAt === undefined
+        ? {}
+        : { recordedAt: event.recordedAt }),
+      ...(event.evidencePhase === undefined
+        ? {}
+        : { evidencePhase: event.evidencePhase }),
+      ...(event.evidenceSnapshotIds === undefined
+        ? {}
+        : { evidenceSnapshotIds: event.evidenceSnapshotIds }),
+      ...(event.decisionHash === undefined
+        ? {}
+        : { decisionHash: event.decisionHash }),
+      ...(event.inputBundleHash === undefined
+        ? {}
+        : { inputBundleHash: event.inputBundleHash }),
+      ...(event.priorDecisionHash === undefined
+        ? {}
+        : { priorDecisionHash: event.priorDecisionHash }),
+      ...(event.priorInputBundleHash === undefined
+        ? {}
+        : { priorInputBundleHash: event.priorInputBundleHash }),
+      ...(event.replacementDecisionHash === undefined
+        ? {}
+        : { replacementDecisionHash: event.replacementDecisionHash }),
+      ...(event.replacementInputBundleHash === undefined
+        ? {}
+        : { replacementInputBundleHash: event.replacementInputBundleHash }),
+      ...(event.reservationId === undefined
+        ? {}
+        : { reservationId: event.reservationId }),
+      ...(event.conflictKeys === undefined
+        ? {}
+        : { conflictKeys: event.conflictKeys }),
+      ...(event.reservationExpiresAt === undefined
+        ? {}
+        : { reservationExpiresAt: event.reservationExpiresAt }),
+      ...(event.idempotencyKey === undefined
+        ? {}
+        : { idempotencyKey: event.idempotencyKey }),
+      ...(event.reservationIds === undefined
+        ? {}
+        : { reservationIds: event.reservationIds }),
     })),
     explanations: data.expectedExplanationNodes
       .filter(isObj)
@@ -2448,6 +2563,7 @@ function validateSourceTimelines(
         `${sourceId}: visible timeline belongs to ${timeline.scenarioId}/${timeline.firmId}, not ${String(source?.scenarioRef)}/${String(source?.firm)}`,
       );
     }
+    const signedEvents = [...timeline.events, ...timeline.expectedEvents];
     const latestInitialRetrieval = (
       Array.isArray(source?.householdEvidence)
         ? source.householdEvidence
@@ -2492,7 +2608,7 @@ function validateSourceTimelines(
       ),
     );
     if (revalidationInstants.size > 0) {
-      const visibleRevalidations = timeline.events
+      const visibleRevalidations = signedEvents
         .filter(({ kind }) => kind === "revalidation")
         .map(({ instant }) => instant);
       if (
@@ -2536,7 +2652,54 @@ function validateSourceTimelines(
     const executionProofComplete = source
       ? rawExecutionEligibilityProof(source, executionPass, executionBindings)
       : false;
-    const eventKinds = timeline.events.map(({ kind }) => kind);
+    let rawEvidenceIndex = 0;
+    const expectedSignedKinds = rawRows(
+      source ?? {},
+      "expectedLedgerEvents",
+    ).flatMap((event) => {
+      if (!isNonEmptyString(event.type)) return [];
+      const kind = event.type === "EvidenceSnapshotRecorded" &&
+          rawEvidenceIndex > 0
+        ? "revalidation"
+        : event.type;
+      if (event.type === "EvidenceSnapshotRecorded") rawEvidenceIndex += 1;
+      return [kind];
+    });
+    const stages = rawRows(
+      isObj(source?.expectedAuthority) ? source.expectedAuthority : {},
+      "stages",
+    );
+    const approvalComplete = source
+      ? rawApprovalProof(source, executionPass, executionBindings)
+      : false;
+    const secondEvidence = expectedSignedKinds.indexOf(
+      "revalidation",
+    );
+    const firstApproval = expectedSignedKinds.indexOf("ApprovalRecorded");
+    const firstReservation = expectedSignedKinds.indexOf("ReservationCreated");
+    const fallbackBoundary = secondEvidence >= 0
+      ? secondEvidence
+      : firstReservation >= 0
+        ? firstReservation
+        : expectedSignedKinds.length;
+    const expectedBoundary = eligibility !== true || executionProofComplete
+      ? expectedSignedKinds.length
+      : stages.length > 0 && !approvalComplete && firstApproval >= 0
+        ? firstApproval
+        : fallbackBoundary;
+    const occurredKinds = timeline.events.slice(1).map(({ kind }) => kind);
+    const expectedKinds = timeline.expectedEvents.map(({ kind }) => kind);
+    if (
+      JSON.stringify(occurredKinds) !==
+        JSON.stringify(expectedSignedKinds.slice(0, expectedBoundary)) ||
+      JSON.stringify(expectedKinds) !==
+        JSON.stringify(expectedSignedKinds.slice(expectedBoundary))
+    ) {
+      problems.push(
+        `${sourceId}: occurred and signed expected lifecycle planes drift from the independently derived reached-stage boundary`,
+      );
+    }
+    const eventKinds = signedEvents.map(({ kind }) => kind);
     if (eligibility === true) {
       const initialDecisionIndex = eventKinds.indexOf("DecisionRecorded");
       const decisionIndex = eventKinds.lastIndexOf("DecisionRecorded");
@@ -2566,10 +2729,9 @@ function validateSourceTimelines(
           (decisionIndex < finalApprovalIndex &&
             (revalidationIndex < 0 ||
               finalApprovalIndex < revalidationIndex))) &&
-        (executionProofComplete
-          ? revalidationIndex < reservationIndex &&
-            reservationIndex < executionIndex
-          : reservationIndex < 0 && executionIndex < 0);
+        (reservationIndex < 0 && executionIndex < 0 ||
+          revalidationIndex < reservationIndex &&
+            reservationIndex < executionIndex);
       const validInvalidationOrder =
         invalidationIndex >= 0 &&
         initialDecisionIndex >= 0 &&
@@ -2581,17 +2743,16 @@ function validateSourceTimelines(
         freshApprovalIndexes.length > 0 &&
         decisionIndex < freshApprovalIndexes[0]! &&
         freshApprovalIndexes.at(-1) === finalApprovalIndex &&
-        (executionProofComplete
-          ? finalApprovalIndex < reservationIndex &&
-            reservationIndex < executionIndex
-          : reservationIndex < 0 && executionIndex < 0);
+        (reservationIndex < 0 && executionIndex < 0 ||
+          finalApprovalIndex < reservationIndex &&
+            reservationIndex < executionIndex);
       if (!validStandardOrder && !validInvalidationOrder) {
         problems.push(
           `${sourceId}: unsorted production timeline must keep the signed decision, final still-valid approval, pre-execution revalidation, reservation, and execution in governed order`,
         );
       }
     }
-    const visibleDownstream = eventKinds.some((kind) =>
+    const visibleDownstream = occurredKinds.some((kind) =>
       [
         "ReservationCreated",
         "ExecutionStarted",
@@ -2624,7 +2785,7 @@ function validateSourceTimelines(
         );
       }
     }
-    const approvalInstants = timeline.events
+    const approvalInstants = signedEvents
       .filter(({ kind }) => kind === "ApprovalRecorded")
       .map(({ instant }) => Date.parse(instant));
     if (
@@ -2637,7 +2798,7 @@ function validateSourceTimelines(
       );
     }
     let previous = Number.NEGATIVE_INFINITY;
-    for (const [index, event] of timeline.events.entries()) {
+    for (const [index, event] of signedEvents.entries()) {
       const instant = new Date(event.instant).getTime();
       if (
         !Number.isFinite(instant) ||
@@ -2672,7 +2833,7 @@ function validateSourceTimelines(
       previous = instant;
     }
     for (const timeZone of TIMELINE_TIME_ZONES) {
-      const keys = timeline.events.flatMap(({ instant }) => {
+      const keys = signedEvents.flatMap(({ instant }) => {
         const key = localTimelineKey(instant, timeZone);
         return key === null ? [] : [key];
       });
@@ -2758,6 +2919,19 @@ function validateRecordIdentities(
     ) {
       problems.push(
         `${at}: printable record does not carry the active pass's decision bindings`,
+      );
+    }
+    const expectedBindingPlanes = [
+      ...record.occurredDecisionEventInstants.map(() => "occurred"),
+      ...record.expectedDecisionEventInstants.map(() => "signed-expected"),
+    ];
+    if (
+      JSON.stringify(
+        record.decisionBindings.map(({ lifecyclePlane }) => lifecyclePlane),
+      ) !== JSON.stringify(expectedBindingPlanes)
+    ) {
+      problems.push(
+        `${at}: printable decision hash lifecycle plane drifts from occurred and signed expected DecisionRecorded events`,
       );
     }
     const activeBinding = record.decisionBindings.at(-1);
@@ -3854,17 +4028,6 @@ export function validateGoldenDemoSemantics(
   const gc15ExecutionProof = gc15
     ? rawExecutionEligibilityProof(gc15, "revalidated", gc15Bindings)
     : false;
-  const downstreamEventTypes = new Set([
-    "ReservationCreated",
-    "ExecutionStarted",
-    "ExecutionSucceeded",
-    "ExecutionPartiallySucceeded",
-    "StatusObserved",
-    "ExceptionDecisionRequested",
-  ]);
-  const expectedVisibleRevalidatedGc15Types = gc15ExecutionProof
-    ? expectedGc15Types
-    : expectedGc15Types.filter((type) => !downstreamEventTypes.has(type));
   const gc15Evidence = Array.isArray(gc15?.householdEvidence)
     ? gc15.householdEvidence.filter(isObj)
     : [];
@@ -3904,10 +4067,10 @@ export function validateGoldenDemoSemantics(
       (eventType, index) => eventType !== expectedInitialGc15Types[index],
     ) ||
     lifecycle.revalidatedEventTypes.length !==
-      expectedVisibleRevalidatedGc15Types.length ||
+      expectedGc15Types.length ||
     lifecycle.revalidatedEventTypes.some(
       (eventType, index) =>
-        eventType !== expectedVisibleRevalidatedGc15Types[index],
+        eventType !== expectedGc15Types[index],
     ) ||
     lifecycle.initialEventInstants.some(
       (instant, index) =>

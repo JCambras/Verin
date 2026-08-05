@@ -5337,7 +5337,7 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
-## F101 · signed money truth and cross-artifact semantics (D-098)
+## F101 · signed money truth and cross-artifact semantics (D-102)
 
 **Invariant:** the signed $75,000 request, $8,000 monthly planned-withdrawal schedule, six-month and
 twelve-month reserve horizons, USD minor units, $48,000/$96,000 derived floors, evidence
@@ -5376,9 +5376,9 @@ named diagnostic before the companion can pass.
 **Revert:** the $6,000 production injection was removed. The focused golden and scenario fitness
 suites pass on the corrected state.
 
-**Date:** 2026-07-28 (D-098).
+**Date:** 2026-07-28 (D-102).
 
-## F102 · signed-money structure, real unit projection, and the named ledger extension (D-099, ADR-0040)
+## F102 · signed-money structure, real unit projection, and the named ledger extension (D-103, ADR-0040)
 
 **Invariant:** the golden gate must REPORT rather than crash on malformed signed input; the
 money-unit half of the cross-artifact fence must fail against real data; the surface-11 policy-draft
@@ -5434,7 +5434,7 @@ than the wording.
 **Revert:** both production injections were removed; `pnpm golden:validate` and the focused fitness
 suites pass on the corrected state.
 
-**Date:** 2026-07-28 (review corrections, D-099).
+**Date:** 2026-07-28 (review corrections, D-103).
 
 ## F103 · golden-cases: displayed decisions, signed liquidity, exact money rendering, status-vocabulary docs
 
@@ -5516,7 +5516,7 @@ empty-list cases, so the fence cannot pass vacuously.
 `pnpm typecheck`, `pnpm lint`, `pnpm knip`, the focused fitness suites, and `pnpm test:e2e` (17
 specs, axe included) pass on the corrected state.
 
-**Date:** 2026-07-28 (review corrections, D-100/D-101).
+**Date:** 2026-07-28 (review corrections, D-104/D-105).
 
 ## F104 · phased liquidity, branch binding, complete proceed authority, and ordered lapse events
 
@@ -5567,7 +5567,7 @@ instead of copying GC-05.
 the focused adversarial suites, all 557 Vitest cases, all 17 Playwright cases with axe, typecheck,
 lint, knip, the v3 invariant report, and the production build pass on the corrected state.
 
-**Date:** 2026-07-28 (review corrections, D-102).
+**Date:** 2026-07-28 (review corrections, D-106).
 
 ## F105 · exact signed sources, decisive evidence, stable prefixes, and request-relative time
 
@@ -5613,7 +5613,7 @@ separately bound blocked outcome.
 Vitest cases, all 17 Playwright cases with axe, `pnpm golden:validate`, typecheck, lint, knip, the
 v3 invariant report, and the production build pass on the corrected state.
 
-**Date:** 2026-07-28 (review corrections, D-103).
+**Date:** 2026-07-28 (review corrections, D-107).
 
 ## F106 · authority-gated reach, complete invalidation, and exact partial receipts
 
@@ -5639,7 +5639,7 @@ GC-13 displays the completed and incomplete receipt parts without a settled clai
 
 **Revert:** all adversarial mutations remain inside companion tests.
 
-**Date:** 2026-07-28 (review corrections, D-104).
+**Date:** 2026-07-28 (review corrections, D-108).
 
 ## F107 · exact invalidation bindings, automatic authority, and reservation causality
 
@@ -5667,7 +5667,7 @@ execution. Axe checks the changed record and authority markup.
 
 **Revert:** all adversarial mutations remain inside companion tests.
 
-**Date:** 2026-07-28 (review corrections, D-105).
+**Date:** 2026-07-28 (review corrections, D-109).
 
 ## F108 · governed reservation order, refreshed comparison, and printable exception decisions
 
@@ -5703,7 +5703,7 @@ companion tests. All 569 Vitest cases, all 18 Playwright cases with axe, the gol
 typecheck, lint, knip, the v3 invariant report, and the production build pass on the corrected
 state.
 
-**Date:** 2026-07-28 (review corrections, D-106).
+**Date:** 2026-07-28 (review corrections, D-110).
 
 ## F109 · exact signed variants, execution metadata, authority timing, and polling
 
@@ -5732,7 +5732,7 @@ axe posture.
 cases with axe, the golden validator, typecheck, lint, knip, v3 invariant report, and production
 build pass on the corrected state.
 
-**Date:** 2026-07-28 (review corrections, D-107).
+**Date:** 2026-07-28 (review corrections, D-111).
 
 ## F110 · canonical requests, exact evidence, prohibition authority, and snapshot causality
 
@@ -5773,7 +5773,7 @@ All 573 Vitest cases, the relevant production Playwright paths with axe, the gol
 typecheck, lint, knip, the v3 invariant report, file-size ratchet, and production build pass on the
 corrected state.
 
-**Date:** 2026-07-28 (review corrections, D-108).
+**Date:** 2026-07-28 (review corrections, D-112).
 
 ## F111 · exact cross-surface projection and complete approval chronology
 
@@ -5810,7 +5810,7 @@ All 574 Vitest cases, all 18 Playwright cases with Axe, the golden validator, ty
 the v3 invariant report, file-size ratchet, production build, and live Chrome inspection pass on
 the corrected state.
 
-**Date:** 2026-07-29 (review corrections, D-109).
+**Date:** 2026-07-29 (review corrections, D-113).
 
 ## F112 · exact prohibition variants and workspace account authority
 
@@ -5844,7 +5844,7 @@ All 574 Vitest cases, the relevant production Playwright paths with Axe, the gol
 typecheck, lint, knip, the v3 invariant report, file-size ratchet, and production build pass on the
 corrected state.
 
-**Date:** 2026-07-29 (review corrections, D-110).
+**Date:** 2026-07-29 (review corrections, D-114).
 
 ## F113 · lifecycle-selected evidence, summaries, and examiner records
 
@@ -5876,7 +5876,7 @@ and exact route context.
 **Revert:** the production injection was removed. All remaining adversarial mutations live only in
 companion tests.
 
-**Date:** 2026-07-29 (review corrections, D-112).
+**Date:** 2026-07-29 (review corrections, D-116).
 
 ## F114 · event-specific proof and exact signed-variant identity
 
@@ -5906,7 +5906,7 @@ and printable records distinguish GC-06 from GC-07 and initial from revalidated 
 All 576 Vitest cases, all 22 Playwright cases with Axe, the golden validator, typecheck, lint, knip,
 the v3 invariant report, file-size ratchet, and production build pass on the corrected state.
 
-**Date:** 2026-07-29 (review corrections, D-113).
+**Date:** 2026-07-29 (review corrections, D-117).
 
 ## F115 · active decision bindings and fail-closed evidence claims
 
@@ -5943,7 +5943,7 @@ companion tests.
 All 578 Vitest cases, all 25 Playwright cases with Axe, the golden validator, typecheck, lint, knip,
 the v3 invariant report, file-size ratchet, and production build pass on the corrected state.
 
-**Date:** 2026-07-29 (review corrections, D-114).
+**Date:** 2026-07-29 (review corrections, D-118).
 
 ## F116 · exact authority sources and fail-closed validation ownership
 
@@ -5978,7 +5978,7 @@ All 589 Vitest cases and all 26 Playwright cases with Axe pass. The signed-truth
 typecheck, lint, knip, v3 invariant report, production build, and diff checks pass on the corrected
 state.
 
-**Date:** 2026-07-29 (review corrections, D-116).
+**Date:** 2026-07-29 (review corrections, D-120).
 
 ## F117 · exact schedules, policy projection, and independent bindings
 
@@ -6011,7 +6011,7 @@ All 592 Vitest cases and all 27 Playwright cases with Axe pass. The signed-truth
 typecheck, lint, knip, v3 invariant report, production build, file-size ratchet, and diff checks pass
 on the corrected state.
 
-**Date:** 2026-07-29 (review corrections, D-117).
+**Date:** 2026-07-29 (review corrections, D-121).
 
 ## F118 · exact signed routes, post-review Safety, and simulation-gated activation
 
@@ -6042,7 +6042,7 @@ state.
 
 **Revert:** every adversarial mutation remains inside companion tests.
 
-**Date:** 2026-07-29 (review corrections, D-118).
+**Date:** 2026-07-29 (review corrections, D-122).
 
 ## F119 · execution reach, causal proofs, audit slots, and approval quorums
 
@@ -6076,7 +6076,7 @@ typecheck, lint, production build, and file-size ratchet pass on the corrected s
 
 **Revert:** every adversarial mutation remains inside companion tests.
 
-**Date:** 2026-07-29 (review corrections, D-119).
+**Date:** 2026-07-29 (review corrections, D-123).
 
 ## F120 · one-case quick start and complete evidence meaning
 
@@ -6104,7 +6104,7 @@ diagnostic.
 **Revert:** all production injections were removed. The adversarial mutations remain in companion
 tests, and the exact browser path passes on the corrected state.
 
-**Date:** 2026-08-04 (D-120).
+**Date:** 2026-08-04 (D-124).
 
 ## F121 · measured contracts headroom
 
@@ -6120,7 +6120,7 @@ same `budgetViolations` function.
 
 **Revert:** restore 4,050 only after the contracts tree measures within that envelope.
 
-**Date:** 2026-08-04 (D-121, ADR-0039).
+**Date:** 2026-08-04 (D-125, ADR-0039).
 
 ## F122 · immutable signed authority gaps fail closed
 
@@ -6144,7 +6144,7 @@ quick start.
 **Revert:** every mutation remains inside companion tests. The GC-03 fixture matches the original
 captain-signed bytes.
 
-**Date:** 2026-08-04 (D-122).
+**Date:** 2026-08-04 (D-126).
 
 ## F123 · governance identifiers are unique and filename-bound
 
@@ -6153,14 +6153,14 @@ captain-signed bytes.
 header matches its filename.
 
 The authority-lapse ADR moved from the already-owned ADR-0030 to ADR-0040. The later product-truth
-decision series moved from duplicate D-061 through D-082 to D-098 through D-119, with the two
-subsequent decisions moved to D-120 and D-121. The companion appends duplicate D-098 and ADR-0040
+decision series moved from duplicate D-061 through D-082 to D-102 through D-123, with the two
+subsequent decisions moved to D-124 and D-125. The companion appends duplicate D-098 and ADR-0040
 entries and injects an ADR-0041 filename with an ADR-0042 header. Each mutation produces a
 file-and-line diagnostic.
 
 **Revert:** all injected duplicates remain inside the companion test.
 
-**Date:** 2026-08-04 (D-122).
+**Date:** 2026-08-04 (D-126).
 
 ## F124 · direct authority gaps, append-stable audit positions, and complete comparison inputs
 
@@ -6189,7 +6189,7 @@ case with identical inputs permits the policy-only claim.
 **Revert:** every adversarial mutation remains inside a companion or was removed immediately after its
 recorded failure.
 
-**Date:** 2026-08-05 (D-123).
+**Date:** 2026-08-05 (D-127).
 
 ## F125 · semantic execution proof and attributed policy reruns
 
@@ -6217,7 +6217,7 @@ position on the rerun record.
 
 **Revert:** all violations remain isolated inside companion tests. Signed fixtures are unchanged.
 
-**Date:** 2026-08-05 (D-124).
+**Date:** 2026-08-05 (D-128).
 
 ## F126 · activated-policy results and structured approval authority
 
@@ -6242,7 +6242,7 @@ unknown proof. Each mutation keeps downstream state unavailable or produces a so
 **Revert:** every adversarial mutation remains inside a companion. No signed fixture was edited or
 re-signed.
 
-**Date:** 2026-08-05 (D-125).
+**Date:** 2026-08-05 (D-129).
 
 ## F127 · terminal approval authority and exact derived records
 
@@ -6270,7 +6270,7 @@ invariant reporting, and knip. No signed fixture was edited or re-signed.
 
 **Revert:** every adversarial violation remains isolated inside a companion test.
 
-**Date:** 2026-08-05 (D-126).
+**Date:** 2026-08-05 (D-130).
 
 ## F128 · exact structured execution-event authority
 
@@ -6302,4 +6302,4 @@ re-signed.
 
 **Revert:** every adversarial violation remains isolated inside a companion test.
 
-**Date:** 2026-08-05 (D-127).
+**Date:** 2026-08-05 (D-131).

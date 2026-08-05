@@ -134,18 +134,42 @@ describe("demo truth boundaries", () => {
       "GC-01-firm-a-happy-path",
     );
     const firm = firmById("firm-a");
-    const approvals = getJourney(
+    const record = getJourney(
       scenario.id,
       firm.id,
       "initial",
       "GC-01-firm-a-happy-path",
-    ).record.lifecycle.filter(({ type }) => type === "ApprovalRecorded");
+    ).record;
+    const approvals = record.expectedLifecycle.filter(
+      ({ type }) => type === "ApprovalRecorded",
+    );
     const timeline = timelineFor(scenario, firm);
 
+    expect(record.lifecycle.map(({ type }) => type)).toEqual([
+      "EvidenceSnapshotRecorded",
+      "DecisionRecorded",
+    ]);
+    expect(record.expectedLifecycle[0]?.type).toBe("ApprovalRecorded");
     expect(approvals.map(({ timestampIso }) => timestampIso)).toEqual([
       timeline.approvalOneAt,
       timeline.approvalTwoAt,
     ]);
+  });
+
+  it("does not infer signed approval authority from event position", () => {
+    const scenario = bindExactSourceCase(
+      scenarioById("recent-bank-change-block"),
+      "firm-a",
+      "GC-03-recent-bank-change-firm-a",
+    );
+    const source = sourceCaseFor(scenario, "firm-a")!;
+    const approvals = source.ledgerEvents.filter(
+      ({ type }) => type === "ApprovalRecorded",
+    );
+
+    expect(approvals.length).toBeGreaterThan(0);
+    expect(approvals.every(({ stageId }) => stageId === null)).toBe(true);
+    expect(approvals.every(({ lifecyclePass }) => lifecyclePass === null)).toBe(true);
   });
 
   it("treats a signed evidence summary change as a comparison difference", () => {
@@ -588,6 +612,98 @@ describe("demo truth boundaries", () => {
       ],
     };
     expect(executionEligibilityProof(scenario, firm, released, "initial")).toBe(false);
+
+    const evidenceAtFinalApproval = {
+      ...bound,
+      evidence: bound.evidence.map((entry) =>
+        entry.liquidityPhase === "pre-execution-revalidation"
+          ? { ...entry, retrievedAt: timeline.approvalTwoAt }
+          : entry,
+      ),
+      ledgerEvents: bound.ledgerEvents.map((event) =>
+        event.type === "EvidenceSnapshotRecorded" &&
+        event.evidencePhase === "pre-execution-revalidation"
+          ? { ...event, recordedAt: timeline.approvalTwoAt }
+          : event,
+      ),
+    };
+    expect(
+      executionEligibilityProof(
+        scenario,
+        firm,
+        evidenceAtFinalApproval,
+        "initial",
+      ),
+    ).toBe(false);
+
+    const reservationAtEvidence = {
+      ...bound,
+      ledgerEvents: bound.ledgerEvents.map((event) =>
+        event.type === "ReservationCreated"
+          ? {
+              ...event,
+              recordedAt: timeline.revalidatedAt,
+              reservationExpiresAt: new Date(
+                Date.parse(timeline.revalidatedAt) + 30 * 60 * 1_000,
+              ).toISOString(),
+            }
+          : event,
+      ),
+    };
+    expect(
+      executionEligibilityProof(
+        scenario,
+        firm,
+        reservationAtEvidence,
+        "initial",
+      ),
+    ).toBe(false);
+
+    const reservationExpiry = bound.ledgerEvents.find(
+      ({ type }) => type === "ReservationCreated",
+    )!.reservationExpiresAt!;
+    const executionAtExpiry = {
+      ...bound,
+      ledgerEvents: bound.ledgerEvents.map((event) =>
+        event.type === "ExecutionStarted"
+          ? { ...event, recordedAt: reservationExpiry }
+          : event,
+      ),
+    };
+    expect(
+      executionEligibilityProof(
+        scenario,
+        firm,
+        executionAtExpiry,
+        "initial",
+      ),
+    ).toBe(false);
+
+    const releasedAtExecution = {
+      ...bound,
+      ledgerEvents: [
+        ...bound.ledgerEvents,
+        {
+          type: "ReservationReleased",
+          note: "Reservation released at execution.",
+          stageId: null,
+          lifecyclePass: "initial" as const,
+          actorId: null,
+          roleId: null,
+          requesterId: null,
+          recordedAt: timeline.executionAt,
+          reservationId: source.executionEligibility.reservations[0]!.reservationId,
+        },
+      ],
+    };
+    expect(
+      executionEligibilityProof(
+        scenario,
+        firm,
+        releasedAtExecution,
+        "initial",
+      ),
+    ).toBe(false);
 
     const unknown = {
       ...bound,

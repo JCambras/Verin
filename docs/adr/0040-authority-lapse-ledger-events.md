@@ -2,13 +2,13 @@
 
 **Status:** Accepted (deferral with trigger)
 **Date:** 2026-07-28
-**Deciders:** Founding architect (recording the captain's D-098 signature on GC-16), captain (D-098)
-**Relates to:** D-098 (signed money truth, evidence completeness, canonical status planes); ADR-0023 (v3 adoption - deviations from v3 are recorded by ADR); ADR-0026 (the existing v3-deviation register); charter #1 (fence every invariant), #4 (detection is not verification)
+**Deciders:** Founding architect (recording the captain's D-102 signature on GC-16), captain (D-102)
+**Relates to:** D-102 (signed money truth, evidence completeness, canonical status planes); ADR-0023 (v3 adoption - deviations from v3 are recorded by ADR); ADR-0026 (the existing v3-deviation register); charter #1 (fence every invariant), #4 (detection is not verification)
 **Informed by:** `docs/v3/verin-core-contracts.ts` §5 (the ratified `LedgerEntry` union), `docs/v3/verin-prompt-sequence-v3.md` (prompt 7 - the ledger)
 
 ## Context
 
-D-098 signed GC-16 (`GC-16-specialist-review-expiration`) as product truth: a specialist-review
+D-102 signed GC-16 (`GC-16-specialist-review-expiration`) as product truth: a specialist-review
 stage that lapses unactioned records `ApprovalStageEscalated` at its P1D escalation point and then
 `ApprovalStageExpired` at the projected deadline. It deliberately does NOT invalidate a nonexistent
 approval or derive a new decision from the lapse alone - both would misstate what happened.
@@ -47,7 +47,7 @@ asserted a conformance the artifacts no longer had.
 |-------------|--------------|
 | Re-sign GC-16 onto `ApprovalInvalidated` | Records a false fact (an approval that never existed being voided) as examiner-facing product truth, and reverses a captain signature to spare an ADR. |
 | Edit `docs/v3/verin-core-contracts.ts` to add both members | The v3 documents are ratified references pinned by the arch-version fence; the repo records deviations against them, it does not rewrite them ahead of the wave that implements them. |
-| Leave it as a code comment plus the D-098 journal entry | The charter requires an ADR for v3 deviations, and a comment cannot carry the collapse trigger or be enforced - which is exactly how the "must be a v3 LedgerEntry type" message went stale. |
+| Leave it as a code comment plus the D-102 journal entry | The charter requires an ADR for v3 deviations, and a comment cannot carry the collapse trigger or be enforced - which is exactly how the "must be a v3 LedgerEntry type" message went stale. |
 | Drop the two events from GC-16 until prompt 7 | Deletes signed truth to satisfy a vocabulary the wave has not landed yet; the truth set exists precisely to constrain the engine that comes later. |
 
 ## Trade-offs and Costs

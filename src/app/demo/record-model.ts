@@ -17,6 +17,13 @@ import type {
 } from "./model";
 import type { SignedCaseId } from "./signed-case-types";
 
+export interface RecordLifecycleEvent {
+  readonly type: string;
+  readonly timestampIso: string;
+  readonly display: string;
+  readonly note: string;
+}
+
 export interface RecordVM {
   readonly header: {
     readonly decisionId: string;
@@ -41,6 +48,7 @@ export interface RecordVM {
     readonly kind: "original" | "derived";
     readonly decisionHash: string;
     readonly bundleHash: string;
+    readonly lifecyclePlane: "occurred" | "signed-expected";
   }[];
   readonly policyApproval: DemoPolicyApprovalEventVM | null;
   readonly intent: IntentVM;
@@ -54,12 +62,8 @@ export interface RecordVM {
   readonly safety: SafetyVM | null;
   readonly execution: readonly ExecutionRowVM[] | null;
   readonly verification: VerificationVM | null;
-  readonly lifecycle: readonly {
-    readonly type: string;
-    readonly timestampIso: string;
-    readonly display: string;
-    readonly note: string;
-  }[];
+  readonly lifecycle: readonly RecordLifecycleEvent[];
+  readonly expectedLifecycle: readonly RecordLifecycleEvent[];
   readonly lifecycleKind: "signed" | "demonstration-policy-rerun";
   readonly stopNote: string | null;
   readonly provenanceAppendix: readonly SourceSystem[];

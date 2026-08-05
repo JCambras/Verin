@@ -32,9 +32,62 @@ export function reservationProofResult(
   pass: JourneyPass,
 ): ProofResult {
   const decision = activeDecisionProof(scenario, firm, sourceCase, pass);
+  const approval = approvalProofResult(scenario, firm, sourceCase, pass);
   const binding = decisionBindingFor(scenario, firm, pass);
   const eligibility = sourceCase.executionEligibility;
-  const gaps = [...decision.gaps];
+  const gaps = [...decision.gaps, ...approval.gaps];
+  const decisionAt = decision.event ? eventInstant(decision.event) : null;
+  const approvalInstants = sourceCase.authority.stages.length === 0
+    ? []
+    : sourceCase.ledgerEvents.flatMap((event) =>
+        event.type === "ApprovalRecorded" &&
+        event.lifecyclePass === pass &&
+        sourceCase.authority.stages.some(
+          (stage) => stage.stageId === event.stageId,
+        ) &&
+        eventInstant(event) !== null
+          ? [eventInstant(event)!]
+          : [],
+      );
+  const finalApprovalAt = sourceCase.authority.stages.length === 0
+    ? null
+    : approvalInstants.length > 0
+      ? Math.max(...approvalInstants)
+      : null;
+  if (sourceCase.authority.stages.length > 0 && finalApprovalAt === null) {
+    gaps.push(`No ApprovalRecorded event carries the final ${pass} approval instant`);
+  }
+  const evidenceCandidates = sourceCase.ledgerEvents.filter(
+    (event) =>
+      event.type === "EvidenceSnapshotRecorded" &&
+      (event.lifecyclePass === pass || event.lifecyclePass === null) &&
+      (event.evidencePhase === "pre-execution-revalidation" ||
+        event.evidencePhase === undefined),
+  );
+  const exactEvidence = evidenceCandidates.filter(
+    (event) =>
+      event.lifecyclePass === pass &&
+      event.evidencePhase === "pre-execution-revalidation" &&
+      event.decisionHash === binding.decisionHash &&
+      event.inputBundleHash === binding.bundleHash &&
+      eventInstant(event) !== null,
+  );
+  if (evidenceCandidates.length !== 1 || exactEvidence.length !== 1) {
+    gaps.push(`Exactly one EvidenceSnapshotRecorded event must bind the ${pass} pre-execution instant`);
+  }
+  const evidenceAt = exactEvidence.length === 1
+    ? eventInstant(exactEvidence[0]!)
+    : null;
+  if (evidenceAt !== null && decisionAt !== null && evidenceAt <= decisionAt) {
+    gaps.push(`${eventLabel(sourceCase, exactEvidence[0]!)} does not follow the active decision`);
+  }
+  if (
+    evidenceAt !== null &&
+    finalApprovalAt !== null &&
+    evidenceAt <= finalApprovalAt
+  ) {
+    gaps.push(`${eventLabel(sourceCase, exactEvidence[0]!)} does not follow final approval`);
+  }
   if (!eligibility.idempotencyKey) {
     gaps.push("Signed execution eligibility lacks an idempotencyKey");
   }
@@ -107,9 +160,22 @@ export function reservationProofResult(
         createdAt !== null &&
         startAt !== null &&
         expectedExpiry !== null &&
-        !(createdAt <= startAt && startAt <= Date.parse(expectedExpiry))
+        !(createdAt < startAt && startAt < Date.parse(expectedExpiry))
       ) {
         eventGaps.push(`${eventLabel(sourceCase, event)} is not held through execution`);
+      }
+      if (createdAt !== null && decisionAt !== null && createdAt <= decisionAt) {
+        eventGaps.push(`${eventLabel(sourceCase, event)} does not follow the active decision`);
+      }
+      if (
+        createdAt !== null &&
+        finalApprovalAt !== null &&
+        createdAt <= finalApprovalAt
+      ) {
+        eventGaps.push(`${eventLabel(sourceCase, event)} does not follow final approval`);
+      }
+      if (createdAt !== null && evidenceAt !== null && createdAt <= evidenceAt) {
+        eventGaps.push(`${eventLabel(sourceCase, event)} does not follow pre-execution evidence`);
       }
       gaps.push(...eventGaps);
       return eventGaps.length === 0;
@@ -139,12 +205,30 @@ export function reservationProofResult(
     if (
       releasedAt !== null &&
       createdAt !== null &&
+      releasedAt <= createdAt
+    ) {
+      gaps.push(`${eventLabel(sourceCase, released)} does not follow reservation creation`);
+    } else if (
+      releasedAt !== null &&
+      createdAt !== null &&
       startAt !== null &&
-      releasedAt > createdAt &&
-      releasedAt < startAt
+      releasedAt <= startAt
     ) {
       gaps.push(`${eventLabel(sourceCase, released)} releases ${released.reservationId} before execution`);
     }
+  }
+  if (startAt !== null && decisionAt !== null && startAt <= decisionAt) {
+    gaps.push(`${eventLabel(sourceCase, start!)} does not follow the active decision`);
+  }
+  if (
+    startAt !== null &&
+    finalApprovalAt !== null &&
+    startAt <= finalApprovalAt
+  ) {
+    gaps.push(`${eventLabel(sourceCase, start!)} does not follow final approval`);
+  }
+  if (startAt !== null && evidenceAt !== null && startAt <= evidenceAt) {
+    gaps.push(`${eventLabel(sourceCase, start!)} does not follow pre-execution evidence`);
   }
   return proof(gaps);
 }

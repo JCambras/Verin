@@ -368,16 +368,27 @@ function sourceTimelines(): SourceTimeline[] {
           : "initial",
         caseId,
       );
-      const lifecycleEvents = journey.record.lifecycle.map((lifecycleEvent, index) =>
-        event(
-          lifecycleEvent.type === "EvidenceSnapshotRecorded" && index > 0
-            ? "revalidation"
-            : lifecycleEvent.type,
+      const occurredCount = journey.record.lifecycle.length;
+      const signedLifecycle = [
+        ...journey.record.lifecycle,
+        ...journey.record.expectedLifecycle,
+      ];
+      let evidenceIndex = 0;
+      const signedLifecycleEvents = signedLifecycle.map((lifecycleEvent) => {
+        const kind = lifecycleEvent.type === "EvidenceSnapshotRecorded" &&
+            evidenceIndex > 0
+          ? "revalidation"
+          : lifecycleEvent.type;
+        if (lifecycleEvent.type === "EvidenceSnapshotRecorded") evidenceIndex += 1;
+        return event(
+          kind,
           lifecycleEvent.timestampIso,
           `${lifecycleEvent.display} · ${lifecycleEvent.note}`,
           true,
-        ),
-      );
+        );
+      });
+      const lifecycleEvents = signedLifecycleEvents.slice(0, occurredCount);
+      const expectedLifecycleEvents = signedLifecycleEvents.slice(occurredCount);
       const primaryEvents: SourceTimelineEvent[] = lifecycleEvents.length > 0
         ? [
             event(
@@ -488,6 +499,7 @@ function sourceTimelines(): SourceTimeline[] {
         firmId: firm.id,
         requestAt: sourceCase.trigger.requestAt,
         events: primaryEvents,
+        expectedEvents: expectedLifecycleEvents,
       };
       const related = (
         authority.kind === "signed"
@@ -541,6 +553,7 @@ function sourceTimelines(): SourceTimeline[] {
                   true,
                 ),
               ],
+              expectedEvents: [],
             } satisfies SourceTimeline,
           ];
         },
@@ -585,7 +598,18 @@ function recordIdentities(): DemoSemanticSnapshot["recordIdentities"] {
             decisionId: record.header.decisionId,
             auditPosition: record.hashes.auditPosition,
             headerCreatedAtIso: record.header.createdAtIso,
-            decisionEventInstants: record.lifecycle
+            decisionEventInstants: [
+              ...record.lifecycle,
+              ...record.expectedLifecycle,
+            ]
+              .filter((event) => event.type === "DecisionRecorded")
+              .map((event) => event.timestampIso),
+            occurredDecisionEventInstants: record.header.sourceCaseId === null
+              ? [record.header.createdAtIso]
+              : record.lifecycle
+                  .filter((event) => event.type === "DecisionRecorded")
+                  .map((event) => event.timestampIso),
+            expectedDecisionEventInstants: record.expectedLifecycle
               .filter((event) => event.type === "DecisionRecorded")
               .map((event) => event.timestampIso),
             decisionBindings: record.decisionBindings.map((binding) => ({
@@ -663,6 +687,14 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     "firm-a",
     "revalidated",
   );
+  const initialSignedInvalidationLifecycle = [
+    ...invalidationJourney.record.lifecycle,
+    ...invalidationJourney.record.expectedLifecycle,
+  ];
+  const revalidatedSignedInvalidationLifecycle = [
+    ...revalidatedInvalidationJourney.record.lifecycle,
+    ...revalidatedInvalidationJourney.record.expectedLifecycle,
+  ];
   const unsupportedInvalidationJourney = getJourney(
     "approval-invalidation",
     "firm-b",
@@ -958,18 +990,18 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
     ],
     reservationCausality,
     approvalInvalidationLifecycle: {
-      initialEventTypes: invalidationJourney.record.lifecycle.map(
+      initialEventTypes: initialSignedInvalidationLifecycle.map(
         (event) => event.type,
       ),
-      initialEventInstants: invalidationJourney.record.lifecycle.map(
+      initialEventInstants: initialSignedInvalidationLifecycle.map(
         (event) => event.timestampIso,
       ),
       revalidatedEventTypes:
-        revalidatedInvalidationJourney.record.lifecycle.map(
+        revalidatedSignedInvalidationLifecycle.map(
           (event) => event.type,
         ),
       revalidatedEventInstants:
-        revalidatedInvalidationJourney.record.lifecycle.map(
+        revalidatedSignedInvalidationLifecycle.map(
         (event) => event.timestampIso,
       ),
       originalApprovals:
