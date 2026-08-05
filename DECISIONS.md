@@ -3075,7 +3075,7 @@ self-configuration capability is designed, leaving the directive unrecorded.
 No code, fixture, fence, or pinned document depends on it. D-099 stands independently of
 this revert.
 
-## D-099 - The v3 pin covers the registered documents; the index carries nothing normative
+## D-099 - The v3 pin covers the registered documents; the index originates nothing normative
 
 **Date:** 2026-08-05 · **Reversible** · Relates to: D-098, ADR-0023, ADR-0018,
 charter #1/#5, DO-NOT-PORT #8
@@ -3099,17 +3099,41 @@ falsify all three statements while the build stayed green. Fixed counts are gone
 statements now track the registry.
 
 That exception carries a rule: `docs/v3/README.md` is navigation, not ratified content,
-so nothing normative may live in it - normative statements belong in a registered
-document, an ADR, or the charter. This is deliberately recorded as prose with a stated
-owner rather than as an invariant, because no mechanism can detect normativity in a file
-the fence does not cover; a fenced-sounding claim with no fence behind it is the
-DO-NOT-PORT #8 failure. Its enforcement hook is a conditional item in
+so it ORIGINATES nothing normative - every rule it states restates a registered document,
+an ADR, or the charter, and a new normative statement originates in one of those instead.
+The originates-nothing formulation is the accurate one: the index visibly carries
+normative statements today (the registration and pin rules, the charter-supremacy
+conflict rule, "What a build session must do"), all restatements of ADR-0023 and the
+charter, so a flat "nothing normative lives here" would make the document non-compliant on
+entry and leave a reviewer no consistent way to attest it. This is deliberately recorded
+as prose with a stated owner rather than as an invariant, because no mechanism can detect
+normativity in a file the fence does not cover; a fenced-sounding claim with no fence
+behind it is the DO-NOT-PORT #8 failure. The rule was applied on entry: the D-098 pointer
+added to the index is a pure pointer, and the product guide's own authority-chain and
+governed-activation citations resolve to the pinned `docs/v3/verin-architecture-v3.md`
+with the index as a secondary hop.
+
+Its enforcement hook is a pair of conditional items in
 `.github/pull_request_template.md` (the shape the charter-amendment item already uses),
-so the obligation is surfaced to a reviewer on any PR touching that index instead of
-living only in prose. The rule was applied on entry: the D-098 pointer added to the index
-is a pure pointer, and the product guide's own authority-chain and governed-activation
-citations resolve to the pinned `docs/v3/verin-architecture-v3.md` with the index as a
-secondary hop.
+each on its own trigger, because the two obligations are independent. The
+navigation-only attestation fires when `docs/v3/README.md` changes; the
+register-with-its-pin obligation fires when any file is ADDED under `docs/v3/`. Bundling
+them under the index trigger would have prompted only in the case where the author already
+remembered the index - the unregistered-document failure this entry names would still land
+silently - and would have made a pure nav-link PR attest something about a document that
+does not exist.
+
+The overbroad pin phrasing was corrected wherever it is stated as a live rule:
+`README.md`, `AGENTS.md`, `docs/v3/README.md`, the fence-inventory row in `FOUNDATION.md`
+(which the falsification session reads as the operational description of what
+`arch-version` does), and - as a captain-authorized scope exception to this docs-only
+change - the one-line docblock at the top of
+`src/__tests__/fitness/arch-version.test.ts`. That last edit is comment text only: no
+assertion, test name, or behavior changed. Dated historical records keep their original
+wording, since they report what was written at the time and this entry supersedes them:
+the append-only `DECISIONS.md` entries above, and the PF-023 entry in
+`docs/fences/proof-log.md`, whose invariant statement and captured failure output are the
+verbatim record of a proof run.
 
 **Optional future hardening (not taken here - this PR is docs-only):** the registration
 half IS mechanizable even though normativity is not. The arch-version fence could read
@@ -3124,8 +3148,9 @@ demand a pin bump for every link edit, and the pin would assert ratified status 
 not have); leave the overbroad phrasing and rely on the fence to be discovered by
 reading; or state the index rule as a normative invariant with no enforcing mechanism.
 
-**Revert path:** restore the "every doc under `docs/v3/` is pinned" phrasing in the three
-documents, remove the v3-index item from `.github/pull_request_template.md`, and delete
-this entry. No code, fixture, fence, or pinned document changes; `v3-invariants.json` and
-the arch-version fence are untouched, since this corrects the prose describing them, not
-their behavior.
+**Revert path:** restore the "every doc under `docs/v3/` is pinned" phrasing in
+`README.md`, `AGENTS.md`, `docs/v3/README.md`, `FOUNDATION.md`, and the arch-version
+fence docblock; remove the two v3-document items from
+`.github/pull_request_template.md`; and delete this entry. No fixture, fence assertion, or
+pinned document changes; `v3-invariants.json` and the arch-version fence BEHAVIOR are
+untouched, since this corrects the prose describing them, not what they do.

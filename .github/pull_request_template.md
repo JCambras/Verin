@@ -30,7 +30,11 @@ pipeline). Fill this out honestly — a false checkbox is a control failure.
 
 ## v3 index (only if `docs/v3/README.md` changed)
 
-- [ ] This PR changes `docs/v3/README.md`. The change is navigation only - nothing normative (D-099). That index is not registered in `v3-invariants.json`, so the arch-version fence does not byte-protect it; normative statements belong in a registered document, an ADR, or the charter. A new ratified document under `docs/v3/` is registered with its SHA-256 pin in this same PR.
+- [ ] This PR changes `docs/v3/README.md`. The change is navigation only - the index originates nothing normative; every rule it states restates a registered document, an ADR, or the charter (D-099). That index is not registered in `v3-invariants.json`, so the arch-version fence does not byte-protect it, and a NEW normative statement originates in a registered document, an ADR, or the charter instead.
+
+## New `docs/v3/` document (only if a file was ADDED under `docs/v3/`)
+
+- [ ] This PR adds a file under `docs/v3/`. If it is ratified content, it is registered in `v3-invariants.json` with its SHA-256 pin in this same PR; if it is deliberately unregistered navigation, this PR says so and why. The arch-version fence iterates that registry and never reads the directory, so an unregistered document lands byte-unprotected on a green build (D-099).
 
 ## AI authorship
 

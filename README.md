@@ -10,7 +10,8 @@ Practice intelligence for registered investment advisers. The third and final bu
 3. **[`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 architecture direction (ADRs
    0023-0028; the ratified documents registered in [`v3-invariants.json`](./v3-invariants.json) are
    SHA-256-pinned by the arch-version fence, which covers that registry rather than the whole directory -
-   the index page is not registered, and carries nothing normative, D-099).
+   the index page is not registered, and originates nothing normative, only restating registered
+   documents, ADRs, and the charter, D-099).
 4. **[`PLAN.md`](./PLAN.md)** — the foundation plan and pre-mortem.
 5. **[`DECISIONS.md`](./DECISIONS.md)** — the decision journal.
 6. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).

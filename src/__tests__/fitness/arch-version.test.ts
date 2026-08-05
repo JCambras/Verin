@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 
 /**
  * ARCH-VERSION FENCE (ADR-0023; v3 prompt-sequence prompt 4's "architecture
- * checksum"). The ratified v3 documents under docs/v3/ are SHA-256-pinned in
- * v3-invariants.json. This fence fails the build when a ratified document's
+ * checksum"). The ratified v3 documents REGISTERED in v3-invariants.json are
+ * SHA-256-pinned; this fence iterates that registry and never reads the
+ * docs/v3/ directory, so an unregistered file there is not byte-protected
+ * (D-099). This fence fails the build when a registered document's
  * bytes no longer match its pin (or a pinned document is missing), so no build
  * session can silently target a stale or edited copy of the architecture. If a
  * document legitimately changes, update its sha256 pin IN THE SAME PR and
