@@ -28,6 +28,7 @@ export interface RenderedMoney {
 }
 
 export interface SignedTriggerProjection {
+  kind: "human_request" | "system_event";
   description: string;
   requesterRole: string;
   requestRef: string;
@@ -70,6 +71,7 @@ export interface DisplayedDecision {
   decisionRole: "primary" | "competing-sibling";
   disposition: string;
   sourceCaseId: string | null;
+  pass: "initial" | "revalidated";
   requestAt: string | null;
   requestAmountMinor: number;
   signedTrigger: SignedTriggerProjection | null;
@@ -230,6 +232,8 @@ export interface DemoSemanticSnapshot {
       detail: string | null;
     }>;
     reservationVisible: boolean;
+    reservationAtIso: string | null;
+    executionAtIso: string | null;
     executionEligibilityVisible: boolean;
     executionReached: boolean;
     verificationReached: boolean;
@@ -414,8 +418,222 @@ const sameMembers = (left: Iterable<string>, right: Iterable<string>): boolean =
 const sourceKey = (scenarioId: string, firmId: string, disposition: string): string =>
   `${scenarioId}\u0000${firmId}\u0000${disposition}`;
 
+function rawRows(source: Record<string, unknown>, field: string): Record<string, unknown>[] {
+  return Array.isArray(source[field]) ? source[field].filter(isObj) : [];
+}
+
+function rawEventIndexes(source: Record<string, unknown>, type: string): number[] {
+  return rawRows(source, "expectedLedgerEvents").flatMap((event, index) =>
+    event.type === type ? [index] : [],
+  );
+}
+
+function rawActiveDecisionIndex(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+): number {
+  const decisions = rawEventIndexes(source, "DecisionRecorded");
+  return pass === "revalidated" ? (decisions.at(-1) ?? -1) : (decisions[0] ?? -1);
+}
+
+function rawActiveApprovalIndexes(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+): number[] {
+  return rawRows(source, "expectedLedgerEvents").flatMap((event, index) =>
+    event.type === "ApprovalRecorded" && event.lifecyclePass === pass
+      ? [index]
+      : [],
+  );
+}
+
+function rawReservationProof(source: Record<string, unknown>): boolean {
+  const eligibility = isObj(source.expectedExecutionEligibility)
+    ? source.expectedExecutionEligibility
+    : null;
+  const reservations = eligibility && Array.isArray(eligibility.reservations)
+    ? eligibility.reservations.filter(isObj)
+    : [];
+  const created = rawEventIndexes(source, "ReservationCreated").at(-1) ?? -1;
+  const execution = rawEventIndexes(source, "ExecutionStarted")[0] ?? Number.MAX_SAFE_INTEGER;
+  const released = rawEventIndexes(source, "ReservationReleased").some(
+    (index) => index > created && index < execution,
+  );
+  return reservations.length > 0 &&
+    reservations.every((reservation) => {
+      const keys = Array.isArray(reservation.conflictKeys)
+        ? reservation.conflictKeys.filter(isNonEmptyString)
+        : [];
+      return isNonEmptyString(reservation.reservationId) &&
+        keys.length > 0 &&
+        typeof reservation.expiresAfter === "string" &&
+        rawDurationMilliseconds(reservation.expiresAfter) !== null;
+    }) &&
+    created >= 0 &&
+    created < execution &&
+    !released;
+}
+
+function rawDurationMilliseconds(value: string): number | null {
+  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(value);
+  if (!match) return null;
+  const parts = match.slice(1).map((part) => Number(part ?? 0));
+  const total = (((parts[0]! * 24 + parts[1]!) * 60 + parts[2]!) * 60 + parts[3]!) * 1_000;
+  return total > 0 ? total : null;
+}
+
+function rawApprovalProof(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+): boolean {
+  const authority = isObj(source.expectedAuthority) ? source.expectedAuthority : null;
+  const stages = authority && Array.isArray(authority.stages)
+    ? authority.stages.filter(isObj)
+    : [];
+  if (stages.length === 0) return authority?.mode === "automatic";
+  const decision = rawActiveDecisionIndex(source, pass);
+  const approvals = rawActiveApprovalIndexes(source, pass);
+  const reservation = rawEventIndexes(source, "ReservationCreated").at(-1) ?? -1;
+  const required = stages.reduce(
+    (count, stage) =>
+      count + (Number.isSafeInteger(stage.approvalsRequired) ? Number(stage.approvalsRequired) : 0),
+    0,
+  );
+  return decision >= 0 &&
+    required > 0 &&
+    approvals.length === required &&
+    approvals.every((index) => index > decision && index < reservation) &&
+    stages.every((stage) => {
+      const stageApprovals = rawRows(source, "expectedLedgerEvents").filter(
+        (event) =>
+          event.type === "ApprovalRecorded" &&
+          event.lifecyclePass === pass &&
+          event.stageId === stage.stageId,
+      );
+      return isNonEmptyString(stage.stageId) &&
+        Number.isSafeInteger(stage.approvalsRequired) &&
+        Number(stage.approvalsRequired) > 0 &&
+        stageApprovals.length === stage.approvalsRequired;
+    });
+}
+
+function rawEvidenceProof(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+  required: string[],
+): boolean {
+  if (required.length === 0) return false;
+  const phase = pass === "revalidated"
+    ? "pre-execution-revalidation"
+    : "initial-decision";
+  const evidence = rawRows(source, "householdEvidence").filter(
+    (entry) =>
+      entry.liquidityPhase === null ||
+      entry.liquidityPhase === undefined ||
+      entry.liquidityPhase === phase,
+  );
+  if (!required.every((ref) =>
+    evidence.some((entry) => entry.subjectRef === ref && entry.freshness === "fresh"))) {
+    return false;
+  }
+  const snapshots = rawEventIndexes(source, "EvidenceSnapshotRecorded");
+  const decision = rawActiveDecisionIndex(source, pass);
+  const finalAuthority = rawActiveApprovalIndexes(source, pass).at(-1) ?? decision;
+  const reservation = rawEventIndexes(source, "ReservationCreated").at(-1) ?? Number.MAX_SAFE_INTEGER;
+  const invalidated = rawEventIndexes(source, "ApprovalInvalidated").at(-1) ?? -1;
+  const originalApproval = rawRows(source, "expectedLedgerEvents").flatMap(
+    (event, index) =>
+      event.type === "ApprovalRecorded" && event.lifecyclePass === "initial"
+        ? [index]
+        : [],
+  ).at(-1) ?? -1;
+  return pass === "revalidated"
+    ? snapshots.some(
+        (index) => index > originalApproval && index < invalidated && invalidated < decision,
+      )
+    : snapshots.some((index) => index > finalAuthority && index < reservation);
+}
+
+function rawVerifiedBankEvidence(entry: Record<string, unknown>): boolean {
+  return entry.evidenceKind === "bank-instruction" &&
+    entry.liquidityPhase === "pre-execution-revalidation" &&
+    entry.freshness === "fresh" &&
+    typeof entry.summary === "string" &&
+    /\b(?:independently verified|verification (?:confirmed|completed)|verified unchanged)\b/i.test(entry.summary) &&
+    !/\b(?:not(?: yet)? verified|unverified|unavailable|pending|failed)\b/i.test(entry.summary);
+}
+
+function rawPreconditionHolds(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+  precondition: Record<string, unknown>,
+): boolean {
+  if (precondition.mustStillHoldAtExecution !== true) return true;
+  const required = Array.isArray(precondition.requiredEvidence)
+    ? precondition.requiredEvidence.filter(isNonEmptyString)
+    : [];
+  switch (precondition.code) {
+    case "material-evidence-fresh-at-execution":
+      return rawEvidenceProof(source, pass, required);
+    case "approval-bound-to-decision-hash": {
+      const events = rawRows(source, "expectedLedgerEvents");
+      const decision = events[rawActiveDecisionIndex(source, pass)];
+      const approvals = rawActiveApprovalIndexes(source, pass).map((index) => events[index]);
+      return required.length === 0 &&
+        rawApprovalProof(source, pass) &&
+        typeof decision?.note === "string" &&
+        /input-bundle hash/i.test(decision.note) &&
+        approvals.some((event) => typeof event?.note === "string" && /decision hash/i.test(event.note));
+    }
+    case "reservation-still-held":
+      return required.length === 0 && rawReservationProof(source);
+    case "bank-instruction-independently-verified":
+      return required.length > 0 && required.every((ref) =>
+        rawRows(source, "householdEvidence").some(
+          (entry) => entry.subjectRef === ref && rawVerifiedBankEvidence(entry),
+        ));
+    case "input-bundle-hash-unchanged-since-approval": {
+      const events = rawRows(source, "expectedLedgerEvents");
+      const invalidated = rawEventIndexes(source, "ApprovalInvalidated").at(-1) ?? -1;
+      const decision = rawActiveDecisionIndex(source, pass);
+      const approvals = rawActiveApprovalIndexes(source, pass);
+      const reservation = rawEventIndexes(source, "ReservationCreated").at(-1) ?? -1;
+      const invalidationNote = events[invalidated]?.note;
+      return pass === "revalidated" &&
+        rawEvidenceProof(source, pass, required) &&
+        rawApprovalProof(source, pass) &&
+        invalidated >= 0 &&
+        decision > invalidated &&
+        approvals.length > 0 &&
+        approvals.every((index) => index > decision && index < reservation) &&
+        typeof invalidationNote === "string" &&
+        /prior decision hash/i.test(invalidationNote) &&
+        /new bundle hash/i.test(invalidationNote);
+    }
+    default:
+      return false;
+  }
+}
+
+function rawExecutionEligibilityProof(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+): boolean {
+  const eligibility = isObj(source.expectedExecutionEligibility)
+    ? source.expectedExecutionEligibility
+    : null;
+  const preconditions = eligibility && Array.isArray(eligibility.preconditions)
+    ? eligibility.preconditions.filter(isObj)
+    : [];
+  return eligibility?.eligible === true &&
+    rawReservationProof(source) &&
+    rawApprovalProof(source, pass) &&
+    preconditions.every((precondition) => rawPreconditionHolds(source, pass, precondition));
+}
+
 function comparisonEvidenceRows(
   source: Record<string, unknown> | undefined,
+  pass: "initial" | "revalidated",
 ): Array<{ key: string; label: string; signature: string }> | null {
   const trigger = isObj(source?.trigger) ? source.trigger : null;
   const money = source ? readSignedMoney(source) : null;
@@ -426,7 +644,12 @@ function comparisonEvidenceRows(
   return evidence
     .filter(
       (entry) =>
-        entry.liquidityPhase !== "pre-execution-revalidation",
+        entry.liquidityPhase === null ||
+        entry.liquidityPhase === undefined ||
+        entry.liquidityPhase ===
+          (pass === "revalidated"
+            ? "pre-execution-revalidation"
+            : "initial-decision"),
     )
     .map((entry) => {
       const key = [
@@ -462,9 +685,10 @@ function comparisonEvidenceRows(
 function comparisonInputSignature(
   source: Record<string, unknown> | undefined,
   authorityGap: GoldenAuthorityGap | undefined,
+  pass: "initial" | "revalidated",
 ): string | null {
-  const evidence = comparisonEvidenceRows(source);
-  const inputs = comparisonNonPolicyInputRows(source, authorityGap);
+  const evidence = comparisonEvidenceRows(source, pass);
+  const inputs = comparisonNonPolicyInputRows(source, authorityGap, pass);
   return evidence && inputs
     ? JSON.stringify({
         evidence: evidence.map(({ signature }) => signature),
@@ -476,6 +700,7 @@ function comparisonInputSignature(
 function comparisonNonPolicyInputRows(
   source: Record<string, unknown> | undefined,
   authorityGap: GoldenAuthorityGap | undefined,
+  pass: "initial" | "revalidated",
 ): Array<{ label: string; signature: string }> | null {
   const trigger = isObj(source?.trigger) ? source.trigger : null;
   const money = source ? readSignedMoney(source) : null;
@@ -510,6 +735,7 @@ function comparisonNonPolicyInputRows(
     {
       label: "signed request meaning",
       signature: JSON.stringify({
+        kind: trigger.kind,
         description: trigger.description,
         maskedRequestSummary: trigger.maskedRequestSummary,
       }),
@@ -538,7 +764,10 @@ function comparisonNonPolicyInputRows(
           money.plannedWithdrawalMonthlyUsd,
         availableLiquidityUsd: money.availableLiquidityUsd,
         pendingLiquidityUsd: money.pendingLiquidityUsd,
-        preExecutionRevalidation: null,
+        preExecutionRevalidation:
+          pass === "revalidated"
+            ? money.preExecutionRevalidation
+            : null,
       }),
     },
     {
@@ -604,16 +833,19 @@ function comparisonDifferenceLabels(
   sourceA: Record<string, unknown> | undefined,
   sourceB: Record<string, unknown> | undefined,
   authorityGaps: GoldenAuthorityGap[],
+  pass: "initial" | "revalidated",
 ): string[] {
-  const rowsA = comparisonEvidenceRows(sourceA);
-  const rowsB = comparisonEvidenceRows(sourceB);
+  const rowsA = comparisonEvidenceRows(sourceA, pass);
+  const rowsB = comparisonEvidenceRows(sourceB, pass);
   const inputsA = comparisonNonPolicyInputRows(
     sourceA,
     authorityGaps.find((gap) => gap.caseId === sourceA?.caseId),
+    pass,
   );
   const inputsB = comparisonNonPolicyInputRows(
     sourceB,
     authorityGaps.find((gap) => gap.caseId === sourceB?.caseId),
+    pass,
   );
   if (!rowsA || !rowsB || !inputsA || !inputsB) return [];
   return [
@@ -640,6 +872,7 @@ function comparisonHasEquivalentInputs(
   const ownSignature = comparisonInputSignature(
     own,
     authorityGaps.find((gap) => gap.caseId === own?.caseId),
+    decision.pass,
   );
   const counterpartSignature = comparisonInputSignature(
     counterpart && isObj(counterpart.data) ? counterpart.data : undefined,
@@ -650,6 +883,7 @@ function comparisonHasEquivalentInputs(
           ? counterpart.data.caseId
           : undefined),
     ),
+    decision.pass,
   );
   return (
     ownSignature !== null &&
@@ -792,6 +1026,7 @@ function expectedSignedCaseVariant(
     firmId: data.firm,
     disposition: data.expectedDisposition,
     trigger: {
+      kind: trigger.kind,
       description: trigger.description,
       requesterRole: trigger.requesterRole,
       requestRef: trigger.requestRef,
@@ -1241,6 +1476,7 @@ function validateDisplayedDecisions(
         ? counterpart.data
         : undefined,
       authorityGaps,
+      d.pass,
     );
     if (
       d.decisionRole === "primary" &&
@@ -1363,6 +1599,7 @@ function validateDisplayedDecisions(
     const expectedTrigger =
       trigger && (sourceRequestMinor !== null || structuredMoneyGap)
         ? {
+            kind: trigger.kind,
             description: trigger.description,
             requesterRole: trigger.requesterRole,
             requestRef: trigger.requestRef,
@@ -1951,47 +2188,12 @@ function validateSourceTimelines(
           isObj(entry) && isNonEmptyString(entry.type) ? [entry.type] : [],
         )
       : [];
-    const eligibilityPreconditions =
-      isObj(source?.expectedExecutionEligibility) &&
-      Array.isArray(source.expectedExecutionEligibility.preconditions)
-        ? source.expectedExecutionEligibility.preconditions.filter(isObj)
-        : [];
-    const timelineEvidence = (
-      Array.isArray(source?.householdEvidence)
-        ? source.householdEvidence
-        : []
-    ).filter(
-      (entry) =>
-        isObj(entry) &&
-        (expectedLedgerTypes.includes("ApprovalInvalidated")
-          ? entry.liquidityPhase === "pre-execution-revalidation"
-          : entry.liquidityPhase !== "pre-execution-revalidation"),
-    );
-    const executionProofComplete = eligibilityPreconditions.every(
-      (precondition) => {
-        if (precondition.mustStillHoldAtExecution !== true) return true;
-        const required = Array.isArray(precondition.requiredEvidence)
-          ? precondition.requiredEvidence.filter(isNonEmptyString)
-          : [];
-        return (
-          required.every((requiredRef) =>
-            timelineEvidence.some(
-              (entry) =>
-                isObj(entry) && entry.subjectRef === requiredRef,
-            ),
-          ) &&
-          (precondition.code !==
-            "bank-instruction-independently-verified" ||
-            timelineEvidence.some(
-              (entry) =>
-                isObj(entry) &&
-                entry.evidenceKind === "bank-instruction" &&
-                entry.liquidityPhase ===
-                  "pre-execution-revalidation",
-            ))
-        );
-      },
-    );
+    const executionPass = expectedLedgerTypes.includes("ApprovalInvalidated")
+      ? "revalidated"
+      : "initial";
+    const executionProofComplete = source
+      ? rawExecutionEligibilityProof(source, executionPass)
+      : false;
     const eventKinds = timeline.events.map(({ kind }) => kind);
     if (eligibility === true && executionProofComplete) {
       const initialDecisionIndex = eventKinds.indexOf("DecisionRecorded");
@@ -2701,6 +2903,10 @@ export function validateGoldenDemoSemantics(
     }
     if (guard.sourceCaseId === null) continue;
     const source = caseData(cases, guard.sourceCaseId);
+    if (!source) {
+      problems.push(`${guard.sourceCaseId}: execution guard has no signed source case`);
+      continue;
+    }
     const actual = guard.executionEligibility;
     const expectedReservations = Array.isArray(expected?.reservations)
       ? expected.reservations.filter(isObj)
@@ -2709,46 +2915,41 @@ export function validateGoldenDemoSemantics(
       source.expectedLedgerEvents.some(
         (event) => isObj(event) && event.type === "ApprovalInvalidated",
       );
-    const activeEvidence = (
-      Array.isArray(source?.householdEvidence)
-        ? source.householdEvidence
-        : []
-    ).filter(
-      (entry) =>
-        isObj(entry) &&
-        (hasDerivedPass
-          ? entry.liquidityPhase === "pre-execution-revalidation"
-          : entry.liquidityPhase !== "pre-execution-revalidation"),
-    );
+    const executionPass = hasDerivedPass ? "revalidated" : "initial";
     const unmetMustHold = expectedPreconditions.find((precondition) => {
-      if (precondition.mustStillHoldAtExecution !== true) return false;
-      const requiredEvidence = Array.isArray(
-        precondition.requiredEvidence,
-      )
-        ? precondition.requiredEvidence.filter(isNonEmptyString)
-        : [];
-      const hasEveryEvidence = requiredEvidence.every((requiredRef) =>
-        activeEvidence.some(
-          (entry) =>
-            isObj(entry) && entry.subjectRef === requiredRef,
-        ),
-      );
-      return (
-        !hasEveryEvidence ||
-        (precondition.code ===
-          "bank-instruction-independently-verified" &&
-          !exactPostReviewEvidence)
-      );
+      return !rawPreconditionHolds(source, executionPass, precondition);
     });
+    const executionProofComplete = rawExecutionEligibilityProof(
+      source,
+      executionPass,
+    );
+    const reservationTtls = expectedReservations.flatMap((reservation) =>
+      typeof reservation.expiresAfter === "string"
+        ? [rawDurationMilliseconds(reservation.expiresAfter)]
+        : [],
+    ).filter((value): value is number => value !== null);
+    const reservationHeldFor = Date.parse(guard.executionAtIso ?? "") -
+      Date.parse(guard.reservationAtIso ?? "");
     if (
-      unmetMustHold &&
+      executionProofComplete &&
+      (reservationTtls.length !== expectedReservations.length ||
+        !Number.isFinite(reservationHeldFor) ||
+        reservationHeldFor < 0 ||
+        reservationTtls.some((ttl) => reservationHeldFor > ttl))
+    ) {
+      problems.push(
+        `${guard.sourceCaseId}: reservation is not valid through the rendered execution instant`,
+      );
+    }
+    if (
+      !executionProofComplete &&
       (guard.executionEligibilityVisible ||
         guard.reservationVisible ||
         guard.executionReached ||
         guard.verificationReached)
     ) {
       problems.push(
-        `${guard.sourceCaseId}: unresolved must-hold precondition ${String(unmetMustHold.code)} must expose no execution eligibility, reservation, execution, or verification state`,
+        `${guard.sourceCaseId}: unresolved execution proof ${String(unmetMustHold?.code ?? "authority-or-reservation")} must expose no execution eligibility, reservation, execution, or verification state`,
       );
     }
     if (
@@ -2809,7 +3010,7 @@ export function validateGoldenDemoSemantics(
       : null;
     if (
       expectedVerification?.reached === true &&
-      !unmetMustHold
+      executionProofComplete
     ) {
       const expectedProves = Array.isArray(expectedVerification.proves)
         ? expectedVerification.proves.filter(isNonEmptyString)

@@ -9,7 +9,10 @@
  * When the real pipeline lands (v3 prompts 12-26), this module is replaced surface
  * by surface; the view-model contract (./model.ts) is what stays.
  */
-import type { DecisionJourneyVM } from "./model";
+import type {
+  DecisionJourneyVM,
+  DemoPolicyApprovalEventVM,
+} from "./model";
 import { buildEvidence, buildIntent, buildWorkspace } from "./build-context";
 import { buildApprovals, buildPolicyTrace, buildRecommendation } from "./build-decision";
 import {
@@ -86,6 +89,7 @@ export function getJourney(
   firmId: string,
   pass: JourneyPass = "initial",
   sourceCaseId?: SignedCaseId,
+  policyApproval: DemoPolicyApprovalEventVM | null = null,
 ): DecisionJourneyVM {
   const baseScenario = scenarioById(scenarioId);
   const firm = firmById(firmId);
@@ -126,6 +130,6 @@ export function getJourney(
     stopNote,
     comparison: buildComparison(scenario, pass),
     policyAuthoring: buildPolicyAuthoring(scenario, firm, pass),
-    record: buildRecord(scenario, firm, pass),
+    record: buildRecord(scenario, firm, pass, policyApproval),
   };
 }

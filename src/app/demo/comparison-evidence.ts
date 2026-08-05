@@ -67,6 +67,7 @@ function normalizedNonPolicyInputs(
     {
       label: "signed request meaning",
       signature: JSON.stringify({
+        kind: sourceCase.trigger.kind,
         description: sourceCase.trigger.description,
         maskedRequestSummary: sourceCase.trigger.maskedRequestSummary,
       }),

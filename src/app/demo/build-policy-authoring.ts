@@ -27,6 +27,12 @@ import {
 
 export const DRAFT_RESERVE_MONTHS = 12;
 
+const CORPUS_IMPACT_UNAVAILABLE: SimulationDeltaRowVM = {
+  label: "Demo-corpus impact",
+  before: { display: "Unavailable - no explicit replay corpus was loaded" },
+  after: { display: "Unavailable - no explicit replay corpus was loaded" },
+};
+
 function unavailableScheduleRows(
   disposition: DispositionKind,
 ): SimulationDeltaRowVM[] {
@@ -53,6 +59,7 @@ function unavailableScheduleRows(
       before: { badge: DISPOSITION_BADGES[disposition] },
       after: { display: unavailable },
     },
+    CORPUS_IMPACT_UNAVAILABLE,
   ];
 }
 
@@ -153,26 +160,7 @@ export function buildPolicyAuthoring(
             ],
         },
       },
-      {
-        label:
-          "Demo-corpus households newly below the floor",
-        before: {
-          metric: derivedMetric(
-            0,
-            "count",
-            simulationInputs,
-            planned.observedAt,
-          ),
-        },
-        after: {
-          metric: derivedMetric(
-            3,
-            "count",
-            simulationInputs,
-            planned.observedAt,
-          ),
-        },
-      },
+      CORPUS_IMPACT_UNAVAILABLE,
     ];
   } else if (isFirmA) {
     simulationDelta = [
@@ -207,6 +195,7 @@ export function buildPolicyAuthoring(
             "Not simulated without signed numeric authority",
         },
       },
+      CORPUS_IMPACT_UNAVAILABLE,
     ];
   } else {
     simulationDelta = [
@@ -220,6 +209,7 @@ export function buildPolicyAuthoring(
         before: { badge: DISPOSITION_BADGES[disposition] },
         after: { badge: DISPOSITION_BADGES[disposition] },
       },
+      CORPUS_IMPACT_UNAVAILABLE,
     ];
   }
 

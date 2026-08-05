@@ -6,7 +6,11 @@
  * only view models (Gate 0: the UI does not invent decisions).
  */
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 import { getJourney } from "@app/demo/journey";
+import { getDb } from "@infra/store/db";
+import { resolveSession, SESSION_COOKIE } from "@infra/identity/session";
+import { demoPolicyApprovalEventFor } from "@app/demo/policy-approval-events";
 import {
   bindExactSourceCase,
   hasSignedInvalidationAuthority,
@@ -64,7 +68,7 @@ export default async function DemoStationPage({
   ) {
     notFound();
   }
-  const approved = first(sp.approved) === "1";
+  if (sp.approved !== undefined) notFound();
   const requestedPass = first(sp.pass);
   if (requestedPass !== undefined && requestedPass !== "revalidated") notFound();
   if (
@@ -83,19 +87,37 @@ export default async function DemoStationPage({
     notFound();
   }
   const pass: JourneyPass = requestedPass === "revalidated" ? "revalidated" : "initial";
+  const approvalEventId = first(sp.approvalEvent);
+  if (approvalEventId !== undefined && approvalEventId.length === 0) notFound();
+  if (
+    approvalEventId !== undefined &&
+    station !== "policy-authoring" &&
+    station !== "record"
+  ) {
+    notFound();
+  }
+  let policyApproval = null;
+  if (approvalEventId) {
+    const cookieStore = await cookies();
+    const principal = await resolveSession(
+      await getDb(),
+      cookieStore.get(SESSION_COOKIE)?.value,
+    );
+    if (!principal.ok) notFound();
+    policyApproval = demoPolicyApprovalEventFor(
+      approvalEventId,
+      principal.value.orgId,
+      { scenarioId, firmId, sourceCaseId, pass },
+    );
+    if (!policyApproval) notFound();
+  }
   const journey = getJourney(
     scenarioId,
     firmId,
     pass,
     sourceCaseId ?? undefined,
+    policyApproval,
   );
-  if (
-    station === "policy-authoring" &&
-    approved &&
-    journey.policyAuthoring.approval.kind === "unavailable"
-  ) {
-    notFound();
-  }
   const routeContext = {
     scenarioId: journey.scenarioId,
     firmId: journey.firmId,
@@ -125,7 +147,7 @@ export default async function DemoStationPage({
     case "comparison":
       return <ComparisonSurface vm={journey.comparison} routeContext={routeContext} />;
     case "policy-authoring":
-      return <PolicyAuthoringSurface vm={journey.policyAuthoring} routeContext={routeContext} approved={approved} />;
+      return <PolicyAuthoringSurface vm={journey.policyAuthoring} routeContext={routeContext} approvalEvent={policyApproval} />;
     case "record":
       return <RecordSurface vm={journey.record} routeContext={routeContext} />;
   }

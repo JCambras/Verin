@@ -17,6 +17,13 @@ export interface DemoDecisionBinding {
   readonly bundleHash: string;
 }
 
+export interface DemoPolicyRerunBinding {
+  readonly eventId: string;
+  readonly policyVersion: string;
+  readonly reserveMonths: number;
+  readonly recordedAtIso: string;
+}
+
 function digest(kind: string, value: unknown): string {
   return createHash("sha256")
     .update(kind)
@@ -62,10 +69,11 @@ export function activeDecisionAt(
     : timeline.decisionAt;
 }
 
-export function decisionBindingFor(
+function bindingFor(
   scenario: ScenarioData,
   firm: FirmData,
   pass: JourneyPass,
+  policyRerun?: DemoPolicyRerunBinding,
 ): DemoDecisionBinding {
   const sourceCase = sourceCaseFor(scenario, firm.id);
   const identity = {
@@ -73,23 +81,27 @@ export function decisionBindingFor(
     firmId: firm.id,
     sourceCaseId: sourceCase?.caseId ?? null,
     pass,
+    ...(policyRerun ? { policyApprovalEventId: policyRerun.eventId } : {}),
+  };
+  const policyVersions = sourceCase?.policyVersions ?? {
+    domainConfigVersionId: null,
+    firmPolicyVersionId: firm.policyVersion,
+    householdInstructionVersionIds: [],
+    regulatoryVersionId: null,
   };
   const bundleHash = digest("verin-demo-input-bundle-v1", {
     identity,
     request: requestFor(scenario, firm.id),
     signedTrigger: sourceCase?.trigger ?? null,
     evidence: selectedEvidence(scenario, firm, pass),
-    policyVersions: sourceCase?.policyVersions ?? {
-      domainConfigVersionId: null,
-      firmPolicyVersionId: firm.policyVersion,
-      householdInstructionVersionIds: [],
-      regulatoryVersionId: null,
-    },
+    policyVersions: policyRerun
+      ? { ...policyVersions, firmPolicyVersionId: policyRerun.policyVersion }
+      : policyVersions,
     householdInstructions: [...(sourceCase?.householdInstructions ?? [])].sort(
       (left, right) => left.versionId.localeCompare(right.versionId),
     ),
     firmConfiguration: {
-      reserveMonths: firm.reserveMonths,
+      reserveMonths: policyRerun?.reserveMonths ?? firm.reserveMonths,
       dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
       approvalsRequired: firm.approvalsRequired,
       distinctActorsRequired: firm.distinctActorsRequired,
@@ -102,8 +114,10 @@ export function decisionBindingFor(
     bundleHash,
     decisionHash: digest("verin-demo-decision-v1", {
       identity,
-      decisionId: decisionIdentityFor(scenario, firm.id, pass),
-      createdAt: activeDecisionAt(scenario, firm, pass),
+      decisionId: policyRerun
+        ? policyRerunDecisionId(scenario, firm, pass, policyRerun)
+        : decisionIdentityFor(scenario, firm.id, pass),
+      createdAt: policyRerun?.recordedAtIso ?? activeDecisionAt(scenario, firm, pass),
       bundleHash,
       disposition: dispositionFor(scenario, firm.id),
       prohibition: sourceCase?.prohibition ?? null,
@@ -114,24 +128,69 @@ export function decisionBindingFor(
   };
 }
 
+export function decisionBindingFor(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass,
+): DemoDecisionBinding {
+  return bindingFor(scenario, firm, pass);
+}
+
+export function policyRerunDecisionId(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass,
+  policyRerun: DemoPolicyRerunBinding,
+): string {
+  return `${decisionIdentityFor(scenario, firm.id, pass)}:policy-rerun:${policyRerun.eventId}`;
+}
+
+export function policyRerunDecisionBindingFor(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass,
+  policyRerun: DemoPolicyRerunBinding,
+): DemoDecisionBinding {
+  return bindingFor(scenario, firm, pass, policyRerun);
+}
+
 export function recordDecisionBindings(
   scenario: ScenarioData,
   firm: FirmData,
   pass: JourneyPass,
+  policyRerun?: DemoPolicyRerunBinding,
 ): readonly {
   readonly kind: "original" | "derived";
   readonly decisionHash: string;
   readonly bundleHash: string;
 }[] {
   const original = decisionBindingFor(scenario, firm, "initial");
-  return pass === "revalidated" &&
+  const signed: Array<{
+    readonly kind: "original" | "derived";
+    readonly decisionHash: string;
+    readonly bundleHash: string;
+  }> = pass === "revalidated" &&
     hasSignedInvalidationAuthority(scenario, firm.id)
     ? [
-        { kind: "original", ...original },
+        { kind: "original" as const, ...original },
         {
-          kind: "derived",
+          kind: "derived" as const,
           ...decisionBindingFor(scenario, firm, "revalidated"),
         },
       ]
-    : [{ kind: "original", ...original }];
+    : [{ kind: "original" as const, ...original }];
+  return policyRerun
+    ? [
+        ...signed,
+        {
+          kind: "derived" as const,
+          ...policyRerunDecisionBindingFor(
+            scenario,
+            firm,
+            pass,
+            policyRerun,
+          ),
+        },
+      ]
+    : signed;
 }

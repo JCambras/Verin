@@ -9,7 +9,11 @@
 import { Metric } from "@app/presentation/metric";
 import { StatusBadge } from "@app/presentation/ui";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
-import type { ComparisonCellVM, PolicyAuthoringVM } from "../model";
+import type {
+  ComparisonCellVM,
+  DemoPolicyApprovalEventVM,
+  PolicyAuthoringVM,
+} from "../model";
 import { DEV_BADGE_TEXT } from "../model";
 import { JourneyNav, PrimaryLink, SurfaceShell, demoHref, type DemoRouteContext } from "./shared";
 
@@ -25,11 +29,11 @@ function Cell({ cell }: { cell: ComparisonCellVM }) {
 
 export function PolicyAuthoringSurface({
   vm,
-  approved,
+  approvalEvent,
   routeContext,
 }: {
   vm: PolicyAuthoringVM;
-  approved: boolean;
+  approvalEvent: DemoPolicyApprovalEventVM | null;
   routeContext: DemoRouteContext;
 }) {
   return (
@@ -108,21 +112,52 @@ export function PolicyAuthoringSurface({
             exact-case simulation delta is computed.
           </p>
         </section>
-      ) : approved ? (
+      ) : approvalEvent ? (
         <section aria-label="Activation" role="status" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 animate-fade-in" data-testid="policy-activated">
           <p className="flex flex-wrap items-center gap-2 text-sm text-slate-800">
             <StatusBadge status="done" label="Approved and activated" />
             <span className="font-mono text-xs text-slate-800">
               {vm.approval.activation.fromVersion} → {vm.approval.activation.toVersion}
             </span>
+            <DevProvenanceBadge label={DEV_BADGE_TEXT[approvalEvent.fakeClass]} />
           </p>
+          <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-slate-600">Authenticated demo actor</dt>
+              <dd className="font-mono text-xs break-all text-slate-800">
+                {approvalEvent.actorId} · {approvalEvent.actorRole}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-600">Approval recorded</dt>
+              <dd className="text-slate-800">
+                <time dateTime={approvalEvent.approvedAtIso}>{approvalEvent.approvedAt}</time>
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-xs text-slate-600">Policy hash</dt>
+              <dd className="font-mono text-xs break-all text-slate-800">{approvalEvent.policyHash}</dd>
+            </div>
+          </dl>
           <p className="text-sm text-slate-700">{vm.approval.changedRerunResult}</p>
-          <PrimaryLink href={demoHref("record", routeContext)}>View the printable decision record</PrimaryLink>
+          <p className="text-xs font-medium text-amber-900">{approvalEvent.watermark}</p>
+          <PrimaryLink href={demoHref("record", routeContext, { approvalEventId: approvalEvent.eventId })}>View the printable policy-rerun record</PrimaryLink>
         </section>
       ) : (
         <section aria-label="Approval gate" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
           <p className="text-sm text-slate-600">Activation requires attributed human approval. Nothing governs until a person says go.</p>
-          <PrimaryLink href={demoHref("policy-authoring", routeContext, { approved: true })}>{vm.approval.gateLabel}</PrimaryLink>
+          <form action="/api/demo/policy-approvals" method="post" className="contents">
+            <input type="hidden" name="scenarioId" value={routeContext.scenarioId} />
+            <input type="hidden" name="firmId" value={routeContext.firmId} />
+            <input type="hidden" name="sourceCaseId" value={routeContext.sourceCaseId ?? ""} />
+            <input type="hidden" name="pass" value={routeContext.pass} />
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 self-start rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+            >
+              {vm.approval.gateLabel}
+            </button>
+          </form>
         </section>
       )}
 

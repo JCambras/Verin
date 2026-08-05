@@ -41,7 +41,7 @@ export interface DemoRouteContext {
 export function demoHref(
   station: DemoStation,
   context: DemoRouteContext,
-  options?: { readonly approved?: boolean },
+  options?: { readonly approvalEventId?: string },
 ): string {
   const params = new URLSearchParams({
     scenario: context.scenarioId,
@@ -49,7 +49,9 @@ export function demoHref(
   });
   if (context.sourceCaseId) params.set("case", context.sourceCaseId);
   if (context.pass === "revalidated") params.set("pass", "revalidated");
-  if (options?.approved) params.set("approved", "1");
+  if (options?.approvalEventId) {
+    params.set("approvalEvent", options.approvalEventId);
+  }
   return `/app/demo/${station}?${params.toString()}`;
 }
 

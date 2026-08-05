@@ -443,6 +443,22 @@ export type PolicyApprovalVM =
       readonly kind: "unavailable";
       readonly reason: string;
     };
+export interface DemoPolicyApprovalEventVM {
+  readonly eventId: string;
+  readonly actorId: string;
+  readonly actorRole: string;
+  readonly tenantOrgId: string;
+  readonly approvedAt: string;
+  readonly approvedAtIso: string;
+  readonly decisionRecordedAt: string;
+  readonly decisionRecordedAtIso: string;
+  readonly policyHash: string;
+  readonly fromVersion: string;
+  readonly toVersion: string;
+  readonly reserveMonths: number;
+  readonly fakeClass: FakeClass;
+  readonly watermark: string;
+}
 export interface PolicyAuthoringVM {
   readonly spine: DecisionSpineVM;
   readonly sentence: string;

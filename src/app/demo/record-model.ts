@@ -13,6 +13,7 @@ import type {
   PrecedenceRowVM,
   SafetyVM,
   VerificationVM,
+  DemoPolicyApprovalEventVM,
 } from "./model";
 import type { SignedCaseId } from "./signed-case-types";
 
@@ -34,13 +35,14 @@ export interface RecordVM {
     readonly auditPosition: {
       readonly orgId: string;
       readonly sequence: number;
-    };
+    } | null;
   };
   readonly decisionBindings: readonly {
     readonly kind: "original" | "derived";
     readonly decisionHash: string;
     readonly bundleHash: string;
   }[];
+  readonly policyApproval: DemoPolicyApprovalEventVM | null;
   readonly intent: IntentVM;
   readonly evidence: readonly EvidenceRowVM[];
   readonly disposition: DispositionVM;
@@ -58,6 +60,7 @@ export interface RecordVM {
     readonly display: string;
     readonly note: string;
   }[];
+  readonly lifecycleKind: "signed" | "demonstration-policy-rerun";
   readonly stopNote: string | null;
   readonly provenanceAppendix: readonly SourceSystem[];
 }

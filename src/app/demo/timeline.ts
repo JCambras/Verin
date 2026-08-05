@@ -103,7 +103,7 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
       ? 20 * SECOND
       : 25 * MINUTE;
   const executionOffset = specialist ? 54 * MINUTE : 29 * MINUTE;
-  const executionAt = add(sourceRequestAt, executionOffset);
+  const plannedExecutionAt = add(sourceRequestAt, executionOffset);
   const approvalOneAt = add(sourceRequestAt, approvalOneOffset);
   const approvalTwoAt = add(sourceRequestAt, approvalTwoOffset);
   const revalidatedAt =
@@ -121,6 +121,9 @@ export function timelineFor(scenario: ScenarioData, firm: FirmData): DemoTimelin
   const reservationAt = new Date(
     reservationBasis + (competing ? 5 * SECOND : MINUTE),
   ).toISOString();
+  const executionAt = invalidation
+    ? add(reservationAt, MINUTE)
+    : plannedExecutionAt;
   const delayedExceptionAt = add(executionAt, 2 * DAY);
   const latestObservationAt =
     verificationStatus === "unknown" || verificationStatus === "nigo"

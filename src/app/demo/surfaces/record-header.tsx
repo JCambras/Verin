@@ -55,7 +55,7 @@ export function RecordHeader({ vm }: { vm: RecordVM }) {
                 : "Refreshed ";
           return (
             <div
-              key={binding.kind}
+              key={`${binding.kind}-${binding.decisionHash}`}
               className="flex flex-col sm:col-span-2"
               data-testid="decision-binding"
               data-binding-kind={binding.kind}
@@ -113,18 +113,25 @@ export function RecordHeader({ vm }: { vm: RecordVM }) {
             {vm.hashes.instructionVersion}
           </dd>
         </div>
-        <div className="flex flex-col sm:col-span-2">
-          <dt className="text-xs text-slate-600">Audit-chain position</dt>
-          <dd
-            className="font-mono text-xs text-slate-800"
-            data-testid="record-audit-position"
-            data-audit-org-id={vm.hashes.auditPosition.orgId}
-            data-audit-sequence={vm.hashes.auditPosition.sequence}
-          >
-            org {vm.hashes.auditPosition.orgId} · sequence{" "}
-            {vm.hashes.auditPosition.sequence}
-          </dd>
-        </div>
+        {vm.hashes.auditPosition ? (
+          <div className="flex flex-col sm:col-span-2">
+            <dt className="text-xs text-slate-600">Audit-chain position</dt>
+            <dd
+              className="font-mono text-xs text-slate-800"
+              data-testid="record-audit-position"
+              data-audit-org-id={vm.hashes.auditPosition.orgId}
+              data-audit-sequence={vm.hashes.auditPosition.sequence}
+            >
+              org {vm.hashes.auditPosition.orgId} · sequence{" "}
+              {vm.hashes.auditPosition.sequence}
+            </dd>
+          </div>
+        ) : (
+          <div className="flex flex-col sm:col-span-2">
+            <dt className="text-xs text-slate-600">Audit-chain position</dt>
+            <dd className="text-sm text-slate-700">Not recorded in the governed audit chain - demonstration rerun only</dd>
+          </div>
+        )}
       </dl>
       <PrintButton />
     </header>

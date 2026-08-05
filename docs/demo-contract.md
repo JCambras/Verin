@@ -13,9 +13,8 @@ end-to-end journey.
 
 ## How to read this document
 
-The body below is the captain-authored v1 contract, adopted in full; its substance is unchanged
-(formatting normalized to house style). Three captain directives - two dated 2026-07-26 and one
-dated 2026-07-28 - are integrated as annotations. Nothing else is altered:
+The body below is the captain-authored v1 contract, adopted in full. Four recorded directives are
+integrated as annotations:
 
 1. **Salesforce deferral (captain ruling, 2026-07-26).** Sandbox access does not yet exist. Every
    step, surface item, or completion-test item that requires the REAL managed-Salesforce invocation
@@ -48,6 +47,15 @@ dated 2026-07-28 - are integrated as annotations. Nothing else is altered:
    `demo-status-vocabulary` half of the golden-cases fence fails the build if this document, the
    acceptance checklist, the design language, the scenario matrix, or the demo's rendered statuses
    drift apart.
+4. **Comparison and policy-proof limits (captain-recorded Firstmate ruling, 2026-08-05).** The quick start compares
+   GC-01 with GC-02. GC-01 includes signed IRA evidence that GC-02 does not, so the current comparison
+   may demonstrate the policy-difference story but may not claim strict policy-only causal
+   attribution. That proof remains **open pending equivalent captain-signed cross-firm evidence**.
+   No evidence is fabricated or re-signed to close it. Policy simulation reports the selected-case
+   delta; corpus-wide impact remains unavailable unless an explicit replay corpus is loaded and
+   evaluated. Policy approval and activation require an attributed authenticated-human event, exact
+   policy hash, timestamp, demonstration provenance, and a rerun `DecisionRecorded` pinned to the
+   activated version. A URL flag is never approval authority.
 
 Canonical observed-status ids: `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`.
 
@@ -217,7 +225,9 @@ Visible proof:
 - different policy version;
 - different reserve logic or approval result;
 - no code deployment;
-- explanation changes because policy changed, not because a prompt changed.
+- policy-difference explanation changes without a prompt or code deployment;
+- strict policy-only attribution is visibly open pending equivalent captain-signed cross-firm
+  evidence because the current GC-01 / GC-02 evidence sets differ.
 
 ### Minute 6:25-7:00 - Policy authoring proof
 
@@ -225,8 +235,9 @@ Enter:
 
 > "Always preserve twelve months of planned withdrawals in cash."
 
-Show structured draft, deterministic interpretation, simulation delta, human approval, version
-activation, and changed rerun result.
+Show structured draft, deterministic interpretation, selected-case simulation delta, attributed
+human approval, version activation, and changed rerun result. Corpus-wide impact is shown as
+unavailable until an explicit replay corpus is loaded and evaluated.
 
 ---
 
@@ -327,6 +338,8 @@ Phase 1 is complete only when:
 - material evidence changes invalidate approval;
 - two concurrent valid requests cannot jointly violate liquidity policy;
 - Firm A and Firm B differ only through configuration;
+- strict policy-only comparison attribution is supported by equivalent captain-signed cross-firm
+  evidence (currently open for GC-01 / GC-02);
 - the natural-language policy path ends in a structured approved version;
 - the complete decision artifact replays byte-identically;
 - a cold reviewer understands the category without a long architecture explanation.

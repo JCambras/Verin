@@ -24,11 +24,12 @@ export function buildExactPolicyTrace(
   firm: FirmData,
   reserveHolds: boolean | null,
   pass: JourneyPass,
+  policyVersionOverride?: string,
 ): PolicyTraceVM {
   const sourceCase = sourceCaseFor(scenario, firm.id);
   const selectedEvidence = evidenceForPass(sourceCase, pass);
   const prohibition = sourceCase?.prohibition;
-  const policy =
+  const policy = policyVersionOverride ??
     sourceCase?.policyVersions.firmPolicyVersionId ?? firm.policyVersion;
   const instructionVersions =
     sourceCase?.policyVersions.householdInstructionVersionIds ?? [];

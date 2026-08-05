@@ -218,6 +218,7 @@ export interface SignedExplanationData {
 }
 
 export interface SignedTriggerData {
+  readonly kind: "human_request" | "system_event";
   readonly description: string;
   readonly requesterRole: string;
   readonly requestRef: string;

@@ -247,12 +247,18 @@ export function buildRecommendation(scenario: ScenarioData, firm: FirmData, pass
   };
 }
 
-export function buildPolicyTrace(scenario: ScenarioData, firm: FirmData, pass: JourneyPass = "initial"): PolicyTraceVM {
+export function buildPolicyTrace(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass = "initial",
+  policyVersionOverride?: string,
+): PolicyTraceVM {
   return buildExactPolicyTrace(
     scenario,
     firm,
     reserveHolds(scenario, firm, pass),
     pass,
+    policyVersionOverride,
   );
 }
 export function buildApprovals(

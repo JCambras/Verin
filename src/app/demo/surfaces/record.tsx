@@ -100,6 +100,19 @@ export function RecordSurface({
             <SurfaceShell title="Decision record" description="Examiner-grade: every section expanded, every identifier complete.">
               <RecordHeader vm={vm} />
 
+              {vm.policyApproval ? (
+                <section aria-label="Demonstration policy approval" className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 print-avoid-break">
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">
+                    Attributed demonstration policy approval
+                    <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.policyApproval.fakeClass]} />
+                  </p>
+                  <p className="font-mono text-xs break-all text-slate-800">
+                    {vm.policyApproval.fromVersion} → {vm.policyApproval.toVersion} · actor {vm.policyApproval.actorId} ({vm.policyApproval.actorRole}) · policy hash {vm.policyApproval.policyHash}
+                  </p>
+                  <p className="text-xs font-medium text-amber-900">{vm.policyApproval.watermark}</p>
+                </section>
+              ) : null}
+
               <DocSection n={1} title="Intent">
                 <p className="text-sm text-slate-800">
                   <FreshValue provenance={vm.intent.requestProvenance}>“{vm.intent.requestText}”</FreshValue>
@@ -385,7 +398,16 @@ export function RecordSurface({
               </DocSection>
 
               {vm.lifecycle.length > 0 ? (
-                <DocSection n={9} title="Signed lifecycle">
+                <DocSection
+                  n={9}
+                  title={vm.lifecycleKind === "signed" ? "Signed lifecycle" : "Demonstration policy-rerun lifecycle"}
+                >
+                  {vm.lifecycleKind === "demonstration-policy-rerun" ? (
+                    <p className="flex items-center gap-2 text-xs text-slate-600">
+                      This lifecycle is demonstration provenance, not a captain-signed ledger.
+                      <DevProvenanceBadge label={DEV_BADGE_TEXT["deterministic-engine-output"]} />
+                    </p>
+                  ) : null}
                   <ol className="flex flex-col gap-2">
                     {vm.lifecycle.map((event, index) => (
                       <li

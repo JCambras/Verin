@@ -99,6 +99,10 @@ function parseVariant(value: unknown): SignedCaseVariant {
     throw new TypeError(`${caseId}.expectedDisposition is unsupported`);
   }
   const trigger = asRecord(fixture.trigger, `${caseId}.trigger`);
+  const triggerKind = asString(trigger.kind, `${caseId}.trigger.kind`);
+  if (triggerKind !== "human_request" && triggerKind !== "system_event") {
+    throw new TypeError(`${caseId}.trigger.kind is unsupported`);
+  }
   const money = parseMoney(
     fixture.signedMoney,
     `${caseId}.signedMoney`,
@@ -175,6 +179,7 @@ function parseVariant(value: unknown): SignedCaseVariant {
     firmId: asString(fixture.firm, `${caseId}.firm`),
     disposition,
     trigger: {
+      kind: triggerKind,
       description: asString(trigger.description, `${caseId}.trigger.description`),
       requesterRole: asString(
         trigger.requesterRole,

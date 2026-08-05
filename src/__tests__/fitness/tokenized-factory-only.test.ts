@@ -1323,7 +1323,7 @@ function sealedFixture(path: string, source: string): Project {
 }
 
 describe("tokenized-factory-only fence (sealed security types)", () => {
-  it("enforces: sealed types are built only in their factory modules", () => {
+  it("enforces: sealed types are built only in their factory modules", { timeout: 60_000 }, () => {
     expect(detectSealedTypeConstruction(realSemanticProject())).toEqual([]);
   });
 

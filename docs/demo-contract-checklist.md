@@ -162,7 +162,10 @@ Surface: **10 Firm A / Firm B comparison**.
 - [ ] Different reserve logic or approval result shown.
 - [ ] No code deployment occurred (Firm A / Firm B differ only through
       [`config/demo/scenarios.yaml`](../config/demo/scenarios.yaml)-class configuration).
-- [ ] Explanation changes because policy changed, not because a prompt changed.
+- [ ] Policy-difference explanation changes without a prompt or code deployment.
+- [ ] **OPEN:** strict policy-only attribution is supported by equivalent captain-signed cross-firm
+      evidence. GC-01 currently includes IRA evidence absent from GC-02, so the current comparison
+      discloses that difference and does not claim sole policy causality.
 
 Backing: a second `DecisionRecorded` under the Firm B tenant with its own downstream chain; the
 comparison surface renders both decisions' traces side by side.
@@ -173,13 +176,17 @@ Surface: **11 Policy draft and simulation impact**.
 
 - [ ] Structured draft shown (`llm-proposed-draft` provenance).
 - [ ] Deterministic interpretation of the draft shown.
-- [ ] Simulation delta shown (which prior decisions would change).
+- [ ] Selected-case simulation delta shown.
+- [ ] **OPEN:** corpus-wide impact is derived from an explicitly loaded replay corpus. Until then,
+      the surface states that corpus impact is unavailable and renders no population count.
 - [ ] Attributed human approval required and shown.
 - [ ] Version activation shown.
 - [ ] Changed rerun result shown.
 
-Backing: the rerun `DecisionRecorded`, whose input bundle pins the newly activated
-`policyVersionRef` (see ledger-vocabulary note above on policy lifecycle events).
+Backing: an authenticated-human demonstration approval event records actor, role, tenant, timestamp,
+exact policy hash, and demonstration provenance. The rerun `DecisionRecorded` pins the newly
+activated `policyVersionRef`; the printable rerun record carries both events and does not claim a
+governed audit-chain position (see ledger-vocabulary note above on policy lifecycle events).
 
 ## Wrap - the examiner-grade record
 

@@ -23,7 +23,7 @@ import {
  * configuration-derived keys are outside this static fence's proof boundary.
  */
 describe("dependency-rule fence", () => {
-  it("enforces: the real src/ tree has zero layer violations", () => {
+  it("enforces: the real src/ tree has zero layer violations", { timeout: 60_000 }, () => {
     const project = realProject();
     const violations = detectLayerViolations(project);
     expect(

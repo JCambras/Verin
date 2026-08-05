@@ -2,8 +2,8 @@ import {
   buildBankInstructionSafetyCheck,
   POST_REVIEW_BANK_EVIDENCE_WITHHELD,
 } from "./build-safety-check";
+import { executionEligibilityProof } from "./execution-preconditions";
 import {
-  evidenceForPass,
   executionEligibilityFor,
   hasSignedInvalidationAuthority,
   liquidityAuthorityFor,
@@ -58,34 +58,26 @@ export function executionReachFor(
       reason: "Exact signed case authority is unavailable.",
     };
   }
-  const selectedEvidence = evidenceForPass(sourceCase, pass);
   const bankInstructionCheck = buildBankInstructionSafetyCheck(
     sourceCase.evidence.filter(
       (entry) => entry.evidenceKind === "bank-instruction",
     ),
     eligibility.preconditions,
   );
-  for (const precondition of eligibility.preconditions) {
-    if (!precondition.mustStillHoldAtExecution) continue;
-    const hasEveryEvidence = precondition.requiredEvidence.every(
-      (requiredRef) =>
-        selectedEvidence.some(
-          (entry) => entry.subjectRef === requiredRef,
-        ),
+  if (!executionEligibilityProof(scenario, firm, sourceCase, pass)) {
+    const unmet = eligibility.preconditions.find(
+      (precondition) =>
+        precondition.mustStillHoldAtExecution &&
+        precondition.code === "bank-instruction-independently-verified" &&
+        bankInstructionCheck.status !== "done",
     );
-    const hasExactFinding =
-      precondition.code !== "bank-instruction-independently-verified" ||
-      bankInstructionCheck.status === "done";
-    if (!hasEveryEvidence || !hasExactFinding) {
       return {
         reached: false,
         reason:
-          precondition.code ===
-          "bank-instruction-independently-verified"
+          unmet
             ? POST_REVIEW_BANK_EVIDENCE_WITHHELD
-            : `Execution precondition ${precondition.code} lacks exact signed proof.`,
+            : "Execution eligibility lacks exact signed proof for every active must-hold condition.",
       };
-    }
   }
   return { reached: true, reason: null };
 }

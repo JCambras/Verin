@@ -86,6 +86,29 @@ export function errorResponse(error: AppError): NextResponse {
 
 const MAX_BODY_BYTES = 64 * 1024;
 
+async function readBoundedBody(
+  req: NextRequest,
+  maxBytes: number,
+): Promise<Result<string, AppError>> {
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (declared > maxBytes) return err(appError("VALIDATION", "Request body too large."));
+  if (!req.body) return ok("");
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return err(appError("VALIDATION", "Request body too large."));
+    }
+    chunks.push(value);
+  }
+  return ok(Buffer.concat(chunks).toString("utf8"));
+}
+
 /**
  * Bounded JSON body reader (STRIDE T-D1 / Sable F2). App-Router handlers do NOT
  * inherit a body-size limit, so an unbounded `req.json()` is a memory-pressure DoS.
@@ -97,27 +120,10 @@ export async function readJsonBody<T = Record<string, unknown>>(
   req: NextRequest,
   maxBytes: number = MAX_BODY_BYTES,
 ): Promise<Result<T, AppError>> {
-  const declared = Number(req.headers.get("content-length") ?? "0");
-  if (declared > maxBytes) return err(appError("VALIDATION", "Request body too large."));
-  let text = "";
-  if (req.body) {
-    const reader = req.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let received = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      if (received > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-        return err(appError("VALIDATION", "Request body too large."));
-      }
-      chunks.push(value);
-    }
-    text = Buffer.concat(chunks).toString("utf8");
-  }
+  const body = await readBoundedBody(req, maxBytes);
+  if (!body.ok) return body;
   try {
-    const parsed: unknown = text ? JSON.parse(text) : {};
+    const parsed: unknown = body.value ? JSON.parse(body.value) : {};
     // Callers destructure an object: a body of literal null / "x" / 3 / [] would
     // otherwise pass the cast and throw an unhandled 500 at the property access.
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
@@ -127,6 +133,17 @@ export async function readJsonBody<T = Record<string, unknown>>(
   } catch {
     return err(appError("VALIDATION", "Invalid JSON body."));
   }
+}
+
+export async function readFormBody(
+  req: NextRequest,
+  maxBytes: number = 8 * 1024,
+): Promise<Result<URLSearchParams, AppError>> {
+  if (!req.headers.get("content-type")?.startsWith("application/x-www-form-urlencoded")) {
+    return err(appError("VALIDATION", "Expected a URL-encoded form body."));
+  }
+  const body = await readBoundedBody(req, maxBytes);
+  return body.ok ? ok(new URLSearchParams(body.value)) : body;
 }
 
 export function sessionCookieOptions() {

@@ -1338,6 +1338,13 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         },
       ],
       [
+        "trigger kind",
+        (target) => {
+          (target.trigger as Record<string, unknown>).kind =
+            "system_event";
+        },
+      ],
+      [
         "requester",
         (target) => {
           (target.trigger as Record<string, unknown>).requesterRole =
@@ -1424,6 +1431,41 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         label,
       ).toBe(true);
     }
+
+    const revalidatedCases = exactComparisonCases();
+    const sourceMoney = caseById(
+      revalidatedCases,
+      "GC-01-firm-a-happy-path",
+    ).signedMoney as Record<string, unknown>;
+    const targetMoney = caseById(
+      revalidatedCases,
+      "GC-02-firm-b-happy-path",
+    ).signedMoney as Record<string, unknown>;
+    sourceMoney.preExecutionRevalidation = {
+      availableLiquidityUsd: 420000,
+      pendingLiquidityUsd: 0,
+    };
+    targetMoney.preExecutionRevalidation = {
+      availableLiquidityUsd: 420000,
+      pendingLiquidityUsd: 1,
+    };
+    const revalidatedDemo = exactComparisonDemo();
+    revalidatedDemo.decisions.find(
+      ({ sourceCaseId, decisionRole }) =>
+        sourceCaseId === "GC-01-firm-a-happy-path" &&
+        decisionRole === "primary",
+    )!.pass = "revalidated";
+    expect(
+      validateGoldenDemoSemantics(
+        revalidatedCases,
+        realRefs,
+        revalidatedDemo,
+      ).some((problem) =>
+        problem.includes(
+          "attributes a disposition difference solely to policy",
+        ),
+      ),
+    ).toBe(true);
 
     const authorityGapCases = exactComparisonCases();
     const authorityGapProblems = validateGoldenDemoSemantics(
@@ -1596,7 +1638,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         bypassedMustHold,
       ).some((problem) =>
         problem.includes(
-          "unresolved must-hold precondition bank-instruction-independently-verified must expose no execution eligibility, reservation, execution, or verification state",
+          "unresolved execution proof bank-instruction-independently-verified must expose no execution eligibility, reservation, execution, or verification state",
         ),
       ),
     ).toBe(true);
@@ -1636,6 +1678,119 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         ),
       ),
     ).toBe(true);
+  });
+
+  it("rejects shape-only execution proof for every must-hold meaning", () => {
+    const expectProofFailure = (
+      cases: LoadedCase[],
+      sourceCaseId: string,
+      demo: DemoSemanticSnapshot = demoClone(),
+    ) => {
+      expect(
+        validateGoldenDemoSemantics(cases, realRefs, demo).some(
+          (problem) =>
+            problem.includes(sourceCaseId) &&
+            problem.includes("unresolved execution proof"),
+        ),
+      ).toBe(true);
+    };
+
+    const stale = clone();
+    const staleEvidence = caseById(
+      stale,
+      "GC-01-firm-a-happy-path",
+    ).householdEvidence as Array<Record<string, unknown>>;
+    staleEvidence.find(
+      (entry) => entry.subjectRef === "subject:smiths-joint-taxable",
+    )!.freshness = "stale";
+    expectProofFailure(stale, "GC-01-firm-a-happy-path");
+
+    const unbound = clone();
+    const unboundEvents = caseById(
+      unbound,
+      "GC-01-firm-a-happy-path",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    unboundEvents.find(
+      (event) =>
+        event.type === "ApprovalRecorded" &&
+        typeof event.note === "string" &&
+        event.note.includes("decision hash"),
+    )!.note = "Approval recorded without an exact binding.";
+    expectProofFailure(unbound, "GC-01-firm-a-happy-path");
+
+    const released = clone();
+    const releasedEvents = caseById(
+      released,
+      "GC-10-simultaneous-distributions-first",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    releasedEvents.splice(
+      releasedEvents.findIndex((event) => event.type === "ExecutionStarted"),
+      0,
+      { type: "ReservationReleased", note: "Reservation released before execution." },
+    );
+    expectProofFailure(released, "GC-10-simultaneous-distributions-first");
+
+    const expiredDemo = demoClone();
+    const expiredGuard = expiredDemo.executionGuards.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-10-simultaneous-distributions-first",
+    )!;
+    expiredGuard.executionAtIso = new Date(
+      Date.parse(expiredGuard.reservationAtIso!) + 31 * 60 * 1_000,
+    ).toISOString();
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, expiredDemo).some(
+        (problem) => problem.includes(
+          "reservation is not valid through the rendered execution instant",
+        ),
+      ),
+    ).toBe(true);
+
+    const refreshed = clone();
+    const refreshedEvents = caseById(
+      refreshed,
+      "GC-15-approval-invalidation",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    refreshedEvents.find(
+      (event) => event.type === "ApprovalInvalidated",
+    )!.note = "Approvals invalidated without persisted hash bindings.";
+    expectProofFailure(refreshed, "GC-15-approval-invalidation");
+
+    const unknown = clone();
+    const unknownEligibility = caseById(
+      unknown,
+      "GC-01-firm-a-happy-path",
+    ).expectedExecutionEligibility as Record<string, unknown>;
+    (unknownEligibility.preconditions as Array<Record<string, unknown>>).push({
+      code: "unknown-proof",
+      requiredEvidence: [],
+      mustStillHoldAtExecution: true,
+    });
+    expectProofFailure(unknown, "GC-01-firm-a-happy-path");
+
+    const bankMeaning = clone();
+    const gc03Raw = caseById(
+      bankMeaning,
+      "GC-03-recent-bank-change-firm-a",
+    );
+    const gc03Evidence = gc03Raw.householdEvidence as Array<Record<string, unknown>>;
+    const bank = gc03Evidence.find(
+      (entry) => entry.evidenceKind === "bank-instruction",
+    )!;
+    gc03Evidence.push({
+      ...bank,
+      liquidityPhase: "pre-execution-revalidation",
+      freshness: "fresh",
+      summary: "Independent verification pending; the instruction is not yet verified.",
+    });
+    const bankDemo = demoClone();
+    const guard = bankDemo.executionGuards.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-03-recent-bank-change-firm-a",
+    )!;
+    guard.executionEligibilityVisible = true;
+    guard.reservationVisible = true;
+    guard.executionReached = true;
+    guard.verificationReached = true;
+    expectProofFailure(bankMeaning, "GC-03-recent-bank-change-firm-a", bankDemo);
   });
 
   it("flags source-bound visible events that precede or misorder the signed request", () => {

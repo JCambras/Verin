@@ -10,7 +10,12 @@
  */
 import type { DisplayMetric } from "@contracts/metric";
 import { DEMO_WATERMARK, isDemonstration } from "@contracts/provenance";
-import type { ComparisonRowVM, ComparisonVM, RecordVM } from "./model";
+import type {
+  ComparisonRowVM,
+  ComparisonVM,
+  DemoPolicyApprovalEventVM,
+  RecordVM,
+} from "./model";
 import { prov, recordProvenance } from "./provenance";
 import { buildEvidence, buildIntent } from "./build-context";
 import {
@@ -30,6 +35,7 @@ import {
 import { executionReachFor } from "./execution-reach";
 import {
   activeDecisionAt,
+  policyRerunDecisionId,
   recordDecisionBindings,
 } from "./decision-bindings";
 import {
@@ -189,7 +195,7 @@ export function buildComparison(
             why: {
               reason: equivalentEvidence
                 ? "Same household, same request, and exact signed equivalent evidence - the outcome differs because the approved policy version differs, with zero code change."
-                : `${comparisonDifference} The outcome is not attributed solely to policy.`,
+                : `${comparisonDifference} The outcome is not attributed solely to policy; strict policy-only attribution remains pending equivalent captain-signed cross-firm evidence.`,
             },
           }
         : {}),
@@ -198,7 +204,7 @@ export function buildComparison(
   return {
     description: equivalentEvidence
       ? "The same household and the same request under exact signed equivalent evidence. The differences below are driven by policy provenance, not code."
-      : `The same household and request are shown. ${comparisonDifference}`,
+      : `The same household and request are shown. ${comparisonDifference} Strict policy-only attribution remains pending equivalent captain-signed cross-firm evidence.`,
     columns: [
       {
         firmId: a.id,
@@ -311,9 +317,9 @@ function signedLifecycle(
   const lifecycle = sourceCase.ledgerEvents.map((event) => {
     const timestampIso = instantFor(event.type);
     return {
-    type: event.type,
-    timestampIso,
-    display: formatDemoInstant(timestampIso, undefined, true),
+      type: event.type,
+      timestampIso,
+      display: formatDemoInstant(timestampIso, undefined, true),
       note: event.note,
     };
   });
@@ -334,6 +340,7 @@ export function buildRecord(
   scenario: ScenarioData,
   firm: FirmData,
   pass: JourneyPass,
+  policyApproval: DemoPolicyApprovalEventVM | null = null,
 ): RecordVM {
   const sourceCase = sourceCaseFor(scenario, firm.id);
   const selectedEvidence = evidenceForPass(sourceCase, pass);
@@ -349,13 +356,33 @@ export function buildRecord(
         "user-entered-demo-input",
         requestFor(scenario, firm.id).requestedAt,
       ),
+      ...(policyApproval
+        ? [prov("user-entered-demo-input", policyApproval.approvedAtIso)]
+        : []),
     ],
     DEMO_NOW,
   );
+  const effectiveFirm = policyApproval
+    ? {
+        ...firm,
+        reserveMonths: policyApproval.reserveMonths,
+        policyVersion: policyApproval.toVersion,
+      }
+    : firm;
+  const policyRerun = policyApproval
+    ? {
+        eventId: policyApproval.eventId,
+        policyVersion: policyApproval.toVersion,
+        reserveMonths: policyApproval.reserveMonths,
+        recordedAtIso: policyApproval.decisionRecordedAtIso,
+      }
+    : undefined;
   const proceed = dispositionFor(scenario, firm.id) === "proceed";
   const invalidation = hasSignedInvalidationAuthority(scenario, firm.id);
   const revalidated = invalidation && pass === "revalidated";
-  const approvals = proceed ? buildApprovals(scenario, firm, pass) : null;
+  const approvals = proceed && !policyApproval
+    ? buildApprovals(scenario, firm, pass)
+    : null;
   const safetyReached = approvals?.satisfied === true;
   const execution = safetyReached ? buildExecution(scenario, firm, pass) : null;
   const verification = execution ? buildVerification(scenario, firm, pass) : null;
@@ -368,8 +395,9 @@ export function buildRecord(
         }
       : safety;
   const executionReach = executionReachFor(scenario, firm, pass);
-  const stopNote =
-    !proceed
+  const stopNote = policyApproval
+    ? "This demonstration policy rerun reached Decision only. New authority, safety, execution, and verification were not performed."
+    : !proceed
       ? "This journey stopped at Decision."
       : !safetyReached
         ? "This journey stopped at Authority because the ordered authority plan was not satisfied."
@@ -378,10 +406,26 @@ export function buildRecord(
           : execution === null
             ? `This journey stopped at Safety: ${executionReach.reason}`
             : null;
-  const decisionAt = activeDecisionAt(scenario, firm, pass);
+  const decisionAt = policyApproval?.decisionRecordedAtIso ??
+    activeDecisionAt(scenario, firm, pass);
+  const disposition = buildDisposition(scenario, effectiveFirm, pass);
+  const rerunDisposition = policyApproval
+    ? {
+        ...disposition,
+        why: {
+          reason:
+            disposition.kind === "proceed"
+              ? `The exact selected-case inputs were rerun under activated policy ${policyApproval.toVersion}, which preserves twelve months of planned withdrawals. The resulting headroom still covers this request.`
+              : `The exact selected-case inputs were rerun under activated policy ${policyApproval.toVersion}; the recorded disposition remains ${disposition.kind}.`,
+          regulation: `Firm policy ${policyApproval.toVersion}`,
+        },
+      }
+    : disposition;
   return {
     header: {
-      decisionId: decisionIdentityFor(scenario, firm.id, pass),
+      decisionId: policyRerun
+        ? policyRerunDecisionId(scenario, firm, pass, policyRerun)
+        : decisionIdentityFor(scenario, firm.id, pass),
       scenarioId: scenario.id,
       firmId: firm.id,
       sourceCaseId: sourceCase?.caseId ?? null,
@@ -393,18 +437,32 @@ export function buildRecord(
     },
     hashes: {
       policyVersion:
+        policyApproval?.toVersion ??
         sourceCase?.policyVersions.firmPolicyVersionId ??
         "Exact signed source unavailable",
       instructionVersion:
         sourceCase?.policyVersions.householdInstructionVersionIds.join(", ") ||
         "Exact signed source unavailable",
-      auditPosition: auditPositionFor(scenario, firm.id, pass),
+      auditPosition: policyApproval
+        ? null
+        : auditPositionFor(scenario, firm.id, pass),
     },
-    decisionBindings: recordDecisionBindings(scenario, firm, pass),
+    decisionBindings: recordDecisionBindings(
+      scenario,
+      firm,
+      pass,
+      policyRerun,
+    ),
+    policyApproval,
     intent: buildIntent(scenario, firm),
     evidence: buildEvidence(scenario, firm, pass).rows,
-    disposition: buildDisposition(scenario, firm, pass),
-    precedence: buildPolicyTrace(scenario, firm, pass).rows,
+    disposition: rerunDisposition,
+    precedence: buildPolicyTrace(
+      scenario,
+      effectiveFirm,
+      pass,
+      policyApproval?.toVersion,
+    ).rows,
     approvalStages: approvals?.stages ?? null,
     authorityMode: approvals?.mode ?? null,
     automaticAuthority: approvals?.automaticAuthority ?? null,
@@ -415,7 +473,25 @@ export function buildRecord(
     safety: finalSafety,
     execution: execution?.rows ?? null,
     verification,
-    lifecycle: signedLifecycle(scenario, firm, pass),
+    lifecycle: policyApproval
+      ? [
+          {
+            type: "PolicyApprovalRecorded",
+            timestampIso: policyApproval.approvedAtIso,
+            display: policyApproval.approvedAt,
+            note: `Attributed demo approval by ${policyApproval.actorId} (${policyApproval.actorRole}) for policy hash ${policyApproval.policyHash}.`,
+          },
+          {
+            type: "DecisionRecorded",
+            timestampIso: policyApproval.decisionRecordedAtIso,
+            display: policyApproval.decisionRecordedAt,
+            note: `Demonstration rerun recorded against active policy ${policyApproval.toVersion}.`,
+          },
+        ]
+      : signedLifecycle(scenario, firm, pass),
+    lifecycleKind: policyApproval
+      ? "demonstration-policy-rerun"
+      : "signed",
     stopNote,
     provenanceAppendix: provenance.derivedFrom,
   };

@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   bindExactSourceCase,
+  firmById,
   resolveSourceCaseId,
   scenarioById,
   sourceCaseFor,
 } from "@app/demo/data";
 import { compareComparisonEvidence } from "@app/demo/comparison-evidence";
 import { auditPositionFor } from "@app/demo/audit-position";
+import {
+  executionEligibilityProof,
+  isVerifiedPostReviewBankEvidence,
+} from "@app/demo/execution-preconditions";
 import { getJourney } from "@app/demo/journey";
 import {
   SIGNED_CASE_IDS,
@@ -132,7 +137,7 @@ describe("demo truth boundaries", () => {
           ...value,
           trigger: {
             ...value.trigger,
-            description: "A materially different request",
+            kind: "system_event",
           },
         }),
       ],
@@ -249,6 +254,118 @@ describe("demo truth boundaries", () => {
     }
   });
 
+  it("compares pre-execution money on a revalidated pass", () => {
+    const scenario = bindExactSourceCase(
+      scenarioById("approval-invalidation"),
+      "firm-a",
+      "GC-15-approval-invalidation",
+    );
+    const source = sourceCaseFor(scenario, "firm-a")!;
+    const same = structuredClone(source);
+    const revalidation = source.money.preExecutionRevalidation!;
+    const changed = {
+      ...source,
+      money: {
+        ...source.money,
+        preExecutionRevalidation: {
+          ...revalidation,
+          pendingLiquidityMinor: revalidation.pendingLiquidityMinor + 1,
+        },
+      },
+    };
+
+    expect(compareComparisonEvidence(source, same, "revalidated").equivalent).toBe(true);
+    expect(compareComparisonEvidence(source, changed, "revalidated")).toMatchObject({
+      equivalent: false,
+      changed: ["signed money inputs"],
+    });
+  });
+
+  it("requires semantic proof for every execution condition", () => {
+    const scenario = bindExactSourceCase(
+      scenarioById("safe-proceed"),
+      "firm-a",
+      "GC-01-firm-a-happy-path",
+    );
+    const firm = firmById("firm-a");
+    const source = sourceCaseFor(scenario, firm.id)!;
+    expect(executionEligibilityProof(scenario, firm, source, "initial")).toBe(true);
+
+    const stale = {
+      ...source,
+      evidence: source.evidence.map((entry) =>
+        entry.subjectRef === "subject:smiths-joint-taxable"
+          ? { ...entry, freshness: "stale" }
+          : entry,
+      ),
+    };
+    expect(executionEligibilityProof(scenario, firm, stale, "initial")).toBe(false);
+
+    const unbound = {
+      ...source,
+      ledgerEvents: source.ledgerEvents.filter(
+        ({ type }) => type !== "ApprovalRecorded",
+      ),
+    };
+    expect(executionEligibilityProof(scenario, firm, unbound, "initial")).toBe(false);
+
+    const executionIndex = source.ledgerEvents.findIndex(
+      ({ type }) => type === "ExecutionStarted",
+    );
+    const released = {
+      ...source,
+      ledgerEvents: [
+        ...source.ledgerEvents.slice(0, executionIndex),
+        {
+          type: "ReservationReleased",
+          note: "Reservation released before execution.",
+          stageId: null,
+          lifecyclePass: null,
+        },
+        ...source.ledgerEvents.slice(executionIndex),
+      ],
+    };
+    expect(executionEligibilityProof(scenario, firm, released, "initial")).toBe(false);
+
+    const unknown = {
+      ...source,
+      executionEligibility: {
+        ...source.executionEligibility,
+        preconditions: [
+          ...source.executionEligibility.preconditions,
+          {
+            code: "unknown-proof",
+            requiredEvidence: [],
+            mustStillHoldAtExecution: true,
+          },
+        ],
+      },
+    };
+    expect(executionEligibilityProof(scenario, firm, unknown, "initial")).toBe(false);
+  });
+
+  it("requires positive fresh post-review bank verification meaning", () => {
+    const source = sourceCaseFor(
+      scenarioById("recent-bank-change-block"),
+      "firm-a",
+    )!;
+    const bank = source.evidence.find(
+      ({ evidenceKind }) => evidenceKind === "bank-instruction",
+    )!;
+    expect(isVerifiedPostReviewBankEvidence({
+      ...bank,
+      liquidityPhase: "pre-execution-revalidation",
+      freshness: "fresh",
+      summary: "Independent verification pending; the instruction is not yet verified.",
+    })).toBe(false);
+    expect(isVerifiedPostReviewBankEvidence({
+      ...bank,
+      liquidityPhase: "pre-execution-revalidation",
+      freshness: "fresh",
+      summary: "Bank instruction independently verified against the destination record.",
+    })).toBe(true);
+  });
+
   it("binds verification proofs to causal events", () => {
     const submitted = getJourney(
       "safe-proceed",
@@ -307,12 +424,18 @@ describe("demo truth boundaries", () => {
     expect(firmA.comparison.description).not.toContain(
       "driven by policy provenance",
     );
-    expect(firmA.record.hashes.auditPosition.orgId).toBe("demo-org");
-    expect(firmA.record.hashes.auditPosition.sequence).not.toBe(
-      firmB.record.hashes.auditPosition.sequence,
+    const firmAAudit = firmA.record.hashes.auditPosition;
+    const firmBAudit = firmB.record.hashes.auditPosition;
+    const gc07Audit = gc07.record.hashes.auditPosition;
+    expect(firmAAudit).not.toBeNull();
+    expect(firmBAudit).not.toBeNull();
+    expect(gc07Audit).not.toBeNull();
+    expect(firmAAudit?.orgId).toBe("demo-org");
+    expect(firmAAudit?.sequence).not.toBe(
+      firmBAudit?.sequence,
     );
-    expect(firmA.record.hashes.auditPosition.sequence).not.toBe(
-      gc07.record.hashes.auditPosition.sequence,
+    expect(firmAAudit?.sequence).not.toBe(
+      gc07Audit?.sequence,
     );
   });
 
@@ -354,5 +477,17 @@ describe("demo truth boundaries", () => {
         "GC-01-firm-a-happy-path",
       ).policyAuthoring.approval.kind,
     ).toBe("available");
+    const simulation = getJourney(
+      "safe-proceed",
+      "firm-a",
+      "initial",
+      "GC-01-firm-a-happy-path",
+    ).policyAuthoring.simulationDelta;
+    expect(simulation).toContainEqual({
+      label: "Demo-corpus impact",
+      before: { display: "Unavailable - no explicit replay corpus was loaded" },
+      after: { display: "Unavailable - no explicit replay corpus was loaded" },
+    });
+    expect(simulation.some(({ label }) => label.includes("households newly"))).toBe(false);
   });
 });

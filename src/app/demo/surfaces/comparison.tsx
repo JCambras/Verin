@@ -1,9 +1,8 @@
 /**
  * Surface 10 - Firm A / Firm B comparison (demo contract §4.10; design §3 row 10,
- * §10). Same household, same request, different approved policy version, materially
- * different outcome, zero code change. Difference is hierarchy, not highlighter; the
- * cause is policy-version provenance, one tap away per differing row. No spine: this
- * surface compares journeys rather than sitting inside one.
+ * §10). Same household and request, exact signed evidence differences disclosed,
+ * different approved policy versions, and zero code change. No spine: this surface
+ * compares journeys rather than sitting inside one.
  */
 import { ComparisonColumns } from "@app/presentation/comparison-columns";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";

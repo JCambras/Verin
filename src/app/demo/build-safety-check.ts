@@ -3,6 +3,7 @@ import type {
   SignedEvidenceData,
   SignedPreconditionData,
 } from "./signed-case-types";
+import { isVerifiedPostReviewBankEvidence } from "./execution-preconditions";
 
 export const POST_REVIEW_BANK_EVIDENCE_WITHHELD =
   "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.";
@@ -22,10 +23,7 @@ export function buildBankInstructionSafetyCheck(
     (entry) =>
       entry.liquidityPhase !== "pre-execution-revalidation",
   );
-  const postReviewEvidence = evidence.find(
-    (entry) =>
-      entry.liquidityPhase === "pre-execution-revalidation",
-  );
+  const postReviewEvidence = evidence.find(isVerifiedPostReviewBankEvidence);
   if (postReviewEvidence) {
     return {
       label: "Bank-instruction post-review finding recorded",

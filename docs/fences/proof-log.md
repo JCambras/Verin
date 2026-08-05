@@ -6190,3 +6190,31 @@ case with identical inputs permits the policy-only claim.
 recorded failure.
 
 **Date:** 2026-08-05 (D-123).
+
+## F125 · semantic execution proof and attributed policy reruns
+
+**Fences:** `src/__tests__/unit/demo-truth-boundaries.test.ts`,
+`src/__tests__/fitness/golden-cases.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** execution requires code-specific semantic proof for every must-hold condition;
+policy-only comparison causality includes trigger kind and pass-aware refreshed money; and a policy
+activation appears only after an authenticated attributed event, with no invented corpus result.
+
+The product companion changes required evidence from fresh to stale, removes active approvals,
+releases the reservation before execution, adds an unknown must-hold code, and supplies a fresh
+phase-tagged bank row whose meaning still says verification is pending. Every mutation makes the
+execution proof false. A separate companion moves execution beyond the signed reservation expiry.
+The independent raw-fixture companion repeats those violations and also
+removes the invalidation event's decision and bundle hash binding; each visible execution projection
+produces a source-case diagnostic.
+
+Comparison companions independently change `trigger.kind` and revalidated
+`preExecutionRevalidation`; neither mutation can retain a policy-only claim. The policy simulation
+companion requires an explicit unavailable corpus row and refuses the former invented household
+count. Browser proof sends the old `approved=1` URL and receives 404, then submits the governed
+approval form, verifies the authenticated actor, timestamped policy hash, demonstration watermark,
+activated version, derived decision binding, Decision-only lifecycle, and absent governed audit
+position on the rerun record.
+
+**Revert:** all violations remain isolated inside companion tests. Signed fixtures are unchanged.
+
+**Date:** 2026-08-05 (D-124).

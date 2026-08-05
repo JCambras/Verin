@@ -3827,3 +3827,29 @@ The product projection and raw-fixture semantic validator normalize these inputs
 stable audit identity, and evidence equality alone cannot justify a policy-only causality claim.
 **Revert path:** none while D-119, D-120, and D-122 require fail-closed execution truth and exact
 examiner-facing identity.
+
+### D-124 · 2026-08-05 · captain-decision · Execution and policy proof require semantic authority
+
+Execution reach now evaluates each supported must-hold code by meaning. Freshness requires fresh
+selected evidence and governed event order; approval binding requires the active decision and full
+stage quorum; reservations require exact live reservation structure and no intervening release;
+bank verification requires a fresh, positive post-review finding; and refreshed-bundle authority
+requires invalidation, derived decision, and complete reapproval. Unknown codes fail closed. The
+independent golden semantic fence implements the same rules from raw signed fixtures.
+
+The quick-start comparison keeps the policy-difference story but states that strict policy-only
+causal attribution is open because GC-01 contains signed IRA evidence absent from GC-02. Trigger kind
+and pass-aware pre-execution money are now part of both independent comparison normalizations. No
+signed fixture is edited or re-signed.
+
+Policy simulation reports only its selected-case result and marks corpus impact unavailable because
+no explicit replay corpus is loaded. Policy approval is a governed POST authorized for
+`policy.approve`; it records the authenticated demo actor, tenant, role, timestamp, and exact policy
+hash with demonstration provenance. The activated version flows into a watermarked Decision-only
+rerun record with a new `DecisionRecorded` binding and no claimed governed audit position. A query
+parameter cannot mint approval.
+
+**Why:** presence-only proof, partial comparison inputs, invented population counts, and client-minted
+approval each allowed an examiner-facing claim without the authority that claim requires.
+**Revert path:** replace the labeled demo event store and selected-case simulation when the real
+policy lifecycle and corpus runner land, while preserving the same fail-closed proof boundaries.

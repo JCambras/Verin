@@ -188,6 +188,7 @@ function displayedDecisions(): DisplayedDecision[] {
         decisionRole: "primary",
         disposition: dispositionFor(scenario, firm.id),
         sourceCaseId: sourceCase?.caseId ?? null,
+        pass: "initial",
         requestAt: journey.intent.requestAt.provenance.asOf,
         requestAmountMinor: requestFor(scenario, firm.id).amountMinor,
         signedTrigger: signedTrigger(sourceCase),
@@ -269,6 +270,7 @@ function displayedDecisions(): DisplayedDecision[] {
                   decisionRole: "competing-sibling",
                   disposition: decision.disposition,
                   sourceCaseId: decision.sourceCaseId,
+                  pass: "initial",
                   requestAt: decision.requestAt,
                   requestAmountMinor: decision.requestAmountMinor,
                   signedTrigger: signedTrigger(relatedSource ?? null),
@@ -568,6 +570,9 @@ function recordIdentities(): DemoSemanticSnapshot["recordIdentities"] {
             sourceCaseId ?? undefined,
           );
           const record = journey.record;
+          if (!record.hashes.auditPosition) {
+            throw new Error("A signed demo record must retain its audit position");
+          }
           return {
             routeScenarioId: scenario.id,
             routeFirmId: firmId,
@@ -857,6 +862,8 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
               }),
             ) ?? [],
           reservationVisible: Boolean(journey.safety?.reservationId),
+          reservationAtIso: journey.safety?.reservationAtIso ?? null,
+          executionAtIso: journey.execution?.rows[0]?.timestampIso ?? null,
           executionEligibilityVisible:
             journey.safety?.executionEligibility !== null &&
             journey.safety?.executionEligibility !== undefined,

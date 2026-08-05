@@ -185,6 +185,9 @@ test("the seven-minute quick start keeps one executable signed case end to end",
   await expect(page.getByText("firm-b-policy@2026.07.1").first()).toBeVisible();
   await expect(page.getByText("$48,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$96,000.00", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/strict policy-only attribution remains pending equivalent captain-signed cross-firm evidence/i),
+  ).toBeVisible();
   expect(await page.getByTestId("comparison-differs").count()).toBeGreaterThan(0);
   await checkAxe(page, "comparison");
   await snap(page, 10, "comparison");
@@ -193,17 +196,45 @@ test("the seven-minute quick start keeps one executable signed case end to end",
   await page.getByRole("link", { name: "Author a policy change" }).click();
   await expectQuickStartStation(page, "policy-authoring");
   await expect(page.getByText("Always preserve twelve months of planned withdrawals in cash.")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Demo-corpus impact/ })).toContainText(
+    "Unavailable - no explicit replay corpus was loaded",
+  );
   await expect(page.getByTestId("policy-activated")).toHaveCount(0);
+  const bypass = await page.request.get(
+    `/app/demo/policy-authoring?${QUICK_START_QUERY}&approved=1`,
+  );
+  expect(bypass.status()).toBe(404);
   await snap(page, 11, "policy-authoring");
-  await page.getByRole("link", { name: "Approve and activate FA-4.3" }).click();
+  await page.getByRole("button", { name: "Approve and activate FA-4.3" }).click();
+  await expect(page).toHaveURL(
+    /\/app\/demo\/policy-authoring\?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path&approvalEvent=[0-9a-f-]{36}$/,
+  );
   await expect(page.getByTestId("policy-activated")).toBeVisible();
   await expect(page.getByText("FA-4.2 → FA-4.3")).toBeVisible();
+  await expect(page.getByText(/Authenticated demo actor/)).toBeVisible();
+  await expect(page.getByText(/principal/).first()).toBeVisible();
+  await expect(
+    page.getByTestId("policy-activated").getByText(
+      "Demonstration - not a compliance record",
+      { exact: true },
+    ),
+  ).toBeVisible();
   await checkAxe(page, "policy-authoring-approved");
 
   // 12 - Printable record: watermark, full hashes, expanded reasoning.
-  await page.getByRole("link", { name: "View the printable decision record" }).click();
-  await expectQuickStartStation(page, "record");
+  await page.getByRole("link", { name: "View the printable policy-rerun record" }).click();
+  await expect(page).toHaveURL(
+    /\/app\/demo\/record\?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path&approvalEvent=[0-9a-f-]{36}$/,
+  );
   await expect(page.getByTestId("record-watermark")).toContainText("Demonstration - not a compliance record");
+  await expect(page.getByText("FA-4.3", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Demonstration policy approval" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Demonstration policy-rerun lifecycle" })).toContainText("DecisionRecorded");
+  await expect(page.getByText(/Not recorded in the governed audit chain/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Execution" })).toContainText(
+    "policy rerun reached Decision only",
+  );
+  await expect(page.getByTestId("decision-binding")).toHaveCount(2);
   await expectFullDecisionBinding(page);
   await checkAxe(page, "record");
   await snap(page, 12, "record");
@@ -1344,7 +1375,7 @@ test("exact schedules and cross-firm reruns fail closed", async ({ page }) => {
       "Human approval and policy activation remain unavailable until the exact-case simulation delta is computed.",
     );
     await expect(
-      page.getByRole("link", {
+      page.getByRole("button", {
         name: /Approve/,
       }),
     ).toHaveCount(0);
