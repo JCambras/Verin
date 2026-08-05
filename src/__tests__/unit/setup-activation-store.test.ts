@@ -4,6 +4,7 @@ import { activateMoneyMovementSetup } from "@app/demo/setup-evaluator";
 import {
   SNAPSHOTS_PER_PRINCIPAL,
   SNAPSHOT_TTL_MS,
+  activatedSetupRecord,
   activatedSetupSnapshot,
   isSetupActivationToken,
   registerActivatedSetupSnapshot,
@@ -13,6 +14,7 @@ import type {
   SetupActivatedSnapshotVM,
   SetupSelections,
 } from "@app/demo/setup-model";
+import type { SetupActivatedRecords } from "@app/demo/setup-records";
 import { setupActivationAuthority } from "../helpers/setup-activation";
 
 /**
@@ -26,6 +28,10 @@ import { setupActivationAuthority } from "../helpers/setup-activation";
 const RESERVE_OPTIONS = ["6-months", "9-months", "12-months"] as const;
 const FRESHNESS_OPTIONS = ["7-days", "14-days", "30-days"] as const;
 const THRESHOLD_OPTIONS = ["25000", "50000", "100000"] as const;
+const recordsBySnapshot = new WeakMap<
+  SetupActivatedSnapshotVM,
+  SetupActivatedRecords
+>();
 
 function baseSelections(): SetupSelections {
   const vm = buildMoneyMovementSetup();
@@ -52,7 +58,14 @@ function snapshotAt(index: number): SetupActivatedSnapshotVM {
     setupActivationAuthority(selections, index),
   );
   if (!result.ok) throw new Error(result.error);
+  recordsBySnapshot.set(result.snapshot, result.records);
   return result.snapshot;
+}
+
+function recordsFor(snapshot: SetupActivatedSnapshotVM): SetupActivatedRecords {
+  const records = recordsBySnapshot.get(snapshot);
+  if (!records) throw new Error("Missing materialized activation records");
+  return records;
 }
 
 let scopeCounter = 0;
@@ -75,16 +88,33 @@ describe("activated setup snapshot registry", () => {
   it("hands the acting principal back the EXACT frozen snapshot it activated", () => {
     const principal = scope();
     const snapshot = snapshotAt(0);
-    registerActivatedSetupSnapshot(principal, snapshot);
+    registerActivatedSetupSnapshot(principal, snapshot, recordsFor(snapshot));
     const read = activatedSetupSnapshot(principal, snapshot.snapshotHash);
     expect(read).toBe(snapshot);
     expect(Object.isFrozen(read)).toBe(true);
   });
 
+  it("serves the exact frozen per-firm records materialized at activation", () => {
+    const principal = scope();
+    const snapshot = snapshotAt(0);
+    const records = recordsFor(snapshot);
+    registerActivatedSetupSnapshot(principal, snapshot, records);
+    expect(Object.isFrozen(records)).toBe(true);
+    for (const firm of snapshot.firms) {
+      const record = activatedSetupRecord(
+        principal,
+        snapshot.snapshotHash,
+        firm.firmId,
+      );
+      expect(record).toBe(records[firm.firmId]);
+      expect(Object.isFrozen(record)).toBe(true);
+    }
+  });
+
   it("scopes entries: another principal holding the hash reads nothing", () => {
     const owner = scope();
     const snapshot = snapshotAt(1);
-    registerActivatedSetupSnapshot(owner, snapshot);
+    registerActivatedSetupSnapshot(owner, snapshot, recordsFor(snapshot));
 
     const otherUser = {
       ...owner,
@@ -97,6 +127,9 @@ describe("activated setup snapshot registry", () => {
     };
     const otherRole = { ...owner, role: "admin" as const };
     expect(activatedSetupSnapshot(otherUser, snapshot.snapshotHash)).toBeNull();
+    expect(
+      activatedSetupRecord(otherUser, snapshot.snapshotHash, "firm-a"),
+    ).toBeNull();
     expect(activatedSetupSnapshot(otherOrg, snapshot.snapshotHash)).toBeNull();
     expect(
       activatedSetupSnapshot(otherSession, snapshot.snapshotHash),
@@ -108,7 +141,7 @@ describe("activated setup snapshot registry", () => {
   it("keeps snapshots reachable across credential rotation in the same session lineage", () => {
     const owner = scope();
     const snapshot = snapshotAt(1);
-    registerActivatedSetupSnapshot(owner, snapshot);
+    registerActivatedSetupSnapshot(owner, snapshot, recordsFor(snapshot));
 
     const afterRotation = { ...owner };
     expect(
@@ -135,7 +168,7 @@ describe("activated setup snapshot registry", () => {
       snapshots.length,
     );
     for (const snapshot of snapshots) {
-      registerActivatedSetupSnapshot(principal, snapshot);
+      registerActivatedSetupSnapshot(principal, snapshot, recordsFor(snapshot));
     }
     expect(
       activatedSetupSnapshot(principal, snapshots[0]!.snapshotHash),
@@ -152,7 +185,7 @@ describe("activated setup snapshot registry", () => {
     vi.useFakeTimers();
     const principal = scope();
     const snapshot = snapshotAt(2);
-    registerActivatedSetupSnapshot(principal, snapshot);
+    registerActivatedSetupSnapshot(principal, snapshot, recordsFor(snapshot));
     expect(activatedSetupSnapshot(principal, snapshot.snapshotHash)).toBe(
       snapshot,
     );
@@ -164,7 +197,7 @@ describe("activated setup snapshot registry", () => {
   it("fails closed on an unknown hash instead of substituting another snapshot", () => {
     const principal = scope();
     const snapshot = snapshotAt(3);
-    registerActivatedSetupSnapshot(principal, snapshot);
+    registerActivatedSetupSnapshot(principal, snapshot, recordsFor(snapshot));
     expect(activatedSetupSnapshot(principal, "not-a-snapshot-hash")).toBeNull();
   });
 
@@ -183,10 +216,14 @@ describe("activated setup snapshot registry", () => {
       expect(activatedSetupSnapshot(principal, invalid)).toBeNull();
     }
     expect(() =>
-      registerActivatedSetupSnapshot(principal, {
-        ...snapshot,
-        snapshotHash: "not-a-generated-token",
-      }),
+      registerActivatedSetupSnapshot(
+        principal,
+        {
+          ...snapshot,
+          snapshotHash: "not-a-generated-token",
+        },
+        recordsFor(snapshot),
+      ),
     ).toThrow("invalid token");
   });
 });

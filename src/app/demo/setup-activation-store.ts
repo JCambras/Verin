@@ -15,7 +15,12 @@
  * unavailable rather than recompute an outcome or borrow a signed record.
  */
 import type { Role } from "@contracts/roles";
-import type { SetupActivatedSnapshotVM } from "./setup-model";
+import type { RecordVM } from "./model";
+import type {
+  SetupActivatedSnapshotVM,
+  SetupFirmId,
+} from "./setup-model";
+import type { SetupActivatedRecords } from "./setup-records";
 
 /** Long enough to walk the journey from activation to export, short enough that an
  * abandoned rehearsal does not retain a snapshot for the life of the process. */
@@ -41,6 +46,7 @@ export interface SetupActivationScope {
 
 interface StoredSnapshot {
   readonly snapshot: SetupActivatedSnapshotVM;
+  readonly records: SetupActivatedRecords;
   readonly expiresAt: number;
 }
 
@@ -86,6 +92,7 @@ function dropExpired(entries: Map<string, StoredSnapshot>, now: number): void {
 export function registerActivatedSetupSnapshot(
   scope: SetupActivationScope,
   snapshot: SetupActivatedSnapshotVM,
+  records: SetupActivatedRecords,
 ): void {
   if (!isSetupActivationToken(snapshot.snapshotHash)) {
     throw new Error("Activated setup snapshot has an invalid token");
@@ -97,18 +104,16 @@ export function registerActivatedSetupSnapshot(
   touch(
     entries,
     snapshot.snapshotHash,
-    { snapshot, expiresAt: now + SNAPSHOT_TTL_MS },
+    { snapshot, records, expiresAt: now + SNAPSHOT_TTL_MS },
     SNAPSHOTS_PER_PRINCIPAL,
   );
   touch(byPrincipal(), key, entries, MAX_PRINCIPALS);
 }
 
-/** The frozen snapshot this principal activated under `snapshotHash`, or null. Null is
- * the only miss signal: the caller fails closed on it. */
-export function activatedSetupSnapshot(
+function storedActivatedSetupSnapshot(
   scope: SetupActivationScope,
   snapshotHash: string,
-): SetupActivatedSnapshotVM | null {
+): StoredSnapshot | null {
   if (!isSetupActivationToken(snapshotHash)) return null;
   const now = Date.now();
   const key = scopeKey(scope);
@@ -122,5 +127,21 @@ export function activatedSetupSnapshot(
   }
   touch(entries, snapshotHash, stored, SNAPSHOTS_PER_PRINCIPAL);
   touch(byPrincipal(), key, entries, MAX_PRINCIPALS);
-  return stored.snapshot;
+  return stored;
+}
+
+export function activatedSetupSnapshot(
+  scope: SetupActivationScope,
+  snapshotHash: string,
+): SetupActivatedSnapshotVM | null {
+  return storedActivatedSetupSnapshot(scope, snapshotHash)?.snapshot ?? null;
+}
+
+export function activatedSetupRecord(
+  scope: SetupActivationScope,
+  snapshotHash: string,
+  firmId: SetupFirmId,
+): RecordVM | null {
+  const stored = storedActivatedSetupSnapshot(scope, snapshotHash);
+  return stored && "records" in stored ? stored.records[firmId] : null;
 }

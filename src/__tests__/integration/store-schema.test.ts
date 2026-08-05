@@ -87,7 +87,7 @@ describe("store schema hardening (integration)", () => {
       ).resolves.toBeDefined();
       await expect(
         db.query(
-          "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-cross','u1','org-2','advisor',$1,$1,NULL)",
+          "INSERT INTO sessions (id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-cross','lineage-cross','u1','org-2','advisor',$1,$1,NULL)",
           [TS],
         ),
       ).rejects.toThrow(/foreign key|violates|constraint/i);
@@ -164,7 +164,7 @@ describe("store schema hardening (integration)", () => {
       expect(new Set(idx.rows.map((r) => r.indexname))).toEqual(new Set(["contacts_household", "financial_accounts_household", "sessions_user", "sessions_lineage"]));
     });
 
-    it("backfills a stable unique lineage for sessions created before migration 3", async () => {
+    it("backfills a stable unique lineage for sessions created before migration 4", async () => {
       await db.exec(`
         DROP INDEX IF EXISTS sessions_lineage;
         ALTER TABLE sessions DROP COLUMN lineage_id;
@@ -173,7 +173,7 @@ describe("store schema hardening (integration)", () => {
         "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-legacy','u1',$1,'advisor',$2,$2,NULL)",
         [ORG, TS],
       );
-      await db.exec(MIGRATIONS[2]!.sql);
+      await db.exec(MIGRATIONS[3]!.sql);
       const lineage = await db.query<{
         id: string;
         lineage_id: string;

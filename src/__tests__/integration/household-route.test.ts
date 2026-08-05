@@ -48,7 +48,7 @@ describe("PATCH /api/crm/households record identity", () => {
       password: "correct-horse-battery",
     });
     await db.query(
-      "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-household-route',$1,$2,'ops',$3,$4,NULL)",
+      "INSERT INTO sessions (id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-household-route','lineage-household-route',$1,$2,'ops',$3,$4,NULL)",
       [user.id, ORG, now, new Date(Date.now() + 50 * 60_000).toISOString()],
     );
     await db.query(

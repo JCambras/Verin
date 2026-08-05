@@ -52,9 +52,10 @@ async function seed(): Promise<void> {
 async function insertSession(id: string, expiresInMs: number): Promise<void> {
   const now = Date.now();
   await db.query(
-    "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ($1,$2,$3,'ops',$4,$5,NULL)",
+    "INSERT INTO sessions (id,lineage_id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ($1,$2,$3,$4,'ops',$5,$6,NULL)",
     [
       id,
+      `lineage-${id}`,
       userId,
       ORG,
       new Date(now - TTL_MINUTES * MIN).toISOString(),

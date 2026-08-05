@@ -284,9 +284,7 @@ function approvalDuration(value: string): {
   days: number;
   hours: number;
 } {
-  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?)?$/.exec(
-    value,
-  );
+  const match = value.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?)?$/);
   if (!match || (!match[1] && !match[2])) {
     throw new Error(
       `Unsupported demonstration approval duration: ${value}`,

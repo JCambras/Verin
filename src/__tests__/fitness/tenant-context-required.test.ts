@@ -65,6 +65,7 @@ const PORT_ESCAPES = new Set([
   "src/domain/pii/projection-resolution.ts :: isPlainProjectionData.<call>",
   "src/domain/pii/projection-resolution.ts :: resolveCompleteSensitiveEntities.<call>",
   "src/domain/pii/projection-resolution.ts :: trustedStaticProjectionText.<call>",
+  "src/domain/money-movement/reserve-projection.ts :: projectReserve.<call>",
   "src/domain/workflow/engine.ts :: ExecutionStore.loadByToken",
   "src/domain/schema/entities.ts :: isAccountType.<call>",
   "src/domain/schema/golden-record.ts :: resolveConflict.<call>",

@@ -24,7 +24,7 @@
 import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
-import { migrationLedgerExists } from "./migration-support";
+import { migrationLedgerExists, SESSION_LINEAGE_SQL } from "./migration-support";
 
 export interface Migration {
   /** Monotonic, gap-free version. Recorded in `schema_migrations` once applied. */
@@ -331,14 +331,6 @@ CREATE UNIQUE INDEX contacts_id_household_org_unique ON contacts(id, household_i
 ${TENANT_EDGES.map((e) => `ALTER TABLE ${e.child}
   ADD CONSTRAINT ${e.constraint}
   FOREIGN KEY (${e.childColumns.join(", ")}) REFERENCES ${e.parent}(${e.parentColumns.join(", ")});`).join("\n")}
-`;
-
-// Version 4 adds a stable login lineage that survives credential-id rotation.
-const SESSION_LINEAGE_SQL = `
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS lineage_id text;
-UPDATE sessions SET lineage_id = id WHERE lineage_id IS NULL;
-ALTER TABLE sessions ALTER COLUMN lineage_id SET NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS sessions_lineage ON sessions(lineage_id);
 `;
 
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */

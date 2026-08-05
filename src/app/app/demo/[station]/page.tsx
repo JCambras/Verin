@@ -10,10 +10,9 @@ import { currentSession } from "@app/_server/session";
 import { getJourney } from "@app/demo/journey";
 import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
 import {
-  activatedSetupSnapshot,
+  activatedSetupRecord,
   isSetupActivationToken,
 } from "@app/demo/setup-activation-store";
-import { buildActivatedRecord } from "@app/demo/setup-evaluator";
 import type { SetupFirmId } from "@app/demo/setup-model";
 import {
   DEMO_SEQUENCE,
@@ -93,8 +92,8 @@ export default async function DemoStationPage({
       );
     }
     const session = await currentSession();
-    const snapshot = session.ok
-      ? activatedSetupSnapshot(
+    const record = session.ok
+      ? activatedSetupRecord(
           {
             orgId: session.value.orgId,
             userId: session.value.userId,
@@ -103,22 +102,19 @@ export default async function DemoStationPage({
             role: session.value.role,
           },
           activation,
+          firmId as SetupFirmId,
         )
       : null;
-    const snapshotFirm = snapshot?.firms.find(
-      (candidate) => candidate.firmId === firmId,
-    );
-    if (snapshot && snapshotFirm && snapshotFirm.scenarioId === scenarioId) {
-      return (
-        <RecordSurface
-          vm={buildActivatedRecord(snapshot, firmId as SetupFirmId)}
-        />
-      );
+    if (
+      record?.identity.scenario.id === scenarioId &&
+      record.identity.firm.id === firmId
+    ) {
+      return <RecordSurface vm={record} />;
     }
     return (
       <RecordUnavailable
         message={
-          snapshot
+          record
             ? `The activated setup snapshot does not contain scenario ${scenarioId} for firm ${firmId}.`
             : "The activated setup snapshot is not available to this authenticated session. Activation snapshots are held in memory for the signed-in demonstration that created them, so a restart, a second server instance, or a newer activation ends them. Re-run setup and activate the draft again to produce a fresh record."
         }

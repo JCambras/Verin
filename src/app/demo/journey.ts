@@ -63,6 +63,7 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
   const disposition = recommendation.disposition;
   const policyTrace = buildPolicyTrace(scenario, firm, disposition.kind);
   const decisionAuthority = buildDecisionAuthorityPlan(scenario, firm);
+  const currentAuthority = buildAuthorityPlan(scenario, firm, "gate");
   const finalAuthority = buildAuthorityPlan(scenario, firm, "final");
   const identity = decisionIdentityFor(
     scenario,
@@ -84,7 +85,7 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
     recommendation,
     policyTrace,
     approvals: reached.authority
-      ? buildApprovals(scenario, firm, identity, decisionAuthority)
+      ? buildApprovals(scenario, firm, identity, currentAuthority)
       : null,
     safety: reached.safety ? buildSafety(scenario) : null,
     execution: reached.execution ? buildExecution(scenario) : null,

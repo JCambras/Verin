@@ -107,8 +107,7 @@ export async function activateSetup(
     draftGeneration: challenge.draftGeneration,
     selectionsHash: challenge.selectionsHash,
   });
-  if (result.ok) {
-    registerActivatedSetupSnapshot(scope, result.snapshot);
-  }
-  return result;
+  if (!result.ok) return result;
+  registerActivatedSetupSnapshot(scope, result.snapshot, result.records);
+  return { ok: true, snapshot: result.snapshot };
 }

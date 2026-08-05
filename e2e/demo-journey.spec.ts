@@ -736,6 +736,10 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByRole("button", { name: "Request independent verification of the bank instruction" })).toBeVisible();
   await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-b");
   await expect(page.getByText("Authority not reached")).toBeVisible();
+
+  await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-a");
+  await expect(page.getByText(/^Expired ·/)).toBeVisible();
+  await expect(page.getByText(/Escalates to: operations manager/)).toBeVisible();
 });
 
 test("print posture: the record's identity header prints complete; app chrome and buttons do not", async ({ page }) => {

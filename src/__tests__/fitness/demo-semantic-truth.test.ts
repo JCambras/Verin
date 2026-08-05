@@ -68,9 +68,9 @@ import {
 import { getJourney } from "@app/demo/journey";
 import {
   activateMoneyMovementSetup,
-  buildActivatedRecord,
   setupActivationAuthorityClaims,
 } from "@app/demo/setup-evaluator";
+import type { SetupActivatedRecords } from "@app/demo/setup-records";
 import {
   setupActivationPreimageFor,
   validateSetupActivationDraft,
@@ -953,6 +953,11 @@ function setupSelections(): SetupSelections {
   return selections;
 }
 
+const recordsBySnapshot = new WeakMap<
+  SetupActivatedSnapshotVM,
+  SetupActivatedRecords
+>();
+
 function activatedSnapshot(
   mutate?: (selections: SetupSelections) => void,
 ): SetupActivatedSnapshotVM {
@@ -963,7 +968,17 @@ function activatedSnapshot(
     setupActivationAuthority(selections),
   );
   if (!result.ok) throw new Error(result.error);
+  recordsBySnapshot.set(result.snapshot, result.records);
   return result.snapshot;
+}
+
+function activatedRecord(
+  snapshot: SetupActivatedSnapshotVM,
+  firmId: SetupFirmId,
+) {
+  const records = recordsBySnapshot.get(snapshot);
+  if (!records) throw new Error("Missing materialized activation records");
+  return records[firmId];
 }
 
 type MutableJsonObject = { [key: string]: JsonValue };
@@ -1464,7 +1479,7 @@ function renderedIdentity(
   firmId: string,
 ): ExportIdentity | null {
   if (resolveScenarioId(scenarioId) === null || resolveFirmId(firmId) === null) return null;
-  const record = buildActivatedRecord(snapshot, firmId as SetupFirmId);
+  const record = activatedRecord(snapshot, firmId as SetupFirmId);
   if (
     record.identity.scenario.id !== scenarioId ||
     record.activatedConfiguration === null
@@ -1776,7 +1791,7 @@ describe("demo semantic-truth fence", () => {
     const activated = activatedSnapshot();
     expect(activated.evidence).toEqual(evidence);
     expect(Object.isFrozen(activated.evidence)).toBe(true);
-    const record = buildActivatedRecord(activated, "firm-a");
+    const record = activatedRecord(activated, "firm-a");
     const exportedBank = record.evidence.find(
       (row) =>
         row.kind === "fact" &&
@@ -2208,7 +2223,7 @@ describe("demo semantic-truth fence", () => {
     expect(staged.authorityPlan.requesterParticipation).toEqual({
       mode: "unbound",
     });
-    const record = buildActivatedRecord(
+    const record = activatedRecord(
       stagedSnapshot,
       "firm-b",
     );
@@ -2296,7 +2311,7 @@ describe("demo semantic-truth fence", () => {
           .flatMap((stage) => stage.actors)
           .some((actor) => actor.requesterExcluded === true),
       ).toBe(false);
-      const record = buildActivatedRecord(
+      const record = activatedRecord(
         snapshot,
         firm.firmId,
       );
@@ -2427,7 +2442,7 @@ describe("demo semantic-truth fence", () => {
 
   it("enforces: request provenance agrees across setup and export", () => {
     const setup = buildMoneyMovementSetup();
-    const record = buildActivatedRecord(activatedSnapshot(), "firm-a");
+    const record = activatedRecord(activatedSnapshot(), "firm-a");
     expect(requestProvenanceViolations(setup, record)).toEqual([]);
   });
 
@@ -2450,7 +2465,7 @@ describe("demo semantic-truth fence", () => {
     expect(
       requestProvenanceViolations(
         drifted,
-        buildActivatedRecord(activatedSnapshot(), "firm-a"),
+        activatedRecord(activatedSnapshot(), "firm-a"),
       ),
     ).toContain("setup request category drifted");
   });
@@ -2718,7 +2733,7 @@ describe("demo semantic-truth fence", () => {
       "Stage 1 - Bank-instruction specialist review",
       "Stage 2 - Dual operations approval",
     ]);
-    const record = buildActivatedRecord(snapshot, "firm-a");
+    const record = activatedRecord(snapshot, "firm-a");
     expect(record.authority).toBe(firmA.authorityPlan);
     expect(record.authority).toEqual(firmA.authorityPlan);
     expect(Object.isFrozen(firmA.authorityPlan.stages)).toBe(true);
@@ -2817,7 +2832,7 @@ describe("demo semantic-truth fence", () => {
       ]),
     ).toEqual([]);
 
-    const record = buildActivatedRecord(snapshot, "firm-a");
+    const record = activatedRecord(snapshot, "firm-a");
     expect(record.header.createdAt).toBe(DEMO_RECORD_CREATED_AT);
     const journeyAuthority = getJourney(
       "recent-bank-change-block",
@@ -2876,7 +2891,7 @@ describe("demo semantic-truth fence", () => {
     ).not.toContainEqual(
       expect.objectContaining({ requesterExcluded: true }),
     );
-    expect(buildActivatedRecord(belowThreshold, "firm-b").authority).toBe(
+    expect(activatedRecord(belowThreshold, "firm-b").authority).toBe(
       belowThresholdPlan,
     );
 
@@ -3045,7 +3060,7 @@ describe("demo semantic-truth fence", () => {
       const snapshot = activatedSnapshot((selections) => {
         selections["firm-a"].reserve = `${months}-months`;
       });
-      const record = buildActivatedRecord(snapshot, "firm-a");
+      const record = activatedRecord(snapshot, "firm-a");
       const reserve = evaluatedReserve(record);
       const reserveRow = record.precedence.find((row) =>
         row.rule.startsWith("Cash-reserve floor"),
@@ -3141,7 +3156,7 @@ describe("demo semantic-truth fence", () => {
 
   it("enforces: the record's reserve floor and headroom declare every leaf they stand on", () => {
     const snapshot = activatedSnapshot();
-    const activated = buildActivatedRecord(snapshot, "firm-a");
+    const activated = activatedRecord(snapshot, "firm-a");
     const journey = getJourney("recent-bank-change-block", "firm-a").record;
     for (const [label, record] of [
       ["the activated record", activated],
@@ -3211,7 +3226,7 @@ describe("demo semantic-truth fence", () => {
       // The exported record repeats the claim the screen made, never a stronger one.
       for (const firm of snapshot.firms) {
         expect(
-          buildActivatedRecord(snapshot, firm.firmId).activatedConfiguration
+          activatedRecord(snapshot, firm.firmId).activatedConfiguration
             ?.configurationProvenance,
         ).toBe(firm.configurationProvenance);
       }

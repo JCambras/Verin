@@ -1,6 +1,5 @@
 import { buildDisposition, buildPolicyTrace } from "./build-decision";
 import { buildMoneyMovementSetup } from "./build-setup";
-import { buildRecord } from "./build-summary";
 import {
   APPROVAL_CLOCKS,
   DEMO_NOW,
@@ -40,7 +39,6 @@ import {
   type SetupSelections,
   type SetupTruthLabel,
 } from "./setup-model";
-import type { RecordVM } from "./model";
 import { evaluateAuthorityPlan } from "./setup-authority";
 import {
   SETUP_SCENARIO_ID,
@@ -55,6 +53,10 @@ import {
   type SetupPolicyEvaluation,
 } from "./setup-policy";
 import { setupProfileIdentity } from "./setup-profile-identity";
+import {
+  materializeActivatedRecords,
+  type SetupActivatedRecords,
+} from "./setup-records";
 
 /** The truth label of each selected option, in group order. */
 function selectedTruthLabels(
@@ -272,10 +274,18 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
+type MaterializedSetupActivationResult =
+  | {
+      readonly ok: true;
+      readonly snapshot: SetupActivatedSnapshotVM;
+      readonly records: SetupActivatedRecords;
+    }
+  | Extract<SetupActivationResult, { readonly ok: false }>;
+
 export function activateMoneyMovementSetup(
   value: unknown,
   authority: SetupActivationAuthorityBinding | undefined,
-): SetupActivationResult {
+): MaterializedSetupActivationResult {
   if (!authority) {
     return {
       ok: false,
@@ -337,7 +347,14 @@ export function activateMoneyMovementSetup(
     authority,
     evidence,
   );
-  const firms: [SetupProofFirmVM, SetupProofFirmVM] = [
+  const activationAcknowledgment = {
+    actor: authority.actor,
+    statementVersion: authority.statementVersion,
+    draftGeneration: authority.draftGeneration,
+    selectionsHash: authority.selectionsHash,
+    statement: vm.activation.attestationStatement,
+  };
+  const firms: SetupActivatedSnapshotVM["firms"] = [
     {
       ...evaluatedA,
       exportHref: `/app/demo/record?scenario=${evaluatedA.scenarioId}&firm=${evaluatedA.firmId}&activation=${snapshotHash}`,
@@ -347,96 +364,19 @@ export function activateMoneyMovementSetup(
       exportHref: `/app/demo/record?scenario=${evaluatedB.scenarioId}&firm=${evaluatedB.firmId}&activation=${snapshotHash}`,
     },
   ];
-  return {
+  const snapshot = deepFreeze({
+    snapshotVersion,
+    snapshotHash,
+    canonicalConfiguration: draft.canonicalConfiguration,
+    activatedAt: vm.activation.effectiveAt,
+    activationAcknowledgment,
+    evidence,
+    selections: draft.selections,
+    firms,
+  });
+  return deepFreeze({
     ok: true,
-    snapshot: deepFreeze({
-      snapshotVersion,
-      snapshotHash,
-      canonicalConfiguration: draft.canonicalConfiguration,
-      activatedAt: vm.activation.effectiveAt,
-      activationAcknowledgment: {
-        actor: authority.actor,
-        statementVersion: authority.statementVersion,
-        draftGeneration: authority.draftGeneration,
-        selectionsHash: authority.selectionsHash,
-        statement: vm.activation.attestationStatement,
-      },
-      evidence,
-      selections: draft.selections,
-      firms,
-    }),
-  };
-}
-
-export function buildActivatedRecord(
-  snapshot: SetupActivatedSnapshotVM,
-  firmId: SetupFirmId,
-): RecordVM {
-  const evaluated = snapshot.firms.find(
-    (candidate) => candidate.firmId === firmId,
-  );
-  if (!evaluated) {
-    throw new Error(`Activated setup snapshot does not contain ${firmId}`);
-  }
-  const policyEvaluation = evaluateSetupPolicy(
-    snapshot.selections,
-    firmId,
-    snapshot.evidence,
-  );
-  const firm = setupRuntimeFirm(
-    firmId,
-    policyEvaluation,
-    evaluated.policyVersion,
-  );
-  const reached = {
-    authority: evaluated.authorityPlan.mode !== "not-reached",
-    safety: evaluated.authorityPlan.mode !== "not-reached",
-    execution: evaluated.authorityPlan.mode !== "not-reached",
-  };
-  const stopNote = evaluated.authorityPlan.mode !== "not-reached"
-    ? null
-    : "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
-  return buildRecord(
-    scenarioById(evaluated.scenarioId),
-    firm,
-    reached,
-    stopNote,
-    {
-      identity: {
-        decisionId: evaluated.decisionId,
-        inputHash: evaluated.inputHash,
-        decisionHash: evaluated.decisionHash,
-        bundleHash: evaluated.bundleHash,
-      },
-      disposition: evaluated.disposition,
-      authority: evaluated.authorityPlan,
-      activatedConfiguration: {
-        snapshotVersion: snapshot.snapshotVersion,
-        snapshotHash: snapshot.snapshotHash,
-        configurationHash: evaluated.configurationHash,
-        configurationPostureStatus:
-          evaluated.configurationPostureStatus,
-        configurationPostureLabel:
-          evaluated.configurationPostureLabel,
-        configurationProvenance: evaluated.configurationProvenance,
-        eligibleRole: evaluated.eligibleRole,
-        requesterParticipation:
-          evaluated.requesterParticipation.mode,
-        activationActorId:
-          snapshot.activationAcknowledgment.actor.opaqueId,
-        activationActorRole:
-          snapshot.activationAcknowledgment.actor.role,
-        attestationStatementVersion:
-          snapshot.activationAcknowledgment.statementVersion,
-        attestedDraftGeneration:
-          snapshot.activationAcknowledgment.draftGeneration,
-        attestedSelectionsHash:
-          snapshot.activationAcknowledgment.selectionsHash,
-        attestationStatement:
-          snapshot.activationAcknowledgment.statement,
-      },
-      reserveHorizon: ACTIVATED_RESERVE_HORIZON,
-      evidence: snapshot.evidence,
-    },
-  );
+    snapshot,
+    records: materializeActivatedRecords(snapshot),
+  });
 }
