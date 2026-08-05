@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.7.0",
+  "$id": "verin-real-derived-replay/1.8.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,7 @@
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.7.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.8.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
@@ -938,6 +938,7 @@
         "invent-reserve-from-missing-schedule",
         "mark-reserve-unavailable",
         "omit-settled-incoming-availability",
+        "preserve-settled-incoming-availability",
         "preserve-evidence-interval",
         "preserve-hold-scope",
         "proceed-without-completed-tax-review",
@@ -984,6 +985,7 @@
         "actionState",
         "direction",
         "liquidityClass",
+        "availableMinorIncludesAction",
         "amountMinor",
         "evidenceSourceRef",
         "reducesEffectiveLiquidity",
@@ -1031,6 +1033,7 @@
             null
           ]
         },
+        "availableMinorIncludesAction": { "type": ["boolean", "null"] },
         "amountMinor": {
           "type": ["integer", "null"],
           "minimum": 0,

@@ -77,28 +77,37 @@ function fundingProblems(item: RealDerivedCase): string[] {
   const requiredParts = [
     payload.request.amountMinor,
     payload.liquidity.reserveRequiredMinor ?? 0,
-    action.reducesEffectiveLiquidity ? action.amountMinor ?? 0 : 0,
   ];
   const availableParts = selected.map((source) => source.availableMinor);
+  const actionAmounts = action.amountMinor === null ? [] : [action.amountMinor];
   if (
-    [...requiredParts, ...availableParts].some(
+    [...requiredParts, ...availableParts, ...actionAmounts].some(
       (value) => !Number.isSafeInteger(value) || value < 0,
     )
   ) {
     problems.push("funding amounts must be safe integer minor units");
-  } else if (
-    availableParts.reduce(
+  } else {
+    const actionAdjustment =
+      action.amountMinor !== null &&
+        action.availableMinorIncludesAction === false
+        ? action.reducesEffectiveLiquidity
+          ? -BigInt(action.amountMinor)
+          : action.increasesAvailableLiquidity
+            ? BigInt(action.amountMinor)
+            : 0n
+        : 0n;
+    if (availableParts.reduce(
       (total, value) => total + BigInt(value),
       0n,
-    ) <
+    ) + actionAdjustment <
       requiredParts.reduce(
         (total, value) => total + BigInt(value),
         0n,
-      )
-  ) {
-    problems.push(
-      "selected funding aggregate does not cover request, reserve, and pending reductions",
-    );
+      )) {
+      problems.push(
+        "selected funding aggregate does not cover request and reserve after exact-once pending-action accounting",
+      );
+    }
   }
   const retirementSelected = selected.some(
     (source) => source.sourceTaxClass === "retirement",

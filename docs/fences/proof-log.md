@@ -7807,3 +7807,44 @@ restored `corpusDigest` `c6fe1a9292b5b653d0ae524244d9a5f73ba8c962893da9433169125
 the real-derived partition remains empty, captain signoff remains pending, and all 1,428 tests pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-093 review hardening).
+
+---
+
+## PF-208 · ambient origins and exact-once action accounting · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-122, ADR-0034):** property and element access record the same sensitive ambient origins;
+replay bytes state whether reported availability includes the cited action; funding applies that action
+exactly once; and captain-facing signoff prose names the semantic contract it asks the captain to attest.
+
+**Injection 1 - bracketed ambient access.** Added `globalThis.Intl.DateTimeFormat("en-US")` and
+`globalThis["process"]["env"]["SEED"]` to the in-memory generator companion while the recorder scanned
+property access only.
+
+**Injection 2 - ambiguous settled credit.** Added an inclusion field to a settled-credit payload before
+the replay schema or treatment selector recognized it.
+
+**Injection 3 - double-countable funding.** Used the same reported availability and settled credit first
+as already included and then as excluded, with only the inclusion bit changed.
+
+**Injection 4 - stale attestation scope.** Left the signoff prose on semantic contract 1.7.0 while the
+manifest bound 1.8.0.
+
+**Observed failure:**
+```
+expected Set{} to deeply equal Set{ 'Intl', 'process.env' }
+replayPayload.liquidity.pendingAction.(redacted) - schema validation failed
+selected funding aggregate does not cover request and reserve after exact-once pending-action accounting
+expected signoff prose to contain verin-real-derived-semantics/1.9.0
+```
+
+**Standing companions:** direct and bracketed ambient-global paths report the same APIs; an absent
+`availableMinorIncludesAction` fails schema validation; an included settled credit selects preservation;
+an excluded settled credit selects one credit adjustment; the same reported amount cannot pass both
+accounting states; and the signoff document must name the live semantic contract version.
+
+**Revert:** the recorder now scans both access forms, replay schema 1.8.0 requires the inclusion state,
+semantic contract 1.9.0 carries both settled-credit treatments, canonical regeneration produced
+`corpusDigest` `faf3ce228307841c4038a9c28186ac61acf1d4ae272cff3637daa3afcae8b3ed`, the real-derived partition
+remains empty, captain signoff remains pending, and the focused companions pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-122 review hardening).

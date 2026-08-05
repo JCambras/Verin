@@ -391,14 +391,30 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         record(call, "process.hrtime", sf);
       }
     }
-    for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
-      const name = access.getName();
+    const accesses = [
+      ...sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
+      ...sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression),
+    ];
+    for (const access of accesses) {
+      const argument = Node.isElementAccessExpression(access)
+        ? access.getArgumentExpression()
+        : undefined;
+      const name = Node.isPropertyAccessExpression(access)
+        ? access.getName()
+        : argument !== undefined &&
+            (Node.isStringLiteral(argument) ||
+              Node.isNoSubstitutionTemplateLiteral(argument))
+          ? argument.getLiteralText()
+          : "";
       const origin = originOf(access);
       if (origin !== undefined && bannedCalls.has(origin)) {
         record(access, apiName(origin), sf);
       }
       if (origin === "process.env" || origin?.startsWith("process.env.") === true) {
         record(access, "process.env", sf);
+      }
+      if (origin === "Intl" || origin?.startsWith("Intl.") === true) {
+        record(access, "Intl", sf);
       }
       if (/^toLocale(String|DateString|TimeString)$/.test(name) || name === "localeCompare") {
         record(access, name, sf);
@@ -671,6 +687,19 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
         "performance.now",
         "Math.random",
       ]),
+    );
+  });
+
+  it("flags Intl and process.env through bracketed ambient-global access", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject(
+        file(
+          'void globalThis.Intl.DateTimeFormat("en-US");\nvoid globalThis["process"]["env"]["SEED"];\n',
+        ),
+      ),
+    );
+    expect(new Set(uses.map((use) => use.api))).toEqual(
+      new Set(["Intl", "process.env"]),
     );
   });
 

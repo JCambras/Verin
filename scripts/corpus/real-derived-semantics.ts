@@ -1,4 +1,7 @@
-import { pendingActionLiquidityTreatment } from "./pending-actions";
+import {
+  pendingActionLiquidityTreatment,
+  pendingAvailabilitySelector,
+} from "./pending-actions";
 import {
   realDerivedInstructionConflictAnalysis,
   realDerivedTopologyProblems as topologyProblems,
@@ -114,12 +117,14 @@ const TREATMENT_SELECTORS: Readonly<
   "reserve-state": (item) => item.replayPayload.liquidity.reserveState,
   "pending-availability": (item) => {
     const action = item.replayPayload.liquidity.pendingAction;
-    return action.actionKind !== null && action.actionState !== null &&
-        pendingActionLiquidityTreatment(
+    return action.actionKind !== null &&
+        action.actionState !== null &&
+        action.availableMinorIncludesAction !== null
+      ? pendingAvailabilitySelector(
           action.actionKind,
           action.actionState,
-        ).increasesAvailableLiquidity
-      ? "increased"
+          action.availableMinorIncludesAction,
+        )
       : "unchanged";
   },
   "threshold-comparator": (item) =>
@@ -303,6 +308,7 @@ export function pendingActionProblems(item: RealDerivedCase): string[] {
     action.actionState,
     action.direction,
     action.liquidityClass,
+    action.availableMinorIncludesAction,
     action.amountMinor,
     action.evidenceSourceRef,
   ];

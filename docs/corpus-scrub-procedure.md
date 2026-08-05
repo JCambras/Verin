@@ -126,7 +126,7 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.7.0 closed payload
+replayPayload   verin-real-derived-replay/1.8.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{firmRef, family, conflictKey}]
 ```
@@ -154,10 +154,11 @@ explicit absence or unavailable payload of the same typed plane. Every concrete 
 observed evidence. Evidence that supports no material plane is rejected. An authority
 interval must cite the payload's grant, destination evidence must cite its instruction, and balance
 evidence must cite the corresponding liquidity source. The selected funding set is explicit, unique,
-same-household, source-owner-aligned, and sufficient in aggregate for the request, reserve, and reducing
-pending actions. Unknown source tax classes fail, and tax risk is derived from every selected source.
-Settled incoming credits use the distinct `credit-settled-incoming-availability` outcome so a replay
-cannot treat failure to recognize settled value as correct exclusion of neutral pending activity.
+same-household, source-owner-aligned, and sufficient in aggregate for the request, reserve, and one
+availability adjustment for any cited action not already reflected in `availableMinor`. Every action
+states `availableMinorIncludesAction`; omitting it is invalid. Settled incoming credits use
+`preserve-settled-incoming-availability` when already included and
+`credit-settled-incoming-availability` otherwise, so a replay cannot omit or double-count settled value.
 An instruction-conflict witness must name the exact request and household, every referenced instruction
 must belong to that household, and impacted subjects must intersect the request source account or
 destination instruction.

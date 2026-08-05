@@ -189,6 +189,7 @@ const PendingActionSchema = z.strictObject({
   kind: z.enum(PENDING_ACTION_KINDS),
   amountMinor: Money,
   state: z.enum(PENDING_ACTION_STATES),
+  availableMinorIncludesAction: z.boolean(),
   createdAt: Instant,
   observedAt: ObservedAt,
   expectedSettleAt: Instant,

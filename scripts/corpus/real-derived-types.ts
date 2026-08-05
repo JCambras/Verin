@@ -19,6 +19,7 @@ export type PendingReplay = {
     | "credit"
     | "unclassified"
     | null;
+  availableMinorIncludesAction: boolean | null;
   evidenceSourceRef: string | null;
   reducesEffectiveLiquidity: boolean;
   increasesAvailableLiquidity: boolean;

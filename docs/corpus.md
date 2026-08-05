@@ -96,9 +96,11 @@ exactly once in `records.referencedHouseholds`, carrying only an opaque derived 
 reasons. Pending-action kind is closed and maps to typed direction and liquidity class. Only live unresolved
 outgoing distributions or debits reduce effective liquidity; blocked, cancelled, rejected, incoming,
 credit, unknown, and unclassified actions do not, and incoming value cannot increase availability before
-settlement. A settled incoming credit has the distinct expected treatment
-`credit-settled-incoming-availability`; the source-reported `availableMinor` and that treatment must account
-for the settled value exactly once.
+settlement. Every pending action records whether its effect is already included in the source-reported
+`availableMinor`. A settled incoming credit already included in that figure uses
+`preserve-settled-incoming-availability`; one not yet included uses
+`credit-settled-incoming-availability`. Funding applies no second adjustment to an included action and
+exactly one signed adjustment to an excluded action.
 
 Funding is never inferred from available accounts in either partition. Every synthetic request and
 real-derived payload names an explicit, duplicate-free `selectedFundingRefs` set. Synthetic selections
@@ -107,8 +109,9 @@ by synthetic semantics names an account in that exact set. Every cited pending a
 its reducing or nonreducing treatment is selected. Each real-derived selected account resolves
 exactly once, belongs to the
 request household, shares an owner with the request source account, carries a supported tax class, and
-contributes to one aggregate sufficiency check over the request amount, required reserve, and any reducing
-pending action. A pending action carries entity-kind-scoped household and account references, names a
+contributes to one aggregate sufficiency check over the request amount, required reserve, and the
+exact-once availability adjustment for any cited action. A pending action carries entity-kind-scoped
+household and account references, names a
 selected account in the request household, and has exact action evidence. Tax risk is evaluated over
 exactly the selected funding set, and any selected retirement source requires a completed tax review.
 
@@ -304,7 +307,7 @@ one.
 `corpusDigest` uses the versioned `verin-corpus/1.12.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.8.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.9.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
 its exact bytes, and exact digests for the complete repository-local runtime dependency closure rooted at

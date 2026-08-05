@@ -20,6 +20,11 @@ export const PENDING_ACTION_STATES = [
 
 export type PendingActionState = (typeof PENDING_ACTION_STATES)[number];
 
+export type PendingAvailabilitySelector =
+  | "unchanged"
+  | "settled-included"
+  | "settled-excluded";
+
 const ACTION_KIND_REGISTRY: Readonly<
   Record<
     PendingActionKind,
@@ -60,4 +65,17 @@ export function pendingActionLiquidityTreatment(
       classification.direction === "incoming" &&
       classification.liquidityClass === "credit",
   };
+}
+
+export function pendingAvailabilitySelector(
+  kind: PendingActionKind,
+  state: PendingActionState,
+  availableMinorIncludesAction: boolean,
+): PendingAvailabilitySelector {
+  if (!pendingActionLiquidityTreatment(kind, state).increasesAvailableLiquidity) {
+    return "unchanged";
+  }
+  return availableMinorIncludesAction
+    ? "settled-included"
+    : "settled-excluded";
 }

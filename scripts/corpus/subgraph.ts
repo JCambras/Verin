@@ -279,6 +279,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
       kind: row.kind,
       amountMinor: row.amountMinor,
       state: row.state,
+      availableMinorIncludesAction: row.availableMinorIncludesAction,
       createdAt: row.createdAt,
       observedAt: row.observedAt,
       expectedSettleAt: row.expectedSettleAt,

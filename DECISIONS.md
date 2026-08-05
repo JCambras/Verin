@@ -4913,3 +4913,29 @@ signoff remains pending.
 signed semantics, ambient-global spellings cannot bypass determinism, and settled funds cannot disappear
 behind a generic nonreducing treatment.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-122 · 2026-08-05 · reversible · Ambient access and pending-action balance accounting are explicit
+
+The nondeterminism fence now records sensitive origins reached through property or element access, so
+`globalThis.Intl.DateTimeFormat` and nested bracket access to `process.env` cannot bypass the source ban.
+
+Every synthetic and real-derived pending action states `availableMinorIncludesAction`. Real-derived
+funding applies no adjustment when the source-reported amount already includes the action, subtracts an
+excluded reducing action once, and credits an excluded settled incoming action once. The closed treatment
+selector distinguishes an included settled credit from an excluded one. The replay schema advances to
+`verin-real-derived-replay/1.8.0`, the semantic contract advances to
+`verin-real-derived-semantics/1.9.0`, and the captain-facing signoff prose names that exact scope.
+
+The tooling ceiling rises from 7900 to 8000 against 7941 measured lines, leaving 59 lines of explicit
+headroom across the existing determinism, schema, semantic, and topology owners. The 500-line file ceiling,
+empty deferred real-derived partition, generated-file ownership, path-keyed isolation, and pending captain
+signoff remain unchanged.
+
+The complete fitness entry point now uses the same single-worker, file-serial policy as the default test
+command. Two consecutive parallel runs pushed `dependency-rule` past its per-test timeout at 21 seconds;
+the same test passed alone in 9.4 seconds. Assertions and timeouts remain unchanged.
+
+**Why:** replay bytes must say whether an action is already reflected in reported availability, or the
+same payload permits both adding and preserving the amount. A sensitive ambient origin must be recorded
+independently of whether source syntax uses dots or brackets.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

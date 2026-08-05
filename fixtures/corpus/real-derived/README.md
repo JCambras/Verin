@@ -52,11 +52,11 @@ enforced contract. In short, every case must carry:
   unanticipated string is REJECTED, so a scrubbing miss has nowhere to live;
 - canonical JSON bytes with unique object keys, canonical key order, and exactly one trailing newline;
 - a `caseId` of the form `RD-<16 hex>`, disjoint from `CS-` corpus ids and `GC-` signed golden ids.
-- the strict `verin-real-derived-replay/1.7.0` payload: entity-kind-scoped destination, ownership,
+- the strict `verin-real-derived-replay/1.8.0` payload: entity-kind-scoped destination, ownership,
   liquidity, pending-action direction, authority, threshold and policy, tax review, instruction conflict,
   temporal state, reservations, and execution preconditions. The explicit funding set must resolve once,
-  stay within the request household and source-account ownership, and cover the request, reserve, and
-  reducing pending actions in aggregate. Every supported class records typed expected and observed
+  stay within the request household and source-account ownership, and cover the request and reserve after
+  applying each pending action exactly once according to `availableMinorIncludesAction`. Every supported class records typed expected and observed
   treatment. Extra, absent, ambiguous, or incompatible inputs are rejected;
 - one exact opaque `firmRef` shared by the case, request, and every reservation, with reservation
   identity defined by `(firmRef, conflictKey)`;
@@ -68,7 +68,7 @@ enforced contract. In short, every case must carry:
   satisfy `observedAt <= retrievedAt <= evaluation.asOf` and match the derived per-kind freshness.
   `unknown` is legal only for the typed missing-observation state. The policy version and semantic digest
   are bound into captain signoff through `corpusDigest`;
-- semantic contract `verin-real-derived-semantics/1.8.0`; its declarative bytes and the complete
+- semantic contract `verin-real-derived-semantics/1.9.0`; its declarative bytes and the complete
   repository-local runtime dependency closure of its executable cross-field authorities are bound into
   `corpusDigest`.
 

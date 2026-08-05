@@ -1,5 +1,8 @@
 import { epochMs } from "./clock";
-import { pendingActionLiquidityTreatment } from "./pending-actions";
+import {
+  pendingActionLiquidityTreatment,
+  pendingAvailabilitySelector,
+} from "./pending-actions";
 import {
   loadRealDerivedSemanticContract,
   semanticTreatment,
@@ -111,6 +114,7 @@ export interface EmittedRecords {
     state: Parameters<typeof pendingActionLiquidityTreatment>[1];
     direction: "outgoing" | "incoming" | "unknown";
     liquidityClass: "distribution" | "debit" | "credit" | "unclassified";
+    availableMinorIncludesAction: boolean;
     reducesEffectiveLiquidity: boolean;
     increasesAvailableLiquidity: boolean;
   }>;
@@ -364,14 +368,17 @@ const selectorValue = (
       const state = reserveState(item);
       return state === "inactive" ? null : state;
     }
-    case "pending-availability":
-      return selectedCitedPendingActions(
+    case "pending-availability": {
+      const selectors = new Set(selectedCitedPendingActions(
         item,
         evidenceSubjects(item, "pending-actions"),
-      ).some((row) => pendingActionLiquidityTreatment(row.kind, row.state)
-        .increasesAvailableLiquidity)
-        ? "increased"
-        : "unchanged";
+      ).map((row) => pendingAvailabilitySelector(
+        row.kind,
+        row.state,
+        row.availableMinorIncludesAction,
+      )).filter((value) => value !== "unchanged"));
+      return selectors.size <= 1 ? [...selectors][0] ?? "unchanged" : null;
+    }
     case "threshold-comparator":
       return item.thresholdPolicy?.comparator ?? "strict";
   }
@@ -433,7 +440,7 @@ export function syntheticSemanticProblems(
       const selector = selectorValue(item, rule);
       if (selector === null) {
         problems.push(
-          `${item.caseId}: outcome "${rule.id}" requires cited reserve evidence`,
+          `${item.caseId}: outcome "${rule.id}" has no single treatment selector`,
         );
         continue;
       }

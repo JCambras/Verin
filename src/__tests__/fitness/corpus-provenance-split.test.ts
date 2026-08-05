@@ -40,6 +40,7 @@ import {
   PENDING_ACTION_KINDS,
   PENDING_ACTION_STATES,
   pendingActionLiquidityTreatment,
+  pendingAvailabilitySelector,
 } from "../../../scripts/corpus/pending-actions";
 import {
   freshnessPolicySemanticDigest,
@@ -178,9 +179,13 @@ const treatmentSelectorValue = (
     case "reserve-state":
       return payload.liquidity.reserveState;
     case "pending-availability":
-      return payload.liquidity.pendingAction.increasesAvailableLiquidity
-        ? "increased"
-        : "unchanged";
+      return payload.liquidity.pendingAction.actionKind === null
+        ? "unchanged"
+        : pendingAvailabilitySelector(
+            payload.liquidity.pendingAction.actionKind,
+            payload.liquidity.pendingAction.actionState,
+            payload.liquidity.pendingAction.availableMinorIncludesAction,
+          );
     case "threshold-comparator":
       return payload.policy.thresholdComparator;
   }
@@ -472,7 +477,7 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.7.0",
+    schemaVersion: "verin-real-derived-replay/1.8.0",
     request: {
       firmRef: FIRM_REF,
       requestRef: REQUEST_REF,
@@ -526,6 +531,7 @@ const realDerivedCase = (
         actionState: null,
         direction: null,
         liquidityClass: null,
+        availableMinorIncludesAction: null,
         amountMinor: null,
         evidenceSourceRef: null,
         reducesEffectiveLiquidity: false,
@@ -714,6 +720,7 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
         actionState: "blocked",
         direction: "outgoing",
         liquidityClass: "distribution",
+        availableMinorIncludesAction: false,
         amountMinor: 500,
         evidenceSourceRef: EVIDENCE_SOURCE_REF,
         reducesEffectiveLiquidity: false,
@@ -1309,7 +1316,7 @@ describe("corpus-provenance-split fence", () => {
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
       "verin-real-derived-case/1.4.0",
-      "verin-real-derived-replay/1.7.0",
+      "verin-real-derived-replay/1.8.0",
     ]);
     expect(
       corpusDigest(
@@ -1986,10 +1993,18 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.8.0",
+      "verin-real-derived-semantics/1.9.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
+    );
+    expect(
+      readFileSync(
+        join(REPO_ROOT, "fixtures/corpus/spec/SIGNOFF.md"),
+        "utf8",
+      ),
+    ).toContain(
+      `It binds \`${semanticContract.contractVersion}\``,
     );
     expect(
       (
@@ -2627,7 +2642,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "real-derived/RD-exact-funding.json",
       ).join("\n"),
     ).toContain(
-      "selected funding aggregate does not cover request, reserve, and pending reductions",
+      "selected funding aggregate does not cover request and reserve after exact-once pending-action accounting",
     );
 
     const expectUnsafe = (
@@ -3190,7 +3205,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(
       syntheticSemanticProblems([segmented]).join("\n"),
     ).toContain(
-      'outcome "liquidity-reserve-miscalculation" requires cited reserve evidence',
+      'outcome "liquidity-reserve-miscalculation" has no single treatment selector',
     );
   });
 
@@ -3225,6 +3240,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       actionState: "settled",
       direction: "incoming",
       liquidityClass: "credit",
+      availableMinorIncludesAction: true,
       reducesEffectiveLiquidity: false,
       increasesAvailableLiquidity: true,
     });
@@ -3247,7 +3263,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(realDerivedOutcome).toEqual({
       defectClassId: "pending-activity-miscount",
-      expectedTreatment: "credit-settled-incoming-availability",
+      expectedTreatment: "preserve-settled-incoming-availability",
       observedTreatment: "omit-settled-incoming-availability",
     });
     expect(
@@ -3271,6 +3287,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       state: "settled",
       direction: "incoming",
       liquidityClass: "credit",
+      availableMinorIncludesAction: true,
       reducesEffectiveLiquidity: false,
       increasesAvailableLiquidity: true,
     });
@@ -3281,9 +3298,62 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       'outcome "pending-activity-miscount" is outside its closed treatment vocabulary',
     );
     syntheticOutcome.expectedTreatment =
-      "credit-settled-incoming-availability";
+      "preserve-settled-incoming-availability";
     syntheticOutcome.observedTreatment =
       "omit-settled-incoming-availability";
+    expect(syntheticSemanticProblems([synthetic])).toEqual([]);
+
+    payload.liquidity.pendingAction.availableMinorIncludesAction = false;
+    payload.outcomes = treatmentOutcomes(
+      payload,
+      "pending-activity-miscount",
+    );
+    expect(
+      payload.outcomes.find(
+        (outcome: Record<string, string>) =>
+          outcome.defectClassId === "pending-activity-miscount",
+      ),
+    ).toEqual({
+      defectClassId: "pending-activity-miscount",
+      expectedTreatment: "credit-settled-incoming-availability",
+      observedTreatment: "omit-settled-incoming-availability",
+    });
+    payload.liquidity.sources[0].availableMinor = 10_500;
+    expect(
+      realDerivedCaseProblems(
+        realDerived,
+        classes,
+        "real-derived/RD-settled-credit-not-included.json",
+      ),
+    ).toEqual([]);
+    payload.liquidity.pendingAction.availableMinorIncludesAction = true;
+    payload.outcomes = treatmentOutcomes(
+      payload,
+      "pending-activity-miscount",
+    );
+    expect(
+      realDerivedCaseProblems(
+        realDerived,
+        classes,
+        "real-derived/RD-settled-credit-included.json",
+      ).join("\n"),
+    ).toContain("exact-once pending-action accounting");
+
+    const ambiguous = structuredClone(realDerived);
+    const ambiguousPayload = ambiguous.replayPayload as Record<string, any>;
+    delete ambiguousPayload.liquidity.pendingAction
+      .availableMinorIncludesAction;
+    expect(
+      realDerivedCaseProblems(
+        ambiguous,
+        classes,
+        "real-derived/RD-settled-credit-ambiguous.json",
+      ).join("\n"),
+    ).toContain("schema validation failed");
+
+    syntheticAction.availableMinorIncludesAction = false;
+    syntheticOutcome.expectedTreatment =
+      "credit-settled-incoming-availability";
     expect(syntheticSemanticProblems([synthetic])).toEqual([]);
   });
 
