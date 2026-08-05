@@ -191,14 +191,12 @@ const evidenceSubjects = (
   );
 const assumption = (item: EmittedCase, id: string): boolean =>
   item.assumptions.some((entry) => entry.id === id);
-const reserveState = (
-  item: EmittedCase,
-): "modeled-scalar" | "modeled-segmented" | "missing" => {
+type ReserveState = "modeled-scalar" | "modeled-segmented" | "missing" | "inactive";
+const reserveState = (item: EmittedCase): ReserveState => {
   if (item.records.plannedWithdrawals.length === 0) return "missing";
   const cited = evidenceSubjects(item, "planned-withdrawals");
-  const schedules = item.records.plannedWithdrawals.filter((row) =>
-    cited.has(row.id)
-  );
+  const schedules = item.records.plannedWithdrawals.filter((row) => cited.has(row.id));
+  if (schedules.length === 0) return "inactive";
   return schedules.some((row) => row.segments.length > 1)
     ? "modeled-segmented"
     : "modeled-scalar";
@@ -320,7 +318,8 @@ const CONTEXT_RULES: Readonly<
   },
   "instruction-conflict-present": (item) =>
     syntheticInstructionConflictAnalysis(item).present,
-  "reserve-not-scalar": (item) => reserveState(item) !== "modeled-scalar",
+  "reserve-not-scalar": (item) =>
+    ["modeled-segmented", "missing"].includes(reserveState(item)),
   "stale-evidence-present": (item) =>
     item.evidence.some((evidence) => evidence.freshness === "stale"),
   "authority-lapses-during-evidence-interval": (item) => {
@@ -374,14 +373,16 @@ const CONTEXT_RULES: Readonly<
 const selectorValue = (
   item: EmittedCase,
   rule: SemanticDefectRule,
-): string => {
+): string | null => {
   switch (rule.treatmentSelector) {
     case "fixed":
       return "fixed";
     case "authority-state":
       return authorityEffective(item) ? "effective" : "ineffective";
-    case "reserve-state":
-      return reserveState(item);
+    case "reserve-state": {
+      const state = reserveState(item);
+      return state === "inactive" ? null : state;
+    }
     case "threshold-comparator":
       return item.thresholdPolicy?.comparator ?? "strict";
   }
@@ -440,9 +441,16 @@ export function syntheticSemanticProblems(
         continue;
       }
       if (outcome === undefined) continue;
+      const selector = selectorValue(item, rule);
+      if (selector === null) {
+        problems.push(
+          `${item.caseId}: outcome "${rule.id}" requires cited reserve evidence`,
+        );
+        continue;
+      }
       const treatment = semanticTreatment(
         rule,
-        selectorValue(item, rule),
+        selector,
       );
       if (
         outcome.expectedTreatment !== treatment.expectedTreatment ||

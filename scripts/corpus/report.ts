@@ -222,6 +222,9 @@ const show = (measured: Measured): string =>
 
 export function renderCorpusReport(input: ReportInput): string {
   const report = buildCorpusReport(input);
+  const detectionClaim = report.realDerived.detectionRate.value === null
+    ? "  No detection rate is claimed. Gate B is not claimed."
+    : "  The detection rate above is claimed only for the real-derived partition. Gate B is not claimed.";
   return [
     "",
     "CORPUS MEASUREMENT - split by provenance, never blended",
@@ -244,7 +247,8 @@ export function renderCorpusReport(input: ReportInput): string {
     "",
     "  There is deliberately no blended figure. A rate measured on author-invented",
     "  synthetic defects is synthetic-defect coverage, not detection (architecture v3",
-    "  §2.4, demo contract §7). No detection rate is claimed and Gate B is not claimed.",
+    "  §2.4, demo contract §7).",
+    detectionClaim,
     "",
   ].join("\n");
 }

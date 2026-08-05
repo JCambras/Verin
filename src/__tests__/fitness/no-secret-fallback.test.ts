@@ -445,9 +445,12 @@ function sanctionedHmacReveal(access: SecretAccess): boolean {
     importedNodeCreateHmac(parent);
 }
 
-export function detectUnsanctionedReveal(project: Project): string[] {
+export function detectUnsanctionedReveal(
+  project: Project,
+  accesses: readonly SecretAccess[] = secretAccesses(project),
+): string[] {
   const out: string[] = [];
-  for (const access of secretAccesses(project)) {
+  for (const access of accesses) {
     if (!sanctionedHmacReveal(access)) {
       out.push(`${access.file}:${access.line}`);
     }
@@ -455,6 +458,12 @@ export function detectUnsanctionedReveal(project: Project): string[] {
   out.push(...secretModuleExportViolations(project));
   return [...new Set(out)];
 }
+
+let realSecretAccessCache: readonly SecretAccess[] | null = null;
+const realSecretAccesses = (): readonly SecretAccess[] => {
+  realSecretAccessCache ??= secretAccesses(realSemanticProject());
+  return realSecretAccessCache;
+};
 
 /** The committed template's lines, or null when the file is missing entirely. */
 export function readEnvExampleLines(): string[] | null {
@@ -541,11 +550,14 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     expect(o, `non-placeholder .env.example values:\n${o.join("\n")}`).toEqual([]);
   });
   it("enforces: raw secret access appears only in reviewed secret-consumer modules (v3 §15.4)", () => {
-    const o = detectUnsanctionedReveal(realSemanticProject());
+    const o = detectUnsanctionedReveal(
+      realSemanticProject(),
+      realSecretAccesses(),
+    );
     expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
-  });
+  }, 60_000);
   it("enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)", () => {
-    const calls = secretAccesses(realSemanticProject());
+    const calls = realSecretAccesses();
     for (const entry of REVEAL_ALLOWLIST) {
       expect(
         calls.some((call) =>

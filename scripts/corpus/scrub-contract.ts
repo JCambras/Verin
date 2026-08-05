@@ -402,11 +402,21 @@ export interface RealDerivedDelivery {
 export function loadRealDerivedDelivery(
   dir: string = REAL_DERIVED_DIR,
 ): RealDerivedDelivery {
-  const entries = readTree(dir, "real-derived").filter(
+  const tree = readTree(dir, "real-derived");
+  const readme = tree.find(
+    (entry) => entry.relPath === "real-derived/README.md",
+  );
+  const entries = tree.filter(
     (entry) => entry.relPath !== "real-derived/README.md",
   );
   const files: GeneratedFile[] = [];
-  const problems: string[] = [];
+  const problems: string[] = readme === undefined
+    ? [
+        "real-derived/README.md is missing - the intake contract must ship with the empty partition",
+      ]
+    : readme.kind !== "file" || readme.bytes === null
+      ? ["real-derived/README.md must be a regular file"]
+      : [];
   for (const [index, entry] of entries.entries()) {
     const delivery = `real-derived delivery ${index + 1}`;
     if (!/^real-derived\/RD-[0-9a-f]{16}\.json$/.test(entry.relPath)) {

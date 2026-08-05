@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import type { Taxonomy } from "./defects";
 import type { GeneratedFile } from "./generate";
 import { REAL_DERIVED_DEFERRAL } from "./manifest";
@@ -67,11 +65,6 @@ export function inspectRealDerivedPartition(
   const delivery = loadRealDerivedDelivery(dir);
   const classes = new Set(taxonomy.defectClasses.map((entry) => entry.id));
   const problems = [
-    ...(!existsSync(join(dir, "README.md"))
-      ? [
-          "real-derived/README.md is missing - the intake contract must ship with the empty partition",
-        ]
-      : []),
     ...delivery.problems,
     ...realDerivedDeferralProblems(delivery.deliveredPaths),
     ...realDerivedSemanticContractProblems(classes),

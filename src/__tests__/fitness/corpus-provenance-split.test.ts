@@ -223,6 +223,7 @@ const authorityClosureProblems = (
   const project = new Project({
     tsConfigFilePath: join(REPO_ROOT, "tsconfig.json"),
     skipAddingFilesFromTsConfig: true,
+    skipFileDependencyResolution: true,
   });
   while (pending.length > 0) {
     const file = pending.pop()!;
@@ -914,6 +915,7 @@ describe("corpus-provenance-split fence", () => {
     const report = renderCorpusReport(reportInput(synthetic));
     expect(report).toContain("detectionRate            null (real-derived-corpus-absent)");
     expect(report).toContain("syntheticDefectCoverage  100.00%");
+    expect(report).toContain("No detection rate is claimed");
   });
 
   it("(d) enforces: the committed real-derived partition IS empty and ships its intake contract", () => {
@@ -1141,6 +1143,27 @@ describe("corpus-provenance-split fence", () => {
       ).toBe(true);
       expect(problems.join("\n")).not.toContain(".hidden");
       expect(problems.join("\n")).not.toContain("nested");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("(d) enforces: the real-derived intake README is a regular file", () => {
+    const root = mkdtempSync(join(tmpdir(), "verin-corpus-readme-"));
+    try {
+      const intake = join(root, "real-derived");
+      const target = join(root, "intake-contract.md");
+      mkdirSync(intake, { recursive: true });
+      writeFileSync(target, "intake\n");
+      symlinkSync(target, join(intake, "README.md"));
+      expect(existsSync(join(intake, "README.md"))).toBe(true);
+      expect(
+        realDerivedProblems(
+          real.taxonomy,
+          real.spec.world.corpusVersion,
+          intake,
+        ).join("\n"),
+      ).toContain("real-derived/README.md must be a regular file");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -1579,6 +1602,10 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
     expect(report).toContain("detectionRate            50.00%");
     expect(report).toContain("falsePositiveRate        0.00%");
+    expect(report).toContain(
+      "The detection rate above is claimed only for the real-derived partition",
+    );
+    expect(report).not.toContain("No detection rate is claimed");
   });
 
   it("a detector that flags EVERYTHING cannot claim success: 1.0 coverage arrives with 1.0 false positives", () => {
@@ -1971,13 +1998,12 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
 
   it("the executable authority closure follows import-equals and refuses indirect loaders", () => {
     const root = REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES[0];
-    const original = readFileSync(join(REPO_ROOT, root), "utf8");
     const importEqualsProblems = authorityClosureProblems(
-      REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
-      REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+      [root],
+      [root],
       {
         [root]:
-          `import Probe = require("./conflict-keys");\nvoid Probe;\n${original}`,
+          'import Probe = require("./conflict-keys");\nvoid Probe;',
       },
     );
     expect(importEqualsProblems).toContain(
@@ -1991,9 +2017,9 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ]) {
       expect(
         authorityClosureProblems(
-          REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
-          REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
-          { [root]: `${probe}\n${original}` },
+          [root],
+          [root],
+          { [root]: probe },
         ).some((problem) =>
           problem.includes("indirect or non-literal runtime dependency")
         ),
@@ -3057,7 +3083,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(generated.taxReviewState).toBe("completed");
   });
 
-  it("synthetic missing reserve state comes from emitted schedule absence", () => {
+  it("synthetic reserve state comes from emitted schedules", () => {
     const item = structuredClone(
       real.cases.find(
         (candidate) =>
@@ -3072,6 +3098,28 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(
       syntheticSemanticProblems([item]).join("\n"),
     ).toContain("AS-12 contradicts emitted withdrawal schedules");
+
+    const segmented = structuredClone(
+      real.cases.find(
+        (candidate) =>
+          candidate.caseId === "CS-segmented-withdrawal-schedule",
+      )!,
+    );
+    segmented.evidence = segmented.evidence.filter(
+      (entry) => entry.kind !== "planned-withdrawals",
+    );
+    segmented.label = { kind: "clean-control" };
+    const outcome = segmented.outcomes.find(
+      (candidate) =>
+        candidate.defectClassId === "liquidity-reserve-miscalculation",
+    )!;
+    outcome.expectedTreatment = "calculate-scalar-reserve";
+    outcome.observedTreatment = "calculate-scalar-reserve";
+    expect(
+      syntheticSemanticProblems([segmented]).join("\n"),
+    ).toContain(
+      'outcome "liquidity-reserve-miscalculation" requires cited reserve evidence',
+    );
   });
 
   it("a settling incoming transfer uses the shared nonreducing pending authority", () => {
