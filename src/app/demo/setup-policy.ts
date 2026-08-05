@@ -26,6 +26,8 @@ export const FRESHNESS_DAYS: Readonly<Record<string, number>> = {
   "30-days": 30,
 };
 
+export const BANK_CHANGE_RECENCY_DAYS = 7;
+
 export const BANK_HANDLING: Readonly<
   Record<string, FirmData["bankChangeHandling"]>
 > = {
@@ -61,6 +63,7 @@ export interface SetupPolicyEvaluation {
   readonly reserveSatisfied: boolean;
   readonly freshnessSatisfied: boolean;
   readonly bankSatisfied: boolean;
+  readonly bankInstructionWithinRecencyWindow: boolean;
   readonly dispositionKind: "proceed" | "blocked";
   readonly dualApproval: boolean;
   readonly requiresSpecialist: boolean;
@@ -148,6 +151,18 @@ function setting(
   return value;
 }
 
+function evidenceAgeDays(
+  evaluatedAt: string,
+  observedAt: string,
+): number | null {
+  const evaluated = Date.parse(evaluatedAt);
+  const observed = Date.parse(observedAt);
+  const ageDays = (evaluated - observed) / 86_400_000;
+  return Number.isFinite(ageDays) && ageDays >= 0
+    ? ageDays
+    : null;
+}
+
 export function evaluateSetupPolicy(
   selections: SetupSelections,
   firmId: SetupFirmId,
@@ -186,17 +201,27 @@ export function evaluateSetupPolicy(
       evidence.plannedMonthlyWithdrawal.value,
     reserveMonths,
   });
-  const evidenceAgeDays =
-    (Date.parse(evaluatedAt) -
-      Date.parse(evidence.plannedMonthlyWithdrawal.provenance.asOf)) /
-    86_400_000;
+  const plannedWithdrawalAgeDays = evidenceAgeDays(
+    evaluatedAt,
+    evidence.plannedMonthlyWithdrawal.provenance.asOf,
+  );
   const freshnessSatisfied =
-    Number.isFinite(evidenceAgeDays) && evidenceAgeDays <= freshnessDays;
+    plannedWithdrawalAgeDays !== null &&
+    plannedWithdrawalAgeDays <= freshnessDays;
+  const bankInstructionAgeDays = evidenceAgeDays(
+    evaluatedAt,
+    evidence.bankInstruction.provenance.asOf,
+  );
+  const bankInstructionWithinRecencyWindow =
+    bankInstructionAgeDays !== null &&
+    bankInstructionAgeDays <= BANK_CHANGE_RECENCY_DAYS;
   const bankChangeRequiresAction =
-    evidence.bankInstruction.value.independentlyVerified === false;
+    evidence.bankInstruction.value.independentlyVerified === false &&
+    bankInstructionWithinRecencyWindow;
   const bankSatisfied =
-    !bankChangeRequiresAction ||
-    bankChangeHandling === "specialist-review";
+    bankInstructionAgeDays !== null &&
+    (!bankChangeRequiresAction ||
+      bankChangeHandling === "specialist-review");
   const dispositionKind =
     projection.reserveSatisfied && freshnessSatisfied && bankSatisfied
       ? "proceed"
@@ -220,6 +245,7 @@ export function evaluateSetupPolicy(
     reserveSatisfied: projection.reserveSatisfied,
     freshnessSatisfied,
     bankSatisfied,
+    bankInstructionWithinRecencyWindow,
     dispositionKind,
     dualApproval,
     requiresSpecialist,

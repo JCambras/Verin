@@ -1,4 +1,7 @@
-import type { AuthorityStageRequirementVM } from "../model";
+import type {
+  AuthorityStageInstanceVM,
+  AuthorityStageRequirementVM,
+} from "../model";
 
 function requesterEligibility(
   value: AuthorityStageRequirementVM["requesterMayApprove"],
@@ -11,8 +14,10 @@ function requesterEligibility(
 
 export function AuthorityRequirementDetails({
   requirement,
+  instance,
 }: {
   requirement: AuthorityStageRequirementVM;
+  instance: AuthorityStageInstanceVM;
 }) {
   return (
     <section
@@ -56,11 +61,12 @@ export function AuthorityRequirementDetails({
           </dd>
         </div>
         <div className="sm:col-span-2">
-          <dt className="text-slate-600">Expires at</dt>
+          <dt className="text-slate-600">Expiration rule</dt>
           <dd className="break-all font-mono text-slate-800">
-            <time dateTime={requirement.expiresAt}>
-              {requirement.expiresAt}
+            <time dateTime={requirement.expiresAfter}>
+              {requirement.expiresAfter}
             </time>
+            {" after this stage arms"}
           </dd>
         </div>
       </dl>
@@ -77,6 +83,49 @@ export function AuthorityRequirementDetails({
             </li>
           ))}
         </ol>
+      </div>
+      <div
+        className="mt-2 rounded border border-slate-200 bg-surface p-2"
+        data-testid={`authority-instance-${requirement.stageId}`}
+      >
+        <p className="text-xs text-slate-600">Stage instance</p>
+        {instance.mode === "armed" ? (
+          <dl className="mt-1 grid min-w-0 gap-2 text-xs sm:grid-cols-2">
+            <div>
+              <dt className="text-slate-600">Instance identity</dt>
+              <dd className="break-all font-mono text-slate-800">
+                {instance.instanceId}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">Source requirement</dt>
+              <dd className="break-all font-mono text-slate-800">
+                {instance.sourceStageId}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">Armed at</dt>
+              <dd className="break-all font-mono text-slate-800">
+                <time dateTime={instance.activatedAt}>
+                  {instance.activatedAt}
+                </time>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-600">Expires at</dt>
+              <dd className="break-all font-mono text-slate-800">
+                <time dateTime={instance.expiresAt}>
+                  {instance.expiresAt}
+                </time>
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="mt-1 text-xs text-slate-800">
+            Not armed. Its expiration clock starts only after the
+            prerequisite stage completes.
+          </p>
+        )}
       </div>
     </section>
   );

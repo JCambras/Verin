@@ -32,13 +32,19 @@ import {
   demoTimestampLabel,
   pendingDistributionDeltaSentence,
 } from "@app/demo/data";
-import { SPECIALIST_REARMED_EXPIRES_AT } from "@app/demo/authority-stage-requirements";
+import {
+  SPECIALIST_REARMED_EXPIRES_AT,
+  armedStageInstanceFor,
+} from "@app/demo/authority-stage-requirements";
 import {
   SIGNED_SETUP_CASES,
   signedCaseEvaluationEvidence,
   signedCaseMaterialEvidence,
 } from "@app/demo/setup-signed-cases";
-import { evaluateSetupPolicy } from "@app/demo/setup-policy";
+import {
+  BANK_CHANGE_RECENCY_DAYS,
+  evaluateSetupPolicy,
+} from "@app/demo/setup-policy";
 import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
@@ -1985,6 +1991,28 @@ describe("demo semantic-truth fence", () => {
     expect(journey.record.hashes.approvalReceiptHash).toMatch(
       /^[a-f0-9]{64}$/,
     );
+    const firstStage = journey.record.authority.stages[0]!;
+    expect(firstStage.stageInstance.mode).toBe("armed");
+    if (firstStage.stageInstance.mode !== "armed") return;
+    const shiftedInstance = armedStageInstanceFor(
+      firstStage.decisionRequirement,
+      "2026-07-28T14:06:00.000Z",
+    );
+    expect(
+      approvalReceiptHashFor(
+        journey.record.identity.decisionHash,
+        {
+          ...journey.record.authority,
+          stages: [
+            {
+              ...firstStage,
+              stageInstance: shiftedInstance,
+            },
+            ...journey.record.authority.stages.slice(1),
+          ],
+        },
+      ),
+    ).not.toBe(journey.record.hashes.approvalReceiptHash);
   });
 
   it("detects: every immutable authority-stage constraint changes identity", () => {
@@ -2012,7 +2040,7 @@ describe("demo semantic-truth fence", () => {
         approvalsRequired: 1,
         distinctActorsRequired: false,
         requesterMayApprove: false,
-        expiresAt: "2026-07-30T14:05:00.000Z",
+        expiresAfter: "P2D",
         escalationPath: [
           {
             after: "P1D",
@@ -2029,7 +2057,7 @@ describe("demo semantic-truth fence", () => {
         approvalsRequired: 2,
         distinctActorsRequired: true,
         requesterMayApprove: false,
-        expiresAt: "2026-07-31T14:05:00.000Z",
+        expiresAfter: "P3D",
         escalationPath: [
           {
             after: "P1D",
@@ -2082,7 +2110,7 @@ describe("demo semantic-truth fence", () => {
         },
         {
           ...requirement,
-          expiresAt: "2026-08-01T14:05:00.000Z",
+          expiresAfter: "P4D",
         },
         {
           ...requirement,
@@ -2117,6 +2145,13 @@ describe("demo semantic-truth fence", () => {
         const changedStage: ApprovalStageVM = {
           ...authorityPlan.stages[0]!,
           decisionRequirement: changedRequirement,
+          stageInstance:
+            authorityPlan.stages[0]!.stageInstance.mode === "armed"
+              ? armedStageInstanceFor(
+                  changedRequirement,
+                  authorityPlan.stages[0]!.stageInstance.activatedAt,
+                )
+              : authorityPlan.stages[0]!.stageInstance,
         };
         return decisionAuthorityClaimFor({
           ...authorityPlan,
@@ -2910,6 +2945,13 @@ describe("demo semantic-truth fence", () => {
     expect(journeyAuthority.stages[0]?.actors[0]?.statusLabel).toBe(
       `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
     );
+    expect(journeyAuthority.stages[1]?.stageInstance).toEqual({
+      mode: "armed",
+      instanceId: "ops-dual-approval:instance-1",
+      sourceStageId: "ops-dual-approval",
+      activatedAt: DEMO_TIMELINE.specialistReviewedAt,
+      expiresAt: "2026-07-31T14:15:00.000Z",
+    });
     expect(BANK_INSTRUCTION.changedAgeDays).toBe(6);
     expect(
       buildMoneyMovementSetup().impacts.find(
@@ -2924,12 +2966,17 @@ describe("demo semantic-truth fence", () => {
     expect(expiredAuthority?.mode).toBe("staged");
     if (expiredAuthority?.mode !== "staged") return;
     const expiredStage = expiredAuthority.stages[0]!;
-    expect(expiredStage.decisionRequirement.expiresAt).toBe(
-      "2026-07-30T14:05:00.000Z",
-    );
+    expect(expiredStage.decisionRequirement.expiresAfter).toBe("P2D");
     expect(expiredStage.decisionRequirement).toEqual(
       journeyAuthority.stages[0]!.decisionRequirement,
     );
+    expect(expiredStage.stageInstance).toEqual({
+      mode: "armed",
+      instanceId: "bank-change-specialist-review:instance-1",
+      sourceStageId: "bank-change-specialist-review",
+      activatedAt: DEMO_TIMELINE.decisionCreatedAt,
+      expiresAt: "2026-07-30T14:05:00.000Z",
+    });
     expect(expiredStage.rearmedStage).toEqual({
       instanceId: "bank-change-specialist-review:rearm-1",
       sourceStageId: "bank-change-specialist-review",
@@ -2939,13 +2986,29 @@ describe("demo semantic-truth fence", () => {
       reasonCode: "specialist-review-idle",
     });
     expect(expiredStage.actors[0]?.statusLabel).toBe(
-      `Expired · ${demoTimestampLabel(expiredStage.decisionRequirement.expiresAt)}`,
+      `Expired · ${demoTimestampLabel("2026-07-30T14:05:00.000Z")}`,
     );
     expect(expiredStage.actors[1]?.statusLabel).toBe(
       `Awaiting review · expires ${demoTimestampLabel(SPECIALIST_REARMED_EXPIRES_AT)}`,
     );
     expect(expiredStage.stepState).toBe("active");
     expect(expiredAuthority.stages[1]?.stepState).toBe("pending");
+    expect(expiredAuthority.stages[1]?.stageInstance).toEqual({
+      mode: "not-armed",
+    });
+    expect(
+      expiredAuthority.stages[1]?.decisionRequirement.expiresAfter,
+    ).toBe("P3D");
+    const eventualOperationsInstance = armedStageInstanceFor(
+      expiredAuthority.stages[1]!.decisionRequirement,
+      "2026-08-01T14:14:00.000Z",
+    );
+    expect(eventualOperationsInstance.expiresAt).toBe(
+      "2026-08-04T14:14:00.000Z",
+    );
+    expect(
+      Date.parse(eventualOperationsInstance.expiresAt),
+    ).toBeGreaterThan(Date.parse(SPECIALIST_REARMED_EXPIRES_AT));
     expect(expiredAuthority.stages[1]?.actors.every((actor) => actor.status !== "done")).toBe(
       true,
     );
@@ -2985,7 +3048,8 @@ describe("demo semantic-truth fence", () => {
             ...stage,
             rearmedStage: {
               ...stage.rearmedStage!,
-              expiresAt: "2026-08-02T14:15:00.000Z",
+              activatedAt: "2026-07-30T14:16:00.000Z",
+              expiresAt: "2026-08-01T14:16:00.000Z",
             },
           },
           ...authority.stages.slice(1),
@@ -3575,6 +3639,93 @@ describe("demo semantic-truth fence", () => {
     );
     expect(baseline.reserveSatisfied).toBe(true);
     expect(increased.reserveSatisfied).toBe(false);
+  });
+
+  it("enforces: setup temporal predicates reject future evidence and gate recent bank handling at P7D", () => {
+    const selections = setupSelections();
+    const evidence = decisionEvidenceSnapshotFor(
+      scenarioById("recent-bank-change-block"),
+    );
+    const evaluatedAt = DEMO_TIMELINE.decisionCreatedAt;
+    const futurePlanned = evaluateSetupPolicy(
+      selections,
+      "firm-a",
+      {
+        ...evidence,
+        plannedMonthlyWithdrawal: {
+          ...evidence.plannedMonthlyWithdrawal,
+          provenance: {
+            ...evidence.plannedMonthlyWithdrawal.provenance,
+            asOf: "2026-07-29T14:05:00.000Z",
+          },
+        },
+      },
+      SMITHS_LIQUIDITY,
+      evaluatedAt,
+    );
+    expect(futurePlanned.freshnessSatisfied).toBe(false);
+    expect(futurePlanned.dispositionKind).toBe("blocked");
+
+    const futureBank = evaluateSetupPolicy(
+      selections,
+      "firm-a",
+      {
+        ...evidence,
+        bankInstruction: {
+          ...evidence.bankInstruction,
+          provenance: {
+            ...evidence.bankInstruction.provenance,
+            asOf: "2026-07-29T14:05:00.000Z",
+          },
+        },
+      },
+      SMITHS_LIQUIDITY,
+      evaluatedAt,
+    );
+    expect(futureBank.bankInstructionWithinRecencyWindow).toBe(false);
+    expect(futureBank.bankSatisfied).toBe(false);
+    expect(futureBank.requiresSpecialist).toBe(false);
+    expect(futureBank.dispositionKind).toBe("blocked");
+
+    const atBoundary = evaluateSetupPolicy(
+      selections,
+      "firm-a",
+      {
+        ...evidence,
+        bankInstruction: {
+          ...evidence.bankInstruction,
+          provenance: {
+            ...evidence.bankInstruction.provenance,
+            asOf: "2026-07-21T14:05:00.000Z",
+          },
+        },
+      },
+      SMITHS_LIQUIDITY,
+      evaluatedAt,
+    );
+    expect(BANK_CHANGE_RECENCY_DAYS).toBe(7);
+    expect(atBoundary.bankInstructionWithinRecencyWindow).toBe(true);
+    expect(atBoundary.requiresSpecialist).toBe(true);
+
+    const outsideWindow = evaluateSetupPolicy(
+      selections,
+      "firm-a",
+      {
+        ...evidence,
+        bankInstruction: {
+          ...evidence.bankInstruction,
+          provenance: {
+            ...evidence.bankInstruction.provenance,
+            asOf: "2026-07-21T14:04:00.000Z",
+          },
+        },
+      },
+      SMITHS_LIQUIDITY,
+      evaluatedAt,
+    );
+    expect(outsideWindow.bankInstructionWithinRecencyWindow).toBe(false);
+    expect(outsideWindow.bankSatisfied).toBe(true);
+    expect(outsideWindow.requiresSpecialist).toBe(false);
   });
 
   it("enforces: the signed liquidity account and Joint Taxable stay distinct", () => {

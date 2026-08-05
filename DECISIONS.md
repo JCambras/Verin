@@ -3656,3 +3656,24 @@ lets unrelated surfaces contradict that owner.
 **Revert path:** bind a rail only when the canonical request and export carry it, replace cookie-store
 memoization only with another request-scoped identity, and merge the browser suites only if rotation can
 be exercised without shortening unrelated sessions.
+
+### D-106 · 2026-08-05 · reversible · Authority clocks and evidence recency begin from valid events
+
+Immutable authority requirements now bind a relative `expiresAfter` duration, matching the signed
+golden fixtures. Absolute `expiresAt` values belong to receipt-bound stage instances and are computed
+only when that stage arms. A downstream sequential stage remains explicitly not armed until its
+prerequisite completes, so GC-16 no longer assigns the pending operations stage an expiry before its
+re-armed specialist stage can finish. The approval receipt hash binds each runtime instance, while the
+decision hash continues to bind only the original requirements.
+
+Setup evidence ages are valid only when both timestamps parse and the observation does not follow the
+evaluation. Planned-withdrawal freshness and bank-instruction chronology fail closed on invalid or
+future instants. Firm-specific handling applies only to an unverified bank instruction inside the
+locked seven-day recency window; an older valid observation does not trigger the recent-change rule.
+The seven-day constant is included in setup-version identity. Decision schema, engine, bundle, record,
+receipt, and setup-version preimages advance with the changed semantics.
+
+**Why:** a sequential stage cannot expire before it exists, and evidence from the future or outside a
+locked predicate cannot be evaluated as though it satisfied that predicate.
+**Revert path:** none while GC-16 keeps stage 2 unarmed and the setup UI advertises a locked P7D
+bank-change predicate.

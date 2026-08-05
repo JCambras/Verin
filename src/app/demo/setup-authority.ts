@@ -16,6 +16,7 @@ import type {
 } from "./model";
 import type { SetupPolicyEvaluation } from "./setup-policy";
 import {
+  armedStageInstanceFor,
   operationsStageRequirementFor,
   specialistStageRequirementFor,
 } from "./authority-stage-requirements";
@@ -97,9 +98,16 @@ export function evaluateAuthorityPlan(
   }
   const requiresSpecialist = evaluation.requiresSpecialist;
   const dualApproval = evaluation.dualApproval;
+  const specialistRequirement = specialistStageRequirementFor(
+    firm,
+    1,
+  );
   const specialistStage = {
-    decisionRequirement:
-      specialistStageRequirementFor(firm, 1),
+    decisionRequirement: specialistRequirement,
+    stageInstance: armedStageInstanceFor(
+      specialistRequirement,
+      DEMO_TIMELINE.decisionCreatedAt,
+    ),
     title: "Stage 1 - Bank-instruction specialist review",
     requirement:
       "The changed bank instruction requires review by a banking specialist before execution.",
@@ -151,12 +159,20 @@ export function evaluateAuthorityPlan(
           },
         ]),
   ];
+  const operationsRequirement = operationsStageRequirementFor(
+    firm,
+    approvalClock,
+    requiresSpecialist ? 2 : 1,
+  );
+  const operationsInstance = armedStageInstanceFor(
+    operationsRequirement,
+    requiresSpecialist
+      ? DEMO_TIMELINE.specialistReviewedAt
+      : DEMO_TIMELINE.decisionCreatedAt,
+  );
   const operationsStage: ApprovalStageVM = {
-    decisionRequirement: operationsStageRequirementFor(
-      firm,
-      approvalClock,
-      requiresSpecialist ? 2 : 1,
-    ),
+    decisionRequirement: operationsRequirement,
+    stageInstance: operationsInstance,
     title: `Stage ${requiresSpecialist ? 2 : 1} - Dual operations approval`,
     requirement:
       firm.requesterParticipation.mode === "unbound"

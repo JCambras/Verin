@@ -37,9 +37,9 @@ export {
 } from "./decision-authority-claim";
 
 export const DEMO_DECISION_SCHEMA_VERSION =
-  "money-movement-demo-decision/6.0.0";
+  "money-movement-demo-decision/7.0.0";
 export const DEMO_DECISION_ENGINE_VERSION =
-  "money-movement-demo-engine/4.0.0";
+  "money-movement-demo-engine/5.0.0";
 
 export interface DecisionIdentityClaims {
   readonly disposition: DispositionVM;
@@ -255,13 +255,14 @@ export function approvalReceiptHashFor(
   return hashCanonicalPreimage(toJsonValue({
     hashKind: "money-movement-demo-approval-receipt",
     preimageVersion:
-      "money-movement-demo-approval-receipt/3.0.0",
+      "money-movement-demo-approval-receipt/4.0.0",
     payload: {
       decisionHash,
       stages: authority.stages.map((stage) => ({
         stageId: stage.decisionRequirement.stageId,
         order: stage.decisionRequirement.order,
         stepState: stage.stepState,
+        stageInstance: stage.stageInstance,
         actors: stage.actors,
         ...(stage.rearmedStage
           ? { rearmedStage: stage.rearmedStage }
@@ -305,7 +306,7 @@ export function decisionBundlePreimageFor(
   );
   return toJsonValue({
     hashKind: "money-movement-demo-bundle",
-    preimageVersion: "money-movement-demo-bundle/6.0.0",
+    preimageVersion: "money-movement-demo-bundle/7.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -335,7 +336,7 @@ export function decisionRecordPreimageFor(
   );
   return toJsonValue({
     hashKind: "money-movement-demo-record",
-    preimageVersion: "money-movement-demo-record/6.0.0",
+    preimageVersion: "money-movement-demo-record/7.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,

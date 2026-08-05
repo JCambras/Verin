@@ -19,6 +19,8 @@ import {
   unreachedAuthorityPlan,
 } from "./setup-authority";
 import {
+  armedStageInstanceFor,
+  notArmedStageInstance,
   operationsStageRequirementFor,
   rearmedSpecialistStageFor,
   specialistStageRequirementFor,
@@ -44,11 +46,16 @@ function buildStages(
   if (hasSpecialist) {
     const decisionRequirement =
       specialistStageRequirementFor(firm, 1);
+    const stageInstance = armedStageInstanceFor(
+      decisionRequirement,
+      DEMO_TIMELINE.decisionCreatedAt,
+    );
     if (spec.specialistExpired) {
       const rearmedStage =
         rearmedSpecialistStageFor(decisionRequirement);
       stages.push({
         decisionRequirement,
+        stageInstance,
         rearmedStage,
         title: "Stage 1 - Bank-instruction specialist review",
         requirement:
@@ -59,7 +66,7 @@ function buildStages(
             name: CAST.specialist,
             role: "Banking specialist",
             status: "expired",
-            statusLabel: `Expired · ${demoTimestampLabel(decisionRequirement.expiresAt)}`,
+            statusLabel: `Expired · ${demoTimestampLabel(stageInstance.expiresAt)}`,
           },
           {
             name: CAST.operationsManager,
@@ -68,12 +75,13 @@ function buildStages(
             statusLabel: `Awaiting review · expires ${demoTimestampLabel(rearmedStage.expiresAt)}`,
           },
         ],
-        expiry: `Original stage expired ${demoTimestampLabel(decisionRequirement.expiresAt)}`,
+        expiry: `Original stage expired ${demoTimestampLabel(stageInstance.expiresAt)}`,
         escalation: `Escalates to: operations manager · re-armed ${demoTimestampLabel(rearmedStage.activatedAt)} · fresh expiry ${demoTimestampLabel(rearmedStage.expiresAt)}`,
       });
     } else {
       stages.push({
         decisionRequirement,
+        stageInstance,
         title: "Stage 1 - Bank-instruction specialist review",
         requirement:
           "The changed bank instruction requires review by a banking specialist before execution.",
@@ -100,6 +108,22 @@ function buildStages(
   }
   const operationsStage = stages.length + 1;
   if (dualApproval) {
+    const decisionRequirement = operationsStageRequirementFor(
+      firm,
+      approvalClock,
+      operationsStage,
+    );
+    const stageInstance = !hasSpecialist
+      ? armedStageInstanceFor(
+          decisionRequirement,
+          DEMO_TIMELINE.decisionCreatedAt,
+        )
+      : specialistComplete
+        ? armedStageInstanceFor(
+            decisionRequirement,
+            DEMO_TIMELINE.specialistReviewedAt,
+          )
+        : notArmedStageInstance();
     const second =
       phase === "final" &&
       specialistComplete &&
@@ -117,11 +141,8 @@ function buildStages(
             statusLabel: "Awaiting approval",
           };
     stages.push({
-      decisionRequirement: operationsStageRequirementFor(
-        firm,
-        approvalClock,
-        operationsStage,
-      ),
+      decisionRequirement,
+      stageInstance,
       title: `Stage ${operationsStage} - Dual operations approval`,
       requirement:
         firm.requesterParticipation.mode === "unbound"
@@ -168,7 +189,10 @@ function buildStages(
               },
             ]),
       ],
-      expiry: approvalClock.expiry,
+      expiry:
+        stageInstance.mode === "armed"
+          ? approvalClock.expiry
+          : `${approvalClock.expiresAfter} expiry starts when this stage arms`,
       escalation: approvalClock.escalation,
     });
   }

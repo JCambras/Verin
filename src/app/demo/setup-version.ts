@@ -22,6 +22,7 @@ import {
   type MoneyMovementSetupDefinitionVM,
 } from "./setup-model";
 import {
+  BANK_CHANGE_RECENCY_DAYS,
   BANK_HANDLING,
   FRESHNESS_DAYS,
   RESERVE_MONTHS,
@@ -51,7 +52,7 @@ export function setupVersionPreimageFor(
 
   return toJsonValue({
     hashKind: "money-movement-demo-setup-version",
-    preimageVersion: "money-movement-demo-setup-version/1.0.0",
+    preimageVersion: "money-movement-demo-setup-version/2.0.0",
     payload: {
       schemaVersion: DEMO_DECISION_SCHEMA_VERSION,
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
@@ -69,6 +70,7 @@ export function setupVersionPreimageFor(
       evaluatorTables: {
         reserveMonths: RESERVE_MONTHS,
         freshnessDays: FRESHNESS_DAYS,
+        bankChangeRecencyDays: BANK_CHANGE_RECENCY_DAYS,
         bankHandling: BANK_HANDLING,
         thresholdMinor: THRESHOLD_MINOR,
         approvalClocks: APPROVAL_CLOCKS,

@@ -5,6 +5,7 @@ import {
   type FirmData,
 } from "./data";
 import type {
+  AuthorityStageInstanceVM,
   AuthorityStageRequirementVM,
   RearmedAuthorityStageVM,
   RequesterApprovalEligibility,
@@ -38,10 +39,7 @@ export function specialistStageRequirementFor(
     approvalsRequired: 1,
     distinctActorsRequired: false,
     requesterMayApprove: requesterMayApprove(firm),
-    expiresAt: approvalExpiryAt(
-      DEMO_TIMELINE.decisionCreatedAt,
-      SPECIALIST_REVIEW_EXPIRES_AFTER,
-    ),
+    expiresAfter: SPECIALIST_REVIEW_EXPIRES_AFTER,
     escalationPath: [
       {
         after: SPECIALIST_REVIEW_ESCALATES_AFTER,
@@ -50,6 +48,26 @@ export function specialistStageRequirementFor(
       },
     ],
   };
+}
+
+export function armedStageInstanceFor(
+  decisionRequirement: AuthorityStageRequirementVM,
+  activatedAt: string,
+): Extract<AuthorityStageInstanceVM, { readonly mode: "armed" }> {
+  return {
+    mode: "armed",
+    instanceId: `${decisionRequirement.stageId}:instance-1`,
+    sourceStageId: decisionRequirement.stageId,
+    activatedAt,
+    expiresAt: approvalExpiryAt(
+      activatedAt,
+      decisionRequirement.expiresAfter,
+    ),
+  };
+}
+
+export function notArmedStageInstance(): AuthorityStageInstanceVM {
+  return { mode: "not-armed" };
 }
 
 export function rearmedSpecialistStageFor(
@@ -89,10 +107,7 @@ export function operationsStageRequirementFor(
     approvalsRequired: firm.approvalsRequired,
     distinctActorsRequired: firm.distinctActorsRequired,
     requesterMayApprove: requesterMayApprove(firm),
-    expiresAt: approvalExpiryAt(
-      DEMO_TIMELINE.decisionCreatedAt,
-      approvalClock.expiresAfter,
-    ),
+    expiresAfter: approvalClock.expiresAfter,
     escalationPath: [
       {
         after: approvalClock.escalationAfter,

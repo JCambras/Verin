@@ -6425,3 +6425,26 @@ the disposable wrapper again. The focused integration test failed at line 119 be
 resolution re-read the rotated credential. Reverting both injections returned both focused tests
 to green. The complete browser command then passed 33 normal-lifetime tests and the isolated
 one-minute rotation test.
+
+## PF-setup-44 · sequential clocks and evidence recency start from valid events
+
+**Date:** 2026-08-05.
+
+**Invariant:** an immutable authority requirement binds a relative expiry duration, while its
+absolute expiry belongs to a receipt-bound instance created only when the stage arms. A sequential
+stage cannot arm before its prerequisite completes. Evidence age is finite and nonnegative, and
+firm-specific recent-bank handling applies only inside the locked seven-day window.
+
+**Fence:** `src/app/demo/decision-authority-claim.ts` rejects an armed stage whose prerequisite is
+not done and verifies each absolute expiry from the instance activation plus its requirement.
+`src/__tests__/fitness/demo-semantic-truth.test.ts` requires GC-16's operations stage to remain
+not armed, proves a later arm receives a fresh three-day window, rejects future planned-withdrawal
+and bank observations, and checks both edges of P7D. `e2e/demo-journey.spec.ts` requires the live
+authority surface and exported record to state that the operations clock has not started.
+
+**Adversarial proof:** the pending GC-16 operations stage was temporarily armed at decision
+creation. The focused semantic-truth run failed eight paths at
+`src/app/demo/decision-authority-claim.ts:260` with `Authority stage 2 armed before its
+prerequisite completed`. Removing the nonnegative age guard made the future planned-withdrawal
+case fail at semantic-truth line 3665. Removing the seven-day upper bound made the outside-window
+case fail at line 3725. Reverting each injection returned the 93-test focused fence to green.

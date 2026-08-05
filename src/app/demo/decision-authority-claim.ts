@@ -4,6 +4,10 @@ import type {
   AuthorityPlanVM,
   RequesterParticipation,
 } from "./model";
+import {
+  DEMO_TIMELINE,
+  approvalExpiryAt,
+} from "./data";
 
 export type DecisionAuthorityClaim =
   | {
@@ -41,7 +45,7 @@ function assertStageRequirement(
     "eligibleRoleIds",
     "escalationPath",
     "executionMode",
-    "expiresAt",
+    "expiresAfter",
     "order",
     "requesterMayApprove",
     "stageId",
@@ -67,9 +71,19 @@ function assertStageRequirement(
       typeof stage.requesterMayApprove === "boolean" ||
       stage.requesterMayApprove === "unbound"
     ) ||
-    !Number.isFinite(Date.parse(stage.expiresAt)) ||
+    stage.expiresAfter.trim().length === 0 ||
     stage.escalationPath.length === 0
   ) {
+    throw new Error(
+      `Authority stage ${index + 1} has an invalid immutable requirement`,
+    );
+  }
+  try {
+    approvalExpiryAt(
+      DEMO_TIMELINE.decisionCreatedAt,
+      stage.expiresAfter,
+    );
+  } catch {
     throw new Error(
       `Authority stage ${index + 1} has an invalid immutable requirement`,
     );
@@ -97,12 +111,63 @@ function assertStageRequirement(
   }
 }
 
+function assertStageInstance(
+  stage: ApprovalStageVM,
+  index: number,
+): void {
+  const instance = stage.stageInstance;
+  if (instance.mode === "not-armed") {
+    if (
+      Object.keys(instance).length !== 1 ||
+      stage.stepState !== "pending" ||
+      stage.rearmedStage
+    ) {
+      throw new Error(
+        `Authority stage ${index + 1} has an invalid stage instance`,
+      );
+    }
+    return;
+  }
+  const expectedKeys = [
+    "activatedAt",
+    "expiresAt",
+    "instanceId",
+    "mode",
+    "sourceStageId",
+  ];
+  const actualKeys = Object.keys(instance).sort();
+  let expectedExpiry: string | null = null;
+  try {
+    expectedExpiry = approvalExpiryAt(
+      instance.activatedAt,
+      stage.decisionRequirement.expiresAfter,
+    );
+  } catch {
+    expectedExpiry = null;
+  }
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, keyIndex) => key !== expectedKeys[keyIndex]) ||
+    instance.instanceId !==
+      `${stage.decisionRequirement.stageId}:instance-1` ||
+    instance.sourceStageId !== stage.decisionRequirement.stageId ||
+    !Number.isFinite(Date.parse(instance.activatedAt)) ||
+    instance.expiresAt !== expectedExpiry ||
+    Date.parse(instance.expiresAt) <= Date.parse(instance.activatedAt)
+  ) {
+    throw new Error(
+      `Authority stage ${index + 1} has an invalid stage instance`,
+    );
+  }
+}
+
 function assertRearmedStage(
   stage: ApprovalStageVM,
   index: number,
 ): void {
   const rearmed = stage.rearmedStage;
   if (!rearmed) return;
+  const original = stage.stageInstance;
   const matchingEscalation =
     stage.decisionRequirement.escalationPath.find(
       (step) =>
@@ -110,6 +175,15 @@ function assertRearmedStage(
         JSON.stringify(step.eligibleRoleIds) ===
           JSON.stringify(rearmed.eligibleRoleIds),
     );
+  let expectedExpiry: string | null = null;
+  try {
+    expectedExpiry = approvalExpiryAt(
+      rearmed.activatedAt,
+      stage.decisionRequirement.expiresAfter,
+    );
+  } catch {
+    expectedExpiry = null;
+  }
   if (
     stage.stepState !== "active" ||
     rearmed.instanceId.trim().length === 0 ||
@@ -118,10 +192,11 @@ function assertRearmedStage(
     new Set(rearmed.eligibleRoleIds).size !==
       rearmed.eligibleRoleIds.length ||
     !matchingEscalation ||
+    original.mode !== "armed" ||
     !Number.isFinite(Date.parse(rearmed.activatedAt)) ||
-    !Number.isFinite(Date.parse(rearmed.expiresAt)) ||
+    rearmed.expiresAt !== expectedExpiry ||
     Date.parse(rearmed.activatedAt) <
-      Date.parse(stage.decisionRequirement.expiresAt) ||
+      Date.parse(original.mode === "armed" ? original.expiresAt : "") ||
     Date.parse(rearmed.expiresAt) <= Date.parse(rearmed.activatedAt)
   ) {
     throw new Error(
@@ -183,7 +258,18 @@ export function assertAuthorityPlan(plan: AuthorityPlanVM): void {
   if (plan.mode !== "staged") return;
   plan.stages.forEach((stage, index) => {
     assertStageRequirement(stage.decisionRequirement, index);
+    assertStageInstance(stage, index);
     assertRearmedStage(stage, index);
+  });
+  plan.stages.slice(1).forEach((stage, index) => {
+    if (
+      stage.stageInstance.mode === "armed" &&
+      plan.stages[index]?.stepState !== "done"
+    ) {
+      throw new Error(
+        `Authority stage ${index + 2} armed before its prerequisite completed`,
+      );
+    }
   });
   if (plan.standardApprovalRole !== "operations") {
     throw new Error(
