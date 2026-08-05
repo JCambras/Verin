@@ -141,7 +141,7 @@ generated manifest, bound into `corpusDigest`, and fed to the real-derived repor
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
 before and after, method, with review by a second party) plus strict hand-owned JSON Schemas for the case
-envelope and `verin-real-derived-replay/1.10.0` payload. That payload contains only typed destination,
+envelope and `verin-real-derived-replay/1.11.0` payload. That payload contains only typed destination,
 ownership, liquidity, direction, authority, threshold, policy, tax-review, instruction-conflict,
 temporal, evidence, reservation, execution, and expected-versus-observed treatment inputs needed by
 supported defect classes. Pending actions carry account and household references bound to the request,
@@ -160,7 +160,7 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.11.0` registry separates awkward context from outcome in both
+The closed `verin-real-derived-semantics/1.12.0` registry separates awkward context from outcome in both
 corpus partitions. A defect case is accepted only when its label is the exact singleton context-bound
 treatment mismatch. Detector attribution for a defect is either an empty miss or the exact signed-label
 singleton. A clean control records the
@@ -297,6 +297,9 @@ D-126 keeps the ceiling at 8100 against 8035 measured lines after completing def
 alias, CommonJS, and computed-member provenance; restoring the repository-wide no-blending scan; and
 rejecting impossible synthetic effectivity and withdrawal schedules. The 65-line buffer preserves the
 separate fence and schema owners.
+D-128 raises the ceiling to 8300 against 8112 measured lines for complete structured-write provenance,
+declared repository-input boundaries, and derivable real-derived time-zone rules. The 188-line buffer
+preserves the separate fence, schema, and semantic owners under the unchanged 500-line file ceiling.
 
 ## What this PR explicitly does NOT claim
 

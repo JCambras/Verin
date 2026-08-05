@@ -8052,3 +8052,49 @@ six contradictory replay shapes fail at schema validation.
 empty, captain signoff remains pending, and all 1,463 unit, integration, and fitness tests pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-127 review hardening).
+
+---
+
+## PF-214 · structured provenance, host inputs, replayable time zones, and canonical trees · `src/__tests__/fitness/corpus-provenance-split.test.ts`, `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-timestamps.test.ts`
+
+**Invariant (D-128, ADR-0034):** structured writes retain partition provenance; ambient host I/O cannot
+enter corpus generation or validation outside declared repository-input owners; real-derived time-zone
+state derives from signed rule facts; intake roots are real directories; and neutral collection order
+cannot alter case bytes.
+
+**Injection 1 - structured provenance loss.** Destructured synthetic and real-derived measurements from
+one array, then wrote both partitions into one object through separate `Object.assign` calls before
+combining the stored values.
+
+**Injection 2 - ambient host I/O.** Read `/etc/hostname`, executed the host `hostname` command, and fetched
+a network resource from an in-memory corpus dependency.
+
+**Injection 3 - asserted time-zone state.** Labeled an ordinary real-derived event as a transition
+boundary without zone rules or a reproducible local rendering.
+
+**Injection 4 - filesystem and ordering ambiguity.** Replaced the real-derived intake root with a
+symlink, reversed the valid world transition table, and reordered two distinct beneficiary rows that
+shared the old partial sort key.
+
+**Observed failure:**
+```
+expected [] to have a length of 2 but got 0
+expected Set{} to deeply equal Set{ 'fs.readFileSync', 'child_process.execFileSync', 'fetch' }
+expected '' to contain 'temporal transition state must match replayable time-zone rules'
+expected '' to contain 'real-derived intake root must be a regular directory'
+expected true to be false
+expected [ sixteen changed synthetic paths ] to deeply equal []
+```
+
+**Standing companions:** object and array patterns plus mutation helpers retain taint; filesystem,
+subprocess, built-in network, and fetch inputs are rejected outside named owners; an unlisted read inside
+a corpus module is still rejected; arbitrary boundary claims and wrong local renderings fail; symlinked
+intake roots fail before traversal; transition input is chronological; and beneficiary ordering is total
+across account, party, tier, and share.
+
+**Revert:** every injection remains as a standing in-memory or temporary-directory companion. Canonical
+regeneration produced `corpusDigest` `3cd3c36730bd27adfad0c6b4b94ea065e49b5bf8b06166a4a6b7cd512174e94b`,
+the real-derived partition remains empty, captain signoff remains pending, and the focused corpus gates
+plus all 1,468 tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-128 review hardening).

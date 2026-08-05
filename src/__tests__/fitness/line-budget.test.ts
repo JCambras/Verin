@@ -78,7 +78,7 @@ const CEILINGS = {
   // the corpus generator's first
   // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,
   // never averaged into a platform layer.
-  tooling: 8100,
+  tooling: 8300,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

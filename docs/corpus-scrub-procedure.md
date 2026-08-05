@@ -126,7 +126,7 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.10.0 closed payload
+replayPayload   verin-real-derived-replay/1.11.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{firmRef, family, conflictKey}]
 ```
@@ -138,7 +138,7 @@ The replay payload contains only the typed inputs needed by the supported defect
   treatment, and source tax class;
 - approval grant, scope, lifecycle, policy version, threshold comparison, restriction effectivity instants and derived state, and legal-hold state;
 - tax-review and instruction-conflict state;
-- event time and pinned time-zone-rule identity;
+- event UTC and local renderings, zone identity, tzdb version, standard offset, and pinned transition rules;
 - one typed expected and observed treatment for every supported defect class;
 - exact evidence references, reservation keys, and execution preconditions.
 

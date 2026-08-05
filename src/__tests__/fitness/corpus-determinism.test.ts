@@ -57,6 +57,20 @@ interface BannedUse {
   api: string;
 }
 
+const REPOSITORY_INPUT_BOUNDARIES = [
+  { file: "/scripts/golden-cases.lib.ts", owner: "loadScenarioRefs", inputs: { "fs.readFileSync": ["SCENARIOS_YAML"] } },
+  { file: "/scripts/golden-cases.lib.ts", owner: "loadGoldenCases", inputs: { "fs.existsSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["join(dir,f)"] } },
+  { file: "/scripts/corpus/scrub-contract.ts", owner: "schemaFromSpec", inputs: { "fs.readFileSync": ["join(SPEC_DIR,name)"] } },
+  { file: "/scripts/corpus/world.ts", owner: "readSpecFile", inputs: { "fs.readFileSync": ["join(dir,name)"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "readTree", inputs: { "fs.existsSync": ["dir"], "fs.lstatSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["fullPath"] } },
+  { file: "/scripts/corpus/manifest.ts", owner: "realDerivedSchemaBindings", inputs: { "fs.readFileSync": ["join(SPEC_DIR,name)"] } },
+  { file: "/scripts/corpus/semantic-contract.ts", owner: "loadRealDerivedSemanticContract", inputs: { "fs.readFileSync": ["join(SPEC_DIR,REAL_DERIVED_SEMANTIC_CONTRACT_FILE)"] } },
+  { file: "/scripts/corpus/semantic-contract.ts", owner: "realDerivedSemanticContractBinding", inputs: { "fs.readFileSync": ["join(SPEC_DIR,REAL_DERIVED_SEMANTIC_CONTRACT_FILE)", "join(REPO_ROOT,file)"] } },
+  { file: "/scripts/corpus/defects.ts", owner: "taxonomyProblems", inputs: { "fs.realpathSync": ["repoRoot", "resolve(repoRoot,entry.sourceCitation.file)"], "fs.statSync": ["canonicalTarget"] } },
+  { file: "/scripts/corpus/defects.ts", owner: "loadTaxonomy", inputs: { "fs.readFileSync": ["join(dir,\"defect-taxonomy.json\")"] } },
+  { file: "/scripts/corpus/signoff.ts", owner: "loadSignoff", inputs: { "fs.readFileSync": ["join(dir,SIGNOFF_FILE)"] } },
+] as const;
+
 /**
  * AST, not grep: `Date.now`, an ARGLESS `new Date()`, `Math.random`,
  * `crypto.randomUUID`, `performance.now`, `process.hrtime`, `process.env`, every
@@ -67,7 +81,70 @@ interface BannedUse {
 export function bannedNondeterminismUses(project: Project, root = ""): BannedUse[] {
   const uses: BannedUse[] = [];
   const seen = new Set<string>();
+  const hostIoApi = (api: string): boolean =>
+    ["fetch", "WebSocket", "EventSource", "XMLHttpRequest"].includes(api) || [
+      "fs.",
+      "fs/promises.",
+      "child_process.",
+      "net.",
+      "http.",
+      "https.",
+      "http2.",
+      "dns.",
+      "dns/promises.",
+      "dgram.",
+      "tls.",
+    ].some((prefix) => api.startsWith(prefix));
+  const enclosingFunctionName = (node: Node): string | undefined => {
+    for (const candidate of [node, ...node.getAncestors()]) {
+      if (Node.isFunctionDeclaration(candidate) || Node.isMethodDeclaration(candidate)) {
+        const name = candidate.getName();
+        if (name !== undefined) return name;
+      }
+      if (Node.isArrowFunction(candidate) || Node.isFunctionExpression(candidate)) {
+        const declaration = candidate.getParentIfKind(SyntaxKind.VariableDeclaration);
+        if (declaration !== undefined && Node.isIdentifier(declaration.getNameNode())) {
+          return declaration.getName();
+        }
+      }
+    }
+    return undefined;
+  };
+  const allowedRepositoryInput = (
+    node: Node,
+    api: string,
+    sf: SourceFile,
+  ): boolean => {
+    const file = sf.getFilePath().replace(/\\/g, "/");
+    const owner = enclosingFunctionName(node);
+    const boundary = owner === undefined
+      ? undefined
+      : REPOSITORY_INPUT_BOUNDARIES.find(
+          (candidate) =>
+            file.endsWith(candidate.file) && owner === candidate.owner,
+        );
+    const call = Node.isCallExpression(node)
+      ? node
+      : node.getFirstAncestorByKind(SyntaxKind.CallExpression);
+    const argument = call?.getArguments()[0]?.getText().replace(/\s/g, "");
+    const inputs = boundary?.inputs as
+      | Readonly<Record<string, readonly string[]>>
+      | undefined;
+    return argument !== undefined && inputs?.[api]?.includes(argument) === true;
+  };
+  const allowedRepositoryInputImport = (
+    api: string,
+    sf: SourceFile,
+  ): boolean => {
+    const file = sf.getFilePath().replace(/\\/g, "/");
+    return REPOSITORY_INPUT_BOUNDARIES.some(
+      (boundary) =>
+        file.endsWith(boundary.file) &&
+        Object.keys(boundary.inputs).includes(api),
+    );
+  };
   const record = (node: Node, api: string, sf: SourceFile): void => {
+    if (hostIoApi(api) && allowedRepositoryInput(node, api, sf)) return;
     const file = sf.getFilePath().replace(root, "");
     const line = node.getStartLineNumber();
     const key = `${file}:${line}:${api}`;
@@ -95,6 +172,10 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       ["Intl", new Set(["Intl"])],
       ["globalThis", new Set(["globalThis"])],
       ["global", new Set(["global"])],
+      ["fetch", new Set(["fetch"])],
+      ["WebSocket", new Set(["WebSocket"])],
+      ["EventSource", new Set(["EventSource"])],
+      ["XMLHttpRequest", new Set(["XMLHttpRequest"])],
     ]);
     const cryptoRandomMembers = new Set([
       "randomUUID",
@@ -134,14 +215,49 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       if (origin.startsWith("os.")) {
         return origin.split(".").slice(0, 2).join(".");
       }
+      if (["fetch", "WebSocket", "EventSource", "XMLHttpRequest"].includes(origin)) {
+        return origin;
+      }
+      const hostModule = [
+        "fs",
+        "fs/promises",
+        "child_process",
+        "net",
+        "http",
+        "https",
+        "http2",
+        "dns",
+        "dns/promises",
+        "dgram",
+        "tls",
+      ].find((candidate) => origin.startsWith(`${candidate}.`));
+      if (hostModule !== undefined) {
+        return origin.split(".").slice(0, 2).join(".");
+      }
       return undefined;
     };
-    const moduleOrigin = (moduleName: string): string | undefined =>
-      moduleName.replace(/^node:/, "") === "crypto" ? "crypto" :
-        moduleName.replace(/^node:/, "") === "process" ? "process" :
-          moduleName.replace(/^node:/, "") === "perf_hooks" ? "performance" :
-            moduleName.replace(/^node:/, "") === "os" ? "os" :
-              undefined;
+    const moduleOrigin = (moduleName: string): string | undefined => {
+      const normalized = moduleName.replace(/^node:/, "");
+      if (normalized === "crypto") return "crypto";
+      if (normalized === "process") return "process";
+      if (normalized === "perf_hooks") return "performance";
+      if (normalized === "os") return "os";
+      return [
+        "fs",
+        "fs/promises",
+        "child_process",
+        "net",
+        "http",
+        "https",
+        "http2",
+        "dns",
+        "dns/promises",
+        "dgram",
+        "tls",
+      ].includes(normalized)
+        ? normalized
+        : undefined;
+    };
     const ambientRoots = new Set([
       "Math",
       "Date",
@@ -149,6 +265,10 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       "process",
       "crypto",
       "Intl",
+      "fetch",
+      "WebSocket",
+      "EventSource",
+      "XMLHttpRequest",
     ]);
     const memberOrigin = (
       base: string,
@@ -802,6 +922,7 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       for (const specifier of declaration.getNamedImports()) {
         const imported = specifier.getName();
         const local = specifier.getAliasNode()?.getText() ?? imported;
+        const importedModuleOrigin = moduleOrigin(moduleName);
         const origin =
           normalizedModuleName === "crypto" &&
             (cryptoRandomMembers.has(imported) || imported === "webcrypto")
@@ -811,11 +932,17 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
               normalizedModuleName === "os" ?
                 `os.${imported}` :
               normalizedModuleName === "perf_hooks" && imported === "performance" ? "performance" :
-                undefined;
+                importedModuleOrigin !== undefined ? `${importedModuleOrigin}.${imported}` :
+                  undefined;
         if (origin === undefined) continue;
         origins.set(local, new Set([origin]));
         const api = sensitiveOriginApi(origin);
-        if (api !== undefined) record(specifier, api, sf);
+        if (
+          api !== undefined &&
+          (!hostIoApi(api) || !allowedRepositoryInputImport(api, sf))
+        ) {
+          record(specifier, api, sf);
+        }
       }
     }
     for (const declaration of sf.getDescendantsOfKind(
@@ -884,8 +1011,13 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       }
     }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.NewExpression)) {
-      if (originOf(call.getExpression())?.has("Date") === true && call.getArguments().length === 0) {
-        record(call, "new Date() (argless)", sf);
+      for (const origin of originOf(call.getExpression()) ?? []) {
+        if (origin === "Date" && call.getArguments().length === 0) {
+          record(call, "new Date() (argless)", sf);
+          continue;
+        }
+        const api = sensitiveOriginApi(origin);
+        if (api !== undefined && hostIoApi(api)) record(call, api, sf);
       }
     }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
@@ -935,6 +1067,16 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       }
     }
     for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+      const importDeclaration = identifier.getFirstAncestor((ancestor) =>
+        Node.isImportDeclaration(ancestor) ||
+        Node.isImportEqualsDeclaration(ancestor)
+      );
+      if (importDeclaration === undefined) {
+        for (const origin of originOf(identifier) ?? []) {
+          const api = sensitiveOriginApi(origin);
+          if (api !== undefined && hostIoApi(api)) record(identifier, api, sf);
+        }
+      }
       if (identifier.getText() !== "Intl") continue;
       const parent = identifier.getParent();
       if (Node.isPropertyAccessExpression(parent) && parent.getNameNode() === identifier) continue;
@@ -1429,6 +1571,31 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     );
   });
 
+  it("flags filesystem, subprocess, and network host inputs", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject({
+        "/src/contracts/io.ts":
+          'import { readFileSync } from "node:fs";\nimport { execFileSync } from "node:child_process";\nvoid readFileSync("/etc/hostname", "utf8");\nvoid Reflect.apply(readFileSync, null, ["/etc/hostname", "utf8"]);\nvoid execFileSync("hostname");\nvoid fetch("https://example.com/input");\nvoid new WebSocket("wss://example.com/input");\n',
+      }),
+    );
+    expect(new Set(uses.map((use) => use.api))).toEqual(
+      new Set([
+        "fs.readFileSync",
+        "child_process.execFileSync",
+        "fetch",
+        "WebSocket",
+      ]),
+    );
+    expect(
+      bannedNondeterminismUses(
+        inMemoryProject({
+          "/scripts/corpus/world.ts":
+            'import { readFileSync } from "node:fs";\nexport function unboundInput() { return readFileSync("/etc/hostname", "utf8"); }\n',
+        }),
+      ).map((use) => use.api),
+    ).toEqual(["fs.readFileSync"]);
+  });
+
   it("scans every supported executable source extension", () => {
     const root = mkdtempSync(join(tmpdir(), "verin-corpus-determinism-"));
     try {
@@ -1496,6 +1663,35 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     expect(tampered[0]!.bytes).not.toBe(generated[0]!.bytes);
     const problems = committedBytesProblems(generated, tampered);
     expect(problems.some((p) => p.includes("committed bytes differ from regeneration"))).toBe(true);
+  });
+
+  it("beneficiary ordering is total across every emitted field", () => {
+    const before = structuredClone(realSpec);
+    before.world.beneficiaries.push({
+      accountRef: "smiths-joint-taxable",
+      partyRef: "mira-smith",
+      sharePercentBps: 2500,
+      tier: "contingent",
+    });
+    const after = structuredClone(before);
+    const matching = after.world.beneficiaries
+      .map((beneficiary, index) => ({ beneficiary, index }))
+      .filter(({ beneficiary }) =>
+        beneficiary.accountRef === "smiths-joint-taxable" &&
+        beneficiary.partyRef === "mira-smith"
+      );
+    const left = matching[0]!.index;
+    const right = matching[1]!.index;
+    [after.world.beneficiaries[left], after.world.beneficiaries[right]] = [
+      after.world.beneficiaries[right]!,
+      after.world.beneficiaries[left]!,
+    ];
+    expect(
+      changedPaths(
+        bytesByPath(before, CORPUS_SEED),
+        bytesByPath(after, CORPUS_SEED),
+      ),
+    ).toEqual([]);
   });
 
   it("a missing and an orphaned generated file are both caught", () => {

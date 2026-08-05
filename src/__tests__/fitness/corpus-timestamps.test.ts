@@ -243,7 +243,7 @@ describe("detects (companion): unrealistic or mislabeled timestamps CANNOT pass"
     expect(renderLocal(clock.asOf, clock.transitions)).toMatch(/^2026-07-26T09:30:00\.000-04:00$/);
   });
 
-  it("transition lookup is order-independent and duplicate instants are refused", () => {
+  it("transition lookup is order-independent and the world requires canonical chronological input", () => {
     const distinctOffsets = [
       { at: "2026-01-01T00:00:00.000Z", offsetMinutes: -300 },
       { at: "2026-03-08T07:00:00.000Z", offsetMinutes: -240 },
@@ -252,6 +252,9 @@ describe("detects (companion): unrealistic or mislabeled timestamps CANNOT pass"
     expect(
       localOffsetMinutes("2026-07-01T00:00:00.000Z", [...distinctOffsets].reverse()),
     ).toBe(-240);
+    const descending = structuredClone(real.spec.world);
+    descending.clock.transitions.reverse();
+    expect(WorldSpecSchema.safeParse(descending).success).toBe(false);
     const duplicate = structuredClone(real.spec.world);
     duplicate.clock.transitions.push(
       structuredClone(duplicate.clock.transitions[0]!),

@@ -134,6 +134,14 @@ export type ReplayPayload = {
   taxReviewEvidenceSourceRef: string;
   temporal: {
     eventAt: string;
+    eventAtLocal: string;
+    timeZone: string;
+    timeZoneDataVersion: string;
+    standardOffsetMinutes: number;
+    timeZoneTransitions: Array<{
+      at: string;
+      offsetMinutes: number;
+    }>;
     timeZoneRuleRef: string;
     transitionState: "standard" | "daylight" | "boundary";
     evidenceSourceRef: string;

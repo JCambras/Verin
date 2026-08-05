@@ -406,17 +406,24 @@ export function loadRealDerivedDelivery(
   const readme = tree.find(
     (entry) => entry.relPath === "real-derived/README.md",
   );
+  const invalidRoot = tree.some(
+    (entry) => entry.relPath === "real-derived" && entry.kind === "unsupported",
+  );
   const entries = tree.filter(
-    (entry) => entry.relPath !== "real-derived/README.md",
+    (entry) =>
+      entry.relPath !== "real-derived" &&
+      entry.relPath !== "real-derived/README.md",
   );
   const files: GeneratedFile[] = [];
-  const problems: string[] = readme === undefined
-    ? [
+  const problems: string[] = invalidRoot
+    ? ["real-derived intake root must be a regular directory"]
+    : readme === undefined
+      ? [
         "real-derived/README.md is missing - the intake contract must ship with the empty partition",
       ]
-    : readme.kind !== "file" || readme.bytes === null
-      ? ["real-derived/README.md must be a regular file"]
-      : [];
+      : readme.kind !== "file" || readme.bytes === null
+        ? ["real-derived/README.md must be a regular file"]
+        : [];
   for (const [index, entry] of entries.entries()) {
     const delivery = `real-derived delivery ${index + 1}`;
     if (!/^real-derived\/RD-[0-9a-f]{16}\.json$/.test(entry.relPath)) {

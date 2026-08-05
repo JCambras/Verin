@@ -1,5 +1,5 @@
 {
-  "contractVersion": "verin-real-derived-semantics/1.11.0",
+  "contractVersion": "verin-real-derived-semantics/1.12.0",
   "defectRules": [
     { "id": "authority-scope-error", "contextRule": "authority-boundary", "treatmentSelector": "authority-state", "treatments": [
       { "selectorValue": "effective", "expectedTreatment": "accept-effective-authority", "defectTreatment": "reject-effective-authority-by-membership" },
@@ -95,6 +95,7 @@
     "instructionConflict": "derived-from-request-bound-typed-instruction-terms",
     "instructionOwners": "target-specific-normalized-destination-owner-set",
     "restrictionLifecycle": "derived-from-effective-instants-at-evaluation",
+    "realDerivedTemporal": "derive-zone-state-and-local-rendering-from-pinned-transition-rules",
     "syntheticTemporal": "cited-zone-bound-records-cross-declared-transition",
     "syntheticBlastRadius": "one-cited-instruction-change-reaches-multiple-topology-subjects"
   },

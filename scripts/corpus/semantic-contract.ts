@@ -107,7 +107,7 @@ const TreatmentSelectorSchema = z.enum([
 ]);
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.11.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.12.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -161,6 +161,9 @@ const SemanticContractSchema = z.strictObject({
     ),
     restrictionLifecycle: z.literal(
       "derived-from-effective-instants-at-evaluation",
+    ),
+    realDerivedTemporal: z.literal(
+      "derive-zone-state-and-local-rendering-from-pinned-transition-rules",
     ),
     syntheticTemporal: z.literal(
       "cited-zone-bound-records-cross-declared-transition",

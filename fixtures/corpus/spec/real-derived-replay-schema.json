@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.10.0",
+  "$id": "verin-real-derived-replay/1.11.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,7 @@
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.10.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.11.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
@@ -331,12 +331,49 @@
       "additionalProperties": false,
       "required": [
         "eventAt",
+        "eventAtLocal",
+        "timeZone",
+        "timeZoneDataVersion",
+        "standardOffsetMinutes",
+        "timeZoneTransitions",
         "timeZoneRuleRef",
         "transitionState",
         "evidenceSourceRef"
       ],
       "properties": {
         "eventAt": { "$ref": "#/$defs/instant" },
+        "eventAtLocal": { "$ref": "#/$defs/localInstant" },
+        "timeZone": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z][A-Za-z0-9_+-]*)+$"
+        },
+        "timeZoneDataVersion": {
+          "type": "string",
+          "pattern": "^iana-tzdb/[0-9]{4}[a-z]$"
+        },
+        "standardOffsetMinutes": {
+          "type": "integer",
+          "minimum": -840,
+          "maximum": 840
+        },
+        "timeZoneTransitions": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at", "offsetMinutes"],
+            "properties": {
+              "at": { "$ref": "#/$defs/instant" },
+              "offsetMinutes": {
+                "type": "integer",
+                "minimum": -840,
+                "maximum": 840
+              }
+            }
+          }
+        },
         "timeZoneRuleRef": { "$ref": "#/$defs/timeZoneRuleRef" },
         "transitionState": {
           "enum": ["standard", "daylight", "boundary"]
@@ -916,6 +953,10 @@
       "type": "string",
       "format": "date-time",
       "pattern": "\\.\\d{3}Z$"
+    },
+    "localInstant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}[+-][0-9]{2}:[0-9]{2}$"
     },
     "nullableInstant": {
       "type": ["string", "null"],

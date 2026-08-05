@@ -356,6 +356,216 @@ export function blendingViolations(project: Project, root = ""): string[] {
     }
     return reads;
   };
+  const propertyName = (node: Node | undefined): string | undefined => {
+    if (node === undefined) return undefined;
+    if (Node.isIdentifier(node) || Node.isStringLiteral(node) || Node.isNumericLiteral(node)) {
+      return Node.isIdentifier(node) ? node.getText() : node.getLiteralText();
+    }
+    const values = staticStringValues(node);
+    return values.size === 1 ? [...values][0] : undefined;
+  };
+  const literalValueAtPath = (
+    input: Node,
+    path: readonly string[],
+  ): Node | undefined => {
+    let current = unwrap(input);
+    for (const part of path) {
+      if (Node.isArrayLiteralExpression(current)) {
+        const index = Number(part);
+        if (!Number.isSafeInteger(index)) return undefined;
+        const element = current.getElements()[index];
+        if (element === undefined || Node.isOmittedExpression(element)) return undefined;
+        current = unwrap(element);
+        continue;
+      }
+      if (Node.isObjectLiteralExpression(current)) {
+        const property = current.getProperties().find((candidate) =>
+          (Node.isPropertyAssignment(candidate) ||
+              Node.isShorthandPropertyAssignment(candidate) ||
+              Node.isMethodDeclaration(candidate)) &&
+            propertyName(candidate.getNameNode()) === part
+        );
+        if (property === undefined) return undefined;
+        if (Node.isPropertyAssignment(property)) {
+          current = unwrap(property.getInitializerOrThrow());
+          continue;
+        }
+        if (Node.isShorthandPropertyAssignment(property)) {
+          current = property.getNameNode();
+          continue;
+        }
+        return undefined;
+      }
+      return undefined;
+    }
+    return current;
+  };
+  const readsAtPath = (
+    source: Node,
+    path: readonly string[],
+  ): Set<string> => {
+    const literal = literalValueAtPath(source, path);
+    if (literal !== undefined && (literal !== source || path.length === 0)) {
+      return readsOf(literal);
+    }
+    const reads = readsOf(source);
+    for (const target of taintTargets(source)) {
+      const nested = {
+        symbol: target.symbol,
+        path: target.path === null ? null : [...target.path, ...path],
+      };
+      for (const accessor of memberReads(nested)) reads.add(accessor);
+      for (const accessor of taints.get(target.symbol) ?? []) reads.add(accessor);
+    }
+    for (const part of path) {
+      if (PARTITION_ACCESSORS.includes(part as typeof PARTITION_ACCESSORS[number])) {
+        reads.add(part);
+      }
+    }
+    return reads;
+  };
+  const bindPatternTaints = (
+    pattern: Node,
+    source: Node,
+    path: readonly string[] = [],
+    defaults: readonly Node[] = [],
+  ): boolean => {
+    if (Node.isIdentifier(pattern)) {
+      const target = taintTargets(pattern)[0];
+      if (target === undefined) return false;
+      const reads = readsAtPath(source, path);
+      for (const fallback of defaults) {
+        for (const accessor of readsOf(fallback)) reads.add(accessor);
+      }
+      return addTaints(target, reads);
+    }
+    if (Node.isObjectBindingPattern(pattern)) {
+      let changed = false;
+      for (const element of pattern.getElements()) {
+        const member = propertyName(element.getPropertyNameNode()) ??
+          propertyName(element.getNameNode());
+        if (member === undefined) continue;
+        const fallback = element.getInitializer();
+        changed = bindPatternTaints(
+          element.getNameNode(),
+          source,
+          [...path, member],
+          fallback === undefined ? defaults : [...defaults, fallback],
+        ) || changed;
+      }
+      return changed;
+    }
+    if (Node.isArrayBindingPattern(pattern)) {
+      let changed = false;
+      for (const [index, element] of pattern.getElements().entries()) {
+        if (!Node.isBindingElement(element)) continue;
+        const fallback = element.getInitializer();
+        changed = bindPatternTaints(
+          element.getNameNode(),
+          source,
+          [...path, String(index)],
+          fallback === undefined ? defaults : [...defaults, fallback],
+        ) || changed;
+      }
+      return changed;
+    }
+    if (Node.isObjectLiteralExpression(pattern)) {
+      let changed = false;
+      for (const property of pattern.getProperties()) {
+        if (Node.isPropertyAssignment(property)) {
+          const member = propertyName(property.getNameNode());
+          if (member !== undefined) {
+            changed = bindPatternTaints(
+              property.getInitializerOrThrow(),
+              source,
+              [...path, member],
+              defaults,
+            ) || changed;
+          }
+        } else if (Node.isShorthandPropertyAssignment(property)) {
+          changed = bindPatternTaints(
+            property.getNameNode(),
+            source,
+            [...path, property.getName()],
+            defaults,
+          ) || changed;
+        } else if (Node.isSpreadAssignment(property)) {
+          changed = bindPatternTaints(
+            property.getExpression(),
+            source,
+            path,
+            defaults,
+          ) || changed;
+        }
+      }
+      return changed;
+    }
+    if (Node.isArrayLiteralExpression(pattern)) {
+      let changed = false;
+      for (const [index, element] of pattern.getElements().entries()) {
+        if (Node.isOmittedExpression(element)) continue;
+        changed = bindPatternTaints(
+          Node.isSpreadElement(element) ? element.getExpression() : element,
+          source,
+          Node.isSpreadElement(element) ? path : [...path, String(index)],
+          defaults,
+        ) || changed;
+      }
+      return changed;
+    }
+    return false;
+  };
+  const objectAssignCall = (node: Node): boolean => {
+    if (!Node.isCallExpression(node)) return false;
+    const expression = node.getExpression();
+    if (
+      !Node.isPropertyAccessExpression(expression) ||
+      expression.getName() !== "assign" ||
+      expression.getExpression().getText() !== "Object"
+    ) {
+      return false;
+    }
+    const symbol = expression.getExpression().getSymbol();
+    return symbol === undefined || symbol.getDeclarations().every((declaration) =>
+      declaration.getSourceFile().isDeclarationFile()
+    );
+  };
+  const addObjectMutationTaints = (call: Node): boolean => {
+    if (!Node.isCallExpression(call) || !objectAssignCall(call)) return false;
+    const [targetNode, ...sources] = call.getArguments();
+    if (targetNode === undefined) return false;
+    const targets = taintTargets(targetNode);
+    let changed = false;
+    for (const source of sources) {
+      if (!Node.isObjectLiteralExpression(source)) {
+        for (const target of targets) {
+          changed = addTaints(target, readsOf(source)) || changed;
+        }
+        continue;
+      }
+      for (const property of source.getProperties()) {
+        if (Node.isPropertyAssignment(property) || Node.isShorthandPropertyAssignment(property)) {
+          const member = propertyName(property.getNameNode());
+          const value = Node.isPropertyAssignment(property)
+            ? property.getInitializerOrThrow()
+            : property.getNameNode();
+          for (const target of targets) {
+            changed = addTaints({
+              symbol: target.symbol,
+              path: target.path === null || member === undefined
+                ? null
+                : [...target.path, member],
+            }, readsOf(value)) || changed;
+          }
+          continue;
+        }
+        for (const target of targets) {
+          changed = addTaints(target, readsOf(property)) || changed;
+        }
+      }
+    }
+    return changed;
+  };
   const assignmentOperators = new Set([
     SyntaxKind.EqualsToken,
     SyntaxKind.PlusEqualsToken,
@@ -384,10 +594,10 @@ export function blendingViolations(project: Project, root = ""): string[] {
         if (initializer === undefined || isReportBoundaryCall(initializer)) {
           continue;
         }
-        const target = taintTargets(declaration.getNameNode())[0];
-        if (target !== undefined) {
-          changed = addTaints(target, readsOf(initializer)) || changed;
-        }
+        changed = bindPatternTaints(
+          declaration.getNameNode(),
+          initializer,
+        ) || changed;
       }
       for (const assignment of sf.getDescendantsOfKind(
         SyntaxKind.BinaryExpression,
@@ -400,9 +610,22 @@ export function blendingViolations(project: Project, root = ""): string[] {
             reads.add(accessor);
           }
         }
+        if (
+          operator === SyntaxKind.EqualsToken &&
+          (Node.isObjectLiteralExpression(assignment.getLeft()) ||
+            Node.isArrayLiteralExpression(assignment.getLeft()))
+        ) {
+          changed = bindPatternTaints(
+            assignment.getLeft(),
+            assignment.getRight(),
+          ) || changed;
+        }
         for (const target of taintTargets(assignment.getLeft())) {
           changed = addTaints(target, reads) || changed;
         }
+      }
+      for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+        changed = addObjectMutationTaints(call) || changed;
       }
     }
     if (!changed) break;
@@ -826,7 +1049,7 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.10.0",
+    schemaVersion: "verin-real-derived-replay/1.11.0",
     request: {
       firmRef: FIRM_REF,
       requestRef: REQUEST_REF,
@@ -924,6 +1147,15 @@ const realDerivedCase = (
     },
     temporal: {
       eventAt: "2026-04-28T13:00:00.000Z",
+      eventAtLocal: "2026-04-28T09:00:00.000-04:00",
+      timeZone: "America/New_York",
+      timeZoneDataVersion: "iana-tzdb/2026b",
+      standardOffsetMinutes: -300,
+      timeZoneTransitions: [
+        { at: "2026-01-01T00:00:00.000Z", offsetMinutes: -300 },
+        { at: "2026-03-08T07:00:00.000Z", offsetMinutes: -240 },
+        { at: "2026-11-01T06:00:00.000Z", offsetMinutes: -300 },
+      ],
       timeZoneRuleRef: TIME_ZONE_RULE_REF,
       transitionState: "daylight",
       evidenceSourceRef: EVIDENCE_SOURCE_REF,
@@ -1089,6 +1321,8 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
         .map((entry) => entry.id);
       break;
     case "temporal-rendering-defect":
+      payload.temporal.eventAt = "2026-03-08T07:00:00.000Z";
+      payload.temporal.eventAtLocal = "2026-03-08T03:00:00.000-04:00";
       payload.temporal.transitionState = "boundary";
       break;
     case "canonical-identity-defect":
@@ -1569,6 +1803,26 @@ describe("corpus-provenance-split fence", () => {
     }
   });
 
+  it("(d) enforces: the real-derived intake root is a regular directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "verin-corpus-intake-root-"));
+    try {
+      const target = join(root, "target");
+      const intake = join(root, "real-derived");
+      mkdirSync(target);
+      writeFileSync(join(target, "README.md"), "intake\n");
+      symlinkSync(target, intake);
+      expect(
+        realDerivedProblems(
+          real.taxonomy,
+          real.spec.world.corpusVersion,
+          intake,
+        ).join("\n"),
+      ).toContain("real-derived intake root must be a regular directory");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("(d) enforces: the signed digest covers versioned defect-taxonomy semantics", () => {
     const changed = structuredClone(real.taxonomy);
     changed.defectClasses[0]!.description = `${changed.defectClasses[0]!.description} changed`;
@@ -1679,7 +1933,7 @@ describe("corpus-provenance-split fence", () => {
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
       "verin-real-derived-case/1.4.0",
-      "verin-real-derived-replay/1.10.0",
+      "verin-real-derived-replay/1.11.0",
     ]);
     expect(
       corpusDigest(
@@ -1831,6 +2085,28 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         'import { value as left } from "./assigned-synthetic"; import { value as right } from "./assigned-real"; export const score = left + right;',
     });
     expect(blendingViolations(project)).toHaveLength(3);
+  });
+
+  it("partition values remain tainted through binding patterns and mutation helpers", () => {
+    const project = inMemoryProject({
+      "/src/domain/destructured-blend.ts":
+        "declare const r: any; const [left, right] = [r.synthetic.defectCases, r.realDerived.defectCases]; export const score = left + right;",
+      "/src/domain/mutated-blend.ts":
+        "declare const r: any; const values: any = {}; Object.assign(values, { left: r.synthetic.defectCases }); Object.assign(values, { right: r.realDerived.defectCases }); export const score = values.left + values.right;",
+      "/src/domain/assigned-structure.ts":
+        "declare const r: any; let left; let right; [left, right] = [r.synthetic.defectCases, r.realDerived.defectCases]; export const score = left + right;",
+    });
+    expect(
+      new Set(
+        blendingViolations(project).map((violation) =>
+          violation.replace(/:\d+: combines.*$/, "")
+        ),
+      ),
+    ).toEqual(new Set([
+      "/src/domain/destructured-blend.ts",
+      "/src/domain/mutated-blend.ts",
+      "/src/domain/assigned-structure.ts",
+    ]));
   });
 
   it("member assignment taint stays on the assigned path", () => {
@@ -2380,6 +2656,42 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     expect(realDerivedCaseProblems(realDerivedCase(), classes, "real-derived/RD-ok.json")).toEqual([]);
   });
 
+  it("a real-derived time-zone boundary is derived from replayable rule facts", () => {
+    const item = realDerivedDefectCase("temporal-rendering-defect");
+    const temporal = (item.replayPayload as Record<string, any>).temporal;
+    temporal.eventAt = "2026-04-28T12:00:00.000Z";
+    temporal.eventAtLocal = "2026-04-28T08:00:00.000-04:00";
+    expect(
+      realDerivedCaseProblems(
+        item,
+        classes,
+        "real-derived/RD-arbitrary-boundary.json",
+      ).join("\n"),
+    ).toContain("temporal transition state must match replayable time-zone rules");
+
+    const wrongLocal = realDerivedCase();
+    ((wrongLocal.replayPayload as Record<string, any>).temporal).eventAtLocal =
+      "2026-04-28T08:00:00.000-05:00";
+    expect(
+      realDerivedCaseProblems(
+        wrongLocal,
+        classes,
+        "real-derived/RD-wrong-local-rendering.json",
+      ).join("\n"),
+    ).toContain("temporal transition state must match replayable time-zone rules");
+
+    const unordered = realDerivedCase();
+    ((unordered.replayPayload as Record<string, any>).temporal)
+      .timeZoneTransitions.reverse();
+    expect(
+      realDerivedCaseProblems(
+        unordered,
+        classes,
+        "real-derived/RD-unordered-zone-rules.json",
+      ).join("\n"),
+    ).toContain("temporal transition state must match replayable time-zone rules");
+  });
+
   it("a real-derived defect label must match its closed replay semantics", () => {
     const mislabeled = realDerivedCase();
     ((mislabeled.replayPayload as Record<string, any>).destination).discriminatorState =
@@ -2488,7 +2800,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.11.0",
+      "verin-real-derived-semantics/1.12.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,

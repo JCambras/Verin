@@ -72,6 +72,15 @@ const ClockSchema = z.strictObject({
     path: ["transitions"],
     message: "duplicate time-zone transition instant",
   },
+).refine(
+  (clock) => clock.transitions.every(
+    (transition, index) =>
+      index === 0 || clock.transitions[index - 1]!.at < transition.at,
+  ),
+  {
+    path: ["transitions"],
+    message: "time-zone transitions must be strictly chronological",
+  },
 );
 const PartySchema = z.strictObject({
   key: Slug,

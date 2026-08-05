@@ -45,7 +45,7 @@ right (D-078). A control that carries any defect signature fails validation.
 
 Real-derived freshness uses the closed `verin-real-derived-freshness/1.0.0` per-kind policy. Its version
 and semantic digest are part of the captain-signed corpus preimage. The same preimage binds the strict
-schemas, `verin-real-derived-semantics/1.11.0` data, and the complete repository-local runtime dependency
+schemas, `verin-real-derived-semantics/1.12.0` data, and the complete repository-local runtime dependency
 closure of the executable authorities that enforce replay topology, evidence support, selected funding,
 and defect signatures.
 

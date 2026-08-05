@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export interface TreeEntry {
@@ -9,6 +9,9 @@ export interface TreeEntry {
 
 export function readTree(dir: string, prefix = ""): TreeEntry[] {
   if (!existsSync(dir)) return [];
+  if (!lstatSync(dir).isDirectory()) {
+    return [{ relPath: prefix === "" ? "." : prefix, kind: "unsupported", bytes: null }];
+  }
   const entries: TreeEntry[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((left, right) =>
     left.name < right.name ? -1 : left.name > right.name ? 1 : 0,

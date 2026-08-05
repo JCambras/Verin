@@ -102,7 +102,8 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
   }
   const beneficiaries = sortedBy(
     world.beneficiaries.filter((row) => householdAccountKeys.has(row.accountRef)),
-    (row) => `${row.accountRef}/${row.partyRef}`,
+    (row) =>
+      `${row.accountRef}/${row.partyRef}/${row.tier}/${String(row.sharePercentBps).padStart(5, "0")}`,
   );
   const memberKeys = new Set(household.memberRefs);
   const localPartyKeys = new Set([

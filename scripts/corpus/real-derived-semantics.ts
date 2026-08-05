@@ -3,6 +3,10 @@ import {
   pendingAvailabilitySelector,
 } from "./pending-actions";
 import {
+  localOffsetMinutes,
+  renderLocal,
+} from "./clock";
+import {
   realDerivedInstructionConflictAnalysis,
   realDerivedTopologyProblems as topologyProblems,
   selectedSources,
@@ -38,6 +42,44 @@ const restrictionLifecycleState = (
     : "in-force";
 };
 
+const temporalTransitionState = (
+  item: RealDerivedCase,
+): "standard" | "daylight" | "boundary" | null => {
+  const temporal = item.replayPayload.temporal;
+  const transitions = temporal.timeZoneTransitions;
+  if (
+    transitions.length < 2 ||
+    !transitions.some(
+      (transition) =>
+        transition.offsetMinutes === temporal.standardOffsetMinutes,
+    ) ||
+    transitions.some(
+      (transition, index) =>
+        index > 0 && transitions[index - 1]!.at >= transition.at,
+    )
+  ) {
+    return null;
+  }
+  try {
+    const offset = localOffsetMinutes(temporal.eventAt, transitions);
+    if (renderLocal(temporal.eventAt, transitions) !== temporal.eventAtLocal) {
+      return null;
+    }
+    const boundary = transitions.findIndex(
+      (transition, index) =>
+        index > 0 &&
+        transition.at === temporal.eventAt &&
+        transitions[index - 1]!.offsetMinutes !== transition.offsetMinutes,
+    );
+    if (boundary >= 0) return "boundary";
+    return offset === temporal.standardOffsetMinutes
+      ? "standard"
+      : "daylight";
+  } catch {
+    return null;
+  }
+};
+
 export function realDerivedTopologyProblems(
   item: RealDerivedCase,
 ): string[] {
@@ -51,6 +93,10 @@ export function realDerivedTopologyProblems(
           policy.restrictionEffectiveTo !== null &&
           policy.restrictionEffectiveTo < policy.restrictionEffectiveFrom)
       ? ["restriction lifecycle state must match effective instants at evaluation.asOf"]
+      : []),
+    ...(temporalTransitionState(item) !==
+        item.replayPayload.temporal.transitionState
+      ? ["temporal transition state must match replayable time-zone rules"]
       : []),
   ];
 }
@@ -115,7 +161,7 @@ const CONTEXT_RULES: Readonly<Record<string, (item: RealDerivedCase) => boolean>
     item.replayPayload.policy.legalHoldScope === "position",
   "nonreducing-pending-action-present": pendingMiscount,
   "time-zone-boundary": (item) =>
-    item.replayPayload.temporal.transitionState === "boundary",
+    temporalTransitionState(item) === "boundary",
   "canonical-identity-collision": (item) =>
     item.replayPayload.identity.resolution === "canonical-collision",
   "threshold-equality": (item) =>
