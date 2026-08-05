@@ -247,6 +247,64 @@ describe("dependency-rule fence", () => {
       );
     });
 
+    it("follows a node:module namespace exported through another module", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/loader.ts": [
+            `import * as nodeModule from "node:module";`,
+            "export { nodeModule };",
+          ].join("\n"),
+          "src/domain/evil.ts": [
+            `import { nodeModule } from "./loader";`,
+            "const load = nodeModule.createRequire(import.meta.url);",
+            `export const value = load("@infra/store");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
+    it("allows project-owned capabilities exported through another module", () => {
+      const project = inMemoryProject({
+        "src/domain/capability.ts": [
+          "export const nodeModule = {",
+          "  createRequire: () => (specifier: string) => specifier,",
+          "};",
+        ].join("\n"),
+        "src/domain/consumer.ts": [
+          `import { nodeModule } from "./capability";`,
+          "const load = nodeModule.createRequire();",
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+        "src/contracts/capability.ts": [
+          "export const Clock = { now: () => 1 };",
+          "export const formatter = { format: () => 'safe' };",
+        ].join("\n"),
+        "src/contracts/consumer.ts": [
+          `import { Clock, formatter } from "./capability";`,
+          "export const values = [Clock.now(), formatter.format()];",
+        ].join("\n"),
+      });
+      expect(detectLayerViolations(project)).toEqual([]);
+      expect(detectContractsExternalImportViolations(project)).toEqual([]);
+    });
+
+    it("invalidates cached module references after a source edit", () => {
+      const project = inMemoryProject({
+        "src/domain/subject.ts": "export const value = 1;",
+      });
+      const subject = project.getSourceFileOrThrow("src/domain/subject.ts");
+      expect(moduleReferences(subject)).toEqual([]);
+      subject.replaceWithText(
+        `import { value } from "@infra/store";\nexport { value };`,
+      );
+      expect(detectLayerViolations(project).map((violation) =>
+        `${violation.fromLayer}->${violation.toLayer}`
+      )).toContain("domain->infrastructure");
+    });
+
     it("uses the latest write when a destructured reflection binding is overwritten", () => {
       const project = inMemoryProject({
         "src/domain/fine.ts": `
@@ -1206,6 +1264,33 @@ describe("dependency-rule fence", () => {
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it.each([
+      [
+        "clock",
+        "export const Clock = Date;",
+        "export const value = Clock.now();",
+      ],
+      [
+        "formatter",
+        "export const formatter = new Intl.DateTimeFormat();",
+        "export const value = formatter.format();",
+      ],
+    ])("follows an exported ambient %s across modules", (_name, exported, used) => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts": exported,
+          "src/contracts/barrel.ts": `export { ${_name === "clock" ? "Clock" : "formatter"} } from "./capability";`,
+          "src/contracts/evil.ts": [
+            `import { ${_name === "clock" ? "Clock" : "formatter"} } from "./barrel";`,
+            used,
+          ].join("\n"),
+        }),
       );
       expect(v.map((violation) => violation.specifier)).toContain(
         "<nondeterministic platform-global>",

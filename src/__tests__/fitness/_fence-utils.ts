@@ -241,6 +241,11 @@ export interface ModuleReference {
     | "implicit-jsx-runtime";
 }
 
+const MODULE_REFERENCE_CACHE = new WeakMap<
+  SourceFile,
+  { readonly sourceText: string; readonly references: ModuleReference[] }
+>();
+
 const unwrapExpression = (node: Node | undefined): Node | undefined => {
   let expression = node;
   while (
@@ -813,6 +818,42 @@ const ambientAliasSourcesIn = (
   return sorted;
 };
 
+const resolvedAliasedSymbol = (symbol: MorphSymbol): MorphSymbol => {
+  const seen = new Set<MorphSymbol>();
+  let current = symbol;
+  while (!seen.has(current)) {
+    seen.add(current);
+    const aliased = current.getAliasedSymbol();
+    if (aliased === undefined || aliased === current) break;
+    current = aliased;
+  }
+  return current;
+};
+
+const ambientAliasSourcesAcrossModulesIn = (
+  sf: SourceFile,
+  symbol: MorphSymbol,
+): {
+  readonly symbol: MorphSymbol;
+  readonly sources: readonly AmbientAliasSource[];
+  readonly sourceFiles: readonly SourceFile[];
+} => {
+  const target = resolvedAliasedSymbol(symbol);
+  const sourceFiles = [...new Set(
+    target.getDeclarations()
+      .map((declaration) => declaration.getSourceFile())
+      .filter((sourceFile) => !sourceFile.isDeclarationFile()),
+  )];
+  if (sourceFiles.length === 0 && target === symbol) sourceFiles.push(sf);
+  return {
+    symbol: target,
+    sources: sourceFiles.flatMap((sourceFile) =>
+      ambientAliasSourcesIn(sourceFile, target)
+    ),
+    sourceFiles,
+  };
+};
+
 const selectorCandidatesForAccessIn = (
   sf: SourceFile,
   access: Node,
@@ -947,14 +988,15 @@ const ambientNamesForSymbolAtPathIn = (
   path: readonly ProvenanceSelector[],
   seen: Set<MorphSymbol>,
 ): ReadonlySet<string> => {
-  if (seen.has(symbol)) return new Set();
-  const sources = ambientAliasSourcesIn(sf, symbol);
+  const provenance = ambientAliasSourcesAcrossModulesIn(sf, symbol);
+  if (seen.has(provenance.symbol)) return new Set();
+  const sources = provenance.sources;
   if (sources.length > 0) {
-    const nextSeen = new Set(seen).add(symbol);
+    const nextSeen = new Set(seen).add(provenance.symbol);
     const names = new Set<string>();
     for (const source of sources) {
       for (const name of ambientGlobalNamesAtPathIn(
-        sf,
+        source.receiver.getSourceFile(),
         source.receiver,
         [...source.selectors, ...path],
         nextSeen,
@@ -963,26 +1005,28 @@ const ambientNamesForSymbolAtPathIn = (
         names.add(name);
       }
     }
-    for (const name of assignedContainerNamesAtPathIn(
-      sf,
-      symbol,
-      path,
-      nextSeen,
-    )) {
-      names.add(name);
+    for (const sourceFile of provenance.sourceFiles) {
+      for (const name of assignedContainerNamesAtPathIn(
+        sourceFile,
+        provenance.symbol,
+        path,
+        nextSeen,
+      )) {
+        names.add(name);
+      }
     }
     return names;
   }
-  const declarations = symbol.getDeclarations();
+  const declarations = provenance.symbol.getDeclarations();
   const isAmbient = declarations.every((declaration) =>
     declaration.getSourceFile().isDeclarationFile()
   );
   if (!isAmbient) return new Set();
-  if (path.length === 0) return new Set([symbol.getName()]);
+  if (path.length === 0) return new Set([provenance.symbol.getName()]);
   const selector = path[0];
-  if (selector === undefined) return new Set([symbol.getName()]);
+  if (selector === undefined) return new Set([provenance.symbol.getName()]);
   const remaining = path.slice(1);
-  return symbol.getName() === "globalThis" &&
+  return provenance.symbol.getName() === "globalThis" &&
       selector.kind === "property" &&
       remaining.length === 0
     ? new Set([selector.name ?? UNKNOWN_AMBIENT_GLOBAL])
@@ -1143,7 +1187,9 @@ const functionReturnSourcesIn = (
   if (Node.isFunctionLikeDeclaration(callee)) {
     declarations.push(callee);
   } else if (Node.isIdentifier(callee)) {
-    for (const declaration of callee.getSymbol()?.getDeclarations() ?? []) {
+    const symbol = callee.getSymbol();
+    const target = symbol === undefined ? undefined : resolvedAliasedSymbol(symbol);
+    for (const declaration of target?.getDeclarations() ?? []) {
       if (Node.isFunctionLikeDeclaration(declaration)) {
         declarations.push(declaration);
       } else if (Node.isVariableDeclaration(declaration)) {
@@ -1276,7 +1322,7 @@ function ambientGlobalNamesIn(
     const names = new Set<string>();
     for (const source of returns.sources) {
       for (const name of ambientGlobalNamesAtPathIn(
-        sf,
+        source.receiver.getSourceFile(),
         source.receiver,
         source.selectors,
         seen,
@@ -1535,6 +1581,11 @@ const destructuredMembersIn = (sf: SourceFile): DestructuredMember[] => {
 
 /** Every module reference, including non-literal dynamic import/require calls. */
 export function moduleReferences(sf: SourceFile): ModuleReference[] {
+  const sourceText = sf.getFullText();
+  const cached = MODULE_REFERENCE_CACHE.get(sf);
+  if (cached?.sourceText === sourceText) {
+    return [...cached.references];
+  }
   const refs: ModuleReference[] = [];
   const isDeclaredLocally = (node: Node): boolean =>
     node.getSymbol()?.getDeclarations().some(
@@ -1620,6 +1671,18 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
   };
   const isNodeModuleSpecifier = (specifier: string | null): boolean =>
     specifier === "module" || specifier === "node:module";
+  const isNodeModuleNamespaceSymbol = (symbol: MorphSymbol): boolean =>
+    [...new Set([symbol, resolvedAliasedSymbol(symbol)])].some((candidate) =>
+      candidate.getDeclarations().some((declaration) => {
+        const importDeclaration = declaration.getFirstAncestorByKind(
+          SyntaxKind.ImportDeclaration,
+        );
+        return importDeclaration !== undefined &&
+          isNodeModuleSpecifier(importDeclaration.getModuleSpecifierValue()) &&
+          (Node.isNamespaceImport(declaration) ||
+            Node.isImportClause(declaration));
+      })
+    );
   for (const imp of sf.getImportDeclarations()) {
     refs.push({ specifier: imp.getModuleSpecifierValue(), line: imp.getStartLineNumber(), kind: "import" });
   }
@@ -1846,15 +1909,19 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     if (!Node.isIdentifier(expression)) return false;
     if (createRequireNamespaces.has(expression.getText())) return true;
     const symbol = expression.getSymbol();
-    if (symbol === undefined || seen.has(symbol)) return false;
-    const sources = ambientAliasSourcesIn(sf, symbol);
+    if (symbol === undefined || isNodeModuleNamespaceSymbol(symbol)) {
+      return symbol !== undefined;
+    }
+    const provenance = ambientAliasSourcesAcrossModulesIn(sf, symbol);
+    if (seen.has(provenance.symbol)) return false;
+    const sources = provenance.sources;
     if (
       failOnUnknown &&
       sources.some((source) => source.uncertain === true)
     ) {
       return true;
     }
-    const nextSeen = new Set(seen).add(symbol);
+    const nextSeen = new Set(seen).add(provenance.symbol);
     return sources.some(
       (source) =>
         (failOnUnknown && source.selectors.length > 0) ||
@@ -2354,9 +2421,62 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       }
     }
   }
+  const containsCreateRequireNamespace = (node: Node): boolean =>
+    isCreateRequireNamespace(node) ||
+    node.getDescendantsOfKind(SyntaxKind.Identifier).some((identifier) => {
+      const symbol = identifier.getSymbol();
+      return createRequireNamespaces.has(identifier.getText()) ||
+        (symbol !== undefined && isNodeModuleNamespaceSymbol(symbol));
+    });
+  const canHoldCreateRequireNamespace =
+    createRequireNamespaces.size > 0 ||
+    sf.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) =>
+      isNodeModuleSpecifier(loaderSpecifier(call))
+    );
+  if (canHoldCreateRequireNamespace) {
+    for (const statement of sf.getVariableStatements()) {
+      if (!statement.isExported()) continue;
+      for (const declaration of statement.getDeclarations()) {
+        const initializer = declaration.getInitializer();
+        if (
+          initializer !== undefined &&
+          containsCreateRequireNamespace(initializer)
+        ) {
+          refs.push({
+            specifier: null,
+            line: declaration.getStartLineNumber(),
+            kind: "create-require",
+          });
+        }
+      }
+    }
+    for (const assignment of sf.getExportAssignments()) {
+      if (containsCreateRequireNamespace(assignment.getExpression())) {
+        refs.push({
+          specifier: null,
+          line: assignment.getStartLineNumber(),
+          kind: "create-require",
+        });
+      }
+    }
+  }
   for (const exp of sf.getExportDeclarations()) {
     const v = exp.getModuleSpecifierValue();
     if (v) refs.push({ specifier: v, line: exp.getStartLineNumber(), kind: "export" });
+    if (
+      isNodeModuleSpecifier(v ?? null) ||
+      (canHoldCreateRequireNamespace && exp.getNamedExports().some((named) =>
+        named.getLocalTargetSymbol()?.getDeclarations().some(
+          containsCreateRequireNamespace,
+        ) === true
+      ))
+    ) {
+      refs.push({
+        specifier: null,
+        line: exp.getStartLineNumber(),
+        kind: "create-require",
+      });
+    }
   }
   for (const ref of sf.getTypeReferenceDirectives()) {
     refs.push({
@@ -2494,7 +2614,8 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
-  return refs;
+  MODULE_REFERENCE_CACHE.set(sf, { sourceText, references: refs });
+  return [...refs];
 }
 
 export interface LayerViolation {
@@ -2635,15 +2756,19 @@ function contractCapabilityReferences(
     MorphSymbol,
     Map<string, boolean>
   >();
-  let containerAssignmentsBySymbol:
-    | ReadonlyMap<MorphSymbol, readonly BinaryExpression[]>
-    | undefined;
+  const containerAssignmentsBySourceFile = new WeakMap<
+    SourceFile,
+    ReadonlyMap<MorphSymbol, readonly BinaryExpression[]>
+  >();
   const containerAssignmentsFor = (
+    sourceFile: SourceFile,
     symbol: MorphSymbol,
   ): readonly BinaryExpression[] => {
+    let containerAssignmentsBySymbol =
+      containerAssignmentsBySourceFile.get(sourceFile);
     if (containerAssignmentsBySymbol === undefined) {
       const assignments = new Map<MorphSymbol, BinaryExpression[]>();
-      for (const candidate of sf.getDescendantsOfKind(
+      for (const candidate of sourceFile.getDescendantsOfKind(
         SyntaxKind.BinaryExpression,
       )) {
         if (
@@ -2668,16 +2793,22 @@ function contractCapabilityReferences(
         assignments.set(targetSymbol, entries);
       }
       containerAssignmentsBySymbol = assignments;
+      containerAssignmentsBySourceFile.set(
+        sourceFile,
+        containerAssignmentsBySymbol,
+      );
     }
     return containerAssignmentsBySymbol.get(symbol) ?? [];
   };
   const expressionProvenance = (
     node: Node | undefined,
     seen: Set<Node> = new Set(),
-  ): Node | undefined => expressionProvenanceIn(sf, node, seen);
+  ): Node | undefined =>
+    expressionProvenanceIn(node?.getSourceFile() ?? sf, node, seen);
   const memberNameCandidates = (
     access: Node,
-  ): PropertyKeyCandidates => memberNameCandidatesIn(sf, access);
+  ): PropertyKeyCandidates =>
+    memberNameCandidatesIn(access.getSourceFile(), access);
   /**
    * A platform global this project never declares, reached EITHER as a bare name
    * (`Date`) or through the `globalThis` namespace (`globalThis.Date`,
@@ -2685,12 +2816,17 @@ function contractCapabilityReferences(
    * loader scan and this one ask the SAME authority.
    */
   const isAmbientGlobal = (node: Node | undefined, name: string): boolean =>
-    ambientGlobalNamesIn(sf, node).has(name) ||
-    ambientGlobalNamesIn(sf, node).has(UNKNOWN_AMBIENT_GLOBAL);
+    ambientGlobalNamesIn(node?.getSourceFile() ?? sf, node).has(name) ||
+    ambientGlobalNamesIn(node?.getSourceFile() ?? sf, node).has(
+      UNKNOWN_AMBIENT_GLOBAL,
+    );
   const isKnownAmbientGlobal = (
     node: Node | undefined,
     name: string,
-  ): boolean => ambientGlobalNamesIn(sf, node).has(name);
+  ): boolean => ambientGlobalNamesIn(
+    node?.getSourceFile() ?? sf,
+    node,
+  ).has(name);
   const hasAmbientName = (
     node: Node | undefined,
     name: string,
@@ -2808,9 +2944,14 @@ function contractCapabilityReferences(
     }
     if (!Node.isIdentifier(expression)) return false;
     const symbol = expression.getSymbol();
-    if (symbol === undefined || seenSymbols.has(symbol)) return false;
-    const nextSeen = new Set(seenSymbols).add(symbol);
-    return ambientAliasSourcesIn(sf, symbol).some((source) => {
+    if (symbol === undefined) return false;
+    const provenance = ambientAliasSourcesAcrossModulesIn(
+      expression.getSourceFile(),
+      symbol,
+    );
+    if (seenSymbols.has(provenance.symbol)) return false;
+    const nextSeen = new Set(seenSymbols).add(provenance.symbol);
+    return provenance.sources.some((source) => {
       if (source.uncertain === true) return true;
       if (
         source.selectors.length === 1 &&
@@ -2854,9 +2995,14 @@ function contractCapabilityReferences(
     }
     if (!Node.isIdentifier(expression)) return false;
     const symbol = expression.getSymbol();
-    if (symbol === undefined || seenSymbols.has(symbol)) return false;
-    const nextSeen = new Set(seenSymbols).add(symbol);
-    return ambientAliasSourcesIn(sf, symbol).some(
+    if (symbol === undefined) return false;
+    const provenance = ambientAliasSourcesAcrossModulesIn(
+      expression.getSourceFile(),
+      symbol,
+    );
+    if (seenSymbols.has(provenance.symbol)) return false;
+    const nextSeen = new Set(seenSymbols).add(provenance.symbol);
+    return provenance.sources.some(
       (source) =>
         source.uncertain === true ||
         (source.selectors.length === 0 &&
@@ -2906,7 +3052,10 @@ function contractCapabilityReferences(
       Node.isPropertyAccessExpression(expression) ||
       Node.isElementAccessExpression(expression)
     ) {
-      const candidates = selectorCandidatesForAccessIn(sf, expression);
+      const candidates = selectorCandidatesForAccessIn(
+        expression.getSourceFile(),
+        expression,
+      );
       return (
         candidates.selectors.some((selector) =>
           isAmbientDateTimeFormatMethodAtPath(
@@ -2936,17 +3085,23 @@ function contractCapabilityReferences(
     if (Node.isIdentifier(expression)) {
       const symbol = expression.getSymbol();
       if (symbol === undefined) return false;
+      const provenance = ambientAliasSourcesAcrossModulesIn(
+        expression.getSourceFile(),
+        symbol,
+      );
       const pathKey = path.map((selector) =>
         selector.kind === "property"
           ? `p:${selector.name ?? "?"}`
           : `i:${selector.index}`
       ).join("/");
-      const cached = dateTimeFormatMethodCache.get(symbol)?.get(pathKey);
+      const cached = dateTimeFormatMethodCache.get(provenance.symbol)?.get(
+        pathKey,
+      );
       if (cached !== undefined) return cached;
-      if (seenSymbols.has(symbol)) return false;
-      const nextSeen = new Set(seenSymbols).add(symbol);
+      if (seenSymbols.has(provenance.symbol)) return false;
+      const nextSeen = new Set(seenSymbols).add(provenance.symbol);
       if (
-        ambientAliasSourcesIn(sf, symbol).some((source) =>
+        provenance.sources.some((source) =>
           isAmbientDateTimeFormatMethodAtPath(
             source.receiver,
             [...source.selectors, ...path],
@@ -2954,41 +3109,48 @@ function contractCapabilityReferences(
           )
         )
       ) {
-        const symbolCache = dateTimeFormatMethodCache.get(symbol) ?? new Map();
+        const symbolCache = dateTimeFormatMethodCache.get(provenance.symbol) ??
+          new Map();
         symbolCache.set(pathKey, true);
-        dateTimeFormatMethodCache.set(symbol, symbolCache);
+        dateTimeFormatMethodCache.set(provenance.symbol, symbolCache);
         return true;
       }
-      for (const assignment of containerAssignmentsFor(symbol)) {
-        const targets = assignmentPathsForSymbolIn(
-          sf,
-          assignment.getLeft(),
-          symbol,
-        );
-        for (const targetPath of targets.paths) {
-          if (
-            targetPath.length <= path.length &&
-            targetPath.every((selector, index) =>
-              selectorsEqual(selector, path[index]!),
-            ) &&
-            isAmbientDateTimeFormatMethodAtPath(
-              assignment.getRight(),
-              path.slice(targetPath.length),
-              nextSeen,
-            )
-          ) {
-            const symbolCache =
-              dateTimeFormatMethodCache.get(symbol) ?? new Map();
-            symbolCache.set(pathKey, true);
-            dateTimeFormatMethodCache.set(symbol, symbolCache);
-            return true;
+      for (const sourceFile of provenance.sourceFiles) {
+        for (const assignment of containerAssignmentsFor(
+          sourceFile,
+          provenance.symbol,
+        )) {
+          const targets = assignmentPathsForSymbolIn(
+            sourceFile,
+            assignment.getLeft(),
+            provenance.symbol,
+          );
+          for (const targetPath of targets.paths) {
+            if (
+              targetPath.length <= path.length &&
+              targetPath.every((selector, index) =>
+                selectorsEqual(selector, path[index]!),
+              ) &&
+              isAmbientDateTimeFormatMethodAtPath(
+                assignment.getRight(),
+                path.slice(targetPath.length),
+                nextSeen,
+              )
+            ) {
+              const symbolCache =
+                dateTimeFormatMethodCache.get(provenance.symbol) ?? new Map();
+              symbolCache.set(pathKey, true);
+              dateTimeFormatMethodCache.set(provenance.symbol, symbolCache);
+              return true;
+            }
           }
         }
       }
       if (seenSymbols.size === 0) {
-        const symbolCache = dateTimeFormatMethodCache.get(symbol) ?? new Map();
+        const symbolCache = dateTimeFormatMethodCache.get(provenance.symbol) ??
+          new Map();
         symbolCache.set(pathKey, false);
-        dateTimeFormatMethodCache.set(symbol, symbolCache);
+        dateTimeFormatMethodCache.set(provenance.symbol, symbolCache);
       }
       return false;
     }
@@ -3024,7 +3186,7 @@ function contractCapabilityReferences(
           return false;
         }
         const name = propertyNameIn(
-          sf,
+          expression.getSourceFile(),
           property.getNameNode(),
           property.getName(),
         );
@@ -3141,15 +3303,8 @@ function contractCapabilityReferences(
     }
     return null;
   };
-  let hasAmbientDateTimeFormatSource = false;
   const inspectMember = (access: Node, receiver: Node): void => {
     const members = memberNameCandidates(access);
-    if (
-      members.names.has("DateTimeFormat") &&
-      isAmbientGlobal(receiver, "Intl")
-    ) {
-      hasAmbientDateTimeFormatSource = true;
-    }
     for (const name of members.names) {
       const capability = capabilityOf(
         name,
@@ -3182,12 +3337,6 @@ function contractCapabilityReferences(
     inspectMember(access, access.getExpression());
   }
   for (const member of destructuredMembersIn(sf)) {
-    if (
-      member.name === "DateTimeFormat" &&
-      hasAmbientName(member.receiver, "Intl", member.ambientReceiverNames)
-    ) {
-      hasAmbientDateTimeFormatSource = true;
-    }
     const capability = capabilityOf(
       member.name,
       member.receiver,
@@ -3271,7 +3420,6 @@ function contractCapabilityReferences(
       }
     }
     if (
-      hasAmbientDateTimeFormatSource &&
       isAmbientDateTimeFormatMethodAtPath(call.getExpression()) &&
       !hasExplicitIntlInstant(call.getArguments())
     ) {

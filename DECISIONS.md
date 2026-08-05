@@ -3529,3 +3529,34 @@ cannot be allowed to erase a capability or tenant edge from a completeness fence
 the shared semantic traversal and its adversarial matrix before relying on it.
 **Revert path:** none while dependency, determinism, and tenant-scope fences must
 fail closed across every runtime source and schema occurrence.
+
+### D-108 · 2026-08-05 · reversible · Capability provenance and tenant scope cross module and recursive boundaries
+
+Ambient `Date` and `Intl.DateTimeFormat` capabilities now retain provenance
+through local imports and re-exports. A `node:module` namespace cannot be exported
+from the module that acquires it, so `createRequire` cannot cross a project-module
+boundary before loading an outer layer. Module-reference results are cached by
+source text so the expanded analysis stays inside the existing 20-second gate,
+and an in-place source edit invalidates the cached result.
+
+Tenant-boundary discovery includes exported schemas with multiple direct tenant
+occurrences, not only collections and catchalls. Occurrence coverage follows one
+recursive expansion, and generated mutations isolate shared values before changing
+individual paths or coherent nested groups. The complete probe matrix covers every
+source union arm and a non-empty explanation child.
+
+The stronger audit exposed contract ownership gaps in prohibitions, precedence
+steps, proceed results, resolution states, and recursive explanation trees. Each
+exported boundary now rejects mixed-tenant assembly independently. ADR-0040 raises
+only the affected contracts envelope from 4,100 to 4,150 on the measured
+4,112-line tree. Domain, infrastructure, presentation, the runtime JSON envelope,
+fixtures, and recorded hashes do not move.
+
+**Why:** an import boundary, direct reference, recursive child, or internally
+coherent foreign subtree cannot erase an ambient capability or tenant edge from a
+completeness fence.
+**Revisit-When:** a new capability carrier, module-export form, or recursive schema
+container is adopted; extend the semantic traversal and its adversarial matrix
+before relying on it.
+**Revert path:** none while dependency, determinism, and tenant-scope fences must
+fail closed across project modules and complete schema trees.

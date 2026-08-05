@@ -51,7 +51,10 @@ export const PrecedenceStepSchema = z.strictObject({
     "blocked",
   ]),
   reasonCode: ReasonCodeSchema,
-}).readonly();
+}).refine(
+  (step) => step.left.sourceRef.firmId === step.right.sourceRef.firmId,
+  "precedence sources must belong to one tenant",
+).readonly();
 export type PrecedenceStep = z.infer<typeof PrecedenceStepSchema>;
 
 const explanationNodeFields = {
@@ -166,6 +169,7 @@ ExplanationNodeSchema._zod.run = ((payload, ctx) => {
       };
   const ancestors = new Set<object>();
   let output: unknown = payload.value;
+  let treeFirmId: string | undefined;
   const tasks: Task[] = [{
     kind: "visit",
     input: payload.value,
@@ -214,6 +218,19 @@ ExplanationNodeSchema._zod.run = ((payload, ctx) => {
     }
     const input = task.input as object;
     const parsedNode = parsed.value as Output;
+    const firmId = parsedNode.evidenceSnapshotRefs[0]?.firmId ??
+      parsedNode.sourceRefs[0]?.sourceRef.firmId;
+    if (treeFirmId === undefined) {
+      treeFirmId = firmId;
+    } else if (firmId !== undefined && firmId !== treeFirmId) {
+      payload.issues.push({
+        code: "custom",
+        message: "explanation tree references must belong to one tenant",
+        input: task.input,
+        inst: ExplanationNodeSchema,
+        path: materializePath(task.path),
+      });
+    }
     const rawChildren = parsedNode.childNodes;
     parsedNode.childNodes = new Array(rawChildren.length);
     task.assign(parsedNode);

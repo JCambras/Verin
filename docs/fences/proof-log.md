@@ -5793,3 +5793,59 @@ its exact companion while the corresponding local and explicit-instant controls
 remain green.
 
 **Date:** 2026-08-04 (review corrections, D-107).
+
+## F114 · cross-module provenance and complete tenant trees fail closed (D-108)
+
+**Invariants:** ambient clocks retain provenance across local module exports;
+`node:module` namespaces cannot cross a project-module boundary before invoking
+`createRequire`; every direct and recursive tenant occurrence has a legal probe;
+and internally coherent foreign subtrees fail their exported parent boundary.
+
+The adversarial companions were added before the detector and contract changes.
+The focused red run failed seven planted cases:
+```
+× follows a node:module namespace exported through another module
+× follows an exported ambient clock across modules
+× follows an exported ambient formatter across modules
+× detects an exported object with multiple direct scoped references
+× requires recursive probes to cover child scoped references
+× enforces one tenant across a recursive explanation tree
+× enforces one tenant across a prohibition source and scope
+```
+
+Cross-module ambient provenance now resolves import and re-export aliases to the
+declaration source before following assignments, container members, and function
+returns. A module that acquires a `node:module` namespace cannot export that loader
+capability. Project-owned Date-, Intl-, and createRequire-shaped values remain
+ordinary local code, including across the same local export boundary.
+
+Tenant discovery now includes schemas with multiple direct occurrences. Coverage
+allows one recursive expansion, and immutable mutation isolates shared values
+before changing either one reference or every reference below a nested prefix.
+Expanding the real probe matrix exposed mixed-tenant assembly in standalone
+prohibition, precedence-step, proceed-result, and resolution-state contracts, as
+well as recursive explanation trees. Each owning schema now rejects that state
+without relying on an enclosing decision record.
+
+The first aggregate verification exposed the real dependency check taking 24.1
+seconds under file concurrency and crossing its unchanged 20-second limit.
+Module-reference results are now cached by source text, and an edit-invalidation
+companion proves stale findings cannot survive a source change. The isolated real
+check fell from 14.0 seconds to 7.2 seconds, while the full fitness run completed
+in 46.2 seconds.
+
+The focused dependency and tenant suites pass 278 tests. Full fitness passes
+1,024 tests, and the complete serialized Vitest suite passes 1,370. Typecheck,
+lint, knip, the CI-configured production build, `v3:invariants` (6 active-pass,
+0 active-fail), and `golden:validate` (16 signed cases) also pass. Contracts
+measure 4,112/4,150 under ADR-0040; domain, infrastructure, presentation, the
+runtime registry envelope, fixtures, and recorded hashes do not move.
+
+**Revert:** the adversarial companions remain continuous tests. Restoring
+source-file-local provenance, exportable loader namespaces, collection-only
+boundary discovery, first-cycle termination, aliased in-place mutations, or
+record-only tenant validation fails its exact companion. Returning stale cached
+module references fails the edit-invalidation companion. The corresponding local
+capability and complete legal probes remain green.
+
+**Date:** 2026-08-05 (review corrections, D-108).

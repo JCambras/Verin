@@ -194,8 +194,29 @@ export const ProhibitionSchema = z.strictObject({
   scopeRef: ScopeRefSchema,
   reasonCode: ReasonCodeSchema,
   explanation: z.string().min(1),
-}).readonly();
+}).refine(
+  (prohibition) =>
+    prohibition.source.sourceRef.firmId === prohibition.scopeRef.firmId,
+  { message: "prohibition source and scope must belong to one tenant" },
+).readonly();
 export type Prohibition = z.infer<typeof ProhibitionSchema>;
+
+const proceedDecisionFirmIds = (decision: {
+  recommendation: z.infer<typeof RecommendationSchema>;
+  authority: z.infer<typeof AuthorityRequirementSchema>;
+  executionPlan: z.infer<typeof ExecutionPlanSchema>;
+}): string[] => [
+  ...recommendationSubjectRefs(decision.recommendation.parameters).map(
+    (subjectRef) => subjectRef.firmId,
+  ),
+  ...(decision.authority.mode === "automatic"
+    ? []
+    : decision.authority.stages.map((stage) => stage.templateRef.firmId)),
+  ...decision.executionPlan.steps.map((step) => step.targetRef.firmId),
+];
+
+const hasOneTenant = (firmIds: readonly string[]): boolean =>
+  firmIds.every((firmId) => firmId === firmIds[0]);
 
 /** Proceed: recommendation + authority + plan, all REQUIRED (v3 invariant 7). */
 export const ProceedDecisionSchema = z.strictObject({
@@ -203,6 +224,13 @@ export const ProceedDecisionSchema = z.strictObject({
   recommendation: RecommendationSchema,
   authority: AuthorityRequirementSchema,
   executionPlan: ExecutionPlanSchema,
+}).superRefine((decision, ctx) => {
+  if (!hasOneTenant(proceedDecisionFirmIds(decision))) {
+    ctx.addIssue({
+      code: "custom",
+      message: "proceed decision references must belong to one tenant",
+    });
+  }
 }).readonly();
 export type ProceedDecision = z.infer<typeof ProceedDecisionSchema>;
 
@@ -232,15 +260,7 @@ const requireDecisionResultTenant = (
   ctx: z.RefinementCtx,
 ): void => {
   const firmIds = result.kind === "proceed"
-    ? [
-        ...recommendationSubjectRefs(result.recommendation.parameters).map(
-          (subjectRef) => subjectRef.firmId,
-        ),
-        ...(result.authority.mode === "automatic"
-          ? []
-          : result.authority.stages.map((stage) => stage.templateRef.firmId)),
-        ...result.executionPlan.steps.map((step) => step.targetRef.firmId),
-      ]
+    ? proceedDecisionFirmIds(result)
     : result.kind === "blocked"
       ? result.blockers.flatMap((blocker) =>
           blocker.resolvingEvidence.map((request) => request.subjectRef.firmId)
@@ -249,7 +269,7 @@ const requireDecisionResultTenant = (
           result.prohibition.source.sourceRef.firmId,
           result.prohibition.scopeRef.firmId,
         ];
-  if (firmIds.some((firmId) => firmId !== firmIds[0])) {
+  if (!hasOneTenant(firmIds)) {
     ctx.addIssue({
       code: "custom",
       message: "decision result references must belong to one tenant",

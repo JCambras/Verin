@@ -55,6 +55,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0037](./0037-line-budget-domain-resume-seal.md) | Domain ceiling 1,250 to 1,300 for pre-load resume validation | Accepted (amends ADR-0033) |
 | [0038](./0038-line-budget-observability-identifier-provenance.md) | Domain and infrastructure ceilings for observability identifier provenance | Accepted (amends ADR-0033/0036) |
 | [0039](./0039-line-budget-decision-result-tenant-closure.md) | Contracts ceiling for decision-result tenant closure | Accepted (amends ADR-0035) |
+| [0040](./0040-line-budget-tenant-boundary-completeness.md) | Contracts ceiling for complete tenant-boundary closure | Accepted (amends ADR-0039) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

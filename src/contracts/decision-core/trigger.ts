@@ -228,5 +228,18 @@ export const ResolutionStateSchema = z.strictObject({
   bound: z.array(SlotRefSchema).readonly(),
   ambiguous: z.array(AmbiguityRefSchema).readonly(),
   gaps: z.array(EvidenceRequestSchema).readonly(),
+}).superRefine((resolution, ctx) => {
+  const firmIds = [
+    ...resolution.ambiguous.flatMap((entry) =>
+      entry.candidateRefs.map((candidate) => candidate.firmId)
+    ),
+    ...resolution.gaps.map((gap) => gap.subjectRef.firmId),
+  ];
+  if (firmIds.some((firmId) => firmId !== firmIds[0])) {
+    ctx.addIssue({
+      code: "custom",
+      message: "resolution references must belong to one tenant",
+    });
+  }
 }).readonly();
 export type ResolutionState = z.infer<typeof ResolutionStateSchema>;
