@@ -35,6 +35,7 @@ function normalizedEvidence(
           freshness: entry.freshness,
           source: entry.source,
           provenance: entry.provenance,
+          summary: entry.summary,
           liquidityPhase: entry.liquidityPhase,
           observedAbsent: entry.observedAbsent,
           displayValue: entry.displayValue,

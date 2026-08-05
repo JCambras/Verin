@@ -858,6 +858,7 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
             journey.safety?.executionEligibility !== undefined,
           executionReached: journey.execution !== null,
           verificationReached: journey.verification !== null,
+          stopNote: journey.stopNote,
           executionEligibility: journey.safety?.executionEligibility
             ? {
                 ...journey.safety.executionEligibility,

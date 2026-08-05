@@ -6076,3 +6076,47 @@ typecheck, lint, production build, and file-size ratchet pass on the corrected s
 **Revert:** every adversarial mutation remains inside companion tests.
 
 **Date:** 2026-07-29 (review corrections, D-082).
+
+## F120 · one-case quick start and complete evidence meaning
+
+**Fences:** `src/__tests__/unit/demo-truth-boundaries.test.ts`,
+`src/__tests__/fitness/golden-cases.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** quick start retains GC-01 identity through every station; unresolved GC-03
+post-review bank evidence withholds execution with an explicit pending captain-evidence statement;
+and comparison equivalence includes every signed evidence row summary in both product and
+independent projections.
+
+The original browser journey started with GC-03, stopped at Safety because no signed post-review
+bank row satisfies its must-hold verification precondition, then navigated directly to GC-01 for
+execution. The launcher, stop surfaces, and printable record now expose the exact withheld reason,
+while quick start uses executable signed GC-01 without changing identity.
+
+For the adversarial route proof, quick start was temporarily changed back to GC-03. The browser
+companion failed at `e2e/demo-journey.spec.ts:22`, receiving the GC-03 workspace URL where the exact
+GC-01 URL was required. For the evidence proof, `summary` was temporarily removed from both
+normalizations. The unit companion failed at
+`src/__tests__/unit/demo-truth-boundaries.test.ts:101` because a summary-only change was still called
+equivalent, and the independent companion failed at
+`src/__tests__/fitness/golden-cases.test.ts:1218` because the invalid policy-only claim produced no
+diagnostic.
+
+**Revert:** all production injections were removed. The adversarial mutations remain in companion
+tests, and the exact browser path passes on the corrected state.
+
+**Date:** 2026-08-04 (D-099).
+
+## F121 · measured contracts headroom
+
+**Fence:** `src/__tests__/fitness/line-budget.test.ts`.
+**Invariant:** signed-money contract authorities fit inside one bounded, measured contracts ceiling,
+while a one-line overage or an empty measurement bucket still fails.
+
+Before ADR-0039, the unmodified real-baseline companion failed at
+`src/__tests__/fitness/line-budget.test.ts:77` and `:90`, reporting 4,111 contracts lines against the
+4,050 ceiling. The ceiling is now 4,150, leaving 39 lines of measured correction headroom. The
+existing companions continue to inject `ceiling + 1` and a zero presentation bucket through the
+same `budgetViolations` function.
+
+**Revert:** restore 4,050 only after the contracts tree measures within that envelope.
+
+**Date:** 2026-08-04 (D-100, ADR-0039).

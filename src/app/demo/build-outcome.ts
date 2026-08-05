@@ -168,7 +168,10 @@ export function buildSafety(
     } as (typeof checks)[number]);
   } else {
     checks.push(
-      buildBankInstructionSafetyCheck(bankInstructionEvidence),
+      buildBankInstructionSafetyCheck(
+        bankInstructionEvidence,
+        eligibility?.preconditions,
+      ),
     );
   }
   if (invalidationAuthority && pass === "revalidated") {

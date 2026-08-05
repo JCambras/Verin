@@ -1179,6 +1179,43 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         ),
       ),
     ).toBe(true);
+
+    const summaryCases = clone();
+    const sourceEvidence = caseById(
+      summaryCases,
+      "GC-01-firm-a-happy-path",
+    ).householdEvidence as Array<Record<string, unknown>>;
+    const counterpart = caseById(
+      summaryCases,
+      "GC-02-firm-b-happy-path",
+    );
+    counterpart.householdEvidence = JSON.parse(
+      JSON.stringify(sourceEvidence),
+    ) as Array<Record<string, unknown>>;
+    (
+      counterpart.householdEvidence as Array<
+        Record<string, unknown>
+      >
+    )[0]!.summary =
+      "The signed evidence now carries a materially different meaning.";
+    const summaryDemo = demoClone();
+    summaryDemo.decisions.find(
+      ({ sourceCaseId, decisionRole }) =>
+        sourceCaseId === "GC-01-firm-a-happy-path" &&
+        decisionRole === "primary",
+    )!.comparisonDescription =
+      "The same household and request have exact signed equivalent evidence; differences are driven by policy provenance, not code.";
+    expect(
+      validateGoldenDemoSemantics(
+        summaryCases,
+        realRefs,
+        summaryDemo,
+      ).some((problem) =>
+        problem.includes(
+          "safe-proceed/firm-a/primary: comparison does not disclose its complete signed evidence difference",
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("flags a verified bank-instruction claim without exact evidence", () => {
@@ -1254,6 +1291,18 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         ),
       }),
     );
+    expect(
+      gc03.safetyChecks.find(
+        ({ label }) =>
+          label ===
+          "Bank-instruction revalidation not evaluated",
+      )?.detail,
+    ).toContain(
+      "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
+    );
+    expect(gc03.stopNote).toContain(
+      "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
+    );
     gc03.safetyChecks = [
       {
         label: "Bank instruction unchanged since the decision",
@@ -1296,6 +1345,24 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ).some((problem) =>
         problem.includes(
           "unresolved must-hold precondition bank-instruction-independently-verified must expose no execution eligibility, reservation, execution, or verification state",
+        ),
+      ),
+    ).toBe(true);
+
+    const hiddenWithheldReason = demoClone();
+    hiddenWithheldReason.executionGuards.find(
+      ({ sourceCaseId }) =>
+        sourceCaseId ===
+        "GC-03-recent-bank-change-firm-a",
+    )!.stopNote = "This journey stopped at Safety.";
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        hiddenWithheldReason,
+      ).some((problem) =>
+        problem.includes(
+          "unresolved post-review bank evidence must state that execution is withheld pending captain-signed evidence",
         ),
       ),
     ).toBe(true);

@@ -3,7 +3,9 @@ import {
   bindExactSourceCase,
   resolveSourceCaseId,
   scenarioById,
+  sourceCaseFor,
 } from "@app/demo/data";
+import { compareComparisonEvidence } from "@app/demo/comparison-evidence";
 import { getJourney } from "@app/demo/journey";
 
 describe("demo truth boundaries", () => {
@@ -47,7 +49,10 @@ describe("demo truth boundaries", () => {
     });
     expect(check?.detail).toContain("changed on 2026-07-22");
     expect(check?.detail).toContain(
-      "No exact signed post-review result was recorded",
+      "Signed post-review bank-instruction evidence is absent",
+    );
+    expect(check?.detail).toContain(
+      "Execution is withheld pending captain-signed evidence",
     );
     expect(journey.record.safety?.checks).toContainEqual(check);
     expect(journey.safety?.executionEligibility).toBeNull();
@@ -61,8 +66,44 @@ describe("demo truth boundaries", () => {
       "ReservationCreated",
     );
     expect(journey.stopNote).toContain(
-      "bank-instruction-independently-verified lacks exact signed proof",
+      "Execution is withheld pending captain-signed evidence",
     );
+  });
+
+  it("treats a signed evidence summary change as a comparison difference", () => {
+    const source = sourceCaseFor(
+      scenarioById("safe-proceed"),
+      "firm-a",
+    )!;
+    const same = {
+      ...source,
+      evidence: source.evidence.map((entry) => ({ ...entry })),
+    };
+    const changed = {
+      ...same,
+      evidence: same.evidence.map((entry, index) =>
+        index === 0
+          ? {
+              ...entry,
+              summary:
+                "The signed evidence now carries a materially different meaning.",
+            }
+          : entry,
+      ),
+    };
+
+    expect(
+      compareComparisonEvidence(source, same, "initial")
+        .equivalent,
+    ).toBe(true);
+    expect(
+      compareComparisonEvidence(source, changed, "initial"),
+    ).toMatchObject({
+      equivalent: false,
+      changed: [
+        "account-balance · subject:smiths-joint-taxable",
+      ],
+    });
   });
 
   it("binds verification proofs to causal events", () => {

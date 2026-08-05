@@ -3757,3 +3757,33 @@ stage configuration without recorded approvals could each publish examiner-facin
 signed event history did not establish.
 **Revert path:** replace these demo authorities when the real execution, comparison, audit, and
 approval projections land, provided the same fail-closed structural guarantees remain.
+
+### D-099 · 2026-08-04 · captain-decision · Quick start keeps one executable signed case
+
+The default seven-minute journey binds GC-01 under Firm A from launcher through printable record.
+No station may silently replace that identity with GC-03 or another case. GC-03 remains reachable
+as its own signed variant, but absent signed post-review bank-instruction evidence withholds its
+execution and states that captain-signed evidence is pending.
+
+Evidence comparison equivalence includes each signed row's summary in both the product projection
+and the independent semantic validator. A summary-only meaning change therefore prevents a
+policy-only causality claim.
+
+**Why:** D-078 selected GC-03 before D-082's must-hold reachability guard exposed that the case has
+no signed post-review bank evidence. Keeping GC-03 as quick start would either stop the promised
+end-to-end path or require a silent case switch. Ignoring evidence summaries could also label
+materially different signed statements equivalent.
+**Revert path:** none without a new captain decision and newly signed evidence that preserves every
+must-hold execution precondition.
+
+### D-100 · 2026-08-04 · reversible · Signed money authorities receive measured contracts headroom
+
+ADR-0039 raises the contracts ceiling from 4,050 to 4,150 after the shared money arithmetic,
+execution-status planes, and metric unit authority bring the measured layer to 4,111 lines. The
+other layer ceilings remain unchanged.
+
+**Why:** these authorities eliminate duplicate product-truth sources and belong in contracts.
+Compressing their validation or rationale would make the tree less maintainable without reducing
+scope.
+**Revert path:** remove the signed-money authorities and their consumers, then ratchet the contracts
+ceiling to the newly measured tree through ADR-0018's amendment path.

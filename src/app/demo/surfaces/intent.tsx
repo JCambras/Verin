@@ -33,7 +33,7 @@ export function IntentSurface({
         </p>
         <p className="text-xs text-slate-600">
           <FreshValue provenance={vm.requestAt.provenance}>
-            <time dateTime={vm.requestAt.provenance.asOf} data-testid="request-timestamp" data-event-instant={vm.requestAt.provenance.asOf}>
+            <time className="text-slate-800" dateTime={vm.requestAt.provenance.asOf} data-testid="request-timestamp" data-event-instant={vm.requestAt.provenance.asOf}>
               {vm.requestAt.display}
             </time>
           </FreshValue>

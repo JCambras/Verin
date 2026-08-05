@@ -226,6 +226,7 @@ export interface DemoSemanticSnapshot {
     executionEligibilityVisible: boolean;
     executionReached: boolean;
     verificationReached: boolean;
+    stopNote: string | null;
     executionEligibility: {
       eligible: boolean;
       reason: string;
@@ -437,6 +438,7 @@ function comparisonEvidenceRows(
           freshness: entry.freshness,
           source: entry.source,
           provenance: entry.provenance,
+          summary: entry.summary ?? null,
           displayValue: entry.displayValue ?? null,
           observedAbsent: entry.observedAbsent ?? false,
           liquidityPhase: entry.liquidityPhase ?? null,
@@ -2350,6 +2352,23 @@ export function validateGoldenDemoSemantics(
         isObj(entry) &&
         entry.liquidityPhase === "pre-execution-revalidation",
     );
+    const expected = isObj(
+      guardSource?.expectedExecutionEligibility,
+    )
+      ? guardSource.expectedExecutionEligibility
+      : null;
+    const expectedPreconditions = Array.isArray(
+      expected?.preconditions,
+    )
+      ? expected.preconditions.filter(isObj)
+      : [];
+    const requiresIndependentBankVerification =
+      expectedPreconditions.some(
+        (precondition) =>
+          precondition.mustStillHoldAtExecution === true &&
+          precondition.code ===
+            "bank-instruction-independently-verified",
+      );
     if (
       guard.exactBankInstructionEvidence !==
         (signedBankRows.length > 0) ||
@@ -2389,7 +2408,14 @@ export function validateGoldenDemoSemantics(
             (isObj(signedBankFinding) &&
               isNonEmptyString(signedBankFinding.summary) &&
               check.detail?.includes(signedBankFinding.summary) ===
-                true)),
+                true)) &&
+          (!requiresIndependentBankVerification ||
+            (check.detail?.includes(
+              "Signed post-review bank-instruction evidence is absent",
+            ) === true &&
+              check.detail.includes(
+                "Execution is withheld pending captain-signed evidence",
+              ))),
       );
       if (unsupportedClaim || !unavailableCheck) {
         problems.push(
@@ -2417,15 +2443,9 @@ export function validateGoldenDemoSemantics(
     }
     if (guard.sourceCaseId === null) continue;
     const source = caseData(cases, guard.sourceCaseId);
-    const expected = isObj(source?.expectedExecutionEligibility)
-      ? source.expectedExecutionEligibility
-      : null;
     const actual = guard.executionEligibility;
     const expectedReservations = Array.isArray(expected?.reservations)
       ? expected.reservations.filter(isObj)
-      : [];
-    const expectedPreconditions = Array.isArray(expected?.preconditions)
-      ? expected.preconditions.filter(isObj)
       : [];
     const hasDerivedPass = Array.isArray(source?.expectedLedgerEvents) &&
       source.expectedLedgerEvents.some(
@@ -2471,6 +2491,17 @@ export function validateGoldenDemoSemantics(
     ) {
       problems.push(
         `${guard.sourceCaseId}: unresolved must-hold precondition ${String(unmetMustHold.code)} must expose no execution eligibility, reservation, execution, or verification state`,
+      );
+    }
+    if (
+      unmetMustHold?.code ===
+        "bank-instruction-independently-verified" &&
+      !guard.stopNote?.includes(
+        "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
+      )
+    ) {
+      problems.push(
+        `${guard.sourceCaseId}: unresolved post-review bank evidence must state that execution is withheld pending captain-signed evidence`,
       );
     }
     const eligibilityDrift =

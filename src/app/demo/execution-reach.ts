@@ -1,4 +1,7 @@
-import { buildBankInstructionSafetyCheck } from "./build-safety-check";
+import {
+  buildBankInstructionSafetyCheck,
+  POST_REVIEW_BANK_EVIDENCE_WITHHELD,
+} from "./build-safety-check";
 import {
   evidenceForPass,
   executionEligibilityFor,
@@ -54,6 +57,7 @@ export function executionReachFor(
     sourceCase.evidence.filter(
       (entry) => entry.evidenceKind === "bank-instruction",
     ),
+    eligibility.preconditions,
   );
   for (const precondition of eligibility.preconditions) {
     if (!precondition.mustStillHoldAtExecution) continue;
@@ -69,7 +73,11 @@ export function executionReachFor(
     if (!hasEveryEvidence || !hasExactFinding) {
       return {
         reached: false,
-        reason: `Execution precondition ${precondition.code} lacks exact signed proof.`,
+        reason:
+          precondition.code ===
+          "bank-instruction-independently-verified"
+            ? POST_REVIEW_BANK_EVIDENCE_WITHHELD
+            : `Execution precondition ${precondition.code} lacks exact signed proof.`,
       };
     }
   }

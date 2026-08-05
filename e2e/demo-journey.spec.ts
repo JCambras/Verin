@@ -12,6 +12,17 @@ import { login, PRINCIPAL } from "./helpers";
  */
 
 const SHOTS = "demo-screens";
+const QUICK_START_QUERY =
+  "scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path";
+
+async function expectQuickStartStation(
+  page: Page,
+  station: string,
+) {
+  await expect(page).toHaveURL(
+    `/app/demo/${station}?${QUICK_START_QUERY}`,
+  );
+}
 
 async function checkAxe(page: Page, name: string) {
   // Settle the surface-entry fade (design §12.2) first: scanning mid-animation
@@ -46,20 +57,23 @@ async function expectFullDecisionBinding(page: Page) {
   }
 }
 
-test("the seven-minute journey fails closed and signed surfaces remain clickable", async ({ page }) => {
+test("the seven-minute quick start keeps one executable signed case end to end", async ({ page }) => {
   await login(page, PRINCIPAL);
 
   // Launcher.
   await page.getByRole("link", { name: "Demo", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Money-movement demo" })).toBeVisible();
+  await expect(
+    page.getByText(
+      "Quick start · Firm A · safe proceed · signed case GC-01-firm-a-happy-path",
+    ),
+  ).toBeVisible();
   await checkAxe(page, "launcher");
   await snap(page, 0, "launcher");
 
-  // 1 - Household workspace (canonical journey: recent bank change under Firm A).
+  // 1 - Household workspace.
   await page.getByRole("link", { name: "Run the seven-minute journey" }).click();
-  await expect(page).toHaveURL(
-    "/app/demo/workspace?scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a",
-  );
+  await expectQuickStartStation(page, "workspace");
   await expect(page.getByRole("heading", { name: "The Smith Household" })).toBeVisible();
   await expect(page.getByText("$8,000.00", { exact: true })).toBeVisible();
   await expectDevBadge(page);
@@ -68,6 +82,7 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
 
   // 2 - Contextual intent panel: request + typed slots, LLM draft set apart.
   await page.getByRole("link", { name: "Ask Verin about this household" }).click();
+  await expectQuickStartStation(page, "intent");
   await expect(page.getByText("Drafted - not yet reviewed")).toBeVisible();
   await expect(page.getByText("$75,000.00").first()).toBeVisible();
   await expectDevBadge(page);
@@ -76,6 +91,7 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
 
   // 3 - Evidence: exact case sources with observed and retrieved instants.
   await page.getByRole("link", { name: "Gather evidence" }).click();
+  await expectQuickStartStation(page, "evidence");
   await expect(page.getByTestId("evidence-missing")).toHaveCount(0);
   await expect(page.getByText("retrieved Jul 26, 09:30:05").first()).toBeVisible();
   await expect(
@@ -87,15 +103,20 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
   await checkAxe(page, "evidence");
   await snap(page, 3, "evidence");
 
-  // 4 - Recommendation: proceed, with the specialist-review authority summary.
+  // 4 - Recommendation: proceed with the signed dual-approval authority.
   await page.getByRole("link", { name: "View the recommendation" }).click();
+  await expectQuickStartStation(page, "decision");
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
-  await expect(page.getByText(/specialist review \(stage 1\)/)).toBeVisible();
+  await expect(
+    page.getByText(/two distinct operations approvers/i),
+  ).toBeVisible();
+  await expect(page.getByText(/specialist review/i)).toHaveCount(0);
   await checkAxe(page, "decision");
   await snap(page, 4, "decision");
 
   // 5 - Policy trace: versions in mono, precedence rows.
   await page.getByRole("link", { name: "View the policy trace" }).click();
+  await expectQuickStartStation(page, "policy-trace");
   await expect(page.getByText("firm-a-policy@2026.07.1").first()).toBeVisible();
   await expect(page.getByText("smiths-destination-restriction@v2").first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "Household destination restriction" })).toBeVisible();
@@ -104,14 +125,14 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
 
   // 6 - Authority: every ordered stage and quorum is visibly satisfied before Safety.
   await page.getByRole("link", { name: "Continue to authority" }).click();
+  await expectQuickStartStation(page, "authority");
   await expect(page.getByText("Dual operations approval").first()).toBeVisible();
-  await expect(page.getByText("Bank-instruction specialist review").first()).toBeVisible();
+  await expect(page.getByText("Bank-instruction specialist review")).toHaveCount(0);
   await expect(page.getByText("the requester cannot approve")).toBeVisible();
   await expect(page.getByText(/Approval binds to decision/)).toBeVisible();
   await expect(page.getByText("Awaiting review")).toHaveCount(0);
   await expect(page.getByText("Awaiting prior stage")).toHaveCount(0);
   await expect(page.getByText("Awaiting approval")).toHaveCount(0);
-  await expect(page.getByText(/Reviewed ·/)).toBeVisible();
   await expect(page.getByText(/Approved ·/)).toHaveCount(2);
   const stagedAuthorityGate = page.getByRole("region", {
     name: "Approve",
@@ -128,32 +149,20 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
   await checkAxe(page, "authority");
   await snap(page, 6, "authority");
 
-  // 7 - Safety: changed, unverified bank evidence blocks execution.
+  // 7 - Safety: signed eligibility, reservation, and idempotency remain on GC-01.
   await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
+  await expectQuickStartStation(page, "safety");
   await expect(page.getByText("Material evidence re-checked")).toBeVisible();
-  await expect(
-    page.getByText("Bank-instruction revalidation not evaluated"),
-  ).toBeVisible();
-  await expect(page.getByText("Execute the movement")).toHaveCount(0);
-  await expect(page.getByText("idem:GC-03:smiths-75000-2026-08-15")).toHaveCount(0);
-  await expect(page.getByText("res:GC-03:liquidity")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Execute the movement" })).toBeVisible();
+  await page.getByRole("button", { name: "Verify source" }).click();
+  await expect(page.getByText("idem:GC-01:smiths-75000-2026-08-15")).toBeVisible();
+  await expect(page.getByText("res:GC-01:liquidity")).toBeVisible();
   await checkAxe(page, "safety");
   await snap(page, 7, "safety");
 
-  await page.goto(
-    "/app/demo/execution?scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a",
-  );
-  await expect(page.getByText("Execution not reached")).toBeVisible();
-  await expect(
-    page.getByText(
-      /bank-instruction-independently-verified lacks exact signed proof/,
-    ),
-  ).toBeVisible();
-
-  // 8 - A separately selected signed executable case remains clickable.
-  await page.goto(
-    "/app/demo/execution?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path",
-  );
+  // 8 - Execution.
+  await page.getByRole("link", { name: "Execute the movement" }).click();
+  await expectQuickStartStation(page, "execution");
   await expect(page.getByText("Submitted", { exact: true })).toBeVisible();
   await expect(page.getByText("settlement not yet confirmed")).toBeVisible();
   await expect(page.getByText("deferred pending sandbox access")).toBeVisible();
@@ -163,6 +172,7 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
 
   // 9 - Verification: proves vs not-yet, next poll.
   await page.getByRole("link", { name: "View verification" }).click();
+  await expectQuickStartStation(page, "verification");
   await expect(page.getByText("What this status proves")).toBeVisible();
   await expect(page.getByText("What it does not prove yet")).toBeVisible();
   await expect(page.getByText("Next status poll")).toBeVisible();
@@ -171,6 +181,7 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
 
   // 10 - Firm A / Firm B: policy versions head the columns; differing rows marked.
   await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
+  await expectQuickStartStation(page, "comparison");
   await expect(page.getByText("firm-b-policy@2026.07.1").first()).toBeVisible();
   await expect(page.getByText("$48,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$96,000.00", { exact: true })).toBeVisible();
@@ -180,6 +191,7 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
 
   // 11 - Policy authoring: draft set apart; activation appears only after approval.
   await page.getByRole("link", { name: "Author a policy change" }).click();
+  await expectQuickStartStation(page, "policy-authoring");
   await expect(page.getByText("Always preserve twelve months of planned withdrawals in cash.")).toBeVisible();
   await expect(page.getByTestId("policy-activated")).toHaveCount(0);
   await snap(page, 11, "policy-authoring");
@@ -190,6 +202,7 @@ test("the seven-minute journey fails closed and signed surfaces remain clickable
 
   // 12 - Printable record: watermark, full hashes, expanded reasoning.
   await page.getByRole("link", { name: "View the printable decision record" }).click();
+  await expectQuickStartStation(page, "record");
   await expect(page.getByTestId("record-watermark")).toContainText("Demonstration - not a compliance record");
   await expectFullDecisionBinding(page);
   await checkAxe(page, "record");
@@ -865,6 +878,15 @@ test("the launcher exposes every exact signed firm and case variant", async ({ p
       `/app/demo/workspace?scenario=${scenarioId}&firm=${firmId}&case=${caseId}`,
     );
   }
+  await expect(
+    page
+      .getByRole("link", {
+        name: /GC-03-recent-bank-change-firm-a/,
+      })
+      .getByText(
+        /Signed post-review bank-instruction evidence is absent\. Execution is withheld pending captain-signed evidence\./,
+      ),
+  ).toBeVisible();
 
   await page.goto(
     "/app/demo/decision?scenario=competing-liquidity&firm=firm-a&case=GC-11-simultaneous-distributions-second",
@@ -921,10 +943,20 @@ test("missing bank-instruction evidence fails closed on Safety and Record", asyn
       "changed on 2026-07-22",
     );
     await expect(surface).toContainText(
-      "No exact signed post-review result was recorded",
+      "Signed post-review bank-instruction evidence is absent",
+    );
+    await expect(surface).toContainText(
+      "Execution is withheld pending captain-signed evidence",
     );
     await expect(surface).not.toContainText(
       "Bank instruction unchanged since the decision",
+    );
+  }
+
+  for (const station of ["execution", "verification"]) {
+    await page.goto(`/app/demo/${station}?${changedContext}`);
+    await expect(page.locator("main")).toContainText(
+      "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
     );
   }
 });
