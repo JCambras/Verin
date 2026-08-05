@@ -3854,3 +3854,28 @@ current approval authority, one external execution cannot split across steps, an
 diagnostic or identifier boundaries must fail closed without unbounded reads.
 **Revert path:** none while the ledger remains the tenant-isolated replay and
 execution ownership authority.
+
+### D-127 · 2026-08-05 · reversible · Bounded ownership, compliance provenance, and step envelopes fail closed
+
+Bounded register replay checks indexed immutable history for active reservation and
+execution-handle owners before the verified window. An affected decision is marked
+incomplete instead of folding an assignment whose earlier owner was not verified.
+
+Compliance eligibility rejects a demonstration before any direct-source fast path,
+and `DerivedProvenance` structurally fixes its source to `computed`. A caller cannot
+launder a demonstration flag through `verin-crm` or another direct source.
+
+Reservation and verification facts bind to one execution-step envelope. A parent
+action and its compensation may share the exact reference as the ratified schema
+permits, while the same reference appearing in multiple steps is rejected with a
+resource-specific error. Reservation releases use the same step-level ownership.
+
+**Why:** exact-window replay cannot infer absent structural owners, compliance trust
+cannot depend on property-check order, and action-level cardinality rejects valid
+step-scoped compensation while failing to name the real cross-step defect.
+**Alternatives:** trust only the visible window, retain source-first compliance
+eligibility, or add an action discriminator to the ratified ledger schema. All were
+rejected because they weaken bounded truth, preserve a laundering path, or make a
+schema-valid shared-reference plan unrecordable.
+**Revert path:** none while bounded register replay, derived compliance exclusion,
+and step-scoped reservation and verification ownership remain active controls.

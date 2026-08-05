@@ -293,9 +293,10 @@ export function isSyntheticSource(source: SourceSystem): boolean {
  * to refuse both. Accepts a plain RecordProvenance or a DerivedProvenance.
  */
 export function canFeedComplianceDecision(p: RecordProvenance | DerivedProvenance): boolean {
+  if (isDemonstration(p)) return false;
   if (isSyntheticSource(p.source)) return false;
   if (p.source !== "computed") return true;
-  if (!isDerived(p) || p.demonstration || p.derivedFrom.length === 0) {
+  if (!isDerived(p) || p.derivedFrom.length === 0) {
     return false;
   }
   const leafSources = p.derivedFrom.filter((source) => source !== "computed");
@@ -315,7 +316,8 @@ export function canFeedComplianceDecision(p: RecordProvenance | DerivedProvenanc
 export const DEMO_WATERMARK = "Demonstration - not a compliance record" as const;
 
 /** Provenance of a value computed FROM other provenanced inputs (the derivation trace). */
-export interface DerivedProvenance extends RecordProvenance {
+export interface DerivedProvenance extends Omit<RecordProvenance, "source"> {
+  readonly source: "computed";
   /** True iff any input was synthetic or itself a demonstration: the derived artifact is itself synthetic. */
   readonly demonstration: boolean;
   /** The input sources this artifact was derived from, flattened through nested derivations to leaf sources (deduped). */

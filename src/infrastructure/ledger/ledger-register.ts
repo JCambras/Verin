@@ -44,6 +44,7 @@ import {
   UNVERIFIED_COMPUTED_PROVENANCE_INPUT,
   verifyRecordedLedgerProvenance,
 } from "./ledger-producer-provenance";
+import { storedLedgerStructureLookup } from "./ledger-structural-store";
 
 export interface VerifiedRegisterDecision {
   readonly projection: DecisionProjection;
@@ -125,6 +126,25 @@ function directEntryReferences(event: LedgerEntry): readonly string[] {
   ];
 }
 
+async function hasPreWindowStructuralOwner(
+  lookup: LedgerStructureLookup,
+  event: LedgerEntry,
+  sequence: number,
+  windowStart: number,
+): Promise<boolean> {
+  if (event.type === "ReservationCreated") {
+    const active = await lookup.activeReservation(
+      event.reservationRef.id,
+      sequence,
+    );
+    if (active && active.sequence < windowStart) return true;
+  }
+  const handleId = structuralExecutionHandleId(event);
+  if (!handleId) return false;
+  const owners = await lookup.executionHandleEvents(handleId, sequence);
+  return owners.some((owner) => owner.sequence < windowStart);
+}
+
 async function replayRegisterWindow(
   tx: SqlTx,
   tenant: TenantContext,
@@ -180,6 +200,7 @@ async function replayRegisterWindow(
         : []),
   );
   const structuralDecisions = new Map<string, StructuralDecision>();
+  const storedStructure = storedLedgerStructureLookup(tx, tenant);
   const structure: LedgerStructureLookup = {
     decision: async (id) => structuralDecisions.get(id) ?? null,
     entry: async (id) => entryById.get(id) ?? null,
@@ -281,6 +302,19 @@ async function replayRegisterWindow(
         continue;
       }
       throw appError("STORE_CONSTRAINT", DECISION_RECORDING_REQUIRED);
+    }
+    if (
+      id &&
+      await hasPreWindowStructuralOwner(
+        storedStructure,
+        event,
+        item.sequence,
+        windowStart,
+      )
+    ) {
+      decisions.delete(id);
+      incompleteDecisions.add(id);
+      continue;
     }
     if (
       event.type === "StatusObserved" &&

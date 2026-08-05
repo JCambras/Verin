@@ -24,6 +24,13 @@ describe("provenance", () => {
     }
   });
 
+  it("demonstration provenance cannot be laundered through a direct source", () => {
+    expect(canFeedComplianceDecision({
+      ...p("verin-crm"),
+      demonstration: true,
+    })).toBe(false);
+  });
+
   it("renders a human-visible source/asOf label", () => {
     expect(provenanceLabel(p("verin-crm"))).toBe("Verin CRM · as of 2026-07-18");
     expect(provenanceLabel(p("estimate"))).toBe("Estimated · as of 2026-07-18");

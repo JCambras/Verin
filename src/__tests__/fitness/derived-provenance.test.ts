@@ -61,6 +61,12 @@ export function checkDerivationLaw(derive: Derive, canFeed: CanFeed): string[] {
   if (allReal.demonstration) out.push(`an all-real derivation must NOT be a demonstration`);
   if (!canFeed(allReal)) out.push(`an all-real derivation must be allowed to feed a compliance decision`);
 
+  const mislabeledDemo: RecordProvenance & { readonly demonstration: true } = {
+    ...prov(real[0]!),
+    demonstration: true,
+  };
+  if (canFeed(mislabeledDemo)) out.push(`a demonstration flag cannot be laundered through a direct source`);
+
   // built literally (not via `derive`) so a broken derivation cannot dodge the chained clause
   const demoInput: DerivedProvenance = { source: "computed", asOf, confidence: "low", demonstration: true, derivedFrom: ["fixture"] };
   const chained = derive([prov(real[0]!), demoInput], asOf);

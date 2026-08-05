@@ -19,12 +19,15 @@ const sameStrings = (
   left.length === right.length &&
   left.every((value, index) => value === right[index]);
 
-function authorizedActions(record: DecisionRecord) {
+function authorizedStepEnvelopes(record: DecisionRecord) {
   return record.result.kind === "proceed"
-    ? record.result.executionPlan.steps.flatMap((step) => [
-        step,
-        ...(step.compensatingAction ? [step.compensatingAction] : []),
-      ])
+    ? record.result.executionPlan.steps.map((step) => ({
+        stepId: step.id,
+        actions: [
+          step,
+          ...(step.compensatingAction ? [step.compensatingAction] : []),
+        ],
+      }))
     : [];
 }
 
@@ -150,23 +153,38 @@ export function assertPlanReferencesV1(
     }
   }
   if (event.type === "ReservationCreated") {
-    const matches = authorizedActions(record).filter((action) =>
-      action.reservationRefs.some(
+    const envelopes = authorizedStepEnvelopes(record).filter(({ actions }) =>
+      actions.some((action) => action.reservationRefs.some(
         (reference) => reference.id === event.reservationRef.id,
-      ) && sameStrings(action.conflictKeys, event.conflictKeys));
-    if (matches.length !== 1) {
+      )));
+    if (envelopes.length > 1) {
       throw appError(
         "STORE_CONSTRAINT",
-        "ledger reservation is not uniquely authorized by the decision",
+        "ledger reservation reference belongs to multiple execution steps",
+      );
+    }
+    if (!envelopes[0]?.actions.some((action) =>
+      action.reservationRefs.some(
+        (reference) => reference.id === event.reservationRef.id,
+      ) && sameStrings(action.conflictKeys, event.conflictKeys))) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        "ledger reservation is not authorized by the decision",
       );
     }
   }
   if (event.type === "ReservationReleased") {
-    const authorized = authorizedActions(record).some((action) =>
-      action.reservationRefs.some(
+    const envelopes = authorizedStepEnvelopes(record).filter(({ actions }) =>
+      actions.some((action) => action.reservationRefs.some(
         (reference) => reference.id === event.reservationRef.id,
-      ));
-    if (!authorized) {
+      )));
+    if (envelopes.length > 1) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        "ledger reservation reference belongs to multiple execution steps",
+      );
+    }
+    if (envelopes.length === 0) {
       throw appError(
         "STORE_CONSTRAINT",
         "ledger reservation is not authorized by the decision",
@@ -174,14 +192,19 @@ export function assertPlanReferencesV1(
     }
   }
   if (event.type === "VerificationClosed") {
-    const matches = authorizedActions(record).filter(
-      (action) =>
-        action.verificationRuleRef.id === event.verificationRuleRef.id,
-    );
-    if (matches.length !== 1) {
+    const envelopes = authorizedStepEnvelopes(record).filter(({ actions }) =>
+      actions.some((action) =>
+        action.verificationRuleRef.id === event.verificationRuleRef.id));
+    if (envelopes.length > 1) {
       throw appError(
         "STORE_CONSTRAINT",
-        "ledger verification rule is not uniquely authorized by the decision",
+        "ledger verification rule belongs to multiple execution steps",
+      );
+    }
+    if (envelopes.length === 0) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        "ledger verification rule is not authorized by the decision",
       );
     }
   }

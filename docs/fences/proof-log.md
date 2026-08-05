@@ -6669,3 +6669,39 @@ and all 19 Playwright end-to-end tests including the accessibility scans.
 files remain.
 
 **Date:** 2026-08-05 (review corrections, ADR-0041, D-126).
+
+## Bounded structural ownership, compliance provenance, and step envelopes (D-127)
+
+**Invariants:** bounded replay never folds a reservation or execution-handle
+assignment whose owner lies outside the verified window; a demonstration cannot
+feed compliance regardless of its claimed direct source; reservation and
+verification references belong to one step while remaining shareable by that
+step's parent and compensation actions.
+
+The permanent companions first ran against the pre-correction implementation:
+
+```text
+× demonstration provenance cannot be laundered through a direct source
+× accepts step-wide reservation and verification facts shared with compensation
+× rejects reservation and verification references shared across steps
+× bounded register excludes a decision with a pre-window reservation owner
+× bounded register excludes a decision with a pre-window execution handle owner
+```
+
+The bounded cases constructed independently replayable current decisions, placed a
+hash-valid competing owner immediately before each verified window, and observed
+the invalid current assignment in the returned projection. The compensation case
+failed because action-level cardinality counted the parent and compensation as two
+owners. The direct-source case returned compliance-eligible despite carrying
+`demonstration: true`.
+
+After correction, indexed predecessor lookups exclude both affected decisions,
+the shared parent and compensation facts append successfully, cross-step reference
+reuse returns precise `STORE_CONSTRAINT` failures, and the direct-source
+demonstration is refused. All adversarial cases remain permanent integration,
+fitness, or unit companions.
+
+**Revert:** no probe files remain. Reverting any production guard makes its
+permanent companion fail.
+
+**Date:** 2026-08-05 (review corrections, D-127).

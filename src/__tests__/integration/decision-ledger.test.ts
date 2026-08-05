@@ -96,12 +96,13 @@ function hashPreimage(value: unknown): string {
   return createHash("sha256").update(canonical.value, "utf8").digest("hex");
 }
 
-function twoStepDecisionRecordingInput() {
-  const input = decisionRecordingInput();
+function withExecutionSteps(
+  input: ReturnType<typeof decisionRecordingInput>,
+  steps: readonly unknown[],
+) {
   if (input.decisionRecord.result.kind !== "proceed") {
     throw new Error("expected proceed decision fixture");
   }
-  const step = input.decisionRecord.result.executionPlan.steps[0]!;
   const candidate = DecisionRecordSchema.parse({
     ...input.decisionRecord,
     decisionHash: "0".repeat(64),
@@ -109,17 +110,7 @@ function twoStepDecisionRecordingInput() {
       ...input.decisionRecord.result,
       executionPlan: {
         ...input.decisionRecord.result.executionPlan,
-        steps: [
-          step,
-          {
-            ...step,
-            id: "step:GC-01:0002",
-            idempotencyKey: "idem:ledger:2",
-            conflictKeys: ["conflict:second"],
-            reservationRefs: [{ firmId: LEDGER_ORG, id: "reservation:2" }],
-            verificationRuleRef: { firmId: LEDGER_ORG, id: "verify:2" },
-          },
-        ],
+        steps,
       },
     },
   });
@@ -137,6 +128,127 @@ function twoStepDecisionRecordingInput() {
         decisionHash: decisionRecord.decisionHash,
       }),
     ],
+  };
+}
+
+function twoStepDecisionRecordingInput() {
+  const input = decisionRecordingInput();
+  if (input.decisionRecord.result.kind !== "proceed") {
+    throw new Error("expected proceed decision fixture");
+  }
+  const step = input.decisionRecord.result.executionPlan.steps[0]!;
+  return withExecutionSteps(input, [
+    step,
+    {
+      ...step,
+      id: "step:GC-01:0002",
+      idempotencyKey: "idem:ledger:2",
+      conflictKeys: ["conflict:second"],
+      reservationRefs: [{ firmId: LEDGER_ORG, id: "reservation:2" }],
+      verificationRuleRef: { firmId: LEDGER_ORG, id: "verify:2" },
+    },
+  ]);
+}
+
+function sharedCompensationDecisionRecordingInput() {
+  const input = decisionRecordingInput();
+  if (input.decisionRecord.result.kind !== "proceed") {
+    throw new Error("expected proceed decision fixture");
+  }
+  const step = input.decisionRecord.result.executionPlan.steps[0]!;
+  return withExecutionSteps(input, [{
+    ...step,
+    compensatingAction: {
+      targetRef: step.targetRef,
+      command: step.command,
+      idempotencyKey: "idem:ledger:compensate",
+      conflictKeys: step.conflictKeys,
+      reservationRefs: step.reservationRefs,
+      preconditions: step.preconditions,
+      verificationRuleRef: step.verificationRuleRef,
+      reasonCode: "decision-closed",
+    },
+  }]);
+}
+
+function sharedCrossStepReferenceDecisionRecordingInput() {
+  const input = decisionRecordingInput();
+  if (input.decisionRecord.result.kind !== "proceed") {
+    throw new Error("expected proceed decision fixture");
+  }
+  const step = input.decisionRecord.result.executionPlan.steps[0]!;
+  return withExecutionSteps(input, [
+    step,
+    {
+      ...step,
+      id: "step:GC-01:0002",
+      idempotencyKey: "idem:ledger:2",
+    },
+  ]);
+}
+
+function independentDecisionRecordingInput() {
+  const input = decisionRecordingInput();
+  const rename = (value: unknown): unknown => {
+    if (typeof value === "string") return value.replaceAll("GC-01", "GC-02");
+    if (Array.isArray(value)) return value.map(rename);
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, rename(child)]),
+    );
+  };
+  const renamedSnapshots = rename(input.evidenceSnapshots) as readonly Record<string, unknown>[];
+  const evidenceSnapshots = renamedSnapshots.map((snapshot, index) =>
+    EvidenceSnapshotRefSchema.parse({
+      ...snapshot,
+      contentHash: createHash("sha256")
+        .update(`independent-evidence:${index}`, "utf8")
+        .digest("hex"),
+    }));
+  const bundleCandidate = DecisionInputBundleSchema.parse({
+    ...(rename(input.inputBundle) as Record<string, unknown>),
+    evidenceSnapshotRefs: evidenceSnapshots.map(({ firmId, id }) => ({ firmId, id })),
+    bundleHash: "0".repeat(64),
+  });
+  const inputBundle = DecisionInputBundleSchema.parse({
+    ...bundleCandidate,
+    bundleHash: hashPreimage(bundleHashPreimage(bundleCandidate)),
+  });
+  const decisionCandidate = DecisionRecordSchema.parse({
+    ...(rename(input.decisionRecord) as Record<string, unknown>),
+    decisionHash: "0".repeat(64),
+  });
+  const decisionRecord = DecisionRecordSchema.parse({
+    ...decisionCandidate,
+    decisionHash: hashPreimage(decisionHashPreimage(decisionCandidate)),
+  });
+  const events = [
+    ...evidenceSnapshots.map((snapshot, index) =>
+      LedgerEntrySchema.parse({
+        ...(rename(input.events[index]) as Record<string, unknown>),
+        id: createHash("sha256")
+          .update(`independent-ledger-evidence:${index}`, "utf8")
+          .digest("hex"),
+        evidenceSnapshotRef: { firmId: snapshot.firmId, id: snapshot.id },
+        contentHash: snapshot.contentHash,
+        snapshotHash: hashPreimage(snapshot),
+      })),
+    LedgerEntrySchema.parse({
+      ...(rename(input.events.at(-1)) as Record<string, unknown>),
+      id: createHash("sha256")
+        .update("independent-ledger-decision", "utf8")
+        .digest("hex"),
+      decisionRef: { firmId: LEDGER_ORG, id: decisionRecord.id },
+      decisionHash: decisionRecord.decisionHash,
+      bundleHash: inputBundle.bundleHash,
+    }),
+  ];
+  return {
+    evidenceSnapshots,
+    inputBundle,
+    decisionRecord,
+    events,
+    provenance: LEDGER_PROVENANCE,
   };
 }
 
@@ -1181,6 +1293,42 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(await listDecisionLedger(db, LEDGER_TENANT)).toHaveLength(7);
   });
 
+  it("accepts step-wide reservation and verification facts shared with compensation", async () => {
+    const input = sharedCompensationDecisionRecordingInput();
+    const recorded = await recordDecision(db, LEDGER_TENANT, input);
+    if (!recorded.ok) throw recorded.error;
+    const samples = allLedgerEventSamples();
+    const reservation = samples.find(
+      (event) => event.type === "ReservationCreated",
+    )!;
+    const verification = samples.find(
+      (event) => event.type === "VerificationClosed",
+    )!;
+
+    await expect(append(db, [reservation, verification])).resolves.toHaveLength(2);
+  });
+
+  it("rejects reservation and verification references shared across steps", async () => {
+    const input = sharedCrossStepReferenceDecisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const reservation = samples.find(
+      (event) => event.type === "ReservationCreated",
+    )!;
+    const verification = samples.find(
+      (event) => event.type === "VerificationClosed",
+    )!;
+
+    await expect(append(db, [reservation])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "ledger reservation reference belongs to multiple execution steps",
+    });
+    await expect(append(db, [verification])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "ledger verification rule belongs to multiple execution steps",
+    });
+  });
+
   it("rejects unauthorized execution, verification, reservation, and trigger references", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
@@ -1347,6 +1495,52 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await expect(rebuildDecisionProjections(db, LEDGER_TENANT))
       .rejects.toMatchObject({ code: "STORE_CONSTRAINT" });
   });
+
+  it.each(["reservation", "execution handle"] as const)(
+    "bounded register excludes a decision with a pre-window %s owner",
+    async (ownerKind) => {
+      const first = decisionRecordingInput();
+      expect((await recordDecision(db, LEDGER_TENANT, first)).ok).toBe(true);
+      const samples = allLedgerEventSamples();
+      const owner = ownerKind === "reservation"
+        ? samples.find((event) => event.type === "ReservationCreated")!
+        : samples.find((event) => event.type === "ExecutionSucceeded")!;
+      await expect(append(db, [owner])).resolves.toHaveLength(1);
+
+      const second = independentDecisionRecordingInput();
+      expect((await recordDecision(db, LEDGER_TENANT, second)).ok).toBe(true);
+      if (second.decisionRecord.result.kind !== "proceed") {
+        throw new Error("expected proceed decision fixture");
+      }
+      const competing = LedgerEntrySchema.parse({
+        ...owner,
+        id: createHash("sha256")
+          .update(`bounded-pre-window:${ownerKind}`, "utf8")
+          .digest("hex"),
+        decisionRef: {
+          firmId: LEDGER_ORG,
+          id: second.decisionRecord.id,
+        },
+        ...(owner.type === "ExecutionSucceeded"
+          ? {
+              stepId: second.decisionRecord.result.executionPlan.steps[0]!.id,
+            }
+          : {}),
+      });
+      await insertRawDecisionEvent(db, competing);
+
+      const snapshot = await readVerifiedDecisionRegister(
+        db,
+        LEDGER_TENANT,
+        second.events.length + 1,
+        50,
+      );
+      expect(snapshot.verification.ok).toBe(true);
+      expect(snapshot.decisions.map(({ projection }) => projection.decisionId))
+        .not.toContain(second.decisionRecord.id);
+      expect(snapshot.replaySourceReason).toBeNull();
+    },
+  );
 
   it.each([
     [
