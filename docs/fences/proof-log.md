@@ -5747,3 +5747,49 @@ platform diagnostics, exact-two-key scoped references, or global Zod deduplicati
 companion while the corresponding safe control remains green.
 
 **Date:** 2026-07-29 (review corrections, D-106).
+
+## F113 · returned capabilities and schema-occurrence coverage fail closed (D-107)
+
+**Invariants:** returning a node-module namespace cannot erase `createRequire`
+provenance; implicit `Intl.DateTimeFormat` clocks remain capabilities through
+aliases and containers; every scoped-reference occurrence has a legal behavioral
+probe before tenant mutation coverage can pass.
+
+The adversarial companions were added before the detector and coverage changes.
+The focused red run failed at `dependency-rule.test.ts:240`,
+`dependency-rule.test.ts:1158`, `dependency-rule.test.ts:1166`, and
+`decision-core-tenant-scope.test.ts:1781`. The missing results were a namespace
+returned by a local wrapper, an extracted `format` method, a formatter method held
+in an object, and an optional unconstrained scoped-reference path omitted from the
+only legal fixture. A union-arm companion then proved that a selected legal branch
+did not cover sibling branch occurrences.
+
+The retained matrix extends the same proof across destructuring, arrays, later
+property writes, local function returns, repeated map edges, and both implicit
+formatter methods. Local createRequire- and Intl-shaped objects remain allowed,
+and formatter aliases supplied a proven numeric instant remain deterministic.
+
+Schema-derived coverage expanded the real legal probe matrix across every
+`AuthorityRequirement`, `DecisionResult`, explanation-source, execution
+compensation, and trigger union arm. The first real run then failed the standalone
+`DecisionResultSchema`: blocked evidence requests and prohibited source/scope
+references could be re-tenanted independently. The result-level refinement now
+rejects both states, and each generated mutation fails through the exported
+boundary that owns it.
+
+The focused capability suite passes 10 tests and the complete tenant-scope suite
+passes 56. The standard fitness command passes 1,015 tests, and the complete
+serialized Vitest suite passes 1,361. Typecheck, lint, line budgets, knip, the
+CI-configured production build, `v3:invariants` (6 active-pass, 0 active-fail), and
+`golden:validate` (16 signed cases) also pass. Production-server Playwright passes
+17 tests after its first run exposed and the shared `FreshValue` primitive closed
+a 4.34:1 faded-text contrast defect. Contracts measure 4,062/4,100 under ADR-0039;
+the runtime registry inventory remains 602/620.
+
+**Revert:** the adversarial companions remain continuous tests. Restoring
+identifier-only namespace resolution, direct-call-only formatter detection,
+fixture-derived tenant paths, or an unconstrained standalone result union fails
+its exact companion while the corresponding local and explicit-instant controls
+remain green.
+
+**Date:** 2026-08-04 (review corrections, D-107).

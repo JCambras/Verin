@@ -25,7 +25,8 @@ import { isAbsolute, join, relative, sep } from "node:path";
 // for correction; ADR-0034 and ADR-0036 raised infrastructure alone,
 // ADR-0035 raised contracts alone for normalized failure snapshots,
 // ADR-0037 raised domain alone for pre-load runtime tenant validation, and
-// ADR-0038 raised domain and infrastructure for identifier provenance. Before
+// ADR-0038 raised domain and infrastructure for identifier provenance, and
+// ADR-0039 raised contracts for decision-result tenant closure. Before
 // ADR-0033, domain and infrastructure sat at exactly ZERO headroom, so one added
 // line in either failed `pnpm test` on an unrelated ceiling and the only remedy was
 // an ADR amendment rather than a code change - which is what compressed doc comments
@@ -34,12 +35,12 @@ import { isAbsolute, join, relative, sep } from "node:path";
 // absorb a correction buys no discipline; it just converts review findings into
 // documentation deletions.
 //
-// MEASURED after D-093, with this file's own algorithm: contracts 4021/4050
-// (29), domain 1298/1350 (52), infrastructure 3484/3550 (66). These are
+// MEASURED after D-107, with this file's own algorithm: contracts 4062/4100
+// (38), domain 1298/1350 (52), infrastructure 3484/3550 (66). These are
 // the real figures, not a stale decision-table row. Any FURTHER increase is still a
 // measured ADR amendment, never a code change.
 const CEILINGS = {
-  contracts: 4050, // ADR-0035, on a re-measured 4,017 baseline
+  contracts: 4100, // ADR-0039, on a re-measured 4,062 baseline
   domain: 1350, // ADR-0038, on a re-measured 1,298 baseline
   infrastructure: 3550, // ADR-0038, on a re-measured 3,484 baseline
   presentation: 6000, // grown only by an ADR bump (ADR-0012)

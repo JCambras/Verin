@@ -3493,3 +3493,39 @@ clock path, platform capability, scoped-reference shape, and opaque-schema occur
 introduced, or Zod changes its graph representation; extend the shared authority and its adversarial
 matrix before relying on it.
 **Revert path:** none while contract purity and tenant-boundary completeness must fail closed.
+
+### D-107 · 2026-08-04 · reversible · Provenance capabilities and tenant probes follow semantic occurrences
+
+Node module namespace provenance now follows local function returns before
+classifying `createRequire`, so returning the imported namespace through a wrapper
+does not erase its layer-crossing authority. Implicit `Intl.DateTimeFormat` clock
+methods retain their capability through aliases, destructuring, object and array
+containers, and property writes; a proven explicit instant remains deterministic.
+
+Tenant-scope completeness is derived from every scoped-reference occurrence in
+the exported schema graph. Optional paths and each union arm require a legal probe
+before mutation testing can report complete coverage. Expanding the real probe
+matrix exposed mixed-tenant blocked and prohibited results at the standalone
+`DecisionResultSchema` boundary, so that contract now closes every disposition
+over one tenant while reusing the nested authority, execution, evidence-request,
+and versioned-source constraints.
+
+ADR-0039 raises only the affected contracts envelope from 4,050 to 4,100 on the
+measured 4,062-line tree. Domain, infrastructure, presentation, the runtime JSON
+envelope, fixtures, and recorded hashes do not move.
+
+Vitest file concurrency is capped at two workers. The standard fitness command
+reproduced CPU oversubscription timeouts in three semantic checks while each
+completed inside the unchanged 20-second limit in isolation; bounded concurrency
+keeps that limit meaningful instead of masking contention with a wider timeout.
+
+The E2E journey also exposed stale plain-text values at 4.34:1 contrast on the
+surface background. `FreshValue` now supplies the documented slate-800 minimum to
+its faded content, while nested semantic colors remain free to override it.
+
+**Why:** a wrapper, alias, omitted optional fixture field, or unselected union arm
+cannot be allowed to erase a capability or tenant edge from a completeness fence.
+**Revisit-When:** a new capability carrier or schema container is adopted; extend
+the shared semantic traversal and its adversarial matrix before relying on it.
+**Revert path:** none while dependency, determinism, and tenant-scope fences must
+fail closed across every runtime source and schema occurrence.

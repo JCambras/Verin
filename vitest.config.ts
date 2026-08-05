@@ -37,6 +37,7 @@ export default defineConfig({
     setupFiles: ["./src/__tests__/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
+    maxWorkers: 2,
     testTimeout: 20000,
   },
 });

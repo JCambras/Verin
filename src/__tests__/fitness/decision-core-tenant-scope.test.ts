@@ -288,11 +288,19 @@ const schemaEdges = (schema: z.ZodType): SchemaEdge[] => {
       if (typeof definition.getter !== "function") {
         unsupportedSchemaStructure(definition, "getter is not a function");
       }
-      edges = [edge(
-        "",
-        "",
-        (definition.getter as () => unknown)(),
-      )];
+      {
+        const resolved = (definition.getter as () => unknown)();
+        if (definition._cachedInner !== undefined) {
+          knownPaths.add("_cachedInner");
+          if (!isSchema(definition._cachedInner)) {
+            unsupportedSchemaStructure(
+              definition,
+              "_cachedInner is not a schema",
+            );
+          }
+        }
+        edges = [edge("", "", resolved)];
+      }
       break;
     case "pipe":
       edges = [
@@ -780,7 +788,11 @@ const fixture = (name: string): Record<string, unknown> =>
 
 type ScopedRef = { firmId: string; id: string };
 type RoleRef = ScopedRef;
-type SourceRef = { sourceRef: ScopedRef; versionRef: ScopedRef };
+type SourceRef = {
+  sourceType: string;
+  sourceRef: ScopedRef;
+  versionRef: ScopedRef;
+};
 type ExplanationNode = {
   evidenceSnapshotRefs: ScopedRef[];
   sourceRefs: SourceRef[];
@@ -850,7 +862,30 @@ const crossTenantSource = (source: SourceRef): SourceRef => ({
   versionRef: { ...source.versionRef, firmId: "firm-b" },
 });
 
+type ValuePath = readonly (string | number)[];
+
+const PROBE_CASES = Symbol("probe-cases");
+type ProbeSet = {
+  readonly [PROBE_CASES]: true;
+  readonly cases: readonly unknown[];
+};
+
+const probeSet = (...cases: readonly unknown[]): ProbeSet => ({
+  [PROBE_CASES]: true,
+  cases,
+});
+
+const probeCases = (probe: unknown): readonly unknown[] =>
+  probe !== null &&
+    typeof probe === "object" &&
+    PROBE_CASES in probe &&
+    (probe as Partial<ProbeSet>)[PROBE_CASES] === true
+    ? (probe as ProbeSet).cases
+    : [probe];
+
 const proceedBoundary = decisionFixture("decision-record-proceed");
+const blockedBoundary = decisionFixture("decision-record-blocked");
+const prohibitedBoundary = decisionFixture("decision-record-prohibited");
 const proceedResult = proceedBoundary.result;
 const executionStep = proceedResult.executionPlan!.steps[0]!;
 const approvalStage = proceedResult.authority!.stages![0]!;
@@ -894,6 +929,14 @@ const authorityRequirement = {
   mode: "approval",
   stages: [probedApprovalStage],
 };
+const specialistAuthorityRequirement = {
+  mode: "specialist_review",
+  specialistRoleIds: [
+    { firmId: "firm-a", id: "compliance-specialist" },
+    { firmId: "firm-a", id: "operations-specialist" },
+  ],
+  stages: [probedApprovalStage],
+};
 const actorRef = {
   firmId: "firm-a",
   actorId: "actor:probe",
@@ -910,17 +953,26 @@ const explanationNode = {
   ],
   childNodes: [],
 };
+const instructionSource = {
+  sourceType: "household_instruction",
+  sourceRef: { firmId: "firm-a", id: "instruction:distribution" },
+  versionRef: { firmId: "firm-a", id: "instruction:distribution@2026.07" },
+};
+const regulatorySource = prohibitedBoundary.result.prohibition!.source;
+const instructionExplanationNode = {
+  ...explanationNode,
+  sourceRefs: [instructionSource],
+};
+const regulatoryExplanationNode = {
+  ...explanationNode,
+  sourceRefs: [regulatorySource],
+};
 const recommendation = {
   ...proceedResult.recommendation!,
   parameters: {
     firstSubject: { firmId: "firm-a", id: "subject:one" },
     secondSubject: { firmId: "firm-a", id: "subject:two" },
   },
-};
-const probedProceedResult = {
-  ...proceedResult,
-  recommendation,
-  authority: authorityRequirement,
 };
 const externalAction = {
   targetRef: executionStep.targetRef,
@@ -935,6 +987,38 @@ const compensatingAction = {
   ...externalAction,
   idempotencyKey: "idem:compensation:probe",
   reasonCode: "later-step-failed",
+};
+const probedExecutionStep = {
+  ...executionStep,
+  compensatingAction,
+};
+const probedExecutionPlan = {
+  ...proceedResult.executionPlan!,
+  steps: [probedExecutionStep],
+};
+const probedProceedResult = {
+  ...proceedResult,
+  recommendation,
+  authority: authorityRequirement,
+  executionPlan: probedExecutionPlan,
+};
+const specialistProceedResult = {
+  ...probedProceedResult,
+  authority: specialistAuthorityRequirement,
+};
+const prohibitedWithInstructionSource = {
+  ...prohibitedBoundary.result,
+  prohibition: {
+    ...prohibitedBoundary.result.prohibition!,
+    source: instructionSource,
+  },
+};
+const prohibitedWithPolicySource = {
+  ...prohibitedBoundary.result,
+  prohibition: {
+    ...prohibitedBoundary.result.prohibition!,
+    source: explanationNode.sourceRefs[0],
+  },
 };
 const executionPrecondition = {
   ...executionStep.preconditions[0]!,
@@ -1001,25 +1085,46 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "authority.ts:ApprovalStageSchema": probedApprovalStage,
   "authority.ts:ApprovalStageTemplateSchema": approvalStageTemplate,
   "authority.ts:ApprovalTemplateSchema": approvalTemplate,
-  "authority.ts:AuthorityRequirementSchema": authorityRequirement,
+  "authority.ts:AuthorityRequirementSchema": probeSet(
+    authorityRequirement,
+    specialistAuthorityRequirement,
+  ),
   "authority.ts:EscalationStepSchema": escalationStep,
   "decision.ts:BlockedDecisionSchema": {
     kind: "blocked",
     blockers: [resolvableBlocker],
   },
   "decision.ts:DecisionRecordSchema": proceedBoundary,
-  "decision.ts:DecisionResultSchema": probedProceedResult,
-  "decision.ts:ExplanationNodeSchema": explanationNode,
-  "decision.ts:ProceedDecisionSchema": probedProceedResult,
+  "decision.ts:DecisionResultSchema": probeSet(
+    probedProceedResult,
+    specialistProceedResult,
+    blockedBoundary.result,
+    prohibitedBoundary.result,
+    prohibitedWithInstructionSource,
+    prohibitedWithPolicySource,
+  ),
+  "decision.ts:ExplanationNodeSchema": probeSet(
+    explanationNode,
+    instructionExplanationNode,
+    regulatoryExplanationNode,
+  ),
+  "decision.ts:ProceedDecisionSchema": probeSet(
+    probedProceedResult,
+    specialistProceedResult,
+  ),
   "decision.ts:RecommendationSchema": recommendation,
   "evidence.ts:DecisionInputBundleSchema":
     fixture("decision-input-bundle"),
   "execution.ts:CompensatingActionSchema": compensatingAction,
-  "execution.ts:ExecutionPlanSchema": proceedResult.executionPlan,
+  "execution.ts:ExecutionPlanSchema": probedExecutionPlan,
   "execution.ts:ExecutionPreconditionSchema": executionPrecondition,
-  "execution.ts:ExecutionStepSchema": executionStep,
+  "execution.ts:ExecutionStepSchema": probedExecutionStep,
   "execution.ts:RetrySafeExternalActionSchema": externalAction,
-  "explanation.ts:ExplanationNodeSchema": explanationNode,
+  "explanation.ts:ExplanationNodeSchema": probeSet(
+    explanationNode,
+    instructionExplanationNode,
+    regulatoryExplanationNode,
+  ),
   "ids.ts:NonEmptyRoleRefSetSchema": roleRefSet,
   "ids.ts:RoleRefSetSchema": roleRefSet,
   "trigger.ts:AmbiguityRefSchema": ambiguityRef,
@@ -1027,10 +1132,181 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "trigger.ts:IntentSchema": intent,
   "trigger.ts:ResolutionStateSchema": resolutionState,
   "trigger.ts:ResolvableBlockerSchema": resolvableBlocker,
-  "trigger.ts:TriggerSchema": trigger,
+  "trigger.ts:TriggerSchema": probeSet(trigger, {
+    kind: "system_event",
+    firmId: "firm-a",
+    sourceRef: { firmId: "firm-a", id: "evidence-source:probe" },
+    eventType: "evidence-updated",
+    eventRef: { firmId: "firm-a", id: "event:probe" },
+    tokenizedPayload: { value: { status: "received" }, piiFree: true },
+  }),
 };
 
-type ValuePath = readonly (string | number)[];
+const occurrenceEdges = (
+  schema: z.ZodType,
+): Array<SchemaEdge & { readonly occurrenceSegment: string }> => {
+  const current = unwrapSchema(schema);
+  const type = schemaDefinition(current).type;
+  const edges = schemaEdges(current);
+  const segmentCounts = new Map<string, number>();
+  for (const edge of edges) {
+    segmentCounts.set(edge.segment, (segmentCounts.get(edge.segment) ?? 0) + 1);
+  }
+  return edges.map((edge, index) => ({
+    ...edge,
+    occurrenceSegment:
+      edge.segment === "" || segmentCounts.get(edge.segment)! > 1
+        ? `<${type}:${index}>${edge.segment}`
+        : edge.segment,
+  }));
+};
+
+const appendOccurrencePath = (path: string, segment: string): string =>
+  `${path}.${segment}`;
+
+const scopedReferenceOccurrencePaths = (
+  schema: z.ZodType,
+): ReadonlySet<string> => {
+  const paths = new Set<string>();
+  const pending: Array<{
+    readonly schema: z.ZodType;
+    readonly path: string;
+    readonly ancestors: ReadonlySet<z.ZodType>;
+  }> = [{ schema, path: "$", ancestors: new Set() }];
+  while (pending.length > 0) {
+    const next = pending.pop()!;
+    const current = unwrapSchema(next.schema);
+    if (next.ancestors.has(current)) continue;
+    if (isScopedReferenceSchema(current)) {
+      paths.add(next.path);
+      continue;
+    }
+    const ancestors = new Set(next.ancestors).add(current);
+    for (const edge of occurrenceEdges(current)) {
+      pending.push({
+        schema: edge.schema,
+        path: appendOccurrencePath(next.path, edge.occurrenceSegment),
+        ancestors,
+      });
+    }
+  }
+  return paths;
+};
+
+const isScopedReferenceValue = (value: unknown): boolean =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  Object.hasOwn(value, "firmId") &&
+  Object.hasOwn(value, "id") &&
+  typeof (value as Record<string, unknown>).firmId === "string" &&
+  typeof (value as Record<string, unknown>).id === "string";
+
+const coveredScopedReferencePaths = (
+  schema: z.ZodType,
+  legal: unknown,
+): ReadonlySet<string> => {
+  const covered = new Set<string>();
+  const visit = (
+    candidate: z.ZodType,
+    value: unknown,
+    path: string,
+    ancestors: ReadonlySet<z.ZodType>,
+  ): void => {
+    const current = unwrapSchema(candidate);
+    if (ancestors.has(current)) return;
+    if (isScopedReferenceSchema(current)) {
+      if (isScopedReferenceValue(value)) covered.add(path);
+      return;
+    }
+    const nextAncestors = new Set(ancestors).add(current);
+    const definition = schemaDefinition(current);
+    const edges = occurrenceEdges(current);
+    const descend = (edge: typeof edges[number], child: unknown): void =>
+      visit(
+        edge.schema,
+        child,
+        appendOccurrencePath(path, edge.occurrenceSegment),
+        nextAncestors,
+      );
+    if (definition.type === "object") {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        return;
+      }
+      const record = value as Record<string, unknown>;
+      const shape = definition.shape as Record<string, unknown>;
+      for (const edge of edges) {
+        if (edge.segment === "{*}") {
+          for (const [key, child] of Object.entries(record)) {
+            if (!(key in shape)) descend(edge, child);
+          }
+        } else if (Object.hasOwn(record, edge.segment)) {
+          descend(edge, record[edge.segment]);
+        }
+      }
+      return;
+    }
+    if (definition.type === "array") {
+      if (!Array.isArray(value)) return;
+      for (const child of value) descend(edges[0]!, child);
+      return;
+    }
+    if (definition.type === "record") {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        return;
+      }
+      for (const [key, child] of Object.entries(value)) {
+        descend(edges[0]!, key);
+        descend(edges[1]!, child);
+      }
+      return;
+    }
+    if (definition.type === "tuple") {
+      if (!Array.isArray(value)) return;
+      const fixed = edges.filter((edge) => edge.segment !== "[]");
+      fixed.forEach((edge, index) => descend(edge, value[index]));
+      const rest = edges.find((edge) => edge.segment === "[]");
+      if (rest !== undefined) {
+        value.slice(fixed.length).forEach((child) => descend(rest, child));
+      }
+      return;
+    }
+    if (definition.type === "set") {
+      if (!(value instanceof Set)) return;
+      for (const child of value) descend(edges[0]!, child);
+      return;
+    }
+    if (definition.type === "map") {
+      if (!(value instanceof Map)) return;
+      for (const [key, child] of value) {
+        descend(edges[0]!, key);
+        descend(edges[1]!, child);
+      }
+      return;
+    }
+    if (definition.type === "union") {
+      const selected = edges.find((edge) => edge.schema.safeParse(value).success);
+      if (selected !== undefined) descend(selected, value);
+      return;
+    }
+    if (definition.type === "intersection") {
+      edges.forEach((edge) => descend(edge, value));
+      return;
+    }
+    if (definition.type === "pipe") {
+      const input = edges[0];
+      const output = edges[1];
+      if (input === undefined || output === undefined) return;
+      descend(input, value);
+      const parsed = input.schema.safeParse(value);
+      if (parsed.success) descend(output, parsed.data);
+      return;
+    }
+    edges.forEach((edge) => descend(edge, value));
+  };
+  visit(schema, legal, "$", new Set());
+  return covered;
+};
 
 const mixedTenantProbes = (legal: unknown): unknown[] => {
   const scopedReferencePaths: ValuePath[] = [];
@@ -1083,6 +1359,7 @@ const tenantBoundaryAudit = (
   readonly missing: string[];
   readonly stale: string[];
   readonly failed: string[];
+  readonly uncovered: string[];
   readonly unsafe: string[];
 } => {
   const boundaries = discoveredScopedReferenceBoundaries(modules);
@@ -1090,14 +1367,30 @@ const tenantBoundaryAudit = (
   const probeNames = Object.keys(probes).sort();
   const missing = boundaryNames.filter((name) => !(name in probes));
   const stale = probeNames.filter((name) => !boundaries.has(name));
+  const boundariesWithUncoveredPaths = new Set<string>();
+  const uncovered = boundaryNames.flatMap((name) => {
+    const schema = boundaries.get(name)!;
+    const cases = probeCases(probes[name]);
+    const coveredPaths = new Set(
+      cases.flatMap((legal) => [...coveredScopedReferencePaths(schema, legal)]),
+    );
+    const paths = [...scopedReferenceOccurrencePaths(schema)]
+      .filter((path) => !coveredPaths.has(path));
+    if (paths.length > 0) boundariesWithUncoveredPaths.add(name);
+    return paths.map((path) => `${name}:${path}`);
+  }).sort();
   const failed = probeNames.filter((name) => {
     const schema = boundaries.get(name);
     if (schema === undefined) return false;
-    const legal = probes[name];
+    const cases = probeCases(probes[name]);
     return (
-      !schema.safeParse(legal).success ||
-      mixedTenantProbes(legal).some(
-        (mixed) => schema.safeParse(mixed).success,
+      cases.length === 0 ||
+      boundariesWithUncoveredPaths.has(name) ||
+      cases.some((legal) =>
+        !schema.safeParse(legal).success ||
+        mixedTenantProbes(legal).some(
+          (mixed) => schema.safeParse(mixed).success,
+        )
       )
     );
   });
@@ -1105,7 +1398,7 @@ const tenantBoundaryAudit = (
     modules,
     allowedOpaqueEntries,
   );
-  return { missing, stale, failed, unsafe };
+  return { missing, stale, failed, uncovered, unsafe };
 };
 
 describe("decision-core tenant-scope fence", () => {
@@ -1121,7 +1414,13 @@ describe("decision-core tenant-scope fence", () => {
     expect(tenantBoundaryAudit(
       DECISION_CORE_SCHEMA_MODULES,
       SCOPED_REFERENCE_BOUNDARY_PROBES,
-    )).toEqual({ missing: [], stale: [], failed: [], unsafe: [] });
+    )).toEqual({
+      missing: [],
+      stale: [],
+      failed: [],
+      uncovered: [],
+      unsafe: [],
+    });
   });
 
   it.each([
@@ -1477,6 +1776,72 @@ describe("decision-core tenant-scope fence", () => {
       [["probe.ts", { PartiallyConstrained }]],
       { "probe.ts:PartiallyConstrained": legal },
     ).failed).toEqual(["probe.ts:PartiallyConstrained"]);
+  });
+
+  it("requires probes to cover optional scoped-reference edges", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const OptionalUnconstrained = z.strictObject({
+      constrained: z.array(reference).refine((refs) =>
+        refs.every((ref) => ref.firmId === refs[0]?.firmId),
+      ),
+      optionalUnconstrained: z.array(reference).optional(),
+    });
+    const legal = {
+      constrained: [
+        { firmId: "firm-a", id: "constrained:one" },
+        { firmId: "firm-a", id: "constrained:two" },
+      ],
+    };
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { OptionalUnconstrained }]],
+      { "probe.ts:OptionalUnconstrained": legal },
+    ).failed).toEqual(["probe.ts:OptionalUnconstrained"]);
+  });
+
+  it("requires probes to cover every scoped-reference union branch", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const UnionBoundary = z.discriminatedUnion("kind", [
+      z.strictObject({
+        kind: z.literal("constrained"),
+        refs: z.array(reference).refine((refs) =>
+          refs.every((ref) => ref.firmId === refs[0]?.firmId),
+        ),
+      }),
+      z.strictObject({
+        kind: z.literal("unconstrained"),
+        refs: z.array(reference),
+      }),
+    ]);
+    const legal = {
+      kind: "constrained",
+      refs: [
+        { firmId: "firm-a", id: "constrained:one" },
+        { firmId: "firm-a", id: "constrained:two" },
+      ],
+    };
+    const audit = tenantBoundaryAudit(
+      [["probe.ts", { UnionBoundary }]],
+      { "probe.ts:UnionBoundary": legal },
+    );
+    expect(audit.failed).toEqual(["probe.ts:UnionBoundary"]);
+    expect(audit.uncovered).toEqual([
+      "probe.ts:UnionBoundary:$.<union:1>.refs.[]",
+    ]);
+  });
+
+  it("assigns distinct occurrence paths to repeated container edges", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    expect([...scopedReferenceOccurrencePaths(z.map(reference, reference))].sort())
+      .toEqual(["$.<map:0>{}", "$.<map:1>{}"]);
   });
 
   it("enforces: ambiguity candidates are duplicate-free and belong to one tenant", () => {

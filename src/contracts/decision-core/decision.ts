@@ -144,6 +144,14 @@ export type Scalar = z.infer<typeof ScalarSchema>;
 export const RecommendationParameterSchema = z.union([ScalarSchema, SubjectRefSchema]);
 export type RecommendationParameter = z.infer<typeof RecommendationParameterSchema>;
 
+const recommendationSubjectRefs = (
+  parameters: Readonly<Record<string, RecommendationParameter>>,
+): readonly z.infer<typeof SubjectRefSchema>[] =>
+  Object.values(parameters).filter(
+    (parameter): parameter is z.infer<typeof SubjectRefSchema> =>
+      parameter !== null && typeof parameter === "object",
+  );
+
 /** An alternative that was considered and why it lost. */
 export const RecommendationAlternativeSchema = z.strictObject({
   code: z.string().min(1),
@@ -164,10 +172,7 @@ export const RecommendationSchema = z
     alternatives: z.array(RecommendationAlternativeSchema).readonly(),
   })
   .superRefine((recommendation, ctx) => {
-    const subjectRefs = Object.values(recommendation.parameters).filter(
-      (parameter): parameter is z.infer<typeof SubjectRefSchema> =>
-        parameter !== null && typeof parameter === "object",
-    );
+    const subjectRefs = recommendationSubjectRefs(recommendation.parameters);
     if (subjectRefs.some((ref) => ref.firmId !== subjectRefs[0]?.firmId)) {
       ctx.addIssue({
         code: "custom",
@@ -219,11 +224,47 @@ export const ProhibitedDecisionSchema = z.strictObject({
 }).readonly();
 export type ProhibitedDecision = z.infer<typeof ProhibitedDecisionSchema>;
 
-export const DecisionResultSchema = z.discriminatedUnion("kind", [
-  ProceedDecisionSchema.unwrap(),
-  BlockedDecisionSchema.unwrap(),
-  ProhibitedDecisionSchema.unwrap(),
-]).readonly();
+const requireDecisionResultTenant = (
+  result:
+    | z.infer<typeof ProceedDecisionSchema>
+    | z.infer<typeof BlockedDecisionSchema>
+    | z.infer<typeof ProhibitedDecisionSchema>,
+  ctx: z.RefinementCtx,
+): void => {
+  const firmIds = result.kind === "proceed"
+    ? [
+        ...recommendationSubjectRefs(result.recommendation.parameters).map(
+          (subjectRef) => subjectRef.firmId,
+        ),
+        ...(result.authority.mode === "automatic"
+          ? []
+          : result.authority.stages.map((stage) => stage.templateRef.firmId)),
+        ...result.executionPlan.steps.map((step) => step.targetRef.firmId),
+      ]
+    : result.kind === "blocked"
+      ? result.blockers.flatMap((blocker) =>
+          blocker.resolvingEvidence.map((request) => request.subjectRef.firmId)
+        )
+      : [
+          result.prohibition.source.sourceRef.firmId,
+          result.prohibition.scopeRef.firmId,
+        ];
+  if (firmIds.some((firmId) => firmId !== firmIds[0])) {
+    ctx.addIssue({
+      code: "custom",
+      message: "decision result references must belong to one tenant",
+    });
+  }
+};
+
+export const DecisionResultSchema = z
+  .discriminatedUnion("kind", [
+    ProceedDecisionSchema.unwrap(),
+    BlockedDecisionSchema.unwrap(),
+    ProhibitedDecisionSchema.unwrap(),
+  ])
+  .superRefine(requireDecisionResultTenant)
+  .readonly();
 export type DecisionResult = z.infer<typeof DecisionResultSchema>;
 
 export function isProceedDecision(result: DecisionResult): result is ProceedDecision {

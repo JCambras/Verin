@@ -237,6 +237,7 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nconst load = Object.getOwnPropertyDescriptors(nodeModule).createRequire.value(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst load = Reflect.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst key = Math.random() ? "createRequire" : "other";\nconst load = Object.getOwnPropertyDescriptor(nodeModule, key)!.value(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nfunction expose() { return nodeModule; }\nconst load = expose().createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -494,6 +495,8 @@ describe("dependency-rule fence", () => {
             "function supplied(local: LocalPlatform) { return local.getBuiltinModule('local'); }",
             "export function returned(): LocalPlatform { return { getBuiltinModule: (value) => value }; }",
             "export const returnedValue = returned().getBuiltinModule('local');",
+            "function expose() { return { createRequire: () => (value: string) => value }; }",
+            "export const localLoader = expose().createRequire();",
             "export const parameterValue = parameter();",
             "export const suppliedValue = supplied(process);",
             "const nested = { process };",
@@ -1151,6 +1154,55 @@ describe("dependency-rule fence", () => {
           "export const value = formatter.formatToParts(undefined);",
         ].join("\n"),
       ],
+      [
+        "aliased implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "const format = formatter.format;",
+          "export const value = format();",
+        ].join("\n"),
+      ],
+      [
+        "container-held implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "const holder = { format: formatter.formatToParts };",
+          "export const value = holder.format();",
+        ].join("\n"),
+      ],
+      [
+        "destructured implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "const { format } = formatter;",
+          "export const value = format();",
+        ].join("\n"),
+      ],
+      [
+        "array-held implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "const holder = [formatter.formatToParts] as const;",
+          "export const value = holder[0]();",
+        ].join("\n"),
+      ],
+      [
+        "property-written implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "const holder: { format?: typeof formatter.format } = {};",
+          "holder.format = formatter.format;",
+          "export const value = holder.format();",
+        ].join("\n"),
+      ],
+      [
+        "returned implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "function expose() { return formatter.formatToParts; }",
+          "export const value = expose()();",
+        ].join("\n"),
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -1191,6 +1243,9 @@ describe("dependency-rule fence", () => {
             "let assignedPlatform = globals.process;",
             "({ Date: AssignedClock, process: assignedPlatform } = globals);",
             "const { now } = Date;",
+            "const formatter = new Intl.DateTimeFormat();",
+            "const explicitFormat = formatter.format;",
+            "const explicitFormatHolder = [formatter.formatToParts] as const;",
             "const { constructor: ctor } = model;",
             // The SHORTHAND spelling names a new local, so the source property has
             // to be resolved through the receiver - reading the local would call
@@ -1206,6 +1261,8 @@ describe("dependency-rule fence", () => {
             "  Date(0),",
             "  model.constructor(),",
             "  now(),",
+            "  explicitFormat(0),",
+            "  explicitFormatHolder[0](0),",
             "  ctor(),",
             "  constructor(),",
             "  Clock.now(),",

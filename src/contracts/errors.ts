@@ -94,7 +94,7 @@ export function normalizeAppError(
   if (policy === "trusted-only") return null;
   if (typeof value !== "object" || value === null) return null;
   try {
-    const code = Reflect.get(value, "code");
+    const code = (value as { readonly code?: unknown }).code;
     return isErrorCode(code)
       ? appError(code, UNTRUSTED_APP_ERROR_MESSAGE)
       : null;
