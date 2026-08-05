@@ -12259,3 +12259,96 @@ local jobs, and workflows containing another malformed job while retaining valid
 **Revert:** removed the invalid `uses` field. The restored 66-test gate-ordering suite passed.
 
 **Date:** 2026-08-05.
+
+### PF-001 (continued) - cross-module and property-held callable provenance
+
+**Invariant (charter operating model / ADR-0039 / D-098):** a disabled Vitest registration remains
+visible when a reachable imported or re-exported helper invokes a caller-supplied callable, and a global
+`Reflect` alias held in an object property cannot hide reflective registration.
+
+**Injections:** added a real imported `registerInjected(registration)` helper and passed `it.skip` from
+`src/__tests__/fitness/charter-drift.test.ts`. A second run invoked `describe.skip` through
+`const injectedIntrinsics = { R: Reflect }; injectedIntrinsics.R.apply(...)` in that real entry.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/_injected-registration-helper.ts:4 imported fitness helper must not register Vitest it.skip
+src/__tests__/fitness/charter-drift.test.ts:40 disabled/focused Vitest registration describe.skip
+```
+
+The pre-fix focused reproductions accepted the cross-module and property-held forms. Continuous
+companions include a barrel re-export, stable object-property sources, and an unresolved computed
+property key that must fail closed. The shared project invocation index preserves the bounded audit.
+
+**Revert:** removed both injected registrations and the temporary helper. The restored charter-drift
+suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-031 (continued) - cross-module and property-held Playwright hooks
+
+**Invariant (charter #9 / ADR-0039 / D-098):** a required Axe runtime graph cannot hide a Playwright hook
+inside an imported or re-exported higher-order helper or an `Object` intrinsic held in an object
+property.
+
+**Injections:** imported a real `installInjected(hook)` helper from `e2e/smoke.spec.ts` and passed
+`test.beforeEach`. A second run stored `test.beforeEach` through
+`const injectedIntrinsics = { O: Object }; injectedIntrinsics.O.assign(...)` before invocation.
+
+**Observed failure (verbatim):**
+```text
+e2e/_injected-hook-helper.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+The pre-fix focused reproductions accepted both forms. Continuous companions cover a barrel re-export,
+property-held `Reflect.apply`, property-held `Object.assign`, and unresolved computed intrinsic
+properties for hook and neutralizer provenance.
+
+**Revert:** removed both injected hook forms and the temporary helper. The restored Axe suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-030 (continued) - GitHub permission, job, and timeout grammar
+
+**Invariant (ADR-0039 / D-098):** a governed command is evidence only when the complete workflow uses
+supported permission scopes, valid job identifiers, and positive-integer or explicit-expression timeout
+values.
+
+**Injection:** added `typo-scope: read` to the real workflow-level permission mapping in
+`.github/workflows/ci.yml`.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci workflow does not provide normal blocking evidence: workflow permissions must be 'read-all', 'write-all', or a literal permission mapping
+```
+
+The pre-fix focused reproduction reported the malformed workflow as command evidence. Continuous
+companions reject an unknown permission scope, an invalid sibling job identifier, arbitrary timeout
+text, and malformed timeout mappings while retaining positive integers and exact GitHub expressions.
+
+**Revert:** removed the invalid permission. The restored gate-ordering suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-032 (continued) - exact Gate 0 renderer bindings
+
+**Invariant (Gate 0 / ADR-0039 / D-098):** every dynamic demo route arm passes its station's exact
+journey view model, spreads the resolved scenario and firm identifiers without overrides, and binds the
+query-derived approval value only where required.
+
+**Injection:** changed the real workspace route arm from `journey.workspace` to `journey.intent`.
+
+**Observed failure (verbatim):**
+```text
+src/app/app/demo/[station]/page.tsx:1 dynamic demo route must render every typed surface exactly once with its journey view model, identifier spread, and approval binding
+```
+
+The pre-fix focused reproduction accepted the wrong view model because it checked only the case label and
+component import. Continuous companions also replace the identifier spread with hardcoded IDs and
+replace the policy-authoring approval binding with a literal.
+
+**Revert:** restored `journey.workspace`. The restored Gate 0 surface suite passed.
+
+**Date:** 2026-08-05.

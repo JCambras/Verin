@@ -31,7 +31,7 @@ import {
   SCENARIOS,
 } from "../../app/demo/data";
 import { getJourney } from "../../app/demo/journey";
-import { DEMO_SEQUENCE } from "../../app/demo/model";
+import { DEMO_SEQUENCE, type DemoStation } from "../../app/demo/model";
 import { isProvablyReachable } from "./_ast-control-flow";
 import { REPO_ROOT } from "./_fence-utils";
 import { hasRegisteredPlaywrightHook } from "./_playwright-hook-analysis";
@@ -75,6 +75,20 @@ const RATIFIED_SURFACE_RATCHET = [
   "Policy draft and simulation impact",
   "Printable examiner-grade decision artifact",
 ] as const;
+const VIEW_MODEL_BY_STATION = {
+  workspace: "workspace",
+  intent: "intent",
+  evidence: "evidence",
+  decision: "recommendation",
+  "policy-trace": "policyTrace",
+  authority: "approvals",
+  safety: "safety",
+  execution: "execution",
+  verification: "verification",
+  comparison: "comparison",
+  "policy-authoring": "policyAuthoring",
+  record: "record",
+} as const satisfies Record<DemoStation, string>;
 const parsedSourceFiles = new Map<string, SourceFile>();
 
 function firstValueHelperIsIdentityPreserving(
@@ -185,15 +199,25 @@ function contractSurfaceNames(markdown: string): string[] {
 
 function routeSurfaceBindings(
   source: string,
-): Array<{ station: string; componentPath: string }> {
+): Array<{
+  station: string;
+  componentPath: string;
+  viewModelKey?: string;
+  identifierSpread: boolean;
+  approvalBinding: "approved" | "absent" | "invalid";
+}> {
   const file = parsedSourceFile("/route.tsx", source);
   const renderer = file.getFunction("renderStation");
   const body = renderer?.getBody();
-  const parameter = renderer?.getParameters()[0];
+  const [parameter, journeyParameter, idsParameter, approvedParameter] =
+    renderer?.getParameters() ?? [];
   if (
     renderer === undefined ||
     !Node.isBlock(body) ||
     parameter === undefined ||
+    journeyParameter === undefined ||
+    idsParameter === undefined ||
+    approvedParameter === undefined ||
     body.getStatements().length !== 1
   ) {
     return [];
@@ -232,10 +256,60 @@ function routeSurfaceBindings(
       .find(Node.isImportSpecifier);
     const moduleName = imported === undefined ? undefined : importModuleOf(imported);
     if (moduleName === undefined || !moduleName.startsWith("@app/")) return [];
+    const attributes = returned.getAttributes();
+    const vmAttribute = attributes.find(
+      (attribute) =>
+        Node.isJsxAttribute(attribute) &&
+        attribute.getNameNode().getText() === "vm",
+    );
+    const vmInitializer = Node.isJsxAttribute(vmAttribute)
+      ? vmAttribute.getInitializer()
+      : undefined;
+    const vmExpression = Node.isJsxExpression(vmInitializer)
+      ? vmInitializer.getExpression()
+      : undefined;
+    const viewModelKey =
+      Node.isPropertyAccessExpression(vmExpression) &&
+      Node.isIdentifier(vmExpression.getExpression()) &&
+      vmExpression.getExpression().getSymbol() === journeyParameter.getSymbol()
+        ? vmExpression.getName()
+        : undefined;
+    const spreads = attributes.filter(Node.isJsxSpreadAttribute);
+    const identifierSpread =
+      spreads.length === 1 &&
+      Node.isIdentifier(spreads[0]!.getExpression()) &&
+      spreads[0]!.getExpression().getSymbol() === idsParameter.getSymbol() &&
+      !attributes.some(
+        (attribute) =>
+          Node.isJsxAttribute(attribute) &&
+          ["scenarioId", "firmId"].includes(
+            attribute.getNameNode().getText(),
+          ),
+      );
+    const approvedAttribute = attributes.find(
+      (attribute) =>
+        Node.isJsxAttribute(attribute) &&
+        attribute.getNameNode().getText() === "approved",
+    );
+    const approvedInitializer = Node.isJsxAttribute(approvedAttribute)
+      ? approvedAttribute.getInitializer()
+      : undefined;
+    const approvedExpression = Node.isJsxExpression(approvedInitializer)
+      ? approvedInitializer.getExpression()
+      : undefined;
+    const approvalBinding = approvedAttribute === undefined
+      ? "absent"
+      : Node.isIdentifier(approvedExpression) &&
+          approvedExpression.getSymbol() === approvedParameter.getSymbol()
+        ? "approved"
+        : "invalid";
     return [
       {
         station: station.getLiteralText(),
         componentPath: `src/app/${moduleName.slice("@app/".length)}.tsx`,
+        viewModelKey,
+        identifierSpread,
+        approvalBinding,
       },
     ];
   });
@@ -1146,13 +1220,17 @@ export function surfaceCompletenessProblems(
   const routeBindings = surfaces.map((surface) => ({
     station: surface.station,
     componentPath: surface.componentPath,
+    viewModelKey: VIEW_MODEL_BY_STATION[surface.station],
+    identifierSpread: true,
+    approvalBinding:
+      surface.station === "policy-authoring" ? "approved" : "absent",
   }));
   if (
     JSON.stringify(routeSurfaceBindings(route)) !==
     JSON.stringify(routeBindings)
   ) {
     problems.push(
-      `${ROUTE_PATH}:1 dynamic demo route must render every typed surface exactly once`,
+      `${ROUTE_PATH}:1 dynamic demo route must render every typed surface exactly once with its journey view model, identifier spread, and approval binding`,
     );
   }
   if (!routePageUsesResolvedStation(route)) {
@@ -1390,6 +1468,18 @@ describe("demo-surface-completeness fence", () => {
         route.replace(
           'const approved = first(sp.approved) === "1";',
           "const approved = true;",
+        ),
+        route.replace(
+          "return <WorkspaceSurface vm={journey.workspace} {...ids} />;",
+          "return <WorkspaceSurface vm={journey.intent} {...ids} />;",
+        ),
+        route.replace(
+          "return <WorkspaceSurface vm={journey.workspace} {...ids} />;",
+          'return <WorkspaceSurface vm={journey.workspace} scenarioId="safe-proceed" firmId="firm-a" />;',
+        ),
+        route.replace(
+          "approved={approved}",
+          "approved={true}",
         ),
         route.replace(
           "  return Array.isArray(v) ? v[0] : v;",

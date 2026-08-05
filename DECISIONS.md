@@ -6559,6 +6559,17 @@ charter audit. PF-001, PF-030, and PF-031 record focused companions, real red in
 green proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics are
 unchanged.
 
+The captain-approved cross-module, CI-grammar, and route-binding review (2026-08-05) amended ADR-0039
+in place a thirty-fourth time: **(1)** higher-order callable provenance follows caller arguments through
+reachable imports and re-exports, so an imported helper cannot hide a Vitest registration, Playwright
+neutralizer, or Playwright hook; **(2)** stable object-property sources for global `Reflect` and `Object`
+aliases are resolved, while incomplete computed property provenance fails closed; **(3)** GitHub
+permission scope keys, job identifier grammar, and positive-integer or explicit-expression timeout
+forms are validated before any workflow command becomes evidence; and **(4)** every Gate 0 renderer arm
+is bound to its exact journey view model, resolved identifier spread, and query-derived approval input.
+PF-001, PF-030, PF-031, and PF-032 record focused companions, real red injections, and restored green
+proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics are unchanged.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

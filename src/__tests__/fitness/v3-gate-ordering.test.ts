@@ -1140,13 +1140,33 @@ describe("v3 gate-ordering fence", () => {
       const invalid = [
         ["name:", "  nested: value"],
         ["permissions: []"],
+        ["permissions:", "  typo-scope: read"],
         ["defaults:", "  run:", "    shell: []"],
         ["concurrency:", "  group: []", "  cancel-in-progress: true"],
         [
           "jobs:",
           "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+          "  1quality:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm typecheck",
+        ],
+        [
+          "jobs:",
+          "  quality:",
           "    name: []",
           "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    timeout-minutes: eventually",
           "    steps:",
           "      - run: pnpm lint",
         ],
@@ -1196,6 +1216,20 @@ describe("v3 gate-ordering fence", () => {
           "workflow does not provide normal blocking evidence",
         );
       }
+
+      const validExpression = parseCiFixture(
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    timeout-minutes: ${{ vars.QUALITY_TIMEOUT }}",
+          "    steps:",
+          "      - run: pnpm lint",
+          "        timeout-minutes: ${{ vars.LINT_TIMEOUT }}",
+          "",
+        ].join("\n"),
+      );
+      expect(ciJobRuns(validExpression, "quality", "pnpm lint")).toBe(true);
     });
 
     it("diagnoses a neutralized command separately from a missing command", () => {

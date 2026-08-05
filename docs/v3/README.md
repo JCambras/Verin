@@ -95,6 +95,8 @@ complete proof metadata is ratcheted, so matching prose cannot fabricate an earl
 That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
 `ci-gate` mechanisms through it too, and every enforced charter mapping is bound to its exact command.
 Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
+The supported workflow schema rejects unknown permission scopes, invalid job identifiers, and timeout
+values that are neither positive integers nor explicit GitHub expressions before accepting any command.
 Effective workflow, job, job-container, and step environments are resolved together; non-literal environment maps and
 overrides of execution-affecting shell, loader, package-manager, or runtime variables are non-evidence.
 Every predecessor of a governed command must match the exact ratcheted checkout, toolchain, install, or
@@ -132,7 +134,9 @@ typed manifest is equal to the normative demo contract, both are pinned to the e
 identities in the SHA-pinned ratified demo contract, every component and dynamic route exists, the
 canonical route binds each station to its manifest component, the dynamic page passes its resolved station
 to that renderer and its loaded marker through a provably reachable return, and the resolved scenario and
-firm identifiers feed the journey service unchanged. Every supported scenario-by-firm outcome is checked
+firm identifiers feed the journey service unchanged. Every renderer arm also passes its station's exact
+journey view model, spreads those resolved identifiers without an override, and supplies the
+query-derived approval value only to policy authoring. Every supported scenario-by-firm outcome is checked
 exhaustively, and the renderer's approval input is bound to the exact
 `first(sp.approved) === "1"` query-derived declaration. The `first` helper is itself pinned to the exact
 identity-preserving first-value semantics. The journey clicks the exact ordered product
@@ -200,7 +204,10 @@ options follow the same immutable-input rule. Fitness registrations must also be
 module-scope statements or direct statements inside an enabled reachable module-scope `describe` /
 `suite` callback; dead control flow and uncalled registration helpers are non-evidence. The complete
 local runtime import graph of every fitness entry is inspected, and imported helpers may not import
-Vitest or register tests or suites.
+Vitest or register tests or suites. Callable parameters in reachable imported and re-exported helpers
+inherit every caller-supplied value, so cross-module higher-order registration cannot hide from that
+ownership check. Stable global intrinsic aliases held in object properties are resolved, and incomplete
+computed property provenance fails closed.
 Per
 **ADR-0055**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

@@ -2,7 +2,9 @@ import {
   Node,
   SyntaxKind,
   type CallExpression,
+  type Project,
   type SourceFile,
+  type Symbol as MorphSymbol,
 } from "ts-morph";
 
 function unwrapExpression(node: Node): Node {
@@ -198,29 +200,240 @@ function isGlobalObjectRoot(node: Node): boolean {
   );
 }
 
-export function isGlobalIntrinsicObject(
+function symbolIdentityKeys(
+  symbol: MorphSymbol | undefined,
+  seen = new Set<object>(),
+): Set<object> {
+  const keys = new Set<object>();
+  if (symbol === undefined || seen.has(symbol.compilerSymbol)) return keys;
+  seen.add(symbol.compilerSymbol);
+  keys.add(symbol.compilerSymbol);
+  const aliased = symbol.getAliasedSymbol();
+  if (aliased !== undefined) {
+    for (const key of symbolIdentityKeys(aliased, seen)) keys.add(key);
+  }
+  return keys;
+}
+
+function objectIdentityKeys(
   node: Node,
-  intrinsicName: string,
   seen = new Set<Node>(),
-): boolean {
+): Set<object> {
   const normalized = unwrapExpression(node);
-  if (seen.has(normalized)) return false;
+  if (seen.has(normalized)) return new Set();
+  seen.add(normalized);
+  if (Node.isObjectLiteralExpression(normalized)) return new Set([normalized]);
+  if (!Node.isIdentifier(normalized)) return new Set();
+  const keys = symbolIdentityKeys(normalized.getSymbol());
+  for (const source of identifierValueSources(normalized)) {
+    for (const key of objectIdentityKeys(source, new Set(seen))) keys.add(key);
+  }
+  return keys;
+}
+
+function sameObjectIdentity(left: Node, right: Node): boolean {
+  const leftKeys = objectIdentityKeys(left);
+  return [...objectIdentityKeys(right)].some((key) => leftKeys.has(key));
+}
+
+function precedingObjectPropertyResolution(
+  receiver: Node,
+  name: string,
+): CallableResolution<Node> {
+  const values: Node[] = [];
+  let complete = true;
+  for (const assignment of receiver
+    .getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.BinaryExpression)) {
+    if (
+      assignment.getStart() >= receiver.getStart() ||
+      assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken
+    ) {
+      continue;
+    }
+    const target = staticMemberAccess(assignment.getLeft());
+    if (target === undefined || !sameObjectIdentity(target.receiver, receiver)) {
+      continue;
+    }
+    if (target.name === undefined) {
+      complete = false;
+    } else if (target.name === name) {
+      values.push(assignment.getRight());
+    }
+  }
+  return { values, complete };
+}
+
+function stableObjectPropertyResolution(
+  receiver: Node,
+  name: string,
+  seen = new Set<Node>(),
+): CallableResolution<Node> | undefined {
+  const normalized = unwrapExpression(receiver);
+  if (seen.has(normalized)) return { values: [], complete: false };
   seen.add(normalized);
   const alternatives = callableExpressionAlternatives(normalized);
   if (expandsCallableExpression(normalized, alternatives)) {
-    return alternatives.some((alternative) =>
-      isGlobalIntrinsicObject(alternative, intrinsicName, new Set(seen)),
+    return combineResolutions(
+      alternatives.map((alternative) =>
+        stableObjectPropertyResolution(alternative, name, new Set(seen)),
+      ),
     );
   }
-  if (isUnshadowedGlobalName(normalized, intrinsicName)) return true;
+  const assigned = precedingObjectPropertyResolution(normalized, name);
+  if (Node.isIdentifier(normalized)) {
+    const sources = identifierValueSources(normalized);
+    if (sources.length === 0) return undefined;
+    const sourceResolution = combineResolutions(
+      sources.map((source) =>
+        stableObjectPropertyResolution(source, name, new Set(seen)),
+      ),
+    );
+    return {
+      values: [...assigned.values, ...(sourceResolution?.values ?? [])],
+      complete:
+        assigned.complete &&
+        sourceResolution !== undefined &&
+        sourceResolution.complete,
+    };
+  }
+  const access = staticMemberAccess(normalized);
+  if (access?.name !== undefined) {
+    const parent = stableObjectPropertyResolution(
+      access.receiver,
+      access.name,
+      new Set(seen),
+    );
+    if (parent === undefined) return undefined;
+    const nested = parent.values.map((source) =>
+      stableObjectPropertyResolution(source, name, new Set(seen)),
+    );
+    return {
+      values: [
+        ...assigned.values,
+        ...nested.flatMap((resolution) => resolution?.values ?? []),
+      ],
+      complete:
+        assigned.complete &&
+        parent.complete &&
+        nested.every(
+          (resolution) => resolution !== undefined && resolution.complete,
+        ),
+    };
+  }
+  if (!Node.isObjectLiteralExpression(normalized)) return undefined;
+  const values = [...assigned.values];
+  let complete = assigned.complete;
+  for (const property of normalized.getProperties()) {
+    if (Node.isSpreadAssignment(property)) {
+      const spread = stableObjectPropertyResolution(
+        property.getExpression(),
+        name,
+        new Set(seen),
+      );
+      if (spread === undefined) {
+        complete = false;
+      } else {
+        values.push(...spread.values);
+        complete = complete && spread.complete;
+      }
+      continue;
+    }
+    const propertyName = staticPropertyName(property.getNameNode());
+    if (propertyName === undefined) {
+      complete = false;
+      continue;
+    }
+    if (propertyName !== name) continue;
+    if (Node.isPropertyAssignment(property)) {
+      const initializer = property.getInitializer();
+      if (initializer === undefined) complete = false;
+      else values.push(initializer);
+    } else if (Node.isShorthandPropertyAssignment(property)) {
+      values.push(property.getNameNode());
+    } else {
+      complete = false;
+    }
+  }
+  return { values, complete };
+}
+
+interface IntrinsicObjectResolution {
+  readonly matches: boolean;
+  readonly complete: boolean;
+  readonly resolved: boolean;
+}
+
+function globalIntrinsicObjectResolution(
+  node: Node,
+  intrinsicName: string,
+  seen = new Set<Node>(),
+): IntrinsicObjectResolution {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) {
+    return { matches: false, complete: false, resolved: true };
+  }
+  seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (expandsCallableExpression(normalized, alternatives)) {
+    const resolutions = alternatives.map((alternative) =>
+      globalIntrinsicObjectResolution(
+        alternative,
+        intrinsicName,
+        new Set(seen),
+      ),
+    );
+    return {
+      matches: resolutions.some((resolution) => resolution.matches),
+      complete: resolutions.every(
+        (resolution) => resolution.resolved && resolution.complete,
+      ),
+      resolved: true,
+    };
+  }
+  if (isUnshadowedGlobalName(normalized, intrinsicName)) {
+    return { matches: true, complete: true, resolved: true };
+  }
   const access = staticMemberAccess(normalized);
   if (
     access?.name === intrinsicName &&
     isGlobalObjectRoot(access.receiver)
   ) {
-    return true;
+    return { matches: true, complete: true, resolved: true };
   }
-  if (!Node.isIdentifier(normalized)) return false;
+  if (access?.name !== undefined) {
+    const property = stableObjectPropertyResolution(
+      access.receiver,
+      access.name,
+    );
+    if (property !== undefined) {
+      const resolutions = property.values.map((source) =>
+        globalIntrinsicObjectResolution(
+          source,
+          intrinsicName,
+          new Set(seen),
+        ),
+      );
+      return {
+        matches: resolutions.some((resolution) => resolution.matches),
+        complete:
+          property.complete &&
+          resolutions.every(
+            (resolution) => resolution.resolved && resolution.complete,
+          ),
+        resolved: true,
+      };
+    }
+  }
+  if (access !== undefined && access.name === undefined) {
+    return { matches: false, complete: false, resolved: true };
+  }
+  if (Node.isObjectLiteralExpression(normalized)) {
+    return { matches: false, complete: true, resolved: true };
+  }
+  if (!Node.isIdentifier(normalized)) {
+    return { matches: false, complete: true, resolved: false };
+  }
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
   if (
     declarations.some((declaration) => {
@@ -235,11 +448,35 @@ export function isGlobalIntrinsicObject(
       return initializer !== undefined && isGlobalObjectRoot(initializer);
     })
   ) {
-    return true;
+    return { matches: true, complete: true, resolved: true };
   }
-  return identifierValueSources(normalized).some((source) =>
-    isGlobalIntrinsicObject(source, intrinsicName, new Set(seen)),
+  const sources = identifierValueSources(normalized);
+  if (sources.length === 0) {
+    return { matches: false, complete: true, resolved: false };
+  }
+  const resolutions = sources.map((source) =>
+    globalIntrinsicObjectResolution(source, intrinsicName, new Set(seen)),
   );
+  return {
+    matches: resolutions.some((resolution) => resolution.matches),
+    complete: resolutions.every(
+      (resolution) => resolution.resolved && resolution.complete,
+    ),
+    resolved: true,
+  };
+}
+
+export function isGlobalIntrinsicObject(
+  node: Node,
+  intrinsicName: string,
+  seen = new Set<Node>(),
+): boolean {
+  const resolution = globalIntrinsicObjectResolution(
+    node,
+    intrinsicName,
+    seen,
+  );
+  return resolution.matches || (resolution.resolved && !resolution.complete);
 }
 
 export function isGlobalIntrinsicCallable(
@@ -548,18 +785,18 @@ function localFunctionIdentityKeys(owner: Node): Set<object> {
     Node.isFunctionExpression(owner) ||
     Node.isMethodDeclaration(owner)
   ) {
-    const symbol = owner.getNameNode()?.getSymbol()?.compilerSymbol;
-    if (symbol !== undefined) keys.add(symbol);
+    for (const key of symbolIdentityKeys(owner.getNameNode()?.getSymbol())) {
+      keys.add(key);
+    }
   }
   const variable = owner.getFirstAncestorByKind(
     SyntaxKind.VariableDeclaration,
   );
   if (variable?.getInitializer() === owner) {
     const name = variable.getNameNode();
-    const symbol = Node.isIdentifier(name)
-      ? name.getSymbol()?.compilerSymbol
-      : undefined;
-    if (symbol !== undefined) keys.add(symbol);
+    if (Node.isIdentifier(name)) {
+      for (const key of symbolIdentityKeys(name.getSymbol())) keys.add(key);
+    }
   }
   return keys;
 }
@@ -623,21 +860,21 @@ function localCallableIdentityResolution(
     Node.isPropertyAccessExpression(normalized) ||
     Node.isElementAccessExpression(normalized)
   ) {
-    const symbol = normalized.getSymbol()?.compilerSymbol;
+    const keys = symbolIdentityKeys(normalized.getSymbol());
     return {
-      keys: symbol === undefined ? new Set() : new Set([symbol]),
-      complete: symbol !== undefined,
+      keys,
+      complete: keys.size > 0,
     };
   }
   if (!Node.isIdentifier(normalized)) {
     return { keys: new Set(), complete: false };
   }
-  const symbol = normalized.getSymbol()?.compilerSymbol;
+  const symbolKeys = symbolIdentityKeys(normalized.getSymbol());
   const sources = identifierValueSources(normalized);
   if (sources.length === 0) {
     return {
-      keys: symbol === undefined ? new Set() : new Set([symbol]),
-      complete: symbol !== undefined,
+      keys: symbolKeys,
+      complete: symbolKeys.size > 0,
     };
   }
   const resolutions = sources.map((source) =>
@@ -645,7 +882,7 @@ function localCallableIdentityResolution(
   );
   return {
     keys: new Set([
-      ...(symbol === undefined ? [] : [symbol]),
+      ...symbolKeys,
       ...resolutions.flatMap((resolution) => [...resolution.keys]),
     ]),
     complete: resolutions.every((resolution) => resolution.complete),
@@ -677,9 +914,68 @@ function localInvocation(call: CallExpression): LocalInvocation {
   return { target: callable, arguments: args };
 }
 
+interface ProjectInvocationIndex {
+  readonly sourceFiles: readonly SourceFile[];
+  readonly callsByIdentity: Map<object, CallExpression[]>;
+}
+
+const projectInvocationIndexCache = new WeakMap<
+  Project,
+  ProjectInvocationIndex
+>();
+
+function sameSourceFiles(
+  left: readonly SourceFile[],
+  right: readonly SourceFile[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((sourceFile, index) => sourceFile === right[index])
+  );
+}
+
+function projectInvocationIndex(project: Project): ProjectInvocationIndex {
+  const sourceFiles = project.getSourceFiles();
+  const cached = projectInvocationIndexCache.get(project);
+  if (
+    cached !== undefined &&
+    sameSourceFiles(cached.sourceFiles, sourceFiles)
+  ) {
+    return cached;
+  }
+  const canExtend =
+    cached !== undefined &&
+    cached.sourceFiles.every((sourceFile) => sourceFiles.includes(sourceFile));
+  const callsByIdentity = canExtend
+    ? cached.callsByIdentity
+    : new Map<object, CallExpression[]>();
+  const indexedFiles = canExtend ? new Set(cached.sourceFiles) : new Set();
+  for (const call of sourceFiles
+    .filter((sourceFile) => !indexedFiles.has(sourceFile))
+    .flatMap((sourceFile) =>
+      sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression),
+    )) {
+    const invocation = localInvocation(call);
+    const identity = localCallableIdentityResolution(invocation.target);
+    for (const key of identity.keys) {
+      const calls = callsByIdentity.get(key) ?? [];
+      calls.push(call);
+      callsByIdentity.set(key, calls);
+    }
+  }
+  const index = { sourceFiles, callsByIdentity };
+  projectInvocationIndexCache.set(project, index);
+  return index;
+}
+
+interface LocalParameterValueCacheEntry {
+  readonly sourceFiles: readonly SourceFile[];
+  readonly resolution: CallableResolution<Node> | null;
+}
+
 const localParameterValueCache = new WeakMap<
   Node,
-  CallableResolution<Node> | null
+  LocalParameterValueCacheEntry
 >();
 const callIdentifierIndexCache = new WeakMap<
   SourceFile,
@@ -808,11 +1104,20 @@ export function localFunctionParameterValues(
         declaration.getSourceFile() === node.getSourceFile(),
     );
   if (parameter === undefined) return undefined;
-  const cached = localParameterValueCache.get(parameter);
-  if (cached !== undefined) return cached ?? undefined;
   const owner = localParameterOwner(parameter);
+  const sourceFiles = owner?.getProject().getSourceFiles() ?? [];
+  const cached = localParameterValueCache.get(parameter);
+  if (
+    cached !== undefined &&
+    sameSourceFiles(cached.sourceFiles, sourceFiles)
+  ) {
+    return cached.resolution ?? undefined;
+  }
   if (owner === undefined) {
-    localParameterValueCache.set(parameter, null);
+    localParameterValueCache.set(parameter, {
+      sourceFiles,
+      resolution: null,
+    });
     return undefined;
   }
   const parameters = owner.getChildrenOfKind(
@@ -820,7 +1125,10 @@ export function localFunctionParameterValues(
   );
   const parameterIndex = parameters.indexOf(parameter);
   if (parameterIndex < 0) {
-    localParameterValueCache.set(parameter, null);
+    localParameterValueCache.set(parameter, {
+      sourceFiles,
+      resolution: null,
+    });
     return undefined;
   }
   const identityKeys = localFunctionIdentityKeys(owner);
@@ -828,6 +1136,12 @@ export function localFunctionParameterValues(
   const invocationIndex = callIdentifierIndex(owner.getSourceFile());
   for (const name of localFunctionCandidateNames(owner)) {
     for (const call of invocationIndex.get(name) ?? []) {
+      candidateCalls.add(call);
+    }
+  }
+  const projectIndex = projectInvocationIndex(owner.getProject());
+  for (const key of identityKeys) {
+    for (const call of projectIndex.callsByIdentity.get(key) ?? []) {
       candidateCalls.add(call);
     }
   }
@@ -856,7 +1170,10 @@ export function localFunctionParameterValues(
     }
   }
   const resolution = matched ? { values, complete } : undefined;
-  localParameterValueCache.set(parameter, resolution ?? null);
+  localParameterValueCache.set(parameter, {
+    sourceFiles,
+    resolution: resolution ?? null,
+  });
   return resolution;
 }
 

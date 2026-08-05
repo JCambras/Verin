@@ -36,6 +36,8 @@ a command in a comment, echo argument, short-circuited expression, heredoc, step
 commented-out block-scalar line, or a job/step carrying `continue-on-error` or an `if:` proves nothing.
 GitHub-invalid job and step forms invalidate the whole workflow, including mixed `run` / `uses` fields,
 `with` on a run step, and local execution fields on a reusable-workflow job.
+Unknown permission scopes, invalid job identifiers, and timeout values other than positive integers or
+explicit GitHub expressions also invalidate the workflow before any command can become evidence.
 Unsupported runners, custom shells, evidence jobs with non-empty `needs` dependencies, and evidence
 jobs using `strategy.matrix` also prove nothing. Every governed command's complete predecessor chain and
 container image are exact ratcheted evidence; unreviewed setup steps, inputs, fields, environment, or
@@ -109,7 +111,8 @@ branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces 
 `src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Gate 0 surface completeness is fenced by
 `src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
 the exact twelve surface identities in the SHA-pinned ratified demo contract, the typed manifest, each
-route case's imported component, the dynamic page's reachable return and query-derived approval input,
+route case's imported component and exact journey view model, its resolved identifier spread without
+overrides, the dynamic page's reachable return, and policy authoring's query-derived approval input,
 the exact ordered clickable journey controls without registered Playwright hooks, and screenshots that
 verify the corresponding URL and loaded marker. CI then runs
 `scripts/demo-screen-artifacts.ts` to require every canonical artifact to exist and be non-empty, and
@@ -292,7 +295,9 @@ canonical repository-relative path and reject duplicate exact results.
   immediate literal or direct frozen and statically non-empty; registration option inputs follow the
   same immutable rule. Fitness registrations must be reachable at module scope or directly inside an
   enabled reachable module-scope suite callback. Every fitness entry's complete local runtime import
-  graph is inspected, and imported helpers may not import Vitest or register tests. Axe route collections are non-empty declarative frozen literals;
+  graph is inspected, and imported helpers may not import Vitest or register tests. Higher-order callable
+  values are propagated through reachable imports and re-exports. Stable global intrinsic aliases stored
+  in object properties are resolved, while incomplete computed property provenance fails closed. Axe route collections are non-empty declarative frozen literals;
   page coverage is credited only to the winning Next route. Hook provenance follows object-property
   callables, member writes, direct or aliased `Object.assign`, `Object.defineProperty`, and `Reflect.set`
   mutations, and unresolved reflective or computed

@@ -3538,6 +3538,15 @@ const O = globalThis.Object;
 O["ass" + "ign"](hooks, { install: test.beforeEach });
 hooks.install(() => undefined);`,
         `const hooks: Record<string, unknown> = {};
+const intrinsics = { O: Object };
+intrinsics.O.assign(hooks, { install: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const intrinsics = { O: Object };
+const key = Boolean(Date.now()) ? "O" : "O";
+intrinsics[key].assign(hooks, { install: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
 const assign = Object.assign;
 assign(hooks, { install: test.beforeEach });
 const alias = hooks;
@@ -3596,6 +3605,11 @@ hooks.install(() => undefined);`,
 install(test.beforeEach);`,
         `const R = Reflect;
 R.apply(test.beforeEach, test, [() => undefined]);`,
+        `const intrinsics = { R: Reflect };
+intrinsics.R.apply(test.beforeEach, test, [() => undefined]);`,
+        `const intrinsics = { R: Reflect };
+const key = Boolean(Date.now()) ? "R" : "R";
+intrinsics[key].apply(test.beforeEach, test, [() => undefined]);`,
         `Reflect["ap" + "ply"](test.beforeEach, test, [() => undefined]);`,
       ];
       for (const wrapper of wrappers) {
@@ -3608,6 +3622,24 @@ ${VALID_AXE_ROUTES}`;
           "e2e/axe-routes.ts:1 reachable local Axe evidence module must not register Playwright hooks",
         );
       }
+    });
+
+    it("rejects Playwright hooks passed into imported higher-order helpers", () => {
+      const fixture = completeSources();
+      fixture["e2e/axe-routes.ts"] =
+        `import { test } from "@playwright/test";
+import { install } from "./install-barrel";
+install(test.beforeEach);
+${VALID_AXE_ROUTES}`;
+      fixture["e2e/install-barrel.ts"] =
+        `export { install } from "./install-hook";`;
+      fixture["e2e/install-hook.ts"] =
+        `export function install(fn: (...args: unknown[]) => unknown) {
+  fn(() => undefined);
+}`;
+      expect(axeCoverageProblems(fixture)).toContain(
+        "e2e/install-hook.ts:1 reachable local Axe evidence module must not register Playwright hooks",
+      );
     });
 
     it("fails closed on unresolved computed Playwright members", () => {

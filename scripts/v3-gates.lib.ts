@@ -1022,14 +1022,37 @@ function conditionValue(value: unknown): boolean {
   return typeof value === "boolean" || nonEmptyString(value);
 }
 
+const GITHUB_EXPRESSION = /^\s*\$\{\{\s*\S(?:[\s\S]*\S)?\s*\}\}\s*$/;
+
+function expressionValue(value: unknown): boolean {
+  return typeof value === "string" && GITHUB_EXPRESSION.test(value);
+}
+
 function timeoutValue(value: unknown): boolean {
   return (
     (typeof value === "number" &&
       Number.isInteger(value) &&
       value > 0) ||
-    nonEmptyString(value)
+    expressionValue(value)
   );
 }
+
+const PERMISSION_SCOPES = new Set([
+  "actions",
+  "attestations",
+  "checks",
+  "contents",
+  "deployments",
+  "discussions",
+  "id-token",
+  "issues",
+  "models",
+  "packages",
+  "pages",
+  "pull-requests",
+  "security-events",
+  "statuses",
+]);
 
 function permissionsProblem(value: unknown): string | undefined {
   if (value === undefined) return undefined;
@@ -1038,8 +1061,11 @@ function permissionsProblem(value: unknown): string | undefined {
   }
   const mapping = literalMapping(value);
   return mapping !== undefined &&
-    Object.values(mapping).every((permission) =>
-      ["read", "write", "none"].includes(String(permission)),
+    Object.entries(mapping).every(
+      ([scope, permission]) =>
+        PERMISSION_SCOPES.has(scope) &&
+        typeof permission === "string" &&
+        ["read", "write", "none"].includes(permission),
     )
     ? undefined
     : "permissions must be 'read-all', 'write-all', or a literal permission mapping";
@@ -1321,6 +1347,9 @@ function ciJobShapeProblem(
   key: string,
   job: unknown,
 ): string | undefined {
+  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) {
+    return `job '${key}' has an invalid identifier`;
+  }
   const record = literalMapping(job);
   if (record === undefined) return `job '${key}' is not a literal mapping`;
   const commonProblem = commonJobFieldProblem(record, `job '${key}'`);
