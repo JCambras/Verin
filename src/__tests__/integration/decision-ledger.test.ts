@@ -1788,6 +1788,49 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
   });
 
+  it.each([
+    ["PII-bearing parameter keys", { "victim@example.com": true }],
+    ["unregistered numeric parameters", { accountNumber: 123456789012 }],
+    ["account-shaped registered amounts", { amountUsd: 123456789012 }],
+  ])("refuses %s before immutable insertion", async (_case, parameters) => {
+    const input = decisionRecordingInput();
+    if (input.decisionRecord.result.kind !== "proceed") {
+      throw new Error("expected proceed decision fixture");
+    }
+    const candidate = DecisionRecordSchema.parse({
+      ...input.decisionRecord,
+      result: {
+        ...input.decisionRecord.result,
+        recommendation: {
+          ...input.decisionRecord.result.recommendation,
+          parameters,
+        },
+      },
+      decisionHash: "0".repeat(64),
+    });
+    const decisionRecord = DecisionRecordSchema.parse({
+      ...candidate,
+      decisionHash: hashPreimage(decisionHashPreimage(candidate)),
+    });
+    const decisionEvent = LedgerEntrySchema.parse({
+      ...input.events.at(-1)!,
+      decisionHash: decisionRecord.decisionHash,
+    });
+    const result = await recordDecision(db, LEDGER_TENANT, {
+      ...input,
+      decisionRecord,
+      events: [...input.events.slice(0, -1), decisionEvent],
+    });
+    expect(result.ok ? null : result.error.code).toBe("PII_VIOLATION");
+    expect(await sourceCounts(db)).toEqual({
+      evidence_snapshots: 0,
+      decision_input_bundles: 0,
+      decision_input_bundle_evidence: 0,
+      decision_records: 0,
+      decision_ledger: 0,
+    });
+  });
+
   it("rejects decision citations that are not pinned by the exact input bundle", async () => {
     const cases = [
       (record: ReturnType<typeof decisionRecordingInput>["decisionRecord"]) => {

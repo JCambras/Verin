@@ -14,6 +14,7 @@ import {
   isOpaqueLedgerIdentifier,
   isOpaqueLedgerToken,
 } from "./ledger-string-rules";
+import { isRegisteredLedgerRecommendationParameter } from "./ledger-recommendation-parameters";
 
 const REGISTERED_RETAINED_CODES = new Set([
   "active-legal-hold",
@@ -414,7 +415,11 @@ function requireClassifiedStrings(root: string, value: unknown): void {
       continue;
     }
     for (const [key, nested] of Object.entries(current.value)) {
-      const path = current.path === "decision.result.recommendation.parameters"
+      const isRecommendationParameter = current.path ===
+        "decision.result.recommendation.parameters";
+      if (isRecommendationParameter &&
+          !isRegisteredLedgerRecommendationParameter(key, nested)) refuse();
+      const path = isRecommendationParameter
         ? `${current.path}.*`
         : `${current.path}.${key}`;
       pending.push({
@@ -449,9 +454,6 @@ function requireDecisionTextProjection(record: DecisionRecord): void {
       requireRegisteredCode(alternative.code);
       if (alternative.summary !== alternative.code) refuse();
       alternative.rejectedBecause.forEach(requireRegisteredCode);
-    }
-    for (const parameter of Object.values(recommendation.parameters)) {
-      if (typeof parameter === "string") requireRetainedToken(parameter);
     }
   } else if (record.result.kind === "blocked") {
     for (const blocker of record.result.blockers) {

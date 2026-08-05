@@ -3802,3 +3802,20 @@ identifiers must not become a raw-PII escape, and every displayed count must ret
 its source and observation time.
 **Revert path:** none while bounded ledger verification, immutable PII exclusion,
 and displayed-metric provenance remain active controls.
+
+### D-125 · 2026-08-05 · reversible · Ledger recommendation parameters are registered before retention
+
+Immutable recommendation parameters now pass an exact name and value registry
+before any replay source or ledger row is inserted. The current money-movement
+record admits a positive bounded USD amount that is not account-shaped and a
+schema-valid tenant-scoped source subject. Unknown keys, PII-bearing keys,
+unregistered scalar values, and account-shaped numeric amounts fail closed.
+
+The implementation measures infrastructure at 9,919 lines. ADR-0040 amends
+ADR-0039's infrastructure ceiling from 9,900 to 10,000 while preserving every
+other layer ceiling and the 500-line file cap.
+
+**Why:** an open scalar record cannot become safe when its keys and non-string
+values are invisible to the immutable PII boundary.
+**Revert path:** none while recommendation parameters can enter append-only
+decision storage.

@@ -6598,3 +6598,30 @@ numeric view-model attack, nested sanctioned-render control, complete register-c
 contract, and route provenance assertions.
 
 **Date:** 2026-08-05 (review corrections, D-124).
+
+## Ledger recommendation parameter retention (D-125)
+
+**Invariant:** every immutable recommendation parameter key and value must match
+an exact registered parameter schema before any replay source or ledger row is
+inserted.
+
+The permanent PGlite companions first ran against the pre-correction boundary:
+
+```text
+× refuses PII-bearing parameter keys before immutable insertion
+× refuses unregistered numeric parameters before immutable insertion
+× refuses account-shaped registered amounts before immutable insertion
+AssertionError: expected null to be 'PII_VIOLATION'
+```
+
+The boundary now dispatches each recommendation parameter through a closed
+name-to-validator registry before canonical wildcard traversal. The registered USD
+amount is finite, positive, bounded, and not account-shaped. The registered source
+subject reuses the retained tenant-scoped reference schema. All three permanent
+companions return `PII_VIOLATION` and assert that every immutable source and ledger
+table remains empty.
+
+**Revert:** all adversarial cases are permanent PGlite integration companions. No
+probe files remain.
+
+**Date:** 2026-08-05 (review correction, D-125).
