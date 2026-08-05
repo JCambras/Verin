@@ -14,6 +14,7 @@ import type {
   ComparisonRowVM,
   ComparisonVM,
   DemoPolicyApprovalEventVM,
+  DispositionVM,
   RecordVM,
 } from "./model";
 import { prov, recordProvenance } from "./provenance";
@@ -42,8 +43,9 @@ import {
   compareComparisonEvidence,
   type ComparisonEvidenceResult,
 } from "./comparison-evidence";
-import { formatDemoInstant, timelineFor } from "./timeline";
+import { formatDemoInstant } from "./timeline";
 import { auditPositionFor } from "./audit-position";
+import { signedLifecycle } from "./record-lifecycle";
 import {
   DEMO_NOW,
   FIRMS,
@@ -59,6 +61,39 @@ import {
   type JourneyPass,
   type ScenarioData,
 } from "./data";
+
+function policyRerunDisposition(
+  scenario: ScenarioData,
+  firm: FirmData,
+  pass: JourneyPass,
+  approval: DemoPolicyApprovalEventVM,
+): DispositionVM {
+  const current = buildDisposition(scenario, firm, pass);
+  if (approval.rerun.disposition === current.kind) {
+    return {
+      ...current,
+      why: {
+        reason: approval.rerun.executionReason,
+        regulation: `Firm policy ${approval.toVersion}`,
+      },
+    };
+  }
+  return {
+    kind: "blocked",
+    headline: "This movement is blocked under the activated reserve policy.",
+    blockers: [
+      {
+        condition: approval.rerun.executionReason,
+        affordanceLabel: "Review the movement amount or available liquidity",
+      },
+    ],
+    why: {
+      reason: approval.rerun.executionReason,
+      regulation: `Firm policy ${approval.toVersion}`,
+    },
+    fakeClass: "deterministic-engine-output",
+  };
+}
 
 function thresholdMetric(firm: FirmData): DisplayMetric {
   // A policy parameter, not a computed figure: fixture-sourced, labeled sample data.
@@ -228,114 +263,6 @@ export function buildComparison(
   };
 }
 
-function signedLifecycle(
-  scenario: ScenarioData,
-  firm: FirmData,
-  pass: JourneyPass,
-): RecordVM["lifecycle"] {
-  const sourceCase = sourceCaseFor(scenario, firm.id);
-  if (!sourceCase) return [];
-  const timeline = timelineFor(scenario, firm);
-  if (hasSignedInvalidationAuthority(scenario, firm.id)) {
-    const instants = [
-      timeline.initialEvidenceSnapshotAt,
-      timeline.decisionAt,
-      timeline.approvalOneAt,
-      timeline.approvalTwoAt,
-      timeline.revalidatedAt,
-      timeline.approvalInvalidatedAt,
-      timeline.derivedDecisionAt,
-      timeline.freshApprovalOneAt,
-      timeline.freshApprovalTwoAt,
-      timeline.reservationAt,
-      timeline.executionAt,
-      timeline.executionSucceededAt,
-      timeline.statusObservedAt,
-    ];
-    const lifecycle = sourceCase.ledgerEvents.map((event, index) => ({
-      type: event.type,
-      timestampIso: instants[index]!,
-      display: formatDemoInstant(instants[index]!, undefined, true),
-      note: event.note,
-    }));
-    if (pass === "revalidated") return lifecycle;
-    const invalidatedAt = lifecycle.findIndex(
-      (event) => event.type === "ApprovalInvalidated",
-    );
-    return invalidatedAt < 0
-      ? lifecycle
-      : lifecycle.slice(0, invalidatedAt + 1);
-  }
-  const approvalInstants = buildApprovals(scenario, firm).stages.flatMap(
-    (stage) =>
-      stage.actors.flatMap((actor) =>
-        actor.timestampIso ? [actor.timestampIso] : [],
-      ),
-  );
-  let evidenceIndex = 0;
-  let approvalIndex = 0;
-  let statusIndex = 0;
-  const instantFor = (type: string): string => {
-    if (type === "EvidenceSnapshotRecorded") {
-      const instant =
-        evidenceIndex === 0
-          ? timeline.initialEvidenceSnapshotAt
-          : timeline.revalidatedAt;
-      evidenceIndex += 1;
-      return instant;
-    }
-    if (type === "DecisionRecorded") return timeline.decisionAt;
-    if (type === "ApprovalRecorded") {
-      const instant = approvalInstants[approvalIndex] ?? timeline.approvalOneAt;
-      approvalIndex += 1;
-      return instant;
-    }
-    if (type === "ApprovalStageEscalated") return timeline.escalatedAt;
-    if (type === "ApprovalStageExpired") return timeline.expiredAt;
-    if (type === "ReservationCreated") return timeline.reservationAt;
-    if (type === "ExecutionStarted") return timeline.executionAt;
-    if (
-      type === "ExecutionSucceeded" ||
-      type === "ExecutionPartiallySucceeded"
-    ) {
-      return timeline.executionSucceededAt;
-    }
-    if (type === "StatusObserved") {
-      const instant =
-        sourceCase.verification.observedStatus === "unknown" ||
-        statusIndex > 0
-          ? timeline.delayedExceptionAt
-          : timeline.statusObservedAt;
-      statusIndex += 1;
-      return instant;
-    }
-    if (type === "ExceptionDecisionRequested") {
-      return timeline.exceptionDecisionRequestedAt;
-    }
-    return timeline.decisionAt;
-  };
-  const lifecycle = sourceCase.ledgerEvents.map((event) => {
-    const timestampIso = instantFor(event.type);
-    return {
-      type: event.type,
-      timestampIso,
-      display: formatDemoInstant(timestampIso, undefined, true),
-      note: event.note,
-    };
-  });
-  return executionReachFor(scenario, firm, pass).reached
-    ? lifecycle
-    : lifecycle.filter(
-        ({ type }) =>
-          type !== "ReservationCreated" &&
-          type !== "ExecutionStarted" &&
-          type !== "ExecutionSucceeded" &&
-          type !== "ExecutionPartiallySucceeded" &&
-          type !== "StatusObserved" &&
-          type !== "ExceptionDecisionRequested",
-      );
-}
-
 export function buildRecord(
   scenario: ScenarioData,
   firm: FirmData,
@@ -375,6 +302,7 @@ export function buildRecord(
         policyVersion: policyApproval.toVersion,
         reserveMonths: policyApproval.reserveMonths,
         recordedAtIso: policyApproval.decisionRecordedAtIso,
+        rerun: policyApproval.rerun,
       }
     : undefined;
   const proceed = dispositionFor(scenario, firm.id) === "proceed";
@@ -383,7 +311,9 @@ export function buildRecord(
   const approvals = proceed && !policyApproval
     ? buildApprovals(scenario, firm, pass)
     : null;
-  const safetyReached = approvals?.satisfied === true;
+  const safetyReached =
+    approvals?.satisfied === true ||
+    sourceCase?.authorityGap?.execution === "withheld";
   const execution = safetyReached ? buildExecution(scenario, firm, pass) : null;
   const verification = execution ? buildVerification(scenario, firm, pass) : null;
   const safety = safetyReached ? buildSafety(scenario, firm, pass) : null;
@@ -400,7 +330,7 @@ export function buildRecord(
     : !proceed
       ? "This journey stopped at Decision."
       : !safetyReached
-        ? "This journey stopped at Authority because the ordered authority plan was not satisfied."
+        ? `This journey stopped at Authority: ${executionReach.reason ?? "the ordered authority plan was not satisfied."}`
         : invalidation && pass === "initial"
           ? "This journey returned to Decision: both approvals were voided when material evidence changed."
           : execution === null
@@ -408,19 +338,14 @@ export function buildRecord(
             : null;
   const decisionAt = policyApproval?.decisionRecordedAtIso ??
     activeDecisionAt(scenario, firm, pass);
-  const disposition = buildDisposition(scenario, effectiveFirm, pass);
   const rerunDisposition = policyApproval
-    ? {
-        ...disposition,
-        why: {
-          reason:
-            disposition.kind === "proceed"
-              ? `The exact selected-case inputs were rerun under activated policy ${policyApproval.toVersion}, which preserves twelve months of planned withdrawals. The resulting headroom still covers this request.`
-              : `The exact selected-case inputs were rerun under activated policy ${policyApproval.toVersion}; the recorded disposition remains ${disposition.kind}.`,
-          regulation: `Firm policy ${policyApproval.toVersion}`,
-        },
-      }
-    : disposition;
+    ? policyRerunDisposition(
+        scenario,
+        effectiveFirm,
+        pass,
+        policyApproval,
+      )
+    : buildDisposition(scenario, effectiveFirm, pass);
   return {
     header: {
       decisionId: policyRerun
@@ -485,7 +410,7 @@ export function buildRecord(
             type: "DecisionRecorded",
             timestampIso: policyApproval.decisionRecordedAtIso,
             display: policyApproval.decisionRecordedAt,
-            note: `Demonstration rerun recorded against active policy ${policyApproval.toVersion}.`,
+            note: `Demonstration rerun recorded against active policy ${policyApproval.toVersion} with disposition ${policyApproval.rerun.disposition}, execution eligibility ${String(policyApproval.rerun.executionEligible)}, and ${policyApproval.rerun.executionPlan ? "a candidate execution plan" : "no execution plan"}.`,
           },
         ]
       : signedLifecycle(scenario, firm, pass),

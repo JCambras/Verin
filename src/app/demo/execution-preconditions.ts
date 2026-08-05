@@ -1,4 +1,4 @@
-import { approvalPlanSatisfied, buildStages } from "./build-approval-stages";
+import { signedApprovalPlanSatisfied } from "./build-approval-stages";
 import { decisionBindingFor } from "./decision-bindings";
 import { evidenceForPass, type FirmData, type JourneyPass, type ScenarioData } from "./data";
 import type {
@@ -83,7 +83,7 @@ function reservationProof(
     !released;
 }
 
-function approvalBindingProof(
+export function approvalBindingProof(
   scenario: ScenarioData,
   firm: FirmData,
   sourceCase: SignedCaseVariant,
@@ -101,7 +101,7 @@ function approvalBindingProof(
   return decisionIndex >= 0 &&
     approvals.length === required &&
     approvals.every((index) => index > decisionIndex && index < reservation) &&
-    approvalPlanSatisfied(buildStages(scenario, firm, "final", pass)) &&
+    signedApprovalPlanSatisfied(sourceCase, pass) &&
     HASH.test(binding.decisionHash) &&
     HASH.test(binding.bundleHash);
 }

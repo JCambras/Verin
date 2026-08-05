@@ -109,6 +109,9 @@ export function RecordSurface({
                   <p className="font-mono text-xs break-all text-slate-800">
                     {vm.policyApproval.fromVersion} → {vm.policyApproval.toVersion} · actor {vm.policyApproval.actorId} ({vm.policyApproval.actorRole}) · policy hash {vm.policyApproval.policyHash}
                   </p>
+                  <p className="text-sm text-slate-800">
+                    Activated rerun: {vm.policyApproval.rerun.disposition} · execution eligible {String(vm.policyApproval.rerun.executionEligible)} · {vm.policyApproval.rerun.executionPlan ? "candidate execution plan bound" : "no execution plan"}
+                  </p>
                   <p className="text-xs font-medium text-amber-900">{vm.policyApproval.watermark}</p>
                 </section>
               ) : null}
@@ -439,7 +442,18 @@ export function RecordSurface({
                 </p>
               </DocSection>
 
-              <JourneyNav back={{ href: demoHref("policy-authoring", routeContext), label: "Back to policy authoring" }} />
+              <JourneyNav
+                back={{
+                  href: demoHref(
+                    "policy-authoring",
+                    routeContext,
+                    vm.policyApproval
+                      ? { approvalEventId: vm.policyApproval.eventId }
+                      : undefined,
+                  ),
+                  label: "Back to policy authoring",
+                }}
+              />
             </SurfaceShell>
           </td>
         </tr>

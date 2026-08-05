@@ -210,6 +210,9 @@ export interface SignedLedgerEventData {
   readonly note: string;
   readonly stageId: string | null;
   readonly lifecyclePass: "initial" | "revalidated" | null;
+  readonly actorId: string | null;
+  readonly roleId: string | null;
+  readonly requesterId: string | null;
 }
 
 export interface SignedExplanationData {

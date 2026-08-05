@@ -392,6 +392,27 @@ function parseVariant(value: unknown): SignedCaseVariant {
         ),
         stageId,
         lifecyclePass,
+        actorId:
+          ledger.actorId === undefined
+            ? null
+            : asString(
+                ledger.actorId,
+                `${caseId}.expectedLedgerEvents[${index}].actorId`,
+              ),
+        roleId:
+          ledger.roleId === undefined
+            ? null
+            : asString(
+                ledger.roleId,
+                `${caseId}.expectedLedgerEvents[${index}].roleId`,
+              ),
+        requesterId:
+          ledger.requesterId === undefined
+            ? null
+            : asString(
+                ledger.requesterId,
+                `${caseId}.expectedLedgerEvents[${index}].requesterId`,
+              ),
       };
     }),
     explanations: asArray(

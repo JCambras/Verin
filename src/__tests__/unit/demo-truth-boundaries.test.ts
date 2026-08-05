@@ -8,11 +8,14 @@ import {
 } from "@app/demo/data";
 import { compareComparisonEvidence } from "@app/demo/comparison-evidence";
 import { auditPositionFor } from "@app/demo/audit-position";
+import { policyRerunDecisionBindingFor } from "@app/demo/decision-bindings";
 import {
   executionEligibilityProof,
   isVerifiedPostReviewBankEvidence,
 } from "@app/demo/execution-preconditions";
 import { getJourney } from "@app/demo/journey";
+import type { DemoPolicyApprovalEventVM } from "@app/demo/model";
+import { evaluatePolicyRerun } from "@app/demo/policy-rerun";
 import {
   SIGNED_CASE_IDS,
   type SignedCaseVariant,
@@ -289,11 +292,26 @@ describe("demo truth boundaries", () => {
     );
     const firm = firmById("firm-a");
     const source = sourceCaseFor(scenario, firm.id)!;
-    expect(executionEligibilityProof(scenario, firm, source, "initial")).toBe(true);
+    expect(executionEligibilityProof(scenario, firm, source, "initial")).toBe(false);
+    let approvalIndex = 0;
+    const bound = {
+      ...source,
+      ledgerEvents: source.ledgerEvents.map((event) => {
+        if (event.type !== "ApprovalRecorded") return event;
+        approvalIndex += 1;
+        return {
+          ...event,
+          actorId: `actor-${approvalIndex}`,
+          roleId: "operations",
+          requesterId: "requester-1",
+        };
+      }),
+    };
+    expect(executionEligibilityProof(scenario, firm, bound, "initial")).toBe(true);
 
     const stale = {
-      ...source,
-      evidence: source.evidence.map((entry) =>
+      ...bound,
+      evidence: bound.evidence.map((entry) =>
         entry.subjectRef === "subject:smiths-joint-taxable"
           ? { ...entry, freshness: "stale" }
           : entry,
@@ -302,37 +320,78 @@ describe("demo truth boundaries", () => {
     expect(executionEligibilityProof(scenario, firm, stale, "initial")).toBe(false);
 
     const unbound = {
-      ...source,
-      ledgerEvents: source.ledgerEvents.filter(
+      ...bound,
+      ledgerEvents: bound.ledgerEvents.filter(
         ({ type }) => type !== "ApprovalRecorded",
       ),
     };
     expect(executionEligibilityProof(scenario, firm, unbound, "initial")).toBe(false);
 
-    const executionIndex = source.ledgerEvents.findIndex(
+    for (const key of ["actorId", "roleId", "requesterId"] as const) {
+      const missingBinding = {
+        ...bound,
+        ledgerEvents: bound.ledgerEvents.map((event) =>
+          event.type === "ApprovalRecorded"
+            ? { ...event, [key]: null }
+            : event,
+        ),
+      };
+      expect(
+        executionEligibilityProof(scenario, firm, missingBinding, "initial"),
+      ).toBe(false);
+    }
+
+    const duplicateActor = {
+      ...bound,
+      ledgerEvents: bound.ledgerEvents.map((event) =>
+        event.type === "ApprovalRecorded"
+          ? { ...event, actorId: "actor-1" }
+          : event,
+      ),
+    };
+    expect(
+      executionEligibilityProof(scenario, firm, duplicateActor, "initial"),
+    ).toBe(false);
+
+    const ineligibleRole = {
+      ...bound,
+      ledgerEvents: bound.ledgerEvents.map((event) =>
+        event.type === "ApprovalRecorded"
+          ? { ...event, roleId: "requester" }
+          : event,
+      ),
+    };
+    expect(
+      executionEligibilityProof(scenario, firm, ineligibleRole, "initial"),
+    ).toBe(false);
+
+    const executionIndex = bound.ledgerEvents.findIndex(
       ({ type }) => type === "ExecutionStarted",
     );
     const released = {
-      ...source,
+      ...bound,
       ledgerEvents: [
-        ...source.ledgerEvents.slice(0, executionIndex),
+        ...bound.ledgerEvents.slice(0, executionIndex),
         {
           type: "ReservationReleased",
           note: "Reservation released before execution.",
           stageId: null,
           lifecyclePass: null,
+          actorId: null,
+          roleId: null,
+          requesterId: null,
         },
-        ...source.ledgerEvents.slice(executionIndex),
+        ...bound.ledgerEvents.slice(executionIndex),
       ],
     };
     expect(executionEligibilityProof(scenario, firm, released, "initial")).toBe(false);
 
     const unknown = {
-      ...source,
+      ...bound,
       executionEligibility: {
-        ...source.executionEligibility,
+        ...bound.executionEligibility,
         preconditions: [
-          ...source.executionEligibility.preconditions,
+          ...bound.executionEligibility.preconditions,
           {
             code: "unknown-proof",
             requiredEvidence: [],
@@ -369,10 +428,16 @@ describe("demo truth boundaries", () => {
   it("binds verification proofs to causal events", () => {
     const submitted = getJourney(
       "safe-proceed",
+      "firm-b",
+      "initial",
+      "GC-02-firm-b-happy-path",
+    ).verification?.proves[0];
+    const unsignedStaged = getJourney(
+      "safe-proceed",
       "firm-a",
       "initial",
       "GC-01-firm-a-happy-path",
-    ).verification?.proves[0];
+    ).verification;
     const nigo = getJourney(
       "delayed-nigo",
       "firm-b",
@@ -384,6 +449,7 @@ describe("demo truth boundaries", () => {
     expect(submitted?.provenance.asOf).toBe(
       "2026-07-26T13:59:10.000Z",
     );
+    expect(unsignedStaged).toBeNull();
     expect(nigo?.[0]).toMatchObject({
       ledgerEvent: "ExecutionSucceeded",
       provenance: {
@@ -395,6 +461,99 @@ describe("demo truth boundaries", () => {
       provenance: {
         asOf: "2026-07-28T21:44:00.000Z",
       },
+    });
+  });
+
+  it("binds an activated policy rerun to its recomputed outcome", () => {
+    const scenario = bindExactSourceCase(
+      scenarioById("competing-liquidity"),
+      "firm-a",
+      "GC-10-simultaneous-distributions-first",
+    );
+    const firm = firmById("firm-a");
+    const policyVersion = "firm-a-policy@2026.08-demo-approved";
+    const rerun = evaluatePolicyRerun(
+      scenario,
+      firm,
+      "initial",
+      policyVersion,
+    )!;
+    expect(rerun).toMatchObject({
+      disposition: "blocked",
+      headroomMinor: 6_400_000,
+      executionEligible: false,
+      executionPlan: null,
+    });
+
+    const policyApproval: DemoPolicyApprovalEventVM = {
+      eventId: "policy-event-gc10",
+      actorId: "demo-policy-admin",
+      actorRole: "policy-admin",
+      tenantOrgId: "org-demo",
+      approvedAt: "Aug 5, 2026, 10:00:00 AM EDT",
+      approvedAtIso: "2026-08-05T14:00:00.000Z",
+      decisionRecordedAt: "Aug 5, 2026, 10:00:00 AM EDT",
+      decisionRecordedAtIso: "2026-08-05T14:00:00.001Z",
+      policyHash: "policy-hash-gc10",
+      fromVersion: firm.policyVersion,
+      toVersion: policyVersion,
+      reserveMonths: 12,
+      rerun,
+      fakeClass: "deterministic-engine-output",
+      watermark: "DEMONSTRATION - NOT PRODUCTION DATA",
+    };
+    const record = getJourney(
+      scenario.id,
+      firm.id,
+      "initial",
+      "GC-10-simultaneous-distributions-first",
+      policyApproval,
+    ).record;
+    expect(record.disposition.kind).toBe("blocked");
+    expect(record.policyApproval?.rerun).toEqual(rerun);
+    expect(record.executionEligibility).toBeNull();
+    expect(record.execution).toBeNull();
+    expect(record.verification).toBeNull();
+
+    const binding = {
+      eventId: policyApproval.eventId,
+      policyVersion,
+      reserveMonths: policyApproval.reserveMonths,
+      recordedAtIso: policyApproval.decisionRecordedAtIso,
+      rerun,
+    };
+    const blockedBinding = policyRerunDecisionBindingFor(
+      scenario,
+      firm,
+      "initial",
+      binding,
+    );
+    const proceedBinding = policyRerunDecisionBindingFor(
+      scenario,
+      firm,
+      "initial",
+      {
+        ...binding,
+        rerun: {
+          ...rerun,
+          disposition: "proceed",
+          executionEligible: true,
+          executionReason: "Candidate plan available.",
+          executionPlan: {
+            action: "money-movement",
+            sourceCaseId: "GC-10-simultaneous-distributions-first",
+            requestRef: "request:gc10-first",
+            amountMinor: 7_500_000,
+            policyVersion,
+          },
+        },
+      },
+    );
+    expect(proceedBinding.bundleHash).toBe(blockedBinding.bundleHash);
+    expect(proceedBinding.decisionHash).not.toBe(blockedBinding.decisionHash);
+    expect(record.decisionBindings.at(-1)).toMatchObject({
+      kind: "derived",
+      ...blockedBinding,
     });
   });
 

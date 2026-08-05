@@ -49,7 +49,9 @@ function reachOf(
   const decisionOnly = disposition !== "proceed";
   const authority = !decisionOnly;
   const approvals = authority ? buildApprovals(scenario, firm, pass) : null;
-  const safety = authority && approvals?.satisfied === true;
+  const authorityGap =
+    sourceCaseFor(scenario, firmId)?.authorityGap?.execution === "withheld";
+  const safety = authority && (approvals?.satisfied === true || authorityGap);
   const execution =
     safety &&
     executionReachFor(scenario, firm, pass).reached;
@@ -72,13 +74,20 @@ function stopNoteOf(
   if (liquidityAuthorityFor(scenario, firmId).kind === "missing") {
     return "This journey stopped at Safety: exact signed liquidity authority is unavailable for this scenario and firm.";
   }
-  if (scenario.spec.invalidation && pass === "initial") return "This journey returned to Decision: both approvals were voided when material evidence changed.";
   const executionReach = executionReachFor(
     scenario,
     firmById(firmId),
     pass,
   );
   if (!executionReach.reached) {
+    if (
+      scenario.spec.invalidation &&
+      pass === "initial" &&
+      executionReach.reason ===
+        "Material evidence changed, so the original authority is void."
+    ) {
+      return "This journey returned to Decision: both approvals were voided when material evidence changed.";
+    }
     return `This journey stopped at Safety: ${executionReach.reason}`;
   }
   return null;

@@ -1,7 +1,3 @@
-import {
-  headroomMinor as calculateHeadroomMinor,
-  reserveFloorMinor as calculateReserveFloorMinor,
-} from "@contracts/money-movement";
 import type {
   DispositionKind,
   PolicyAuthoringVM,
@@ -17,15 +13,14 @@ import {
 import { liquidityInputs } from "./build-decision-truth";
 import {
   dispositionFor,
-  liquidityAuthorityFor,
   plannedWithdrawalEvidenceFor,
-  requestFor,
   type FirmData,
   type JourneyPass,
   type ScenarioData,
 } from "./data";
+import { evaluatePolicyRerun } from "./policy-rerun";
 
-export const DRAFT_RESERVE_MONTHS = 12;
+export { DRAFT_RESERVE_MONTHS } from "./policy-rerun";
 
 const CORPUS_IMPACT_UNAVAILABLE: SimulationDeltaRowVM = {
   label: "Demo-corpus impact",
@@ -75,47 +70,28 @@ export function buildPolicyAuthoring(
     pass,
   );
   const currentFloor = reserveFloorMetric(firm, scenario, pass);
-  const twelveMonthFloor = planned
-    ? calculateReserveFloorMinor(
-        planned.displayValue!.valueMinor,
-        DRAFT_RESERVE_MONTHS,
-      )
-    : null;
+  const toVersion = isFirmA ? "FA-4.3" : "FB-2.1";
+  const rerun = evaluatePolicyRerun(
+    scenario,
+    firm,
+    pass,
+    toVersion,
+  );
+  const twelveMonthFloor = rerun?.reserveFloorMinor ?? null;
   const simulationInputs = liquidityInputs(
     scenario,
     firm,
     pass,
   );
-  const authority = liquidityAuthorityFor(scenario, firm.id);
-  const snapshot =
-    authority.kind === "signed"
-      ? pass === "revalidated"
-        ? (authority.preExecutionRevalidation ??
-          authority.initialDecision)
-        : authority.initialDecision
-      : null;
-  const newHeadroom =
-    snapshot && twelveMonthFloor !== null
-      ? calculateHeadroomMinor(
-          snapshot.availableCashMinor,
-          snapshot.pendingActivityMinor,
-          twelveMonthFloor,
-        )
-      : null;
+  const newHeadroom = rerun?.headroomMinor ?? null;
   const currentHeadroom = headroomMetric(
     scenario,
     firm,
     pass,
   );
   const disposition = dispositionFor(scenario, firm.id);
-  const request = requestFor(scenario, firm.id);
   const simulatedDisposition: DispositionKind | null =
-    newHeadroom === null
-      ? null
-      : disposition === "proceed" &&
-          newHeadroom < request.amountMinor
-        ? "blocked"
-        : disposition;
+    rerun?.disposition ?? null;
 
   let simulationDelta: SimulationDeltaRowVM[];
   if (!planned || !currentFloor) {
@@ -218,7 +194,7 @@ export function buildPolicyAuthoring(
       ? "Re-run not calculated: this exact case has no signed planned-withdrawal schedule, and no canonical schedule was substituted."
       : "Re-run not calculated: this branch and firm have no captain-signed numeric liquidity case, and no unrelated case was substituted.";
   const approval =
-    !planned || currentFloor === null || newHeadroom === null
+    !planned || currentFloor === null || rerun === null
       ? {
           kind: "unavailable" as const,
           reason: noResult,
@@ -229,8 +205,8 @@ export function buildPolicyAuthoring(
             ? "Approve and activate FA-4.3"
             : "Approve (no effective change for Firm B)",
           activation: isFirmA
-            ? { fromVersion: "FA-4.2", toVersion: "FA-4.3" }
-            : { fromVersion: "FB-2.1", toVersion: "FB-2.1" },
+            ? { fromVersion: "FA-4.2", toVersion }
+            : { fromVersion: "FB-2.1", toVersion },
           changedRerunResult: isFirmA
             ? {
                 proceed:

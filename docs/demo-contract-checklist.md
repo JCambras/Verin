@@ -101,7 +101,10 @@ Surface: **6 Approval stages and actor status**.
 - [ ] Approval bound to the exact decision hash, visibly.
 
 Backing: `ApprovalRecorded` per approval outcome, each carrying `decisionHash` and
-`inputBundleHash` (the visible binding).
+`inputBundleHash` plus structured actor, eligible-role, requester, stage, and lifecycle-pass bindings.
+If any binding is absent, the stage remains pending and execution is visibly withheld pending
+captain-signed approval evidence. GC-01 currently has this open gap and remains the default quick-start
+identity without a case switch.
 
 ## Minute 3:20-4:05 - Safety before execution
 
@@ -116,8 +119,9 @@ Backing: refreshed `EvidenceSnapshotRecorded` entries, `ReservationCreated` (con
 expiry); on the invalidation branch `ApprovalInvalidated` (+ `ReservationReleased` where a
 reservation is given up).
 
-Structural order: `ReservationCreated` follows the final still-valid `ApprovalRecorded` when
-approval is required and the pre-execution evidence revalidation, then precedes
+Structural order: after every required structured approval binding is complete,
+`ReservationCreated` follows the final still-valid `ApprovalRecorded` and the pre-execution evidence
+revalidation, then precedes
 `ExecutionStarted`. A material change records `ApprovalInvalidated`, a derived decision, and fresh
 required approvals before reservation.
 
@@ -194,6 +198,8 @@ Surface: **12 Printable examiner-grade decision artifact**.
 
 - [ ] The complete decision timeline is printable/exportable: evidence, policy, approval,
       execution, status, unresolved verification obligations, any derived exception decision.
+- [ ] Missing structured approval authority removes every downstream execution projection while
+      preserving the signed historical outcome and naming the captain-signature gap.
 - [ ] Immutable identifiers and hashes present throughout.
 - [ ] The artifact replays byte-identically (contract §8).
 - [ ] Any artifact derived from labeled-synthetic or fake inputs is watermarked as a demonstration

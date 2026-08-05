@@ -10,6 +10,7 @@ import {
   type JourneyPass,
   type ScenarioData,
 } from "./data";
+import type { DemoPolicyRerunResultVM } from "./model";
 import { timelineFor } from "./timeline";
 
 export interface DemoDecisionBinding {
@@ -22,6 +23,7 @@ export interface DemoPolicyRerunBinding {
   readonly policyVersion: string;
   readonly reserveMonths: number;
   readonly recordedAtIso: string;
+  readonly rerun: DemoPolicyRerunResultVM;
 }
 
 function digest(kind: string, value: unknown): string {
@@ -110,6 +112,29 @@ function bindingFor(
       bankChangeHandling: firm.bankChangeHandling,
     },
   });
+  const decisionResult = policyRerun
+    ? {
+        disposition: policyRerun.rerun.disposition,
+        prohibition:
+          policyRerun.rerun.disposition === "prohibited"
+            ? (sourceCase?.prohibition ?? null)
+            : null,
+        authority:
+          policyRerun.rerun.disposition === "proceed"
+            ? (sourceCase?.authority ?? null)
+            : null,
+        executionEligibility: {
+          eligible: policyRerun.rerun.executionEligible,
+          reason: policyRerun.rerun.executionReason,
+        },
+        executionPlan: policyRerun.rerun.executionPlan,
+      }
+    : {
+        disposition: dispositionFor(scenario, firm.id),
+        prohibition: sourceCase?.prohibition ?? null,
+        authority: sourceCase?.authority ?? null,
+        executionEligibility: sourceCase?.executionEligibility ?? null,
+      };
   return {
     bundleHash,
     decisionHash: digest("verin-demo-decision-v1", {
@@ -119,10 +144,7 @@ function bindingFor(
         : decisionIdentityFor(scenario, firm.id, pass),
       createdAt: policyRerun?.recordedAtIso ?? activeDecisionAt(scenario, firm, pass),
       bundleHash,
-      disposition: dispositionFor(scenario, firm.id),
-      prohibition: sourceCase?.prohibition ?? null,
-      authority: sourceCase?.authority ?? null,
-      executionEligibility: sourceCase?.executionEligibility ?? null,
+      ...decisionResult,
       explanations: sourceCase?.explanations ?? [],
     }),
   };

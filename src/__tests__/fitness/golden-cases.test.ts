@@ -1502,7 +1502,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         scenarioId === "dual-approval" && firmId === "firm-a",
     )!;
     expect(dualApproval.exactBankInstructionEvidence).toBe(false);
-    expect(dualApproval.safetyChecks.length).toBeGreaterThan(0);
+    expect(dualApproval.safetyChecks).toEqual([]);
     dualApproval.safetyChecks = [
       {
         label: "Bank instruction unchanged since the decision",
@@ -1528,9 +1528,10 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
 
     const recordDrift = demoClone();
     const recordGuard = recordDrift.executionGuards.find(
-      ({ scenarioId, firmId }) =>
-        scenarioId === "dual-approval" && firmId === "firm-a",
+      ({ sourceCaseId }) =>
+        sourceCaseId === "GC-03-recent-bank-change-firm-a",
     )!;
+    expect(recordGuard.safetyChecks.length).toBeGreaterThan(0);
     recordGuard.recordSafetyChecks = [];
     expect(
       validateGoldenDemoSemantics(
@@ -1681,6 +1682,49 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
   });
 
   it("rejects shape-only execution proof for every must-hold meaning", () => {
+    const bindApprovalActors = (
+      target: Record<string, unknown>,
+    ) => {
+      const authority = target.expectedAuthority as Record<string, unknown>;
+      const stages = authority.stages as Array<Record<string, unknown>>;
+      const events = target.expectedLedgerEvents as Array<Record<string, unknown>>;
+      let actorIndex = 0;
+      const assignedByStage = new Map<string, number>();
+      for (const event of events) {
+        if (event.type !== "ApprovalRecorded") continue;
+        const pass = event.lifecyclePass === "revalidated"
+          ? "revalidated"
+          : "initial";
+        const stage = stages.find(({ stageId }) => stageId === event.stageId) ??
+          stages.find((candidate) => {
+            const key = `${pass}:${String(candidate.stageId)}`;
+            return (assignedByStage.get(key) ?? 0) <
+              Number(candidate.approvalsRequired);
+          })!;
+        const key = `${pass}:${String(stage.stageId)}`;
+        assignedByStage.set(key, (assignedByStage.get(key) ?? 0) + 1);
+        const roles = stage.eligibleRoleIds as string[];
+        actorIndex += 1;
+        event.stageId = stage.stageId;
+        event.lifecyclePass = pass;
+        event.actorId = `signed-actor-${actorIndex}`;
+        event.roleId = roles[0];
+        event.requesterId = "signed-requester";
+      }
+    };
+    const exposeGuard = (
+      demo: DemoSemanticSnapshot,
+      sourceCaseId: string,
+    ) => {
+      const guard = demo.executionGuards.find(
+        (candidate) => candidate.sourceCaseId === sourceCaseId,
+      )!;
+      guard.executionEligibilityVisible = true;
+      guard.reservationVisible = true;
+      guard.executionReached = true;
+      guard.verificationReached = true;
+      return guard;
+    };
     const expectProofFailure = (
       cases: LoadedCase[],
       sourceCaseId: string,
@@ -1698,14 +1742,17 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const stale = clone();
     const staleEvidence = caseById(
       stale,
-      "GC-01-firm-a-happy-path",
+      "GC-02-firm-b-happy-path",
     ).householdEvidence as Array<Record<string, unknown>>;
     staleEvidence.find(
       (entry) => entry.subjectRef === "subject:smiths-joint-taxable",
     )!.freshness = "stale";
-    expectProofFailure(stale, "GC-01-firm-a-happy-path");
+    expectProofFailure(stale, "GC-02-firm-b-happy-path");
 
     const unbound = clone();
+    bindApprovalActors(
+      caseById(unbound, "GC-01-firm-a-happy-path"),
+    );
     const unboundEvents = caseById(
       unbound,
       "GC-01-firm-a-happy-path",
@@ -1716,9 +1763,14 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         typeof event.note === "string" &&
         event.note.includes("decision hash"),
     )!.note = "Approval recorded without an exact binding.";
-    expectProofFailure(unbound, "GC-01-firm-a-happy-path");
+    const unboundDemo = demoClone();
+    exposeGuard(unboundDemo, "GC-01-firm-a-happy-path");
+    expectProofFailure(unbound, "GC-01-firm-a-happy-path", unboundDemo);
 
     const released = clone();
+    bindApprovalActors(
+      caseById(released, "GC-10-simultaneous-distributions-first"),
+    );
     const releasedEvents = caseById(
       released,
       "GC-10-simultaneous-distributions-first",
@@ -1728,11 +1780,17 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       0,
       { type: "ReservationReleased", note: "Reservation released before execution." },
     );
-    expectProofFailure(released, "GC-10-simultaneous-distributions-first");
+    const releasedDemo = demoClone();
+    exposeGuard(releasedDemo, "GC-10-simultaneous-distributions-first");
+    expectProofFailure(
+      released,
+      "GC-10-simultaneous-distributions-first",
+      releasedDemo,
+    );
 
     const expiredDemo = demoClone();
     const expiredGuard = expiredDemo.executionGuards.find(
-      ({ sourceCaseId }) => sourceCaseId === "GC-10-simultaneous-distributions-first",
+      ({ sourceCaseId }) => sourceCaseId === "GC-02-firm-b-happy-path",
     )!;
     expiredGuard.executionAtIso = new Date(
       Date.parse(expiredGuard.reservationAtIso!) + 31 * 60 * 1_000,
@@ -1746,6 +1804,9 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
 
     const refreshed = clone();
+    bindApprovalActors(
+      caseById(refreshed, "GC-15-approval-invalidation"),
+    );
     const refreshedEvents = caseById(
       refreshed,
       "GC-15-approval-invalidation",
@@ -1753,21 +1814,30 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     refreshedEvents.find(
       (event) => event.type === "ApprovalInvalidated",
     )!.note = "Approvals invalidated without persisted hash bindings.";
-    expectProofFailure(refreshed, "GC-15-approval-invalidation");
+    const refreshedDemo = demoClone();
+    exposeGuard(refreshedDemo, "GC-15-approval-invalidation");
+    expectProofFailure(
+      refreshed,
+      "GC-15-approval-invalidation",
+      refreshedDemo,
+    );
 
     const unknown = clone();
     const unknownEligibility = caseById(
       unknown,
-      "GC-01-firm-a-happy-path",
+      "GC-02-firm-b-happy-path",
     ).expectedExecutionEligibility as Record<string, unknown>;
     (unknownEligibility.preconditions as Array<Record<string, unknown>>).push({
       code: "unknown-proof",
       requiredEvidence: [],
       mustStillHoldAtExecution: true,
     });
-    expectProofFailure(unknown, "GC-01-firm-a-happy-path");
+    expectProofFailure(unknown, "GC-02-firm-b-happy-path");
 
     const bankMeaning = clone();
+    bindApprovalActors(
+      caseById(bankMeaning, "GC-03-recent-bank-change-firm-a"),
+    );
     const gc03Raw = caseById(
       bankMeaning,
       "GC-03-recent-bank-change-firm-a",
@@ -1783,13 +1853,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       summary: "Independent verification pending; the instruction is not yet verified.",
     });
     const bankDemo = demoClone();
-    const guard = bankDemo.executionGuards.find(
-      ({ sourceCaseId }) => sourceCaseId === "GC-03-recent-bank-change-firm-a",
-    )!;
-    guard.executionEligibilityVisible = true;
-    guard.reservationVisible = true;
-    guard.executionReached = true;
-    guard.verificationReached = true;
+    exposeGuard(bankDemo, "GC-03-recent-bank-change-firm-a");
     expectProofFailure(bankMeaning, "GC-03-recent-bank-change-firm-a", bankDemo);
   });
 
@@ -1901,11 +1965,11 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
           .slice(index + 1)
           .some((event) => event.kind === "ApprovalRecorded"),
     )!;
-    const reservationEvent = invertedTimeline.events.find(
-      ({ kind }) => kind === "ReservationCreated",
+    const revalidationEvent = invertedTimeline.events.find(
+      ({ kind }) => kind === "revalidation",
     )!;
-    [finalApproval.kind, reservationEvent.kind] = [
-      reservationEvent.kind,
+    [finalApproval.kind, revalidationEvent.kind] = [
+      revalidationEvent.kind,
       finalApproval.kind,
     ];
     expect(
@@ -1916,19 +1980,25 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ),
     ).toBe(true);
 
-    const hiddenException = demoClone();
-    const partialTimeline = hiddenException.sourceTimelines.find(
+    const inventedException = demoClone();
+    const partialTimeline = inventedException.sourceTimelines.find(
       ({ sourceCaseId }) =>
         sourceCaseId === "GC-13-partial-salesforce-success",
     )!;
-    partialTimeline.events.find(
-      ({ kind }) => kind === "ExceptionDecisionRequested",
-    )!.kind = "execution-receipt";
+    partialTimeline.events.push({
+      ...partialTimeline.events.at(-1)!,
+      kind: "ExceptionDecisionRequested",
+      instant: "2026-07-26T21:14:40.000Z",
+      display: "Invented downstream exception",
+      renderedInstant: "Jul 26, 2026, 5:14:40 PM EDT",
+    });
     expect(
-      validateGoldenDemoSemantics(clone(), realRefs, hiddenException).some(
+      validateGoldenDemoSemantics(clone(), realRefs, inventedException).some(
         (problem) =>
           problem.includes("GC-13-partial-salesforce-success") &&
-          problem.includes("ExceptionDecisionRequested must remain visible"),
+          problem.includes(
+            "incomplete structured signed execution authority must hide every downstream timeline event",
+          ),
       ),
     ).toBe(true);
   });
@@ -2181,14 +2251,12 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
 
     const roundedUpPartial = demoClone();
-    roundedUpPartial.partialReceipt.incompleteParts = [];
-    roundedUpPartial.partialReceipt.observedStatuses = ["completed", "completed"];
-    roundedUpPartial.partialReceipt.statusLabels = ["Settled · verified"];
-    roundedUpPartial.partialReceipt.exceptionDecision = null;
-    roundedUpPartial.partialReceipt.recordExceptionDecision = null;
+    roundedUpPartial.partialReceipt.completedParts = ["instruction-created"];
+    roundedUpPartial.partialReceipt.incompleteParts = ["disbursement-scheduled"];
+    roundedUpPartial.partialReceipt.observedStatuses = ["completed", "unknown"];
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, roundedUpPartial).some(
-        (problem) => problem.includes("GC-13 must render and print"),
+        (problem) => problem.includes("GC-13 must retain the signed partial outcome"),
       ),
     ).toBe(true);
 
@@ -2207,32 +2275,36 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
   });
 
-  it("requires a source-bound reservation before the competing request and execution", () => {
-    const lateReservation = demoClone();
-    const causal = lateReservation.reservationCausality.find(
-      ({ sourceCaseId }) =>
-        sourceCaseId === "GC-10-simultaneous-distributions-first",
-    )!;
-    causal.reservationAt = causal.relatedRequestAt;
+  it("withholds reservation causality until structured authority is complete", () => {
+    const inventedReservation = demoClone();
+    inventedReservation.reservationCausality.push({
+      scenarioId: "simultaneous-distributions",
+      firmId: "firm-a",
+      sourceCaseId: "GC-10-simultaneous-distributions-first",
+      requestAt: "2026-07-26T18:30:00.000Z",
+      decisionAt: "2026-07-26T18:30:10.000Z",
+      reservationAt: "2026-07-26T18:30:20.000Z",
+      executionAt: "2026-07-26T18:30:30.000Z",
+      relatedSourceCaseId: "GC-11-simultaneous-distributions-second",
+      relatedRequestAt: "2026-07-26T18:30:25.000Z",
+    });
     expect(
-      validateGoldenDemoSemantics(clone(), realRefs, lateReservation).some(
+      validateGoldenDemoSemantics(clone(), realRefs, inventedReservation).some(
         (problem) =>
           problem.includes(
-            "reservation must commit after its decision, before its signed sibling request and execution",
+            "reservation causality must appear exactly when structured signed execution authority is complete",
           ),
       ),
     ).toBe(true);
 
-    const missingReservation = demoClone();
-    missingReservation.reservationCausality = [];
     expect(
-      validateGoldenDemoSemantics(clone(), realRefs, missingReservation).some(
+      validateGoldenDemoSemantics(clone(), realRefs, demoClone()).some(
         (problem) =>
           problem.includes(
-            "reservation causality must bind exactly once to the signed GC-11 sibling",
+            "reservation causality must appear exactly when structured signed execution authority is complete",
           ),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("rejects drifted triggers, evidence, and prohibition authority", () => {
@@ -2590,13 +2662,11 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
 
   it("rejects receipt timestamps and verification state detached from signed events", () => {
     const receiptDrift = demoClone();
-    const gc13 = receiptDrift.executionGuards.find(
+    const gc14Receipt = receiptDrift.executionGuards.find(
       (guard) =>
-        guard.sourceCaseId === "GC-13-partial-salesforce-success",
+        guard.sourceCaseId === "GC-14-delayed-nigo",
     )!;
-    gc13.executionRows[0]!.timestampIso =
-      "2026-07-26T21:14:00.000Z";
-    gc13.executionRows[1]!.timestampIso =
+    gc14Receipt.executionRows[0]!.timestampIso =
       "2026-07-26T21:14:00.000Z";
     expect(
       validateGoldenDemoSemantics(
@@ -2609,11 +2679,11 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
 
     const proofDrift = demoClone();
-    const gc13Proofs = proofDrift.executionGuards.find(
+    const gc14Proofs = proofDrift.executionGuards.find(
       (guard) =>
-        guard.sourceCaseId === "GC-13-partial-salesforce-success",
+        guard.sourceCaseId === "GC-14-delayed-nigo",
     )!;
-    for (const proof of gc13Proofs.verificationProves) {
+    for (const proof of gc14Proofs.verificationProves) {
       proof.observedAtIso = "2026-07-28T21:14:00.000Z";
     }
     expect(

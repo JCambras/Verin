@@ -2,7 +2,11 @@ import {
   buildBankInstructionSafetyCheck,
   POST_REVIEW_BANK_EVIDENCE_WITHHELD,
 } from "./build-safety-check";
-import { executionEligibilityProof } from "./execution-preconditions";
+import {
+  approvalBindingProof,
+  executionEligibilityProof,
+} from "./execution-preconditions";
+import { SIGNED_APPROVAL_BINDINGS_WITHHELD } from "./build-approval-stages";
 import {
   executionEligibilityFor,
   hasSignedInvalidationAuthority,
@@ -43,6 +47,21 @@ export function executionReachFor(
         "Exact signed execution eligibility is unavailable.",
     };
   }
+  if (!sourceCase) {
+    return {
+      reached: false,
+      reason: "Exact signed case authority is unavailable.",
+    };
+  }
+  if (
+    sourceCase.authority.stages.length > 0 &&
+    !approvalBindingProof(scenario, firm, sourceCase, pass)
+  ) {
+    return {
+      reached: false,
+      reason: SIGNED_APPROVAL_BINDINGS_WITHHELD,
+    };
+  }
   if (
     hasSignedInvalidationAuthority(scenario, firm.id) &&
     pass !== "revalidated"
@@ -50,12 +69,6 @@ export function executionReachFor(
     return {
       reached: false,
       reason: "Material evidence changed, so the original authority is void.",
-    };
-  }
-  if (!sourceCase) {
-    return {
-      reached: false,
-      reason: "Exact signed case authority is unavailable.",
     };
   }
   const bankInstructionCheck = buildBankInstructionSafetyCheck(
@@ -71,13 +84,13 @@ export function executionReachFor(
         precondition.code === "bank-instruction-independently-verified" &&
         bankInstructionCheck.status !== "done",
     );
-      return {
-        reached: false,
-        reason:
-          unmet
-            ? POST_REVIEW_BANK_EVIDENCE_WITHHELD
-            : "Execution eligibility lacks exact signed proof for every active must-hold condition.",
-      };
+    return {
+      reached: false,
+      reason:
+        unmet
+          ? POST_REVIEW_BANK_EVIDENCE_WITHHELD
+          : "Execution eligibility lacks exact signed proof for every active must-hold condition.",
+    };
   }
   return { reached: true, reason: null };
 }

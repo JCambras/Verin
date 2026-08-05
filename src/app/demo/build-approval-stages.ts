@@ -1,14 +1,76 @@
 import type { ApprovalStageVM } from "./model";
+import type {
+  SignedAuthorityStageData,
+  SignedCaseVariant,
+  SignedLedgerEventData,
+} from "./signed-case-types";
 import { formatDemoInstant, timelineFor } from "./timeline";
 import {
   CANONICAL_REQUEST,
-  CAST,
   hasSignedInvalidationAuthority,
   sourceCaseFor,
   type FirmData,
   type JourneyPass,
   type ScenarioData,
 } from "./data";
+
+export const SIGNED_APPROVAL_BINDINGS_WITHHELD =
+  "Missing signed approval actor identity, role, and requester bindings. Execution is withheld pending captain-signed approval evidence.";
+
+function eventBindingComplete(
+  stage: SignedAuthorityStageData,
+  event: SignedLedgerEventData,
+): boolean {
+  return event.actorId !== null &&
+    event.roleId !== null &&
+    event.requesterId !== null &&
+    stage.eligibleRoleIds.includes(event.roleId) &&
+    (stage.requesterMayApprove || event.actorId !== event.requesterId);
+}
+
+export function signedApprovalStageSatisfied(
+  stage: SignedAuthorityStageData,
+  events: readonly SignedLedgerEventData[],
+  pass: JourneyPass,
+): boolean {
+  const approvals = events.filter(
+    (event) =>
+      event.type === "ApprovalRecorded" &&
+      event.stageId === stage.stageId &&
+      event.lifecyclePass === pass,
+  );
+  if (
+    !Number.isSafeInteger(stage.approvalsRequired) ||
+    stage.approvalsRequired <= 0 ||
+    approvals.length !== stage.approvalsRequired ||
+    !approvals.every((event) => eventBindingComplete(stage, event))
+  ) {
+    return false;
+  }
+  return !stage.distinctActorsRequired ||
+    new Set(approvals.map(({ actorId }) => actorId)).size ===
+      stage.approvalsRequired;
+}
+
+export function signedApprovalPlanSatisfied(
+  sourceCase: SignedCaseVariant,
+  pass: JourneyPass,
+): boolean {
+  if (sourceCase.authority.stages.length === 0) {
+    return sourceCase.authority.mode === "automatic";
+  }
+  let previousOrder = 0;
+  for (const stage of sourceCase.authority.stages) {
+    if (
+      stage.order <= previousOrder ||
+      !signedApprovalStageSatisfied(stage, sourceCase.ledgerEvents, pass)
+    ) {
+      return false;
+    }
+    previousOrder = stage.order;
+  }
+  return true;
+}
 
 export function approvalPlanSatisfied(
   stages: readonly ApprovalStageVM[],
@@ -27,9 +89,12 @@ export function approvalPlanSatisfied(
     previousOrder = stage.order;
     const eligible = stage.actors.filter(
       (actor) =>
+        actor.bindingComplete &&
+        actor.actorId !== null &&
+        actor.roleId !== null &&
         actor.status === "done" &&
         stage.eligibleRoleIds.includes(actor.roleId) &&
-        (stage.requesterMayApprove || !actor.requesterExcluded),
+        (stage.requesterMayApprove || actor.requesterExcluded === false),
     );
     const actorCount = stage.distinctActorsRequired
       ? new Set(eligible.map((actor) => actor.actorId)).size
@@ -77,17 +142,21 @@ export function buildStages(
   return sourceStages.map((stage): ApprovalStageVM => {
     const specialistReview =
       stage.stageId === "bank-change-specialist-review";
-    const approvalCount = sourceCase
-      ? sourceCase.ledgerEvents.filter(
-          (event) =>
-            event.type === "ApprovalRecorded" &&
-            event.stageId === stage.stageId &&
-            event.lifecyclePass === pass,
-        ).length
-      : stage.approvalsRequired;
+    const approvalEvents = sourceCase?.ledgerEvents.filter(
+      (event) =>
+        event.type === "ApprovalRecorded" &&
+        event.stageId === stage.stageId &&
+        event.lifecyclePass === pass,
+    ) ?? [];
     const stageReached =
       !specialistExpired &&
-      approvalCount >= stage.approvalsRequired;
+      sourceCase !== null &&
+      sourceCase !== undefined &&
+      signedApprovalStageSatisfied(
+        stage,
+        sourceCase.ledgerEvents,
+        pass,
+      );
     const approvalOneAt =
       pass === "revalidated"
         ? timeline.freshApprovalOneAt
@@ -100,94 +169,39 @@ export function buildStages(
       pass === "revalidated" && invalidation
         ? "Fresh approval on derived decision"
         : "Approved";
-    const actors = specialistReview
-      ? specialistExpired
-        ? [
-            {
-              actorId: "actor-alex-kim",
-              name: CAST.specialist,
-              roleId: "bank-change-specialist",
-              role: "Banking specialist",
-              status: "expired",
-              statusLabel: "Escalated, then expired",
-            },
-            {
-              actorId: "actor-jordan-bell",
-              name: CAST.principal,
-              roleId: "operations-manager",
-              role: "Operations manager (escalation)",
-              status: "expired",
-              statusLabel: "Expired unresolved",
-            },
-          ]
-        : approvalCount >= stage.approvalsRequired
-          ? [
-              {
-                actorId: "actor-alex-kim",
-                name: CAST.specialist,
-                roleId: "bank-change-specialist",
-                role: "Banking specialist",
-                status: "done",
-                statusLabel: `Reviewed · ${formatDemoInstant(timeline.specialistReviewedAt)}`,
-                timestampIso: timeline.specialistReviewedAt,
-              },
-            ]
-          : [
-              {
-                actorId: "actor-alex-kim",
-                name: CAST.specialist,
-                roleId: "bank-change-specialist",
-                role: "Banking specialist",
-                status: "pending",
-                statusLabel: "Awaiting review",
-              },
-            ]
-      : [
-          {
-            actorId: "actor-miguel-torres",
-            name: CAST.opsApprover1,
-            roleId: "operations",
-            role: "Operations",
-            status:
-              !specialistExpired && approvalCount >= 1
-                ? "done"
-                : "pending",
-            statusLabel:
-              !specialistExpired && approvalCount >= 1
-                ? `${statusPrefix} · ${formatDemoInstant(approvalOneAt)}`
-                : "Awaiting prior stage",
-            ...(!specialistExpired && approvalCount >= 1
-              ? { timestampIso: approvalOneAt }
-              : {}),
-          },
-          {
-            actorId: "actor-priya-nair",
-            name: CAST.opsApprover2,
-            roleId: "operations",
-            role: "Operations",
-            status:
-              !specialistExpired && approvalCount >= 2
-                ? "done"
-                : "pending",
-            statusLabel:
-              !specialistExpired && approvalCount >= 2
-                ? `${statusPrefix} · ${formatDemoInstant(approvalTwoAt)}`
-                : "Awaiting prior stage",
-            ...(!specialistExpired && approvalCount >= 2
-              ? { timestampIso: approvalTwoAt }
-              : {}),
-          },
-          {
-            actorId: "actor-dana-ellison",
-            name: CAST.requester,
-            roleId: "advisor",
-            role: "Advisor (requester)",
+    const actors = approvalEvents.map((event, index) => {
+      const complete = eventBindingComplete(stage, event);
+      const timestampIso = specialistReview
+        ? timeline.specialistReviewedAt
+        : index === 0
+          ? approvalOneAt
+          : approvalTwoAt;
+      return complete
+        ? {
+            actorId: event.actorId,
+            name: event.actorId!,
+            roleId: event.roleId,
+            role: event.roleId!,
+            status: "done",
+            statusLabel: `${specialistReview ? "Reviewed" : statusPrefix} · ${formatDemoInstant(timestampIso)}`,
+            timestampIso,
+            note: `Requester binding ${event.requesterId}.`,
+            requesterExcluded:
+              !stage.requesterMayApprove &&
+              event.actorId === event.requesterId,
+            bindingComplete: true,
+          }
+        : {
+            actorId: null,
+            name: `Approval event ${index + 1}: actor identity unavailable`,
+            roleId: null,
+            role: "Signed role unavailable",
             status: "pending",
-            statusLabel: "Cannot approve",
-            note: "Requested this movement - the requester cannot approve.",
-            requesterExcluded: true,
-          },
-        ];
+            statusLabel: "Signed binding incomplete",
+            note: "Signed requester identity binding unavailable.",
+            bindingComplete: false,
+          };
+    });
     return {
       ...stage,
       title: specialistReview

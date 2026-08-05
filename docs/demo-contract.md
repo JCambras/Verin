@@ -56,6 +56,14 @@ integrated as annotations:
    evaluated. Policy approval and activation require an attributed authenticated-human event, exact
    policy hash, timestamp, demonstration provenance, and a rerun `DecisionRecorded` pinned to the
    activated version. A URL flag is never approval authority.
+5. **Structured approval authority (captain-recorded Firstmate ruling, 2026-08-05).** An
+   `ApprovalRecorded` event proves a staged quorum only when it carries structured actor identity,
+   eligible role, requester identity, stage, and lifecycle-pass bindings. The current staged fixtures,
+   including GC-01 and GC-13, lack the actor, role, and requester bindings. Their signed outcomes remain
+   product truth, but execution is withheld pending captain-signed approval evidence. The default quick
+   start remains GC-01 with no silent case switch, so its Authority-to-Verification segment is open.
+   GC-02 remains independently executable under its signed automatic authority and is not substituted
+   into the GC-01 run.
 
 Canonical observed-status ids: `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`.
 
@@ -161,10 +169,13 @@ Visible proof:
 - expiration and escalation;
 - approval bound to the exact decision hash.
 
+If any structured actor, role, requester, stage, pass, or decision binding is absent, the stage remains
+pending and the journey states that execution is withheld pending captain-signed approval evidence.
+
 ### Minute 3:20-4:05 - Safety before execution
 
-After approval, Verin refreshes material evidence, checks pending actions, creates reservations, and
-invalidates approval if facts changed.
+Only after structured approval authority is complete, Verin refreshes material evidence, checks
+pending actions, creates reservations, and invalidates approval if facts changed.
 
 For every executable decision, `ReservationCreated` follows the final still-valid
 `ApprovalRecorded` when approval is required, follows pre-execution evidence revalidation, and
@@ -340,6 +351,8 @@ Phase 1 is complete only when:
 - Firm A and Firm B differ only through configuration;
 - strict policy-only comparison attribution is supported by equivalent captain-signed cross-firm
   evidence (currently open for GC-01 / GC-02);
+- staged execution is supported by captain-signed actor, eligible-role, and requester bindings
+  (currently open for GC-01 and the other staged fixtures);
 - the natural-language policy path ends in a structured approved version;
 - the complete decision artifact replays byte-identically;
 - a cold reviewer understands the category without a long architecture explanation.

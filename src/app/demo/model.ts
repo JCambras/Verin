@@ -1,9 +1,16 @@
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
 import type { ExecutionReceiptId, ObservedStatusId, VerificationProjectionId } from "@contracts/execution-status";
+import type { PolicyAuthoringVM } from "./policy-model";
 import type { RecordVM } from "./record-model";
 import type { SignedCaseId } from "./signed-case-types";
 export type { RecordVM } from "./record-model";
+export type {
+  DemoPolicyApprovalEventVM,
+  DemoPolicyRerunResultVM,
+  PolicyAuthoringVM,
+  SimulationDeltaRowVM,
+} from "./policy-model";
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
 // has landed yet), so every element carries one of these classes and a DevProvenanceBadge
@@ -215,15 +222,16 @@ export interface PolicyTraceVM {
 
 // ── Surface 6: Approval stages and actor status ─────────────────────────────────────
 export interface ActorSlotVM {
-  readonly actorId: string;
+  readonly actorId: string | null;
   readonly name: string;
-  readonly roleId: string;
+  readonly roleId: string | null;
   readonly role: string;
   readonly status: string; // StatusBadge key
   readonly statusLabel: string;
   readonly timestampIso?: string;
   readonly note?: string; // e.g. "You requested this - you cannot approve"
   readonly requesterExcluded?: boolean;
+  readonly bindingComplete: boolean;
 }
 export interface ApprovalStageVM {
   readonly stageId: string;
@@ -416,56 +424,6 @@ export interface ComparisonVM {
   readonly description: string;
   readonly columns: readonly [ComparisonColumnVM, ComparisonColumnVM];
   readonly rows: readonly ComparisonRowVM[];
-  readonly fakeClass: FakeClass;
-}
-
-// ── Surface 11: Policy draft and simulation impact ──────────────────────────────────
-export interface DraftRowVM {
-  readonly field: string;
-  readonly value: string;
-}
-export interface SimulationDeltaRowVM {
-  readonly label: string;
-  readonly before: ComparisonCellVM;
-  readonly after: ComparisonCellVM;
-}
-export type PolicyApprovalVM =
-  | {
-      readonly kind: "available";
-      readonly gateLabel: string;
-      readonly activation: {
-        readonly fromVersion: string;
-        readonly toVersion: string;
-      };
-      readonly changedRerunResult: string;
-    }
-  | {
-      readonly kind: "unavailable";
-      readonly reason: string;
-    };
-export interface DemoPolicyApprovalEventVM {
-  readonly eventId: string;
-  readonly actorId: string;
-  readonly actorRole: string;
-  readonly tenantOrgId: string;
-  readonly approvedAt: string;
-  readonly approvedAtIso: string;
-  readonly decisionRecordedAt: string;
-  readonly decisionRecordedAtIso: string;
-  readonly policyHash: string;
-  readonly fromVersion: string;
-  readonly toVersion: string;
-  readonly reserveMonths: number;
-  readonly fakeClass: FakeClass;
-  readonly watermark: string;
-}
-export interface PolicyAuthoringVM {
-  readonly spine: DecisionSpineVM;
-  readonly sentence: string;
-  readonly draft: { readonly rows: readonly DraftRowVM[]; readonly label: string; readonly fakeClass: FakeClass };
-  readonly interpretation: string;
-  readonly simulationDelta: readonly SimulationDeltaRowVM[];
-  readonly approval: PolicyApprovalVM;
   readonly fakeClass: FakeClass;
 }
 

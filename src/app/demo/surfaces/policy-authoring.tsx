@@ -140,6 +140,20 @@ export function PolicyAuthoringSurface({
             </div>
           </dl>
           <p className="text-sm text-slate-700">{vm.approval.changedRerunResult}</p>
+          <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-slate-600">Activated rerun disposition</dt>
+              <dd className="text-slate-800">{approvalEvent.rerun.disposition}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-slate-600">Candidate execution plan</dt>
+              <dd className="text-slate-800">
+                {approvalEvent.rerun.executionPlan
+                  ? `Bound to ${approvalEvent.rerun.executionPlan.requestRef}`
+                  : "None - execution is ineligible"}
+              </dd>
+            </div>
+          </dl>
           <p className="text-xs font-medium text-amber-900">{approvalEvent.watermark}</p>
           <PrimaryLink href={demoHref("record", routeContext, { approvalEventId: approvalEvent.eventId })}>View the printable policy-rerun record</PrimaryLink>
         </section>

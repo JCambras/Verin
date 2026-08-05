@@ -694,7 +694,12 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
         journey.approvals?.binding !== undefined,
       satisfied: journey.approvals?.satisfied ?? false,
       stages: (journey.approvals?.stages ?? []).map((stage) => {
-        const completed = stage.actors.filter((actor) => actor.status === "done");
+        const completed = stage.actors.filter(
+          (actor) =>
+            actor.status === "done" &&
+            actor.actorId !== null &&
+            actor.roleId !== null,
+        );
         return {
           stageId: stage.stageId,
           order: stage.order,
@@ -710,8 +715,12 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
             reasonCode: escalation.reasonCode,
           })),
           satisfied: stage.satisfied,
-          completedActorIds: completed.map((actor) => actor.actorId),
-          completedRoleIds: completed.map((actor) => actor.roleId),
+          completedActorIds: completed.flatMap((actor) =>
+            actor.actorId === null ? [] : [actor.actorId],
+          ),
+          completedRoleIds: completed.flatMap((actor) =>
+            actor.roleId === null ? [] : [actor.roleId],
+          ),
         };
       }),
     };
@@ -976,14 +985,22 @@ export function loadDemoSemanticSnapshot(): DemoSemanticSnapshot {
       freshActorIds:
         revalidatedInvalidationJourney.approvals?.stages.flatMap((stage) =>
           stage.actors
-            .filter((actor) => actor.status === "done")
-            .map((actor) => actor.actorId),
+            .filter(
+              (actor) => actor.status === "done" && actor.actorId !== null,
+            )
+            .flatMap((actor) =>
+              actor.actorId === null ? [] : [actor.actorId],
+            ),
         ) ?? [],
       freshRoleIds:
         revalidatedInvalidationJourney.approvals?.stages.flatMap((stage) =>
           stage.actors
-            .filter((actor) => actor.status === "done")
-            .map((actor) => actor.roleId),
+            .filter(
+              (actor) => actor.status === "done" && actor.roleId !== null,
+            )
+            .flatMap((actor) =>
+              actor.roleId === null ? [] : [actor.roleId],
+            ),
         ) ?? [],
       initialReservationVisible:
         Boolean(invalidationJourney.safety?.reservationId),

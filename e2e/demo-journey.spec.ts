@@ -57,7 +57,7 @@ async function expectFullDecisionBinding(page: Page) {
   }
 }
 
-test("the seven-minute quick start keeps one executable signed case end to end", async ({ page }) => {
+test("the quick start keeps GC-01 identity and withholds unsigned authority", async ({ page }) => {
   await login(page, PRINCIPAL);
 
   // Launcher.
@@ -123,64 +123,46 @@ test("the seven-minute quick start keeps one executable signed case end to end",
   await checkAxe(page, "policy-trace");
   await snap(page, 5, "policy-trace");
 
-  // 6 - Authority: every ordered stage and quorum is visibly satisfied before Safety.
   await page.getByRole("link", { name: "Continue to authority" }).click();
   await expectQuickStartStation(page, "authority");
   await expect(page.getByText("Dual operations approval").first()).toBeVisible();
   await expect(page.getByText("Bank-instruction specialist review")).toHaveCount(0);
-  await expect(page.getByText("the requester cannot approve")).toBeVisible();
+  await expect(page.getByText(/requester cannot satisfy both approvals/i)).toBeVisible();
   await expect(page.getByText(/Approval binds to decision/)).toBeVisible();
-  await expect(page.getByText("Awaiting review")).toHaveCount(0);
-  await expect(page.getByText("Awaiting prior stage")).toHaveCount(0);
-  await expect(page.getByText("Awaiting approval")).toHaveCount(0);
-  await expect(page.getByText(/Approved ·/)).toHaveCount(2);
-  const stagedAuthorityGate = page.getByRole("region", {
-    name: "Approve",
-  });
-  await expect(stagedAuthorityGate).toContainText(
-    "signed account reference subject:smiths-joint-taxable",
-  );
-  await expect(stagedAuthorityGate).toContainText(
-    "account name unavailable",
-  );
-  await expect(stagedAuthorityGate).not.toContainText(
-    "Smith Family Taxable",
-  );
+  await expect(page.getByText("Signed binding incomplete")).toHaveCount(2);
+  await expect(page.getByText(/actor identity unavailable/)).toHaveCount(2);
+  await expect(
+    page.getByText(
+      /missing signed approval actor identity, role, and requester bindings/i,
+    ),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Approve" })).toHaveCount(0);
   await checkAxe(page, "authority");
   await snap(page, 6, "authority");
 
-  // 7 - Safety: signed eligibility, reservation, and idempotency remain on GC-01.
-  await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
+  await page.goto(`/app/demo/safety?${QUICK_START_QUERY}`);
   await expectQuickStartStation(page, "safety");
-  await expect(page.getByText("Material evidence re-checked")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Execute the movement" })).toBeVisible();
-  await page.getByRole("button", { name: "Verify source" }).click();
-  await expect(page.getByText("idem:GC-01:smiths-75000-2026-08-15")).toBeVisible();
-  await expect(page.getByText("res:GC-01:liquidity")).toBeVisible();
+  await expect(page.getByText("Safety check not reached")).toBeVisible();
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
   await checkAxe(page, "safety");
   await snap(page, 7, "safety");
 
-  // 8 - Execution.
-  await page.getByRole("link", { name: "Execute the movement" }).click();
+  await page.goto(`/app/demo/execution?${QUICK_START_QUERY}`);
   await expectQuickStartStation(page, "execution");
-  await expect(page.getByText("Submitted", { exact: true })).toBeVisible();
-  await expect(page.getByText("settlement not yet confirmed")).toBeVisible();
-  await expect(page.getByText("deferred pending sandbox access")).toBeVisible();
-  await expectDevBadge(page);
+  await expect(page.getByText("Execution not reached")).toBeVisible();
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
   await checkAxe(page, "execution");
   await snap(page, 8, "execution");
 
-  // 9 - Verification: proves vs not-yet, next poll.
-  await page.getByRole("link", { name: "View verification" }).click();
+  await page.goto(`/app/demo/verification?${QUICK_START_QUERY}`);
   await expectQuickStartStation(page, "verification");
-  await expect(page.getByText("What this status proves")).toBeVisible();
-  await expect(page.getByText("What it does not prove yet")).toBeVisible();
-  await expect(page.getByText("Next status poll")).toBeVisible();
+  await expect(page.getByText("Verification not reached")).toBeVisible();
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
   await checkAxe(page, "verification");
   await snap(page, 9, "verification");
 
   // 10 - Firm A / Firm B: policy versions head the columns; differing rows marked.
-  await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
+  await page.goto(`/app/demo/comparison?${QUICK_START_QUERY}`);
   await expectQuickStartStation(page, "comparison");
   await expect(page.getByText("firm-b-policy@2026.07.1").first()).toBeVisible();
   await expect(page.getByText("$48,000.00", { exact: true })).toBeVisible();
@@ -240,6 +222,46 @@ test("the seven-minute quick start keeps one executable signed case end to end",
   await snap(page, 12, "record");
 });
 
+test("activated policy reruns recompute the decision and preserve approval context", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  const context =
+    "scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first";
+
+  await page.goto(`/app/demo/policy-authoring?${context}`);
+  const requestRow = page.getByRole("row").filter({ hasText: "This request" });
+  await expect(requestRow).toContainText("Blocked - resolvable");
+  await page.getByRole("button", { name: "Approve and activate FA-4.3" }).click();
+  const approvalEvent = new URL(page.url()).searchParams.get("approvalEvent");
+  expect(approvalEvent).toMatch(/^[0-9a-f-]{36}$/);
+
+  await page.getByRole("link", { name: "View the printable policy-rerun record" }).click();
+  await expect(page.getByRole("region", { name: "Decision and disposition" })).toContainText(
+    "Blocked - resolvable",
+  );
+  await expect(page.getByRole("region", { name: "Safety revalidation" })).not.toContainText(
+    "Execution eligible: yes",
+  );
+  const back = page.getByRole("link", { name: "Back to policy authoring" });
+  await expect(back).toHaveAttribute(
+    "href",
+    `/app/demo/policy-authoring?${context}&approvalEvent=${approvalEvent}`,
+  );
+  await back.click();
+  await expect(page.getByTestId("policy-activated")).toBeVisible();
+});
+
+test("unsigned approval actor bindings withhold execution", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  const context =
+    "scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success";
+
+  await page.goto(`/app/demo/authority?${context}`);
+  await expect(page.getByText(/missing signed approval actor identity, role, and requester bindings/i)).toBeVisible();
+  await page.goto(`/app/demo/execution?${context}`);
+  await expect(page.getByText(/missing signed approval actor identity, role, and requester bindings/i)).toBeVisible();
+  await expect(page.getByText("Execution not reached")).toBeVisible();
+});
+
 test("the UI does not invent decisions: dispositions are the recorded contract outcomes", async ({ page }) => {
   await login(page, PRINCIPAL);
 
@@ -280,36 +302,12 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByText("$112,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("Missing signed branch-and-firm liquidity authority")).toBeVisible();
   await page.goto("/app/demo/safety?scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first");
-  const sibling = page.locator(
-    '[data-related-source-case="GC-11-simultaneous-distributions-second"]',
-  );
-  await expect(sibling).toHaveAttribute("data-related-disposition", "blocked");
-  const siblingRequestAt = await sibling.getAttribute(
-    "data-related-request-instant",
-  );
-  const siblingDecisionAt = await sibling.getAttribute(
-    "data-related-decision-instant",
-  );
-  const reservationAt = await page
-    .getByTestId("reservation-commit-timestamp")
-    .getAttribute("data-event-instant");
-  expect(Date.parse(siblingDecisionAt!)).toBeGreaterThan(
-    Date.parse(siblingRequestAt!),
-  );
-  expect(Date.parse(reservationAt!)).toBeLessThan(
-    Date.parse(siblingRequestAt!),
-  );
-  await expect(sibling).toContainText(
-    "GC-11-simultaneous-distributions-second",
-  );
+  await expect(page.getByText("Safety check not reached")).toBeVisible();
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
+  await expect(page.getByTestId("reservation-commit-timestamp")).toHaveCount(0);
   await page.goto("/app/demo/execution?scenario=competing-liquidity&firm=firm-a&case=GC-10-simultaneous-distributions-first");
-  const competingExecutionAt = await page
-    .getByTestId("timeline-event")
-    .first()
-    .getAttribute("data-event-instant");
-  expect(Date.parse(reservationAt!)).toBeLessThan(
-    Date.parse(competingExecutionAt!),
-  );
+  await expect(page.getByText("Execution not reached")).toBeVisible();
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
 
   // Prohibited: solid stamp, versioned source, ZERO resolving affordances.
   await page.goto("/app/demo/decision?scenario=permanent-prohibition&firm=firm-a&case=GC-06-household-restriction");
@@ -496,72 +494,37 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.goto("/app/demo/intent?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
-  const invalidationRequestAt = await page
-    .getByTestId("request-timestamp")
-    .getAttribute("data-event-instant");
   for (const surface of ["workspace", "evidence", "decision", "authority"]) {
     await page.goto(`/app/demo/${surface}?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation`);
     await expect(page.getByText("$15,000.00", { exact: true })).toHaveCount(0);
   }
   await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
-  const invalidationRevalidatedAt = await page
-    .getByTestId("revalidation-timestamp")
-    .getAttribute("data-event-instant");
-  expect(Date.parse(invalidationRevalidatedAt!)).toBeGreaterThan(
-    Date.parse(invalidationRequestAt!),
-  );
-  await expect(page.getByTestId("voided-approval")).toHaveCount(2);
-  await expect(page.getByText("Approval voided - evidence changed")).toHaveCount(2);
-  await expect(page.getByTestId("what-changed")).toBeVisible();
-  await expect(page.getByText("$0.00", { exact: true })).toBeVisible();
-  await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
-  const changedText = await page.getByTestId("what-changed").innerText();
-  expect(changedText.indexOf("Initial decision")).toBeLessThan(changedText.indexOf("Pre-execution revalidation"));
-  await expect(page.getByRole("link", { name: "Re-evaluate with current evidence" })).toBeVisible();
+  await expect(page.getByText("Safety check not reached")).toBeVisible();
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
   await checkAxe(page, "safety-invalidation");
   await snap(page, 15, "safety-invalidation");
-  await page.goto("/app/demo/record?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
-  await expect(page.getByText("$15,000.00", { exact: true }).first()).toBeVisible();
+  await page.goto("/app/demo/evidence?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated");
+  await expect(page.getByTestId("refreshed-evidence")).toBeVisible();
+  await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/app/demo/workspace?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
   await expect(page.getByText("$15,000.00", { exact: true })).toHaveCount(0);
   await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
-  await expect(page.getByText("$15,000.00", { exact: true })).toBeVisible();
+  await expect(page.getByText("Safety check not reached")).toBeVisible();
   await checkAxe(page, "safety-invalidation-mobile");
   await snap(page, 19, "safety-invalidation-mobile");
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  // Duplicate retry: the product claim in plain words, keys matching byte-for-byte.
   await page.goto("/app/demo/intent?scenario=duplicate-retry&firm=firm-a&case=GC-12-duplicate-retry");
-  const duplicateRequestAt = await page
-    .getByTestId("request-timestamp")
-    .getAttribute("data-event-instant");
   await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a&case=GC-12-duplicate-retry");
-  await expect(page.getByText("Already submitted once - Verin did not send it again.")).toBeVisible();
-  await expect(page.getByText("Duplicate suppressed")).toBeVisible();
-  const duplicateEvents = page.getByTestId("timeline-event");
-  await expect(duplicateEvents).toHaveCount(2);
-  const duplicateInstants = await duplicateEvents.evaluateAll((rows) =>
-    rows.map((row) => row.getAttribute("data-event-instant")!),
-  );
-  expect(duplicateInstants.every((instant) =>
-    Date.parse(instant) > Date.parse(duplicateRequestAt!),
-  )).toBe(true);
-  expect(Date.parse(duplicateInstants[1]!)).toBeGreaterThan(
-    Date.parse(duplicateInstants[0]!),
-  );
-  await expect(duplicateEvents.nth(0)).toContainText("Jul 26, 16:39");
-  await expect(duplicateEvents.nth(1)).toContainText("Jul 26, 16:40");
+  await expect(page.getByText("Execution not reached")).toBeVisible();
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
+  await expect(page.getByTestId("timeline-event")).toHaveCount(0);
   await snap(page, 16, "execution-duplicate-suppressed");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/app/demo/execution?scenario=duplicate-retry&firm=firm-a&case=GC-12-duplicate-retry");
-  await expect(page.getByTestId("timeline-event").nth(0)).toContainText(
-    "Jul 26, 16:39",
-  );
-  await expect(page.getByTestId("timeline-event").nth(1)).toContainText(
-    "Jul 26, 16:40",
-  );
+  await expect(page.getByText("Execution not reached")).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 720 });
 
   // Delayed NIGO: first-class appended row with its resolving affordance.
@@ -598,7 +561,6 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByText("Authority not reached")).toBeVisible();
 
   await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-a&case=GC-16-specialist-review-expiration");
-  await expect(page.getByText("Escalated, then expired")).toBeVisible();
   await expect(page.getByText("escalated to the operations manager, then expired unresolved")).toBeVisible();
   await expect(page.getByText(/Execution mode: sequential · expires after P2D/)).toBeVisible();
   await expect(page.getByText(/Escalates after P1D to operations-manager · specialist-review-idle/)).toBeVisible();
@@ -670,10 +632,9 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(initialPolicyHeadroom).toContainText("$204,000.00");
 
   await page.goto("/app/demo/authority?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation");
-  await expect(page.getByText(/Approved ·/)).toHaveCount(2);
-  await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
-  await expect(page.getByTestId("voided-approval")).toHaveCount(2);
-  await page.getByRole("link", { name: "Re-evaluate with current evidence" }).click();
+  await expect(page.getByText("Signed binding incomplete")).toHaveCount(2);
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
+  await page.goto(`/app/demo/decision?${invalidationContext}&pass=revalidated`);
   await expect(page.getByTestId("derived-decision")).toBeVisible();
   await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
   await expect(
@@ -695,23 +656,14 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(page.getByTestId("derived-decision")).toBeVisible();
   await page.getByRole("link", { name: "View the policy trace" }).click();
   await page.getByRole("link", { name: "Continue to authority" }).click();
-  await expect(page.getByText("Fresh approval on derived decision")).toHaveCount(2);
-  await page.getByRole("link", { name: "Continue after recorded approvals" }).click();
-  await expect(page.getByText("Two fresh approvals bind to the derived decision")).toBeVisible();
-  await page.getByRole("button", { name: "Verify source" }).click();
-  await expect(page.getByText("res:GC-15:liquidity")).toBeVisible();
+  await expect(page.getByText("Signed binding incomplete")).toHaveCount(2);
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
   await checkAxe(page, "approval-invalidation-revalidated");
   await snap(page, 22, "approval-invalidation-revalidated");
-  await page.getByRole("link", { name: "Execute the movement" }).click();
-  await page.getByRole("link", { name: "View verification" }).click();
-  await expect(page.getByText("Submission accepted by the capability")).toBeVisible();
-  await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
+  await page.goto(`/app/demo/comparison?${invalidationContext}&pass=revalidated`);
   await expect(page).toHaveURL(/pass=revalidated/);
   await expect(page.getByText("$237,000.00", { exact: true })).toBeVisible();
   await expect(page.getByText("$252,000.00", { exact: true })).toHaveCount(0);
-  await page.getByRole("link", { name: "Back to verification" }).click();
-  await expect(page).toHaveURL(/pass=revalidated/);
-  await expect(page.getByText("Submission accepted by the capability")).toBeVisible();
 
   await page.goto(`/app/demo/record?${invalidationContext}`);
   await expect(page.getByTestId("signed-lifecycle-event")).toHaveCount(6);
@@ -721,20 +673,20 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(page.getByText(/res:GC-15/)).toHaveCount(0);
   await expect(
     page.getByRole("region", { name: "Execution" }),
-  ).toContainText("returned to Decision");
+  ).toContainText(/missing signed approval actor identity/i);
   await expect(
     page.getByRole("region", { name: "Execution" }),
   ).not.toContainText("Submitted");
   await expect(
     page.getByRole("region", { name: "Verification state at time of export" }),
-  ).toContainText("returned to Decision");
+  ).toContainText(/missing signed approval actor identity/i);
 
   await page.goto(`/app/demo/record?${invalidationContext}&pass=revalidated`);
   const lifecycle = page.getByTestId("signed-lifecycle-event");
-  await expect(lifecycle).toHaveCount(13);
+  await expect(lifecycle).toHaveCount(9);
   await expect(page.getByTestId("decision-binding")).toHaveCount(2);
-  await expect(page.getByText(/idem:GC-15/).first()).toBeVisible();
-  await expect(page.getByText(/res:GC-15/).first()).toBeVisible();
+  await expect(page.getByText(/idem:GC-15/)).toHaveCount(0);
+  await expect(page.getByText(/res:GC-15/)).toHaveCount(0);
   await expect(page.getByText("Original decision hash", { exact: true })).toBeVisible();
   await expect(page.getByText("Derived decision hash", { exact: true })).toBeVisible();
   await expect(page.getByText("Refreshed input-bundle hash", { exact: true })).toBeVisible();
@@ -748,17 +700,13 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
     "DecisionRecorded",
     "ApprovalRecorded",
     "ApprovalRecorded",
-    "ReservationCreated",
-    "ExecutionStarted",
-    "ExecutionSucceeded",
-    "StatusObserved",
   ]);
   await expect(
     page.getByRole("region", { name: "Execution" }),
-  ).toContainText("Submitted");
+  ).toContainText(/missing signed approval actor identity/i);
   await expect(
     page.getByRole("region", { name: "Verification state at time of export" }),
-  ).toContainText("Submission accepted by the capability");
+  ).toContainText(/missing signed approval actor identity/i);
   const lifecycleInstants = await lifecycle.evaluateAll((rows) =>
     rows.map((row) => row.getAttribute("data-event-instant")),
   );
@@ -782,33 +730,14 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   expect(unsupportedRevalidation?.status()).toBe(404);
 
   await page.goto("/app/demo/execution?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success");
-  const completedPart = page.getByTestId("timeline-event").filter({ hasText: "instruction-created" });
-  const incompletePart = page.getByTestId("timeline-event").filter({ hasText: "disbursement-scheduled" });
-  await expect(completedPart).toContainText("Completed part");
-  await expect(incompletePart).toContainText("Unconfirmed");
-  await expect(completedPart).toHaveAttribute(
-    "data-event-instant",
-    "2026-07-26T21:14:10.000Z",
-  );
-  await expect(incompletePart).toHaveAttribute(
-    "data-event-instant",
-    "2026-07-28T21:14:00.000Z",
-  );
-  await expect(page.getByText("Settled · verified")).toHaveCount(0);
-  await page.getByRole("link", { name: "View verification" }).click();
-  await expect(page.getByText("Completed part: instruction-created")).toBeVisible();
-  await expect(page.getByText("Incomplete part: disbursement-scheduled")).toBeVisible();
-  await expect(page.getByText(/settled/i)).toHaveCount(0);
-  await expect(page.getByTestId("exception-decision-requested")).toContainText(
-    "ExceptionDecisionRequested",
-  );
-  await expect(page.getByTestId("exception-decision-requested")).toContainText(
-    "partial-execution",
-  );
+  await expect(page.getByText("Execution not reached")).toBeVisible();
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
+  await expect(page.getByTestId("timeline-event")).toHaveCount(0);
   await page.goto("/app/demo/record?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success");
-  await expect(page.getByTestId("exception-decision-requested")).toContainText(
-    "ExceptionDecisionRequested",
-  );
+  await expect(page.getByTestId("exception-decision-requested")).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Execution" }),
+  ).toContainText(/missing signed approval actor identity/i);
 
   await page.goto(
     "/app/demo/policy-authoring?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated",
@@ -819,8 +748,8 @@ test("signed authority, invalidation, and partial receipts fail closed and remai
   await expect(page.getByText("$204,000.00", { exact: true })).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/app/demo/safety?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated");
-  await expect(page.getByText("Two fresh approvals bind to the derived decision")).toBeVisible();
+  await page.goto("/app/demo/authority?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated");
+  await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
   await checkAxe(page, "approval-invalidation-revalidated-mobile");
   await snap(page, 23, "approval-invalidation-revalidated-mobile");
 });
@@ -944,12 +873,13 @@ test("missing bank-instruction evidence fails closed on Safety and Record", asyn
   for (const station of ["safety", "record"]) {
     await page.goto(`/app/demo/${station}?${context}`);
     const surface = page.locator("main");
-    await expect(surface).toContainText("Evidence missing");
-    await expect(surface).toContainText("Bank-instruction check not evaluated");
-    await expect(surface).toContainText("Evidence unavailable");
+    await expect(surface).toContainText(
+      /exact signed liquidity authority is unavailable|No captain-signed numeric liquidity case/,
+    );
     await expect(surface).not.toContainText(
       "Bank instruction unchanged since the decision",
     );
+    await expect(surface).not.toContainText("Execution eligible: yes");
   }
 
   const changedContext =
@@ -1018,11 +948,9 @@ test("exact demo route context survives every inspective and dead-end link", asy
   }
 
   await page.goto(
-    "/app/demo/safety?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation",
+    "/app/demo/evidence?scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated",
   );
-  await page
-    .getByRole("link", { name: "Re-evaluate with current evidence" })
-    .click();
+  await page.getByRole("link", { name: "View the recommendation" }).click();
   await expect(page).toHaveURL(
     /scenario=approval-invalidation&firm=firm-a&case=GC-15-approval-invalidation&pass=revalidated$/,
   );
@@ -1033,7 +961,7 @@ test("verification proof provenance stays bound to each signed event", async ({ 
   await login(page, PRINCIPAL);
 
   await page.goto(
-    "/app/demo/verification?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path",
+    "/app/demo/verification?scenario=safe-proceed&firm=firm-b&case=GC-02-firm-b-happy-path",
   );
   const submittedProof = page
     .getByRole("region", {
@@ -1049,34 +977,6 @@ test("verification proof provenance stays bound to each signed event", async ({ 
     "data-event-instant",
     "2026-07-26T13:59:10.000Z",
   );
-
-  await page.goto(
-    "/app/demo/verification?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success",
-  );
-  const partialProofs = page.getByRole("region", {
-    name: "What this status proves",
-  });
-  await expect(
-    partialProofs.getByRole("listitem").filter({
-      hasText: "Submission accepted by the capability",
-    }),
-  ).toHaveAttribute("data-event-instant", "2026-07-26T21:14:10.000Z");
-  await expect(
-    partialProofs.getByRole("listitem").filter({
-      hasText: "Completed part: instruction-created",
-    }),
-  ).toHaveAttribute("data-event-instant", "2026-07-26T21:14:10.000Z");
-  await page.goto(
-    "/app/demo/record?scenario=partial-salesforce-success&firm=firm-a&case=GC-13-partial-salesforce-success",
-  );
-  await expect(
-    page
-      .getByRole("region", {
-        name: "Verification state at time of export",
-      })
-      .getByRole("listitem")
-      .filter({ hasText: "Completed part: instruction-created" }),
-  ).toHaveAttribute("data-event-instant", "2026-07-26T21:14:10.000Z");
 
   await page.goto(
     "/app/demo/verification?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo",
@@ -1427,7 +1327,7 @@ test("every fake-backed demo surface carries a visible dev provenance badge", as
     "record",
   ];
   for (const s of surfaces) {
-    await page.goto(`/app/demo/${s}?scenario=safe-proceed&firm=firm-a&case=GC-01-firm-a-happy-path`);
+    await page.goto(`/app/demo/${s}?scenario=safe-proceed&firm=firm-b&case=GC-02-firm-b-happy-path`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     expect(await page.getByTestId("dev-provenance-badge").count(), `surface ${s} must carry a dev provenance badge`).toBeGreaterThan(0);
   }

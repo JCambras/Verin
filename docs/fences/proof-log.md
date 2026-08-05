@@ -6218,3 +6218,28 @@ position on the rerun record.
 **Revert:** all violations remain isolated inside companion tests. Signed fixtures are unchanged.
 
 **Date:** 2026-08-05 (D-124).
+
+## F126 · activated-policy results and structured approval authority
+
+**Fences:** `src/__tests__/unit/demo-truth-boundaries.test.ts`,
+`src/__tests__/fitness/golden-cases.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** an activated policy record binds the outcome recomputed under that policy, and staged
+execution consumes only structured signed actor, role, requester, stage, pass, and quorum evidence.
+
+The browser companion first reproduced GC-10 showing Proceed after the activated twelve-month reserve
+simulation showed Blocked. It now verifies Blocked on the approval surface and printable record,
+absent execution eligibility and plan, a derived decision hash bound to the recomputed result, and a
+back link that retains the approval event. A unit mutation changes only rerun disposition,
+eligibility, and plan: the input-bundle hash remains stable while the decision hash changes.
+
+The second browser companion first reproduced GC-13 reaching execution from approval counts whose
+events had no actor, role, or requester fields. It now verifies the exact missing-binding reason and
+no execution surface. Product companions remove each binding, duplicate an actor, and supply an
+ineligible role. Raw-fixture companions add otherwise complete structured bindings, then independently
+remove semantic hash authority, release or expire a reservation, make evidence stale, or invent an
+unknown proof. Each mutation keeps downstream state unavailable or produces a source-case diagnostic.
+
+**Revert:** every adversarial mutation remains inside a companion. No signed fixture was edited or
+re-signed.
+
+**Date:** 2026-08-05 (D-125).

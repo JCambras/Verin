@@ -3853,3 +3853,28 @@ parameter cannot mint approval.
 approval each allowed an examiner-facing claim without the authority that claim requires.
 **Revert path:** replace the labeled demo event store and selected-case simulation when the real
 policy lifecycle and corpus runner land, while preserving the same fail-closed proof boundaries.
+
+### D-125 · 2026-08-05 · captain-decision · Activated outcomes and approval authority are exact
+
+An activated policy rerun recomputes disposition, execution eligibility, and its candidate execution
+plan from the activated policy. The rerun decision hash binds that complete result. Its approval
+surface, printable record, trace, lifecycle, and navigation retain one attributed activation event.
+GC-10 therefore renders blocked under the activated twelve-month reserve because its post-reserve
+headroom does not cover the request.
+
+Staged authority consumes actor identity, eligible role, and requester identity only when those
+fields are structured on the signed approval event. Counts and prose cannot mint them. Missing
+bindings leave the stage pending and remove execution eligibility, reservation, execution,
+verification, exceptions, and downstream record events while preserving the signed fixture as
+historical product truth. GC-03 retains its stronger signed post-review bank-evidence gap, and an
+expired authority retains its terminal expiry reason.
+
+The default quick start remains GC-01 without any case switch, but its Authority-to-Verification
+segment is now explicitly open pending captain-signed actor, role, and requester bindings. GC-02's
+automatic authority remains independently executable and is not substituted into the GC-01 run.
+
+**Why:** reusing a pre-activation result makes the governed record contradict its policy simulation,
+while manufacturing approval participants from event counts turns an unsigned quorum into execution
+authority.
+**Revert path:** none without captain-signed structured approval bindings and an activated-policy
+evaluator that preserves the same exact result and hash boundaries.

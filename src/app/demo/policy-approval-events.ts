@@ -4,6 +4,7 @@ import { appError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
 import { DEMO_WATERMARK } from "@contracts/provenance";
 import { buildPolicyAuthoring, DRAFT_RESERVE_MONTHS } from "./build-policy-authoring";
+import { evaluatePolicyRerun } from "./policy-rerun";
 import {
   bindExactSourceCase,
   firmById,
@@ -92,6 +93,15 @@ export function recordDemoPolicyApproval(
   if (policy.approval.kind === "unavailable") {
     return err(appError("VALIDATION", policy.approval.reason));
   }
+  const rerun = evaluatePolicyRerun(
+    scenario,
+    firmById(firmId),
+    request.pass,
+    policy.approval.activation.toVersion,
+  );
+  if (!rerun) {
+    return err(appError("VALIDATION", "The activated policy rerun could not be computed."));
+  }
   const approvedAtIso = new Date().toISOString();
   const decisionRecordedAtIso = new Date(Date.parse(approvedAtIso) + 1).toISOString();
   const event: StoredDemoPolicyApproval = Object.freeze({
@@ -111,6 +121,7 @@ export function recordDemoPolicyApproval(
     fromVersion: policy.approval.activation.fromVersion,
     toVersion: policy.approval.activation.toVersion,
     reserveMonths: DRAFT_RESERVE_MONTHS,
+    rerun,
     fakeClass: "deterministic-engine-output",
     watermark: DEMO_WATERMARK,
     scenarioId,

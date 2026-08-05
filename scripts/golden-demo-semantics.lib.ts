@@ -513,8 +513,51 @@ function rawApprovalProof(
       return isNonEmptyString(stage.stageId) &&
         Number.isSafeInteger(stage.approvalsRequired) &&
         Number(stage.approvalsRequired) > 0 &&
-        stageApprovals.length === stage.approvalsRequired;
+        stageApprovals.length === stage.approvalsRequired &&
+        stageApprovals.every((approval) =>
+          rawApprovalBindingComplete(approval, stage),
+        ) &&
+        (stage.distinctActorsRequired !== true ||
+          new Set(stageApprovals.map((approval) => approval.actorId)).size ===
+            stage.approvalsRequired);
     });
+}
+
+function rawApprovalBindingComplete(
+  approval: Record<string, unknown>,
+  stage: Record<string, unknown>,
+): boolean {
+  const eligibleRoles = Array.isArray(stage.eligibleRoleIds)
+    ? stage.eligibleRoleIds.filter(isNonEmptyString)
+    : [];
+  return isNonEmptyString(approval.actorId) &&
+    isNonEmptyString(approval.roleId) &&
+    isNonEmptyString(approval.requesterId) &&
+    eligibleRoles.includes(approval.roleId) &&
+    (stage.requesterMayApprove === true ||
+      approval.actorId !== approval.requesterId);
+}
+
+function rawCompletedApprovalBindings(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+): Record<string, unknown>[] {
+  const authority = isObj(source.expectedAuthority)
+    ? source.expectedAuthority
+    : null;
+  const stages = authority && Array.isArray(authority.stages)
+    ? authority.stages.filter(isObj)
+    : [];
+  const events = rawRows(source, "expectedLedgerEvents");
+  return stages.flatMap((stage) =>
+    events.filter(
+      (event) =>
+        event.type === "ApprovalRecorded" &&
+        event.lifecyclePass === pass &&
+        event.stageId === stage.stageId &&
+        rawApprovalBindingComplete(event, stage),
+    ),
+  );
 }
 
 function rawEvidenceProof(
@@ -1157,6 +1200,9 @@ function expectedSignedCaseVariant(
         authorityGap?.missingAuthorities.includes("approval-event-bindings")
           ? inferredApprovalBindings[inferredApprovalIndex++]?.lifecyclePass
           : null),
+      actorId: event.actorId ?? null,
+      roleId: event.roleId ?? null,
+      requesterId: event.requesterId ?? null,
     })),
     explanations: data.expectedExplanationNodes
       .filter(isObj)
@@ -2195,7 +2241,7 @@ function validateSourceTimelines(
       ? rawExecutionEligibilityProof(source, executionPass)
       : false;
     const eventKinds = timeline.events.map(({ kind }) => kind);
-    if (eligibility === true && executionProofComplete) {
+    if (eligibility === true) {
       const initialDecisionIndex = eventKinds.indexOf("DecisionRecorded");
       const decisionIndex = eventKinds.lastIndexOf("DecisionRecorded");
       const firstApprovalIndex = eventKinds.indexOf("ApprovalRecorded");
@@ -2219,10 +2265,15 @@ function validateSourceTimelines(
         decisionIndex >= 0 &&
         (firstApprovalIndex < 0 ||
           decisionIndex < firstApprovalIndex) &&
-        decisionIndex < revalidationIndex &&
-        (finalApprovalIndex < 0 || finalApprovalIndex < revalidationIndex) &&
-        revalidationIndex < reservationIndex &&
-        reservationIndex < executionIndex;
+        (revalidationIndex < 0 || decisionIndex < revalidationIndex) &&
+        (finalApprovalIndex < 0 ||
+          (decisionIndex < finalApprovalIndex &&
+            (revalidationIndex < 0 ||
+              finalApprovalIndex < revalidationIndex))) &&
+        (executionProofComplete
+          ? revalidationIndex < reservationIndex &&
+            reservationIndex < executionIndex
+          : reservationIndex < 0 && executionIndex < 0);
       const validInvalidationOrder =
         invalidationIndex >= 0 &&
         initialDecisionIndex >= 0 &&
@@ -2234,15 +2285,33 @@ function validateSourceTimelines(
         freshApprovalIndexes.length > 0 &&
         decisionIndex < freshApprovalIndexes[0]! &&
         freshApprovalIndexes.at(-1) === finalApprovalIndex &&
-        finalApprovalIndex < reservationIndex &&
-        reservationIndex < executionIndex;
+        (executionProofComplete
+          ? finalApprovalIndex < reservationIndex &&
+            reservationIndex < executionIndex
+          : reservationIndex < 0 && executionIndex < 0);
       if (!validStandardOrder && !validInvalidationOrder) {
         problems.push(
           `${sourceId}: unsorted production timeline must keep the signed decision, final still-valid approval, pre-execution revalidation, reservation, and execution in governed order`,
         );
       }
     }
+    const visibleDownstream = eventKinds.some((kind) =>
+      [
+        "ReservationCreated",
+        "ExecutionStarted",
+        "ExecutionSucceeded",
+        "ExecutionPartiallySucceeded",
+        "StatusObserved",
+        "ExceptionDecisionRequested",
+      ].includes(kind),
+    );
+    if (!executionProofComplete && visibleDownstream) {
+      problems.push(
+        `${sourceId}: incomplete structured signed execution authority must hide every downstream timeline event`,
+      );
+    }
     if (
+      executionProofComplete &&
       expectedLedgerTypes.includes("ExecutionPartiallySucceeded") &&
       expectedLedgerTypes.includes("ExceptionDecisionRequested")
     ) {
@@ -2778,13 +2847,13 @@ export function validateGoldenDemoSemantics(
     gc15InitialPending === null ||
     gc15RevalidationPending === null ||
     demo.approvalInvalidationPhases.initialSurfaceMoneyMinor.includes(gc15RevalidationPending) ||
-    demo.approvalInvalidationPhases.safetyBeforePendingMinor !== gc15InitialPending ||
-    demo.approvalInvalidationPhases.safetyAfterPendingMinor !== gc15RevalidationPending ||
+    demo.approvalInvalidationPhases.safetyBeforePendingMinor !== null ||
+    demo.approvalInvalidationPhases.safetyAfterPendingMinor !== null ||
     demo.approvalInvalidationPhases.refreshedEvidencePendingMinor !==
       gc15RevalidationPending
   ) {
     problems.push(
-      "GC-15 must keep revalidation pending activity off initial surfaces, then render initial and refreshed pending values in order",
+      "GC-15 must keep revalidation pending activity off initial surfaces, withhold authority-gated Safety, and render refreshed evidence independently",
     );
   }
 
@@ -2950,6 +3019,33 @@ export function validateGoldenDemoSemantics(
     ) {
       problems.push(
         `${guard.sourceCaseId}: unresolved execution proof ${String(unmetMustHold?.code ?? "authority-or-reservation")} must expose no execution eligibility, reservation, execution, or verification state`,
+      );
+    }
+    const signedAuthority = isObj(source.expectedAuthority)
+      ? source.expectedAuthority
+      : null;
+    const signedStages = signedAuthority && Array.isArray(signedAuthority.stages)
+      ? signedAuthority.stages.filter(isObj)
+      : [];
+    const signedAuthorityExpired = rawRows(
+      source,
+      "expectedLedgerEvents",
+    ).some((event) => event.type === "ApprovalStageExpired");
+    const strongerWithheldReason =
+      signedAuthorityExpired ||
+      guard.stopNote?.includes(
+        "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
+      );
+    if (
+      signedStages.length > 0 &&
+      !rawApprovalProof(source, executionPass) &&
+      !strongerWithheldReason &&
+      !guard.stopNote?.includes(
+        "Missing signed approval actor identity, role, and requester bindings. Execution is withheld pending captain-signed approval evidence.",
+      )
+    ) {
+      problems.push(
+        `${guard.sourceCaseId}: missing structured signed approval bindings must name the actor, role, and requester gap and withhold execution pending captain-signed evidence`,
       );
     }
     if (
@@ -3302,15 +3398,10 @@ export function validateGoldenDemoSemantics(
         }
       }
     });
-    const eligibility = isObj(data.expectedExecutionEligibility)
-      ? data.expectedExecutionEligibility.eligible
-      : undefined;
-    if (
-      (eligibility === true && !plan.satisfied) ||
-      (eligibility === false && plan.satisfied)
-    ) {
+    const signedApprovalSatisfied = rawApprovalProof(data, plan.pass);
+    if (plan.satisfied !== signedApprovalSatisfied) {
       problems.push(
-        `${String(data.caseId)}: rendered authority satisfaction contradicts signed execution eligibility`,
+        `${String(data.caseId)}: rendered authority satisfaction contradicts structured signed actor, role, requester, stage, pass, and quorum bindings`,
       );
     }
   }
@@ -3320,9 +3411,15 @@ export function validateGoldenDemoSemantics(
       sourceCaseId === "GC-10-simultaneous-distributions-first" &&
       relatedSourceCaseId === "GC-11-simultaneous-distributions-second",
   );
-  if (gc10Reservation.length !== 1) {
+  const gc10Source = caseData(
+    cases,
+    "GC-10-simultaneous-distributions-first",
+  );
+  const expectedGc10Reservations =
+    gc10Source && rawExecutionEligibilityProof(gc10Source, "initial") ? 1 : 0;
+  if (gc10Reservation.length !== expectedGc10Reservations) {
     problems.push(
-      "GC-10 reservation causality must bind exactly once to the signed GC-11 sibling",
+      "GC-10 reservation causality must appear exactly when structured signed execution authority is complete",
     );
   }
   for (const causal of demo.reservationCausality) {
@@ -3365,6 +3462,29 @@ export function validateGoldenDemoSemantics(
     initialLifecycleEnd < 0
       ? []
       : expectedGc15Types.slice(0, initialLifecycleEnd + 1);
+  const gc15InitialApprovalBindings = gc15
+    ? rawCompletedApprovalBindings(gc15, "initial")
+    : [];
+  const gc15FreshApprovalBindings = gc15
+    ? rawCompletedApprovalBindings(gc15, "revalidated")
+    : [];
+  const gc15FreshApprovalProof = gc15
+    ? rawApprovalProof(gc15, "revalidated")
+    : false;
+  const gc15ExecutionProof = gc15
+    ? rawExecutionEligibilityProof(gc15, "revalidated")
+    : false;
+  const downstreamEventTypes = new Set([
+    "ReservationCreated",
+    "ExecutionStarted",
+    "ExecutionSucceeded",
+    "ExecutionPartiallySucceeded",
+    "StatusObserved",
+    "ExceptionDecisionRequested",
+  ]);
+  const expectedVisibleRevalidatedGc15Types = gc15ExecutionProof
+    ? expectedGc15Types
+    : expectedGc15Types.filter((type) => !downstreamEventTypes.has(type));
   const gc15Evidence = Array.isArray(gc15?.householdEvidence)
     ? gc15.householdEvidence.filter(isObj)
     : [];
@@ -3403,9 +3523,11 @@ export function validateGoldenDemoSemantics(
     lifecycle.initialEventTypes.some(
       (eventType, index) => eventType !== expectedInitialGc15Types[index],
     ) ||
-    lifecycle.revalidatedEventTypes.length !== expectedGc15Types.length ||
+    lifecycle.revalidatedEventTypes.length !==
+      expectedVisibleRevalidatedGc15Types.length ||
     lifecycle.revalidatedEventTypes.some(
-      (eventType, index) => eventType !== expectedGc15Types[index],
+      (eventType, index) =>
+        eventType !== expectedVisibleRevalidatedGc15Types[index],
     ) ||
     lifecycle.initialEventInstants.some(
       (instant, index) =>
@@ -3416,21 +3538,26 @@ export function validateGoldenDemoSemantics(
         index > 0 &&
         instant < lifecycle.revalidatedEventInstants[index - 1]!,
     ) ||
-    lifecycle.originalApprovals !== 2 ||
-    lifecycle.freshApprovals !== 2 ||
-    !lifecycle.freshPlanSatisfied ||
-    new Set(lifecycle.freshActorIds).size !== 2 ||
-    !lifecycle.freshRoleIds.every((roleId) => roleId === "operations") ||
+    lifecycle.originalApprovals !== gc15InitialApprovalBindings.length ||
+    lifecycle.freshApprovals !== gc15FreshApprovalBindings.length ||
+    lifecycle.freshPlanSatisfied !== gc15FreshApprovalProof ||
+    JSON.stringify(lifecycle.freshActorIds) !==
+      JSON.stringify(gc15FreshApprovalBindings.map(({ actorId }) => actorId)) ||
+    JSON.stringify(lifecycle.freshRoleIds) !==
+      JSON.stringify(gc15FreshApprovalBindings.map(({ roleId }) => roleId)) ||
     lifecycle.initialReservationVisible ||
     lifecycle.initialExecutionReached ||
     lifecycle.initialVerificationReached ||
-    !lifecycle.revalidatedReservationVisible ||
-    !lifecycle.revalidatedExecutionReached ||
-    !lifecycle.revalidatedVerificationReached ||
-    lifecycle.revalidatedExecutionStatuses.join(",") !== "submitted" ||
-    !lifecycle.revalidatedVerificationProves.includes(
-      "Submission accepted by the capability",
-    ) ||
+    lifecycle.revalidatedReservationVisible !== gc15ExecutionProof ||
+    lifecycle.revalidatedExecutionReached !== gc15ExecutionProof ||
+    lifecycle.revalidatedVerificationReached !== gc15ExecutionProof ||
+    (gc15ExecutionProof
+      ? lifecycle.revalidatedExecutionStatuses.join(",") !== "submitted" ||
+        !lifecycle.revalidatedVerificationProves.includes(
+          "Submission accepted by the capability",
+        )
+      : lifecycle.revalidatedExecutionStatuses.length > 0 ||
+        lifecycle.revalidatedVerificationProves.length > 0) ||
     lifecycle.initialRecordBindings.length !== 1 ||
     initialRecordBinding?.kind !== "original" ||
     !bindingMatches(
@@ -3460,9 +3587,9 @@ export function validateGoldenDemoSemantics(
     lifecycle.initialRecordExecutionReached ||
     lifecycle.initialRecordVerificationReached ||
     lifecycle.initialRecordEligibilityVisible ||
-    !lifecycle.revalidatedRecordExecutionReached ||
-    !lifecycle.revalidatedRecordVerificationReached ||
-    !lifecycle.revalidatedRecordEligibilityVisible ||
+    lifecycle.revalidatedRecordExecutionReached !== gc15ExecutionProof ||
+    lifecycle.revalidatedRecordVerificationReached !== gc15ExecutionProof ||
+    lifecycle.revalidatedRecordEligibilityVisible !== gc15ExecutionProof ||
     expectedInitialRecommendation === null ||
     expectedRevalidatedRecommendation === null ||
     lifecycle.initialRecommendationSource !==
@@ -3474,7 +3601,7 @@ export function validateGoldenDemoSemantics(
     lifecycle.unsupportedFirmEventCount !== 0
   ) {
     problems.push(
-      "GC-15 visible lifecycle passes must preserve phase-selected evidence, exact firm authority, decision bindings, approval reach, invalidation, reservation, execution, and submitted verification in signed order",
+      "GC-15 visible lifecycle must preserve phase-selected evidence, decision bindings, invalidation, and structured authority-gated downstream reach in signed order",
     );
   }
 
@@ -3494,39 +3621,55 @@ export function validateGoldenDemoSemantics(
     : [];
   const exceptionDecision = demo.partialReceipt.exceptionDecision;
   const recordExceptionDecision = demo.partialReceipt.recordExceptionDecision;
-  if (
-    !gc13Explanation.includes("instruction-created") ||
-    !gc13Explanation.includes("disbursement-scheduled") ||
-    !gc13LedgerTypes.includes("ExceptionDecisionRequested") ||
-    gc13Verification?.observedStatus !== "unknown" ||
-    demo.partialReceipt.completedParts.join(",") !== "instruction-created" ||
-    demo.partialReceipt.incompleteParts.join(",") !==
-      "disbursement-scheduled" ||
-    demo.partialReceipt.observedStatuses.join(",") !== "completed,unknown" ||
-    demo.partialReceipt.statusLabels.some((label) =>
+  const gc13ExecutionProof = gc13
+    ? rawExecutionEligibilityProof(gc13, "initial")
+    : false;
+  const gc13FixtureComplete =
+    gc13Explanation.includes("instruction-created") &&
+    gc13Explanation.includes("disbursement-scheduled") &&
+    gc13LedgerTypes.includes("ExceptionDecisionRequested") &&
+    gc13Verification?.observedStatus === "unknown";
+  const gc13VisibleComplete =
+    demo.partialReceipt.completedParts.join(",") === "instruction-created" &&
+    demo.partialReceipt.incompleteParts.join(",") ===
+      "disbursement-scheduled" &&
+    demo.partialReceipt.observedStatuses.join(",") === "completed,unknown" &&
+    !demo.partialReceipt.statusLabels.some((label) =>
       label.toLowerCase().includes("settled"),
-    ) ||
-    !demo.partialReceipt.proves.includes(
+    ) &&
+    demo.partialReceipt.proves.includes(
       "Completed part: instruction-created",
-    ) ||
-    !demo.partialReceipt.notProvenYet.includes(
+    ) &&
+    demo.partialReceipt.notProvenYet.includes(
       "Incomplete part: disbursement-scheduled",
-    ) ||
-    exceptionDecision?.eventType !== "ExceptionDecisionRequested" ||
-    exceptionDecision.reason !== "partial-execution" ||
-    exceptionDecision.triggeringLedgerEvent !==
-      "ExecutionPartiallySucceeded" ||
-    !isNonEmptyString(exceptionDecision.priorDecisionId) ||
-    recordExceptionDecision?.eventType !==
-      "ExceptionDecisionRequested" ||
-    recordExceptionDecision.reason !== "partial-execution" ||
-    recordExceptionDecision.triggeringLedgerEvent !==
-      "ExecutionPartiallySucceeded" ||
-    recordExceptionDecision.priorDecisionId !==
-      exceptionDecision.priorDecisionId
+    ) &&
+    exceptionDecision?.eventType === "ExceptionDecisionRequested" &&
+    exceptionDecision.reason === "partial-execution" &&
+    exceptionDecision.triggeringLedgerEvent ===
+      "ExecutionPartiallySucceeded" &&
+    isNonEmptyString(exceptionDecision.priorDecisionId) &&
+    recordExceptionDecision?.eventType ===
+      "ExceptionDecisionRequested" &&
+    recordExceptionDecision.reason === "partial-execution" &&
+    recordExceptionDecision.triggeringLedgerEvent ===
+      "ExecutionPartiallySucceeded" &&
+    recordExceptionDecision.priorDecisionId ===
+      exceptionDecision.priorDecisionId;
+  const gc13Withheld =
+    demo.partialReceipt.completedParts.length === 0 &&
+    demo.partialReceipt.incompleteParts.length === 0 &&
+    demo.partialReceipt.observedStatuses.length === 0 &&
+    demo.partialReceipt.statusLabels.length === 0 &&
+    demo.partialReceipt.proves.length === 0 &&
+    demo.partialReceipt.notProvenYet.length === 0 &&
+    exceptionDecision === null &&
+    recordExceptionDecision === null;
+  if (
+    !gc13FixtureComplete ||
+    (gc13ExecutionProof ? !gc13VisibleComplete : !gc13Withheld)
   ) {
     problems.push(
-      "GC-13 must render and print ExceptionDecisionRequested with the exact partial receipt while the movement remains unknown and unconfirmed",
+      "GC-13 must retain the signed partial outcome but expose it only after structured signed execution authority is complete",
     );
   }
 
