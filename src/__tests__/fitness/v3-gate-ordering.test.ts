@@ -561,7 +561,11 @@ describe("v3 gate-ordering fence", () => {
           "audit-chain-verify",
           "pnpm audit:chain",
         ),
-      ).toEqual({ state: "unsafe-runner", reason: "missing runs-on" });
+      ).toEqual({
+        state: "inactive-workflow",
+        reason:
+          "job 'audit-chain-verify' local-execution form is missing runs-on",
+      });
     });
 
     it("validates runner schedulability independently of explicit shell selection", () => {
@@ -577,19 +581,26 @@ describe("v3 gate-ordering fence", () => {
             "",
           ].join("\n"),
         );
-      for (const [runsOn, reason] of [
-        [undefined, "missing runs-on"],
-        ["42", "non-string runs-on '42'"],
-        ["windows-latest", "unsupported or unschedulable runner 'windows-latest'"],
-        ["ubuntu-never", "unsupported or unschedulable runner 'ubuntu-never'"],
-        ['" ubuntu-latest "', "unsupported or unschedulable runner ' ubuntu-latest '"],
-        ['"${{ matrix.os }}"', "unsupported or unschedulable runner '${{ matrix.os }}'"],
+      for (const [runsOn, expected] of [
+        [
+          undefined,
+          {
+            state: "inactive-workflow",
+            reason:
+              "job 'audit-chain-verify' local-execution form is missing runs-on",
+          },
+        ],
+        ["42", { state: "unsafe-runner", reason: "non-string runs-on '42'" }],
+        ["windows-latest", { state: "unsafe-runner", reason: "unsupported or unschedulable runner 'windows-latest'" }],
+        ["ubuntu-never", { state: "unsafe-runner", reason: "unsupported or unschedulable runner 'ubuntu-never'" }],
+        ['" ubuntu-latest "', { state: "unsafe-runner", reason: "unsupported or unschedulable runner ' ubuntu-latest '" }],
+        ['"${{ matrix.os }}"', { state: "unsafe-runner", reason: "unsupported or unschedulable runner '${{ matrix.os }}'" }],
       ] as const) {
         const jobs = workflow(runsOn);
         expect(
           ciJobCommandStatus(jobs, "audit-chain-verify", "pnpm audit:chain"),
           String(runsOn),
-        ).toEqual({ state: "unsafe-runner", reason });
+        ).toEqual(expected);
         expect(ciJobBlocks(jobs, "audit-chain-verify"), String(runsOn)).toBe(false);
       }
       for (const runsOn of ["ubuntu-latest", "ubuntu-24.04", "macos-15"]) {
@@ -641,7 +652,7 @@ describe("v3 gate-ordering fence", () => {
       for (const ref of ["e2e", "golden-cases", "audit-chain-verify", "v3-invariants", "test"]) expect(ciJobBlocks(ciJobs, ref), ref).toBe(true);
     });
 
-    it("does not treat malformed, empty, unsupported, or fully skipped jobs as blocking", () => {
+    it("does not treat a workflow with malformed, empty, unsupported, or fully skipped jobs as blocking", () => {
       const jobs = parseCiFixture(
         [
           "jobs:",
@@ -669,10 +680,24 @@ describe("v3 gate-ordering fence", () => {
           "",
         ].join("\n"),
       );
-      for (const ref of ["malformed", "empty", "uses-only", "unsupported", "skipped"]) {
+      for (const ref of ["malformed", "empty", "uses-only", "unsupported", "skipped", "blocking"]) {
         expect(ciJobBlocks(jobs, ref), ref).toBe(false);
       }
-      expect(ciJobBlocks(jobs, "blocking")).toBe(true);
+      expect(
+        ciJobBlocks(
+          parseCiFixture(
+            [
+              "jobs:",
+              "  blocking:",
+              "    runs-on: ubuntu-latest",
+              "    steps:",
+              "      - run: pnpm lint",
+              "",
+            ].join("\n"),
+          ),
+          "blocking",
+        ),
+      ).toBe(true);
     });
 
     it("refuses an evidence job with a needs dependency that can prevent it from running", () => {
@@ -1032,6 +1057,83 @@ describe("v3 gate-ordering fence", () => {
       expect(jobs.size).toBe(0);
       expect(ciJobRuns(jobs, "quality", "pnpm lint")).toBe(false);
       expect(ciJobRunProblem(jobs, "quality", "pnpm lint")).toContain("is missing");
+    });
+
+    it("rejects workflow shapes GitHub cannot execute", () => {
+      const invalid = [
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+          "        uses: actions/checkout@v7",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+          "        with:",
+          "          mode: unsafe",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    uses: ./reusable.yml",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    with:",
+          "      mode: unsafe",
+          "    steps:",
+          "      - run: pnpm lint",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    uses: ./reusable.yml",
+          "    secrets: 42",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - uses: actions/checkout@v7",
+          "        working-directory: subdirectory",
+          "      - run: pnpm lint",
+        ],
+      ];
+      for (const yaml of invalid) {
+        const jobs = parseCiFixture([...yaml, ""].join("\n"));
+        expect(ciJobRuns(jobs, "quality", "pnpm lint"), yaml.join("\n")).toBe(false);
+        expect(ciJobRunProblem(jobs, "quality", "pnpm lint")).toContain(
+          "workflow does not provide normal blocking evidence",
+        );
+      }
+
+      const valid = parseCiFixture(
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - uses: actions/setup-node@v7",
+          "        with:",
+          "          node-version: 22",
+          "          cache: pnpm",
+          "      - run: pnpm lint",
+          "",
+        ].join("\n"),
+      );
+      expect(ciJobRuns(valid, "quality", "pnpm lint")).toBe(true);
     });
 
     it("diagnoses a neutralized command separately from a missing command", () => {

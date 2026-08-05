@@ -921,6 +921,147 @@ function workingDirectoryProblem(directory: unknown): string | undefined {
   return `working-directory '${directory}' is not the repository root`;
 }
 
+const RUN_STEP_FIELDS = [
+  "continue-on-error",
+  "env",
+  "id",
+  "if",
+  "name",
+  "run",
+  "shell",
+  "timeout-minutes",
+  "working-directory",
+] as const;
+
+const USES_STEP_FIELDS = [
+  "continue-on-error",
+  "env",
+  "id",
+  "if",
+  "name",
+  "timeout-minutes",
+  "uses",
+  "with",
+] as const;
+
+const LOCAL_JOB_FIELDS = [
+  "concurrency",
+  "container",
+  "continue-on-error",
+  "defaults",
+  "env",
+  "environment",
+  "if",
+  "name",
+  "needs",
+  "outputs",
+  "permissions",
+  "runs-on",
+  "services",
+  "steps",
+  "strategy",
+  "timeout-minutes",
+] as const;
+
+const REUSABLE_JOB_FIELDS = [
+  "concurrency",
+  "if",
+  "name",
+  "needs",
+  "permissions",
+  "secrets",
+  "strategy",
+  "uses",
+  "with",
+] as const;
+
+function ciStepShapeProblem(
+  step: unknown,
+  index: number,
+): string | undefined {
+  const record = literalMapping(step);
+  const prefix = `step ${index + 1}`;
+  if (record === undefined) return `${prefix} is not a literal mapping`;
+  const hasRun = Object.hasOwn(record, "run");
+  const hasUses = Object.hasOwn(record, "uses");
+  if (hasRun === hasUses) {
+    return `${prefix} must declare exactly one of run or uses`;
+  }
+  if (hasRun) {
+    if (typeof record.run !== "string" || record.run.trim() === "") {
+      return `${prefix} run must be a non-empty string`;
+    }
+    if (Object.hasOwn(record, "with")) {
+      return `${prefix} run step cannot declare with`;
+    }
+    return hasOnlyKeys(record, RUN_STEP_FIELDS)
+      ? undefined
+      : `${prefix} run step contains unsupported fields`;
+  }
+  if (typeof record.uses !== "string" || record.uses.trim() === "") {
+    return `${prefix} uses must be a non-empty string`;
+  }
+  if (
+    Object.hasOwn(record, "shell") ||
+    Object.hasOwn(record, "working-directory")
+  ) {
+    return `${prefix} uses step cannot declare shell or working-directory`;
+  }
+  if (!hasOnlyKeys(record, USES_STEP_FIELDS)) {
+    return `${prefix} uses step contains unsupported fields`;
+  }
+  return record.with !== undefined && literalMapping(record.with) === undefined
+    ? `${prefix} with must be a literal mapping`
+    : undefined;
+}
+
+function ciJobShapeProblem(
+  key: string,
+  job: unknown,
+): string | undefined {
+  const record = literalMapping(job);
+  if (record === undefined) return `job '${key}' is not a literal mapping`;
+  if (Object.hasOwn(record, "uses")) {
+    if (typeof record.uses !== "string" || record.uses.trim() === "") {
+      return `job '${key}' uses must be a non-empty string`;
+    }
+    if (!hasOnlyKeys(record, REUSABLE_JOB_FIELDS)) {
+      return `job '${key}' reusable-workflow form cannot declare local execution fields`;
+    }
+    if (record.with !== undefined && literalMapping(record.with) === undefined) {
+      return `job '${key}' with must be a literal mapping`;
+    }
+    return record.secrets === undefined ||
+      record.secrets === "inherit" ||
+      literalMapping(record.secrets) !== undefined
+      ? undefined
+      : `job '${key}' secrets must be 'inherit' or a literal mapping`;
+  }
+  if (!hasOnlyKeys(record, LOCAL_JOB_FIELDS)) {
+    return `job '${key}' local-execution form contains unsupported fields`;
+  }
+  if (!Object.hasOwn(record, "runs-on")) {
+    return `job '${key}' local-execution form is missing runs-on`;
+  }
+  if (!Array.isArray(record.steps) || record.steps.length === 0) {
+    return `job '${key}' local-execution form requires non-empty steps`;
+  }
+  const stepProblem = record.steps
+    .map(ciStepShapeProblem)
+    .find((problem) => problem !== undefined);
+  return stepProblem === undefined
+    ? undefined
+    : `job '${key}' ${stepProblem}`;
+}
+
+function ciWorkflowShapeProblem(
+  declared: Readonly<Record<string, unknown>>,
+): string | undefined {
+  return Object.entries(declared)
+    .map(([key, job]) => ciJobShapeProblem(key, job))
+    .find((problem) => problem !== undefined);
+}
+
 function simpleShellCommand(script: string): { text: string; tokens: string[] } | undefined {
   const commands = shellCommandLines(script);
   if (commands.length !== 1) return undefined;
@@ -1021,14 +1162,16 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
     return jobs;
   }
   const activationProblem = workflowTriggerProblem(doc);
-  if (activationProblem !== undefined) {
-    jobs.workflowProblem = activationProblem;
-  }
   const declared = (doc as { jobs?: unknown } | null)?.jobs;
   if (typeof declared !== "object" || declared === null || Array.isArray(declared)) return jobs;
+  const declaredJobs = declared as Record<string, unknown>;
+  const shapeProblem = ciWorkflowShapeProblem(declaredJobs);
+  if (activationProblem !== undefined || shapeProblem !== undefined) {
+    jobs.workflowProblem = activationProblem ?? shapeProblem;
+  }
   const workflowShell = configuredRunShell(doc);
   const workflowDirectory = configuredRunWorkingDirectory(doc);
-  for (const [key, job] of Object.entries(declared as Record<string, unknown>)) {
+  for (const [key, job] of Object.entries(declaredJobs)) {
     const steps = (job as { steps?: unknown } | null)?.steps;
     const jobShell = configuredRunShell(job);
     const defaultShell = jobShell === undefined ? workflowShell : jobShell;

@@ -25,8 +25,9 @@ import {
 import { DEMO_SURFACES } from "../../app/demo/surface-contract";
 import { isProvablyReachable } from "./_ast-control-flow";
 import {
-  reflectApplyTarget,
-  reflectGetAccess,
+  callableExpressionAlternatives,
+  reflectApplyResolution,
+  reflectGetResolution,
 } from "./_callable-indirection";
 import { hasRegisteredPlaywrightHook } from "./_playwright-hook-analysis";
 import {
@@ -1569,6 +1570,19 @@ function couldBeNamespaceImportIdentifier(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.some((alternative) =>
+      couldBeNamespaceImportIdentifier(
+        alternative,
+        moduleName,
+        new Set(seen),
+      ),
+    );
+  }
   if (isNamespaceImportIdentifier(normalized, moduleName)) return true;
   if (!Node.isIdentifier(normalized)) return false;
   return precedingAssignmentValues(normalized).some((assigned) =>
@@ -1589,6 +1603,20 @@ function couldBeNamedImportIdentifier(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.some((alternative) =>
+      couldBeNamedImportIdentifier(
+        alternative,
+        moduleName,
+        imported,
+        new Set(seen),
+      ),
+    );
+  }
   if (isNamedImportIdentifier(normalized, moduleName, imported)) return true;
   const access = memberAccess(normalized);
   if (
@@ -1618,6 +1646,21 @@ function couldBeNamedImportMemberExpression(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.some((alternative) =>
+      couldBeNamedImportMemberExpression(
+        alternative,
+        moduleName,
+        imported,
+        member,
+        new Set(seen),
+      ),
+    );
+  }
   if (
     isNamedImportMemberExpression(
       normalized,
@@ -1628,16 +1671,20 @@ function couldBeNamedImportMemberExpression(
   ) {
     return true;
   }
-  const reflected = reflectGetAccess(normalized);
+  const reflected = reflectGetResolution(normalized);
   if (
     reflected !== undefined &&
-    (reflected.name === undefined || reflected.name === member) &&
-    couldBeNamedImportIdentifier(
-      reflected.receiver,
-      moduleName,
-      imported,
-      new Set(seen),
-    )
+    (!reflected.complete ||
+      reflected.values.some(
+        (access) =>
+          (access.name === undefined || access.name === member) &&
+          couldBeNamedImportIdentifier(
+            access.receiver,
+            moduleName,
+            imported,
+            new Set(seen),
+          ),
+      ))
   ) {
     return true;
   }
@@ -1770,12 +1817,17 @@ function registrationScopeOf(call: CallExpression, sourceFile: SourceFile): Sour
 }
 
 function isNeutralizingAnnotation(call: CallExpression): boolean {
-  return ["skip", "fixme", "fail"].some((member) =>
-    couldBeNamedImportMemberExpression(
-      reflectApplyTarget(call) ?? call.getExpression(),
-      "@playwright/test",
-      "test",
-      member,
+  const reflected = reflectApplyResolution(call);
+  if (reflected !== undefined && !reflected.complete) return true;
+  const callables = reflected?.values ?? [call.getExpression()];
+  return callables.some((callable) =>
+    ["skip", "fixme", "fail"].some((member) =>
+      couldBeNamedImportMemberExpression(
+        callable,
+        "@playwright/test",
+        "test",
+        member,
+      ),
     ),
   );
 }
@@ -1866,6 +1918,20 @@ function couldBeTestInfoMember(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.some((alternative) =>
+      couldBeTestInfoMember(
+        alternative,
+        origins,
+        member,
+        new Set(seen),
+      ),
+    );
+  }
   const access = memberAccess(normalized);
   if (
     access?.name === member &&
@@ -1964,6 +2030,15 @@ function localCallableFunctions(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return [];
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.flatMap((alternative) =>
+      localCallableFunctions(alternative, new Set(seen)),
+    );
+  }
   if (isFunctionNode(normalized)) return [normalized];
   const boundTarget = indirectCallableTarget(normalized);
   if (boundTarget !== undefined) {
@@ -1995,6 +2070,15 @@ function localCallableIsUnresolved(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.some((alternative) =>
+      localCallableIsUnresolved(alternative, new Set(seen)),
+    );
+  }
   if (isFunctionNode(normalized)) return false;
   if (indirectCallableTarget(normalized) !== undefined) return false;
   if (!Node.isIdentifier(normalized)) return false;
@@ -2058,25 +2142,32 @@ function functionHasNeutralizer(
   seen.add(fn);
   const { origins, destructuredMembers } = testInfoOrigins(fn);
   return ownedCalls(fn).some((call) => {
-    const callable = reflectApplyTarget(call) ?? call.getExpression();
-    const neutralizesDirectly = ["skip", "fixme", "fail"].some(
-      (member) =>
-        isNeutralizingAnnotation(call) ||
-        couldBeTestInfoMember(
-          callable,
-          origins,
-          member,
-        ) ||
-        [...destructuredMembers].some(
-          ([symbol, destructuredMember]) =>
-            destructuredMember === member &&
-            derivesFromSymbol(call.getExpression(), symbol),
-        ),
+    const reflected = reflectApplyResolution(call);
+    if (reflected !== undefined && !reflected.complete) return true;
+    const callables = reflected?.values ?? [call.getExpression()];
+    const neutralizesDirectly = callables.some((callable) =>
+      ["skip", "fixme", "fail"].some(
+        (member) =>
+          isNeutralizingAnnotation(call) ||
+          couldBeTestInfoMember(
+            callable,
+            origins,
+            member,
+          ) ||
+          [...destructuredMembers].some(
+            ([symbol, destructuredMember]) =>
+              destructuredMember === member &&
+              derivesFromSymbol(callable, symbol),
+          ),
+      ),
     );
     const neutralizesThroughCallee =
-      localCallableFunctions(callable).some((target) =>
-        functionHasNeutralizer(target, new Set(seen)),
-      ) || localCallableIsUnresolved(callable);
+      callables.some(
+        (callable) =>
+          localCallableFunctions(callable).some((target) =>
+            functionHasNeutralizer(target, new Set(seen)),
+          ) || localCallableIsUnresolved(callable),
+      );
     const neutralizesThroughCallback = call
       .getArguments()
       .some((argument) =>
@@ -3417,6 +3508,16 @@ hooks.install(() => undefined);`,
         `Reflect.get(test, "beforeEach")(() => undefined);`,
         `const hook = Math.random() > 0.5 ? "beforeEach" : "noop";
 Reflect.get(test, hook)(() => undefined);`,
+        `(true ? test.beforeEach : (() => undefined))(() => undefined);`,
+        `(test.beforeEach || (() => undefined))(() => undefined);`,
+        `(0, test.beforeEach)(() => undefined);`,
+        `let invoke = Reflect.apply.bind(Reflect, () => undefined, undefined);
+invoke = Reflect.apply.bind(Reflect, test.beforeEach, test);
+invoke([() => undefined]);`,
+        `const safe = { noop: () => undefined };
+let select = Reflect.get.bind(Reflect, safe, "noop");
+select = Reflect.get.bind(Reflect, test, "beforeEach");
+select()(() => undefined);`,
         `test["before" + "Each"](() => undefined);`,
         `const base = { install: test.beforeEach };
 const hooks = { ...base };
@@ -4040,7 +4141,17 @@ invoke(test.${"fixme"}, test, [true, "file disabled"]);`,
   Reflect,
   [test.${"fail"}, test, [true, "expected failure"]],
 );`,
+        `(true ? test.${"skip"} : (() => undefined))(true, "file disabled");`,
+        `(test.${"fixme"} || (() => undefined))(true, "file disabled");`,
+        `(0, test.${"fail"})(true, "expected failure");`,
+        `let invoke = Reflect.apply.bind(Reflect, () => undefined, undefined);
+invoke = Reflect.apply.bind(Reflect, test.${"skip"}, test);
+invoke([true, "file disabled"]);`,
         `Reflect.get(test, "${"skip"}")(true, "file disabled");`,
+        `const safe = { noop: () => undefined };
+let select = Reflect.get.bind(Reflect, safe, "noop");
+select = Reflect.get.bind(Reflect, test, "${"fixme"}");
+select()(true, "file disabled");`,
         `const member = Math.random() > 0.5 ? "${"fixme"}" : "noop";
 Reflect.get(test, member)(true, "file disabled");`,
         `(Reflect.apply.bind(Reflect) as typeof Reflect.apply)(

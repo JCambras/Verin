@@ -5,8 +5,9 @@ import {
   type SourceFile,
 } from "ts-morph";
 import {
-  reflectApplyTarget,
-  reflectGetAccess,
+  callableExpressionAlternatives,
+  reflectApplyResolution,
+  reflectGetResolution,
 } from "./_callable-indirection";
 
 const PLAYWRIGHT_HOOK_MEMBERS = new Set([
@@ -220,6 +221,15 @@ function namespaceImportValue(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.some((alternative) =>
+      namespaceImportValue(alternative, new Set(seen)),
+    );
+  }
   if (directNamespaceImport(normalized)) return true;
   if (!Node.isIdentifier(normalized)) return false;
   return [
@@ -242,12 +252,25 @@ function playwrightTestValue(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.some((alternative) =>
+      playwrightTestValue(alternative, new Set(seen)),
+    );
+  }
   if (directTestImport(normalized)) return true;
-  const reflected = reflectGetAccess(normalized);
+  const reflected = reflectGetResolution(normalized);
   if (
     reflected !== undefined &&
-    (reflected.name === undefined || reflected.name === "test") &&
-    namespaceImportValue(reflected.receiver, new Set(seen))
+    (!reflected.complete ||
+      reflected.values.some(
+        (access) =>
+          (access.name === undefined || access.name === "test") &&
+          namespaceImportValue(access.receiver, new Set(seen)),
+      ))
   ) {
     return true;
   }
@@ -783,12 +806,25 @@ function playwrightHookValue(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
-  const reflected = reflectGetAccess(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    return alternatives.some((alternative) =>
+      playwrightHookValue(alternative, new Set(seen)),
+    );
+  }
+  const reflected = reflectGetResolution(normalized);
   if (
     reflected !== undefined &&
-    playwrightTestValue(reflected.receiver, new Set(seen)) &&
-    (reflected.name === undefined ||
-      PLAYWRIGHT_HOOK_MEMBERS.has(reflected.name))
+    (!reflected.complete ||
+      reflected.values.some(
+        (access) =>
+          playwrightTestValue(access.receiver, new Set(seen)) &&
+          (access.name === undefined ||
+            PLAYWRIGHT_HOOK_MEMBERS.has(access.name)),
+      ))
   ) {
     return true;
   }
@@ -884,9 +920,13 @@ export function hasRegisteredPlaywrightHook(
   }
   return sourceFile
     .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .some((call) =>
-      playwrightHookValue(
-        reflectApplyTarget(call) ?? call.getExpression(),
-      ),
-    );
+    .some((call) => {
+      const reflected = reflectApplyResolution(call);
+      return reflected === undefined
+        ? playwrightHookValue(call.getExpression())
+        : !reflected.complete ||
+            reflected.values.some((target) =>
+              playwrightHookValue(target),
+            );
+    });
 }

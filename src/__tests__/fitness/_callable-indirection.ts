@@ -1,7 +1,6 @@
 import {
   Node,
   SyntaxKind,
-  type BinaryExpression,
   type CallExpression,
   type SourceFile,
 } from "ts-morph";
@@ -18,6 +17,39 @@ function unwrapExpression(node: Node): Node {
     current = current.getExpression();
   }
   return current;
+}
+
+export function callableExpressionAlternatives(node: Node): Node[] {
+  const normalized = unwrapExpression(node);
+  if (Node.isConditionalExpression(normalized)) {
+    return [normalized.getWhenTrue(), normalized.getWhenFalse()];
+  }
+  if (Node.isCommaListExpression(normalized)) {
+    const elements = normalized.getElements();
+    const last = elements.at(-1);
+    return last === undefined ? [] : [last];
+  }
+  if (Node.isBinaryExpression(normalized)) {
+    const operator = normalized.getOperatorToken().getKind();
+    if (operator === SyntaxKind.CommaToken) {
+      return [normalized.getRight()];
+    }
+    if (
+      operator === SyntaxKind.BarBarToken ||
+      operator === SyntaxKind.AmpersandAmpersandToken ||
+      operator === SyntaxKind.QuestionQuestionToken
+    ) {
+      return [normalized.getLeft(), normalized.getRight()];
+    }
+  }
+  return [normalized];
+}
+
+function expandsCallableExpression(
+  normalized: Node,
+  alternatives: readonly Node[],
+): boolean {
+  return alternatives.length !== 1 || alternatives[0] !== normalized;
 }
 
 function staticPropertyName(node: Node | undefined): string | undefined {
@@ -51,38 +83,81 @@ function staticMemberAccess(
   };
 }
 
-const assignmentCache = new WeakMap<SourceFile, BinaryExpression[]>();
+interface AssignmentValue {
+  readonly start: number;
+  readonly value: Node;
+}
 
-function simpleAssignments(sourceFile: SourceFile): BinaryExpression[] {
+const assignmentCache = new WeakMap<
+  SourceFile,
+  ReadonlyMap<object, readonly AssignmentValue[]>
+>();
+const precedingAssignmentCache = new WeakMap<Node, readonly Node[]>();
+const identifierSourceCache = new WeakMap<Node, readonly Node[]>();
+const sourceUsesReflectCache = new WeakMap<SourceFile, boolean>();
+
+function sourceUsesReflect(sourceFile: SourceFile): boolean {
+  const cached = sourceUsesReflectCache.get(sourceFile);
+  if (cached !== undefined) return cached;
+  const usesReflect =
+    sourceFile.getFullText().includes("Reflect") &&
+    sourceFile
+      .getDescendantsOfKind(SyntaxKind.Identifier)
+      .some((identifier) => identifier.getText() === "Reflect");
+  sourceUsesReflectCache.set(sourceFile, usesReflect);
+  return usesReflect;
+}
+
+function simpleAssignments(
+  sourceFile: SourceFile,
+): ReadonlyMap<object, readonly AssignmentValue[]> {
   const cached = assignmentCache.get(sourceFile);
   if (cached !== undefined) return cached;
-  const assignments = sourceFile
-    .getDescendantsOfKind(SyntaxKind.BinaryExpression)
-    .filter(
-      (candidate) =>
-        candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
-        Node.isIdentifier(candidate.getLeft()),
-    );
+  const assignments = new Map<object, AssignmentValue[]>();
+  for (const candidate of sourceFile.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  )) {
+    if (
+      candidate.getOperatorToken().getKind() !== SyntaxKind.EqualsToken ||
+      !Node.isIdentifier(candidate.getLeft())
+    ) {
+      continue;
+    }
+    const symbol = candidate.getLeft().getSymbol()?.compilerSymbol;
+    if (symbol === undefined) continue;
+    const values = assignments.get(symbol) ?? [];
+    values.push({
+      start: candidate.getStart(),
+      value: candidate.getRight(),
+    });
+    assignments.set(symbol, values);
+  }
   assignmentCache.set(sourceFile, assignments);
   return assignments;
 }
 
-function precedingAssignmentValues(identifier: Node): Node[] {
+export function precedingCallableAssignmentValues(
+  identifier: Node,
+): Node[] {
   if (!Node.isIdentifier(identifier)) return [];
-  const symbol = identifier.getSymbol();
+  const cached = precedingAssignmentCache.get(identifier);
+  if (cached !== undefined) return [...cached];
+  const symbol = identifier.getSymbol()?.compilerSymbol;
   if (symbol === undefined) return [];
-  return simpleAssignments(identifier.getSourceFile())
-    .filter(
-      (candidate) =>
-        candidate.getStart() < identifier.getStart() &&
-        candidate.getLeft().getSymbol() === symbol,
-    )
-    .map((candidate) => candidate.getRight());
+  const values = (
+    simpleAssignments(identifier.getSourceFile()).get(symbol) ?? []
+  )
+    .filter((candidate) => candidate.start < identifier.getStart())
+    .map((candidate) => candidate.value);
+  precedingAssignmentCache.set(identifier, values);
+  return [...values];
 }
 
 function identifierValueSources(identifier: Node): Node[] {
   if (!Node.isIdentifier(identifier)) return [];
-  return [
+  const cached = identifierSourceCache.get(identifier);
+  if (cached !== undefined) return [...cached];
+  const sources = [
     ...(identifier
       .getSymbol()
       ?.getDeclarations()
@@ -91,8 +166,10 @@ function identifierValueSources(identifier: Node): Node[] {
         const initializer = declaration.getInitializer();
         return initializer === undefined ? [] : [initializer];
       }) ?? []),
-    ...precedingAssignmentValues(identifier),
+    ...precedingCallableAssignmentValues(identifier),
   ];
+  identifierSourceCache.set(identifier, sources);
+  return [...sources];
 }
 
 function isGlobalReflect(node: Node): boolean {
@@ -111,11 +188,15 @@ function isGlobalReflect(node: Node): boolean {
   );
 }
 
+const reflectApplyValueCache = new WeakMap<Node, boolean>();
+
 function isReflectApplyValue(
   node: Node,
   seen = new Set<Node>(),
 ): boolean {
   const normalized = unwrapExpression(node);
+  const cached = reflectApplyValueCache.get(normalized);
+  if (cached !== undefined) return cached;
   if (seen.has(normalized)) return false;
   seen.add(normalized);
   const access = staticMemberAccess(normalized);
@@ -123,17 +204,22 @@ function isReflectApplyValue(
     access?.name === "apply" &&
     isGlobalReflect(access.receiver)
   ) {
+    reflectApplyValueCache.set(normalized, true);
     return true;
   }
-  if (!Node.isIdentifier(normalized)) return false;
+  if (!Node.isIdentifier(normalized)) {
+    reflectApplyValueCache.set(normalized, false);
+    return false;
+  }
   if (
-    precedingAssignmentValues(normalized).some((source) =>
+    precedingCallableAssignmentValues(normalized).some((source) =>
       isReflectApplyValue(source, new Set(seen)),
     )
   ) {
+    reflectApplyValueCache.set(normalized, true);
     return true;
   }
-  return (
+  const result =
     normalized
       .getSymbol()
       ?.getDeclarations()
@@ -157,8 +243,9 @@ function isReflectApplyValue(
           initializer !== undefined &&
           isGlobalReflect(initializer)
         );
-      }) ?? false
-  );
+      }) ?? false;
+  reflectApplyValueCache.set(normalized, result);
+  return result;
 }
 
 function staticArrayElements(
@@ -178,7 +265,15 @@ function staticArrayElements(
   const values = sources
     .map((source) => staticArrayElements(source, new Set(seen)))
     .filter((value): value is Node[] => value !== undefined);
-  if (values.length !== 1 || values.length !== sources.length) {
+  if (
+    values.length === 0 ||
+    values.length !== sources.length ||
+    new Set(
+      values.map((elements) =>
+        elements.map((element) => element.getText()).join("\u0000"),
+      ),
+    ).size !== 1
+  ) {
     return undefined;
   }
   return values[0];
@@ -213,26 +308,35 @@ function staticStringValue(
   return values[0];
 }
 
+const reflectGetValueCache = new WeakMap<Node, boolean>();
+
 function isReflectGetValue(
   node: Node,
   seen = new Set<Node>(),
 ): boolean {
   const normalized = unwrapExpression(node);
+  const cached = reflectGetValueCache.get(normalized);
+  if (cached !== undefined) return cached;
   if (seen.has(normalized)) return false;
   seen.add(normalized);
   const access = staticMemberAccess(normalized);
   if (access?.name === "get" && isGlobalReflect(access.receiver)) {
+    reflectGetValueCache.set(normalized, true);
     return true;
   }
-  if (!Node.isIdentifier(normalized)) return false;
+  if (!Node.isIdentifier(normalized)) {
+    reflectGetValueCache.set(normalized, false);
+    return false;
+  }
   if (
-    precedingAssignmentValues(normalized).some((source) =>
+    precedingCallableAssignmentValues(normalized).some((source) =>
       isReflectGetValue(source, new Set(seen)),
     )
   ) {
+    reflectGetValueCache.set(normalized, true);
     return true;
   }
-  return (
+  const result =
     normalized
       .getSymbol()
       ?.getDeclarations()
@@ -253,8 +357,9 @@ function isReflectGetValue(
         );
         const initializer = variable?.getInitializer();
         return initializer !== undefined && isGlobalReflect(initializer);
-      }) ?? false
-  );
+      }) ?? false;
+  reflectGetValueCache.set(normalized, result);
+  return result;
 }
 
 export interface ReflectedPropertyAccess {
@@ -262,18 +367,51 @@ export interface ReflectedPropertyAccess {
   readonly name?: string;
 }
 
-function compositionalReflectGetAccess(
+export interface CallableResolution<T> {
+  readonly values: readonly T[];
+  readonly complete: boolean;
+}
+
+function combineResolutions<T>(
+  resolutions: readonly (CallableResolution<T> | undefined)[],
+): CallableResolution<T> | undefined {
+  const resolved = resolutions.filter(
+    (resolution): resolution is CallableResolution<T> =>
+      resolution !== undefined,
+  );
+  if (resolved.length === 0) return undefined;
+  return {
+    values: resolved.flatMap((resolution) => resolution.values),
+    complete:
+      resolved.length === resolutions.length &&
+      resolved.every((resolution) => resolution.complete),
+  };
+}
+
+function compositionalReflectGetResolution(
   callable: Node,
   args: readonly Node[],
   seen = new Set<Node>(),
-): ReflectedPropertyAccess | undefined {
+): CallableResolution<ReflectedPropertyAccess> | undefined {
   const normalized = unwrapExpression(callable);
   if (seen.has(normalized)) return undefined;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (expandsCallableExpression(normalized, alternatives)) {
+    return combineResolutions(
+      alternatives.map((alternative) =>
+        compositionalReflectGetResolution(
+          alternative,
+          args,
+          new Set(seen),
+        ),
+      ),
+    );
+  }
   if (Node.isCallExpression(normalized)) {
     const bound = staticMemberAccess(normalized.getExpression());
     if (bound?.name === "bind") {
-      return compositionalReflectGetAccess(
+      return compositionalReflectGetResolution(
         bound.receiver,
         [...normalized.getArguments().slice(1), ...args],
         new Set(seen),
@@ -281,18 +419,23 @@ function compositionalReflectGetAccess(
     }
   }
   if (Node.isIdentifier(normalized)) {
-    const accesses = identifierValueSources(normalized)
-      .map((source) =>
-        compositionalReflectGetAccess(source, args, new Set(seen)),
-      )
-      .filter(
-        (access): access is ReflectedPropertyAccess => access !== undefined,
+    const sources = identifierValueSources(normalized);
+    if (sources.length > 0) {
+      const resolution = combineResolutions(
+        sources.map((source) =>
+          compositionalReflectGetResolution(
+            source,
+            args,
+            new Set(seen),
+          ),
+        ),
       );
-    if (accesses.length > 0) return accesses[0];
+      if (resolution !== undefined) return resolution;
+    }
   }
   const access = staticMemberAccess(normalized);
   if (access?.name === "call") {
-    return compositionalReflectGetAccess(
+    return compositionalReflectGetResolution(
       access.receiver,
       args.slice(1),
       new Set(seen),
@@ -300,59 +443,86 @@ function compositionalReflectGetAccess(
   }
   if (access?.name === "apply" && !isGlobalReflect(access.receiver)) {
     const applied = staticArrayElements(args[1]);
-    return applied === undefined
+    if (applied !== undefined) {
+      return compositionalReflectGetResolution(
+        access.receiver,
+        applied,
+        new Set(seen),
+      );
+    }
+    return compositionalReflectGetResolution(
+      access.receiver,
+      [],
+      new Set(seen),
+    ) === undefined
       ? undefined
-      : compositionalReflectGetAccess(
-          access.receiver,
-          applied,
-          new Set(seen),
-        );
+      : { values: [], complete: false };
   }
   if (isReflectApplyValue(normalized)) {
     const target = args[0];
     const reflectedArguments = staticArrayElements(args[2]);
-    return target === undefined || reflectedArguments === undefined
-      ? undefined
-      : compositionalReflectGetAccess(
-          target,
-          reflectedArguments,
-          new Set(seen),
-        );
+    if (target === undefined || reflectedArguments === undefined) {
+      return { values: [], complete: false };
+    }
+    const nested = compositionalReflectGetResolution(
+      target,
+      reflectedArguments,
+      new Set(seen),
+    );
+    return nested ?? { values: [], complete: false };
   }
   if (!isReflectGetValue(normalized)) return undefined;
   const receiver = args[0];
   return receiver === undefined
-    ? undefined
+    ? { values: [], complete: false }
     : {
-        receiver,
-        name: staticStringValue(args[1]),
+        values: [
+          {
+            receiver,
+            name: staticStringValue(args[1]),
+          },
+        ],
+        complete: true,
       };
 }
 
-export function reflectGetAccess(
+export function reflectGetResolution(
   node: Node,
-): ReflectedPropertyAccess | undefined {
+): CallableResolution<ReflectedPropertyAccess> | undefined {
+  if (!sourceUsesReflect(node.getSourceFile())) return undefined;
   const normalized = unwrapExpression(node);
   return Node.isCallExpression(normalized)
-    ? compositionalReflectGetAccess(
+    ? compositionalReflectGetResolution(
         normalized.getExpression(),
         normalized.getArguments(),
       )
     : undefined;
 }
 
-function compositionalReflectApplyTarget(
+function compositionalReflectApplyResolution(
   callable: Node,
   args: readonly Node[],
   seen = new Set<Node>(),
-): Node | undefined {
+): CallableResolution<Node> | undefined {
   const normalized = unwrapExpression(callable);
   if (seen.has(normalized)) return undefined;
   seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (expandsCallableExpression(normalized, alternatives)) {
+    return combineResolutions(
+      alternatives.map((alternative) =>
+        compositionalReflectApplyResolution(
+          alternative,
+          args,
+          new Set(seen),
+        ),
+      ),
+    );
+  }
   if (Node.isCallExpression(normalized)) {
     const bound = staticMemberAccess(normalized.getExpression());
     if (bound?.name === "bind") {
-      return compositionalReflectApplyTarget(
+      return compositionalReflectApplyResolution(
         bound.receiver,
         [...normalized.getArguments().slice(1), ...args],
         new Set(seen),
@@ -360,18 +530,23 @@ function compositionalReflectApplyTarget(
     }
   }
   if (Node.isIdentifier(normalized)) {
-    for (const source of identifierValueSources(normalized)) {
-      const target = compositionalReflectApplyTarget(
-        source,
-        args,
-        new Set(seen),
+    const sources = identifierValueSources(normalized);
+    if (sources.length > 0) {
+      const resolution = combineResolutions(
+        sources.map((source) =>
+          compositionalReflectApplyResolution(
+            source,
+            args,
+            new Set(seen),
+          ),
+        ),
       );
-      if (target !== undefined) return target;
+      if (resolution !== undefined) return resolution;
     }
   }
   const access = staticMemberAccess(normalized);
   if (access?.name === "call") {
-    return compositionalReflectApplyTarget(
+    return compositionalReflectApplyResolution(
       access.receiver,
       args.slice(1),
       new Set(seen),
@@ -382,32 +557,49 @@ function compositionalReflectApplyTarget(
     !isGlobalReflect(access.receiver)
   ) {
     const applied = staticArrayElements(args[1]);
-    return applied === undefined
+    if (applied !== undefined) {
+      return compositionalReflectApplyResolution(
+        access.receiver,
+        applied,
+        new Set(seen),
+      );
+    }
+    return compositionalReflectApplyResolution(
+      access.receiver,
+      [],
+      new Set(seen),
+    ) === undefined
       ? undefined
-      : compositionalReflectApplyTarget(
-          access.receiver,
-          applied,
-          new Set(seen),
-        );
+      : { values: [], complete: false };
   }
   if (!isReflectApplyValue(normalized)) return undefined;
   const target = args[0];
-  if (target === undefined) return undefined;
+  if (target === undefined) return { values: [], complete: false };
   const reflectedArguments = staticArrayElements(args[2]);
-  if (reflectedArguments === undefined) return target;
-  return (
-    compositionalReflectApplyTarget(
-      target,
-      reflectedArguments,
-      new Set(seen),
-    ) ?? target
+  if (reflectedArguments !== undefined) {
+    return (
+      compositionalReflectApplyResolution(
+        target,
+        reflectedArguments,
+        new Set(seen),
+      ) ?? { values: [target], complete: true }
+    );
+  }
+  const nested = compositionalReflectApplyResolution(
+    target,
+    [],
+    new Set(seen),
   );
+  return nested === undefined
+    ? { values: [target], complete: true }
+    : { values: nested.values, complete: false };
 }
 
-export function reflectApplyTarget(
+export function reflectApplyResolution(
   call: CallExpression,
-): Node | undefined {
-  return compositionalReflectApplyTarget(
+): CallableResolution<Node> | undefined {
+  if (!sourceUsesReflect(call.getSourceFile())) return undefined;
+  return compositionalReflectApplyResolution(
     call.getExpression(),
     call.getArguments(),
   );

@@ -409,6 +409,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 | Let a name-only charter CI mapping prove an empty job | A job key with no executable blocking step says nothing about enforcement, and setup commands do not prove the named control. Every enforced mapping now binds and ratchets the exact command it claims. |
 | Let any awaited `page.evaluate` count as animation settlement | An evaluate callback can clear or rewrite the DOM before Axe scans it. The helper has one sanctioned, non-mutating settlement expression, so masking callbacks fail structurally. |
 | Treat a filtered or manual-only workflow as normal CI evidence | A valid command that does not run for ordinary pushes and pull requests is not a blocking repository control. Trigger filters therefore invalidate the whole workflow as evidence. |
+| Accept a `run` command from a workflow GitHub rejects | A step declaring both `run` and `uses`, a run step carrying `with`, or a reusable-workflow job carrying local execution fields never executes. Job and step form validation therefore precedes command evidence and invalidates the whole workflow on a malformed form. |
 | Accept package-script names as owned entry points | A script body can become `true` while the workflow and every exact command mapping stay unchanged. Mapped controls invoke their binary or owned source entry point directly. |
 | Prove Axe from required spec source without parsing Playwright selection or route state | `testIgnore`, `testMatch`, `grep`, a wrong route, or a pre-load scan can leave source text intact while the required UI never gates. Configuration, route groups, and loaded markers are one structural proof. |
 | Inspect only the directly named Axe files | A side-effect import can patch `AxeBuilder.prototype.analyze` or register a Playwright hook before the required scan. The complete runtime local import graph is part of the evidence boundary. |
@@ -538,9 +539,11 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   module-scope executable statement that could replace its analysis method, and required specifications
   cannot import the Axe runtime directly.
 - Reflective callable resolution composes direct or bound `Reflect.apply`, `Function.call`, and
-  `Function.apply` layers before returning the invoked target, including stable aliases and bound
-  callables invoked through `call` or `apply`. Gate 0 also requires `snap` and `snapLauncher` to remain
-  unreassigned and proves every supported URL scenario and firm resolver preserves the supplied identity.
+  `Function.apply` layers before returning every possible invoked target, including conditional,
+  logical, and sequence callees, every initializer and preceding assignment source, stable aliases,
+  and bound callables invoked through `call` or `apply`. Incomplete resolution is non-evidence. Gate 0
+  also requires `snap` and `snapLauncher` to remain unreassigned and proves every supported URL
+  scenario and firm resolver preserves the supplied identity.
 - The v3 runner accepts an explicit registry path for validation tooling. Its companion executes the
   real runner against injected gate-ratchet drift and requires process exit 1, so a syntactic descendant
   `fail` call is not accepted as proof of blocking behavior.
@@ -569,10 +572,10 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Both test runners canonicalize every Vitest result to its exact repository-relative path before
   associating it with a required fitness file. A passing shadow path with the same suffix cannot satisfy
   the required file, and duplicate exact results are a failure rather than a last-write-wins map entry.
-- Shared callable-indirection analysis resolves reflective invocation targets and static `Reflect.get`
-  provenance. Vitest registrations invoked through `Reflect.apply` remain visible, while Playwright
-  neutralizers and hooks obtained through `Reflect.get` are rejected; an unresolved property key rooted
-  at the Playwright API fails closed.
+- Shared callable-indirection analysis resolves every reflective invocation source and static
+  `Reflect.get` provenance. Vitest registrations invoked through `Reflect.apply` remain visible, while
+  Playwright neutralizers and hooks obtained through `Reflect.get` are rejected; unresolved property
+  keys, composite branches, and reflective source ambiguity fail closed at their evidence boundaries.
 - `charter-map.json` gains the `v3-gate-ordering` operating-model entry, so the charter-drift fence's
   orphan and ratchet checks cover the new fence. Charter drift pins the complete set of effective
   enforced mechanism tuples, including type, reference, command, and status, so a mechanism-level

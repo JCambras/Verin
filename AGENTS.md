@@ -34,6 +34,8 @@ invoke their owned entry points directly. The required
 command must be a dedicated simple command whose exit status controls its step, and the job must BLOCK:
 a command in a comment, echo argument, short-circuited expression, heredoc, step `name:`, `env:` value,
 commented-out block-scalar line, or a job/step carrying `continue-on-error` or an `if:` proves nothing.
+GitHub-invalid job and step forms invalidate the whole workflow, including mixed `run` / `uses` fields,
+`with` on a run step, and local execution fields on a reusable-workflow job.
 Unsupported runners, custom shells, evidence jobs with non-empty `needs` dependencies, and evidence
 jobs using `strategy.matrix` also prove nothing. Every governed command's complete predecessor chain and
 container image are exact ratcheted evidence; unreviewed setup steps, inputs, fields, environment, or
@@ -295,7 +297,8 @@ canonical repository-relative path and reject duplicate exact results.
   callables, member writes, direct or aliased `Object.assign`, `Object.defineProperty`, and `Reflect.set`
   mutations, and unresolved reflective or computed
   ambient CommonJS loaders are non-evidence. Vitest registrations invoked through `Reflect.apply` or
-  obtained through `Reflect.get` remain visible, and unresolved reflected members fail closed.
+  obtained through `Reflect.get` remain visible across conditional, logical, and sequence callables and
+  every initializer or preceding assignment source; unresolved reflected members and sources fail closed.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

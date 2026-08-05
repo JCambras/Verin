@@ -6536,6 +6536,17 @@ canonicalize result names to exact repository-relative paths and reject duplicat
 passing suffix-matching shadow file cannot satisfy an omitted fence. PF-001, PF-024, and PF-031 record
 the red reproductions, focused companions, and restored green proofs.
 
+The captain-approved composite-callable and executable-workflow review (2026-08-05) amended ADR-0039
+in place a thirty-second time: **(1)** Vitest and Playwright provenance resolves conditional, logical,
+and sequence callable expressions; **(2)** shared `Reflect.apply` and `Reflect.get` resolution considers
+every initializer and preceding assignment source, and incomplete resolution is non-evidence; and
+**(3)** CI command evidence first validates the workflow's complete local, reusable, run-step, and
+uses-step forms, so a GitHub-invalid `run` / `uses` / `with` combination invalidates the workflow rather
+than proving a command that cannot execute. The assignment index and Reflect-free source fast path keep
+the charter audit bounded while preserving exact path ownership. PF-001, PF-030, and PF-031 record the
+real red reproductions, focused companions, and restored green proofs. Gate A and Gate B requirements,
+ownership, proof points, and readiness semantics are unchanged.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

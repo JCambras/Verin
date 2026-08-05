@@ -15,7 +15,7 @@ import {
   Project,
   SyntaxKind,
   ts,
-  type BinaryExpression,
+  type CallExpression,
   type SourceFile,
 } from "ts-morph";
 import { ciJobRunProblem, parseCiJobs, type CiJob } from "../../../scripts/v3-gates.lib";
@@ -28,8 +28,10 @@ import {
 } from "../../../scripts/fitness-tests.lib";
 import { isProvablyReachable } from "./_ast-control-flow";
 import {
-  reflectApplyTarget,
-  reflectGetAccess,
+  callableExpressionAlternatives,
+  precedingCallableAssignmentValues,
+  reflectApplyResolution,
+  reflectGetResolution,
 } from "./_callable-indirection";
 import { moduleReferences } from "./_fence-utils";
 
@@ -395,7 +397,7 @@ function staticRegistrationBoolean(
         const initializer = declaration.getInitializer();
         return initializer === undefined ? [] : [initializer];
       }) ?? []),
-    ...precedingRegistrationAssignments(normalized),
+    ...precedingCallableAssignmentValues(normalized),
   ];
   const values = sources.map((source) =>
     staticRegistrationBoolean(source, new Set(seen)),
@@ -414,8 +416,13 @@ function staticRegistrationMember(
   node: Node,
 ): { receiver: Node; name?: string } | undefined {
   const normalized = unwrapRegistrationExpression(node);
-  const reflected = reflectGetAccess(normalized);
-  if (reflected !== undefined) return reflected;
+  const reflected = reflectGetResolution(normalized);
+  if (
+    reflected?.complete === true &&
+    reflected.values.length === 1
+  ) {
+    return reflected.values[0];
+  }
   if (Node.isPropertyAccessExpression(normalized)) {
     return {
       receiver: normalized.getExpression(),
@@ -427,37 +434,6 @@ function staticRegistrationMember(
     receiver: normalized.getExpression(),
     name: staticRegistrationString(normalized.getArgumentExpression()),
   };
-}
-
-const registrationAssignmentsByFile = new WeakMap<
-  SourceFile,
-  BinaryExpression[]
->();
-
-function precedingRegistrationAssignments(node: Node): Node[] {
-  if (!Node.isIdentifier(node)) return [];
-  const symbol = node.getSymbol();
-  if (symbol === undefined) return [];
-  const file = node.getSourceFile();
-  let assignments = registrationAssignmentsByFile.get(file);
-  if (assignments === undefined) {
-    assignments = file
-      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
-      .filter(
-        (candidate) =>
-          candidate.getOperatorToken().getKind() ===
-            SyntaxKind.EqualsToken &&
-          Node.isIdentifier(candidate.getLeft()),
-      );
-    registrationAssignmentsByFile.set(file, assignments);
-  }
-  return assignments
-    .filter(
-      (candidate) =>
-        candidate.getStart() < node.getStart() &&
-        candidate.getLeft().getSymbol() === symbol,
-    )
-    .map((candidate) => candidate.getRight());
 }
 
 interface VitestCallablePath {
@@ -499,7 +475,7 @@ function isVitestGlobalObject(
       const initializer = declaration.getInitializer();
       return initializer === undefined ? [] : [initializer];
     }),
-    ...precedingRegistrationAssignments(normalized),
+    ...precedingCallableAssignmentValues(normalized),
   ];
   return sources.some((source) =>
     isVitestGlobalObject(source, new Set(seen)),
@@ -513,15 +489,48 @@ function vitestCallablePaths(
   const normalized = unwrapRegistrationExpression(node);
   if (seen.has(normalized)) return [];
   seen.add(normalized);
-  const reflected = reflectGetAccess(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (
+    alternatives.length !== 1 ||
+    alternatives[0] !== normalized
+  ) {
+    const resolved = alternatives.map((alternative) =>
+      vitestCallablePaths(alternative, new Set(seen)),
+    );
+    const paths = resolved.flat();
+    return resolved.some((branch) => branch.length === 0) &&
+      paths.length > 0
+      ? [
+          ...paths,
+          {
+            members: ["*", "*"],
+            conditions: [],
+            caseCollections: [],
+          },
+        ]
+      : paths;
+  }
+  const reflected = reflectGetResolution(normalized);
   if (reflected !== undefined) {
-    return vitestCallablePaths(
-      reflected.receiver,
-      new Set(seen),
-    ).map((path) => ({
-      ...path,
-      members: [...path.members, reflected.name ?? "*"],
-    }));
+    const paths = reflected.values.flatMap((access) =>
+      vitestCallablePaths(
+        access.receiver,
+        new Set(seen),
+      ).map((path) => ({
+        ...path,
+        members: [...path.members, access.name ?? "*"],
+      })),
+    );
+    return reflected.complete
+      ? paths
+      : [
+          ...paths,
+          {
+            members: ["*", "*"],
+            conditions: [],
+            caseCollections: [],
+          },
+        ];
   }
   if (Node.isTaggedTemplateExpression(normalized)) {
     const paths = vitestCallablePaths(
@@ -647,7 +656,7 @@ function vitestCallablePaths(
   );
   return [
     ...imported,
-    ...precedingRegistrationAssignments(normalized).flatMap((source) =>
+    ...precedingCallableAssignmentValues(normalized).flatMap((source) =>
       vitestCallablePaths(source, new Set(seen)),
     ),
     ...(VITEST_REGISTRATION_BASES.has(normalized.getText()) &&
@@ -664,6 +673,28 @@ function vitestCallablePaths(
         ]
       : []),
   ];
+}
+
+function vitestCallablePathsForCall(
+  call: CallExpression,
+): VitestCallablePath[] {
+  const reflected = reflectApplyResolution(call);
+  if (reflected === undefined) {
+    return vitestCallablePaths(call.getExpression());
+  }
+  const paths = reflected.values.flatMap((target) =>
+    vitestCallablePaths(target),
+  );
+  return reflected.complete
+    ? paths
+    : [
+        ...paths,
+        {
+          members: ["*", "*"],
+          conditions: [],
+          caseCollections: [],
+        },
+      ];
 }
 
 const NEUTRALIZING_VITEST_OPTIONS = new Set([
@@ -786,7 +817,7 @@ function registrationOptionsState(
       const initializer = declaration.getInitializer();
       return initializer === undefined ? [] : [initializer];
     }),
-    ...precedingRegistrationAssignments(normalized),
+    ...precedingCallableAssignmentValues(normalized),
   ];
   return sources.length > 0 &&
     sources.every(
@@ -909,9 +940,7 @@ function disabledVitestRegistrationProblemsInFile(
   return file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
     .flatMap((call) =>
-      vitestCallablePaths(
-        reflectApplyTarget(call) ?? call.getExpression(),
-      )
+      vitestCallablePathsForCall(call)
         .filter(isVitestRegistrationPath)
         .flatMap((path) => {
           const members = path.members;
@@ -1144,9 +1173,7 @@ function analyzeRegistrationModule(
     registrations: file
       .getDescendantsOfKind(SyntaxKind.CallExpression)
       .flatMap((call) =>
-        vitestCallablePaths(
-          reflectApplyTarget(call) ?? call.getExpression(),
-        )
+        vitestCallablePathsForCall(call)
           .filter(isVitestRegistrationPath)
           .map(
             (registration) =>
@@ -1279,9 +1306,7 @@ function importedVitestRegistrationProblems(
       const registrations = file
         .getDescendantsOfKind(SyntaxKind.CallExpression)
         .flatMap((call) =>
-          vitestCallablePaths(
-            reflectApplyTarget(call) ?? call.getExpression(),
-          )
+          vitestCallablePathsForCall(call)
             .filter(isVitestRegistrationPath)
             .map(
               (registration) =>
@@ -1490,7 +1515,22 @@ describe.each(cases)("mutable case alias", () => {});`,
       `import { describe } from "vitest";
 Reflect.apply(describe.skip, describe, ["reflectively disabled", () => {}]);`,
       `import { describe } from "vitest";
+(true ? describe.skip : describe)("conditionally disabled", () => {});`,
+      `import { describe } from "vitest";
+(describe.skip || describe)("logically disabled", () => {});`,
+      `import { describe } from "vitest";
+(0, describe.skip)("sequence disabled", () => {});`,
+      `import { describe } from "vitest";
+let invoke = Reflect.apply.bind(Reflect, () => undefined, undefined);
+invoke = Reflect.apply.bind(Reflect, describe.skip, describe);
+invoke(["assignment-shadowed apply", () => {}]);`,
+      `import { describe } from "vitest";
 Reflect.get(describe, "skip")("reflected member", () => {});`,
+      `import { describe } from "vitest";
+const safe = { noop: () => undefined };
+let select = Reflect.get.bind(Reflect, safe, "noop");
+select = Reflect.get.bind(Reflect, describe, "skip");
+select()("assignment-shadowed get", () => {});`,
       `import { describe } from "vitest";
 const member = Math.random() > 0.5 ? "skip" : "noop";
 Reflect.get(describe, member)("unresolved reflected member", () => {});`,

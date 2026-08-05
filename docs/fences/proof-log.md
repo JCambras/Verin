@@ -12122,3 +12122,70 @@ shared index before it reports invariant or gate state.
 **Revert:** removed the injected shadow result. The restored complete-suite and v3 companions passed.
 
 **Date:** 2026-08-05.
+
+### PF-001 (continued) - composite and multi-source Vitest callables
+
+**Invariant (charter operating model / ADR-0039 / D-098):** conditional, logical, and sequence
+callables cannot hide a disabled Vitest registration, and a harmless initializer cannot hide a later
+reflective source.
+
+**Injection:** added a conditional `describe.skip` registration and reassigned a harmless
+`Reflect.apply.bind(...)` alias to invoke `describe.skip` in the real charter-drift fitness entry.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/charter-drift.test.ts:1407 disabled/focused Vitest registration describe.skip
+src/__tests__/fitness/charter-drift.test.ts:1418 disabled/focused Vitest registration describe.skip
+```
+
+The pre-fix focused reproduction returned no registration path for the conditional callee or the later
+reflective assignment. Continuous companions cover conditional, logical, and sequence callables plus
+multi-source `Reflect.apply` and `Reflect.get` aliases. The shared assignment index and Reflect-free
+source fast path preserve the bounded charter audit.
+
+**Revert:** removed both real registrations. The restored charter-drift suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-031 (continued) - composite and multi-source Playwright callables
+
+**Invariant (charter #9 / ADR-0039 / D-098):** conditional callables and later reflective assignments
+cannot hide a Playwright hook or neutralizer from the required Axe evidence graph.
+
+**Injection:** added a conditional `test.beforeEach` call and reassigned a harmless
+`Reflect.apply.bind(...)` alias to invoke `test.beforeEach` in the real `e2e/smoke.spec.ts` graph.
+
+**Observed failure (verbatim):**
+```text
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+The pre-fix focused reproduction reported no registered hook for either form. Continuous companions
+cover conditional, logical, and sequence callables plus multi-source `Reflect.apply` and `Reflect.get`
+aliases for both hooks and neutralizers.
+
+**Revert:** removed both real hooks. The restored Axe suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-030 (continued) - executable GitHub job and step forms
+
+**Invariant (ADR-0039 / D-098):** a governed command is evidence only when GitHub accepts every job and
+step form in the blocking workflow.
+
+**Injection:** added `uses: actions/checkout@v7` beside the real `run` field in the
+`v3-invariants` evidence step.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci workflow does not provide normal blocking evidence: job 'v3-invariants' step 5 must declare exactly one of run or uses
+```
+
+The pre-fix focused reproduction reported the invalid step as proven. Continuous companions reject
+mixed `run` / `uses`, `with` on run steps, local execution fields on reusable-workflow jobs, malformed
+local jobs, and workflows containing another malformed job while retaining valid uses-step inputs.
+
+**Revert:** removed the invalid `uses` field. The restored 66-test gate-ordering suite passed.
+
+**Date:** 2026-08-05.
