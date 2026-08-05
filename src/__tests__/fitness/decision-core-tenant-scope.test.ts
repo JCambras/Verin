@@ -459,6 +459,7 @@ const ALLOWED_OPAQUE_SCHEMA_NODE_PATHS = [
   "authority.ts:EscalationStepSchema.roleIds.check[2]",
   "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].check[0]",
   "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].suppliableBy.check[1]",
+  "decision.ts:BlockedDecisionSchema.check[0]",
   "decision.ts:DecisionRecordSchema.check[0]",
   "decision.ts:DecisionRecordSchema.check[1]",
   "decision.ts:DecisionRecordSchema.check[2]",
@@ -481,6 +482,7 @@ const ALLOWED_OPAQUE_SCHEMA_NODE_PATHS = [
   "evidence.ts:DecisionInputBundleSchema.timeZone",
   "trigger.ts:AmbiguityRefSchema.candidateRefs.check[1]",
   "trigger.ts:AmbiguityRefSchema.candidateRefs.check[2]",
+  "trigger.ts:ResolvableBlockerSchema.check[0]",
 ] as const;
 
 const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
@@ -587,6 +589,11 @@ const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
     "trigger.ts:EvidenceRequestSchema.suppliableBy.check[1]",
     "trigger.ts:ResolutionStateSchema.gaps.[].suppliableBy.check[1]",
     "trigger.ts:ResolvableBlockerSchema.resolvingEvidence.[].suppliableBy.check[1]",
+  ],
+  "decision.ts:BlockedDecisionSchema.check[0]": [
+    "decision.ts:BlockedDecisionSchema.check[0]",
+    "decision.ts:DecisionRecordSchema.result.check[0]",
+    "decision.ts:DecisionResultSchema.check[0]",
   ],
   "decision.ts:DecisionRecordSchema.check[0]": [
     "decision.ts:DecisionRecordSchema.check[0]",
@@ -741,6 +748,12 @@ const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
     "trigger.ts:AmbiguityRefSchema.candidateRefs.check[2]",
     "trigger.ts:ResolutionStateSchema.ambiguous.[].candidateRefs.check[2]",
   ],
+  "trigger.ts:ResolvableBlockerSchema.check[0]": [
+    "decision.ts:BlockedDecisionSchema.blockers.[].check[0]",
+    "decision.ts:DecisionRecordSchema.result.blockers.[].check[0]",
+    "decision.ts:DecisionResultSchema.blockers.[].check[0]",
+    "trigger.ts:ResolvableBlockerSchema.check[0]",
+  ],
 };
 
 const opaqueSchemaEntriesByPath = new Map<string, OpaqueSchemaEntry>();
@@ -837,6 +850,10 @@ type ExternalAction = {
   verificationRuleRef: ScopedRef;
   compensatingAction?: ExternalAction;
 };
+type ExecutionStepFixture = ExternalAction & {
+  id: string;
+  dependsOn: string[];
+};
 type DecisionFixture = Record<string, unknown> & {
   intentRef: ScopedRef;
   inputBundleRef: ScopedRef;
@@ -864,7 +881,7 @@ type DecisionFixture = Record<string, unknown> & {
     }>;
     prohibition?: { source: SourceRef; scopeRef: ScopedRef };
     executionPlan?: {
-      steps: ExternalAction[];
+      steps: ExecutionStepFixture[];
     };
   };
 };
@@ -941,6 +958,12 @@ const probedApprovalStage = {
   templateRef: { firmId: "firm-a", id: "template:probe" },
   expiresAt: "2026-07-29T13:30:00.000Z",
 };
+const secondApprovalStage = {
+  ...probedApprovalStage,
+  stageId: "stage:probe:second",
+  order: 1,
+  templateRef: { firmId: "firm-a", id: "template:probe:second" },
+};
 const approvalStageTemplate = {
   stageId: probedApprovalStage.stageId,
   order: probedApprovalStage.order,
@@ -957,6 +980,10 @@ const approvalTemplate = {
 const authorityRequirement = {
   mode: "approval",
   stages: [probedApprovalStage],
+};
+const multiStageAuthorityRequirement = {
+  mode: "approval",
+  stages: [probedApprovalStage, secondApprovalStage],
 };
 const specialistAuthorityRequirement = {
   mode: "specialist_review",
@@ -1049,15 +1076,41 @@ const probedExecutionPlan = {
   ...proceedResult.executionPlan!,
   steps: [probedExecutionStep],
 };
+const secondExecutionStep = {
+  ...executionStep,
+  id: "step:probe:second",
+  command: {
+    ...executionStep.command,
+    payloadRef: { firmId: "firm-a", id: "blob:probe:second" },
+  },
+  idempotencyKey: "idem:probe:second",
+  conflictKeys: ["conflict:probe:second"],
+  reservationRefs: [{ firmId: "firm-a", id: "reservation:probe:second" }],
+  verificationRuleRef: { firmId: "firm-a", id: "verification:probe:second" },
+  dependsOn: [probedExecutionStep.id],
+};
+const multiStepExecutionPlan = {
+  ...probedExecutionPlan,
+  steps: [probedExecutionStep, secondExecutionStep],
+};
 const probedProceedResult = {
   ...proceedResult,
   recommendation,
   authority: authorityRequirement,
   executionPlan: probedExecutionPlan,
 };
+const multiStepProceedResult = {
+  ...probedProceedResult,
+  authority: multiStageAuthorityRequirement,
+  executionPlan: multiStepExecutionPlan,
+};
 const specialistProceedResult = {
   ...probedProceedResult,
   authority: specialistAuthorityRequirement,
+};
+const multiStepSpecialistProceedResult = {
+  ...specialistProceedResult,
+  executionPlan: multiStepExecutionPlan,
 };
 const prohibitedWithInstructionSource = {
   ...prohibitedBoundary.result,
@@ -1100,10 +1153,29 @@ const evidenceRequest = {
     { firmId: "firm-a", id: "operations" },
   ],
 };
+const secondEvidenceRequest = {
+  ...evidenceRequest,
+  subjectRef: { firmId: "firm-a", id: "subject:two" },
+};
 const resolvableBlocker = {
   code: "missing-balance",
   explanation: "Balance evidence is required.",
   resolvingEvidence: [evidenceRequest],
+};
+const multiEvidenceBlocker = {
+  ...resolvableBlocker,
+  resolvingEvidence: [evidenceRequest, secondEvidenceRequest],
+};
+const multiBlockerDecision = {
+  kind: "blocked",
+  blockers: [
+    multiEvidenceBlocker,
+    {
+      ...multiEvidenceBlocker,
+      code: "missing-secondary-evidence",
+      explanation: "Secondary evidence is required.",
+    },
+  ],
 };
 const resolutionState = {
   bound: [],
@@ -1128,6 +1200,56 @@ const intent = {
   slots: {},
   createdAt: "2026-07-26T13:30:00.000Z",
 };
+const systemTrigger = {
+  kind: "system_event",
+  firmId: "firm-a",
+  sourceRef: { firmId: "firm-a", id: "evidence-source:probe" },
+  eventType: "evidence-updated",
+  eventRef: { firmId: "firm-a", id: "event:probe" },
+  tokenizedPayload: { value: { status: "received" }, piiFree: true },
+};
+const evidenceSnapshot = {
+  firmId: "firm-a",
+  id: "evidence:probe",
+  kind: "account-balance",
+  sourceRef: { firmId: "firm-a", id: "source:probe" },
+  subjectRef: { firmId: "firm-a", id: "subject:probe" },
+  observedAt: "2026-07-26T13:30:00.000Z",
+  retrievedAt: "2026-07-26T13:30:00.000Z",
+  attribution: "source-system",
+  schemaVersion: "1",
+  encryptedStorageRef: { firmId: "firm-a", id: "blob:probe" },
+  contentHash: "a".repeat(64),
+  freshness: "fresh",
+};
+const comprehensiveExplanationTrace = versionedSources.map((source, index) => ({
+  ...explanationNode,
+  sourceRefs: [source],
+  childNodes: [{
+    ...explanationNode,
+    sourceRefs: [versionedSources[(index + 1) % versionedSources.length]!],
+  }],
+}));
+const comprehensiveProceedRecord = {
+  ...proceedBoundary,
+  createdBy: actorRef,
+  result: multiStepSpecialistProceedResult,
+  precedenceTrace: precedenceSteps,
+  explanationTrace: comprehensiveExplanationTrace,
+  derivedFromDecisionRef: { firmId: "firm-a", id: "decision:probe:parent" },
+};
+const comprehensiveApprovalRecord = {
+  ...proceedBoundary,
+  result: multiStepProceedResult,
+};
+const comprehensiveBlockedRecord = {
+  ...blockedBoundary,
+  result: reTenant(multiBlockerDecision, blockedBoundary.intentRef.firmId),
+};
+const comprehensiveProhibitedRecords = prohibitedDecisions.map((result) => ({
+  ...prohibitedBoundary,
+  result,
+}));
 
 const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   Record<string, unknown>
@@ -1139,19 +1261,23 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "authority.ts:ApprovalStageTemplateSchema": approvalStageTemplate,
   "authority.ts:ApprovalTemplateSchema": approvalTemplate,
   "authority.ts:AuthorityRequirementSchema": probeSet(
-    authorityRequirement,
+    multiStageAuthorityRequirement,
     specialistAuthorityRequirement,
   ),
   "authority.ts:EscalationStepSchema": escalationStep,
   "decision.ts:BlockedDecisionSchema": {
-    kind: "blocked",
-    blockers: [resolvableBlocker],
+    ...multiBlockerDecision,
   },
-  "decision.ts:DecisionRecordSchema": proceedBoundary,
+  "decision.ts:DecisionRecordSchema": probeSet(
+    comprehensiveProceedRecord,
+    comprehensiveApprovalRecord,
+    comprehensiveBlockedRecord,
+    ...comprehensiveProhibitedRecords,
+  ),
   "decision.ts:DecisionResultSchema": probeSet(
-    probedProceedResult,
-    specialistProceedResult,
-    blockedBoundary.result,
+    multiStepProceedResult,
+    multiStepSpecialistProceedResult,
+    multiBlockerDecision,
     prohibitedBoundary.result,
     prohibitedWithInstructionSource,
     prohibitedWithPolicySource,
@@ -1164,8 +1290,8 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   ),
   "decision.ts:PrecedenceStepSchema": probeSet(...precedenceSteps),
   "decision.ts:ProceedDecisionSchema": probeSet(
-    probedProceedResult,
-    specialistProceedResult,
+    multiStepProceedResult,
+    multiStepSpecialistProceedResult,
   ),
   "decision.ts:ProhibitedDecisionSchema": probeSet(...prohibitedDecisions),
   "decision.ts:ProhibitionSchema": probeSet(...prohibitions),
@@ -1173,8 +1299,9 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "decision.ts:VersionedSourceRefSchema": probeSet(...versionedSources),
   "evidence.ts:DecisionInputBundleSchema":
     fixture("decision-input-bundle"),
+  "evidence.ts:EvidenceSnapshotRefSchema": evidenceSnapshot,
   "execution.ts:CompensatingActionSchema": compensatingAction,
-  "execution.ts:ExecutionPlanSchema": probedExecutionPlan,
+  "execution.ts:ExecutionPlanSchema": multiStepExecutionPlan,
   "execution.ts:ExecutionPreconditionSchema": executionPrecondition,
   "execution.ts:ExecutionStepSchema": probedExecutionStep,
   "execution.ts:RetrySafeExternalActionSchema": externalAction,
@@ -1190,17 +1317,13 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "ids.ts:RoleRefSetSchema": roleRefSet,
   "trigger.ts:AmbiguityRefSchema": ambiguityRef,
   "trigger.ts:EvidenceRequestSchema": evidenceRequest,
-  "trigger.ts:IntentSchema": intent,
+  "trigger.ts:IntentSchema": probeSet(
+    intent,
+    { ...intent, trigger: systemTrigger },
+  ),
   "trigger.ts:ResolutionStateSchema": resolutionState,
-  "trigger.ts:ResolvableBlockerSchema": resolvableBlocker,
-  "trigger.ts:TriggerSchema": probeSet(trigger, {
-    kind: "system_event",
-    firmId: "firm-a",
-    sourceRef: { firmId: "firm-a", id: "evidence-source:probe" },
-    eventType: "evidence-updated",
-    eventRef: { firmId: "firm-a", id: "event:probe" },
-    tokenizedPayload: { value: { status: "received" }, piiFree: true },
-  }),
+  "trigger.ts:ResolvableBlockerSchema": multiEvidenceBlocker,
+  "trigger.ts:TriggerSchema": probeSet(trigger, systemTrigger),
 };
 
 const occurrenceEdges = (
@@ -1225,6 +1348,48 @@ const occurrenceEdges = (
 const appendOccurrencePath = (path: string, segment: string): string =>
   `${path}.${segment}`;
 
+const MULTIPLE_VALUES_OCCURRENCE = "<multiple>";
+
+const requiredMultipleValuesPath = (
+  schema: z.ZodType,
+  edges: readonly (SchemaEdge & { readonly occurrenceSegment: string })[],
+  root: boolean,
+): readonly string[] | null => {
+  const current = unwrapSchema(schema);
+  const definition = schemaDefinition(current);
+  if (definition.type === "array") {
+    const element = edges[0];
+    return root &&
+        element !== undefined &&
+        schemaContainsScopedReference(element.schema)
+      ? [`${element.occurrenceSegment}${MULTIPLE_VALUES_OCCURRENCE}`]
+      : null;
+  }
+  if (
+    definition.type !== "object" ||
+    isScopedReferenceSchema(current) ||
+    isTenantAnchorSchema(current)
+  ) {
+    return null;
+  }
+  const tenantEdges = edges.filter((edge) =>
+    schemaContainsScopedReference(edge.schema)
+  );
+  if (tenantEdges.length !== 1) return null;
+  const edge = tenantEdges[0]!;
+  const child = unwrapSchema(edge.schema);
+  if (schemaDefinition(child).type !== "array") return null;
+  const element = occurrenceEdges(child)[0];
+  return element !== undefined && schemaContainsScopedReference(element.schema)
+    ? [edge.occurrenceSegment, `${element.occurrenceSegment}${MULTIPLE_VALUES_OCCURRENCE}`]
+    : null;
+};
+
+const appendOccurrenceSegments = (
+  path: string,
+  segments: readonly string[],
+): string => segments.reduce(appendOccurrencePath, path);
+
 const tenantScopeOccurrencePaths = (
   schema: z.ZodType,
 ): ReadonlySet<string> => {
@@ -1241,13 +1406,20 @@ const tenantScopeOccurrencePaths = (
     if (visits >= 2) continue;
     if (isScopedReferenceSchema(current)) {
       paths.add(next.path);
-      continue;
-    }
-    if (isTenantAnchorSchema(current)) {
+    } else if (isTenantAnchorSchema(current)) {
       paths.add(appendOccurrencePath(next.path, "firmId"));
     }
     const ancestors = new Map(next.ancestors).set(current, visits + 1);
-    for (const edge of occurrenceEdges(current)) {
+    const edges = occurrenceEdges(current);
+    const requiredMultiple = requiredMultipleValuesPath(
+      current,
+      edges,
+      next.path === "$",
+    );
+    if (requiredMultiple !== null) {
+      paths.add(appendOccurrenceSegments(next.path, requiredMultiple));
+    }
+    for (const edge of edges) {
       pending.push({
         schema: edge.schema,
         path: appendOccurrencePath(next.path, edge.occurrenceSegment),
@@ -1283,9 +1455,7 @@ const coveredTenantScopePaths = (
     if (visits >= 2) return;
     if (isScopedReferenceSchema(current)) {
       if (isScopedReferenceValue(value)) covered.add(path);
-      return;
-    }
-    if (
+    } else if (
       isTenantAnchorSchema(current) &&
       value !== null &&
       typeof value === "object" &&
@@ -1297,6 +1467,28 @@ const coveredTenantScopePaths = (
     const nextAncestors = new Map(ancestors).set(current, visits + 1);
     const definition = schemaDefinition(current);
     const edges = occurrenceEdges(current);
+    const requiredMultiple = requiredMultipleValuesPath(
+      current,
+      edges,
+      path === "$",
+    );
+    if (requiredMultiple !== null) {
+      let repeated: unknown = value;
+      for (const segment of requiredMultiple.slice(0, -1)) {
+        if (
+          repeated === null ||
+          typeof repeated !== "object" ||
+          Array.isArray(repeated)
+        ) {
+          repeated = undefined;
+          break;
+        }
+        repeated = (repeated as Record<string, unknown>)[segment];
+      }
+      if (Array.isArray(repeated) && repeated.length >= 2) {
+        covered.add(appendOccurrenceSegments(path, requiredMultiple));
+      }
+    }
     const descend = (edge: typeof edges[number], child: unknown): void =>
       visit(
         edge.schema,
@@ -1860,6 +2052,22 @@ describe("decision-core tenant-scope fence", () => {
     ).missing).toEqual(["probe.ts:DirectBoundary"]);
   });
 
+  it("discovers nested tenant edges below a scoped record root", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const OwnedRecord = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+      nestedRef: reference.optional(),
+    });
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { OwnedRecord }]],
+      {},
+    ).missing).toEqual(["probe.ts:OwnedRecord"]);
+  });
+
   it("executes each probe instead of trusting its registry label", () => {
     const reference = z.strictObject({
       firmId: z.string(),
@@ -1930,6 +2138,33 @@ describe("decision-core tenant-scope fence", () => {
     ).failed).toEqual(["probe.ts:OptionalUnconstrained"]);
   });
 
+  it("requires a multi-element probe for tenant-bearing arrays", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const item = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+      relatedRef: reference,
+    }).refine((value) => value.relatedRef.firmId === value.firmId);
+    const ConstrainedCollection = z.array(item).min(1).refine((values) =>
+      values.every((value) => value.firmId === values[0]?.firmId)
+    );
+    const audit = tenantBoundaryAudit(
+      [["probe.ts", { ConstrainedCollection }]],
+      {
+        "probe.ts:ConstrainedCollection": [{
+          firmId: "firm-a",
+          id: "one",
+          relatedRef: { firmId: "firm-a", id: "related:one" },
+        }],
+      },
+    );
+    expect(audit.failed).toEqual(["probe.ts:ConstrainedCollection"]);
+    expect(audit.uncovered.some((path) => path.includes("multiple"))).toBe(true);
+  });
+
   it("requires probes to cover every scoped-reference union branch", () => {
     const reference = z.strictObject({
       firmId: z.string(),
@@ -1961,6 +2196,7 @@ describe("decision-core tenant-scope fence", () => {
     expect(audit.failed).toEqual(["probe.ts:UnionBoundary"]);
     expect(audit.uncovered).toEqual([
       "probe.ts:UnionBoundary:$.<union:1>.refs.[]",
+      "probe.ts:UnionBoundary:$.<union:1>.refs.[]<multiple>",
     ]);
   });
 
@@ -2004,6 +2240,26 @@ describe("decision-core tenant-scope fence", () => {
     expect(decisionSchemas.ProhibitionSchema.safeParse({
       ...prohibition,
       scopeRef: { ...prohibition.scopeRef, firmId: "firm-b" },
+    }).success).toBe(false);
+  });
+
+  it("enforces one tenant across blocker collections at each exported boundary", () => {
+    const firmARequest = evidenceRequest;
+    const firmBRequest = reTenant(evidenceRequest, "firm-b");
+    expect(triggerSchemas.ResolvableBlockerSchema.safeParse({
+      ...resolvableBlocker,
+      resolvingEvidence: [firmARequest, firmBRequest],
+    }).success).toBe(false);
+
+    expect(decisionSchemas.BlockedDecisionSchema.safeParse({
+      kind: "blocked",
+      blockers: [
+        { ...resolvableBlocker, resolvingEvidence: [firmARequest] },
+        reTenant(
+          { ...resolvableBlocker, resolvingEvidence: [firmARequest] },
+          "firm-b",
+        ),
+      ],
     }).success).toBe(false);
   });
 

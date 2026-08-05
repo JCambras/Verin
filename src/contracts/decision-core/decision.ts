@@ -242,7 +242,9 @@ export type ProceedDecision = z.infer<typeof ProceedDecisionSchema>;
 export const BlockedDecisionSchema = z.strictObject({
   kind: z.literal("blocked"),
   blockers: z.array(ResolvableBlockerSchema).min(1).readonly(),
-}).readonly();
+}).refine((decision) => hasOneTenant(decision.blockers.flatMap((blocker) =>
+  blocker.resolvingEvidence.map((request) => request.subjectRef.firmId)
+)), "blocked decision references must belong to one tenant").readonly();
 export type BlockedDecision = z.infer<typeof BlockedDecisionSchema>;
 
 /** Prohibited: the prohibition, nothing else (v3 invariant 9). */

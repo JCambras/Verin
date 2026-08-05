@@ -204,7 +204,13 @@ export const ResolvableBlockerSchema = z.strictObject({
   code: ReasonCodeSchema,
   explanation: z.string().min(1),
   resolvingEvidence: z.array(EvidenceRequestSchema).min(1).readonly(),
-}).readonly();
+}).refine(
+  (blocker) => blocker.resolvingEvidence.every(
+    (request) =>
+      request.subjectRef.firmId === blocker.resolvingEvidence[0]?.subjectRef.firmId,
+  ),
+  "resolving evidence must belong to one tenant",
+).readonly();
 export type ResolvableBlocker = z.infer<typeof ResolvableBlockerSchema>;
 
 type NormalizableResolvableBlocker = {

@@ -3589,3 +3589,35 @@ adopted; extend the shared provenance authority and its adversarial companion be
 relying on it.
 **Revert path:** none while contracts must remain deterministic across ordinary
 TypeScript and JavaScript forms.
+
+### D-110 · 2026-08-05 · reversible · Static capability carriers and collection tenant boundaries fail closed
+
+Static class property initializers and later assignments are container value sources
+in the shared provenance graph. Ambient clocks and `node:module` namespaces retain
+their authority through those properties, including across local module exports.
+Project-owned class properties remain local capabilities.
+
+Container assignments are indexed once per source-file text and invalidated when
+that text changes. This keeps the complete path analysis inside the unchanged
+20-second dependency gate without allowing stale provenance after an in-memory edit.
+
+Applied formatter calls are deterministic only when every reaching argument-list
+source proves one explicit instant. An empty, spread, or unresolved alternative keeps
+the invocation classified as an implicit clock read.
+
+Tenant occurrence traversal records a scoped record and continues through its nested
+fields. Tenant-bearing collection boundaries require multi-element legal probes, and
+the exported resolvable-blocker and blocked-decision contracts independently reject
+internally coherent values assembled from multiple tenants.
+
+The production refinements measure 4,120/4,150 under ADR-0040. Domain,
+infrastructure, presentation, the runtime registry envelope, fixtures, and recorded
+hashes do not move.
+
+**Why:** a class property, alternate applied argument list, scoped record root, or
+single-element collection fixture cannot erase a capability or tenant edge from a
+completeness fence.
+**Revisit-When:** a new capability container or tenant-bearing collection form is
+adopted; extend the shared traversal and its adversarial matrix before relying on it.
+**Revert path:** none while dependency, determinism, and tenant-boundary fences must
+fail closed across every runtime source and exported contract.

@@ -5886,3 +5886,47 @@ from the shared provenance authority fails its exact companion while the local a
 explicit-instant controls remain green.
 
 **Date:** 2026-08-05 (review corrections, D-109).
+
+## F116 · static capability carriers and collection tenant boundaries fail closed (D-110)
+
+**Invariants:** ambient capabilities retain provenance through static class
+properties and every reaching applied argument list; scoped record roots do not
+hide nested tenant edges; tenant-bearing collections prove and enforce one tenant
+across multiple values at each exported boundary.
+
+The adversarial companions were added before the shared traversals and production
+refinements changed. The focused red runs failed seven planted cases: a
+`node:module` namespace held by a static class property, static `Date` and
+`Intl.DateTimeFormat` capabilities, an applied formatter argument list with an
+empty reaching assignment, a nested reference below a scoped record root, a
+single-element collection probe, and mixed-tenant blocker collections. The
+blocker companion exercises both `ResolvableBlockerSchema` and
+`BlockedDecisionSchema`.
+
+Static property initializers and later assignments now enter the same path-based
+container provenance used by aliases, imports, and re-exports. The retained matrix
+also proves local class capabilities remain allowed, static carriers work across
+project modules, and every possible applied argument list containing one explicit
+instant remains deterministic. The source-text-keyed assignment index invalidates
+on an in-memory edit and keeps the real dependency scan at 7.7 seconds under the
+unchanged 20-second gate.
+
+Tenant occurrence traversal records a scoped root and continues into its fields.
+Tenant-bearing collection boundaries require a legal multi-element probe, while
+the blocker contracts reject coherent foreign requests or blockers assembled next
+to a local value. The production refinements measure 4,120/4,150 under ADR-0040,
+and `decision.ts` remains inside the 500-line file ceiling.
+
+The focused dependency and tenant suites pass 302 tests. Full fitness passes
+1,048 tests, and the complete serialized Vitest suite passes 1,394. Typecheck,
+lint, knip, the CI-configured production build, `v3:invariants` (6 active-pass,
+0 active-fail), and `golden:validate` (16 signed cases) pass. Production-server
+Playwright passes 17 tests, including axe checks.
+
+**Revert:** the adversarial companions remain continuous tests. Removing static
+property sources, source-text cache invalidation, all-source applied argument
+resolution, nested traversal below scoped records, multi-element probe coverage,
+or either exported blocker refinement fails its paired companion while the local
+capability and explicit-instant controls remain green.
+
+**Date:** 2026-08-05 (review corrections, D-110).

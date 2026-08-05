@@ -238,6 +238,8 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nconst load = Reflect.getOwnPropertyDescriptor(nodeModule, "createRequire")!.value(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nconst key = Math.random() ? "createRequire" : "other";\nconst load = Object.getOwnPropertyDescriptor(nodeModule, key)!.value(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nfunction expose() { return nodeModule; }\nconst load = expose().createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { static module = nodeModule; }\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { static module: typeof nodeModule; }\nHolder.module = nodeModule;\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -257,6 +259,25 @@ describe("dependency-rule fence", () => {
           "src/domain/evil.ts": [
             `import { nodeModule } from "./loader";`,
             "const load = nodeModule.createRequire(import.meta.url);",
+            `export const value = load("@infra/store");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
+    it("follows a node:module namespace in an exported static class property", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/loader.ts": [
+            `import * as nodeModule from "node:module";`,
+            "export class Holder { static module = nodeModule; }",
+          ].join("\n"),
+          "src/domain/evil.ts": [
+            `import { Holder } from "./loader";`,
+            "const load = Holder.module.createRequire(import.meta.url);",
             `export const value = load("@infra/store");`,
           ].join("\n"),
         }),
@@ -303,6 +324,28 @@ describe("dependency-rule fence", () => {
       expect(detectLayerViolations(project).map((violation) =>
         `${violation.fromLayer}->${violation.toLayer}`
       )).toContain("domain->infrastructure");
+    });
+
+    it("invalidates cached container assignments after a source edit", () => {
+      const project = inMemoryProject({
+        "src/domain/subject.ts": [
+          "class Holder { static module: unknown; }",
+          "Holder.module = { createRequire: () => () => 1 };",
+          "const load = (Holder.module as { createRequire(): Function }).createRequire();",
+          `export const value = load("@infra/store");`,
+        ].join("\n"),
+      });
+      expect(detectLayerViolations(project)).toEqual([]);
+      project.getSourceFileOrThrow("src/domain/subject.ts").replaceWithText([
+        `import * as nodeModule from "node:module";`,
+        "class Holder { static module: typeof nodeModule; }",
+        "Holder.module = nodeModule;",
+        "const load = Holder.module.createRequire(import.meta.url);",
+        `export const value = load("@infra/store");`,
+      ].join("\n"));
+      expect(detectLayerViolations(project).map((violation) =>
+        `${violation.fromLayer}->${violation.toLayer}`
+      )).toContain("domain->unresolved");
     });
 
     it("uses the latest write when a destructured reflection binding is overwritten", () => {
@@ -1216,6 +1259,28 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "clock retained in a static class property",
+        [
+          "class Holder { static Clock = Date; }",
+          "export const value = Holder.Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "formatter retained in a static class property",
+        [
+          "class Holder { static formatter = new Intl.DateTimeFormat(); }",
+          "export const value = Holder.formatter.format();",
+        ].join("\n"),
+      ],
+      [
+        "formatter assigned to a static class property",
+        [
+          "class Holder { static formatter: Intl.DateTimeFormat; }",
+          "Holder.formatter = new Intl.DateTimeFormat();",
+          "export const value = Holder.formatter.format();",
+        ].join("\n"),
+      ],
+      [
         "implicit Intl format instant",
         "export const value = new Intl.DateTimeFormat().format();",
       ],
@@ -1304,6 +1369,17 @@ describe("dependency-rule fence", () => {
           "export const value = format();",
         ].join("\n"),
       ],
+      [
+        "apply argument list with an empty reaching assignment",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "export function format(condition: boolean) {",
+          "  let args: [number] | [] = [0];",
+          "  if (condition) args = [];",
+          "  return formatter.format.apply(formatter, args);",
+          "}",
+        ].join("\n"),
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -1331,6 +1407,36 @@ describe("dependency-rule fence", () => {
           "src/contracts/barrel.ts": `export { ${_name === "clock" ? "Clock" : "formatter"} } from "./capability";`,
           "src/contracts/evil.ts": [
             `import { ${_name === "clock" ? "Clock" : "formatter"} } from "./barrel";`,
+            used,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it.each([
+      [
+        "clock",
+        "export class Holder { static Clock = Date; }",
+        "export const value = Holder.Clock.now();",
+      ],
+      [
+        "formatter",
+        "export class Holder { static formatter = new Intl.DateTimeFormat(); }",
+        "export const value = Holder.formatter.format();",
+      ],
+    ])("follows an exported static ambient %s across modules", (
+      _name,
+      exported,
+      used,
+    ) => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts": exported,
+          "src/contracts/evil.ts": [
+            `import { Holder } from "./capability";`,
             used,
           ].join("\n"),
         }),
@@ -1378,11 +1484,17 @@ describe("dependency-rule fence", () => {
         inMemoryProject({
           "src/contracts/ok.ts": [
             "const formatter = new Intl.DateTimeFormat();",
+            "function explicitApplied(condition: boolean) {",
+            "  let assignedArgs: [number] = [0];",
+            "  if (condition) assignedArgs = [1];",
+            "  return formatter.format.apply(formatter, assignedArgs);",
+            "}",
             "const bound = formatter.format.bind(formatter, 0);",
             "export const values = [",
             "  formatter.format.call(formatter, 0),",
             "  formatter.formatToParts.apply(formatter, [0]),",
             "  Reflect.apply(formatter.format, formatter, [0]),",
+            "  explicitApplied(true),",
             "  bound(),",
             "];",
           ].join("\n"),
