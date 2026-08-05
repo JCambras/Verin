@@ -58,6 +58,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0040](./0040-line-budget-primitive-vocabulary.md) | Contracts ceiling 4,050 to 5,460 for the primitive catalog | Accepted (amends ADR-0035) |
 | [0041](./0041-sibling-decision-ledger.md) | Sibling append-only decision ledger and replay storage (v3 prompt 7); ceiling amendments compose with the prompt-8 catalog | Accepted (amends ADR-0007/0018/0019) |
 | [0042](./0042-line-budget-ledger-review-hardening.md) | Infrastructure ceiling for sealed ledger authority and verified disclosure | Accepted (amends ADR-0018/0041) |
+| [0043](./0043-line-budget-ledger-retention-hardening.md) | Infrastructure ceiling for fail-closed ledger retention and bounded replay | Accepted (amends ADR-0018/0042) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

@@ -5894,3 +5894,39 @@ copy is absent.
 test suites as the detection-is-not-verification proof.
 
 **Date:** 2026-08-05 (review corrections F1-F4, D-113).
+### PF-200 fail-closed ledger SQL, retained values, and bounded evidence replay
+
+**Invariants:** unresolved SQL cannot evade immutable-table insert ownership;
+sensitive-length numeric values and unregistered namespaced or versioned references
+cannot enter immutable replay bytes; a bounded register decision uses a qualifying
+evidence recording inside the verified window and before that decision.
+
+The new companions were added before the production corrections and reproduced the
+reported failures:
+
+```text
+× detects an immutable insert returned by a helper
+  expected [] to deeply equal [{ file: "src/infrastructure/evil.ts", line: 5 }]
+× refuses a PII-shaped immutable source identifier (subject:ROBERT-SMITH)
+  expected true to be false
+× refuses a PII-shaped immutable source identifier (subject:robert-smith)
+  expected true to be false
+× refuses an unclassified sensitive-length numeric recommendation parameter
+  expected true to be false
+× uses a repeated evidence recording inside the verified register window
+  expected [] to deeply equal ["dec:GC-01:0002"]
+```
+
+The anti-fork suite additionally covers a typed imported SQL constant and a wholly
+unresolved executor argument. Reviewed dynamic SQL is limited to the database driver
+and migration runner; the companion independently checks every shipped migration SQL
+value for immutable inserts and every preflight for a read-only `SELECT` head.
+
+After the corrections, the five focused append-only, size, budget, decision-ledger, and
+projection suites pass 86 tests. The line-budget companion measures infrastructure at
+6,608 lines under the ADR-0041 ceiling.
+
+**Revert:** no planted production source remains. The in-memory SQL sources and runtime
+payloads stay as detection-is-not-verification companions.
+
+**Date:** 2026-08-05 (review corrections F10-F14, ADR-0041, D-114).

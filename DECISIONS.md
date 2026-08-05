@@ -3658,3 +3658,33 @@ would reject legitimate machine codes without proving identity.
 **Revert path:** restore the permissive provenance parser, retained-value traversal,
 literal-fragment fence, and shared empty UI state together only if their trust and
 disclosure claims are withdrawn.
+
+### D-114 · 2026-08-05 · reversible · Ledger retention, insert ownership, and bounded replay fail closed
+
+Unresolved SQL passed to an executor is now an immutable-table ownership violation unless
+it belongs to the exact database-driver or migration-runner boundary. Imported constants,
+helper returns, literal unions, concatenations, and templates are resolved before that
+decision. The reviewed migration escape is paired with a complete migration-plan check
+that refuses immutable inserts and non-read-only preflights.
+
+Retained replay traversal rejects sensitive-length numeric primitives and admits readable
+namespaced or versioned identifiers only through exact reviewed values and numeric-prefix
+registries. Human-shaped lowercase and uppercase references therefore fail before
+immutable bytes are stored.
+
+Bounded register replay selects an evidence recording inside the verified window and
+before the citing decision while separately proving that some recording fact exists.
+A repeated snapshot can no longer make a complete in-window decision disappear because an
+older occurrence was outside the window. ADR-0019 now states that the bounded register is
+an operator view and defers a complete decision-ledger examiner export until the first
+examiner or regulated-customer requirement.
+
+The corrected implementation measures infrastructure at 6,608 lines. ADR-0041 raises the
+ceiling to 6,650 with 42 lines of bounded headroom; contracts, domain, presentation, and
+the 500-line file cap remain unchanged.
+
+**Why:** immutable history cannot rely on unresolved SQL classification, open reference
+grammars, ignored numeric primitives, or evidence selection outside the window whose state
+is displayed.
+**Revert path:** restore these boundaries together only if the append-only ownership,
+PII-retention, bounded-replay, and examiner-surface claims are withdrawn.

@@ -485,6 +485,44 @@ describe("deterministic decision-ledger projections", () => {
     ).toBe(false);
   });
 
+  it("uses a repeated evidence recording inside the verified register window", async () => {
+    const first = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, first)).ok).toBe(true);
+    const repeatedEvidenceEvents = first.events.slice(0, -1).map((event, index) =>
+      LedgerEntrySchema.parse({
+        ...event,
+        id: `register:repeated-evidence:${index}`,
+      }));
+    await expect(db.transaction((tx) =>
+      appendDecisionEvents(
+        tx,
+        LEDGER_TENANT,
+        repeatedEvidenceEvents,
+        LEDGER_PROVENANCE,
+        first.evidenceSnapshots,
+      ))).resolves.toHaveLength(first.evidenceSnapshots.length);
+    expect(
+      (await recordDecision(
+        db,
+        LEDGER_TENANT,
+        reusedBundleRecordingInput("dec:GC-01:0002"),
+      )).ok,
+    ).toBe(true);
+
+    const snapshot = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      5,
+      50,
+    );
+    expect(snapshot.verification.ok).toBe(true);
+    expect(snapshot.rows).toHaveLength(5);
+    expect(snapshot.decisions.map(({ projection }) => projection.decisionId)).toEqual([
+      "dec:GC-01:0002",
+    ]);
+  });
+
   it("suppresses every register row when stored actor metadata fails verification", async () => {
     expect(
       (await recordDecision(db, LEDGER_TENANT, decisionRecordingInput())).ok,

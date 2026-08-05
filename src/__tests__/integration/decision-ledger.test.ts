@@ -731,7 +731,18 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
   });
 
-  it.each(["unsafe@firm.test", "123456789012", "robert-smith"])(
+  it.each([
+    "unsafe@firm.test",
+    "123456789012",
+    "robert-smith",
+    "subject:ROBERT-SMITH",
+    "subject:ROBERT-SMITH:1",
+    "subject:robert-smith",
+    "subject:robert-smith:1",
+    "subject:first",
+    "source:grace",
+    "robert@1",
+  ])(
     "refuses a PII-shaped immutable source identifier (%s)",
     async (id) => {
       const input = decisionRecordingInput();
@@ -753,6 +764,43 @@ describe("decision ledger storage and L1-L4 verification", () => {
       expect((await sourceCounts(db)).decision_ledger).toBe(0);
     },
   );
+
+  it("refuses an unclassified sensitive-length numeric recommendation parameter", async () => {
+    const input = decisionRecordingInput();
+    if (input.decisionRecord.result.kind !== "proceed") {
+      throw new Error("expected proceed decision fixture");
+    }
+    const candidate = DecisionRecordSchema.parse({
+      ...input.decisionRecord,
+      result: {
+        ...input.decisionRecord.result,
+        recommendation: {
+          ...input.decisionRecord.result.recommendation,
+          parameters: {
+            ...input.decisionRecord.result.recommendation.parameters,
+            unclassifiedNumber: 123456789,
+          },
+        },
+      },
+      decisionHash: "0".repeat(64),
+    });
+    const decisionRecord = DecisionRecordSchema.parse({
+      ...candidate,
+      decisionHash: hashPreimage(decisionHashPreimage(candidate)),
+    });
+    const decisionEvent = LedgerEntrySchema.parse({
+      ...input.events.at(-1)!,
+      decisionHash: decisionRecord.decisionHash,
+    });
+    const result = await recordDecision(db, LEDGER_TENANT, {
+      ...input,
+      decisionRecord,
+      events: [...input.events.slice(0, -1), decisionEvent],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? null : result.error.code).toBe("PII_VIOLATION");
+    expect((await sourceCounts(db)).decision_ledger).toBe(0);
+  });
 
   it("refuses duplicated names disguised as source and decision codes", async () => {
     const evidenceInput = decisionRecordingInput();

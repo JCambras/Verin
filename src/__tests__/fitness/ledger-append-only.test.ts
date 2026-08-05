@@ -8,6 +8,7 @@ import {
   realProject,
 } from "./_fence-utils";
 import { DECISION_LEDGER_SQL } from "@infra/store/decision-ledger-migration";
+import { MIGRATIONS } from "@infra/store/migrations";
 
 const IMMUTABLE_TABLES = [
   "evidence_snapshots",
@@ -27,6 +28,13 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
 };
 const DYNAMIC_SQL = "\u0000dynamic-sql\u0000";
 const INSERT_TARGET = /\bINSERT\s+INTO\s+([^\s(;,]+)/gi;
+const REVIEWED_DYNAMIC_SQL_OWNERS = new Map([
+  ["src/infrastructure/store/db.ts", new Set(["exec", "query"])],
+  [
+    "src/infrastructure/store/migrations.ts",
+    new Set(["assertPreflightClean", "runMigrations"]),
+  ],
+]);
 
 interface Violation {
   readonly file: string;
@@ -60,6 +68,42 @@ function combine(
     text: a.text + b.text,
     complete: a.complete && b.complete,
   })));
+}
+
+function resolvedDeclarations(expression: Node): Node[] {
+  const symbol = expression.getSymbol();
+  const target = symbol?.getAliasedSymbol() ?? symbol;
+  return [
+    ...(Node.isIdentifier(expression) ? expression.getDefinitionNodes() : []),
+    ...(target?.getDeclarations() ?? []),
+  ];
+}
+
+function returnedValues(declaration: Node): Node[] {
+  const callable = Node.isVariableDeclaration(declaration)
+    ? declaration.getInitializer()
+    : declaration;
+  if (
+    !callable ||
+    (!Node.isFunctionDeclaration(callable) &&
+      !Node.isFunctionExpression(callable) &&
+      !Node.isArrowFunction(callable) &&
+      !Node.isMethodDeclaration(callable) &&
+      !Node.isGetAccessorDeclaration(callable))
+  ) return [];
+  const body = callable.getBody();
+  if (!body) return [];
+  if (!Node.isBlock(body)) return [body];
+  return body.getDescendantsOfKind(SyntaxKind.ReturnStatement)
+    .filter((statement) =>
+      statement.getFirstAncestor((ancestor) =>
+        Node.isFunctionLikeDeclaration(ancestor) ||
+        Node.isGetAccessorDeclaration(ancestor)
+      ) === callable)
+    .flatMap((statement) => {
+      const value = statement.getExpression();
+      return value ? [value] : [];
+    });
 }
 
 function sqlCandidates(
@@ -116,16 +160,36 @@ function sqlCandidates(
       ...sqlCandidates(expression.getWhenFalse(), seen),
     ];
   }
+  if (Node.isCallExpression(expression)) {
+    const declarations = resolvedDeclarations(
+      unwrapExpression(expression.getExpression()),
+    );
+    const values = declarations.flatMap(returnedValues)
+      .flatMap((value) => sqlCandidates(value, seen));
+    return values.length > 0
+      ? values
+      : [{ text: DYNAMIC_SQL, complete: false }];
+  }
   const type = expression.getType();
+  if (
+    type.isUnion() &&
+    type.getUnionTypes().every((member) => member.isStringLiteral())
+  ) {
+    return type.getUnionTypes().map((member) => ({
+      text: String(member.getLiteralValue()),
+      complete: true,
+    }));
+  }
   if (type.isStringLiteral()) {
     return [{ text: String(type.getLiteralValue()), complete: true }];
   }
   if (Node.isIdentifier(expression)) {
-    const symbol = expression.getSymbol();
+    const symbol = expression.getSymbol()?.getAliasedSymbol() ??
+      expression.getSymbol();
     const key = (symbol ?? expression) as unknown as object;
     if (seen.has(key)) return [{ text: DYNAMIC_SQL, complete: false }];
     const nested = new Set(seen).add(key);
-    const sources = (symbol?.getDeclarations() ?? []).flatMap((declaration) =>
+    const sources = resolvedDeclarations(expression).flatMap((declaration) =>
       Node.isVariableDeclaration(declaration) && declaration.getInitializer()
         ? [declaration.getInitializer()!]
         : []);
@@ -146,10 +210,26 @@ function sqlCandidates(
   return [{ text: DYNAMIC_SQL, complete: false }];
 }
 
+function enclosingCallableName(node: Node): string | null {
+  for (const ancestor of node.getAncestors()) {
+    if (Node.isFunctionDeclaration(ancestor)) {
+      return ancestor.getName() ?? null;
+    }
+    if (Node.isMethodDeclaration(ancestor)) return ancestor.getName();
+  }
+  return null;
+}
+
+function isReviewedDynamicSql(call: Node, file: string): boolean {
+  const owner = enclosingCallableName(call);
+  return owner !== null &&
+    (REVIEWED_DYNAMIC_SQL_OWNERS.get(file)?.has(owner) ?? false);
+}
+
 function insertedTable(candidate: SqlCandidate): ImmutableTable | "dynamic" | null {
+  if (!candidate.complete) return "dynamic";
   for (const match of candidate.text.matchAll(INSERT_TARGET)) {
     const token = match[1] ?? "";
-    if (!candidate.complete && token.includes(DYNAMIC_SQL)) return "dynamic";
     const table = token
       .split(".")
       .at(-1)
@@ -174,6 +254,7 @@ function ledgerInsertViolations(files: readonly SourceFile[]): Violation[] {
       if (!normalized) continue;
       for (const candidate of sqlCandidates(normalized.arguments[0])) {
         const table = insertedTable(candidate);
+        if (table === "dynamic" && isReviewedDynamicSql(call, rel)) continue;
         if (!table || (table !== "dynamic" && INSERT_ALLOWLIST[table] === rel)) {
           continue;
         }
@@ -227,6 +308,21 @@ describe("decision-ledger append-only fence", () => {
     expect(missing, `missing append-only triggers:\n${missing.join("\n")}`).toEqual([]);
   });
 
+  it("reviewed dynamic migration SQL cannot insert immutable rows", () => {
+    const violations = MIGRATIONS.flatMap((migration) => [
+      migration.sql,
+      ...(migration.preflight ?? []).map((probe) => probe.sql),
+    ]).flatMap((sql) => {
+      const table = insertedTable({ text: sql, complete: true });
+      return table ? [table] : [];
+    });
+    expect(violations).toEqual([]);
+    expect(
+      MIGRATIONS.flatMap((migration) => migration.preflight ?? [])
+        .every((probe) => /^\s*SELECT\b/i.test(probe.sql)),
+    ).toBe(true);
+  });
+
   describe("detects (companion): planted repository violations fail", () => {
     it("detects a planted raw insert with file and line", () => {
       const project = inMemoryProject({
@@ -246,6 +342,51 @@ describe("decision-ledger append-only fence", () => {
         "/src/infrastructure/evil.ts":
           `export async function evil(db: { query(sql: string): unknown }) {\n` +
           `  return db.query("INSERT " + "INTO decision_" + "ledger (id) VALUES ('x')");\n` +
+          `}`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([{
+        file: "src/infrastructure/evil.ts",
+        line: 2,
+      }]);
+    });
+
+    it("detects an immutable insert imported from another module", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts":
+          `import { insertSql } from "./sql";\n` +
+          `export function evil(db: { query(sql: string): unknown }) {\n` +
+          `  return db.query(insertSql);\n` +
+          `}`,
+        "/src/infrastructure/sql.ts":
+          `export const insertSql: string = "INSERT INTO decision_ledger (id) VALUES ('x')";`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([{
+        file: "src/infrastructure/evil.ts",
+        line: 3,
+      }]);
+    });
+
+    it("detects an immutable insert returned by a helper", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts":
+          `function buildInsert() {\n` +
+          `  return "INSERT INTO decision_ledger (id) VALUES ('x')";\n` +
+          `}\n` +
+          `export function evil(db: { query(sql: string): unknown }) {\n` +
+          `  return db.query(buildInsert());\n` +
+          `}`,
+      });
+      expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([{
+        file: "src/infrastructure/evil.ts",
+        line: 5,
+      }]);
+    });
+
+    it("fails closed when executor SQL cannot be resolved", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/evil.ts":
+          `export function evil(db: { query(sql: string): unknown }, sql: string) {\n` +
+          `  return db.query(sql);\n` +
           `}`,
       });
       expect(ledgerInsertViolations(project.getSourceFiles())).toEqual([{

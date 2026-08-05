@@ -385,11 +385,11 @@ export async function loadVerifiedReplayDecision(
 }
 
 export async function listReplayDecisionEvidenceCoverage(
-  tx: SqlQueryable,
-  tenant: TenantContext,
-  event: DecisionRecorded,
+  tx: SqlQueryable, tenant: TenantContext, event: DecisionRecorded,
+  windowStartSequence: number, decisionSequence: number,
 ): Promise<Array<{
   readonly id: string;
+  readonly hasRecordingFact: boolean;
   readonly recordedSequence: number | null;
 }>> {
   assertTenantContext(tenant);
@@ -398,9 +398,12 @@ export async function listReplayDecisionEvidenceCoverage(
   }
   const result = await tx.query<{
     evidence_snapshot_id: string;
+    has_recording_fact: boolean;
     recorded_sequence: number | string | null;
   }>(
-    `SELECT m.evidence_snapshot_id, min(l.sequence) AS recorded_sequence
+    `SELECT m.evidence_snapshot_id,
+            count(l.sequence) > 0 AS has_recording_fact,
+            min(l.sequence) FILTER (WHERE l.sequence >= $3 AND l.sequence < $4) AS recorded_sequence
        FROM decision_records r
        JOIN decision_input_bundle_evidence m
          ON m.org_id = r.org_id AND m.bundle_id = r.input_bundle_id
@@ -411,13 +414,12 @@ export async function listReplayDecisionEvidenceCoverage(
       WHERE r.org_id = $1 AND r.id = $2
       GROUP BY m.ordinal, m.evidence_snapshot_id
       ORDER BY m.ordinal ASC`,
-    [event.firmId, event.decisionRef.id],
+    [event.firmId, event.decisionRef.id, windowStartSequence, decisionSequence],
   );
   return result.rows.map((row) => ({
     id: row.evidence_snapshot_id,
-    recordedSequence: row.recorded_sequence === null
-      ? null
-      : Number(row.recorded_sequence),
+    hasRecordingFact: row.has_recording_fact,
+    recordedSequence: row.recorded_sequence === null ? null : Number(row.recorded_sequence),
   }));
 }
 

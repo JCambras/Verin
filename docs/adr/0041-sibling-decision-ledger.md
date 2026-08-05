@@ -94,8 +94,8 @@ settle now.
   now applies to both chains.
 - Amend the ADR-0018 ceilings, re-measured on the composed tree that already
   carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 6,000,
-  domain 1,350 to 1,650, and infrastructure 3,550 to 6,550. Measured state is
-  contracts 5,951 (49 headroom), domain 1,584 (66), and infrastructure 6,507 (43) -
+  domain 1,350 to 1,650, and infrastructure 3,550 to 6,650. Measured state is
+  contracts 5,954 (46 headroom), domain 1,584 (66), and infrastructure 6,608 (42) -
   bounded correction room, per the ADR-0033 rule that a zero-headroom ceiling just
   converts review findings into documentation deletions. The presentation envelope and
   the per-file 500-line limit are unchanged: the repository is split into the chain

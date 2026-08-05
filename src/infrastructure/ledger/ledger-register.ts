@@ -86,16 +86,21 @@ async function replayRegisterWindow(
     }
     let decisionRecord;
     if (event.type === "DecisionRecorded") {
-      const coverage = await listReplayDecisionEvidenceCoverage(tx, tenant, event);
-      if (coverage.some((item) => item.recordedSequence === null)) {
+      const coverage = await listReplayDecisionEvidenceCoverage(
+        tx,
+        tenant,
+        event,
+        rows[0]?.sequence ?? row.sequence,
+        row.sequence,
+      );
+      if (coverage.some((item) => !item.hasRecordingFact)) {
         throw appError(
           "STORE_CONSTRAINT",
           "decision evidence has no recording ledger fact",
         );
       }
       if (
-        coverage.some((item) =>
-          item.recordedSequence! < (rows[0]?.sequence ?? 0))
+        coverage.some((item) => item.recordedSequence === null)
       ) {
         continue;
       }
