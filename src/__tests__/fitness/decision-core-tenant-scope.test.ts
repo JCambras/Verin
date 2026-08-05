@@ -11,6 +11,7 @@ import * as explanationSchemas from "@contracts/decision-core/explanation";
 import * as idSchemas from "@contracts/decision-core/ids";
 import * as ledgerSchemas from "@contracts/decision-core/ledger";
 import * as normalizationSchemas from "@contracts/decision-core/normalization";
+import * as replayProvenanceSchemas from "@contracts/decision-core/replay-provenance";
 import * as serializationSchemas from "@contracts/decision-core/serialization";
 import * as triggerSchemas from "@contracts/decision-core/trigger";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
@@ -46,6 +47,7 @@ const DECISION_CORE_SCHEMA_MODULES: readonly SchemaModule[] = [
   ["ids.ts", idSchemas],
   ["ledger.ts", ledgerSchemas],
   ["normalization.ts", normalizationSchemas],
+  ["replay-provenance.ts", replayProvenanceSchemas],
   ["serialization.ts", serializationSchemas],
   ["trigger.ts", triggerSchemas],
 ];

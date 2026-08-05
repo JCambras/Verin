@@ -391,6 +391,44 @@ describe("deterministic decision-ledger projections", () => {
     ).toEqual([mixed]);
   });
 
+  it("does not relabel a fixture bundle when a real producer reuses it", async () => {
+    expect(
+      (await recordDecision(db, LEDGER_TENANT, decisionRecordingInput())).ok,
+    ).toBe(true);
+    const reused = reusedBundleRecordingInput("dec:GC-01:0002");
+    const result = await recordDecision(db, LEDGER_TENANT, {
+      ...reused,
+      provenance: {
+        source: "verin-crm",
+        asOf: LEDGER_TIME,
+        confidence: "high",
+      },
+    });
+    expect(result.ok, result.ok ? "" : result.error.message).toBe(true);
+    const projections = await listDecisionProjections(db, LEDGER_TENANT);
+    const reusedProjection = projections.find(
+      ({ projection }) => projection.decisionId === "dec:GC-01:0002",
+    )!;
+    expect(reusedProjection.provenance.demonstration).toBe(true);
+    expect(reusedProjection.provenance.derivedFrom).toContain("fixture");
+    expect(canFeedComplianceDecision(reusedProjection.provenance)).toBe(false);
+    const register = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      200,
+      50,
+    );
+    const registeredReuse = register.decisions.find(
+      ({ projection }) => projection.decisionId === "dec:GC-01:0002",
+    )!;
+    expect(registeredReuse.provenance.demonstration).toBe(true);
+    expect(registeredReuse.provenance.derivedFrom).toContain("fixture");
+    expect(
+      (await rebuildDecisionProjections(db, LEDGER_TENANT)).projections,
+    ).toEqual(projections);
+  });
+
   it("bounds a request-path read while reporting how many decisions exist", async () => {
     expect((await recordDecision(db, LEDGER_TENANT, decisionRecordingInput())).ok).toBe(true);
     const second = reusedBundleRecordingInput("dec:GC-01:0002");
@@ -483,6 +521,47 @@ describe("deterministic decision-ledger projections", () => {
     expect(
       statements.some((sql) => sql.includes("decision_state_projection")),
     ).toBe(false);
+  });
+
+  it("batch-loads register replay sources before folding the event window", async () => {
+    expect(
+      (await recordDecision(db, LEDGER_TENANT, decisionRecordingInput())).ok,
+    ).toBe(true);
+    for (let index = 2; index <= 14; index += 1) {
+      expect(
+        (await recordDecision(
+          db,
+          LEDGER_TENANT,
+          reusedBundleRecordingInput(`dec:GC-01:${String(index).padStart(4, "0")}`),
+        )).ok,
+      ).toBe(true);
+    }
+    const statements: string[] = [];
+    const measured: SqlDb = {
+      ...db,
+      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        return db.transaction((tx) => fn({
+          ...tx,
+          async query<U>(
+            sql: string,
+            params?: unknown[],
+          ): Promise<SqlResult<U>> {
+            statements.push(sql);
+            return tx.query<U>(sql, params);
+          },
+        }));
+      },
+    };
+    const snapshot = await readVerifiedDecisionRegister(
+      measured,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      200,
+      1,
+    );
+    expect(snapshot.decisions).toHaveLength(1);
+    expect(snapshot.decisionsTotal).toBe(14);
+    expect(statements.length).toBeLessThanOrEqual(13);
   });
 
   it("uses a repeated evidence recording inside the verified register window", async () => {

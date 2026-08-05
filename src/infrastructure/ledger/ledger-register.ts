@@ -20,17 +20,15 @@ import {
   type DecisionProjection,
 } from "@domain/ledger/projections";
 import {
-  verifyDecisionLedgerTransaction,
-  listDecisionLedger,
+  verifyAndListDecisionLedgerTransaction,
   type DecisionLedgerRow,
   type LedgerVerification,
 } from "./ledger-verification";
 import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
 import {
-  listReplayDecisionEvidenceCoverage,
-  loadVerifiedReplayDecision,
-  verifyReplayEvidence,
-} from "./ledger-sources";
+  loadVerifiedReplayWindow,
+  type RecordedReplayEvent,
+} from "./ledger-replay-loader";
 
 export interface VerifiedRegisterDecision {
   readonly projection: DecisionProjection;
@@ -76,57 +74,7 @@ async function replayRegisterWindow(
   readonly decisions: readonly VerifiedRegisterDecision[];
   readonly decisionsTotal: number;
 }> {
-  const verifiedEvidence = new Set<string>();
-  const decisions = new Map<string, VerifiedRegisterDecision>();
-  for (const row of rows) {
-    const event = parseEvent(row);
-    if (event.type === "EvidenceSnapshotRecorded") {
-      verifiedEvidence.add(await verifyReplayEvidence(tx, tenant, event));
-      continue;
-    }
-    let decisionRecord;
-    if (event.type === "DecisionRecorded") {
-      const coverage = await listReplayDecisionEvidenceCoverage(
-        tx,
-        tenant,
-        event,
-        rows[0]?.sequence ?? row.sequence,
-        row.sequence,
-      );
-      if (coverage.some((item) => !item.hasRecordingFact)) {
-        throw appError(
-          "STORE_CONSTRAINT",
-          "decision evidence has no recording ledger fact",
-        );
-      }
-      if (
-        coverage.some((item) => item.recordedSequence === null)
-      ) {
-        continue;
-      }
-      if (coverage.some((item) => !verifiedEvidence.has(item.id))) {
-        throw appError(
-          "STORE_CONSTRAINT",
-          "decision evidence is missing from the verified window",
-        );
-      }
-      decisionRecord = await loadVerifiedReplayDecision(
-        tx,
-        tenant,
-        event,
-        verifiedEvidence,
-      );
-    }
-    const id = eventDecisionId(event);
-    if (!id) continue;
-    const current = decisions.get(id);
-    const projection = foldDecisionProjection({
-      ...(current ? { current: current.projection } : {}),
-      event,
-      sequence: row.sequence,
-      ...(decisionRecord ? { decisionRecord } : {}),
-    });
-    if (!projection) continue;
+  const entries: RecordedReplayEvent[] = rows.map((row) => {
     const provenance = parseRecordProvenance({
       source: row.provSource,
       asOf: row.provAsOf,
@@ -135,13 +83,37 @@ async function replayRegisterWindow(
     if (!provenance) {
       throw appError("STORE_CONSTRAINT", "verified ledger provenance is invalid");
     }
-    const asOf = current && current.provenance.asOf > provenance.asOf
+    return { event: parseEvent(row), sequence: row.sequence, provenance };
+  });
+  const sources = await loadVerifiedReplayWindow(tx, tenant, entries);
+  const decisions = new Map<string, VerifiedRegisterDecision>();
+  for (const entry of entries) {
+    const { event, sequence } = entry;
+    let eventProvenance = entry.provenance;
+    let decisionRecord;
+    if (event.type === "DecisionRecorded") {
+      const source = sources.decisions.get(event.decisionRef.id);
+      if (!source) continue;
+      decisionRecord = source.record;
+      eventProvenance = source.provenance;
+    }
+    const id = eventDecisionId(event);
+    if (!id) continue;
+    const current = decisions.get(id);
+    const projection = foldDecisionProjection({
+      ...(current ? { current: current.projection } : {}),
+      event,
+      sequence,
+      ...(decisionRecord ? { decisionRecord } : {}),
+    });
+    if (!projection) continue;
+    const asOf = current && current.provenance.asOf > eventProvenance.asOf
       ? current.provenance.asOf
-      : provenance.asOf;
+      : eventProvenance.asOf;
     decisions.set(id, {
       projection,
       provenance: deriveArtifactProvenance(
-        current ? [current.provenance, provenance] : [provenance],
+        current ? [current.provenance, eventProvenance] : [eventProvenance],
         asOf,
       ),
     });
@@ -167,19 +139,17 @@ export async function readVerifiedDecisionRegister(
   assertSameTenant(exportGrant.tenant, piiGrant.tenant);
   const tenant = exportGrant.tenant;
   return db.transaction(async (tx) => {
-    const verification = await verifyDecisionLedgerTransaction(
+    const checked = await verifyAndListDecisionLedgerTransaction(
       tx,
-      tenant,
+      piiGrant,
       eventWindow,
     );
-    const rows = verification.ok
-      ? await listDecisionLedger(tx, piiGrant, eventWindow)
-      : [];
-    const replayed = verification.ok
+    const rows = checked.verification.ok ? checked.rows : [];
+    const replayed = checked.verification.ok
       ? await replayRegisterWindow(tx, tenant, rows, decisionLimit)
       : { decisions: [], decisionsTotal: 0 };
     return {
-      verification,
+      verification: checked.verification,
       rows,
       ...replayed,
     };

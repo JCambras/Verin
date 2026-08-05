@@ -27,7 +27,10 @@ import { computeChainHash, GENESIS_HASH } from "@infra/audit/hash-chain";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { verifyAndListOrgChain } from "@infra/audit/audit-store";
 import { decisionLedgerChainPreimage } from "@infra/ledger/ledger-schema-registry";
-import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
+import {
+  LedgerEntrySchema,
+  type LedgerEntry,
+} from "@contracts/decision-core/ledger";
 import {
   bundleHashPreimage,
   canonicalJson,
@@ -36,7 +39,10 @@ import {
 } from "@contracts/decision-core/serialization";
 import { DecisionInputBundleSchema } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
-import { deriveArtifactProvenance } from "@contracts/provenance";
+import {
+  deriveArtifactProvenance,
+  parseRecordProvenance,
+} from "@contracts/provenance";
 import {
   LEDGER_EXPORT_GRANT,
   LEDGER_LATER,
@@ -58,6 +64,114 @@ function hashPreimage(value: unknown): string {
   const canonical = canonicalJson(value as JsonValue);
   if (!canonical.ok) throw canonical.error;
   return createHash("sha256").update(canonical.value, "utf8").digest("hex");
+}
+
+async function rewriteLastLedgerEvent(
+  db: SqlDb,
+  transform: (event: LedgerEntry) => LedgerEntry,
+): Promise<void> {
+  const stored = await db.query<{
+    payload_json: string;
+    prev_hash: string;
+    schema_version: string;
+    serializer_version: string;
+    prov_source: string;
+    prov_asof: string;
+    prov_confidence: string;
+  }>(
+    `SELECT payload_json, prev_hash, schema_version, serializer_version,
+            prov_source, prov_asof, prov_confidence
+       FROM decision_ledger
+      WHERE org_id = $1
+      ORDER BY sequence DESC
+      LIMIT 1`,
+    [LEDGER_ORG],
+  );
+  const row = stored.rows[0]!;
+  const event = transform(LedgerEntrySchema.parse(JSON.parse(row.payload_json)));
+  const payload = canonicalJson(event as unknown as JsonValue);
+  const actor = canonicalJson(event.actor as unknown as JsonValue);
+  const provenance = parseRecordProvenance({
+    source: row.prov_source,
+    asOf: row.prov_asof,
+    confidence: row.prov_confidence,
+  });
+  expect(payload.ok && actor.ok && provenance).toBeTruthy();
+  if (!payload.ok || !actor.ok || !provenance) return;
+  const preimage = decisionLedgerChainPreimage(
+    row.schema_version,
+    row.serializer_version,
+    payload.value,
+    provenance,
+  );
+  expect(preimage).not.toBeNull();
+  if (!preimage) return;
+  const entryHash = computeChainHash(preimage, row.prev_hash);
+  await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
+  await db.query(
+    `UPDATE decision_ledger
+        SET payload_json = $2, actor_json = $3, entry_hash = $4
+      WHERE org_id = $1 AND sequence = 4`,
+    [LEDGER_ORG, payload.value, actor.value, entryHash],
+  );
+  await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+  await db.query(
+    "UPDATE decision_ledger_anchor SET head_hash = $2 WHERE org_id = $1",
+    [LEDGER_ORG, entryHash],
+  );
+}
+
+async function rechainLedger(db: SqlDb): Promise<void> {
+  const stored = await db.query<{
+    id: string;
+    sequence: number | string;
+    payload_json: string;
+    schema_version: string;
+    serializer_version: string;
+    prov_source: string;
+    prov_asof: string;
+    prov_confidence: string;
+  }>(
+    `SELECT id, sequence, payload_json, schema_version, serializer_version,
+            prov_source, prov_asof, prov_confidence
+       FROM decision_ledger
+      WHERE org_id = $1
+      ORDER BY sequence ASC`,
+    [LEDGER_ORG],
+  );
+  let previous = GENESIS_HASH;
+  for (const row of stored.rows) {
+    const provenance = parseRecordProvenance({
+      source: row.prov_source,
+      asOf: row.prov_asof,
+      confidence: row.prov_confidence,
+    });
+    expect(provenance).not.toBeNull();
+    if (!provenance) return;
+    const preimage = decisionLedgerChainPreimage(
+      row.schema_version,
+      row.serializer_version,
+      row.payload_json,
+      provenance,
+    );
+    expect(preimage).not.toBeNull();
+    if (!preimage) return;
+    const entryHash = computeChainHash(preimage, previous);
+    await db.query(
+      `UPDATE decision_ledger
+          SET prev_hash = $3, entry_hash = $4
+        WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, row.id, previous, entryHash],
+    );
+    previous = entryHash;
+  }
+  const head = stored.rows.at(-1);
+  await db.query(
+    `UPDATE decision_ledger_anchor
+        SET max_sequence = $2, entry_count = $3, head_hash = $4
+      WHERE org_id = $1`,
+    [LEDGER_ORG, Number(head?.sequence ?? 0), stored.rows.length, previous],
+  );
 }
 
 async function seedOrg(db: SqlDb, id: string): Promise<void> {
@@ -275,6 +389,54 @@ describe("decision ledger storage and L1-L4 verification", () => {
       "UPDATE decision_ledger_anchor SET head_hash = $2 WHERE org_id = $1",
       [LEDGER_ORG, hash],
     );
+    await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+    const result = await verifyDecisionLedger(db, LEDGER_TENANT);
+    expect(result.ok).toBe(false);
+    expect(result.levels.at(-1)?.level).toBe("L2");
+  });
+
+  it("L2 reapplies the ledger PII boundary to correctly rechained bytes", async () => {
+    await recordFixture(db);
+    await rewriteLastLedgerEvent(db, (event) => LedgerEntrySchema.parse({
+      ...event,
+      actor: { firmId: LEDGER_ORG, systemId: "unsafe@firm.test" },
+    }));
+    const result = await verifyDecisionLedger(db, LEDGER_TENANT);
+    expect(result.ok).toBe(false);
+    expect(result.levels.at(-1)?.level).toBe("L2");
+  });
+
+  it("L2 rechecks immutable decision hashes after a privileged rechain", async () => {
+    await recordFixture(db);
+    await rewriteLastLedgerEvent(db, (event) => LedgerEntrySchema.parse({
+      ...event,
+      decisionHash: "f".repeat(64),
+    }));
+    const result = await verifyDecisionLedger(db, LEDGER_TENANT);
+    expect(result.ok).toBe(false);
+    expect(result.levels.at(-1)?.level).toBe("L2");
+  });
+
+  it("L2 rejects a correctly rechained causal reference to a later entry", async () => {
+    await recordFixture(db);
+    const samples = allLedgerEventSamples();
+    const stuck = samples.find((event) => event.type === "VerificationStuck")!;
+    const exception = samples.find(
+      (event) => event.type === "ExceptionDecisionRequested",
+    )!;
+    await expect(append(db, [stuck, exception])).resolves.toHaveLength(2);
+    await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
+    await db.query(
+      "UPDATE decision_ledger SET sequence = sequence + 1000 WHERE org_id = $1 AND sequence IN (5,6)",
+      [LEDGER_ORG],
+    );
+    await db.query(
+      `UPDATE decision_ledger
+          SET sequence = CASE WHEN id = $2 THEN 5 ELSE 6 END
+        WHERE org_id = $1 AND id IN ($2,$3)`,
+      [LEDGER_ORG, exception.id, stuck.id],
+    );
+    await rechainLedger(db);
     await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
     const result = await verifyDecisionLedger(db, LEDGER_TENANT);
     expect(result.ok).toBe(false);

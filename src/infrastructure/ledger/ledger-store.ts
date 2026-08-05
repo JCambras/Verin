@@ -8,24 +8,13 @@ import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import { classifyErrorMetadata, log } from "@infra/observability/logger";
 import { authorityObservabilityId } from "@domain/observability/safe-values";
 import { err, ok, type Result } from "@contracts/result";
+import { parseRecordProvenance, type RecordProvenance } from "@contracts/provenance";
 import {
-  parseRecordProvenance,
-  type RecordProvenance,
-} from "@contracts/provenance";
-import {
-  EvidenceSnapshotRefSchema,
-  DecisionInputBundleSchema,
-  type EvidenceSnapshotRef,
-  type DecisionInputBundle,
+  EvidenceSnapshotRefSchema, DecisionInputBundleSchema,
+  type EvidenceSnapshotRef, type DecisionInputBundle,
 } from "@contracts/decision-core/evidence";
-import {
-  DecisionRecordSchema,
-  type DecisionRecord,
-} from "@contracts/decision-core/decision";
-import {
-  LedgerEntrySchema,
-  type LedgerEntry,
-} from "@contracts/decision-core/ledger";
+import { DecisionRecordSchema, type DecisionRecord } from "@contracts/decision-core/decision";
+import { LedgerEntrySchema, type LedgerEntry } from "@contracts/decision-core/ledger";
 import {
   bundleHashPreimage,
   decisionHashPreimage,
@@ -43,12 +32,13 @@ import {
 } from "./ledger-projection-store";
 import { decisionLedgerChainPreimage } from "./ledger-schema-registry";
 import { lockDecisionLedgerTenant } from "./ledger-lock";
+import { deriveRecordedDecisionProvenance } from "./ledger-source-provenance";
 import {
   assertLedgerEventPiiBoundary,
   assertReplaySourcePiiBoundary,
 } from "./ledger-pii";
 
-export { rebuildDecisionProjections } from "./ledger-rebuild";
+export { rebuildDecisionProjections } from "./ledger-verification";
 
 export interface RecordDecisionInput extends PIIBearing {
   readonly evidenceSnapshots: readonly EvidenceSnapshotRef[];
@@ -148,6 +138,7 @@ async function appendPrepared(
   events: readonly PreparedEvent[],
   provenance: RecordProvenance,
   decisionRecord?: DecisionRecord,
+  decisionProvenance?: RecordProvenance,
 ): Promise<AppendedLedgerEntry[]> {
   assertTenantContext(tenant);
   const orgId = tenant.orgId;
@@ -182,12 +173,16 @@ async function appendPrepared(
       }
     }
     await assertLedgerSourceBindings(tx, tenant, event);
+    const projectionProvenance =
+      event.type === "DecisionRecorded" && decisionProvenance
+        ? decisionProvenance
+        : provenance;
     await validateProjection(
       tx,
       tenant,
       event,
       sequence,
-      provenance,
+      projectionProvenance,
       event.type === "DecisionRecorded" ? decisionRecord : undefined,
     );
     const chainPreimage = decisionLedgerChainPreimage(
@@ -223,7 +218,7 @@ async function appendPrepared(
       tenant,
       event,
       sequence,
-      provenance,
+      projectionProvenance,
       event.type === "DecisionRecorded" ? decisionRecord : undefined,
     );
     // Per entry, never once per batch: if a later event of this batch throws and a
@@ -405,12 +400,20 @@ export async function recordDecision(
         prepared.value.record,
         prepared.value.events.at(-1)!.event.recordedAt,
       );
+      const decisionProvenance = await deriveRecordedDecisionProvenance(
+        tx,
+        tenant,
+        prepared.value.bundle,
+        prepared.value.record,
+        prepared.value.provenance,
+      );
       return appendPrepared(
         tx,
         tenant,
         prepared.value.events,
         prepared.value.provenance,
         prepared.value.record,
+        decisionProvenance,
       );
     });
     return ok(appended);

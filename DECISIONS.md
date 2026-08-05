@@ -3688,3 +3688,27 @@ grammars, ignored numeric primitives, or evidence selection outside the window w
 is displayed.
 **Revert path:** restore these boundaries together only if the append-only ownership,
 PII-retention, bounded-replay, and examiner-surface claims are withdrawn.
+
+### D-115 · 2026-08-05 · reversible · Ledger verification and replay-source trust share immutable recording edges
+
+L2 now reapplies the append path's retained-PII and immutable-source binding
+authorities and checks causal order set-wise before reporting PASS. Correctly chained
+bytes that the repository would refuse therefore cannot be disclosed by the register or
+consumed by rebuild.
+
+Replay-source trust belongs to the first hash-bound recording edge for immutable
+evidence and bundle bytes. Every reuse retains its own producer provenance, and online,
+bounded, and rebuild folds derive from both. A fixture bundle reused by a `verin-crm`
+producer remains a demonstration and cannot feed a compliance decision.
+
+Register replay batch-loads evidence, decisions, bundles, memberships, and source
+origins before folding and reuses the verified row snapshot. A 14-decision regression
+falls from 65 statements to a constant category-bounded query count. ADR-0039's
+migration guidance now names versions 4 and 5. ADR-0042 records the trust ownership and
+raises the infrastructure ceiling to 7,050 around the measured 6,927 lines, with the
+500-line cap unchanged.
+
+**Why:** canonical schema bytes alone do not prove repository acceptance, and mutable
+use claims cannot upgrade immutable synthetic inputs.
+**Revert path:** none while L1-L4 authorizes disclosure and rebuild, source reuse is
+supported, and bounded register replay runs under a tenant lock.

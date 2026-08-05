@@ -6,12 +6,6 @@
 import type { SqlDb, SqlQueryable, SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
-import { type LedgerEntry } from "@contracts/decision-core/ledger";
-import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
-import {
-  verifyStoredByteChain,
-  type ChainVerdict,
-} from "@infra/audit/hash-chain";
 import { parseRecordProvenance } from "@contracts/provenance";
 import {
   assertTenantContext,
@@ -21,54 +15,40 @@ import {
   assertActionGrant,
   type ActionGrant,
 } from "@contracts/authz";
-import {
-  decisionLedgerChainPreimage,
-  parseRecordedLedgerEvent,
-} from "./ledger-schema-registry";
+import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
 import { lockDecisionLedgerTenant } from "./ledger-lock";
-import { verifyReplaySources } from "./ledger-sources";
+import {
+  verifyReplaySources,
+  type RecordedReplayEvent,
+} from "./ledger-replay-loader";
+import {
+  applyProjection,
+  clearDerivedState,
+  listDecisionProjections,
+  type ProjectedDecision,
+} from "./ledger-projection-store";
+import {
+  verifyLedgerSnapshot,
+  type DecisionLedgerRow,
+  type LedgerSnapshot,
+  type LedgerVerification,
+} from "./ledger-verification-levels";
 
-export interface DecisionLedgerRow extends PIIBearing {
-  readonly orgId: string;
-  readonly id: string;
-  readonly sequence: number;
-  readonly eventType: string;
-  readonly schemaVersion: string;
-  readonly serializerVersion: string;
-  readonly occurredAt: string;
-  readonly recordedAt: string;
-  readonly actorJson: string;
-  readonly correlationId: string;
-  readonly causationId: string | null;
-  readonly decisionId: string | null;
-  readonly evidenceSnapshotId: string | null;
-  readonly triggeringEntryId: string | null;
-  readonly reservationCreationId: string | null;
-  readonly payloadJson: string;
-  readonly prevHash: string;
-  readonly entryHash: string;
-  readonly provSource: string;
-  readonly provAsOf: string;
-  readonly provConfidence: string;
-}
-
-export interface LedgerVerificationLevel extends ChainVerdict {
-  readonly level: "L1" | "L2" | "L3" | "L4";
-}
-
-export interface LedgerVerification {
-  readonly ok: boolean;
-  readonly entriesChecked: number;
-  /** Entries stored for the tenant; larger than `entriesChecked` on a windowed run. */
-  readonly entriesStored: number;
-  readonly levels: readonly LedgerVerificationLevel[];
-}
+export type {
+  DecisionLedgerRow,
+  LedgerVerification,
+} from "./ledger-verification-levels";
 
 export interface DecisionLedgerIntegrityVerification {
   readonly ok: boolean;
   readonly ledger: LedgerVerification;
   readonly replaySourcesChecked: number;
   readonly replaySourceReason: string | null;
+}
+
+export interface RebuiltDecisionProjections {
+  readonly entriesReplayed: number;
+  readonly projections: readonly ProjectedDecision[];
 }
 
 interface DbLedgerRow extends PIIBearing {
@@ -121,7 +101,6 @@ function toRow(row: DbLedgerRow): DecisionLedgerRow {
   };
 }
 
-/** Ordered by sequence. `tail` reads only the most recent N entries. */
 async function listDecisionLedgerForTenant(
   db: SqlQueryable,
   tenant: TenantContext,
@@ -152,216 +131,6 @@ export async function listDecisionLedger(
   return listDecisionLedgerForTenant(db, grant.tenant, tail);
 }
 
-function level(
-  name: LedgerVerificationLevel["level"],
-  ok: boolean,
-  checked: number,
-  sequence: number | null,
-  reason: string | null,
-): LedgerVerificationLevel {
-  return {
-    level: name,
-    ok,
-    entriesChecked: checked,
-    brokenAtSequence: sequence,
-    reason,
-  };
-}
-
-function promotedDecisionId(event: LedgerEntry): string | null {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return null;
-}
-
-function promotedEvidenceId(event: LedgerEntry): string | null {
-  if (event.type === "EvidenceSnapshotRecorded") {
-    return event.evidenceSnapshotRef.id;
-  }
-  if (event.type === "StatusObserved") {
-    return event.evidenceSnapshotRef?.id ?? null;
-  }
-  return null;
-}
-
-function promotedTriggeringEntryId(event: LedgerEntry): string | null {
-  return event.type === "ExceptionDecisionRequested"
-    ? event.triggeringEntryRef.id
-    : null;
-}
-
-function promotedReservationCreationId(event: LedgerEntry): string | null {
-  return event.type === "ReservationReleased"
-    ? event.reservationCreationRef.id
-    : null;
-}
-
-function verifyL2(
-  rows: readonly DecisionLedgerRow[],
-): { verdict: LedgerVerificationLevel; events: LedgerEntry[] } {
-  const events: LedgerEntry[] = [];
-  for (const row of rows) {
-    let unknown: unknown;
-    try {
-      unknown = JSON.parse(row.payloadJson);
-    } catch {
-      return {
-        verdict: level("L2", false, events.length, row.sequence, "payload_json is not JSON"),
-        events,
-      };
-    }
-    const parsed = parseRecordedLedgerEvent(
-      row.eventType,
-      row.schemaVersion,
-      row.serializerVersion,
-      unknown,
-    );
-    if (!parsed.ok) {
-      return {
-        verdict: level("L2", false, events.length, row.sequence, parsed.reason),
-        events,
-      };
-    }
-    const canonical = canonicalJson(parsed.event as unknown as JsonValue);
-    if (!canonical.ok || canonical.value !== row.payloadJson) {
-      return {
-        verdict: level("L2", false, events.length, row.sequence, "payload bytes are not canonical for the recorded serializer"),
-        events,
-      };
-    }
-    events.push(parsed.event);
-  }
-  return { verdict: level("L2", true, rows.length, null, null), events };
-}
-
-function verifyL3(
-  rows: readonly DecisionLedgerRow[],
-  events: readonly LedgerEntry[],
-): LedgerVerificationLevel {
-  for (let index = 0; index < events.length; index += 1) {
-    const row = rows[index]!;
-    const event = events[index]!;
-    const actor = canonicalJson(event.actor as unknown as JsonValue);
-    const matches =
-      event.firmId === row.orgId &&
-      event.id === row.id &&
-      event.type === row.eventType &&
-      event.schemaVersion === row.schemaVersion &&
-      event.serializerVersion === row.serializerVersion &&
-      event.occurredAt === row.occurredAt &&
-      event.recordedAt === row.recordedAt &&
-      actor.ok &&
-      actor.value === row.actorJson &&
-      event.correlationId === row.correlationId &&
-      (event.causationRef?.id ?? null) === row.causationId &&
-      promotedDecisionId(event) === row.decisionId &&
-      promotedEvidenceId(event) === row.evidenceSnapshotId &&
-      promotedTriggeringEntryId(event) === row.triggeringEntryId &&
-      promotedReservationCreationId(event) === row.reservationCreationId;
-    if (!matches) {
-      return level("L3", false, index, row.sequence, "promoted column differs from canonical payload");
-    }
-  }
-  return level("L3", true, rows.length, null, null);
-}
-
-interface AnchorRow {
-  max_sequence: number | string;
-  entry_count: number | string;
-  head_hash: string;
-}
-
-interface LedgerSnapshot extends PIIBearing {
-  readonly rows: DecisionLedgerRow[];
-  readonly anchor: AnchorRow | undefined;
-  readonly stored: number;
-  readonly headSequence: number | null;
-  readonly start: { sequence: number; prevHash: string } | undefined;
-}
-
-/** The anchor is tenant-wide, so L4 compares it with the stored totals, never the window. */
-function verifyL4(
-  snapshot: LedgerSnapshot,
-  checked: number,
-): LedgerVerificationLevel {
-  const { anchor, rows, stored, headSequence } = snapshot;
-  if (stored === 0) {
-    return anchor
-      ? level("L4", false, 0, null, "anchor exists for an empty ledger")
-      : level("L4", true, 0, null, null);
-  }
-  if (!anchor) return level("L4", false, checked, null, "ledger anchor is missing");
-  const head = rows.at(-1);
-  const matches =
-    Number(anchor.entry_count) === stored &&
-    Number(anchor.max_sequence) === headSequence &&
-    (!head || anchor.head_hash === head.entryHash);
-  return matches
-    ? level("L4", true, checked, null, null)
-    : level("L4", false, checked, headSequence, "ledger anchor count, sequence, or head hash differs");
-}
-
-function verifyRows(snapshot: LedgerSnapshot): LedgerVerification {
-  const { rows, stored } = snapshot;
-  const chainRows = [];
-  for (const row of rows) {
-    const provenance = parseRecordProvenance({
-      source: row.provSource,
-      asOf: row.provAsOf,
-      confidence: row.provConfidence,
-    });
-    const preimage = provenance
-      ? decisionLedgerChainPreimage(
-          row.schemaVersion,
-          row.serializerVersion,
-          row.payloadJson,
-          provenance,
-        )
-      : null;
-    if (!preimage) {
-      const l1 = level(
-        "L1",
-        false,
-        chainRows.length,
-        row.sequence,
-        "ledger chain preimage or provenance is unsupported",
-      );
-      return {
-        ok: false,
-        entriesChecked: l1.entriesChecked,
-        entriesStored: stored,
-        levels: [l1],
-      };
-    }
-    chainRows.push({
-      sequence: row.sequence,
-      canonicalBytes: preimage,
-      prevHash: row.prevHash,
-      entryHash: row.entryHash,
-    });
-  }
-  const l1Raw = verifyStoredByteChain(chainRows, snapshot.start);
-  const l1 = { ...l1Raw, level: "L1" as const };
-  const fail = (levels: LedgerVerificationLevel[]): LedgerVerification => ({
-    ok: false,
-    entriesChecked: levels.at(-1)!.entriesChecked,
-    entriesStored: stored,
-    levels,
-  });
-  if (!l1.ok) return fail([l1]);
-  const l2 = verifyL2(rows);
-  if (!l2.verdict.ok) return fail([l1, l2.verdict]);
-  const l3 = verifyL3(rows, l2.events);
-  if (!l3.ok) return fail([l1, l2.verdict, l3]);
-  const l4 = verifyL4(snapshot, rows.length);
-  return {
-    ok: l4.ok,
-    entriesChecked: rows.length,
-    entriesStored: stored,
-    levels: [l1, l2.verdict, l3, l4],
-  };
-}
-
 /**
  * Reading and verifying the whole chain is O(entries) work under the store's single
  * connection, so callers on a request path pass `window` to verify the most recent
@@ -375,10 +144,10 @@ export async function verifyAndListDecisionLedger(
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
   assertActionGrant(grant, "pii.view");
   return db.transaction((tx) =>
-    verifyDecisionLedgerTransactionSnapshot(tx, grant.tenant, window));
+    verifyAndListDecisionLedgerTransaction(tx, grant, window));
 }
 
-async function verifyDecisionLedgerTransactionSnapshot(
+async function verifySnapshotTransaction(
   tx: SqlTx,
   tenant: TenantContext,
   window?: number,
@@ -395,7 +164,11 @@ async function verifyDecisionLedgerTransactionSnapshot(
   const headSequence = headRaw === null || headRaw === undefined
     ? null
     : Number(headRaw);
-  const anchor = await tx.query<AnchorRow>(
+  const anchor = await tx.query<{
+    max_sequence: number | string;
+    entry_count: number | string;
+    head_hash: string;
+  }>(
     "SELECT max_sequence, entry_count, head_hash FROM decision_ledger_anchor WHERE org_id = $1",
     [orgId],
   );
@@ -424,9 +197,106 @@ async function verifyDecisionLedgerTransactionSnapshot(
     };
   }
   return {
-    verification: verifyRows(snapshot),
+    verification: await verifyLedgerSnapshot(tx, tenant, snapshot),
     rows: snapshot.rows,
   };
+}
+
+export async function verifyAndListDecisionLedgerTransaction(
+  tx: SqlTx,
+  grant: ActionGrant<"pii.view">,
+  window?: number,
+): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
+  assertActionGrant(grant, "pii.view");
+  return verifySnapshotTransaction(tx, grant.tenant, window);
+}
+
+function parseReplayEvents(
+  rows: readonly DecisionLedgerRow[],
+): RecordedReplayEvent[] {
+  return rows.map((row) => {
+    let value: unknown;
+    try {
+      value = JSON.parse(row.payloadJson);
+    } catch {
+      throw appError("STORE_CONSTRAINT", "ledger replay payload is not JSON");
+    }
+    const parsed = parseRecordedLedgerEvent(
+      row.eventType,
+      row.schemaVersion,
+      row.serializerVersion,
+      value,
+    );
+    if (!parsed.ok) throw appError("STORE_CONSTRAINT", parsed.reason);
+    const provenance = parseRecordProvenance({
+      source: row.provSource,
+      asOf: row.provAsOf,
+      confidence: row.provConfidence,
+    });
+    if (!provenance) {
+      throw appError("STORE_CONSTRAINT", "ledger replay provenance is invalid");
+    }
+    return { event: parsed.event, sequence: row.sequence, provenance };
+  });
+}
+
+async function verifyDecisionLedgerReplayTransaction(
+  tx: SqlTx,
+  tenant: TenantContext,
+): Promise<{
+  verification: LedgerVerification;
+  entries: RecordedReplayEvent[];
+  lastSequence: number | undefined;
+}> {
+  assertTenantContext(tenant);
+  const checked = await verifySnapshotTransaction(tx, tenant);
+  return {
+    verification: checked.verification,
+    entries: checked.verification.ok ? parseReplayEvents(checked.rows) : [],
+    lastSequence: checked.rows.at(-1)?.sequence,
+  };
+}
+
+export async function rebuildDecisionProjections(
+  db: SqlDb,
+  tenant: TenantContext,
+): Promise<RebuiltDecisionProjections> {
+  assertTenantContext(tenant);
+  return db.transaction(async (tx) => {
+    const checked = await verifyDecisionLedgerReplayTransaction(tx, tenant);
+    if (!checked.verification.ok) {
+      throw appError(
+        "STORE_CONSTRAINT",
+        `decision ledger integrity failed at ${checked.verification.levels.at(-1)?.level ?? "unknown"}`,
+      );
+    }
+    const sources = await verifyReplaySources(tx, tenant, checked.entries);
+    await clearDerivedState(tx, tenant);
+    for (const item of checked.entries) {
+      const source = item.event.type === "DecisionRecorded"
+        ? sources.decisions.get(item.event.decisionRef.id)
+        : undefined;
+      await applyProjection(
+        tx,
+        tenant,
+        item.event,
+        item.sequence,
+        source?.provenance ?? item.provenance,
+        source?.record,
+      );
+    }
+    if (checked.lastSequence !== undefined) {
+      await tx.query(
+        `INSERT INTO decision_projection_checkpoint (org_id,last_sequence,rebuilt_at)
+         VALUES ($1,$2,$3)`,
+        [tenant.orgId, checked.lastSequence, new Date().toISOString()],
+      );
+    }
+    return {
+      entriesReplayed: checked.entries.length,
+      projections: await listDecisionProjections(tx, tenant),
+    };
+  });
 }
 
 export async function verifyDecisionLedgerTransaction(
@@ -436,7 +306,7 @@ export async function verifyDecisionLedgerTransaction(
 ): Promise<LedgerVerification> {
   assertTenantContext(tenant);
   return (
-    await verifyDecisionLedgerTransactionSnapshot(tx, tenant, window)
+    await verifySnapshotTransaction(tx, tenant, window)
   ).verification;
 }
 
@@ -455,7 +325,7 @@ export async function verifyDecisionLedgerIntegrity(
 ): Promise<DecisionLedgerIntegrityVerification> {
   assertTenantContext(tenant);
   return db.transaction(async (tx) => {
-    const checked = await verifyDecisionLedgerTransactionSnapshot(tx, tenant);
+    const checked = await verifyDecisionLedgerReplayTransaction(tx, tenant);
     if (!checked.verification.ok) {
       return {
         ok: false,
@@ -464,22 +334,8 @@ export async function verifyDecisionLedgerIntegrity(
         replaySourceReason: "decision ledger chain does not verify",
       };
     }
-    const events: LedgerEntry[] = [];
     try {
-      for (const row of checked.rows) {
-        const value = JSON.parse(row.payloadJson) as unknown;
-        const parsed = parseRecordedLedgerEvent(
-          row.eventType,
-          row.schemaVersion,
-          row.serializerVersion,
-          value,
-        );
-        if (!parsed.ok) {
-          throw appError("STORE_CONSTRAINT", parsed.reason);
-        }
-        events.push(parsed.event);
-      }
-      const sources = await verifyReplaySources(tx, tenant, events);
+      const sources = await verifyReplaySources(tx, tenant, checked.entries);
       return {
         ok: true,
         ledger: checked.verification,

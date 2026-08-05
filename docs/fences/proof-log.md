@@ -5930,3 +5930,33 @@ projection suites pass 86 tests. The line-budget companion measures infrastructu
 payloads stay as detection-is-not-verification companions.
 
 **Date:** 2026-08-05 (review corrections F10-F14, ADR-0041, D-114).
+### PF-201 ledger acceptance, source trust, and batched register replay
+
+**Invariants:** L1-L4 never verifies event bytes the append boundary would refuse;
+immutable source reuse cannot upgrade fixture provenance; bounded register I/O scales
+with source categories rather than event count.
+
+Five real PGlite regressions were added before the production corrections and failed:
+
+```text
+× L2 reapplies the ledger PII boundary to correctly rechained bytes
+  expected false, received true
+× L2 rechecks immutable decision hashes after a privileged rechain
+  expected false, received true
+× L2 rejects a correctly rechained causal reference to a later entry
+  expected false, received true
+× does not relabel a fixture bundle when a real producer reuses it
+  expected true, received false
+× batch-loads register replay sources before folding the event window
+  expected 65 statements to be less than or equal to 13
+```
+
+The corrected L2 calls the shared PII and source-binding authorities plus one set-based
+causal check. Replay derives source trust from the first chain-bound recording edge and
+the current use edge. The batch companion creates fourteen decisions, reads a one-item
+display limit, and proves all fourteen are counted without per-event source queries.
+
+**Revert:** no planted production data remains. The correctly rechained rows and
+query-count harness remain as detection-is-not-verification companions.
+
+**Date:** 2026-08-05 (review corrections F15-F18, ADR-0042, D-115).

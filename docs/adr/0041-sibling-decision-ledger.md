@@ -5,6 +5,7 @@
 **Deciders:** Founding architect (executing v3 prompt 7 and its accepted design report)
 **Relates to:** Charter non-negotiables #1, #2, #7, #13; v3 invariants 2, 4, 5, 23, 30
 **Informed by:** `docs/v3/verin-architecture-v3.md` §§5, 12, 15, 16, 18; prompt 7; `verin-ledgerdesign-l7/report.md`
+**Amended by:** ADR-0042
 
 ## Context
 
@@ -55,6 +56,9 @@ settle now.
   (`prov_source`/`prov_asof`/`prov_confidence`, charter #4). Both write paths refuse
   an unregistered source, the chain binds all three fields, and surfaces classify a
   row from the stored value - never from an actor name.
+- Replay-source trust belongs to the first hash-bound recording edge for those
+  immutable bytes, while every reuse retains its own producer provenance. Projection
+  provenance derives from both, so reuse cannot upgrade a synthetic source.
 - Evidence snapshots and input bundles are content-addressed and reusable: a later
   decision over the same immutable inputs links the stored bytes. Reuse demands byte
   equality, so an id collision with different bytes is refused, never overwritten.
@@ -93,9 +97,9 @@ settle now.
   bundles, membership, and decision records. External anchor witnessing or HMAC
   now applies to both chains.
 - Amend the ADR-0018 ceilings, re-measured on the composed tree that already
-  carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 6,000,
-  domain 1,350 to 1,650, and infrastructure 3,550 to 6,650. Measured state is
-  contracts 5,954 (46 headroom), domain 1,584 (66), and infrastructure 6,608 (42) -
+  carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 6,050,
+  domain 1,350 to 1,650, and infrastructure 3,550 to 6,950. Measured state is
+  contracts 5,991 (59 headroom), domain 1,584 (66), and infrastructure 6,927 (23) -
   bounded correction room, per the ADR-0033 rule that a zero-headroom ceiling just
   converts review findings into documentation deletions. The presentation envelope and
   the per-file 500-line limit are unchanged: the repository is split into the chain
@@ -123,8 +127,10 @@ settle now.
 
 ## Consequences
 
-Migration version 3 is additive. Existing audit DDL, rows, preimages, outbox, and
-verification remain byte-compatible. Future event schema versions add dispatch
+Migration version 4 adds the decision-ledger foundation, and version 5 adds recorded
+replay-source schema identity plus generation-bound reservation ownership. Both are
+additive. Existing audit DDL, rows, preimages, outbox, and verification remain
+byte-compatible. Future event schema versions add dispatch
 entries and pure upcasts for projection use. They never rewrite an old row or
 hash. Prompt 19 owns decision re-evaluation, and prompts 18/23/25 own authority,
 reservation, execution, and status behavior.
