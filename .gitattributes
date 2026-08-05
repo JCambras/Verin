@@ -6,7 +6,16 @@ fixtures/corpus/manifest.json linguist-generated=true
 fixtures/corpus/synthetic/** linguist-generated=true
 
 # Canonical bytes are LF, everywhere, forever: the corpus digest is a hash over
-# committed bytes, so a CRLF checkout would break every signature.
+# committed bytes, so a CRLF checkout would break every signature. The repo-wide
+# default is what makes that true - the digest inputs are not only fixtures but
+# repository SOURCE (every file in REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES, under
+# scripts/ and src/contracts/), and the arch-version fence pins document bytes the
+# same way. Pinning only the trees we happen to hash today is a rule that goes
+# stale the next time something becomes a digest input.
+* text=auto eol=lf
+
+# The digest-bearing trees are forced text rather than heuristically detected: a
+# generated case that git guesses is binary would silently escape normalization.
 fixtures/corpus/** text eol=lf
 fixtures/decision-core/** text eol=lf
 fixtures/golden/** text eol=lf

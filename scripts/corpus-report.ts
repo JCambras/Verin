@@ -17,7 +17,6 @@ import {
   type RealDerivedCaseOutcome,
   type SyntheticCaseOutcome,
 } from "./corpus/report";
-import { CORPUS_SEED } from "./corpus/seed";
 import { validateCorpus } from "./corpus/validate";
 
 const result = validateCorpus();
@@ -47,7 +46,7 @@ const realDerivedOutcomes: RealDerivedCaseOutcome[] = result.realDerivedCases.ma
 console.log(renderCorpusReport({
   corpusVersion: result.spec.world.corpusVersion,
   corpusDigest: result.corpusDigest,
-  seed: CORPUS_SEED,
+  seed: result.seed,
   taxonomyDigest: result.taxonomyDigest,
   authority: result.authority,
   signoff: result.signoff,

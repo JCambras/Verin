@@ -4890,7 +4890,7 @@ partition, the unchanged 500-line file ceiling, and pending unsigned captain sig
 unrelated terms, and a local loader spelling cannot change signed semantics outside the digest.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-121 · 2026-08-05 · captain-decision · Corpus privacy, validation, determinism, and settled credits fail closed
+### D-125 · 2026-08-05 · captain-decision · Corpus privacy, validation, determinism, and settled credits fail closed
 
 Cross-household destination owners are emitted only as opaque `referencedOwners` ids unless another
 request-household relationship independently makes the party local. Full roster names, kinds, and roles
@@ -4914,7 +4914,7 @@ signed semantics, ambient-global spellings cannot bypass determinism, and settle
 behind a generic nonreducing treatment.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-122 · 2026-08-05 · reversible · Ambient access and pending-action balance accounting are explicit
+### D-126 · 2026-08-05 · reversible · Ambient access and pending-action balance accounting are explicit
 
 The nondeterminism fence now records sensitive origins reached through property or element access, so
 `globalThis.Intl.DateTimeFormat` and nested bracket access to `process.env` cannot bypass the source ban.
@@ -4940,7 +4940,7 @@ same payload permits both adding and preserving the amount. A sensitive ambient 
 independently of whether source syntax uses dots or brackets.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-123 · 2026-08-05 · reversible · Executable provenance and availability reconciliation share complete authorities
+### D-127 · 2026-08-05 · reversible · Executable provenance and availability reconciliation share complete authorities
 
 The corpus determinism project discovers source files through the same executable-source predicate as
 the tooling budgets, covering TypeScript and JavaScript variants. Nondeterministic origin tracing follows
@@ -4963,7 +4963,7 @@ The real-derived partition remains empty and deferred, and captain signoff remai
 availability must be reconciled with the signed action treatment before sufficiency can be evaluated.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-124 · 2026-08-05 · reversible · Alternate origins, parameter binding, ambient APIs, and settled debits fail closed
+### D-128 · 2026-08-05 · reversible · Alternate origins, parameter binding, ambient APIs, and settled debits fail closed
 
 The corpus determinism fence carries every possible origin through conditional and logical arms, callable
 returns, declarations, and fixed containers. Object and array parameter patterns bind recursively from
@@ -4985,7 +4985,7 @@ captain signoff remains pending.
 erase provenance, and settled debits cannot be added back or omitted during funding reconciliation.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-125 · 2026-08-05 · reversible · Determinism provenance and restriction lifecycle derive from complete facts
+### D-129 · 2026-08-05 · reversible · Determinism provenance and restriction lifecycle derive from complete facts
 
 The corpus determinism project now expands from `scripts/corpus/` through the complete transitive local
 executable import closure. Origin tracing covers method declarations, property accessors, and defaulted
@@ -5011,7 +5011,7 @@ stable API list, and a signed lifecycle defect cannot be replayed from a trusted
 effectivity facts.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-126 · 2026-08-05 · reversible · Determinism and synthetic schedules fail closed
+### D-130 · 2026-08-05 · reversible · Determinism and synthetic schedules fail closed
 
 Corpus determinism provenance now models JavaScript default semantics conservatively, including an
 explicit `undefined` argument and nested object or array binding defaults. Callable aliases preserve
@@ -5038,7 +5038,7 @@ measurement cannot evade provenance separation by changing its spelling; and sig
 cannot rely on an impossible interval or an order-sensitive schedule with no valid ordering.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
 
-### D-127 · 2026-08-05 · reversible · Mutable keys and assignment provenance fail closed
+### D-131 · 2026-08-05 · reversible · Mutable keys and assignment provenance fail closed
 
 Computed member resolution now trusts an initializer only for a `const` binding. A mutable key is treated
 as dynamic sensitive access even when its declaration initializer is harmless, so a later assignment
@@ -5063,7 +5063,7 @@ erase measurement provenance, and already-enforced signed schema rules should be
 duplicated in a downstream semantic owner.
 **Revert path:** none while the determinism and no-blending fences claim to cover mutable dataflow.
 
-### D-128 · 2026-08-05 · reversible · Structured provenance, repository inputs, and temporal rules fail closed
+### D-132 · 2026-08-05 · reversible · Structured provenance, repository inputs, and temporal rules fail closed
 
 The no-blending fence propagates partition provenance through object and array binding patterns and
 `Object.assign` mutation writes. Exact member paths remain distinct, while dynamic mutation sources fail
@@ -5094,7 +5094,7 @@ ordering cannot alter generated bytes.
 **Revert path:** none while the corpus fences claim structured provenance, host independence, replayable
 time-zone semantics, and order-independent generation.
 
-### D-129 · 2026-08-05 · reversible · Corpus runtime and replay roots fail closed
+### D-133 · 2026-08-05 · reversible · Corpus runtime and replay roots fail closed
 
 The determinism fence rejects `eval`, the `Function` constructor, and their aliases rather than attempting
 to inspect dynamically compiled source. Logical compound assignments preserve every possible ambient
@@ -5121,7 +5121,7 @@ foreign source accounts cannot weaken signed corpus acceptance.
 **Revert path:** none while the corpus claims host independence, partition separation, recorded IANA
 semantics, and request-household topology.
 
-### D-130 · 2026-08-05 · reversible · Repository input and synthetic evidence semantics fail closed
+### D-134 · 2026-08-05 · reversible · Repository input and synthetic evidence semantics fail closed
 
 Repository-root provenance follows only immutable bindings, so reassignment cannot redirect an approved
 loader after a trusted initializer. All signed spec, schema, signoff, golden-case, and executable-authority
@@ -5143,7 +5143,7 @@ verification chronology cannot become signed replay truth.
 **Revert path:** none while the corpus claims repository-contained inputs and replayable synthetic
 authority and destination evidence.
 
-### D-131 · 2026-08-05 · reversible · Repository-input refusals name their cause and one authority binding backs every digest
+### D-135 · 2026-08-05 · reversible · Repository-input refusals name their cause and one authority binding backs every digest
 
 Every refusal from the single repository-input read path names the input and distinguishes a missing
 path, an escape from the repository, and a non-regular file. Containment is decided on the canonical
@@ -5169,3 +5169,35 @@ remains pending.
 signoff-bound value drifts silently, and a digest rebuilt independently in two places is only accidentally
 the same digest.
 **Revert path:** none while the corpus reads repository-contained inputs and binds signoff to a digest.
+
+### D-136 · 2026-08-05 · reversible · One containment predicate, a named root, and LF as the repo-wide digest byte
+
+The repository-input reader names the ROOT as well as the input: an unresolvable root is refused as
+`repository root "..." does not exist` instead of a bare `ENOENT`, and a refusal describes its input
+against whichever spelling of the root - the caller's or its canonical form - actually contains it, so a
+repository reached through a symlinked root still names files repo-relatively.
+
+Containment is decided in exactly one place. The taxonomy-citation check no longer hand-rolls its own
+`realpath` + relative + regular-file sequence; it calls the same resolver the reader calls, exposed as
+`isRepositoryContainedFile` because a detector over injected input must REPORT rather than abort. Two
+copies of a containment predicate are two places to weaken it.
+
+`CorpusValidation` carries the seed it validated under, so `pnpm corpus:report` measures the digest
+inputs the validator used rather than a separately imported constant that only happens to agree. `loadSpec`
+parses the two spec files it consumes; the defect taxonomy and the real-derived semantic contract are
+strict-parsed by the loaders that own their schemas, and a discarded second parse was never a second check.
+
+Canonical LF bytes are pinned repo-wide rather than for the fixture trees alone. `corpusDigest` folds in
+the raw bytes of every executable semantic authority under `scripts/` and `src/contracts/`, and the
+arch-version fence pins document bytes the same way, so a CRLF checkout would have broken the blocking
+`corpus` job for a reason unrelated to any change.
+
+The tooling bucket measures 8292 lines under the unchanged 8300 ceiling. Canonical regeneration produces
+`corpusDigest` `71636c4034c16b6d3c6a2737d7c3e3acf8f98a820f6360105f7e117700b0fe17`. The real-derived
+partition remains empty and deferred, generated-file ownership remains intact, and captain signoff
+remains pending.
+
+**Why:** a root is an input too, a duplicated security predicate drifts, a digest input carried beside the
+result cannot disagree with it, and a byte-exact signature needs byte-exact checkouts.
+**Revert path:** none while the corpus reads repository-contained inputs and binds signoff to a digest
+over committed bytes.

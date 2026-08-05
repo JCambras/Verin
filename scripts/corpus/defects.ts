@@ -12,11 +12,10 @@
  *     classes derived from requirements and signed cases; real defect history is
  *     the deferred real-derived partition (docs/corpus-scrub-procedure.md).
  */
-import { realpathSync, statSync } from "node:fs";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { z } from "zod";
 import { parseStrictJson } from "./strict-json";
-import { readRepositoryFile } from "./tree";
+import { isRepositoryContainedFile, readRepositoryFile } from "./tree";
 import { REPO_ROOT, SPEC_DIR, type CasesSpec } from "./world";
 
 const Slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase hyphenated slug");
@@ -46,7 +45,6 @@ export const CLEAN_CONTROL_ID = "clean-control";
 
 export function taxonomyProblems(taxonomy: Taxonomy, repoRoot: string = REPO_ROOT): string[] {
   const problems: string[] = [];
-  const canonicalRoot = realpathSync(repoRoot);
   if (taxonomy.cleanControlLabel.id !== CLEAN_CONTROL_ID) {
     problems.push(`cleanControlLabel.id must be "${CLEAN_CONTROL_ID}", got "${taxonomy.cleanControlLabel.id}"`);
   }
@@ -54,21 +52,12 @@ export function taxonomyProblems(taxonomy: Taxonomy, repoRoot: string = REPO_ROO
   for (const entry of [taxonomy.cleanControlLabel, ...taxonomy.defectClasses]) {
     if (seen.has(entry.id)) problems.push(`defectClasses: duplicate id "${entry.id}"`);
     seen.add(entry.id);
-    let validCitation = false;
-    try {
-      const canonicalTarget = realpathSync(
+    if (
+      !isRepositoryContainedFile(
         resolve(repoRoot, entry.sourceCitation.file),
-      );
-      const pathFromRoot = relative(canonicalRoot, canonicalTarget);
-      const contained =
-        pathFromRoot !== ".." &&
-        !pathFromRoot.startsWith(`..${sep}`) &&
-        !isAbsolute(pathFromRoot);
-      validCitation = contained && statSync(canonicalTarget).isFile();
-    } catch {
-      validCitation = false;
-    }
-    if (!validCitation) {
+        repoRoot,
+      )
+    ) {
       problems.push(
         `defectClasses[${entry.id}].sourceCitation.file -> "${entry.sourceCitation.file}" is not a regular file contained in this repository`,
       );

@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -23,6 +24,7 @@ import { generateSyntheticCases } from "../../../scripts/corpus/generate";
 import { buildInventory, corpusDigest, taxonomySemanticDigest } from "../../../scripts/corpus/manifest";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import { loadSignoff } from "../../../scripts/corpus/signoff";
+import { readRepositoryFile } from "../../../scripts/corpus/tree";
 import { loadSpec, type LoadedSpec } from "../../../scripts/corpus/world";
 import { committedBytesProblems, readCommittedCorpus } from "../../../scripts/corpus/validate";
 
@@ -65,11 +67,13 @@ const REPOSITORY_INPUT_BOUNDARIES = [
   { file: "/scripts/corpus/scrub-contract.ts", owner: "schemaFromSpec", inputs: {} },
   { file: "/scripts/corpus/world.ts", owner: "readSpecFile", rootParameters: [1], inputs: {} },
   { file: "/scripts/corpus/tree.ts", owner: "readTree", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.lstatSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["fullPath"] } },
-  { file: "/scripts/corpus/tree.ts", owner: "readRepositoryFile", rootParameters: [1], inputs: { "fs.statSync": ["canonicalTarget"], "fs.readFileSync": ["canonicalTarget"], "fs.realpathSync": ["repoRoot", "path"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "resolveRepositoryFile", rootParameters: [1], inputs: { "fs.statSync": ["canonicalTarget"], "fs.realpathSync": ["repoRoot", "path"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "readRepositoryFile", rootParameters: [1], inputs: { "fs.readFileSync": ["resolved.target"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "isRepositoryContainedFile", rootParameters: [1], inputs: {} },
   { file: "/scripts/corpus/manifest.ts", owner: "realDerivedSchemaBindings", inputs: {} },
   { file: "/scripts/corpus/semantic-contract.ts", owner: "loadRealDerivedSemanticContract", inputs: {} },
   { file: "/scripts/corpus/semantic-contract.ts", owner: "realDerivedSemanticContractBinding", inputs: {} },
-  { file: "/scripts/corpus/defects.ts", owner: "taxonomyProblems", rootParameters: [1], inputs: { "fs.realpathSync": ["repoRoot", "resolve(repoRoot,entry.sourceCitation.file)"], "fs.statSync": ["canonicalTarget"] } },
+  { file: "/scripts/corpus/defects.ts", owner: "taxonomyProblems", rootParameters: [1], inputs: {} },
   { file: "/scripts/corpus/defects.ts", owner: "loadTaxonomy", rootParameters: [0], inputs: {} },
   { file: "/scripts/corpus/signoff.ts", owner: "loadSignoff", rootParameters: [0], inputs: {} },
 ] as const;
@@ -1864,6 +1868,27 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
       );
     } finally {
       rmSync(localDir, { recursive: true, force: true });
+    }
+  });
+
+  // The ROOT is an input too. An unresolvable one used to escape the reader's
+  // naming rule entirely, and a repository reached through a symlinked root
+  // named every file by absolute path - the exact case naming exists to fix.
+  it("repository readers name an unresolvable root and stay repo-relative under a symlinked one", () => {
+    const externalDir = mkdtempSync(join(tmpdir(), "verin-corpus-root-proof-"));
+    const localDir = mkdtempSync(join(REPO_ROOT, ".corpus-input-proof-"));
+    try {
+      expect(() => loadTaxonomy(localDir, join(externalDir, "absent-root"))).toThrow(
+        /repository root "[^"]*absent-root" does not exist/,
+      );
+      const linkedRoot = join(externalDir, "linked-root");
+      symlinkSync(realpathSync(localDir), linkedRoot);
+      expect(() =>
+        readRepositoryFile(join(realpathSync(localDir), "absent-input.md"), linkedRoot),
+      ).toThrow(/repository input "absent-input\.md" does not exist/);
+    } finally {
+      rmSync(localDir, { recursive: true, force: true });
+      rmSync(externalDir, { recursive: true, force: true });
     }
   });
 

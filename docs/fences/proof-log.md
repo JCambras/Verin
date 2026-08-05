@@ -8210,3 +8210,49 @@ regeneration produced `corpusDigest`
 empty, captain signoff remains pending, and all 1,478 unit, integration, and fitness tests pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-131 review hardening).
+
+## PF-218 · the repository root is a named input, and one predicate decides containment · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (D-132, ADR-0034):** every repository-input refusal names its input and its reason - an
+unresolvable ROOT included - and a refusal stays repo-relative when the repository is reached through a
+symlinked root. Containment is decided by ONE predicate shared by the reader and the taxonomy-citation
+reporter.
+
+**Injection 1 - unguarded root.** Moved `realpathSync(repoRoot)` back outside the guarded section, so a
+root that does not resolve escaped the naming rule entirely.
+
+**Observed failure:**
+```
+expected [Function] to throw error matching /repository root "[^"]*absent-root" does not exist/
+Error: ENOENT: no such file or directory, lstat '/private/var/folders/.../verin-corpus-root-proof-UaPywY/absent-root'
+```
+
+**Injection 2 - single-spelling description.** Described the input against the caller's root only, so a
+repository reached through a symlinked root named every refusal by absolute path.
+
+**Observed failure:**
+```
+expected [Function] to throw error matching /repository input "absent-input\.md" does not exist/
+Received: "repository input \"/Users/.../.corpus-input-proof-cCnes4/absent-input.md\" does not exist"
+```
+
+**Injection 3 - fs call outside the shared predicate.** Added `realpathSync(repoRoot)` back into
+`taxonomyProblems`, whose repository-input allowlist is now empty because it owns no filesystem access.
+
+**Observed failure:**
+```
+non-deterministic APIs in the generator:
+/scripts/corpus/defects.ts:49 fs.realpathSync
+```
+
+**Standing companions:** an unresolvable root must be refused by name; a symlinked root must still name
+inputs repo-relatively; a taxonomy citation that escapes the repository or is not a regular file must be
+reported, not thrown; and any filesystem call outside the registered repository-input boundaries fails
+the determinism ban.
+
+**Revert:** all three injections remain as temporary-directory and AST companions in the determinism
+fence. Canonical regeneration produced `corpusDigest`
+`71636c4034c16b6d3c6a2737d7c3e3acf8f98a820f6360105f7e117700b0fe17`, the real-derived partition remains
+empty, and captain signoff remains pending.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-132 review hardening).

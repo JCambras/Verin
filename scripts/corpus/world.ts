@@ -275,14 +275,11 @@ export function loadSpec(dir: string = SPEC_DIR): LoadedSpec {
   const rawBytes = Object.fromEntries(
     SPEC_FILES.map((name) => [name, readSpecFile(name, dir)]),
   );
-  const parsed = Object.fromEntries(
-    SPEC_FILES.map((name) => [
-      name,
-      parseStrictJson(rawBytes[name]!, name),
-    ]),
-  );
-  const world = WorldSpecSchema.parse(parsed["world.json"]);
-  const cases = CasesSpecSchema.parse(parsed["cases.json"]);
+  // Every spec file's BYTES bind the generator digest; only these two are parsed
+  // here. The taxonomy and the semantic contract are strict-parsed by the loaders
+  // that own their schemas, and a throwaway second parse is not a second check.
+  const world = WorldSpecSchema.parse(parseStrictJson(rawBytes["world.json"]!, "world.json"));
+  const cases = CasesSpecSchema.parse(parseStrictJson(rawBytes["cases.json"]!, "cases.json"));
   const problems = specReferenceProblems(world, cases);
   if (problems.length > 0) {
     throw new Error(

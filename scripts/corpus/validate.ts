@@ -262,6 +262,7 @@ export interface CorpusValidation {
   readonly inventory: readonly CaseInventoryEntry[];
   readonly signoff: CorpusSignoff;
   readonly authority: CorpusAuthorityBindings;
+  readonly seed: string;
   readonly taxonomyDigest: string;
   readonly corpusDigest: string;
   readonly problems: readonly string[];
@@ -334,6 +335,7 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
     inventory,
     signoff,
     authority,
+    seed,
     taxonomyDigest,
     corpusDigest: digest,
     problems,
