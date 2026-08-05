@@ -1,11 +1,12 @@
 import type { SqlDb, SqlTx } from "@infra/store/db";
-import { appError, isAppError } from "@contracts/errors";
+import { appError, normalizeAppError } from "@contracts/errors";
 import {
   deriveArtifactProvenance,
   type DerivedProvenance,
   type RecordProvenance,
 } from "@contracts/provenance";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import { promotedDecisionId } from "@contracts/decision-core/ledger-references";
 import {
   foldDecisionProjection,
@@ -122,6 +123,7 @@ function directEntryReferences(event: LedgerEntry): readonly string[] {
 
 async function replayRegisterWindow(
   tx: SqlTx,
+  tenant: TenantContext,
   rows: readonly DecisionLedgerRow[],
   decisionLimit: number,
 ): Promise<{
@@ -146,16 +148,14 @@ async function replayRegisterWindow(
         row.id,
         await verifyRecordedLedgerProvenance(
           tx,
+          tenant,
           row,
           verifiedRecordingEntryIds,
           provenanceCache,
         ),
       );
     } catch (error) {
-      if (
-        isAppError(error) &&
-        error.message === UNVERIFIED_COMPUTED_PROVENANCE_INPUT
-      ) {
+      if (normalizeAppError(error, "trusted-only")?.message === UNVERIFIED_COMPUTED_PROVENANCE_INPUT) {
         incompleteProvenance.add(row.id);
         continue;
       }
@@ -242,7 +242,7 @@ async function replayRegisterWindow(
       continue;
     }
     if (event.type === "EvidenceSnapshotRecorded") {
-      verifiedEvidence.add(await verifyReplayEvidence(tx, event));
+      verifiedEvidence.add(await verifyReplayEvidence(tx, tenant, event));
       await assertRecordedLedgerStructure([item], structure);
       continue;
     }
@@ -284,6 +284,7 @@ async function replayRegisterWindow(
     if (event.type === "DecisionRecorded") {
       const coverage = await listReplayDecisionEvidenceCoverage(
         tx,
+        tenant,
         event,
         windowStart,
         row.sequence,
@@ -309,6 +310,7 @@ async function replayRegisterWindow(
       }
       const binding = await loadVerifiedReplayDecisionBinding(
         tx,
+        tenant,
         event,
         verifiedEvidence,
       );
@@ -351,18 +353,18 @@ async function replayRegisterWindow(
     try {
       eventProvenance = await deriveLedgerEventProvenance(
         tx,
+        tenant,
         event,
         rowProvenance.get(row.id)!,
         false,
         verifiedRecordingEntryIds,
       );
     } catch (error) {
+      const known = normalizeAppError(error, "trusted-only");
       if (
-        isAppError(error) &&
-        (
-          error.message === UNVERIFIED_REPLAY_SOURCE_PROVENANCE ||
-          error.message === UNVERIFIED_COMPUTED_PROVENANCE_INPUT
-        )
+        known &&
+        (known.message === UNVERIFIED_REPLAY_SOURCE_PROVENANCE ||
+          known.message === UNVERIFIED_COMPUTED_PROVENANCE_INPUT)
       ) {
         decisions.delete(id);
         incompleteDecisions.add(id);
@@ -395,14 +397,15 @@ async function replayRegisterWindow(
 
 export async function readVerifiedDecisionRegister(
   db: SqlDb,
-  orgId: string,
+  tenant: TenantContext,
   eventWindow: number,
   decisionLimit: number,
 ): Promise<VerifiedRegisterSnapshot> {
+  assertTenantContext(tenant);
   return db.transaction(async (tx) => {
     const checked = await verifyDecisionLedgerTransaction(
       tx,
-      orgId,
+      tenant,
       eventWindow,
     );
     if (!checked.verification.ok) {
@@ -417,6 +420,7 @@ export async function readVerifiedDecisionRegister(
     try {
       const replayed = await replayRegisterWindow(
         tx,
+        tenant,
         checked.rows,
         decisionLimit,
       );
@@ -428,9 +432,8 @@ export async function readVerifiedDecisionRegister(
         decisions: [],
         decisionsTotal: 0,
         rowProvenance: new Map(),
-        replaySourceReason: isAppError(error)
-          ? error.message
-          : "immutable replay source verification failed",
+        replaySourceReason: normalizeAppError(error, "trusted-only")?.message
+          ?? "immutable replay source verification failed",
       };
     }
   });

@@ -2,6 +2,7 @@ import type { SqlQueryable } from "@infra/store/db";
 import { appError, type AppError } from "@contracts/errors";
 import { assertNoPIIValues } from "@contracts/pii";
 import { err, ok, type Result } from "@contracts/result";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import {
   COMPUTED_LEDGER_PROVENANCE_VERSION,
   DIRECT_LEDGER_PROVENANCE_VERSION,
@@ -23,6 +24,8 @@ import {
 
 export const UNVERIFIED_COMPUTED_PROVENANCE_INPUT =
   "computed provenance input is outside the verified window";
+const COMPUTED_CONFIDENCE_MISMATCH =
+  "computed provenance confidence does not match verified ancestry";
 
 export interface PreparedLedgerProducerProvenance {
   readonly value: LedgerProducerProvenance;
@@ -147,6 +150,7 @@ export function prepareLedgerProducerProvenance(
 
 async function verifiedInputProvenances(
   tx: SqlQueryable,
+  tenant: TenantContext,
   provenance: ComputedLedgerProducerProvenance,
   beforeSequence: number,
   verifiedEntryIds: ReadonlySet<string> | undefined,
@@ -155,6 +159,9 @@ async function verifiedInputProvenances(
 ): Promise<RecordProvenance[]> {
   const inputs: RecordProvenance[] = [];
   for (const input of provenance.derivation.inputs) {
+    if (input.entryRef.firmId !== tenant.orgId) {
+      throw appError("STORE_CONSTRAINT", "computed provenance references another tenant");
+    }
     if (
       verifiedEntryIds &&
       !verifiedEntryIds.has(input.entryRef.id)
@@ -197,6 +204,7 @@ async function verifiedInputProvenances(
       pending = parsed.source === "computed" && "derivation" in parsed
         ? verifyComputedProvenance(
             tx,
+            tenant,
             parsed,
             Number(row.sequence),
             verifiedEntryIds,
@@ -230,8 +238,10 @@ async function verifiedInputProvenances(
 
 async function traceMatches(
   tx: SqlQueryable,
+  tenant: TenantContext,
   provenance: ComputedLedgerProducerProvenance,
 ): Promise<boolean> {
+  if (provenance.derivation.traceRef.firmId !== tenant.orgId) return false;
   const trace = computedProvenanceTrace(provenance);
   const expectedJson = canonical(trace, "computed provenance trace");
   const expectedDigest = canonicalDigest(trace, "computed provenance trace");
@@ -258,6 +268,7 @@ async function traceMatches(
 
 async function verifyComputedProvenance(
   tx: SqlQueryable,
+  tenant: TenantContext,
   provenance: ComputedLedgerProducerProvenance,
   beforeSequence: number,
   verifiedEntryIds: ReadonlySet<string> | undefined,
@@ -273,7 +284,7 @@ async function verifyComputedProvenance(
   }
   activeTraces.add(traceId);
   try {
-    if (!await traceMatches(tx, provenance)) {
+    if (!await traceMatches(tx, tenant, provenance)) {
       throw appError(
         "STORE_CONSTRAINT",
         "computed provenance trace is invalid",
@@ -281,6 +292,7 @@ async function verifyComputedProvenance(
     }
     const inputs = await verifiedInputProvenances(
       tx,
+      tenant,
       provenance,
       beforeSequence,
       verifiedEntryIds,
@@ -288,6 +300,9 @@ async function verifyComputedProvenance(
       cache,
     );
     const derived = deriveArtifactProvenance(inputs, provenance.asOf);
+    if (provenance.confidence !== derived.confidence) {
+      throw appError("STORE_CONSTRAINT", COMPUTED_CONFIDENCE_MISMATCH);
+    }
     if (!canFeedComplianceDecision(derived)) {
       throw appError(
         "STORE_CONSTRAINT",
@@ -302,12 +317,15 @@ async function verifyComputedProvenance(
 
 export async function verifyPreparedLedgerProducerProvenance(
   tx: SqlQueryable,
+  tenant: TenantContext,
   prepared: PreparedLedgerProducerProvenance,
   beforeSequence: number,
 ): Promise<RecordProvenance> {
+  assertTenantContext(tenant);
   if (prepared.value.source !== "computed") return prepared.value;
   const inputs = await verifiedInputProvenances(
     tx,
+    tenant,
     prepared.value,
     beforeSequence,
     undefined,
@@ -315,6 +333,9 @@ export async function verifyPreparedLedgerProducerProvenance(
     new Map(),
   );
   const derived = deriveArtifactProvenance(inputs, prepared.value.asOf);
+  if (prepared.value.confidence !== derived.confidence) {
+    throw appError("STORE_CONSTRAINT", COMPUTED_CONFIDENCE_MISMATCH);
+  }
   if (!canFeedComplianceDecision(derived)) {
     throw appError(
       "STORE_CONSTRAINT",
@@ -326,15 +347,21 @@ export async function verifyPreparedLedgerProducerProvenance(
 
 export async function verifyRecordedLedgerProvenance(
   tx: SqlQueryable,
+  tenant: TenantContext,
   row: StoredLedgerProvenance,
   verifiedEntryIds?: ReadonlySet<string>,
   cache: Map<string, Promise<RecordProvenance>> = new Map(),
 ): Promise<RecordProvenance> {
+  assertTenantContext(tenant);
+  if (row.orgId !== tenant.orgId) {
+    throw appError("STORE_CONSTRAINT", "ledger provenance tenant does not match authority");
+  }
   const key = `${row.orgId}\u0000${row.id}`;
   const cached = cache.get(key);
   if (cached) return cached;
   const pending = verifyRecordedLedgerProvenanceUncached(
     tx,
+    tenant,
     row,
     verifiedEntryIds,
     cache,
@@ -350,6 +377,7 @@ export async function verifyRecordedLedgerProvenance(
 
 async function verifyRecordedLedgerProvenanceUncached(
   tx: SqlQueryable,
+  tenant: TenantContext,
   row: StoredLedgerProvenance,
   verifiedEntryIds: ReadonlySet<string> | undefined,
   cache: Map<string, Promise<RecordProvenance>>,
@@ -387,6 +415,7 @@ async function verifyRecordedLedgerProvenanceUncached(
     }
     return verifyComputedProvenance(
       tx,
+      tenant,
       parsed,
       row.sequence,
       verifiedEntryIds,
@@ -401,8 +430,10 @@ async function verifyRecordedLedgerProvenanceUncached(
 
 export async function assertNoOrphanComputedProvenanceTraces(
   tx: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<void> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   const result = await tx.query<{ n: number | string }>(
     `SELECT count(*) AS n
        FROM decision_provenance_traces trace

@@ -26,6 +26,7 @@ import {
   registeredSourceEncodings,
 } from "@infra/ledger/ledger-source-registry";
 import { verifyDecisionLedger } from "@infra/ledger/ledger-verification";
+import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import {
   registeredLedgerStructuralEncodings,
 } from "@infra/ledger/ledger-structural-validator";
@@ -68,6 +69,10 @@ const FIXTURE = JSON.parse(
     "utf8",
   ),
 ) as RecordedRowFixture;
+const FIXTURE_TENANT = systemTenant(
+  registerTestSystemActor("test.ledger-codec"),
+  FIXTURE.firmId,
+);
 const REPLAY_FIXTURE = JSON.parse(
   readFileSync(
     join(REPO_ROOT, "fixtures/decision-core/recorded-replay-sources.json"),
@@ -113,6 +118,11 @@ const LIVE_CODEC_DEPENDENCIES = new Set([
   "decisionHashPreimage",
   "CANONICAL_SERIALIZER_VERSION",
   "DECISION_CORE_SCHEMA_VERSION",
+  "parseLedgerProducerProvenance",
+  "DIRECT_LEDGER_PROVENANCE_VERSION",
+  "LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION",
+  "COMPUTED_LEDGER_PROVENANCE_VERSION",
+  "LEDGER_PROVENANCE_SERIALIZER_VERSION",
 ]);
 const FROZEN_CODEC_FILES = [
   "src/contracts/decision-core/ledger-v1/ledger.ts",
@@ -403,7 +413,7 @@ describe("decision-ledger schema registry fence", () => {
         schemaVersion,
         FIXTURE.versions[schemaVersion]!.EvidenceSnapshotRecorded!,
       );
-      const verdict = await verifyDecisionLedger(db, FIXTURE.firmId);
+      const verdict = await verifyDecisionLedger(db, FIXTURE_TENANT);
       expect(
         verdict.levels.find((level) => !level.ok)?.reason ?? "",
       ).toBe("");
@@ -495,7 +505,7 @@ describe("decision-ledger schema registry fence", () => {
     it("a ledger row whose recorded version is unregistered fails L1 with a reason", async () => {
       const row = FIXTURE.versions[LEDGER_SCHEMA_VERSION]!.EvidenceSnapshotRecorded!;
       await storeRecordedRow(db, "9.9.9", row);
-      const verdict = await verifyDecisionLedger(db, FIXTURE.firmId);
+      const verdict = await verifyDecisionLedger(db, FIXTURE_TENANT);
       expect(verdict.ok).toBe(false);
       expect(verdict.levels.at(-1)).toMatchObject({
         level: "L1",

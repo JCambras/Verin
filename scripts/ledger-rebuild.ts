@@ -12,7 +12,9 @@ import {
   type SqlDb,
   type SqlQueryable,
 } from "../src/infrastructure/store/db";
-import { isAppError } from "../src/contracts/errors";
+import { normalizeAppError } from "../src/contracts/errors";
+import type { TenantContext } from "../src/contracts/tenant";
+import { systemWriteActor } from "../src/contracts/principal";
 import { rebuildDecisionProjections } from "../src/infrastructure/ledger/ledger-store";
 import { verifyDecisionLedgerIntegrity } from "../src/infrastructure/ledger/ledger-verification";
 import {
@@ -33,7 +35,7 @@ function fail(message: string): never {
 
 async function printLockedPlan(
   db: SqlQueryable,
-  tenant: string,
+  tenant: TenantContext,
   entries: number,
 ): Promise<void> {
   const sample = await listDecisionProjectionMetadata(
@@ -42,7 +44,7 @@ async function printLockedPlan(
     REBUILD_PLAN_SAMPLE,
   );
   const lines = rebuildPlanLines({
-    tenant,
+    tenant: tenant.orgId,
     entries,
     derived: await countDecisionProjections(db, tenant),
     sample,
@@ -50,22 +52,22 @@ async function printLockedPlan(
   process.stdout.write(`${lines.join("\n")}\n`);
 }
 
-async function printPlan(db: SqlDb, tenant: string): Promise<number> {
-  const integrity = await verifyDecisionLedgerIntegrity(db, tenant);
+async function printPlan(db: SqlDb, authority: TenantContext): Promise<number> {
+  const integrity = await verifyDecisionLedgerIntegrity(db, authority);
   const verdict = integrity.ledger;
   if (!integrity.ok) {
     await db.close();
     fail(
-      `org ${tenant} ledger does not verify (${verdict.levels.find((level) => !level.ok)?.reason ?? integrity.replaySourceReason ?? "unknown"}) - refusing to replay`,
+      `org ${authority.orgId} ledger does not verify (${verdict.levels.find((level) => !level.ok)?.reason ?? integrity.replaySourceReason ?? "unknown"}) - refusing to replay`,
     );
   }
   if (verdict.entriesChecked === 0) {
     await db.close();
     fail(
-      `org ${tenant} has 0 decision-ledger entries - replaying nothing is vacuous (did db:seed run against this store?)`,
+      `org ${authority.orgId} has 0 decision-ledger entries - replaying nothing is vacuous (did db:seed run against this store?)`,
     );
   }
-  await printLockedPlan(db, tenant, verdict.entriesChecked);
+  await printLockedPlan(db, authority, verdict.entriesChecked);
   return verdict.entriesChecked;
 }
 
@@ -76,6 +78,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const db = await createDb();
+  const authority = systemWriteActor("ledger-rebuild", options.tenant).tenant;
   const known = await db.query<{ id: string }>(
     "SELECT id FROM orgs WHERE id = $1",
     [options.tenant],
@@ -85,7 +88,7 @@ async function main(): Promise<void> {
     fail(`org ${options.tenant} does not exist in this store`);
   }
   if (!options.apply) {
-    await printPlan(db, options.tenant);
+    await printPlan(db, authority);
     await db.close();
     process.stdout.write(
       "PREVIEW - nothing was changed. Re-run with --apply to replay this tenant.\n",
@@ -95,10 +98,10 @@ async function main(): Promise<void> {
   let entries = 0;
   const rebuilt = await rebuildDecisionProjections(
     db,
-    options.tenant,
+    authority,
     async (tx, verifiedEntries) => {
       entries = verifiedEntries;
-      await printLockedPlan(tx, options.tenant, verifiedEntries);
+      await printLockedPlan(tx, authority, verifiedEntries);
     },
   );
   await db.close();
@@ -115,8 +118,9 @@ async function main(): Promise<void> {
 main().catch((e: unknown) => {
   // A typed AppError is a plain object, so the usual Error narrowing would print
   // "[object Object]" and hide exactly the reason the operator needs.
-  const reason = isAppError(e)
-    ? `${e.code}: ${e.message}`
+  const known = normalizeAppError(e, "trusted-only");
+  const reason = known
+    ? `${known.code}: ${known.message}`
     : e instanceof Error ? e.message : String(e);
   process.stderr.write(`ledger-rebuild error: ${reason}\n`);
   process.exit(1);

@@ -1,5 +1,6 @@
 import { appError } from "@contracts/errors";
 import type { SqlQueryable } from "@infra/store/db";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import {
   parseRecordedLedgerEvent,
 } from "./ledger-schema-registry";
@@ -36,8 +37,10 @@ function parseEntry(row: StoredEntryRow): StructuralLedgerEntry {
 
 export function storedLedgerStructureLookup(
   tx: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
 ): LedgerStructureLookup {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   return {
     async decision(id) {
       const result = await tx.query<{

@@ -1,4 +1,5 @@
 import type { SqlQueryable } from "@infra/store/db";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
 export interface DecisionLedgerRow {
   readonly orgId: string;
@@ -94,9 +95,11 @@ function toRow(row: DbLedgerRow): DecisionLedgerRow {
 
 export async function listDecisionLedger(
   db: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
   tail?: number,
 ): Promise<DecisionLedgerRow[]> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   if (tail === undefined) {
     const result = await db.query<DbLedgerRow>(
       `SELECT ledger.*, record.input_bundle_id AS expected_input_bundle_id

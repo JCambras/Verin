@@ -1,5 +1,6 @@
 import { appError } from "@contracts/errors";
 import type { SqlQueryable } from "@infra/store/db";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
 interface ReplaySourceCoverageRow {
   readonly orphan_evidence: number | string;
@@ -12,8 +13,10 @@ interface ReplaySourceCoverageRow {
 
 export async function verifyReplaySourceCoverage(
   tx: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<number> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   const coverage = await tx.query<ReplaySourceCoverageRow>(
     `WITH bindable_sources AS (
        SELECT 'evidence' AS source_kind, bindable_evidence.id AS source_id

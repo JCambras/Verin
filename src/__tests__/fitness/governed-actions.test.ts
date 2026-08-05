@@ -1089,6 +1089,13 @@ function semanticCallables(
 const GOVERNED_NON_PII_FIELDS = new Set([
   "src/infrastructure/observability/tracer.ts :: RecordedSpan.name",
 ]);
+const GOVERNED_MACHINE_REFERENCE_FIELDS = new Set([
+  "evidenceRecording",
+  "evidenceSnapshotId",
+  "evidence_snapshot_id",
+  "evidenceSnapshotRef",
+  "evidenceSnapshotRefs",
+]);
 
 /**
  * An escape names ONE exact structural position. getFirstAncestorByKind reaches
@@ -1105,6 +1112,7 @@ const GOVERNED_NON_PII_FIELDS = new Set([
  */
 function isGovernedNonPiiField(path: string, declaration: Node): boolean {
   if (!Node.isPropertyNamed(declaration)) return false;
+  if (GOVERNED_MACHINE_REFERENCE_FIELDS.has(declaration.getName())) return true;
   const owner = declaration.getParent();
   if (!owner || !Node.isInterfaceDeclaration(owner)) return false;
   const name = declaration.getName();
@@ -2204,6 +2212,26 @@ describe("governed-actions fence (v3 §15.3)", () => {
       path: "RecordedSpan",
       isEscaped: isGovernedNonPiiField,
     })).not.toContain("RecordedSpan.name");
+  });
+
+  it("keeps machine evidence references distinct from evidence content", () => {
+    const project = inMemoryProject({
+      "/src/infrastructure/ledger/types.ts": `
+        interface MachineReference { evidenceSnapshotRef: { id: string } }
+        interface EvidenceContent { evidence: string }
+      `,
+    });
+    const source = project.getSourceFileOrThrow(
+      "/src/infrastructure/ledger/types.ts",
+    );
+    expect(structuralPiiExposures(
+      source.getInterfaceOrThrow("MachineReference").getType(),
+      { path: "MachineReference", isEscaped: isGovernedNonPiiField },
+    )).toEqual([]);
+    expect(structuralPiiExposures(
+      source.getInterfaceOrThrow("EvidenceContent").getType(),
+      { path: "EvidenceContent", isEscaped: isGovernedNonPiiField },
+    )).toEqual(["EvidenceContent.evidence"]);
   });
 
   it("enforces: governed sinks validate action-scoped grants at their execution boundaries", () => {

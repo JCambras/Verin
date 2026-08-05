@@ -14,6 +14,10 @@ vi.mock("@app/_server/context", () => ({
 vi.mock("@infra/ledger/ledger-register", () => ({
   readVerifiedDecisionRegister,
 }));
+vi.mock("@contracts/tenant", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@contracts/tenant")>(),
+  tenantOf: vi.fn(() => ({ orgId: "firm-a" })),
+}));
 
 import { GET } from "@app/api/ledger/route";
 import {

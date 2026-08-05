@@ -1,11 +1,9 @@
 /** Sole synchronous decision-ledger write path. There is no outbox. */
 import { isSqlTransaction, type SqlDb, type SqlTx } from "@infra/store/db";
 import { GENESIS_HASH, computeChainHash } from "@infra/audit/hash-chain";
-import { assertNoPIIValues } from "@contracts/pii";
-import { appError, isAppError, logLevelFor, type AppError } from "@contracts/errors";
-import { log } from "@infra/observability/logger";
-import { isDriverConstraintError, logSafeReason } from "@infra/store/driver-errors";
+import { appError, type AppError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import { type LedgerProducerProvenance } from "@contracts/provenance";
 import {
   EvidenceSnapshotRefSchema,
@@ -34,7 +32,6 @@ import {
   insertDecisionSources,
   insertEvidenceSnapshots,
   preflightEvidenceSnapshots,
-  replaySourcesContainPII,
 } from "./ledger-sources";
 import { issueValidatedLedgerSourceWrite } from "./ledger-source-capability";
 import { deriveLedgerEventProvenance } from "./ledger-source-provenance";
@@ -57,6 +54,7 @@ import {
   type PreparedLedgerProducerProvenance,
 } from "./ledger-producer-provenance";
 import { persistLedgerProducerProvenance } from "./ledger-producer-provenance-write";
+import { cleanUpAppendSavepoint, storeFailure } from "./ledger-store-failure";
 
 export { rebuildDecisionProjections } from "./ledger-rebuild";
 export type { LedgerProducerProvenance } from "@contracts/provenance";
@@ -85,7 +83,6 @@ function prepareEvent(input: LedgerEntry): Result<PreparedEvent, AppError> {
   if (!parsed.success) return err(appError("VALIDATION", "ledger event is invalid"));
   try {
     assertLedgerEventPiiBoundary(parsed.data);
-    assertNoPIIValues(parsed.data, "decision ledger");
   } catch {
     return err(appError("PII_VIOLATION", "decision ledger payload contains prohibited PII"));
   }
@@ -97,53 +94,15 @@ function prepareEvent(input: LedgerEntry): Result<PreparedEvent, AppError> {
     : actorJson;
 }
 
-/**
- * The real driver error is logged before mapping: this is the sole ledger write
- * chokepoint, so collapsing an outage, a bug, and a genuine constraint violation into
- * one opaque code would leave a failed append undiagnosable.
- */
-function storeFailure(orgId: string, error: unknown): AppError {
-  const known = isAppError(error) ? error : null;
-  log[known ? logLevelFor(known.code) : "error"](
-    { orgId, code: known?.code ?? null, reason: logSafeReason(error) },
-    "decision ledger append failed",
-  );
-  if (known) return known;
-  return isDriverConstraintError(error)
-    ? appError("STORE_CONSTRAINT", "decision ledger append violated a store constraint")
-    : appError("INTERNAL", "decision ledger append failed");
-}
-
-async function cleanUpAppendSavepoint(
-  tx: SqlTx,
-  orgId: string,
-): Promise<void> {
-  try {
-    await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append");
-  } catch (error) {
-    log.warn(
-      { orgId, reason: logSafeReason(error) },
-      "decision ledger savepoint rollback failed",
-    );
-  }
-  try {
-    await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
-  } catch (error) {
-    log.warn(
-      { orgId, reason: logSafeReason(error) },
-      "decision ledger savepoint release failed",
-    );
-  }
-}
-
 async function appendPrepared(
   tx: SqlTx,
-  orgId: string,
+  tenant: TenantContext,
   events: readonly PreparedEvent[],
   provenance: PreparedLedgerProducerProvenance,
   sourceWrite: ReturnType<typeof issueValidatedLedgerSourceWrite>,
   decisionRecord?: DecisionRecord,
 ): Promise<AppendedLedgerEntry[]> {
+  const orgId = tenant.orgId;
   const head = await tx.query<{ sequence: number | string; entry_hash: string }>(
     "SELECT sequence, entry_hash FROM decision_ledger WHERE org_id = $1 ORDER BY sequence DESC LIMIT 1",
     [orgId],
@@ -151,28 +110,31 @@ async function appendPrepared(
   let sequence = head.rows[0] ? Number(head.rows[0].sequence) + 1 : 0;
   let prevHash = head.rows[0]?.entry_hash ?? GENESIS_HASH;
   const appended: AppendedLedgerEntry[] = [];
-  const structure = storedLedgerStructureLookup(tx, orgId);
+  const structure = storedLedgerStructureLookup(tx, tenant);
   const producerProvenance = await persistLedgerProducerProvenance(
     tx,
+    tenant,
     provenance,
     sequence,
     events[0]!.event.recordedAt,
   );
   for (const prepared of events) {
     const { event, payloadJson, actorJson } = prepared;
-    const inputBundleId = await assertLedgerSourceBindings(tx, event);
+    const inputBundleId = await assertLedgerSourceBindings(tx, tenant, event);
     await assertRecordedLedgerStructure(
       [{ sequence, event }],
       structure,
     );
     const projectionProvenance = await deriveLedgerEventProvenance(
       tx,
+      tenant,
       event,
       producerProvenance,
       event.type === "DecisionRecorded",
     );
     const projection = await prepareProjection(
       tx,
+      tenant,
       event,
       sequence,
       projectionProvenance,
@@ -224,9 +186,9 @@ async function appendPrepared(
       event.type === "EvidenceSnapshotRecorded" ||
       event.type === "DecisionRecorded"
     ) {
-      await bindReplaySourceProvenance(sourceWrite, tx, event);
+      await bindReplaySourceProvenance(sourceWrite, tx, tenant, event);
     }
-    await persistProjection(tx, projection, sequence);
+    await persistProjection(tx, tenant, projection, sequence);
     // Per entry, never once per batch: if a later event of this batch throws and a
     // future producer swallows it inside its own transaction, the rows that DID
     // commit still have an anchor that matches them, so L4 stays repairable.
@@ -302,6 +264,7 @@ function evidenceCorresponds(
 
 function validateDecisionInput(
   input: RecordDecisionInput,
+  tenant: TenantContext,
 ): Result<{
   snapshots: EvidenceSnapshotRef[];
   bundle: DecisionInputBundle;
@@ -326,15 +289,19 @@ function validateDecisionInput(
   if (!provenance.ok) return provenance;
   const snapshotValues = snapshots.flatMap((parsed) =>
     parsed.success ? [parsed.data] : []);
+  if (
+    bundle.data.firmId !== tenant.orgId ||
+    record.data.firmId !== tenant.orgId ||
+    snapshotValues.some((snapshot) => snapshot.firmId !== tenant.orgId)
+  ) {
+    return err(appError("VALIDATION", "decision replay source tenant does not match authority"));
+  }
   try {
     snapshotValues.forEach((snapshot) =>
       assertReplaySourcePiiBoundary("evidence", snapshot));
     assertReplaySourcePiiBoundary("bundle", bundle.data);
     assertReplaySourcePiiBoundary("decision", record.data);
   } catch {
-    return err(appError("PII_VIOLATION", "decision replay source contains prohibited PII"));
-  }
-  if (replaySourcesContainPII([...snapshotValues, bundle.data, record.data])) {
     return err(appError("PII_VIOLATION", "decision replay source contains prohibited PII"));
   }
   if (
@@ -386,17 +353,20 @@ function validateDecisionInput(
 /** Atomically persist evidence, bundle, immutable decision, events, and projections. */
 export async function recordDecision(
   db: SqlDb,
+  tenant: TenantContext,
   input: RecordDecisionInput,
 ): Promise<Result<AppendedLedgerEntry[], AppError>> {
-  const prepared = validateDecisionInput(input);
+  assertTenantContext(tenant);
+  const prepared = validateDecisionInput(input, tenant);
   if (!prepared.ok) return prepared;
   try {
     const sourceWrite = issueValidatedLedgerSourceWrite();
     const appended = await db.transaction(async (tx) => {
-      await lockDecisionLedgerTenant(tx, prepared.value.record.firmId, "append");
+      await lockDecisionLedgerTenant(tx, tenant, "append");
       await insertDecisionSources(
         sourceWrite,
         tx,
+        tenant,
         prepared.value.snapshots,
         prepared.value.bundle,
         prepared.value.record,
@@ -404,7 +374,7 @@ export async function recordDecision(
       );
       return appendPrepared(
         tx,
-        prepared.value.record.firmId,
+        tenant,
         prepared.value.events,
         prepared.value.provenance,
         sourceWrite,
@@ -413,7 +383,7 @@ export async function recordDecision(
     });
     return ok(appended);
   } catch (error) {
-    return err(storeFailure(prepared.value.record.firmId, error));
+    return err(storeFailure(tenant, error));
   }
 }
 
@@ -429,11 +399,13 @@ export async function recordDecision(
  */
 export async function appendDecisionEvents(
   tx: SqlTx,
-  orgId: string,
+  tenant: TenantContext,
   inputs: readonly LedgerEntry[],
   provenance: LedgerProducerProvenance,
   evidenceSnapshots: readonly EvidenceSnapshotRef[] = [],
 ): Promise<AppendedLedgerEntry[]> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   if (inputs.length === 0 && evidenceSnapshots.length === 0) return [];
   if (!isSqlTransaction(tx)) {
     throw appError("VALIDATION", "decision events require an active transaction");
@@ -453,13 +425,13 @@ export async function appendDecisionEvents(
     throw appError("VALIDATION", "evidence snapshot is invalid");
   }
   const snapshots = parsed.flatMap((snapshot) => snapshot.success ? [snapshot.data] : []);
+  if (snapshots.some((snapshot) => snapshot.firmId !== orgId)) {
+    throw appError("VALIDATION", "evidence snapshot tenant does not match authority");
+  }
   try {
     snapshots.forEach((snapshot) =>
       assertReplaySourcePiiBoundary("evidence", snapshot));
   } catch {
-    throw appError("PII_VIOLATION", "decision replay source contains prohibited PII");
-  }
-  if (replaySourcesContainPII(snapshots)) {
     throw appError("PII_VIOLATION", "decision replay source contains prohibited PII");
   }
   if (!evidenceCorresponds(snapshots, prepared.value, orgId)) {
@@ -467,21 +439,22 @@ export async function appendDecisionEvents(
   }
   let savepointCreated = false;
   try {
-    await lockDecisionLedgerTenant(tx, orgId, "append");
-    await assertStatusEvidenceOrder(tx, orgId, prepared.value);
-    await preflightEvidenceSnapshots(tx, snapshots);
+    await lockDecisionLedgerTenant(tx, tenant, "append");
+    await assertStatusEvidenceOrder(tx, tenant, prepared.value);
+    await preflightEvidenceSnapshots(tx, tenant, snapshots);
     const sourceWrite = issueValidatedLedgerSourceWrite();
     await tx.exec("SAVEPOINT decision_ledger_append");
     savepointCreated = true;
     await insertEvidenceSnapshots(
       sourceWrite,
       tx,
+      tenant,
       snapshots,
       prepared.value.at(-1)!.event.recordedAt,
     );
     const appended = await appendPrepared(
       tx,
-      orgId,
+      tenant,
       prepared.value,
       normalizedProvenance.value,
       sourceWrite,
@@ -491,8 +464,8 @@ export async function appendDecisionEvents(
     return appended;
   } catch (error) {
     if (savepointCreated) {
-      await cleanUpAppendSavepoint(tx, orgId);
+      await cleanUpAppendSavepoint(tx, tenant);
     }
-    throw storeFailure(orgId, error);
+    throw storeFailure(tenant, error);
   }
 }

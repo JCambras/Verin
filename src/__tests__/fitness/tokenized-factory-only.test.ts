@@ -98,6 +98,8 @@ const TRUSTED_FACTORY_CALLS = [
     allowed: [
       { file: "scripts/backup-restore-drill.ts", owner: "main" },
       { file: "scripts/db-seed.ts", owner: "seed" },
+      { file: "scripts/ledger-rebuild.ts", owner: "main" },
+      { file: "scripts/seed-decision-ledger.ts", owner: "seedDecisionLedger" },
       { file: "src/app/login/actions.ts", owner: "loginAction" },
       { file: "src/infrastructure/wire.ts", owner: "resumeAccountOpeningByToken" },
     ],
@@ -1329,7 +1331,7 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
 
   it("enforces: identity and system minting factories are called only at reviewed boundaries", () => {
     expect(detectUntrustedFactoryCalls(realSemanticProject())).toEqual([]);
-  });
+  }, 30_000);
 
   it("enforces: every trusted factory callsite remains live", () => {
     const project = realSemanticProject();

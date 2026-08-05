@@ -7,6 +7,7 @@ import {
   DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
   DECISION_LEDGER_COMPUTED_PROVENANCE_SQL,
   DECISION_LEDGER_GENERATIONS_SQL,
+  DECISION_LEDGER_TOTAL_WITNESS_SQL,
   DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
 } from "@infra/store/decision-ledger-migration";
 
@@ -36,6 +37,7 @@ const DATA_TABLES = [
   "decision_replay_source_provenance",
   "decision_ledger",
   "decision_ledger_anchor",
+  "decision_ledger_total_witness",
   "decision_state_projection",
   "decision_reservation_index",
   "decision_projection_checkpoint",
@@ -65,6 +67,10 @@ export function unclassifiedTables(ddl: string, dataTables: readonly string[], n
 // any superset query (e.g. the login query grown an "OR role = $2" arm).
 const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
   {
+    sql: normalizeSql(DECISION_LEDGER_TOTAL_WITNESS_SQL),
+    why: "forward-only migration 11 backfills the independent tenant total witness",
+  },
+  {
     sql: normalizeSql(DECISION_LEDGER_COMPUTED_PROVENANCE_SQL),
     why: "forward-only migration 9 backfills provenance codec identities for every existing tenant",
   },
@@ -84,7 +90,7 @@ const REVIEWED_ESCAPES: Array<{ sql: string; why: string }> = [
     sql:
       "SELECT s.id AS session_id, s.org_id, u.role, s.expires_at, s.revoked_at, " +
       "u.id AS user_id, u.email, u.status AS user_status " +
-      "FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = $1",
+      "FROM sessions s JOIN users u ON u.id = s.user_id AND u.org_id = s.org_id WHERE s.id = $1",
     why: "session resolution: the unguessable session id is the capability; org_id comes FROM this row",
   },
   {

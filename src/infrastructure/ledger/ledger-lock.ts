@@ -1,5 +1,6 @@
 import type { SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
 /**
  * One lock owner - the tenant's `orgs` row - held in two modes.
@@ -16,9 +17,11 @@ export type DecisionLedgerLockMode = "append" | "verify";
 
 export async function lockDecisionLedgerTenant(
   tx: SqlTx,
-  orgId: string,
+  authority: TenantContext,
   mode: DecisionLedgerLockMode,
 ): Promise<void> {
+  assertTenantContext(authority);
+  const orgId = authority.orgId;
   const tenant = mode === "append"
     ? await tx.query<{ id: string }>(
         "SELECT id FROM orgs WHERE id = $1 FOR UPDATE",

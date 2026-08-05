@@ -5,6 +5,7 @@ import {
   requirePrincipalWithRole,
 } from "@app/_server/context";
 import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
+import { tenantOf } from "@contracts/tenant";
 import {
   canFeedComplianceDecision,
   DEV_BADGE_TEXT,
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     replaySourceReason,
   } = await readVerifiedDecisionRegister(
     db,
-    principal.value.orgId,
+    tenantOf(principal.value),
     MAX_ENTRIES,
     MAX_DECISIONS,
   );

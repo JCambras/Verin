@@ -1,14 +1,12 @@
 /** Immutable content-addressed replay inputs and their verification. */
 import type { SqlQueryable, SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
-import { assertNoPIIValues } from "@contracts/pii";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import {
   type EvidenceSnapshotRef,
   type DecisionInputBundle,
 } from "@contracts/decision-core/evidence";
-import {
-  type DecisionRecord,
-} from "@contracts/decision-core/decision";
+import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type {
   DecisionRecorded,
   EvidenceSnapshotRecorded,
@@ -28,16 +26,6 @@ import {
 import { verifyReplaySourceProvenanceBinding } from "./ledger-source-provenance";
 import { decisionReplayPinsMatchBundle } from "./ledger-bindings";
 import { verifyReplaySourceCoverage } from "./ledger-source-integrity";
-
-export function replaySourcesContainPII(values: readonly unknown[]): boolean {
-  try {
-    values.forEach((value) =>
-      assertNoPIIValues(value, "decision ledger replay source"));
-    return false;
-  } catch {
-    return true;
-  }
-}
 
 async function reuseStoredBytes(
   tx: SqlQueryable,
@@ -68,8 +56,13 @@ async function reuseStoredBytes(
 
 export async function preflightEvidenceSnapshots(
   tx: SqlTx,
+  tenant: TenantContext,
   snapshots: readonly EvidenceSnapshotRef[],
 ): Promise<void> {
+  assertTenantContext(tenant);
+  if (snapshots.some((snapshot) => snapshot.firmId !== tenant.orgId)) {
+    throw appError("VALIDATION", "evidence snapshot tenant does not match authority");
+  }
   const ids = new Set<string>();
   for (const snapshot of snapshots) {
     if (ids.has(snapshot.id)) {
@@ -91,10 +84,15 @@ export async function preflightEvidenceSnapshots(
 export async function insertEvidenceSnapshots(
   capability: ValidatedLedgerSourceWrite,
   tx: SqlTx,
+  tenant: TenantContext,
   snapshots: readonly EvidenceSnapshotRef[],
   recordedAt: string,
 ): Promise<void> {
+  assertTenantContext(tenant);
   assertValidatedLedgerSourceWrite(capability);
+  if (snapshots.some((snapshot) => snapshot.firmId !== tenant.orgId)) {
+    throw appError("VALIDATION", "evidence snapshot tenant does not match authority");
+  }
   for (const snapshot of snapshots) {
     const bytes = canonical(snapshot, "evidence snapshot");
     if (!bytes.ok) throw bytes.error;
@@ -161,13 +159,22 @@ async function insertBundle(
 export async function insertDecisionSources(
   capability: ValidatedLedgerSourceWrite,
   tx: SqlTx,
+  tenant: TenantContext,
   snapshots: readonly EvidenceSnapshotRef[],
   bundle: DecisionInputBundle,
   record: DecisionRecord,
   recordedAt: string,
 ): Promise<void> {
+  assertTenantContext(tenant);
   assertValidatedLedgerSourceWrite(capability);
-  await insertEvidenceSnapshots(capability, tx, snapshots, recordedAt);
+  if (
+    bundle.firmId !== tenant.orgId ||
+    record.firmId !== tenant.orgId ||
+    snapshots.some((snapshot) => snapshot.firmId !== tenant.orgId)
+  ) {
+    throw appError("VALIDATION", "decision replay source tenant does not match authority");
+  }
+  await insertEvidenceSnapshots(capability, tx, tenant, snapshots, recordedAt);
   await insertBundle(tx, bundle, recordedAt);
   const recordBytes = canonical(record, "decision record");
   if (!recordBytes.ok) throw recordBytes.error;
@@ -187,9 +194,14 @@ export async function insertDecisionSources(
 export async function bindReplaySourceProvenance(
   capability: ValidatedLedgerSourceWrite,
   tx: SqlTx,
+  tenant: TenantContext,
   event: EvidenceSnapshotRecorded | DecisionRecorded,
 ): Promise<void> {
+  assertTenantContext(tenant);
   assertValidatedLedgerSourceWrite(capability);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   const sources: Array<{
     kind: "evidence" | "bundle" | "decision";
     id: string;
@@ -223,7 +235,7 @@ export async function bindReplaySourceProvenance(
       [event.firmId, source.kind, source.id, event.id],
     );
   }
-  await verifyReplaySourceProvenanceBinding(tx, event);
+  await verifyReplaySourceProvenanceBinding(tx, tenant, event);
 }
 
 function replaySourceError(reason: string): never {
@@ -259,9 +271,6 @@ function requireCanonicalSource<
   if (parsed.canonicalBytes !== bytes) {
     return replaySourceError(`${label} bytes are not canonical during replay`);
   }
-  if (replaySourcesContainPII([parsed.value])) {
-    return replaySourceError(`${label} contains prohibited PII during replay`);
-  }
   try {
     assertReplaySourcePiiBoundary(kind, parsed.value);
   } catch {
@@ -275,8 +284,13 @@ function requireCanonicalSource<
 
 export async function verifyReplayEvidence(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: EvidenceSnapshotRecorded,
 ): Promise<string> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   const result = await tx.query<{
     canonical_json: string;
     schema_version: string;
@@ -329,9 +343,14 @@ export interface VerifiedReplayDecisionBinding {
 
 export async function loadVerifiedReplayDecisionBinding(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: DecisionRecorded,
   verifiedEvidence: ReadonlySet<string>,
 ): Promise<VerifiedReplayDecisionBinding> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   const decisions = await tx.query<{
     input_bundle_id: string;
     canonical_json: string;
@@ -435,11 +454,13 @@ export async function loadVerifiedReplayDecisionBinding(
 
 export async function loadVerifiedReplayDecision(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: DecisionRecorded,
   verifiedEvidence: ReadonlySet<string>,
 ): Promise<DecisionRecord> {
+  assertTenantContext(tenant);
   return (
-    await loadVerifiedReplayDecisionBinding(tx, event, verifiedEvidence)
+    await loadVerifiedReplayDecisionBinding(tx, tenant, event, verifiedEvidence)
   ).record;
 }
 
@@ -450,25 +471,29 @@ export interface VerifiedReplaySources {
 
 export async function verifyReplaySources(
   tx: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
   events: readonly LedgerEntry[],
 ): Promise<VerifiedReplaySources> {
+  assertTenantContext(tenant);
+  if (events.some((event) => event.firmId !== tenant.orgId)) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   const evidence = new Set<string>();
   const decisions = new Map<string, DecisionRecord>();
   for (const event of events) {
     if (event.type === "EvidenceSnapshotRecorded") {
-      await verifyReplaySourceProvenanceBinding(tx, event);
-      evidence.add(await verifyReplayEvidence(tx, event));
+      await verifyReplaySourceProvenanceBinding(tx, tenant, event);
+      evidence.add(await verifyReplayEvidence(tx, tenant, event));
     } else if (event.type === "DecisionRecorded") {
-      await verifyReplaySourceProvenanceBinding(tx, event);
+      await verifyReplaySourceProvenanceBinding(tx, tenant, event);
       decisions.set(
         event.decisionRef.id,
-        await loadVerifiedReplayDecision(tx, event, evidence),
+        await loadVerifiedReplayDecision(tx, tenant, event, evidence),
       );
     }
   }
   return {
     decisions,
-    sourcesChecked: await verifyReplaySourceCoverage(tx, orgId),
+    sourcesChecked: await verifyReplaySourceCoverage(tx, tenant),
   };
 }

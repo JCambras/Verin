@@ -9,7 +9,7 @@ import {
   realProject,
   walk,
 } from "./_fence-utils";
-import { MIGRATION_SQL } from "@infra/store/migrations";
+import { MIGRATION_SQL, MIGRATIONS } from "@infra/store/migrations";
 import {
   DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
 } from "@infra/store/decision-ledger-migration";
@@ -52,49 +52,71 @@ const INSERT_ALLOWLIST: Record<ImmutableTable, string> = {
 const IMMUTABLE_TABLE_SET = new Set<string>(IMMUTABLE_TABLES);
 const REVIEWED_IMMUTABLE_MIGRATIONS = [
   {
-    version: 3,
+    version: 4,
     name: "decision-ledger-foundation",
     sha256: "b63ee91ed6c81fa9f48bb67cee37311e698a6c53b3234488e2c94160c46128bd",
   },
   {
-    version: 4,
+    version: 5,
     name: "decision-ledger-reservation-generations",
     sha256: "bb3044d0a85da31272a1266cb2129061fd2b6d449d5e6d4b9433a4e0c5f18796",
   },
   {
-    version: 5,
+    version: 6,
     name: "decision-ledger-replay-coverage-index",
     sha256: "8c32facbfef86d4631cb7f47d416cef07aa0768321c8f37ee6725034eebe74c4",
   },
   {
-    version: 6,
+    version: 7,
     name: "decision-replay-source-provenance",
     sha256: "90eede11f7c297c033e465a196d72dc22f8d94cfe49c78364b2e46542e1a5aac",
   },
   {
-    version: 7,
+    version: 8,
     name: "decision-ledger-reservation-lookup-indexes",
     sha256: "afe03abb22f3a11bde4b350a77a1cdbae01e11a1d3dcfaaa8460d92d1bd321f6",
   },
   {
-    version: 8,
+    version: 9,
     name: "decision-ledger-bundle-identity",
     sha256: "a9968958afe5c2147897c964dea3d7a742744bd04a49e26a3144ad3eef98e2d9",
   },
   {
-    version: 9,
+    version: 10,
     name: "decision-ledger-computed-provenance",
     sha256: "3b16a94f67c6da1c80ee9da163e6957d06e9b029faadb12f379ff02af6a0f350",
   },
+  {
+    version: 11,
+    name: "decision-ledger-total-witness",
+    sha256: "3fe8cc1cce6de74cf6ec9987b113e4ac0236d1f88e9f624a0944466f735fd61c",
+  },
 ] as const;
-const REVIEWED_UNRESOLVED_SQL_ESCAPE = Object.freeze({
-  file: "src/infrastructure/store/migrations.ts",
-  functionName: "runMigrations",
-  loopVariable: "m",
-  collection: "MIGRATIONS",
-  sink: "tx.exec",
-  argument: "m.sql",
-});
+const REVIEWED_DYNAMIC_IMMUTABLE_MIGRATION = {
+  version: 3,
+  name: "tenant-qualified-relationships",
+  expression: "TENANT_QUALIFIED_RELATIONSHIPS_SQL",
+  sha256: "9f1ff748cfaf40547a786f21d1a27f2e0d0cc23c2757d832e64372cbe64499a0",
+} as const;
+const MIGRATION_PLAN_FILE = "src/infrastructure/store/migrations.ts";
+const REVIEWED_UNRESOLVED_SQL_ESCAPES = [
+  {
+    file: "src/infrastructure/store/migration-runner.ts",
+    functionName: "assertPreflightClean",
+    loopVariable: "probe",
+    collection: "migration.preflight ?? []",
+    sink: "db.query",
+    argument: "probe.sql",
+  },
+  {
+    file: "src/infrastructure/store/migration-runner.ts",
+    functionName: "runMigrationPlan",
+    loopVariable: "migration",
+    collection: "pending",
+    sink: "tx.exec",
+    argument: "migration.sql",
+  },
+] as const;
 const REVIEWED_SQL_FORWARDING_ESCAPE = Object.freeze({
   file: "src/infrastructure/store/db.ts",
   methods: new Set(["query", "exec"]),
@@ -1488,14 +1510,13 @@ function isReviewedUnresolvedSql(
     SyntaxKind.FunctionDeclaration,
   );
   const loop = call.getFirstAncestorByKind(SyntaxKind.ForOfStatement);
-  return rel === REVIEWED_UNRESOLVED_SQL_ESCAPE.file &&
-    declaration?.getName() === REVIEWED_UNRESOLVED_SQL_ESCAPE.functionName &&
-    loop?.getInitializer().getText() ===
-      `const ${REVIEWED_UNRESOLVED_SQL_ESCAPE.loopVariable}` &&
-    loop.getExpression().getText() ===
-      REVIEWED_UNRESOLVED_SQL_ESCAPE.collection &&
-    call.getExpression().getText() === REVIEWED_UNRESOLVED_SQL_ESCAPE.sink &&
-    expression.getText() === REVIEWED_UNRESOLVED_SQL_ESCAPE.argument;
+  return REVIEWED_UNRESOLVED_SQL_ESCAPES.some((escape) =>
+    rel === escape.file &&
+    declaration?.getName() === escape.functionName &&
+    loop?.getInitializer().getText() === `const ${escape.loopVariable}` &&
+    loop.getExpression().getText() === escape.collection &&
+    call.getExpression().getText() === escape.sink &&
+    expression.getText() === escape.argument);
 }
 
 function isReviewedImmutableMigration(
@@ -1510,6 +1531,21 @@ function isReviewedImmutableMigration(
       createHash("sha256").update(sql).digest("hex"));
 }
 
+function isReviewedDynamicImmutableMigration(
+  version: number,
+  name: string,
+  expression: Node,
+): boolean {
+  const reviewed = REVIEWED_DYNAMIC_IMMUTABLE_MIGRATION;
+  const runtime = MIGRATIONS.find((migration) =>
+    migration.version === version && migration.name === name);
+  return version === reviewed.version &&
+    name === reviewed.name &&
+    expression.getText() === reviewed.expression &&
+    runtime !== undefined &&
+    createHash("sha256").update(runtime.sql).digest("hex") === reviewed.sha256;
+}
+
 function relativeFencePath(file: SourceFile): string {
   const absolute = file.getFilePath().replace(/\\/g, "/");
   const sourceIndex = absolute.lastIndexOf("/src/");
@@ -1522,8 +1558,7 @@ function migrationMutationViolations(
   files: readonly SourceFile[],
 ): Violation[] {
   const file = files.find((candidate) =>
-    relativeFencePath(candidate) ===
-      REVIEWED_UNRESOLVED_SQL_ESCAPE.file);
+    relativeFencePath(candidate) === MIGRATION_PLAN_FILE);
   if (!file) return [];
   const declaration = file.getVariableDeclaration("MIGRATIONS");
   const initializer = declaration?.getInitializer();
@@ -1566,11 +1601,14 @@ function migrationMutationViolations(
     if (
       version === null ||
       name === null ||
-      sql === null ||
-      (
-        immutableWriteTargets(sql).length > 0 &&
-        !isReviewedImmutableMigration(version, name, sql)
-      )
+      (sql === null
+        ? !isReviewedDynamicImmutableMigration(
+            version,
+            name,
+            sqlProperty.getInitializerOrThrow(),
+          )
+        : immutableWriteTargets(sql).length > 0 &&
+          !isReviewedImmutableMigration(version, name, sql))
     ) {
       violations.push({
         file: relativeFencePath(file),
@@ -1990,10 +2028,13 @@ describe("decision-ledger append-only fence", () => {
           `  for (const migration of migrations) await db.exec(migration.sql);\n` +
           `}`,
         "/src/infrastructure/store/migrations.ts":
-          `const MIGRATIONS: readonly { sql: string }[] = [];\n` +
-          `export async function runMigrations(db: { transaction<T>(fn: (tx: { exec(s: string): Promise<void> }) => Promise<T>): Promise<T> }) {\n` +
-          `  for (const m of MIGRATIONS) {\n` +
-          `    await db.transaction(async (tx) => tx.exec(m.sql));\n` +
+          `export const MIGRATIONS: readonly { sql: string }[] = [];`,
+        "/src/infrastructure/store/migration-runner.ts":
+          `import { MIGRATIONS } from "./migrations";\n` +
+          `export async function runMigrationPlan(tx: { exec(s: string): Promise<void> }) {\n` +
+          `  const pending = MIGRATIONS;\n` +
+          `  for (const migration of pending) {\n` +
+          `    await tx.exec(migration.sql);\n` +
           `  }\n` +
           `}`,
       });
@@ -2204,14 +2245,14 @@ describe("decision-ledger append-only fence", () => {
     it("limits immutable migration mutations to exact reviewed entries", () => {
       expect(
         isReviewedImmutableMigration(
-          8,
+          9,
           "decision-ledger-bundle-identity",
           DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
         ),
       ).toBe(true);
       expect(
         isReviewedImmutableMigration(
-          8,
+          9,
           "decision-ledger-bundle-identity",
           `${DECISION_LEDGER_BUNDLE_IDENTITY_SQL}
 TRUNCATE decision_ledger;`,
@@ -2219,13 +2260,16 @@ TRUNCATE decision_ledger;`,
       ).toBe(false);
       const project = inMemoryProject({
         "/src/infrastructure/store/migrations.ts":
-          `const MIGRATIONS = [{ ` +
+          `export const MIGRATIONS = [{ ` +
           `version: 9, name: "unsafe-rewrite", ` +
           `sql: "UPDATE decision_ledger SET payload_json = '{}' WHERE org_id = $1" ` +
-          `}];\n` +
-          `export async function runMigrations(db: { transaction<T>(fn: (tx: { exec(s: string): Promise<void> }) => Promise<T>): Promise<T> }) {\n` +
-          `  for (const m of MIGRATIONS) {\n` +
-          `    await db.transaction(async (tx) => tx.exec(m.sql));\n` +
+          `}];`,
+        "/src/infrastructure/store/migration-runner.ts":
+          `import { MIGRATIONS } from "./migrations";\n` +
+          `export async function runMigrationPlan(tx: { exec(s: string): Promise<void> }) {\n` +
+          `  const pending = MIGRATIONS;\n` +
+          `  for (const migration of pending) {\n` +
+          `    await tx.exec(migration.sql);\n` +
           `  }\n` +
           `}`,
       });

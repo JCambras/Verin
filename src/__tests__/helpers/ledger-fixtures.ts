@@ -20,12 +20,21 @@ import {
 } from "@contracts/decision-core/serialization";
 import type { DirectLedgerProducerProvenance } from "@contracts/provenance";
 import { unwrap } from "@contracts/result";
+import {
+  registerTestSystemActor,
+  systemTenant,
+  type TenantContext,
+} from "@contracts/tenant";
 import type { RecordDecisionInput } from "@infra/ledger/ledger-store";
 import { retainedTextReference } from "@infra/ledger/ledger-pii";
 import { retainedTextProjection } from "../../../scripts/seed-decision-ledger";
 
 export const LEDGER_ORG = "firm-a";
 export const LEDGER_OTHER_ORG = "firm-b";
+const LEDGER_TEST_ACTOR = registerTestSystemActor("test.ledger");
+export const ledgerTenant = (orgId: string): TenantContext =>
+  systemTenant(LEDGER_TEST_ACTOR, orgId);
+export const LEDGER_TENANT = ledgerTenant(LEDGER_ORG);
 export const LEDGER_TIME = "2026-07-26T13:30:00.000Z";
 export const LEDGER_LATER = "2026-07-27T13:30:00.000Z";
 export const LEDGER_HASH = "a".repeat(64);

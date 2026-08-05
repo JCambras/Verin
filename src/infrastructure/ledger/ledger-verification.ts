@@ -4,9 +4,10 @@
  * promoted columns, and L4 checks the independently maintained anchor.
  */
 import type { SqlDb, SqlTx } from "@infra/store/db";
-import { appError, isAppError } from "@contracts/errors";
+import { appError, normalizeAppError } from "@contracts/errors";
 import { type LedgerEntry } from "@contracts/decision-core/ledger";
 import type { RecordProvenance } from "@contracts/provenance";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import {
   promotedDecisionId,
   promotedEvidenceSnapshotId,
@@ -154,10 +155,16 @@ interface AnchorRow {
   head_hash: string;
 }
 
+interface TotalWitnessRow {
+  entry_count: number | string;
+  compromised: boolean;
+}
+
 interface LedgerSnapshot {
   readonly rows: DecisionLedgerRow[];
   readonly anchor: AnchorRow | undefined;
   readonly stored: number;
+  readonly totalTrusted: boolean;
   readonly headSequence: number | null;
   readonly start: { sequence: number; prevHash: string } | undefined;
 }
@@ -168,6 +175,9 @@ function verifyL4(
   checked: number,
 ): LedgerVerificationLevel {
   const { anchor, rows, stored, headSequence } = snapshot;
+  if (!snapshot.totalTrusted) {
+    return level("L4", false, checked, headSequence, "ledger tenant total witness is missing or compromised");
+  }
   if (stored === 0) {
     if (anchor) {
       return level("L4", false, 0, null, "anchor exists for an empty ledger");
@@ -260,24 +270,32 @@ function verifyRows(snapshot: LedgerSnapshot): LedgerVerification {
  */
 export async function verifyAndListDecisionLedger(
   db: SqlDb,
-  orgId: string,
+  tenant: TenantContext,
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
+  assertTenantContext(tenant);
   return db.transaction((tx) =>
-    verifyDecisionLedgerTransaction(tx, orgId, window));
+    verifyDecisionLedgerTransaction(tx, tenant, window));
 }
 
 export async function verifyDecisionLedgerTransaction(
   tx: SqlTx,
-  orgId: string,
+  tenant: TenantContext,
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
-  await lockDecisionLedgerTenant(tx, orgId, "verify");
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
+  await lockDecisionLedgerTenant(tx, tenant, "verify");
   const anchor = await tx.query<AnchorRow>(
     "SELECT max_sequence, entry_count, head_hash FROM decision_ledger_anchor WHERE org_id = $1",
     [orgId],
   );
   const anchorRow = anchor.rows[0];
+  const witnessed = await tx.query<TotalWitnessRow>(
+    "SELECT entry_count, compromised FROM decision_ledger_total_witness WHERE org_id = $1",
+    [orgId],
+  );
+  const witness = witnessed.rows[0];
   const bounded = window !== undefined && Number.isInteger(window) && window > 0;
   let snapshot: LedgerSnapshot;
   if (!bounded) {
@@ -292,14 +310,18 @@ export async function verifyDecisionLedgerTransaction(
     snapshot = {
       anchor: anchorRow,
       stored: Number(totals.rows[0]?.n ?? 0),
+      totalTrusted: witness === undefined
+        ? Number(totals.rows[0]?.n ?? 0) === 0
+        : !witness.compromised &&
+          Number(witness.entry_count) === Number(totals.rows[0]?.n ?? 0),
       headSequence: headRaw === null || headRaw === undefined
         ? null
         : Number(headRaw),
-      rows: await listDecisionLedger(tx, orgId),
+      rows: await listDecisionLedger(tx, tenant),
       start: undefined,
     };
   } else {
-    const rows = await listDecisionLedger(tx, orgId, window);
+    const rows = await listDecisionLedger(tx, tenant, window);
     const first = rows[0]!;
     const predecessor = first && first.sequence > 0
       ? await tx.query<{ entry_hash: string }>(
@@ -310,6 +332,10 @@ export async function verifyDecisionLedgerTransaction(
     snapshot = {
       anchor: anchorRow,
       stored: Number(anchorRow?.entry_count ?? 0),
+      totalTrusted: witness === undefined
+        ? anchorRow === undefined && rows.length === 0
+        : !witness.compromised &&
+          Number(witness.entry_count) === Number(anchorRow?.entry_count ?? 0),
       headSequence: anchorRow === undefined
         ? null
         : Number(anchorRow.max_sequence),
@@ -330,17 +356,19 @@ export async function verifyDecisionLedgerTransaction(
 
 export async function verifyDecisionLedger(
   db: SqlDb,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<LedgerVerification> {
-  return (await verifyAndListDecisionLedger(db, orgId)).verification;
+  assertTenantContext(tenant);
+  return (await verifyAndListDecisionLedger(db, tenant)).verification;
 }
 
 export async function verifyDecisionLedgerIntegrity(
   db: SqlDb,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<DecisionLedgerIntegrityVerification> {
+  assertTenantContext(tenant);
   return db.transaction(async (tx) => {
-    const checked = await verifyDecisionLedgerTransaction(tx, orgId);
+    const checked = await verifyDecisionLedgerTransaction(tx, tenant);
     if (!checked.verification.ok) {
       return {
         ok: false,
@@ -359,6 +387,7 @@ export async function verifyDecisionLedgerIntegrity(
       for (const row of checked.rows) {
         await verifyRecordedLedgerProvenance(
           tx,
+          tenant,
           row,
           verifiedEntryIds,
           provenanceCache,
@@ -375,15 +404,15 @@ export async function verifyDecisionLedgerIntegrity(
         }
         events.push(parsed.event);
       }
-      await assertNoOrphanComputedProvenanceTraces(tx, orgId);
+      await assertNoOrphanComputedProvenanceTraces(tx, tenant);
       await assertRecordedLedgerStructure(
         events.map((event, index) => ({
           event,
           sequence: checked.rows[index]!.sequence,
         })),
-        storedLedgerStructureLookup(tx, orgId),
+        storedLedgerStructureLookup(tx, tenant),
       );
-      const sources = await verifyReplaySources(tx, orgId, events);
+      const sources = await verifyReplaySources(tx, tenant, events);
       return {
         ok: true,
         ledger: checked.verification,
@@ -399,9 +428,9 @@ export async function verifyDecisionLedgerIntegrity(
         ok: false,
         ledger: checked.verification,
         replaySourcesChecked: 0,
-        replaySourceReason: isAppError(error)
-          ? error.message
-          : "immutable replay source verification failed",
+        replaySourceReason: normalizeAppError(error, "trusted-only")?.message
+          ??
+          "immutable replay source verification failed",
       };
     }
   });

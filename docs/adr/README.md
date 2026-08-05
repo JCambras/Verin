@@ -55,6 +55,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0037](./0037-line-budget-domain-resume-seal.md) | Domain ceiling 1,250 to 1,300 for pre-load resume validation | Accepted (amends ADR-0033) |
 | [0038](./0038-line-budget-observability-identifier-provenance.md) | Domain and infrastructure ceilings for observability identifier provenance | Accepted (amends ADR-0033/0036) |
 | [0033](./0033-sibling-decision-ledger.md) | Sibling append-only decision ledger and replay storage; prompt-7 ceilings compose with prompt-6 hardening | Accepted (amends ADR-0007/0018/0019) |
+| [0039](./0039-line-budget-ledger-review-integrity.md) | Infrastructure ceiling for ledger review integrity controls | Accepted (amends ADR-0033) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

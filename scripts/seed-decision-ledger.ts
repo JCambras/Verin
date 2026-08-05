@@ -18,6 +18,7 @@ import {
   decisionHashPreimage,
 } from "../src/contracts/decision-core/serialization";
 import { recordDecision } from "../src/infrastructure/ledger/ledger-store";
+import { systemWriteActor } from "../src/contracts/principal";
 import { retainedTextReference } from "../src/infrastructure/ledger/ledger-pii";
 import { unwrap } from "../src/contracts/result";
 
@@ -146,7 +147,7 @@ export async function seedDecisionLedger(
       bundleHash: inputBundle.bundleHash,
     }),
   ];
-  const result = await recordDecision(db, {
+  const result = await recordDecision(db, systemWriteActor("seed", firmId).tenant, {
     evidenceSnapshots,
     inputBundle,
     decisionRecord,

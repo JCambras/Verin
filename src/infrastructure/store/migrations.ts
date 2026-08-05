@@ -21,10 +21,9 @@
  * DERIVES its table list from this DDL: an unclassified table fails the build rather
  * than defaulting to unscoped.
  */
-import { appError, normalizeAppError } from "@contracts/errors";
-import type { SqlDb, SqlQueryable } from "./db";
-import { migrationFailure } from "./migration-errors";
-import { migrationLedgerExists } from "./migration-support";
+import { appError } from "@contracts/errors";
+import type { SqlDb } from "./db";
+import { runMigrationPlan } from "./migration-runner";
 import {
   DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
   DECISION_LEDGER_COMPUTED_PROVENANCE_SQL,
@@ -32,6 +31,7 @@ import {
   DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL,
   DECISION_LEDGER_RESERVATION_LOOKUP_INDEXES_SQL,
   DECISION_LEDGER_SQL,
+  DECISION_LEDGER_TOTAL_WITNESS_SQL,
   DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
 } from "./decision-ledger-migration";
 
@@ -387,6 +387,11 @@ export const MIGRATIONS: readonly Migration[] = [
     name: "decision-ledger-computed-provenance",
     sql: DECISION_LEDGER_COMPUTED_PROVENANCE_SQL,
   },
+  {
+    version: 11,
+    name: "decision-ledger-total-witness",
+    sql: DECISION_LEDGER_TOTAL_WITNESS_SQL,
+  },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free
@@ -411,127 +416,6 @@ for (const [i, m] of MIGRATIONS.entries()) {
  */
 export const MIGRATION_SQL = [SCHEMA_MIGRATIONS_DDL, ...MIGRATIONS.map((m) => m.sql)].join("\n");
 
-/**
- * Run every read-only probe for one version and report all orphan classes.
- */
-async function assertPreflightClean(db: SqlQueryable, m: Migration): Promise<void> {
-  try {
-    const blocked: string[] = [];
-    for (const probe of m.preflight ?? []) {
-      const { rows } = await db.query<{ orphans: number }>(probe.sql);
-      const orphans = Number(rows[0]?.orphans ?? 0);
-      if (orphans > 0) blocked.push(`${probe.relationship}: ${orphans} row(s) in ${probe.subject} reference a parent in another tenant (or no parent at all)`);
-    }
-    if (blocked.length > 0) {
-      throw appError("INTERNAL", `migration ${m.version} (${m.name}) cannot be applied to this store; no schema change was made and no row was modified. Re-point or remove the rows below, then restart:\n${blocked.join("\n")}`);
-    }
-  } catch (cause) {
-    const error = normalizeAppError(cause);
-    if (error) throw error;
-    throw migrationFailure("preflight", cause, m);
-  }
-}
-
-/**
- * Every database object this schema OWNS, derived from the shipped DDL rather than
- * re-listed by hand, so a new table or index cannot be added without also being
- * covered by the virginity proof below. Columns need no separate entry: a managed
- * column can only exist inside a managed table, which this already names.
- */
-const MANAGED_OBJECT_RE =
-  /CREATE\s+(?:(?:OR\s+REPLACE\s+)?FUNCTION|TRIGGER|(?:UNIQUE\s+)?INDEX(?:\s+IF\s+NOT\s+EXISTS)?|TABLE(?:\s+IF\s+NOT\s+EXISTS)?)\s+([a-z_][a-z0-9_]*)/gi;
-const MANAGED_OBJECT_NAMES: ReadonlySet<string> = new Set(
-  [...MIGRATION_SQL.matchAll(MANAGED_OBJECT_RE)].map((match) => match[1]!.toLowerCase()),
-);
-
-const LEDGER_TABLE = "schema_migrations";
-
-// Names only, never row data: every value here is one of OUR identifiers, and EVERY
-// clause is scoped to current_schema() - triggers included, or a neighbour schema in a
-// shared Postgres owning an `audit_log_no_update` refuses a correct virgin bootstrap.
-const MANAGED_OBJECT_PROBE_SQL = `
-SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-  WHERE n.nspname = current_schema() AND c.relkind IN ('r','i','v','m','S','p')
-UNION SELECT t.tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-  JOIN pg_namespace n ON n.oid = c.relnamespace WHERE NOT t.tgisinternal AND n.nspname = current_schema()
-UNION SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = current_schema();
-`;
-
-/**
- * An EMPTY ledger is a claim ("this store has never been migrated"), not a fact, and
- * the bootstrap path below trusts it enough to apply version 1 and record it before
- * any later preflight has run. That is safe on a genuinely virgin store - there are
- * no rows to orphan - and unsafe on a store whose tables exist while the ledger does
- * not: a dump restored without its schema_migrations rows, or a dropped ledger table.
- * There, versions would be RECORDED against a schema nobody verified, so the
- * "a failed preflight leaves the recorded version exactly unchanged" guarantee would
- * not hold. So the claim is PROVEN before the first mutation: if any object this
- * schema owns already exists, refuse, and leave the store byte-for-byte as found.
- */
-async function assertManagedSchemaEmpty(db: SqlQueryable): Promise<void> {
-  let existing: string[];
-  try {
-    const { rows } = await db.query<{ name: string }>(MANAGED_OBJECT_PROBE_SQL);
-    existing = rows
-      .map((row) => String(row.name).toLowerCase())
-      .filter((name) => name !== LEDGER_TABLE && MANAGED_OBJECT_NAMES.has(name))
-      .sort();
-  } catch (cause) {
-    throw migrationFailure("virginity-check", cause);
-  }
-  if (existing.length === 0) return;
-  throw appError(
-    "INTERNAL",
-    `the migration ledger is empty but this store already contains ${existing.length} object(s) this schema owns; no schema change was made and no version was recorded. This is the shape of a restored dump whose schema_migrations rows were not restored, or a dropped ledger. Restore the ledger to the version the data was written at (or adopt the store deliberately by recording the applied versions), then restart. Objects found: ${existing.join(", ")}`,
-    { stage: "virginity-check", existingCount: existing.length },
-  );
-}
-
 export async function runMigrations(db: SqlDb): Promise<void> {
-  let stage: Parameters<typeof migrationFailure>[0] = "virginity-check";
-  let activeMigration: Migration | undefined;
-  try {
-    await db.transaction(async (tx) => {
-      const ledgerExisted = await migrationLedgerExists(tx);
-      if (!ledgerExisted) await assertManagedSchemaEmpty(tx);
-      stage = "ledger-bootstrap";
-      await tx.exec(SCHEMA_MIGRATIONS_DDL);
-      stage = "applied-version-read";
-      const recorded = await tx.query<{ version: number; name: string }>(
-        "SELECT version, name FROM schema_migrations ORDER BY version",
-      );
-      if (recorded.rows.length === 0 && ledgerExisted) {
-        stage = "virginity-check";
-        await assertManagedSchemaEmpty(tx);
-      }
-      const mismatch = recorded.rows.findIndex((row, index) =>
-        Number(row.version) !== MIGRATIONS[index]?.version ||
-        String(row.name) !== MIGRATIONS[index]?.name
-      );
-      if (mismatch >= 0) {
-        throw appError(
-          "INTERNAL",
-          "the migration ledger is not an exact contiguous prefix of the shipped migration plan; no schema change was made",
-          { stage: "applied-version-read", recordedCount: recorded.rows.length },
-        );
-      }
-      const pending = MIGRATIONS.slice(recorded.rows.length);
-      for (const migration of pending) {
-        activeMigration = migration;
-        stage = "preflight";
-        await assertPreflightClean(tx, migration);
-        stage = "mutation";
-        await tx.exec(migration.sql);
-        await tx.query(
-          "INSERT INTO schema_migrations (version, name, applied_at) VALUES ($1, $2, now())",
-          [migration.version, migration.name],
-        );
-      }
-    });
-  } catch (cause) {
-    const error = normalizeAppError(cause);
-    if (error) throw error;
-    throw migrationFailure(stage, cause, activeMigration);
-  }
+  return runMigrationPlan(db);
 }

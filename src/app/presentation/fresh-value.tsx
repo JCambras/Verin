@@ -24,7 +24,7 @@ export function FreshValue({ provenance, children }: { provenance: RecordProvena
   const label = provenanceLabel(provenance);
   return (
     <span className="inline-flex items-baseline gap-1.5">
-      <span style={{ opacity: opacityForAge(provenance.asOf), transition: "opacity 150ms ease" }} title={label}>
+      <span className="text-slate-800" style={{ opacity: opacityForAge(provenance.asOf), transition: "opacity 150ms ease" }} title={label}>
         {children}
       </span>
       <span className="text-xs text-slate-600">· {label}</span>

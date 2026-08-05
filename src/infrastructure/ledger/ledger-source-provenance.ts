@@ -1,5 +1,6 @@
 import type { SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import {
   deriveArtifactProvenance,
   type DerivedProvenance,
@@ -39,6 +40,7 @@ export const UNVERIFIED_REPLAY_SOURCE_PROVENANCE =
 
 async function bindingProvenance(
   tx: SqlQueryable,
+  tenant: TenantContext,
   row: BindingRow | undefined,
   kind: SourceKind,
   id: string,
@@ -61,6 +63,7 @@ async function bindingProvenance(
   }
   return verifyRecordedLedgerProvenance(
     tx,
+    tenant,
     {
       orgId: row.org_id,
       id: row.recording_entry_id,
@@ -128,6 +131,7 @@ async function hasEarlierSourceRecording(
 
 async function loadBinding(
   tx: SqlQueryable,
+  tenant: TenantContext,
   orgId: string,
   kind: SourceKind,
   id: string,
@@ -173,6 +177,7 @@ async function loadBinding(
     : false;
   return bindingProvenance(
     tx,
+    tenant,
     row,
     kind,
     id,
@@ -183,6 +188,7 @@ async function loadBinding(
 
 async function decisionSourceProvenance(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: DecisionRecorded,
   fallback: RecordProvenance | null,
   verifiedRecordingEntryIds?: ReadonlySet<string>,
@@ -201,6 +207,7 @@ async function decisionSourceProvenance(
   }
   const decision = await loadBinding(
     tx,
+    tenant,
     event.firmId,
     "decision",
     event.decisionRef.id,
@@ -208,6 +215,7 @@ async function decisionSourceProvenance(
   );
   const bundle = await loadBinding(
     tx,
+    tenant,
     event.firmId,
     "bundle",
     bundleId,
@@ -233,6 +241,7 @@ async function decisionSourceProvenance(
   for (const member of members.rows) {
     const provenance = await loadBinding(
       tx,
+      tenant,
       event.firmId,
       "evidence",
       member.evidence_snapshot_id,
@@ -251,15 +260,21 @@ async function decisionSourceProvenance(
 
 export async function deriveLedgerEventProvenance(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: LedgerEntry,
   eventProvenance: RecordProvenance,
   allowCurrentDecisionBinding = false,
   verifiedRecordingEntryIds?: ReadonlySet<string>,
 ): Promise<DerivedProvenance> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   const inputs: RecordProvenance[] = [eventProvenance];
   if (event.type === "DecisionRecorded") {
     inputs.push(...await decisionSourceProvenance(
       tx,
+      tenant,
       event,
       allowCurrentDecisionBinding ? eventProvenance : null,
       verifiedRecordingEntryIds,
@@ -270,6 +285,7 @@ export async function deriveLedgerEventProvenance(
   ) {
     const provenance = await loadBinding(
       tx,
+      tenant,
       event.firmId,
       "evidence",
       event.evidenceSnapshotRef.id,
@@ -292,11 +308,17 @@ export async function deriveLedgerEventProvenance(
 
 export async function verifyReplaySourceProvenanceBinding(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: EvidenceSnapshotRecorded | DecisionRecorded,
 ): Promise<void> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   if (event.type === "EvidenceSnapshotRecorded") {
     if (!await loadBinding(
       tx,
+      tenant,
       event.firmId,
       "evidence",
       event.evidenceSnapshotRef.id,
@@ -308,5 +330,5 @@ export async function verifyReplaySourceProvenanceBinding(
     }
     return;
   }
-  await decisionSourceProvenance(tx, event, null);
+  await decisionSourceProvenance(tx, tenant, event, null);
 }

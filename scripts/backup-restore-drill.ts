@@ -42,8 +42,8 @@ async function main(): Promise<void> {
   const beforeHouseholds = Number((await src.query<{ n: string }>("SELECT count(*) AS n FROM households")).rows[0]!.n);
   const beforeChain = await verifyOrgChain(src, tenant);
   const beforeAudit = await countOrgChain(src, tenant);
-  const beforeDecision = (await listDecisionLedger(src, "org")).length;
-  const beforeDecisionChain = await verifyDecisionLedgerIntegrity(src, "org");
+  const beforeDecision = (await listDecisionLedger(src, tenant)).length;
+  const beforeDecisionChain = await verifyDecisionLedgerIntegrity(src, tenant);
   if (!beforeChain.ok || !beforeDecisionChain.ok) {
     throw new Error("pre-backup audit-class chain invalid");
   }
@@ -63,8 +63,8 @@ async function main(): Promise<void> {
   const afterHouseholds = Number((await restored.query<{ n: string }>("SELECT count(*) AS n FROM households")).rows[0]!.n);
   const afterAudit = await countOrgChain(restored, tenant);
   const afterChain = await verifyOrgChain(restored, tenant);
-  const afterDecision = (await listDecisionLedger(restored, "org")).length;
-  const afterDecisionChain = await verifyDecisionLedgerIntegrity(restored, "org");
+  const afterDecision = (await listDecisionLedger(restored, tenant)).length;
+  const afterDecisionChain = await verifyDecisionLedgerIntegrity(restored, tenant);
   await restored.close();
 
   const ok =

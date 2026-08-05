@@ -1,12 +1,18 @@
 import type { SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
 export async function assertStatusEvidenceOrder(
   tx: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
   events: readonly { readonly event: LedgerEntry }[],
 ): Promise<void> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
+  if (events.some(({ event }) => event.firmId !== orgId)) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   const recordedInBatch = new Set<string>();
   const recordedBeforeBatch = new Map<string, boolean>();
   for (const { event } of events) {

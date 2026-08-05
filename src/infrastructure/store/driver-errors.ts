@@ -4,7 +4,7 @@
  * a generic 409), so each chokepoint logs the real error PII-safely and only a real
  * SQLSTATE integrity violation becomes the client-resolvable conflict.
  */
-import { isAppError } from "@contracts/errors";
+import { normalizeAppError } from "@contracts/errors";
 import { looksLikePIIValue, REDACTED } from "@contracts/pii";
 
 /**
@@ -13,7 +13,8 @@ import { looksLikePIIValue, REDACTED } from "@contracts/pii";
  * PII-shaped reason is replaced wholesale before it reaches the log.
  */
 export function logSafeReason(e: unknown): string {
-  const raw = e instanceof Error ? `${e.name}: ${e.message}` : isAppError(e) ? e.message : String(e);
+  const known = normalizeAppError(e, "trusted-only");
+  const raw = e instanceof Error ? `${e.name}: ${e.message}` : known ? known.message : String(e);
   return looksLikePIIValue(raw) ? REDACTED : raw;
 }
 

@@ -27,7 +27,8 @@ export interface SqlQueryable {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<SqlResult<T>>;
 }
 
-const SQL_TRANSACTION = Symbol("verin.sql-transaction");
+const SQL_TRANSACTION = Symbol.for("verin.sql-transaction");
+declare const SqlTransactionBrand: unique symbol;
 
 /**
  * A transaction context. Adds `exec` (a multi-statement script, no params) to the
@@ -35,7 +36,7 @@ const SQL_TRANSACTION = Symbol("verin.sql-transaction");
  * used by the migration runner (a migration's DDL + its schema_migrations record).
  */
 export interface SqlTx extends SqlQueryable {
-  readonly [SQL_TRANSACTION]: true;
+  readonly [SqlTransactionBrand]: true;
   exec(sql: string): Promise<void>;
 }
 
@@ -49,7 +50,7 @@ export interface SqlDb extends SqlQueryable {
 
 export function isSqlTransaction(value: SqlQueryable): value is SqlTx {
   return SQL_TRANSACTION in value &&
-    (value as SqlTx)[SQL_TRANSACTION] === true;
+    (value as SqlQueryable & Record<symbol, unknown>)[SQL_TRANSACTION] === true;
 }
 
 function wrap(pg: PGlite): SqlDb {
@@ -82,7 +83,7 @@ function wrap(pg: PGlite): SqlDb {
     transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
       return serialize(() =>
         pg.transaction(async (tx) => {
-          const q: SqlTx = {
+          const q = {
             [SQL_TRANSACTION]: true,
             async query<U>(sql: string, params?: unknown[]) {
               const res = await tx.query<U>(sql, params as unknown[] | undefined);
@@ -91,7 +92,7 @@ function wrap(pg: PGlite): SqlDb {
             async exec(sql: string) {
               await tx.exec(sql);
             },
-          };
+          } as unknown as SqlTx;
           return fn(q);
         }) as Promise<T>,
       );

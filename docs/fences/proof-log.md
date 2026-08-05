@@ -6527,3 +6527,33 @@ promise for each decision binding during its ordered pass.
 companions. No probe files remain.
 
 **Date:** 2026-07-29 (review corrections W1-W5, D-122).
+
+## Ledger authority, retained confidence, and independent totals (D-123)
+
+**Invariants:** every SQL-backed ledger entry point asserts sealed tenant authority
+before database access and rejects mismatched event or replay-source tenants;
+computed confidence equals verified least-trust ancestry on append and replay;
+recorded computed-v1 behavior has no live provenance parser or version dependency;
+bounded L4 uses an independently maintained tenant-total witness; transaction
+capability identity survives separately evaluated bundles.
+
+The pre-correction real-tree tenant fence reported every ledger repository entry as
+unscoped, including `recordDecision` and `appendDecisionEvents`, plus unowned SQL in
+the mutually recursive computed-provenance verifier. The permanent companions now
+plant a closed recursive SQL-helper cycle and prove it remains unowned while a cycle
+reached only from an asserted tenant owner is accepted.
+
+Permanent PGlite companions delete a ledger row before a bounded verifier's
+predecessor, overclaim computed confidence on append, and replay a retained computed
+trace whose claimed confidence exceeds its verified input. Each fails at L4 or the
+provenance constraint. A realm-registry transaction object created outside the local
+module is accepted while the compile-time `SqlTx` capability remains branded.
+
+The retained-codec companion rejects imports of the live provenance parser and
+current version constants. The migration and immutable-ownership companions pin
+migration 11 by version, name, and SHA-256 and reject any content extension.
+
+**Revert:** all adversarial cases are permanent fitness or integration companions.
+No probe files remain.
+
+**Date:** 2026-08-04 (review corrections, D-123).

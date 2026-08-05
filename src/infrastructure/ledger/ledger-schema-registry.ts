@@ -7,15 +7,15 @@ import {
   canonicalJsonV1_0_0,
   type JsonValue,
 } from "@contracts/decision-core/v1-7/serialization";
-import {
-  COMPUTED_LEDGER_PROVENANCE_VERSION,
-  DIRECT_LEDGER_PROVENANCE_VERSION,
-  LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION,
-  LEDGER_PROVENANCE_SERIALIZER_VERSION,
-  parseLedgerProducerProvenance,
-  type ComputedLedgerProducerProvenance,
-  type RecordProvenance,
+import type {
+  ComputedLedgerProducerProvenance,
+  RecordProvenance,
 } from "@contracts/provenance";
+
+const DIRECT_PROVENANCE_V1_0_0 = "record-v1.0.0";
+const LEGACY_COMPUTED_PROVENANCE_V1_0_0 = "computed-legacy-v0.0.0";
+const COMPUTED_PROVENANCE_V1_0_0 = "computed-v1.0.0";
+const PROVENANCE_SERIALIZER_V1_0_0 = "1.0.0";
 
 export type RecordedLedgerProvenance =
   | RecordProvenance
@@ -53,6 +53,104 @@ const chainPreimageV1_0_0 = (
     provenance.asOf,
     provenance.confidence,
   ]);
+
+function exactKeysV1_0_0(value: object, expected: readonly string[]): boolean {
+  const keys = Reflect.ownKeys(value);
+  return keys.length === expected.length &&
+    expected.every((key) => keys.includes(key));
+}
+
+function canonicalTimestampV1_0_0(value: unknown): value is string {
+  return typeof value === "string" &&
+    !Number.isNaN(Date.parse(value)) &&
+    new Date(value).toISOString() === value;
+}
+
+function lexicalIdV1_0_0(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(value);
+}
+
+function hashV1_0_0(value: unknown): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function scopedRefV1_0_0(
+  value: unknown,
+): value is { readonly firmId: string; readonly id: string } {
+  return value !== null &&
+    typeof value === "object" &&
+    exactKeysV1_0_0(value, ["firmId", "id"]) &&
+    lexicalIdV1_0_0(Reflect.get(value, "firmId")) &&
+    lexicalIdV1_0_0(Reflect.get(value, "id"));
+}
+
+function parseComputedProvenanceV1_0_0(
+  value: unknown,
+): ComputedLedgerProducerProvenance | null {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    !exactKeysV1_0_0(value, ["source", "asOf", "confidence", "derivation"]) ||
+    Reflect.get(value, "source") !== "computed"
+  ) return null;
+  const asOf = Reflect.get(value, "asOf");
+  const confidence = Reflect.get(value, "confidence");
+  const derivation = Reflect.get(value, "derivation");
+  if (
+    !canonicalTimestampV1_0_0(asOf) ||
+    !PROVENANCE_CONFIDENCES_V1_0_0.has(confidence as string) ||
+    derivation === null ||
+    typeof derivation !== "object" ||
+    !exactKeysV1_0_0(derivation, [
+      "schemaVersion", "serializerVersion", "traceRef", "producer", "inputs",
+      "observedAt", "confidence", "traceDigest",
+    ]) ||
+    Reflect.get(derivation, "schemaVersion") !== COMPUTED_PROVENANCE_V1_0_0 ||
+    Reflect.get(derivation, "serializerVersion") !== PROVENANCE_SERIALIZER_V1_0_0 ||
+    !scopedRefV1_0_0(Reflect.get(derivation, "traceRef")) ||
+    Reflect.get(derivation, "observedAt") !== asOf ||
+    Reflect.get(derivation, "confidence") !== confidence ||
+    !hashV1_0_0(Reflect.get(derivation, "traceDigest"))
+  ) return null;
+  const producer = Reflect.get(derivation, "producer");
+  const inputs = Reflect.get(derivation, "inputs");
+  if (
+    producer === null ||
+    typeof producer !== "object" ||
+    !exactKeysV1_0_0(producer, ["kind", "id", "version"]) ||
+    Reflect.get(producer, "kind") !== "algorithm" ||
+    !lexicalIdV1_0_0(Reflect.get(producer, "id")) ||
+    typeof Reflect.get(producer, "version") !== "string" ||
+    !/^[0-9]+(?:\.[0-9]+){1,3}(?:-[a-z0-9.-]+)?$/.test(
+      Reflect.get(producer, "version") as string,
+    ) ||
+    !Array.isArray(inputs) ||
+    inputs.length === 0
+  ) return null;
+  const traceRef = Reflect.get(derivation, "traceRef") as {
+    readonly firmId: string;
+  };
+  const seen = new Set<string>();
+  for (const input of inputs) {
+    if (
+      input === null ||
+      typeof input !== "object" ||
+      !exactKeysV1_0_0(input, ["kind", "entryRef", "entryHash"]) ||
+      Reflect.get(input, "kind") !== "ledger-entry" ||
+      !scopedRefV1_0_0(Reflect.get(input, "entryRef")) ||
+      !hashV1_0_0(Reflect.get(input, "entryHash"))
+    ) return null;
+    const ref = Reflect.get(input, "entryRef") as {
+      readonly firmId: string;
+      readonly id: string;
+    };
+    const key = `${ref.firmId}\u0000${ref.id}`;
+    if (ref.firmId !== traceRef.firmId || seen.has(key)) return null;
+    seen.add(key);
+  }
+  return value as ComputedLedgerProducerProvenance;
+}
 
 const PROVENANCE_SOURCES_V1_0_0 = new Set([
   "verin-crm",
@@ -139,7 +237,7 @@ export function decisionLedgerChainPreimage(
   if (!codec || !parsed) return null;
   return parsed.kind === "computed"
     ? JSON.stringify([
-        COMPUTED_LEDGER_PROVENANCE_VERSION,
+        COMPUTED_PROVENANCE_V1_0_0,
         payloadJson,
         parsed.canonicalBytes,
       ])
@@ -163,19 +261,19 @@ function parseRecordedLedgerProvenanceFields(
   const source = value.source;
   const version = value.provenanceSchemaVersion ??
     (source === "computed"
-      ? LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION
-      : DIRECT_LEDGER_PROVENANCE_VERSION);
+      ? LEGACY_COMPUTED_PROVENANCE_V1_0_0
+      : DIRECT_PROVENANCE_V1_0_0);
   const serializer = value.provenanceSerializerVersion ??
-    LEDGER_PROVENANCE_SERIALIZER_VERSION;
-  if (serializer !== LEDGER_PROVENANCE_SERIALIZER_VERSION) return null;
+    PROVENANCE_SERIALIZER_V1_0_0;
+  if (serializer !== PROVENANCE_SERIALIZER_V1_0_0) return null;
   if (
-    version === DIRECT_LEDGER_PROVENANCE_VERSION ||
-    version === LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION
+    version === DIRECT_PROVENANCE_V1_0_0 ||
+    version === LEGACY_COMPUTED_PROVENANCE_V1_0_0
   ) {
     if (
-      (version === DIRECT_LEDGER_PROVENANCE_VERSION &&
+      (version === DIRECT_PROVENANCE_V1_0_0 &&
         source === "computed") ||
-      (version === LEGACY_COMPUTED_LEDGER_PROVENANCE_VERSION &&
+      (version === LEGACY_COMPUTED_PROVENANCE_V1_0_0 &&
         source !== "computed") ||
       (value.provenanceJson !== undefined &&
         value.provenanceJson !== null) ||
@@ -192,7 +290,7 @@ function parseRecordedLedgerProvenanceFields(
     return provenance ? { kind: "legacy", provenance } : null;
   }
   if (
-    version !== COMPUTED_LEDGER_PROVENANCE_VERSION ||
+    version !== COMPUTED_PROVENANCE_V1_0_0 ||
     source !== "computed" ||
     typeof value.provenanceJson !== "string" ||
     typeof value.provenanceTraceId !== "string"
@@ -205,7 +303,7 @@ function parseRecordedLedgerProvenanceFields(
   } catch {
     return null;
   }
-  const provenance = parseLedgerProducerProvenance(unknown);
+  const provenance = parseComputedProvenanceV1_0_0(unknown);
   const serialized = canonicalJsonV1_0_0(unknown as JsonValue);
   if (
     !provenance ||

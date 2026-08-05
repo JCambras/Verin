@@ -14,6 +14,7 @@ import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { promotedDecisionId } from "@contracts/decision-core/ledger-references";
 import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import {
   foldDecisionProjection,
   type DecisionProjection,
@@ -94,11 +95,16 @@ async function writeReservationIndex(
 
 export async function prepareProjection(
   tx: SqlTx,
+  tenant: TenantContext,
   event: LedgerEntry,
   sequence: number,
   provenance: RecordProvenance,
   record?: DecisionRecord,
 ): Promise<PreparedProjection | undefined> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId || (record && record.firmId !== tenant.orgId)) {
+    throw appError("VALIDATION", "projection input tenant does not match authority");
+  }
   const loaded = await loadProjection(tx, event.firmId, event);
   if (
     event.type !== "DecisionRecorded" &&
@@ -138,10 +144,15 @@ export async function prepareProjection(
 
 export async function persistProjection(
   tx: SqlTx,
+  tenant: TenantContext,
   projection: PreparedProjection | undefined,
   sequence: number,
 ): Promise<void> {
+  assertTenantContext(tenant);
   if (!projection) return;
+  if (projection.event.firmId !== tenant.orgId) {
+    throw appError("VALIDATION", "projection tenant does not match authority");
+  }
   await writeReservationIndex(tx, projection, sequence);
   await tx.query(
     `INSERT INTO decision_state_projection
@@ -165,26 +176,31 @@ export async function persistProjection(
 
 export async function applyProjection(
   tx: SqlTx,
+  tenant: TenantContext,
   event: LedgerEntry,
   sequence: number,
   provenance: RecordProvenance,
   record?: DecisionRecord,
 ): Promise<void> {
+  assertTenantContext(tenant);
   const projection = await prepareProjection(
     tx,
+    tenant,
     event,
     sequence,
     provenance,
     record,
   );
-  await persistProjection(tx, projection, sequence);
+  await persistProjection(tx, tenant, projection, sequence);
 }
 
 /** Discard derived state so a replay can rebuild it from immutable rows alone. */
 export async function clearDerivedState(
   tx: SqlTx,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<void> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   await tx.query(
     "DELETE FROM decision_state_projection WHERE org_id = $1",
     [orgId],
@@ -202,8 +218,10 @@ export async function clearDerivedState(
 /** How many decisions this tenant has derived state for, so a window can say so. */
 export async function countDecisionProjections(
   db: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
 ): Promise<number> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   const rows = await db.query<{ n: number | string }>(
     "SELECT count(*) AS n FROM decision_state_projection WHERE org_id = $1",
     [orgId],
@@ -213,9 +231,11 @@ export async function countDecisionProjections(
 
 export async function listDecisionProjectionMetadata(
   db: SqlQueryable,
-  orgId: string,
+  tenant: TenantContext,
   limit: number,
 ): Promise<Array<{ readonly decisionId: string; readonly lastSequence: number }>> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   const rows = await db.query<{
     decision_id: string;
     last_sequence: number | string;
@@ -241,9 +261,11 @@ export async function listDecisionProjectionMetadata(
  */
 export async function listDecisionProjections(
   db: SqlDb,
-  orgId: string,
+  tenant: TenantContext,
   limit?: number,
 ): Promise<ProjectedDecision[]> {
+  assertTenantContext(tenant);
+  const orgId = tenant.orgId;
   const rows = await db.query<{
     state_json: string;
     provenance_json: string;

@@ -3751,3 +3751,26 @@ history must include its database guard, and computed trust cannot survive if it
 derivation can be erased, forged, detached, or skipped during bounded replay.
 **Revert path:** none while Prompt 7 permits computed producers, bounded register
 verification, or application-owned ledger schema.
+
+### D-123 · 2026-08-04 · reversible · Ledger integrity claims require independent authority
+
+Every ledger repository entry accepts and asserts a sealed tenant context before
+SQL. Event, replay-source, and computed-trace tenant identities must match that
+authority. Transaction runtime identity uses the realm registry while retaining a
+separate compile-time capability brand.
+
+Computed provenance confidence must equal the least-trust confidence derived from
+verified ancestry on append and replay. The recorded `computed-v1.0.0` parser,
+version constants, serializer identity, and chain tag are frozen inside the retained
+registry, while current provenance constants select new writes only.
+
+Bounded L4 verification reads an independently maintained per-tenant total witness.
+The witness is backfilled by forward-only migration 11, advances transactionally on
+inserts, and records attempted ledger mutation so deletion outside the verified
+window cannot pass. ADR-0039 amends ADR-0018's infrastructure ceiling from 9,400 to
+9,900 after the corrected implementation measured 9,651 lines.
+
+**Why:** immutable history cannot rely on raw tenant identifiers, self-referential
+counts, mutable current codecs, or producer confidence claims.
+**Revert path:** none while the decision ledger is a tenant-isolated replay and
+integrity authority.

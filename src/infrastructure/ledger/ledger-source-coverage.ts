@@ -1,8 +1,11 @@
 import type { SqlQueryable } from "@infra/store/db";
 import type { DecisionRecorded } from "@contracts/decision-core/ledger";
+import { appError } from "@contracts/errors";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
 export async function listReplayDecisionEvidenceCoverage(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: DecisionRecorded,
   windowStart: number,
   decisionSequence: number,
@@ -14,6 +17,10 @@ export async function listReplayDecisionEvidenceCoverage(
   }>;
   readonly complete: boolean;
 }> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   const maximumInWindow = Math.max(0, decisionSequence - windowStart);
   const resultLimit = maximumInWindow + 1;
   const result = await tx.query<{

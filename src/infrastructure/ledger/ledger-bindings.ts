@@ -5,6 +5,7 @@ import type { DecisionInputBundle } from "@contracts/decision-core/evidence";
 import type { VersionedSourceRef } from "@contracts/decision-core/explanation";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { promotedDecisionRef } from "@contracts/decision-core/ledger-references";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
 interface DecisionHashes {
   decision_hash: string;
@@ -87,8 +88,13 @@ export function decisionReplayPinsMatchBundle(
  */
 export async function assertLedgerSourceBindings(
   tx: SqlQueryable,
+  tenant: TenantContext,
   event: LedgerEntry,
 ): Promise<string | null> {
+  assertTenantContext(tenant);
+  if (event.firmId !== tenant.orgId) {
+    throw appError("VALIDATION", "ledger event tenant does not match authority");
+  }
   if (event.type === "EvidenceSnapshotRecorded") {
     const snapshot = await tx.query<{
       content_hash: string;

@@ -269,6 +269,63 @@ CREATE UNIQUE INDEX decision_reservation_one_active
   WHERE status = 'active';
 `;
 
+export const DECISION_LEDGER_TOTAL_WITNESS_SQL = `
+CREATE TABLE IF NOT EXISTS decision_ledger_total_witness (
+  org_id text PRIMARY KEY REFERENCES orgs(id),
+  entry_count bigint NOT NULL CHECK (entry_count >= 0),
+  compromised boolean NOT NULL DEFAULT false,
+  updated_at timestamptz NOT NULL
+);
+
+INSERT INTO decision_ledger_total_witness
+  (org_id, entry_count, compromised, updated_at)
+SELECT org_id, count(*), false, max(recorded_at)
+  FROM decision_ledger
+ GROUP BY org_id;
+
+CREATE OR REPLACE FUNCTION decision_ledger_total_on_insert() RETURNS trigger AS $$
+BEGIN
+  INSERT INTO decision_ledger_total_witness
+    (org_id, entry_count, compromised, updated_at)
+  VALUES (NEW.org_id, 1, false, NEW.recorded_at)
+  ON CONFLICT (org_id) DO UPDATE
+    SET entry_count = decision_ledger_total_witness.entry_count + 1,
+        updated_at = NEW.recorded_at;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS decision_ledger_total_insert ON decision_ledger;
+CREATE TRIGGER decision_ledger_total_insert AFTER INSERT ON decision_ledger
+  FOR EACH ROW EXECUTE FUNCTION decision_ledger_total_on_insert();
+
+CREATE OR REPLACE FUNCTION decision_ledger_total_on_mutation() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'TRUNCATE' THEN
+    UPDATE decision_ledger_total_witness
+       SET compromised = true, updated_at = now();
+    RETURN NULL;
+  END IF;
+  INSERT INTO decision_ledger_total_witness
+    (org_id, entry_count, compromised, updated_at)
+  VALUES (COALESCE(NEW.org_id, OLD.org_id), 0, true, now())
+  ON CONFLICT (org_id) DO UPDATE
+    SET compromised = true, updated_at = now();
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS decision_ledger_total_mutation ON decision_ledger;
+CREATE TRIGGER decision_ledger_total_mutation AFTER UPDATE OR DELETE ON decision_ledger
+  FOR EACH ROW EXECUTE FUNCTION decision_ledger_total_on_mutation();
+DROP TRIGGER IF EXISTS decision_ledger_total_truncate ON decision_ledger;
+CREATE TRIGGER decision_ledger_total_truncate AFTER TRUNCATE ON decision_ledger
+  FOR EACH STATEMENT EXECUTE FUNCTION decision_ledger_total_on_mutation();
+`;
+
 export const DECISION_LEDGER_REPLAY_COVERAGE_INDEX_SQL = `
 CREATE INDEX IF NOT EXISTS decision_ledger_evidence_recorded
   ON decision_ledger(org_id, evidence_snapshot_id, sequence)

@@ -27,12 +27,13 @@ async function main(): Promise<void> {
   let entriesTotal = 0;
   let decisionEntriesTotal = 0;
   for (const { id } of orgs.rows) {
-    const v = await verifyOrgChain(db, systemTenant("audit-chain-verify", id));
+    const tenant = systemTenant("audit-chain-verify", id);
+    const v = await verifyOrgChain(db, tenant);
     const line = `org ${id}: ${v.ok ? "OK" : "BROKEN"} (${v.entriesChecked} entries${v.reason ? `, ${v.reason}` : ""})`;
     process.stdout.write(`${line}\n`);
     if (!v.ok) broken += 1;
     entriesTotal += v.entriesChecked;
-    const decision = await verifyDecisionLedgerIntegrity(db, id);
+    const decision = await verifyDecisionLedgerIntegrity(db, tenant);
     // The chain verdict and the replay-source verdict fail for different reasons and
     // both are PII-safe codes: printing only OK/BROKEN would leave a failing gate
     // undiagnosable, which is exactly what the ledger write path refuses to do.

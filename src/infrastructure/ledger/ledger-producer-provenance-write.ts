@@ -1,6 +1,7 @@
 import type { SqlTx } from "@infra/store/db";
 import { appError } from "@contracts/errors";
 import type { RecordProvenance } from "@contracts/provenance";
+import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import {
   verifyPreparedLedgerProducerProvenance,
   type PreparedLedgerProducerProvenance,
@@ -63,12 +64,24 @@ async function insertOrMatchTrace(
 
 export async function persistLedgerProducerProvenance(
   tx: SqlTx,
+  tenant: TenantContext,
   prepared: PreparedLedgerProducerProvenance,
   beforeSequence: number,
   recordedAt: string,
 ): Promise<RecordProvenance> {
+  assertTenantContext(tenant);
+  if (
+    prepared.value.source === "computed" &&
+    (prepared.value.derivation.traceRef.firmId !== tenant.orgId ||
+      prepared.value.derivation.inputs.some(
+        (input) => input.entryRef.firmId !== tenant.orgId,
+      ))
+  ) {
+    throw appError("VALIDATION", "computed provenance tenant does not match authority");
+  }
   const verified = await verifyPreparedLedgerProducerProvenance(
     tx,
+    tenant,
     prepared,
     beforeSequence,
   );

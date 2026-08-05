@@ -28,7 +28,8 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/store/db.ts :: getDb", why: "global database singleton factory" },
   { ref: "src/infrastructure/store/db.ts :: createMemoryDb", why: "isolated test database factory" },
   { ref: "src/infrastructure/store/migration-support.ts :: migrationLedgerExists", why: "read-only global migration ledger discovery" },
-  { ref: "src/infrastructure/store/migrations.ts :: runMigrations", why: "global schema management" },
+  { ref: "src/infrastructure/store/migration-runner.ts :: runMigrationPlan", why: "global schema management" },
+  { ref: "src/infrastructure/store/migrations.ts :: runMigrations", why: "global schema management facade" },
   { ref: "src/infrastructure/store/readiness.ts :: readStoreReadiness", why: "cross-tenant deployment probe that reads no tenant rows" },
   { ref: "src/infrastructure/identity/identity-store.ts :: findUserByEmail", why: "login resolves the tenant from the identity row" },
   { ref: "src/infrastructure/identity/identity-store.ts :: getPasswordHash", why: "user-PK capability before authentication" },
@@ -46,6 +47,14 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/store/execution-store.ts :: makeExecutionStore.loadByToken", why: "unguessable resume-token capability load" },
   { ref: "src/infrastructure/audit/audit-store.ts :: enqueueAudit", why: "transaction-local auditedWrite internal" },
   { ref: "src/infrastructure/audit/audit-store.ts :: discardedAuditEventWork", why: "non-persisting login constant work" },
+  { ref: "src/infrastructure/ledger/ledger-bindings.ts :: decisionReplayPinsMatchBundle", why: "pure replay-pin comparison" },
+  { ref: "src/infrastructure/ledger/ledger-producer-provenance.ts :: prepareLedgerProducerProvenance", why: "pure provenance normalization" },
+  { ref: "src/infrastructure/ledger/ledger-structural-store.ts :: storedLedgerStructureLookup.decision", why: "closure captures asserted tenant authority" },
+  { ref: "src/infrastructure/ledger/ledger-structural-store.ts :: storedLedgerStructureLookup.entry", why: "closure captures asserted tenant authority" },
+  { ref: "src/infrastructure/ledger/ledger-structural-store.ts :: storedLedgerStructureLookup.decisionRecording", why: "closure captures asserted tenant authority" },
+  { ref: "src/infrastructure/ledger/ledger-structural-store.ts :: storedLedgerStructureLookup.evidenceRecording", why: "closure captures asserted tenant authority" },
+  { ref: "src/infrastructure/ledger/ledger-structural-store.ts :: storedLedgerStructureLookup.activeReservation", why: "closure captures asserted tenant authority" },
+  { ref: "src/infrastructure/store/db.ts :: isSqlTransaction", why: "pure transaction capability predicate" },
   { ref: "src/infrastructure/wire.ts :: resumeAccountOpeningByToken", why: "e-sign resume-token capability" },
   { ref: "src/infrastructure/wire.ts :: esignCallback", why: "verified e-sign signature and resume-token capability" },
   { ref: "src/infrastructure/wire.ts :: computeEsignSignature", why: "pure e-sign simulation signer" },
@@ -65,6 +74,7 @@ const PORT_ESCAPES = new Set([
   "src/domain/pii/projection-resolution.ts :: isPlainProjectionData.<call>",
   "src/domain/pii/projection-resolution.ts :: resolveCompleteSensitiveEntities.<call>",
   "src/domain/pii/projection-resolution.ts :: trustedStaticProjectionText.<call>",
+  "src/domain/ledger/projections.ts :: foldDecisionProjection.<call>",
   "src/domain/workflow/engine.ts :: ExecutionStore.loadByToken",
   "src/domain/schema/entities.ts :: isAccountType.<call>",
   "src/domain/schema/golden-record.ts :: resolveConflict.<call>",
@@ -449,31 +459,55 @@ export function detectMissingTenantParams(
         ...entry.signatures.map((signature) => signature.getDeclaration()),
       ]),
     );
-    const helperOwned = (declaration: Node, seen: ReadonlySet<string>): boolean => {
+    const helperReferences = (declaration: Node): Node[] => {
+      if (!Node.isFunctionDeclaration(declaration)) return [];
+      const name = declaration.getNameNode();
+      return name
+        ? name.findReferencesAsNodes().filter((reference) =>
+            reference.getSourceFile() === sf &&
+            reference.getStart() !== name.getStart())
+        : [];
+    };
+    const helperUsesAreOwned = (declaration: Node, seen: ReadonlySet<string>): boolean => {
       if (ownerDeclarations.has(declaration)) return true;
       if (declaration.getAncestors().some((ancestor) => ownerDeclarations.has(ancestor))) {
         return true;
       }
       if (!Node.isFunctionDeclaration(declaration)) return false;
-      const name = declaration.getNameNode();
-      if (!name) return false;
       const key = `${normalized}:${declaration.getStart()}`;
-      if (seen.has(key)) return false;
+      if (seen.has(key)) return true;
       const nextSeen = new Set(seen).add(key);
-      const references = name.findReferencesAsNodes().filter((reference) =>
-        reference.getSourceFile() === sf &&
-        reference.getStart() !== name.getStart()
-      );
+      const references = helperReferences(declaration);
       return references.length > 0 && references.every((reference) => {
         const parent = reference.getParent();
         if (!Node.isCallExpression(parent) || parent.getExpression() !== reference) {
           return false;
         }
         return parent.getAncestors().some((ancestor) =>
-          helperOwned(ancestor, nextSeen)
+          helperUsesAreOwned(ancestor, nextSeen)
         );
       });
     };
+    const helperReachesOwner = (declaration: Node, seen: ReadonlySet<string>): boolean => {
+      if (
+        ownerDeclarations.has(declaration) ||
+        declaration.getAncestors().some((ancestor) => ownerDeclarations.has(ancestor))
+      ) return true;
+      if (!Node.isFunctionDeclaration(declaration)) return false;
+      const key = `${normalized}:${declaration.getStart()}`;
+      if (seen.has(key)) return false;
+      const nextSeen = new Set(seen).add(key);
+      return helperReferences(declaration).some((reference) => {
+        const parent = reference.getParent();
+        return Node.isCallExpression(parent) &&
+          parent.getExpression() === reference &&
+          parent.getAncestors().some((ancestor) =>
+            helperReachesOwner(ancestor, nextSeen));
+      });
+    };
+    const helperOwned = (declaration: Node, seen: ReadonlySet<string>): boolean =>
+      helperUsesAreOwned(declaration, seen) &&
+      helperReachesOwner(declaration, seen);
     const sqlCalls = sf
       .getDescendantsOfKind(SyntaxKind.CallExpression)
       .filter(isSqlExecutorCall);
@@ -858,6 +892,49 @@ describe("tenant-context-required fence", () => {
         }
       `);
       expect(detectMissingTenantParams(project, new Set())).toEqual([]);
+    });
+
+    it("accepts recursive SQL helpers only when their cycle reaches a scoped owner", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        import {
+          assertTenantContext,
+          type TenantContext,
+        } from "../../contracts/tenant";
+        function left(db: SqlDb, orgId: string, depth: number): unknown {
+          if (depth > 0) return right(db, orgId, depth - 1);
+          return db.query("SELECT email FROM users WHERE org_id = $1", [orgId]);
+        }
+        function right(db: SqlDb, orgId: string, depth: number): unknown {
+          return left(db, orgId, depth);
+        }
+        export function listAll(db: SqlDb, tenant: TenantContext) {
+          assertTenantContext(tenant);
+          return left(db, tenant.orgId, 1);
+        }
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([]);
+    });
+
+    it("rejects a closed recursive SQL-helper cycle without a scoped owner", () => {
+      const project = repositoryFixture(`
+        import type { SqlDb } from "../store/db";
+        declare const db: SqlDb;
+        function left(depth: number): unknown {
+          if (depth > 0) return right(depth - 1);
+          return db.query("SELECT email FROM users");
+        }
+        function right(depth: number): unknown { return left(depth); }
+        void left;
+      `);
+      expect(detectMissingTenantParams(project, new Set())).toEqual([
+        {
+          ref: expect.stringMatching(
+            /^src\/infrastructure\/crm\/subject\.ts:\d+ :: <unowned-sql>$/,
+          ),
+          detail: "SQL executor call is not owned by a checked repository callable or reviewed global escape",
+        },
+      ]);
     });
 
     it("rejects SQL in an exported object getter even when a guarded sibling is callable", () => {
