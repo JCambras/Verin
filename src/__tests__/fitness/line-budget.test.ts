@@ -72,11 +72,13 @@ const CEILINGS = {
   // measurements are recorded in ADR-0034. D-122 raises it to 8000 against
   // 7941 measured lines for exact pending-action balance accounting. D-124
   // keeps it at 8000 against 7989 lines after settled-outgoing reconciliation.
+  // D-125 raises it to 8100 against 8018 lines for transitive determinism
+  // provenance and restriction lifecycle recomputation.
   // The ratchet-down after
   // the corpus generator's first
   // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,
   // never averaged into a platform layer.
-  tooling: 8000,
+  tooling: 8100,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

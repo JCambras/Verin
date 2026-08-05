@@ -478,7 +478,7 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.9.0",
+    schemaVersion: "verin-real-derived-replay/1.10.0",
     request: {
       firmRef: FIRM_REF,
       requestRef: REQUEST_REF,
@@ -558,6 +558,8 @@ const realDerivedCase = (
       restrictionRef: null,
       restrictionEvidenceSourceRef: null,
       restrictionState: "absent",
+      restrictionEffectiveFrom: null,
+      restrictionEffectiveTo: null,
       legalHoldRef: null,
       legalHoldEvidenceSourceRef: null,
       legalHoldScope: "none",
@@ -694,6 +696,10 @@ const realDerivedDefectCase = (defectClassId: string): Record<string, unknown> =
       payload.policy.restrictionRef = RESTRICTION_REF;
       payload.policy.restrictionEvidenceSourceRef = EVIDENCE_SOURCE_REF;
       payload.policy.restrictionState = "expired";
+      payload.policy.restrictionEffectiveFrom =
+        "2025-01-01T00:00:00.000Z";
+      payload.policy.restrictionEffectiveTo =
+        "2026-04-27T00:00:00.000Z";
       (item.subjects as string[]).push(RESTRICTION_REF);
       (item.evidence as Array<Record<string, unknown>>).push(
         observedEvidence("restriction", RESTRICTION_REF),
@@ -1317,7 +1323,7 @@ describe("corpus-provenance-split fence", () => {
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
       "verin-real-derived-case/1.4.0",
-      "verin-real-derived-replay/1.9.0",
+      "verin-real-derived-replay/1.10.0",
     ]);
     expect(
       corpusDigest(
@@ -2019,7 +2025,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.10.0",
+      "verin-real-derived-semantics/1.11.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,
@@ -3639,6 +3645,20 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       ).toContain("clean-control carries replay defect signatures");
     },
   );
+
+  it("recomputes restriction lifecycle from effective instants", () => {
+    const defect = realDerivedDefectCase("restriction-lifecycle-error");
+    const policy = (defect.replayPayload as Record<string, any>).policy;
+    policy.restrictionEffectiveFrom = "2026-01-01T00:00:00.000Z";
+    policy.restrictionEffectiveTo = null;
+    expect(
+      realDerivedCaseProblems(
+        defect,
+        classes,
+        "real-derived/RD-forged-restriction-state.json",
+      ).join("\n"),
+    ).toContain("restriction lifecycle state");
+  });
 
   it("the real-derived replay payload is versioned, complete, strict, and internally consistent", () => {
     const missing = realDerivedCase();

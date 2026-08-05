@@ -4984,3 +4984,29 @@ captain signoff remains pending.
 **Why:** one safe branch cannot hide a reachable nondeterministic origin, parameter destructuring cannot
 erase provenance, and settled debits cannot be added back or omitted during funding reconciliation.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-125 · 2026-08-05 · reversible · Determinism provenance and restriction lifecycle derive from complete facts
+
+The corpus determinism project now expands from `scripts/corpus/` through the complete transitive local
+executable import closure. Origin tracing covers method declarations, property accessors, and defaulted
+parameters. Every process member and every `node:os` member is treated as host state, so a newly used
+property or operating-system API cannot bypass a selected-member registry.
+
+Real-derived restriction policy now carries `restrictionEffectiveFrom` and `restrictionEffectiveTo`.
+Lifecycle state is recomputed from those instants at `evaluation.asOf`; absent restrictions require null
+instants, present restrictions require a start instant, inverted intervals fail, and a claimed enum that
+disagrees with the derived state is rejected before semantic attribution. The restriction defect context
+uses the same derived authority. The replay schema advances to `verin-real-derived-replay/1.10.0`, and the
+semantic contract advances to `verin-real-derived-semantics/1.11.0` with an explicit declarative lifecycle
+rule.
+
+The tooling ceiling rises from 8000 to 8100 against 8018 measured lines, leaving 82 lines of explicit
+headroom for the existing determinism and semantic owners. Canonical regeneration produces
+`corpusDigest` `befa00adb2f5081ba8854e4393a79373a05105078c37f2c872c0b594a271629c`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** imported executable helpers can alter corpus bytes, host state is an open category rather than a
+stable API list, and a signed lifecycle defect cannot be replayed from a trusted enum without its
+effectivity facts.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

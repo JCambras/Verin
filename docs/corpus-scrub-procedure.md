@@ -126,7 +126,7 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.9.0 closed payload
+replayPayload   verin-real-derived-replay/1.10.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{firmRef, family, conflictKey}]
 ```
@@ -136,7 +136,7 @@ The replay payload contains only the typed inputs needed by the supported defect
 - request, destination, ownership, discriminator, and identity-resolution state;
 - source liquidity, an explicit selected funding set, reserve shape, typed pending-action direction and
   treatment, and source tax class;
-- approval grant, scope, lifecycle, policy version, threshold comparison, restriction, and legal-hold state;
+- approval grant, scope, lifecycle, policy version, threshold comparison, restriction effectivity instants and derived state, and legal-hold state;
 - tax-review and instruction-conflict state;
 - event time and pinned time-zone-rule identity;
 - one typed expected and observed treatment for every supported defect class;
@@ -144,7 +144,7 @@ The replay payload contains only the typed inputs needed by the supported defect
 
 Absent, additional, ambiguous, or mutually incompatible fields fail. Request and destination identity,
 ownership, source-account resolution, selected-funding ownership and aggregate sufficiency, threshold
-comparison, pending-action treatment, authority lifecycle, evidence inventory, reservation inventory,
+comparison, pending-action treatment, authority and restriction lifecycle, evidence inventory, reservation inventory,
 and subject inventory are cross-checked rather than trusted. The payload carries no raw names, account
 numbers, institution names, unrelated balances, or unrelated household records.
 

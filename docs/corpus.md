@@ -59,7 +59,7 @@ manifest, included in `corpusDigest`, and supplied to the provenance-specific re
 | # | Rule |
 |---|---|
 | 1 | Bytes come from `canonicalJson` (`src/contracts/decision-core/serialization.ts`) plus exactly one trailing `\n`. |
-| 2 | No `Math.random`, callable or argless `Date`, `crypto.randomUUID`, random-byte or random-integer APIs, `crypto.getRandomValues`, `performance.now`, or `process.hrtime` anywhere under `scripts/corpus/`, including imports, aliases, assignments, parameters, local returns, and dynamic imports. AST-fenced. |
+| 2 | No `Math.random`, callable or argless `Date`, entropy APIs, locale APIs, process host state, or operating-system state anywhere in the complete local executable import closure rooted at `scripts/corpus/`, including aliases, assignments, parameters, methods, accessors, local returns, and dynamic imports. AST-fenced. |
 | 3 | No wall clock. Every instant descends from `spec.clock.asOf` by an explicit offset. |
 | 4 | No locale API and no `Intl` in generator code. Local time is derived from the chronologically latest qualifying pinned tz transition; duplicate transition instants are rejected. |
 | 5 | No `Set`/`Map` iteration-order dependence: every collection is sorted by a named comparator before emission. |
@@ -309,7 +309,7 @@ one.
 `corpusDigest` uses the versioned `verin-corpus/1.12.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.10.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.11.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
 its exact bytes, and exact digests for the complete repository-local runtime dependency closure rooted at

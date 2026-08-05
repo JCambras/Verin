@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "verin-real-derived-replay/1.9.0",
+  "$id": "verin-real-derived-replay/1.10.0",
   "title": "Verin scrubbed real-derived replay payload",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,7 @@
     "execution"
   ],
   "properties": {
-    "schemaVersion": { "const": "verin-real-derived-replay/1.9.0" },
+    "schemaVersion": { "const": "verin-real-derived-replay/1.10.0" },
     "request": {
       "type": "object",
       "additionalProperties": false,
@@ -231,6 +231,8 @@
         "restrictionRef",
         "restrictionEvidenceSourceRef",
         "restrictionState",
+        "restrictionEffectiveFrom",
+        "restrictionEffectiveTo",
         "legalHoldRef",
         "legalHoldEvidenceSourceRef",
         "legalHoldScope"
@@ -252,6 +254,12 @@
         },
         "restrictionState": {
           "enum": ["absent", "in-force", "expired", "future"]
+        },
+        "restrictionEffectiveFrom": {
+          "$ref": "#/$defs/nullableInstant"
+        },
+        "restrictionEffectiveTo": {
+          "$ref": "#/$defs/nullableInstant"
         },
         "legalHoldRef": { "$ref": "#/$defs/nullableLegalHoldRef" },
         "legalHoldEvidenceSourceRef": {
@@ -649,10 +657,17 @@
           "properties": {
             "policy": {
               "type": "object",
-              "required": ["restrictionRef", "restrictionState"],
+              "required": [
+                "restrictionRef",
+                "restrictionState",
+                "restrictionEffectiveFrom",
+                "restrictionEffectiveTo"
+              ],
               "properties": {
                 "restrictionRef": { "type": "null" },
-                "restrictionState": { "const": "absent" }
+                "restrictionState": { "const": "absent" },
+                "restrictionEffectiveFrom": { "type": "null" },
+                "restrictionEffectiveTo": { "type": "null" }
               }
             }
           }
@@ -663,12 +678,19 @@
           "properties": {
             "policy": {
               "type": "object",
-              "required": ["restrictionRef", "restrictionState"],
+              "required": [
+                "restrictionRef",
+                "restrictionState",
+                "restrictionEffectiveFrom",
+                "restrictionEffectiveTo"
+              ],
               "properties": {
                 "restrictionRef": { "$ref": "#/$defs/restrictionRef" },
                 "restrictionState": {
                   "enum": ["in-force", "expired", "future"]
-                }
+                },
+                "restrictionEffectiveFrom": { "$ref": "#/$defs/instant" },
+                "restrictionEffectiveTo": { "$ref": "#/$defs/nullableInstant" }
               }
             }
           }

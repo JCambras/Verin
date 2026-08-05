@@ -107,6 +107,8 @@ export type ReplayPayload = {
     restrictionRef: string | null;
     restrictionEvidenceSourceRef: string | null;
     restrictionState: "absent" | "in-force" | "expired" | "future";
+    restrictionEffectiveFrom: string | null;
+    restrictionEffectiveTo: string | null;
     legalHoldRef: string | null;
     legalHoldEvidenceSourceRef: string | null;
     legalHoldScope: "none" | "account" | "position";

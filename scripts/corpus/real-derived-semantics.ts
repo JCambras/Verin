@@ -25,10 +25,34 @@ const evidenceKindByPlane = new Map(
     entry.evidenceKind,
   ]),
 );
+const restrictionLifecycleState = (
+  item: RealDerivedCase,
+): "absent" | "in-force" | "expired" | "future" | null => {
+  const policy = item.replayPayload.policy;
+  if (policy.restrictionRef === null) return "absent";
+  if (policy.restrictionEffectiveFrom === null) return null;
+  if (policy.restrictionEffectiveFrom > item.evaluation.asOf) return "future";
+  return policy.restrictionEffectiveTo !== null &&
+      policy.restrictionEffectiveTo <= item.evaluation.asOf
+    ? "expired"
+    : "in-force";
+};
+
 export function realDerivedTopologyProblems(
   item: RealDerivedCase,
 ): string[] {
-  return topologyProblems(item, evidenceKindByPlane);
+  const policy = item.replayPayload.policy;
+  const derived = restrictionLifecycleState(item);
+  return [
+    ...topologyProblems(item, evidenceKindByPlane),
+    ...(derived === null ||
+        derived !== policy.restrictionState ||
+        (policy.restrictionEffectiveFrom !== null &&
+          policy.restrictionEffectiveTo !== null &&
+          policy.restrictionEffectiveTo < policy.restrictionEffectiveFrom)
+      ? ["restriction lifecycle state must match effective instants at evaluation.asOf"]
+      : []),
+  ];
 }
 
 const intervalCollapse = (item: RealDerivedCase): boolean => {
@@ -85,7 +109,7 @@ const CONTEXT_RULES: Readonly<Record<string, (item: RealDerivedCase) => boolean>
   "authority-lapses-during-evidence-interval": intervalCollapse,
   "restriction-not-in-force": (item) =>
     ["expired", "future"].includes(
-      item.replayPayload.policy.restrictionState,
+      restrictionLifecycleState(item) ?? "absent",
     ),
   "position-hold-present": (item) =>
     item.replayPayload.policy.legalHoldScope === "position",

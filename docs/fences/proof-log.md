@@ -7927,3 +7927,43 @@ produced `corpusDigest` `77388ead4e7cfd738954dc7b9915b32ecdcca7b013208ac20664505
 the real-derived partition remains empty, captain signoff remains pending, and all 1,436 tests pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-124 review hardening).
+
+---
+
+## PF-211 · executable closure, callable origins, host state, and restriction lifecycle · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-125, ADR-0034):** determinism analysis covers every local executable dependency and
+callable provenance path, process and operating-system host state cannot enter corpus bytes, and
+restriction lifecycle context is recomputed from signed effectivity facts at the evaluation instant.
+
+**Injection 1 - dependency outside the scan root.** Imported `process` through a sibling helper outside
+the synthetic corpus source root and read its environment from the corpus entry point.
+
+**Injection 2 - callable shape loss.** Returned `process` through a class method, a getter, and an omitted
+parameter whose default was `process`, then read `env.SEED` through each result.
+
+**Injection 3 - host-state registry gaps.** Read `process.platform`, `process.argv`,
+`node:os.hostname()`, and `node:os.release()`.
+
+**Injection 4 - asserted restriction state.** Claimed an expired restriction while its supplied interval
+was in force at `evaluation.asOf`.
+
+**Observed failure:**
+```
+expected [ SourceFile ] to have a length of 2 but got 1
+expected [] to have a length of 3 but got 0
+expected Set{} to deeply equal Set{ 'process.platform', 'process.argv', 'os.hostname', 'os.release' }
+expected schema validation output to contain 'restriction lifecycle state'
+```
+
+**Standing companions:** a sibling executable helper enters the project and preserves its origin;
+methods, getters, and default parameters each expose `process.env`; process properties and OS calls are
+reported by semantic origin; and a restriction whose enum disagrees with its signed effectivity interval
+fails with the lifecycle-specific refusal.
+
+**Revert:** each injection became a standing adversarial companion. Canonical regeneration produced
+`corpusDigest` `befa00adb2f5081ba8854e4393a79373a05105078c37f2c872c0b594a271629c`,
+the real-derived partition remains empty, captain signoff remains pending, and the focused companions
+pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-125 review hardening).

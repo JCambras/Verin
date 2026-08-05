@@ -141,12 +141,13 @@ generated manifest, bound into `corpusDigest`, and fed to the real-derived repor
 What ships now is the *pipeline*: a required `scrubAttestation` (source-system class, opaque identities
 for extractor, scrubber, and reviewer, chronological occurrence/extraction/scrub/review instants, records
 before and after, method, with review by a second party) plus strict hand-owned JSON Schemas for the case
-envelope and `verin-real-derived-replay/1.9.0` payload. That payload contains only typed destination,
+envelope and `verin-real-derived-replay/1.10.0` payload. That payload contains only typed destination,
 ownership, liquidity, direction, authority, threshold, policy, tax-review, instruction-conflict,
 temporal, evidence, reservation, execution, and expected-versus-observed treatment inputs needed by
 supported defect classes. Pending actions carry account and household references bound to the request,
-selected funding, and exact evidence. Threshold policy identity carries its strict or inclusive
-comparator. Absent, extra, ambiguous, incompatible, or unversioned inputs fail. Raw names,
+selected funding, and exact evidence. Restriction policy carries effectivity instants so lifecycle state
+is recomputed at `evaluation.asOf`. Threshold policy identity carries its strict or inclusive comparator.
+Absent, extra, ambiguous, incompatible, or unversioned inputs fail. Raw names,
 account numbers, unrelated balances, and unrelated household data have no field in the contract.
 
 Every hand-owned corpus JSON document passes one unique-key parser before semantic parsing or hashing.
@@ -159,7 +160,7 @@ what makes a shipped-but-unpopulated capability charter-#5-legal.
 Derived ids accept only opaque token components and closed suffix vocabularies. A name or other prose
 cannot hide inside an id-shaped string.
 
-The closed `verin-real-derived-semantics/1.10.0` registry separates awkward context from outcome in both
+The closed `verin-real-derived-semantics/1.11.0` registry separates awkward context from outcome in both
 corpus partitions. A defect case is accepted only when its label is the exact singleton context-bound
 treatment mismatch. Detector attribution for a defect is either an empty miss or the exact signed-label
 singleton. A clean control records the
@@ -290,6 +291,8 @@ explicit pending-action balance inclusion, and exact-once funding arithmetic. Th
 the separated determinism, schema, semantic, and topology owners under the unchanged 500-line file ceiling.
 D-124 keeps the ceiling at 8000 against 7989 measured lines after adding settled-outgoing availability
 semantics. The 11-line headroom remains measured rather than implicit.
+D-125 raises the ceiling to 8100 against 8018 measured lines for transitive determinism provenance and
+restriction lifecycle recomputation. The 82-line buffer preserves the separate fence and semantic owners.
 
 ## What this PR explicitly does NOT claim
 

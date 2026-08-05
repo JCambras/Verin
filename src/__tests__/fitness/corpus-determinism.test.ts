@@ -2,14 +2,20 @@ import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
-import { REPO_ROOT, toolingSourceFiles } from "./_fence-utils";
+import { Node, Project, SyntaxKind, ts, type SourceFile } from "ts-morph";
+import {
+  isExecutableSourceFilePath,
+  moduleReferences,
+  REPO_ROOT,
+  toolingSourceFiles,
+} from "./_fence-utils";
 import { inMemoryProject } from "./_fence-utils";
 import { loadTaxonomy } from "../../../scripts/corpus/defects";
 import { generateSyntheticCases } from "../../../scripts/corpus/generate";
@@ -104,23 +110,10 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       "generatePrime",
       "generatePrimeSync",
     ]);
-    const processRuntimeMembers = new Set([
-      "env",
-      "hrtime",
-      "uptime",
-      "cpuUsage",
-      "resourceUsage",
-      "memoryUsage",
-      "availableMemory",
-      "constrainedMemory",
-      "getActiveResourcesInfo",
-      "cwd",
-    ]);
     const bannedCalls = new Set([
       "Math.random",
       "Date.now",
       "performance.now",
-      ...[...processRuntimeMembers].map((name) => `process.${name}`),
       ...[...cryptoRandomMembers].flatMap((name) => [
         `crypto.${name}`,
         `crypto.webcrypto.${name}`,
@@ -130,11 +123,24 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
     ]);
     const apiName = (origin: string): string =>
       origin.startsWith("crypto.") ? origin.split(".").at(-1)! : origin;
+    const sensitiveOriginApi = (origin: string): string | undefined => {
+      if (bannedCalls.has(origin)) return apiName(origin);
+      if (origin.startsWith("process.env")) return "process.env";
+      if (origin.startsWith("process.hrtime")) return "process.hrtime";
+      if (origin.startsWith("process.")) {
+        return origin.split(".").slice(0, 2).join(".");
+      }
+      if (origin.startsWith("os.")) {
+        return origin.split(".").slice(0, 2).join(".");
+      }
+      return undefined;
+    };
     const moduleOrigin = (moduleName: string): string | undefined =>
       moduleName.replace(/^node:/, "") === "crypto" ? "crypto" :
         moduleName.replace(/^node:/, "") === "process" ? "process" :
           moduleName.replace(/^node:/, "") === "perf_hooks" ? "performance" :
-            undefined;
+            moduleName.replace(/^node:/, "") === "os" ? "os" :
+              undefined;
     const ambientRoots = new Set([
       "Math",
       "Date",
@@ -219,6 +225,19 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       }
     }
     type CallableShape = { parameters: Node[]; returns: Node[] };
+    const returnedExpressions = (declaration: {
+      getDescendantsOfKind(kind: SyntaxKind.ReturnStatement): Array<{
+        getExpression(): Node | undefined;
+      }>;
+      getBody(): Node | undefined;
+    }): Node[] => {
+      const body = declaration.getBody();
+      const returns = declaration
+        .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+        .flatMap((statement) => statement.getExpression() ?? []);
+      if (body !== undefined && !Node.isBlock(body)) returns.push(body);
+      return returns;
+    };
     const symbolDeclarations = (node: Node): Node[] => {
       const symbol = node.getSymbol();
       return (symbol?.getAliasedSymbol() ?? symbol)?.getDeclarations() ?? [];
@@ -228,20 +247,23 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         ? localFunctions.get(target.getText())
         : undefined;
       const resolved = symbolDeclarations(target).flatMap((declaration) => {
-        if (Node.isFunctionDeclaration(declaration)) {
-          const body = declaration.getBody();
-          const returns: Node[] = declaration
-            .getDescendantsOfKind(SyntaxKind.ReturnStatement)
-            .flatMap((statement) => statement.getExpression() ?? []);
-          if (body !== undefined && !Node.isBlock(body)) returns.push(body);
-          return [{ parameters: declaration.getParameters(), returns }];
+        if (
+          Node.isFunctionDeclaration(declaration) ||
+          Node.isMethodDeclaration(declaration)
+        ) {
+          return [{
+            parameters: declaration.getParameters(),
+            returns: returnedExpressions(declaration),
+          }];
         }
         const value =
           Node.isVariableDeclaration(declaration)
             ? declaration.getInitializer()
             : Node.isPropertyAssignment(declaration)
               ? declaration.getInitializer()
-              : undefined;
+              : Node.isPropertyDeclaration(declaration)
+                ? declaration.getInitializer()
+                : undefined;
         if (
           value === undefined ||
           (!Node.isArrowFunction(value) && !Node.isFunctionExpression(value))
@@ -304,7 +326,11 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
             Node.isObjectBindingPattern(child) ||
             Node.isArrayBindingPattern(child)
           );
-        if (name !== undefined) bindParameter(name, arguments_[index]);
+        const supplied = arguments_[index] ??
+          (Node.isParameterDeclaration(parameter)
+            ? parameter.getInitializer()
+            : undefined);
+        if (name !== undefined) bindParameter(name, supplied);
       }
       return next;
     };
@@ -437,9 +463,17 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
     ): OriginSet | undefined => {
       if (
         Node.isVariableDeclaration(declaration) ||
-        Node.isPropertyAssignment(declaration)
+        Node.isPropertyAssignment(declaration) ||
+        Node.isPropertyDeclaration(declaration)
       ) {
         return originOf(declaration.getInitializer(), trail, bindings);
+      }
+      if (Node.isGetAccessorDeclaration(declaration)) {
+        return mergeOrigins(
+          ...returnedExpressions(declaration).map((expression) =>
+            originOf(expression, trail, bindings)
+          ),
+        );
       }
       if (Node.isShorthandPropertyAssignment(declaration)) {
         return originOf(declaration.getNameNode(), trail, bindings);
@@ -600,7 +634,8 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       ) {
         const changed = setOrigins(name.getText(), value);
         for (const origin of value) {
-          if (bannedCalls.has(origin)) record(source, apiName(origin), sf);
+          const api = sensitiveOriginApi(origin);
+          if (api !== undefined) record(source, api, sf);
         }
         return changed;
       }
@@ -663,13 +698,16 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           normalizedModuleName === "crypto" &&
             (cryptoRandomMembers.has(imported) || imported === "webcrypto")
             ? `crypto.${imported}` :
-            normalizedModuleName === "process" && processRuntimeMembers.has(imported) ?
+            normalizedModuleName === "process" ?
               `process.${imported}` :
+              normalizedModuleName === "os" ?
+                `os.${imported}` :
               normalizedModuleName === "perf_hooks" && imported === "performance" ? "performance" :
                 undefined;
         if (origin === undefined) continue;
         origins.set(local, new Set([origin]));
-        if (bannedCalls.has(origin)) record(specifier, apiName(origin), sf);
+        const api = sensitiveOriginApi(origin);
+        if (api !== undefined) record(specifier, api, sf);
       }
     }
     let changed = true;
@@ -739,10 +777,9 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       for (const origin of originOf(call.getExpression()) ?? []) {
         if (origin === "Date") {
           record(call, "Date() (callable)", sf);
-        } else if (bannedCalls.has(origin)) {
-          record(call, apiName(origin), sf);
-        } else if (origin.startsWith("process.hrtime.")) {
-          record(call, "process.hrtime", sf);
+        } else {
+          const api = sensitiveOriginApi(origin);
+          if (api !== undefined) record(call, api, sf);
         }
       }
     }
@@ -762,10 +799,8 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           ? argument.getLiteralText()
           : "";
       for (const origin of originOf(access) ?? []) {
-        if (bannedCalls.has(origin)) record(access, apiName(origin), sf);
-        if (origin === "process.env" || origin.startsWith("process.env.")) {
-          record(access, "process.env", sf);
-        }
+        const api = sensitiveOriginApi(origin);
+        if (api !== undefined) record(access, api, sf);
         if (origin === "Intl" || origin.startsWith("Intl.")) {
           record(access, "Intl", sf);
         }
@@ -791,6 +826,28 @@ const generatorProject = (root: string = CORPUS_SRC): Project => {
   });
   for (const file of toolingSourceFiles(root)) {
     project.addSourceFileAtPath(file);
+  }
+  for (let index = 0; index < project.getSourceFiles().length; index += 1) {
+    const source = project.getSourceFiles()[index]!;
+    for (const reference of moduleReferences(source)) {
+      if (reference.specifier === null) continue;
+      const resolved = ts.resolveModuleName(
+        reference.specifier,
+        source.getFilePath(),
+        project.getCompilerOptions(),
+        project.getModuleResolutionHost(),
+      ).resolvedModule;
+      if (
+        resolved === undefined ||
+        resolved.isExternalLibraryImport ||
+        !isExecutableSourceFilePath(resolved.resolvedFileName) ||
+        resolved.resolvedFileName.split(/[/\\]/).includes("node_modules") ||
+        project.getSourceFile(resolved.resolvedFileName) !== undefined
+      ) {
+        continue;
+      }
+      project.addSourceFileAtPath(resolved.resolvedFileName);
+    }
   }
   return project;
 };
@@ -1154,6 +1211,31 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     );
   });
 
+  it("flags method, accessor, and default-parameter host origins", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject(
+        file(
+          "class Helper { runtime() { return process; } get ambient() { return process; } }\nconst helper = new Helper();\nvoid helper.runtime().env.SEED;\nvoid helper.ambient.env.SEED;\nfunction read(runtime = process) { return runtime; }\nvoid read().env.SEED;\n",
+        ),
+      ),
+    );
+    expect(uses.filter((use) => use.api === "process.env")).toHaveLength(3);
+  });
+
+  it("flags process properties and operating-system APIs", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject({
+        "/src/contracts/direct.ts":
+          "void process.platform;\nvoid process.argv;\n",
+        "/src/contracts/imported.ts":
+          'import { hostname } from "node:os";\nimport * as os from "node:os";\nvoid hostname();\nvoid os.release();\n',
+      }),
+    );
+    expect(new Set(uses.map((use) => use.api))).toEqual(
+      new Set(["process.platform", "process.argv", "os.hostname", "os.release"]),
+    );
+  });
+
   it("scans every supported executable source extension", () => {
     const root = mkdtempSync(join(tmpdir(), "verin-corpus-determinism-"));
     try {
@@ -1180,6 +1262,32 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
         bannedNondeterminismUses(project, root)
           .filter((use) => use.api === "Math.random"),
       ).toHaveLength(extensions.length);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("scans executable dependencies outside the corpus source root", () => {
+    const root = mkdtempSync(join(tmpdir(), "verin-corpus-closure-"));
+    const corpusRoot = join(root, "corpus");
+    try {
+      mkdirSync(corpusRoot);
+      writeFileSync(
+        join(corpusRoot, "entry.ts"),
+        'import { runtime } from "../shared";\nvoid runtime.env.SEED;\n',
+        "utf8",
+      );
+      writeFileSync(
+        join(root, "shared.ts"),
+        "export const runtime = process;\n",
+        "utf8",
+      );
+      const project = generatorProject(corpusRoot);
+      expect(project.getSourceFiles()).toHaveLength(2);
+      expect(
+        bannedNondeterminismUses(project, root)
+          .filter((use) => use.api === "process.env"),
+      ).toHaveLength(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
