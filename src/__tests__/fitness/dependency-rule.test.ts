@@ -246,6 +246,12 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nclass Holder { module: typeof nodeModule; constructor() { this.module = nodeModule; } }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { constructor(public module = nodeModule) {} }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { constructor(public module: typeof nodeModule) {} }\nconst load = new Holder(nodeModule).module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst modules: Array<typeof nodeModule> = [];\nmodules.push(nodeModule);\nconst load = modules[0]!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst modules = new Map<string, typeof nodeModule>();\nmodules.set("loader", nodeModule);\nconst load = modules.get("loader")!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nObject.assign(holder, { module: nodeModule });\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nObject.defineProperty(holder, "module", { value: nodeModule });\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nconst holder: { module?: typeof nodeModule } = {};\nReflect.set(holder, "module", nodeModule);\nconst load = holder.module!.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { static module: typeof nodeModule; static { this.module = nodeModule; } }\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -265,6 +271,26 @@ describe("dependency-rule fence", () => {
           "src/domain/evil.ts": [
             `import { nodeModule } from "./loader";`,
             "const load = nodeModule.createRequire(import.meta.url);",
+            `export const value = load("@infra/store");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
+    it("follows a mutation-held node:module namespace across modules", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/loader.ts": [
+            `import * as nodeModule from "node:module";`,
+            "export const modules: Array<typeof nodeModule> = [];",
+            "modules.push(nodeModule);",
+          ].join("\n"),
+          "src/domain/evil.ts": [
+            `import { modules } from "./loader";`,
+            "const load = modules[0]!.createRequire(import.meta.url);",
             `export const value = load("@infra/store");`,
           ].join("\n"),
         }),
@@ -389,7 +415,7 @@ describe("dependency-rule fence", () => {
       )).toContain("domain->infrastructure");
     });
 
-    it("invalidates cached container assignments after a source edit", () => {
+    it("invalidates cached container writes after a source edit", () => {
       const project = inMemoryProject({
         "src/domain/subject.ts": [
           "class Holder { static module: unknown; }",
@@ -402,7 +428,7 @@ describe("dependency-rule fence", () => {
       project.getSourceFileOrThrow("src/domain/subject.ts").replaceWithText([
         `import * as nodeModule from "node:module";`,
         "class Holder { static module: typeof nodeModule; }",
-        "Holder.module = nodeModule;",
+        "Object.assign(Holder, { module: nodeModule });",
         "const load = Holder.module.createRequire(import.meta.url);",
         `export const value = load("@infra/store");`,
       ].join("\n"));
@@ -1344,6 +1370,56 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "clock pushed into an array",
+        [
+          "const clocks: DateConstructor[] = [];",
+          "clocks.push(Date);",
+          "export const value = clocks[0]!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock stored through Map.set",
+        [
+          "const clocks = new Map<string, DateConstructor>();",
+          `clocks.set("primary", Date);`,
+          `export const value = clocks.get("primary")!.now();`,
+        ].join("\n"),
+      ],
+      [
+        "clock copied through Object.assign",
+        [
+          "const holder: { Clock?: DateConstructor } = {};",
+          "Object.assign(holder, { Clock: Date });",
+          "export const value = holder.Clock!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock installed through Object.defineProperty",
+        [
+          "const holder: { Clock?: DateConstructor } = {};",
+          `Object.defineProperty(holder, "Clock", { value: Date });`,
+          "export const value = holder.Clock!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock installed through Reflect.set",
+        [
+          "const holder: { Clock?: DateConstructor } = {};",
+          `Reflect.set(holder, "Clock", Date);`,
+          "export const value = holder.Clock!.now();",
+        ].join("\n"),
+      ],
+      [
+        "clock assigned in a static block",
+        [
+          "class Holder {",
+          "  static Clock: DateConstructor;",
+          "  static { this.Clock = Date; }",
+          "}",
+          "export const value = Holder.Clock.now();",
+        ].join("\n"),
+      ],
+      [
         "clock retained in a static class getter",
         [
           "class Holder { static get Clock() { return Date; } }",
@@ -1590,6 +1666,27 @@ describe("dependency-rule fence", () => {
         "export const value = Date.parse('2026-08-05');",
       ],
       [
+        "reflected Date prototype method",
+        [
+          `const method = Object.getOwnPropertyDescriptor(Date.prototype, "getFullYear")!.value;`,
+          "export const value = method.call(new Date(0));",
+        ].join("\n"),
+      ],
+      [
+        "Reflect-acquired Date prototype method",
+        [
+          `const method = Reflect.getOwnPropertyDescriptor(Date.prototype, "getFullYear")!.value;`,
+          "export const value = method.call(new Date(0));",
+        ].join("\n"),
+      ],
+      [
+        "bulk-acquired Date prototype methods",
+        [
+          "const methods = Object.getOwnPropertyDescriptors(Date.prototype);",
+          "export const value = methods.getFullYear!.value.call(new Date(0));",
+        ].join("\n"),
+      ],
+      [
         "typed Intl number formatter",
         "export function format(value: Intl.NumberFormat) { return value.format(1000); }",
       ],
@@ -1653,6 +1750,24 @@ describe("dependency-rule fence", () => {
           "src/contracts/evil.ts": [
             `import { ${_name === "clock" ? "Clock" : "formatter"} } from "./barrel";`,
             used,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it("follows a mutation-held ambient clock across modules", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts": [
+            "export const clocks: DateConstructor[] = [];",
+            "clocks.push(Date);",
+          ].join("\n"),
+          "src/contracts/evil.ts": [
+            `import { clocks } from "./capability";`,
+            "export const value = clocks[0]!.now();",
           ].join("\n"),
         }),
       );
@@ -1908,6 +2023,38 @@ describe("dependency-rule fence", () => {
             "  nestedAssignedRandom(),",
             "  Date[localMember],",
             "  callClock(callableClock),",
+            "];",
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
+    });
+
+    it("project-owned clocks remain allowed through mutable carriers", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/ok.ts": [
+            "const Clock = { now: () => 1 };",
+            "const clocks: Array<typeof Clock> = [];",
+            "clocks.push(Clock);",
+            "const assigned: { Clock?: typeof Clock } = {};",
+            "Object.assign(assigned, { Clock });",
+            "const described: { Clock?: typeof Clock } = {};",
+            `Object.defineProperty(described, "Clock", { value: Clock });`,
+            "const reflected: { Clock?: typeof Clock } = {};",
+            `Reflect.set(reflected, "Clock", Clock);`,
+            "class Holder {",
+            "  static Clock: typeof Clock;",
+            "  static { this.Clock = Clock; }",
+            "}",
+            `const describedMethod = Object.getOwnPropertyDescriptor(Clock, "now")!.value;`,
+            "export const values = [",
+            "  clocks[0]!.now(),",
+            "  assigned.Clock!.now(),",
+            "  described.Clock!.now(),",
+            "  reflected.Clock!.now(),",
+            "  Holder.Clock.now(),",
+            "  describedMethod(),",
             "];",
           ].join("\n"),
         }),

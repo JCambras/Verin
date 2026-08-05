@@ -928,13 +928,36 @@ const valuePathSegmentsEqual = (
     : left === right;
 
 const PROBE_CASES = Symbol("probe-cases");
+const LARGE_INVENTORY_TENANT_PROBES = Symbol("large-inventory-tenant-probes");
+type LargeInventoryTenantProbe = {
+  readonly legal: unknown;
+  readonly mixed: readonly unknown[];
+};
 type ProbeSet = {
   readonly [PROBE_CASES]: true;
   readonly cases: readonly unknown[];
+  readonly [LARGE_INVENTORY_TENANT_PROBES]?: readonly LargeInventoryTenantProbe[];
 };
 
 const probeSet = (...cases: readonly unknown[]): ProbeSet => ({
   [PROBE_CASES]: true,
+  cases,
+});
+
+const largeInventoryTenantProbeSet = (
+  ...probes: readonly LargeInventoryTenantProbe[]
+): ProbeSet => ({
+  [PROBE_CASES]: true,
+  [LARGE_INVENTORY_TENANT_PROBES]: probes,
+  cases: probes.map((probe) => probe.legal),
+});
+
+const probeSetWithLargeInventoryTenantProbes = (
+  cases: readonly unknown[],
+  ...probes: readonly LargeInventoryTenantProbe[]
+): ProbeSet => ({
+  [PROBE_CASES]: true,
+  [LARGE_INVENTORY_TENANT_PROBES]: probes,
   cases,
 });
 
@@ -945,6 +968,16 @@ const probeCases = (probe: unknown): readonly unknown[] =>
     (probe as Partial<ProbeSet>)[PROBE_CASES] === true
     ? (probe as ProbeSet).cases
     : [probe];
+
+const largeInventoryTenantProbes = (
+  probe: unknown,
+): readonly LargeInventoryTenantProbe[] =>
+  probe !== null &&
+    typeof probe === "object" &&
+    PROBE_CASES in probe &&
+    (probe as Partial<ProbeSet>)[PROBE_CASES] === true
+    ? (probe as ProbeSet)[LARGE_INVENTORY_TENANT_PROBES] ?? []
+    : [];
 
 const proceedBoundary = decisionFixture("decision-record-proceed");
 const blockedBoundary = decisionFixture("decision-record-blocked");
@@ -1321,6 +1354,80 @@ const comprehensiveProhibitedRecords = prohibitedDecisions.map((result) => ({
   ...prohibitedBoundary,
   result,
 }));
+const mixedApprovalTemplate = {
+  ...approvalTemplate,
+  stages: [
+    reTenant(approvalTemplate.stages[0]!, "firm-b"),
+    approvalTemplate.stages[1]!,
+  ],
+};
+const mixedMultiStageAuthorityRequirement = {
+  ...multiStageAuthorityRequirement,
+  stages: [
+    reTenant(multiStageAuthorityRequirement.stages[0]!, "firm-b"),
+    multiStageAuthorityRequirement.stages[1]!,
+  ],
+};
+const mixedSpecialistAuthorityRequirement = {
+  ...specialistAuthorityRequirement,
+  stages: [
+    reTenant(specialistAuthorityRequirement.stages[0]!, "firm-b"),
+    specialistAuthorityRequirement.stages[1]!,
+  ],
+};
+const mixedBlockedDecision = {
+  ...multiBlockerDecision,
+  blockers: [
+    reTenant(multiBlockerDecision.blockers[0]!, "firm-b"),
+    multiBlockerDecision.blockers[1]!,
+  ],
+};
+const mixDecisionRecordResult = <
+  T extends {
+    readonly intentRef: { readonly firmId: string };
+    readonly result: unknown;
+  },
+>(
+  record: T,
+): T => {
+  const firmId = record.intentRef.firmId === "firm-b" ? "firm-a" : "firm-b";
+  return {
+    ...record,
+    intentRef: reTenant(record.intentRef, firmId),
+    result: reTenant(record.result, firmId),
+  };
+};
+const mixProceedRecommendation = <
+  T extends {
+    readonly authority?: unknown;
+    readonly recommendation?: unknown;
+  },
+>(result: T): T => ({
+  ...result,
+  authority: reTenant(result.authority, "firm-b"),
+  recommendation: reTenant(result.recommendation, "firm-b"),
+});
+const mixedRecursiveExplanationNode = {
+  ...recursiveExplanationNodes[0]!,
+  childNodes: [
+    reTenant(recursiveExplanationNodes[0]!.childNodes[0]!, "firm-b"),
+    recursiveExplanationNodes[0]!.childNodes[1]!,
+  ],
+};
+const mixedExecutionPlan = {
+  ...multiStepExecutionPlan,
+  steps: [
+    reTenant(multiStepExecutionPlan.steps[0]!, "firm-b"),
+    multiStepExecutionPlan.steps[1]!,
+  ],
+};
+const mixedExecutionStep = {
+  ...probedExecutionStep,
+  compensatingAction: reTenant(
+    probedExecutionStep.compensatingAction,
+    "firm-b",
+  ),
+};
 
 const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   Record<string, unknown>
@@ -1330,39 +1437,77 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "authority.ts:ApprovalRequirementSchema": approvalRequirement,
   "authority.ts:ApprovalStageSchema": probedApprovalStage,
   "authority.ts:ApprovalStageTemplateSchema": approvalStageTemplate,
-  "authority.ts:ApprovalTemplateSchema": approvalTemplate,
-  "authority.ts:AuthorityRequirementSchema": probeSet(
-    multiStageAuthorityRequirement,
-    specialistAuthorityRequirement,
+  "authority.ts:ApprovalTemplateSchema": largeInventoryTenantProbeSet({
+    legal: approvalTemplate,
+    mixed: [mixedApprovalTemplate],
+  }),
+  "authority.ts:AuthorityRequirementSchema": largeInventoryTenantProbeSet(
+    {
+      legal: multiStageAuthorityRequirement,
+      mixed: [mixedMultiStageAuthorityRequirement],
+    },
+    {
+      legal: specialistAuthorityRequirement,
+      mixed: [mixedSpecialistAuthorityRequirement],
+    },
   ),
   "authority.ts:EscalationStepSchema": escalationStep,
-  "decision.ts:BlockedDecisionSchema": {
-    ...multiBlockerDecision,
-  },
-  "decision.ts:DecisionRecordSchema": probeSet(
-    comprehensiveProceedRecord,
-    comprehensiveApprovalRecord,
-    comprehensiveBlockedRecord,
-    ...comprehensiveProhibitedRecords,
+  "decision.ts:BlockedDecisionSchema": largeInventoryTenantProbeSet({
+    legal: multiBlockerDecision,
+    mixed: [mixedBlockedDecision],
+  }),
+  "decision.ts:DecisionRecordSchema": largeInventoryTenantProbeSet(
+    ...[
+      comprehensiveProceedRecord,
+      comprehensiveApprovalRecord,
+      comprehensiveBlockedRecord,
+      ...comprehensiveProhibitedRecords,
+    ].map((legal) => ({
+      legal,
+      mixed: [mixDecisionRecordResult(legal)],
+    })),
   ),
-  "decision.ts:DecisionResultSchema": probeSet(
-    multiStepProceedResult,
-    multiStepSpecialistProceedResult,
-    multiBlockerDecision,
-    prohibitedBoundary.result,
-    prohibitedWithInstructionSource,
-    prohibitedWithPolicySource,
+  "decision.ts:DecisionResultSchema": probeSetWithLargeInventoryTenantProbes(
+    [
+      multiStepProceedResult,
+      multiStepSpecialistProceedResult,
+      multiBlockerDecision,
+      prohibitedBoundary.result,
+      prohibitedWithInstructionSource,
+      prohibitedWithPolicySource,
+    ],
+    {
+      legal: multiStepProceedResult,
+      mixed: [mixProceedRecommendation(multiStepProceedResult)],
+    },
+    {
+      legal: multiStepSpecialistProceedResult,
+      mixed: [mixProceedRecommendation(multiStepSpecialistProceedResult)],
+    },
+    { legal: multiBlockerDecision, mixed: [mixedBlockedDecision] },
   ),
-  "decision.ts:ExplanationNodeSchema": probeSet(
-    explanationNode,
-    instructionExplanationNode,
-    regulatoryExplanationNode,
-    ...recursiveExplanationNodes,
+  "decision.ts:ExplanationNodeSchema": probeSetWithLargeInventoryTenantProbes(
+    [
+      explanationNode,
+      instructionExplanationNode,
+      regulatoryExplanationNode,
+      ...recursiveExplanationNodes,
+    ],
+    {
+      legal: recursiveExplanationNodes[0],
+      mixed: [mixedRecursiveExplanationNode],
+    },
   ),
   "decision.ts:PrecedenceStepSchema": probeSet(...precedenceSteps),
-  "decision.ts:ProceedDecisionSchema": probeSet(
-    multiStepProceedResult,
-    multiStepSpecialistProceedResult,
+  "decision.ts:ProceedDecisionSchema": largeInventoryTenantProbeSet(
+    {
+      legal: multiStepProceedResult,
+      mixed: [mixProceedRecommendation(multiStepProceedResult)],
+    },
+    {
+      legal: multiStepSpecialistProceedResult,
+      mixed: [mixProceedRecommendation(multiStepSpecialistProceedResult)],
+    },
   ),
   "decision.ts:ProhibitedDecisionSchema": probeSet(...prohibitedDecisions),
   "decision.ts:ProhibitionSchema": probeSet(...prohibitions),
@@ -1372,15 +1517,27 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
     fixture("decision-input-bundle"),
   "evidence.ts:EvidenceSnapshotRefSchema": evidenceSnapshot,
   "execution.ts:CompensatingActionSchema": compensatingAction,
-  "execution.ts:ExecutionPlanSchema": multiStepExecutionPlan,
+  "execution.ts:ExecutionPlanSchema": largeInventoryTenantProbeSet({
+    legal: multiStepExecutionPlan,
+    mixed: [mixedExecutionPlan],
+  }),
   "execution.ts:ExecutionPreconditionSchema": executionPrecondition,
-  "execution.ts:ExecutionStepSchema": probedExecutionStep,
+  "execution.ts:ExecutionStepSchema": largeInventoryTenantProbeSet({
+    legal: probedExecutionStep,
+    mixed: [mixedExecutionStep],
+  }),
   "execution.ts:RetrySafeExternalActionSchema": externalAction,
-  "explanation.ts:ExplanationNodeSchema": probeSet(
-    explanationNode,
-    instructionExplanationNode,
-    regulatoryExplanationNode,
-    ...recursiveExplanationNodes,
+  "explanation.ts:ExplanationNodeSchema": probeSetWithLargeInventoryTenantProbes(
+    [
+      explanationNode,
+      instructionExplanationNode,
+      regulatoryExplanationNode,
+      ...recursiveExplanationNodes,
+    ],
+    {
+      legal: recursiveExplanationNodes[0],
+      mixed: [mixedRecursiveExplanationNode],
+    },
   ),
   "explanation.ts:PrecedenceStepSchema": probeSet(...precedenceSteps),
   "explanation.ts:VersionedSourceRefSchema": probeSet(...versionedSources),
@@ -1618,11 +1775,16 @@ const coveredTenantScopePaths = (
   return covered;
 };
 
-const mixedTenantProbes = (legal: unknown): unknown[] => {
+const tenantFirmIdPathsIn = (
+  value: unknown,
+): {
+  readonly paths: readonly ValuePath[];
+  readonly hasScopedReference: boolean;
+} => {
   const tenantFirmIdPaths: ValuePath[] = [];
   let hasScopedReference = false;
   const pending: Array<{ path: ValuePath; value: unknown }> = [
-    { path: [], value: legal },
+    { path: [], value },
   ];
   while (pending.length > 0) {
     const { path, value } = pending.pop()!;
@@ -1664,6 +1826,56 @@ const mixedTenantProbes = (legal: unknown): unknown[] => {
       }
     }
   }
+  return { paths: tenantFirmIdPaths, hasScopedReference };
+};
+
+const valueAtPath = (
+  root: unknown,
+  path: ValuePath,
+): unknown => {
+  let value = root;
+  for (const segment of path) {
+    if (typeof segment === "string" || typeof segment === "number") {
+      if (value === null || typeof value !== "object") return undefined;
+      value = (value as Record<string | number, unknown>)[segment];
+      continue;
+    }
+    if (segment.collection === "set") {
+      if (!(value instanceof Set)) return undefined;
+      value = [...value][segment.index];
+      continue;
+    }
+    if (!(value instanceof Map)) return undefined;
+    const entry = [...value.entries()][segment.index];
+    if (entry === undefined) return undefined;
+    value = segment.collection === "map-key" ? entry[0] : entry[1];
+  }
+  return value;
+};
+
+const isReviewedLargeInventoryProbe = (
+  legal: unknown,
+  mixed: unknown,
+): boolean => {
+  const legalPaths = tenantFirmIdPathsIn(legal).paths;
+  const mixedPaths = tenantFirmIdPathsIn(mixed).paths;
+  const mixedPathKeys = new Set(mixedPaths.map((path) => JSON.stringify(path)));
+  if (
+    legalPaths.length <= 10 ||
+    mixedPaths.length !== legalPaths.length ||
+    !legalPaths.every((path) => mixedPathKeys.has(JSON.stringify(path)))
+  ) return false;
+  const changed = legalPaths.filter((path) =>
+    valueAtPath(legal, path) !== valueAtPath(mixed, path)
+  ).length;
+  return changed >= 3 && changed < legalPaths.length;
+};
+
+const mixedTenantProbes = (legal: unknown): unknown[] => {
+  const {
+    paths: tenantFirmIdPaths,
+    hasScopedReference,
+  } = tenantFirmIdPathsIn(legal);
   if (tenantFirmIdPaths.length < 2) {
     if (!hasScopedReference) return [];
     throw new Error("tenant boundary probes require at least two scoped references");
@@ -1824,9 +2036,29 @@ const tenantBoundaryAudit = (
     const schema = boundaries.get(name);
     if (schema === undefined) return false;
     const cases = probeCases(probes[name]);
+    const reviewedLargeInventoryProbes = largeInventoryTenantProbes(
+      probes[name],
+    );
+    const largeInventoryCases = cases.filter((legal) =>
+      tenantFirmIdPathsIn(legal).paths.length > 10
+    );
+    const invalidLargeInventoryProbe =
+      reviewedLargeInventoryProbes.some((probe) =>
+        !cases.includes(probe.legal) ||
+        tenantFirmIdPathsIn(probe.legal).paths.length <= 10 ||
+        probe.mixed.length === 0 ||
+        probe.mixed.some((mixed) =>
+          !isReviewedLargeInventoryProbe(probe.legal, mixed) ||
+          schema.safeParse(mixed).success
+        )
+      ) ||
+      largeInventoryCases.some((legal) =>
+        !reviewedLargeInventoryProbes.some((probe) => probe.legal === legal)
+      );
     return (
       cases.length === 0 ||
       boundariesWithUncoveredPaths.has(name) ||
+      invalidLargeInventoryProbe ||
       cases.some((legal) =>
         !schema.safeParse(legal).success ||
         mixedTenantProbes(legal).some(
@@ -2281,6 +2513,69 @@ describe("decision-core tenant-scope fence", () => {
       [["probe.ts", { IndexMatched }]],
       { "probe.ts:IndexMatched": legal },
     ).failed).toEqual(["probe.ts:IndexMatched"]);
+  });
+
+  it("does not sample tenant subsets in large reference inventories", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const shape = Object.fromEntries(
+      Array.from({ length: 11 }, (_, index) => [`ref${index}`, reference]),
+    );
+    const TripleGap = z.strictObject(shape).refine((value) => {
+      const foreignCount = Object.values(value).filter((ref) =>
+        ref.firmId === "firm-b"
+      ).length;
+      return foreignCount !== 1 && foreignCount !== 2;
+    });
+    const legal = Object.fromEntries(
+      Array.from({ length: 11 }, (_, index) => [
+        `ref${index}`,
+        { firmId: "firm-a", id: `ref:${index}` },
+      ]),
+    );
+    const mixed = {
+      ...legal,
+      ref0: { firmId: "firm-b", id: "ref:0" },
+      ref1: { firmId: "firm-b", id: "ref:1" },
+      ref2: { firmId: "firm-b", id: "ref:2" },
+    };
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { TripleGap }]],
+      {
+        "probe.ts:TripleGap": largeInventoryTenantProbeSet({
+          legal,
+          mixed: [mixed],
+        }),
+      },
+    ).failed).toEqual(["probe.ts:TripleGap"]);
+
+    const Complete = z.strictObject(shape).refine((value) =>
+      new Set(Object.values(value).map((ref) => ref.firmId)).size === 1
+    );
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { Complete }]],
+      { "probe.ts:Complete": legal },
+    ).failed).toEqual(["probe.ts:Complete"]);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { Complete }]],
+      {
+        "probe.ts:Complete": largeInventoryTenantProbeSet({
+          legal,
+          mixed: [{ ...mixed, ref2: legal.ref2 }],
+        }),
+      },
+    ).failed).toEqual(["probe.ts:Complete"]);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { Complete }]],
+      {
+        "probe.ts:Complete": largeInventoryTenantProbeSet({
+          legal,
+          mixed: [mixed],
+        }),
+      },
+    ).failed).toEqual([]);
   });
 
   it("requires probes to cover optional scoped-reference edges", () => {

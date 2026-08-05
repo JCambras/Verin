@@ -3719,3 +3719,33 @@ association shape is adopted; extend the shared authority and its adversarial ma
 before relying on it.
 **Revert path:** none while dependency, deterministic replay, and tenant-boundary
 completeness must fail closed across ordinary TypeScript and schema associations.
+
+### D-114 · 2026-08-05 · reversible · Mutable capabilities, reflected host methods, and large tenant inventories fail closed
+
+Container provenance now indexes standard array mutations plus ambient `Object.assign`,
+`Object.defineProperty`, and `Reflect.set` writes through the same selector authority as
+direct assignments. Static-block writes through lexical `this` contribute to class
+capability provenance. Mutable accessor results such as `Map.get` remain fail-closed
+through their ambient type or unresolved return provenance.
+
+Reading a host-sensitive Date, Intl, String, Number, or BigInt method through
+`Object.getOwnPropertyDescriptor`, `Object.getOwnPropertyDescriptors`, or
+`Reflect.getOwnPropertyDescriptor` is itself a nondeterministic capability acquisition.
+Standard call, apply, bind, and Reflect wrappers retain the same classification.
+
+The bounded automatic tenant-subset matrix remains, but every legal fixture with more
+than ten tenant paths now also requires reviewed higher-order mixed-tenant payloads.
+Each reviewed payload preserves the tenant-path inventory, changes at least three but
+not all tenant paths, and must be rejected by the exported boundary. The production
+matrix records coherent foreign subtrees for every large approval, decision,
+explanation, and execution fixture.
+
+These are fence-only corrections. No production contract, runtime schema, fixture byte,
+recorded hash, source ceiling, or runtime registry envelope changed.
+
+**Why:** mutation syntax, static initialization, reflection, and bounded automatic
+sampling cannot erase a capability or mixed-tenant state from a charter-critical fence.
+**Revisit-When:** a new mutable carrier, reflection API, or large tenant association is
+adopted; add its reviewed adversarial payload before relying on it.
+**Revert path:** none while dependency, deterministic replay, and tenant-boundary
+completeness must fail closed across ordinary TypeScript and schema associations.

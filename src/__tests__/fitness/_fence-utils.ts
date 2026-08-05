@@ -1097,6 +1097,207 @@ const containerAssignmentsForSymbolIn = (
   return cached.bySymbol.get(symbol) ?? [];
 };
 
+type IndexedContainerMutation =
+  | {
+      readonly kind: "array-values";
+      readonly target: Node;
+      readonly values: readonly Node[];
+    }
+  | {
+      readonly kind: "copy-properties";
+      readonly target: Node;
+      readonly sources: readonly Node[];
+    }
+  | {
+      readonly kind: "set-property";
+      readonly target: Node;
+      readonly keys: PropertyKeyCandidates;
+      readonly source: Node;
+      readonly sourceSelectors: readonly ProvenanceSelector[];
+    };
+
+const CONTAINER_MUTATIONS_CACHE = new WeakMap<
+  SourceFile,
+  {
+    readonly sourceText: string;
+    readonly bySymbol: ReadonlyMap<
+      MorphSymbol,
+      readonly IndexedContainerMutation[]
+    >;
+  }
+>();
+
+const rootSymbolOfContainerTarget = (
+  node: Node | undefined,
+): MorphSymbol | undefined => {
+  let target = unwrapExpression(node);
+  while (
+    Node.isPropertyAccessExpression(target) ||
+    Node.isElementAccessExpression(target)
+  ) {
+    target = unwrapExpression(target.getExpression());
+  }
+  return Node.isIdentifier(target) ? target.getSymbol() : undefined;
+};
+
+const nodeOrDeclarationMentionsAny = (
+  node: Node,
+  names: readonly string[],
+  seenSymbols: ReadonlySet<MorphSymbol> = new Set(),
+): boolean => {
+  if (names.some((name) => node.getText().includes(name))) return true;
+  const expression = unwrapExpression(node);
+  if (Node.isIdentifier(expression)) {
+    const symbol = expression.getSymbol();
+    if (symbol === undefined || seenSymbols.has(symbol)) return false;
+    const nextSeen = new Set(seenSymbols).add(symbol);
+    return symbol.getDeclarations().some((declaration) =>
+      names.some((name) => declaration.getText().includes(name)) ||
+      (Node.isVariableDeclaration(declaration) &&
+        declaration.getInitializer() !== undefined &&
+        nodeOrDeclarationMentionsAny(
+          declaration.getInitializerOrThrow(),
+          names,
+          nextSeen,
+        ))
+    );
+  }
+  if (
+    Node.isPropertyAccessExpression(expression) ||
+    Node.isElementAccessExpression(expression)
+  ) {
+    return nodeOrDeclarationMentionsAny(
+      expression.getExpression(),
+      names,
+      seenSymbols,
+    );
+  }
+  if (Node.isCallExpression(expression)) {
+    return nodeOrDeclarationMentionsAny(
+      expression.getExpression(),
+      names,
+      seenSymbols,
+    );
+  }
+  return false;
+};
+
+const indexedContainerMutationsIn = (
+  sourceFile: SourceFile,
+): ReadonlyMap<MorphSymbol, readonly IndexedContainerMutation[]> => {
+  const sourceText = sourceFile.getFullText();
+  const cached = CONTAINER_MUTATIONS_CACHE.get(sourceFile);
+  if (cached !== undefined && cached.sourceText === sourceText) {
+    return cached.bySymbol;
+  }
+  const bySymbol = new Map<MorphSymbol, IndexedContainerMutation[]>();
+  const add = (mutation: IndexedContainerMutation): void => {
+    const symbol = rootSymbolOfContainerTarget(mutation.target);
+    if (symbol === undefined) return;
+    const mutations = bySymbol.get(symbol) ?? [];
+    mutations.push(mutation);
+    bySymbol.set(symbol, mutations);
+  };
+  for (const call of sourceFile.getDescendantsOfKind(
+    SyntaxKind.CallExpression,
+  )) {
+    const called = call.getExpression();
+    const callee = unwrapExpression(called);
+    const directMembers = Node.isPropertyAccessExpression(callee)
+      ? new Set([callee.getName()])
+      : Node.isElementAccessExpression(callee)
+        ? propertyKeyCandidatesIn(
+          sourceFile,
+          callee.getArgumentExpression(),
+        ).names
+        : new Set<string>();
+    const mayBeAliasedAmbientMutation =
+      Node.isIdentifier(callee) ||
+      Node.isCallExpression(callee) ||
+      directMembers.has("call") ||
+      directMembers.has("apply") ||
+      directMembers.has("bind");
+    const mayBeObjectMutation =
+      directMembers.has("assign") ||
+      directMembers.has("defineProperty") ||
+      mayBeAliasedAmbientMutation;
+    const objectCall = mayBeObjectMutation &&
+        nodeOrDeclarationMentionsAny(called, ["Object"])
+      ? normalizedAmbientBuiltinCall(
+        call,
+        "Object",
+        ["assign", "defineProperty"],
+      )
+      : null;
+    if (objectCall !== null && objectCall.arguments !== null) {
+      const [target, keyOrSource, descriptor] = objectCall.arguments;
+      if (target !== undefined && objectCall.method === "assign") {
+        add({
+          kind: "copy-properties",
+          target,
+          sources: objectCall.arguments.slice(1),
+        });
+      } else if (
+        target !== undefined &&
+        keyOrSource !== undefined &&
+        descriptor !== undefined
+      ) {
+        add({
+          kind: "set-property",
+          target,
+          keys: propertyKeyCandidatesIn(sourceFile, keyOrSource),
+          source: descriptor,
+          sourceSelectors: [{ kind: "property", name: "value" }],
+        });
+      }
+    }
+    const mayBeReflectMutation = directMembers.has("set") ||
+      mayBeAliasedAmbientMutation;
+    const reflectCall = mayBeReflectMutation &&
+        nodeOrDeclarationMentionsAny(called, ["Reflect"])
+      ? normalizedAmbientBuiltinCall(call, "Reflect", ["set"])
+      : null;
+    if (reflectCall !== null && reflectCall.arguments !== null) {
+      const [target, key, value] = reflectCall.arguments;
+      if (target !== undefined && key !== undefined && value !== undefined) {
+        add({
+          kind: "set-property",
+          target,
+          keys: propertyKeyCandidatesIn(sourceFile, key),
+          source: value,
+          sourceSelectors: [],
+        });
+      }
+    }
+    if (
+      !Node.isPropertyAccessExpression(callee) &&
+      !Node.isElementAccessExpression(callee)
+    ) continue;
+    if (
+      !["fill", "push", "splice", "unshift"].some((name) =>
+        directMembers.has(name)
+      )
+    ) continue;
+    const members = memberNameCandidatesIn(sourceFile, callee);
+    const values = members.names.has("splice")
+      ? call.getArguments().slice(2)
+      : members.names.has("fill")
+        ? call.getArguments().slice(0, 1)
+        : members.names.has("push") || members.names.has("unshift")
+          ? call.getArguments()
+          : [];
+    if (values.length === 0) continue;
+    const receiver = callee.getExpression();
+    const type = unwrapExpression(receiver)?.getType();
+    if (type?.isArray() || type?.isTuple()) {
+      add({ kind: "array-values", target: receiver, values });
+    }
+  }
+  const next = { sourceText, bySymbol };
+  CONTAINER_MUTATIONS_CACHE.set(sourceFile, next);
+  return bySymbol;
+};
+
 const selectorsEqual = (
   left: ProvenanceSelector,
   right: ProvenanceSelector,
@@ -1111,10 +1312,114 @@ const selectorsEqual = (
       ).index;
 };
 
+const selectorsMayMatch = (
+  left: ProvenanceSelector,
+  right: ProvenanceSelector,
+): boolean =>
+  left.kind === right.kind &&
+  (left.kind === "property"
+    ? left.name === null ||
+      (right as Extract<ProvenanceSelector, { kind: "property" }>).name === null ||
+      left.name === (
+        right as Extract<ProvenanceSelector, { kind: "property" }>
+      ).name
+    : left.index === (
+        right as Extract<ProvenanceSelector, { kind: "index" }>
+      ).index);
+
 type ContainerValueSource = {
   readonly receiver: Node;
   readonly remaining: readonly ProvenanceSelector[];
   readonly uncertain: boolean;
+};
+
+const containerValueSourcesAtPathIn = (
+  sf: SourceFile,
+  symbol: MorphSymbol,
+  path: readonly ProvenanceSelector[],
+): readonly ContainerValueSource[] => {
+  const sources: ContainerValueSource[] = [];
+  for (const assignment of containerAssignmentsForSymbolIn(sf, symbol)) {
+    const targets = assignmentPathsForSymbolIn(sf, assignment.getLeft(), symbol);
+    if (targets.unresolved) {
+      sources.push({
+        receiver: assignment.getRight(),
+        remaining: [],
+        uncertain: true,
+      });
+    }
+    for (const targetPath of targets.paths) {
+      if (
+        targetPath.length > path.length ||
+        !targetPath.every((selector, index) =>
+          selectorsEqual(selector, path[index]!),
+        )
+      ) continue;
+      sources.push({
+        receiver: assignment.getRight(),
+        remaining: path.slice(targetPath.length),
+        uncertain: false,
+      });
+    }
+  }
+  const mutations = indexedContainerMutationsIn(sf).get(symbol) ?? [];
+  for (const mutation of mutations) {
+    const targets = assignmentPathsForSymbolIn(sf, mutation.target, symbol);
+    for (const targetPath of targets.paths) {
+      if (
+        targetPath.length > path.length ||
+        !targetPath.every((selector, index) =>
+          selectorsEqual(selector, path[index]!),
+        )
+      ) continue;
+      const remaining = path.slice(targetPath.length);
+      if (mutation.kind === "copy-properties") {
+        sources.push(...mutation.sources.map((source) => ({
+          receiver: source,
+          remaining,
+          uncertain: targets.unresolved,
+        })));
+        continue;
+      }
+      if (mutation.kind === "array-values") {
+        if (remaining[0]?.kind !== "index") continue;
+        sources.push(...mutation.values.map((source) => ({
+          receiver: source,
+          remaining: remaining.slice(1),
+          uncertain: targets.unresolved,
+        })));
+        continue;
+      }
+      const keySelectors: ProvenanceSelector[] = [
+        ...mutation.keys.names,
+      ].flatMap((name): ProvenanceSelector[] => {
+        const property: ProvenanceSelector = { kind: "property", name };
+        if (!/^(?:0|[1-9]\d*)$/.test(name)) return [property];
+        const index = Number.parseInt(name, 10);
+        return Number.isSafeInteger(index)
+          ? [property, { kind: "index", index }]
+          : [property];
+      });
+      if (mutation.keys.unresolved) {
+        keySelectors.push({ kind: "property", name: null });
+      }
+      for (const keySelector of keySelectors) {
+        if (
+          remaining[0] === undefined ||
+          !selectorsMayMatch(keySelector, remaining[0])
+        ) continue;
+        sources.push({
+          receiver: mutation.source,
+          remaining: [
+            ...mutation.sourceSelectors,
+            ...remaining.slice(1),
+          ],
+          uncertain: targets.unresolved || mutation.keys.unresolved,
+        });
+      }
+    }
+  }
+  return sources;
 };
 
 const classStaticValueSourcesAtPathIn = (
@@ -1183,6 +1488,51 @@ const classStaticValueSourcesAtPathIn = (
           remaining: path.slice(1),
           uncertain: true,
         });
+      }
+    }
+    for (const block of classLike.getStaticBlocks()) {
+      for (const assignment of block.getDescendantsOfKind(
+        SyntaxKind.BinaryExpression,
+      )) {
+        if (
+          !PROVENANCE_ASSIGNMENT_OPERATORS.has(
+            assignment.getOperatorToken().getKind(),
+          )
+        ) continue;
+        const ancestors = assignment.getAncestors();
+        const blockIndex = ancestors.findIndex(
+          (ancestor) => ancestor.compilerNode === block.compilerNode,
+        );
+        const nestedThisScope = (
+          blockIndex < 0 ? ancestors : ancestors.slice(0, blockIndex)
+        ).some((ancestor) =>
+          (Node.isFunctionLikeDeclaration(ancestor) &&
+            !Node.isArrowFunction(ancestor)) ||
+          Node.isClassDeclaration(ancestor) ||
+          Node.isClassExpression(ancestor)
+        );
+        if (nestedThisScope) continue;
+        const targets = assignmentPathsForThisIn(sf, assignment.getLeft());
+        if (targets.unresolved) {
+          sources.push({
+            receiver: assignment.getRight(),
+            remaining: [],
+            uncertain: true,
+          });
+        }
+        for (const targetPath of targets.paths) {
+          if (
+            targetPath.length > path.length ||
+            !targetPath.every((candidate, index) =>
+              selectorsEqual(candidate, path[index]!),
+            )
+          ) continue;
+          sources.push({
+            receiver: assignment.getRight(),
+            remaining: path.slice(targetPath.length),
+            uncertain: false,
+          });
+        }
       }
     }
   }
@@ -1406,30 +1756,18 @@ const assignedContainerNamesAtPathIn = (
       names.add(name);
     }
   }
-  for (const assignment of containerAssignmentsForSymbolIn(sf, symbol)) {
-    const targets = assignmentPathsForSymbolIn(
-      sf,
-      assignment.getLeft(),
-      symbol,
-    );
-    if (targets.unresolved) names.add(UNKNOWN_AMBIENT_GLOBAL);
-    for (const targetPath of targets.paths) {
-      if (
-        targetPath.length > path.length ||
-        !targetPath.every((selector, index) =>
-          selectorsEqual(selector, path[index]!),
-        )
-      ) {
-        continue;
-      }
-      for (const name of ambientGlobalNamesAtPathIn(
-        sf,
-        assignment.getRight(),
-        path.slice(targetPath.length),
-        seen,
-      )) {
-        names.add(name);
-      }
+  for (const source of containerValueSourcesAtPathIn(sf, symbol, path)) {
+    if (source.uncertain) {
+      names.add(UNKNOWN_AMBIENT_GLOBAL);
+      continue;
+    }
+    for (const name of ambientGlobalNamesAtPathIn(
+      source.receiver.getSourceFile(),
+      source.receiver,
+      source.remaining,
+      seen,
+    )) {
+      names.add(name);
     }
   }
   return names;
@@ -2519,30 +2857,20 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           )
         ) return true;
       }
-      for (const assignment of containerAssignmentsForSymbolIn(
+      for (const source of containerValueSourcesAtPathIn(
         sourceFile,
         provenance.symbol,
+        path,
       )) {
-        const targets = assignmentPathsForSymbolIn(
-          sourceFile,
-          assignment.getLeft(),
-          provenance.symbol,
-        );
-        if (failOnUnknown && targets.unresolved) return true;
-        for (const targetPath of targets.paths) {
-          if (
-            targetPath.length > path.length ||
-            !targetPath.every((targetSelector, index) =>
-              selectorsEqual(targetSelector, path[index]!)
-            )
-          ) continue;
-          if (isCreateRequireNamespaceAtPath(
-            assignment.getRight(),
-            path.slice(targetPath.length),
+        if (
+          (failOnUnknown && source.uncertain) ||
+          isCreateRequireNamespaceAtPath(
+            source.receiver,
+            source.remaining,
             nextSeen,
             failOnUnknown,
-          )) return true;
-        }
+          )
+        ) return true;
       }
     }
     return false;
@@ -3837,27 +4165,15 @@ function contractCapabilityReferences(
               )
             ),
             ...sourceFiles.flatMap((sourceFile) =>
-              containerAssignmentsForSymbolIn(sourceFile, target).flatMap(
-                (assignment) => {
-                  const targets = assignmentPathsForSymbolIn(
-                    sourceFile,
-                    assignment.getLeft(),
-                    target,
-                  );
-                  return targets.paths.flatMap((targetPath) => {
-                    if (
-                      targetPath.length > path.length ||
-                      !targetPath.every((candidate, index) =>
-                        selectorsEqual(candidate, path[index]!)
-                      )
-                    ) return [];
-                    return dateInvocationCapabilitiesAtPath(
-                      assignment.getRight(),
-                      path.slice(targetPath.length),
+              containerValueSourcesAtPathIn(sourceFile, target, path).flatMap(
+                (source) =>
+                  source.uncertain
+                    ? []
+                    : dateInvocationCapabilitiesAtPath(
+                      source.receiver,
+                      source.remaining,
                       nextSeen,
-                    );
-                  });
-                },
+                    ),
               )
             ),
           ];
@@ -4064,31 +4380,20 @@ function contractCapabilityReferences(
             )),
         );
       }
-      for (const assignment of containerAssignmentsForSymbolIn(
+      for (const source of containerValueSourcesAtPathIn(
         declarationSourceFile,
         provenance.symbol,
+        path,
       )) {
-        const targets = assignmentPathsForSymbolIn(
-          declarationSourceFile,
-          assignment.getLeft(),
-          provenance.symbol,
+        capabilities.push(
+          ...(source.uncertain
+            ? [{ boundArguments: null }]
+            : dateTimeFormatMethodCapabilitiesAtPath(
+              source.receiver,
+              source.remaining,
+              nextSeen,
+            )),
         );
-        for (const targetPath of targets.paths) {
-          if (
-            targetPath.length <= path.length &&
-            targetPath.every((selector, index) =>
-              selectorsEqual(selector, path[index]!),
-            )
-          ) {
-            capabilities.push(
-              ...dateTimeFormatMethodCapabilitiesAtPath(
-                assignment.getRight(),
-                path.slice(targetPath.length),
-                nextSeen,
-              ),
-            );
-          }
-        }
       }
     }
     if (seenSymbols.size === 0 || capabilities.length > 0) {
@@ -4691,6 +4996,50 @@ function contractCapabilityReferences(
     return [{ callee: call.getExpression(), arguments: call.getArguments() }];
   };
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    const descriptorInvocation = nodeOrDeclarationMentionsAny(
+        call.getExpression(),
+        ["getOwnPropertyDescriptor", "getOwnPropertyDescriptors"],
+      )
+      ? normalizedAmbientBuiltinCall(
+        call,
+        "Object",
+        ["getOwnPropertyDescriptor", "getOwnPropertyDescriptors"],
+      ) ??
+        normalizedAmbientBuiltinCall(
+          call,
+          "Reflect",
+          ["getOwnPropertyDescriptor"],
+        )
+      : null;
+    if (descriptorInvocation !== null && descriptorInvocation.arguments !== null) {
+      const target = descriptorInvocation.arguments[0];
+      const descriptorKeys = propertyKeyCandidatesIn(
+        sf,
+        descriptorInvocation.arguments[1],
+      );
+      const targetHasPrimitiveLocaleCapability = target !== undefined && (
+        isLocaleSensitivePrimitiveMethod(target, "localeCompare") ||
+        isLocaleSensitivePrimitiveMethod(target, "toLocaleString")
+      );
+      const targetHasLocaleCapability = target !== undefined && (
+        isAmbientIntlInstance(target) ||
+        (descriptorInvocation.method === "getOwnPropertyDescriptors" &&
+          (isAmbientDateInstance(target) ||
+            targetHasPrimitiveLocaleCapability)) ||
+        [...descriptorKeys.names].some((name) =>
+          (dateHostTimeMethodNames.has(name) && isAmbientDateInstance(target)) ||
+          isLocaleSensitivePrimitiveMethod(target, name)
+        ) ||
+        (descriptorKeys.unresolved &&
+          (isAmbientDateInstance(target) || targetHasPrimitiveLocaleCapability))
+      );
+      if (targetHasLocaleCapability) {
+        record(
+          call.getStartLineNumber(),
+          "<nondeterministic platform-global>",
+        );
+      }
+    }
     const callee = unwrapExpression(call.getExpression());
     if (
       Node.isPropertyAccessExpression(callee) ||

@@ -6053,3 +6053,45 @@ coherent tenant subsets fails its paired companion while project-owned lookalike
 complete legal tenant probes remain green.
 
 **Date:** 2026-08-05 (review corrections, D-113).
+
+## F120 · mutation, reflection, and large-inventory provenance fail closed (D-114)
+
+**Invariants:** mutable and static carriers retain loader and ambient capability
+provenance; reflected host methods remain nondeterministic; large tenant inventories
+cannot rely only on bounded automatic subset sampling.
+
+The adversarial companions were added before the shared authorities changed. The first
+focused red run failed twelve planted cases: array, `Object.assign`,
+`Object.defineProperty`, `Reflect.set`, and static-block carriers for both
+`node:module` and ambient Date; a reflected Date prototype method; and an eleven-path
+tenant boundary that rejected every single and pair mutation while accepting exactly
+three foreign references. The retained matrix also exercises `Map.set` carriers and
+cross-module mutation carriers, invalidates mutation caches after source edits, and
+proves that a missing, undersized, or accepted large-inventory payload cannot satisfy
+the tenant audit. Reflect and bulk descriptor acquisition independently retain the
+host-method refusal.
+
+Container writes now feed the shared path-based provenance graph used by the dependency
+and determinism fences. Static blocks contribute only lexical `this` writes. Descriptor
+reads classify host-sensitive Date, Intl, and primitive methods at acquisition, before
+later invocation syntax can erase their origin. Project-owned lookalikes remain legal.
+
+Automatic tenant mutations still cover bounded proper subsets and structural groups.
+Every legal fixture above ten paths additionally owns one or more reviewed payloads
+that preserve its tenant inventory and re-tenant a proper higher-order subset. The real
+approval, decision, explanation, and execution probes use coherent foreign subtrees,
+and every exported boundary rejects them independently.
+
+The focused dependency and tenant suites pass 382 tests. Serialized fitness passes
+1,128 tests, and the complete serialized Vitest suite passes 1,483. Typecheck, lint, knip,
+the CI-configured production build, `v3:invariants` (6 active-pass, 0 active-fail), and
+`golden:validate` (16 signed cases) pass. Production-server Playwright passes 17 tests.
+No production contract, runtime schema, fixture byte, registry byte, recorded hash, or
+platform line measurement changed.
+
+**Revert:** the adversarial companions remain continuous tests. Removing mutation
+sources, static-block writes, reflected host-method classification, or reviewed
+large-inventory payloads fails its paired companion while local lookalikes and complete
+tenant constraints remain green.
+
+**Date:** 2026-08-05 (review corrections, D-114).
