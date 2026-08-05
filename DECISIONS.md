@@ -3028,3 +3028,38 @@ hardcoded load credential finding; or disable the blocking njsscan rules.
 
 **Revert path:** restore parallel v3 fence execution, the literal load
 credential, and the prior AST handle names.
+
+## D-098 - The captain's differentiating thesis ships as a standing repo document
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: D-034, ADR-0023 (open item C7),
+charter #1/#5
+
+The product thesis the captain stated on 2026-08-05 - traditional software makes you
+configure the software and then the software runs your business; Verin inverts that,
+you run your business and Verin learns how it operates and increasingly configures
+itself around you - is now a committed document, `docs/product-guide.md`, pointed to
+from `README.md`, `AGENTS.md`, `PRODUCT-DIRECTION.md`, and `docs/v3/README.md`.
+
+It carries an explicit authority chain so the repo keeps ONE north-star chain rather
+than two rival ones: subordinate to `CHARTER.md` and the ratified v3 direction, and
+stating the thesis that `PRODUCT-DIRECTION.md` serves rather than competing with it.
+It does not satisfy ADR-0023's open C7 item (a `PRODUCT-DIRECTION.md` v2 under the v3
+framing), which stays open. The thesis carries a build-honesty label: it is the
+product aim, and no continuous-learning or self-configuration subsystem exists today.
+
+The PROPOSE/APPROVE shaping of configuration surfaces is recorded there as a
+directional design principle, explicitly NOT a normative rule, precisely so it is not
+a prose-only invariant. It is fenced in the PR that designs the self-configuration
+capability, beside the already-registered policy-lifecycle invariants 15-17 (Wave E).
+Governed, attributed activation is not directional - it is already covered by the
+ratified invariants.
+
+**Alternatives rejected:** leave the thesis in session history only (it would be
+re-derived or lost); state it as a second north star competing with
+`PRODUCT-DIRECTION.md`; state the configuration-surface requirement as a normative
+"must" with no fence behind it (DO-NOT-PORT #8, charter #1); or hold the doc until the
+self-configuration capability is designed, leaving the directive unrecorded.
+
+**Revert path:** delete `docs/product-guide.md` and remove the four one-line pointers
+(`README.md` item 8, `AGENTS.md`, `PRODUCT-DIRECTION.md` header, `docs/v3/README.md`).
+No code, fixture, fence, or pinned document depends on it.

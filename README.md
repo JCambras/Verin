@@ -14,11 +14,13 @@ Practice intelligence for registered investment advisers. The third and final bu
 6. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).
 7. **[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md)** - the product north star for the demo build,
    subordinate to the charter and grounded in the foundation.
-8. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
+8. **[`docs/product-guide.md`](./docs/product-guide.md)** - the captain-directed differentiating thesis
+   (D-098) that the product direction serves; test every design, prompt, and demo choice against it.
+9. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
    contract (D-034), with its scenario matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
    and acceptance checklist [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md).
-9. **[`docs/golden-cases.md`](./docs/golden-cases.md)** - the captain-signed golden-case truth set
-   (D-035), machine-mirrored in `fixtures/golden/` and gated by `pnpm golden:validate`.
+10. **[`docs/golden-cases.md`](./docs/golden-cases.md)** - the captain-signed golden-case truth set
+    (D-035), machine-mirrored in `fixtures/golden/` and gated by `pnpm golden:validate`.
 
 ## Stack
 

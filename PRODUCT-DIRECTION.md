@@ -14,6 +14,10 @@
 > is built today, what Wave 1 lands, and what is directional - so nothing here reads as a claim that
 > unbuilt work exists (charter #5).
 >
+> **The differentiating thesis.** The captain-directed product thesis this direction serves is
+> [`docs/product-guide.md`](./docs/product-guide.md) (D-098, 2026-08-05) - it states *what makes Verin
+> different*; this doc stays the north star for *what Verin feels like to use*.
+>
 > **The Phase 1 demo contract.** Demo work is governed by the normative Phase 1 investor-demo contract,
 > [`docs/demo-contract.md`](./docs/demo-contract.md) (D-034, 2026-07-26), with its machine-usable matrix
 > [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml) and acceptance checklist
