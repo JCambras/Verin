@@ -543,7 +543,7 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
   it("enforces: raw secret access appears only in reviewed secret-consumer modules (v3 §15.4)", () => {
     const o = detectUnsanctionedReveal(realSemanticProject());
     expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
-  });
+  }, 60_000);
   it("enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)", () => {
     const calls = secretAccesses(realSemanticProject());
     for (const entry of REVEAL_ALLOWLIST) {

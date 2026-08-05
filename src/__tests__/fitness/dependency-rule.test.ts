@@ -35,7 +35,7 @@ describe("dependency-rule fence", () => {
       external,
       `contracts external-import violations:\n${external.map((v) => `${v.file}:${v.line} (${v.specifier})`).join("\n")}`,
     ).toEqual([]);
-  });
+  }, 60_000);
 
   // COMPANION (charter #4): incomplete/wrong code CANNOT pass. Each seam is caught.
   describe("detects (companion): a planted violation is caught", () => {

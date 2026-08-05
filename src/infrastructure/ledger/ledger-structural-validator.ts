@@ -2,6 +2,21 @@ import { appError } from "@contracts/errors";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { promotedDecisionRef } from "@contracts/decision-core/ledger-references";
+import {
+  approvalStageKey,
+  assertExecutionHandleOwnership,
+  effectiveApprovalAuthority,
+  executionHandleOwnerEntries,
+  mergePriorEntries,
+  structuralExecutionHandleId,
+} from "./ledger-structural-history";
+import {
+  assertDecisionClaimsV1,
+  assertPlanReferencesV1,
+  EXCEPTION_TRIGGER_TYPES_V1,
+} from "./ledger-structural-rules-v1";
+
+export { structuralExecutionHandleId } from "./ledger-structural-history";
 
 export interface StructuralDecision {
   readonly record: DecisionRecord;
@@ -12,9 +27,6 @@ export interface StructuralLedgerEntry {
   readonly sequence: number;
   readonly event: LedgerEntry;
 }
-
-export const DECISION_RECORDING_REQUIRED =
-  "decision-scoped ledger event must follow DecisionRecorded";
 
 export interface LedgerStructureLookup {
   readonly decision: (id: string) => Promise<StructuralDecision | null>;
@@ -31,44 +43,20 @@ export interface LedgerStructureLookup {
     reservationId: string,
     beforeSequence: number,
   ) => Promise<StructuralLedgerEntry | null>;
+  readonly approvalEscalations: (
+    decisionId: string,
+    stageId: string,
+    beforeSequence: number,
+    limit: number,
+  ) => Promise<readonly StructuralLedgerEntry[]>;
+  readonly executionHandleEvents: (
+    handleId: string,
+    beforeSequence: number,
+  ) => Promise<readonly StructuralLedgerEntry[]>;
 }
 
-const EXCEPTION_TRIGGER_TYPES_V1 = new Set<LedgerEntry["type"]>([
-  "ApprovalInvalidated",
-  "ExecutionPartiallySucceeded",
-  "ExecutionFailed",
-  "StatusObserved",
-  "VerificationStuck",
-]);
-
-const sameStrings = (
-  left: readonly string[],
-  right: readonly string[],
-): boolean =>
-  left.length === right.length &&
-  left.every((value, index) => value === right[index]);
-
-function authorizedActions(record: DecisionRecord) {
-  return record.result.kind === "proceed"
-    ? record.result.executionPlan.steps.flatMap((step) => [
-        step,
-        ...(step.compensatingAction ? [step.compensatingAction] : []),
-      ])
-    : [];
-}
-
-function approvalStage(record: DecisionRecord, stageId: string) {
-  return record.result.kind === "proceed" &&
-    record.result.authority.mode !== "automatic"
-    ? record.result.authority.stages.find((stage) => stage.stageId === stageId)
-    : undefined;
-}
-
-function executionStep(record: DecisionRecord, stepId: string) {
-  return record.result.kind === "proceed"
-    ? record.result.executionPlan.steps.find((step) => step.id === stepId)
-    : undefined;
-}
+export const DECISION_RECORDING_REQUIRED =
+  "decision-scoped ledger event must follow DecisionRecorded";
 
 function decisionId(event: LedgerEntry): string | null {
   return promotedDecisionRef(event)?.id ?? null;
@@ -107,156 +95,6 @@ function assertSameDecisionLineage(
     "STORE_CONSTRAINT",
     "ledger causal reference belongs to another decision lineage",
   );
-}
-
-function assertDecisionClaimsV1(
-  event: LedgerEntry,
-  binding: StructuralDecision,
-): void {
-  const claimedDecisionHash =
-    event.type === "DecisionRecorded" || event.type === "ApprovalRecorded"
-      ? event.decisionHash
-      : "priorDecisionHash" in event
-        ? event.priorDecisionHash
-        : undefined;
-  if (
-    claimedDecisionHash !== undefined &&
-    claimedDecisionHash !== binding.record.decisionHash
-  ) {
-    throw appError(
-      "STORE_CONSTRAINT",
-      "ledger event decision hash does not match immutable record",
-    );
-  }
-  if (
-    (event.type === "ApprovalRecorded" &&
-      event.inputBundleHash !== binding.bundleHash) ||
-    (event.type === "DecisionRecorded" &&
-      event.bundleHash !== undefined &&
-      event.bundleHash !== binding.bundleHash)
-  ) {
-    throw appError(
-      "STORE_CONSTRAINT",
-      "ledger input bundle hash does not match immutable bundle",
-    );
-  }
-}
-
-function assertPlanReferencesV1(
-  event: LedgerEntry,
-  record: DecisionRecord,
-): void {
-  if (
-    event.type === "ApprovalRecorded" ||
-    event.type === "ApprovalStageExpired" ||
-    event.type === "ApprovalStageEscalated"
-  ) {
-    const stage = approvalStage(record, event.stageId);
-    if (!stage) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "ledger event references an unauthorized approval stage",
-      );
-    }
-    if (event.type === "ApprovalRecorded") {
-      const eligibleRoles = new Set(
-        stage.requirements.flatMap((requirement) =>
-          requirement.eligibleRoleIds.map((role) => role.id)),
-      );
-      if (
-        !event.approver.roleIds.some((role) => eligibleRoles.has(role.id))
-      ) {
-        throw appError(
-          "STORE_CONSTRAINT",
-          "ledger approver role is not authorized by the approval stage",
-        );
-      }
-    }
-    if (
-      event.type === "ApprovalStageExpired" &&
-      event.effectiveAt !== stage.expiresAt
-    ) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "ledger approval expiry does not match the recorded stage",
-      );
-    }
-    if (event.type === "ApprovalStageEscalated") {
-      const escalation = stage.escalationPath[event.escalationStepIndex];
-      if (
-        !escalation ||
-        escalation.reasonCode !== event.reasonCode ||
-        !sameStrings(
-          escalation.roleIds.map((role) => role.id),
-          event.roleIds.map((role) => role.id),
-        )
-      ) {
-        throw appError(
-          "STORE_CONSTRAINT",
-          "ledger escalation is not authorized by the approval stage",
-        );
-      }
-    }
-  }
-  if (
-    event.type === "ExecutionStarted" ||
-    event.type === "ExecutionSucceeded" ||
-    event.type === "ExecutionPartiallySucceeded" ||
-    event.type === "ExecutionFailed"
-  ) {
-    const step = executionStep(record, event.stepId);
-    if (!step) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "ledger event references an unauthorized execution step",
-      );
-    }
-    if (
-      event.type === "ExecutionStarted" &&
-      event.idempotencyKey !== step.idempotencyKey
-    ) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "ledger execution idempotency key is not authorized by the decision",
-      );
-    }
-  }
-  if (event.type === "ReservationCreated") {
-    const matches = authorizedActions(record).filter((action) =>
-      action.reservationRefs.some(
-        (reference) => reference.id === event.reservationRef.id,
-      ) && sameStrings(action.conflictKeys, event.conflictKeys));
-    if (matches.length !== 1) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "ledger reservation is not uniquely authorized by the decision",
-      );
-    }
-  }
-  if (event.type === "ReservationReleased") {
-    const authorized = authorizedActions(record).some((action) =>
-      action.reservationRefs.some(
-        (reference) => reference.id === event.reservationRef.id,
-      ));
-    if (!authorized) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "ledger reservation is not authorized by the decision",
-      );
-    }
-  }
-  if (event.type === "VerificationClosed") {
-    const matches = authorizedActions(record).filter(
-      (action) =>
-        action.verificationRuleRef.id === event.verificationRuleRef.id,
-    );
-    if (matches.length !== 1) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "ledger verification rule is not uniquely authorized by the decision",
-      );
-    }
-  }
 }
 
 interface StructuralRules {
@@ -311,8 +149,13 @@ async function assertEventStructure(
       );
     }
     rules.assertDecisionClaims(event, binding);
-    rules.assertPlanReferences(event, binding.record);
+    rules.assertPlanReferences(
+      event,
+      binding.record,
+      await effectiveApprovalAuthority(event, binding.record, sequence, lookup),
+    );
   }
+  await assertExecutionHandleOwnership(event, sequence, lookup);
   if (event.type === "DecisionRecorded") {
     const prior = await lookup.decisionRecording(
       event.decisionRef.id,
@@ -430,6 +273,11 @@ export async function assertRecordedLedgerStructure(
   const seenEntries = new Map<string, StructuralLedgerEntry>();
   const seenDecisions = new Map<string, StructuralLedgerEntry>();
   const seenEvidence = new Map<string, StructuralLedgerEntry>();
+  const seenApprovalEscalations = new Map<
+    string,
+    StructuralLedgerEntry[]
+  >();
+  const seenExecutionHandles = new Map<string, StructuralLedgerEntry[]>();
   const activeReservations = new Map<
     string,
     StructuralLedgerEntry | null
@@ -471,6 +319,26 @@ export async function assertRecordedLedgerStructure(
       activeReservations.set(id, active);
       return active;
     },
+    approvalEscalations: async (decisionId, stageId, before, limit) => {
+      const stored = await base.approvalEscalations(
+        decisionId,
+        stageId,
+        before,
+        limit,
+      );
+      return mergePriorEntries(
+        stored,
+        seenApprovalEscalations.get(approvalStageKey(decisionId, stageId)) ?? [],
+        before,
+      ).slice(0, limit);
+    },
+    executionHandleEvents: async (handleId, before) => {
+      const stored = await base.executionHandleEvents(handleId, before);
+      return executionHandleOwnerEntries(
+        [...stored, ...(seenExecutionHandles.get(handleId) ?? [])],
+        before,
+      );
+    },
   };
   for (const item of [...entries].sort(
     (left, right) => left.sequence - right.sequence,
@@ -482,6 +350,23 @@ export async function assertRecordedLedgerStructure(
     }
     if (item.event.type === "EvidenceSnapshotRecorded") {
       seenEvidence.set(item.event.evidenceSnapshotRef.id, item);
+    }
+    if (item.event.type === "ApprovalStageEscalated") {
+      const key = approvalStageKey(
+        item.event.decisionRef.id,
+        item.event.stageId,
+      );
+      seenApprovalEscalations.set(key, [
+        ...(seenApprovalEscalations.get(key) ?? []),
+        item,
+      ]);
+    }
+    const handleId = structuralExecutionHandleId(item.event);
+    if (handleId) {
+      seenExecutionHandles.set(handleId, [
+        ...(seenExecutionHandles.get(handleId) ?? []),
+        item,
+      ]);
     }
     if (item.event.type === "ReservationCreated") {
       activeReservations.set(item.event.reservationRef.id, item);

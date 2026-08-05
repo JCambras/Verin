@@ -117,10 +117,14 @@ describe("deterministic decision-ledger projections", () => {
       id: "projection:escalation",
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
+    if (escalation.type !== "ApprovalStageEscalated") {
+      throw new Error("expected escalation fixture");
+    }
     const expiry = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageExpired")!,
       id: "projection:expiry",
       priorDecisionHash: input.decisionRecord.decisionHash,
+      effectiveAt: escalation.newExpiresAt,
     });
     await expect(append(db, [escalation, expiry])).resolves.toHaveLength(2);
     const online = await listDecisionProjections(db, LEDGER_TENANT);
@@ -146,6 +150,30 @@ describe("deterministic decision-ledger projections", () => {
         escalationStepIndex: 0,
         escalationMode: "add",
       }],
+    });
+  });
+
+  it("projects replacement escalation roles and re-armed expiry", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const sample = allLedgerEventSamples().find(
+      (event) => event.type === "ApprovalStageEscalated",
+    )!;
+    const event = LedgerEntrySchema.parse({
+      ...sample,
+      id: "projection:approval-escalated",
+      mode: "replace",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    await expect(append(db, [event])).resolves.toHaveLength(1);
+    const state = (await listDecisionProjections(db, LEDGER_TENANT))[0]!
+      .projection;
+    expect(state.approvalStages[0]).toMatchObject({
+      expiresAt: event.type === "ApprovalStageEscalated"
+        ? event.newExpiresAt
+        : "",
+      eligibleRoleIds: ["operations-manager"],
+      escalationMode: "replace",
     });
   });
 

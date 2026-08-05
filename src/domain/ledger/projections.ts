@@ -6,6 +6,10 @@
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { promotedDecisionId } from "@contracts/decision-core/ledger-references";
+import {
+  applyApprovalStageEscalation,
+  initialApprovalStageAuthority,
+} from "./approval-authority";
 
 export interface ApprovalActivity {
   readonly entryId: string;
@@ -81,17 +85,18 @@ function initialize(
     disposition: record.result.kind,
     approvalMode: authority?.mode ?? "none",
     approvalStages: authority && authority.mode !== "automatic"
-      ? authority.stages.map((stage) => ({
-          stageId: stage.stageId,
-          status: "pending" as const,
-          expiresAt: stage.expiresAt,
-          escalationStepIndex: null,
-          escalationMode: null,
-          eligibleRoleIds: stage.requirements
-            .flatMap((requirement) => requirement.eligibleRoleIds.map((role) => role.id))
-            .sort(),
-          activity: [],
-        }))
+      ? authority.stages.map((stage) => {
+          const effective = initialApprovalStageAuthority(stage);
+          return {
+            stageId: stage.stageId,
+            status: "pending" as const,
+            expiresAt: effective.expiresAt,
+            escalationStepIndex: null,
+            escalationMode: null,
+            eligibleRoleIds: effective.eligibleRoleIds,
+            activity: [],
+          };
+        })
       : [],
     reservations: [],
     executionSteps: [],
@@ -177,16 +182,17 @@ export function foldDecisionProjection(
       }));
       break;
     case "ApprovalStageEscalated":
-      state = updateStage(state, event.stageId, (stage) => ({
-        ...stage,
-        status: "escalated",
-        expiresAt: event.newExpiresAt,
-        escalationStepIndex: event.escalationStepIndex,
-        escalationMode: event.mode,
-        eligibleRoleIds: event.mode === "replace"
-          ? event.roleIds.map((role) => role.id)
-          : [...new Set([...stage.eligibleRoleIds, ...event.roleIds.map((role) => role.id)])].sort(),
-      }));
+      state = updateStage(state, event.stageId, (stage) => {
+        const effective = applyApprovalStageEscalation(stage, event);
+        return {
+          ...stage,
+          status: "escalated",
+          expiresAt: effective.expiresAt,
+          escalationStepIndex: event.escalationStepIndex,
+          escalationMode: event.mode,
+          eligibleRoleIds: effective.eligibleRoleIds,
+        };
+      });
       break;
     case "ReservationCreated":
       state = {

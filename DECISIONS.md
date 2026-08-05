@@ -3819,3 +3819,38 @@ other layer ceiling and the 500-line file cap.
 values are invisible to the immutable PII boundary.
 **Revert path:** none while recommendation parameters can enter append-only
 decision storage.
+
+### D-126 · 2026-08-05 · reversible · Ledger runtime authority and structural ownership fail closed
+
+Transaction authority is membership in a realm-stable live `WeakSet`, granted only
+around the driver transaction callback and revoked in `finally`. A predictable
+property and a stale callback adapter no longer satisfy the append capability.
+
+Approval projection and structural validation consume one domain authority reducer.
+Prior `ApprovalStageEscalated` events replace or add effective roles and re-arm the
+effective expiry at `newExpiresAt`; a replacement removes the original roles. The
+original approval requirement and escalation path remain hash-bound in the immutable
+decision record. History reads are limited by that recorded path, and a repeated
+escalation step is refused.
+
+Execution handles identify one decision and one execution step. Structural append,
+whole-ledger verification, rebuild, and bounded register replay share the rule. The
+store reads only the first handle event and first step-bearing event through indexed
+`LIMIT 1` lookups, so earlier status placeholders cannot hide a later step owner.
+Migration 12 adds and exactly pins the tenant-scoped approval and handle indexes.
+
+Generic ledger identifier segments no longer admit arbitrary firm-shaped strings;
+only the registered firm segments needed by recorded machine identifiers remain,
+while actual `firmId` fields stay path-specific and are asserted against sealed tenant
+authority before SQL. Store failures use the shared fixed-shape SQLSTATE classifier,
+so safe driver codes survive the observability vocabulary without driver prose.
+
+The composed implementation measures 1,641 domain lines and 10,244 infrastructure
+lines. ADR-0041 amends ADR-0018 to ceilings of 1,700 and 10,350 respectively, while
+preserving the contracts and presentation ceilings and the 500-line file limit.
+
+**Why:** immutable append authority must be live, recorded escalation must govern
+current approval authority, one external execution cannot split across steps, and
+diagnostic or identifier boundaries must fail closed without unbounded reads.
+**Revert path:** none while the ledger remains the tenant-isolated replay and
+execution ownership authority.

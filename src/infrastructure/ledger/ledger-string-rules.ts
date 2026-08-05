@@ -23,6 +23,7 @@ const REGISTERED_CORRELATION_IDENTIFIERS = new Set([
   "corr:ledger-test",
   "seed:1",
 ]);
+const REGISTERED_FIRM_SEGMENTS = new Set(["firm-a", "firm-b"]);
 
 const REGISTERED_MACHINE_TOKENS = new Set([
   "account-balance",
@@ -98,7 +99,7 @@ const RECORDED_TIME_ZONE_DATA_VERSIONS = new Set<string>(
 function isRegisteredMachineSegment(value: string): boolean {
   const versioned = value.match(/^([a-z0-9-]+)@(?:v)?\d[0-9a-z.-]*$/);
   return OPAQUE_SEGMENT.test(value) ||
-    FIRM_IDENTIFIER.test(value) ||
+    REGISTERED_FIRM_SEGMENTS.has(value) ||
     MACHINE_NAMESPACES.has(value) ||
     REGISTERED_MACHINE_SEGMENTS.has(versioned?.[1] ?? value);
 }

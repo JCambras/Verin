@@ -30,8 +30,12 @@ import {
 } from "./ledger-source-provenance";
 import { listReplayDecisionEvidenceCoverage } from "./ledger-source-coverage";
 import {
+  executionHandleOwnerEntries,
+} from "./ledger-structural-history";
+import {
   assertRecordedLedgerStructure,
   DECISION_RECORDING_REQUIRED,
+  structuralExecutionHandleId,
   type LedgerStructureLookup,
   type StructuralDecision,
   type StructuralLedgerEntry,
@@ -206,6 +210,15 @@ async function replayRegisterWindow(
         )
         .sort((left, right) => right.sequence - left.sequence)[0] ?? null;
     },
+    approvalEscalations: async (decisionId, stageId, before, limit) =>
+      entries.filter((item) =>
+        item.sequence < before &&
+        item.event.type === "ApprovalStageEscalated" &&
+        item.event.decisionRef.id === decisionId &&
+        item.event.stageId === stageId).slice(0, limit),
+    executionHandleEvents: async (handleId, before) =>
+      executionHandleOwnerEntries(entries.filter((item) =>
+        structuralExecutionHandleId(item.event) === handleId), before),
   };
   for (const [index, row] of rows.entries()) {
     const item = entries[index]!;

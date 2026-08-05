@@ -316,6 +316,57 @@ describe("store schema hardening (integration)", () => {
       expect(plan).toContain("decision_ledger_active_reservation_created");
       expect(plan).toContain("decision_ledger_reservation_released");
     });
+
+    it("indexes approval authority and execution-handle history lookups", async () => {
+      const indexes = await db.query<{ indexname: string }>(
+        `SELECT indexname
+           FROM pg_indexes
+          WHERE schemaname = 'public'
+            AND indexname IN (
+              'decision_ledger_approval_escalations',
+              'decision_ledger_execution_handles'
+            )`,
+      );
+      expect(new Set(indexes.rows.map((row) => row.indexname))).toEqual(
+        new Set([
+          "decision_ledger_approval_escalations",
+          "decision_ledger_execution_handles",
+        ]),
+      );
+      await db.exec("SET enable_seqscan = off");
+      const approval = await db.query<Record<string, string>>(
+        `EXPLAIN (COSTS OFF)
+         SELECT sequence
+           FROM decision_ledger ledger
+          WHERE ledger.org_id = $1
+            AND ledger.decision_id = $2
+            AND ledger.event_type = 'ApprovalStageEscalated'
+            AND ledger.payload_json::jsonb #>> '{stageId}' = $3
+            AND ledger.sequence < $4
+          ORDER BY ledger.sequence ASC
+          LIMIT $5`,
+        [ORG, "decision:test", "stage:test", 100, 2],
+      );
+      const execution = await db.query<Record<string, string>>(
+        `EXPLAIN (COSTS OFF)
+         SELECT sequence
+           FROM decision_ledger ledger
+          WHERE ledger.org_id = $1
+            AND ledger.event_type IN (
+              'ExecutionSucceeded', 'ExecutionPartiallySucceeded',
+              'StatusObserved', 'VerificationStuck'
+            )
+            AND ledger.payload_json::jsonb #>> '{executionHandleRef,id}' = $2
+            AND ledger.sequence < $3
+          ORDER BY ledger.sequence ASC
+          LIMIT 1`,
+        [ORG, "handle:test", 100],
+      );
+      expect(approval.rows.flatMap((row) => Object.values(row)).join("\n"))
+        .toContain("decision_ledger_approval_escalations");
+      expect(execution.rows.flatMap((row) => Object.values(row)).join("\n"))
+        .toContain("decision_ledger_execution_handles");
+    });
   });
 });
 

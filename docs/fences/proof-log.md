@@ -6625,3 +6625,47 @@ table remains empty.
 probe files remain.
 
 **Date:** 2026-08-05 (review correction, D-125).
+
+## Ledger runtime authority and structural ownership (D-126)
+
+**Invariants:** a SQL transaction capability is valid only during its driver
+callback; firm-shaped human and numeric identifiers cannot enter generic immutable
+references; approval validation consumes the same folded escalation authority as
+projection; one execution handle identifies one decision and one step; store failure
+reasons use the closed observability vocabulary; structural history reads remain
+tenant-scoped and bounded.
+
+The pre-correction end-to-end probes reproduced all five review findings:
+
+```text
+transaction active=true, stale=true, forged=true
+subject:firm-robert accepted=true
+subject:org-123456789012 accepted=true
+replacement escalation: removed role accepted, new role rejected
+replacement escalation: old expiry accepted, new expiry rejected
+same execution handle accepted for two execution steps
+driver failure reasons fell outside the reason vocabulary
+```
+
+Permanent PGlite companions now prove live transaction membership is revoked, both
+firm-shaped reference attacks fail before insertion, replacement escalation removes
+old roles and re-arms expiry, a repeated escalation step fails, and a status-first
+execution handle cannot later bind two steps. The observability companion asserts
+that a class-23 SQLSTATE remains `driver-error:23505` while driver prose becomes
+`unexpected-error`.
+
+Migration 12 is pinned by version, name, and SHA-256. Its permanent companion appends
+a destructive index statement to the reviewed SQL and proves exact review fails.
+The schema companion disables sequential scans and proves the bounded approval and
+execution lookups select their tenant-scoped indexes. The max-file companion passes
+after structural history, retained v1 rules, and validation orchestration are split
+into separate files below 500 lines.
+
+Final verification passed `pnpm typecheck`, `pnpm lint`, all 1,440 Vitest tests,
+`pnpm knip`, all 16 golden cases, all six active v3 invariants, the production build,
+and all 19 Playwright end-to-end tests including the accessibility scans.
+
+**Revert:** all attacks remain permanent integration or fitness companions. No probe
+files remain.
+
+**Date:** 2026-08-05 (review corrections, ADR-0041, D-126).

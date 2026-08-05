@@ -96,6 +96,50 @@ function hashPreimage(value: unknown): string {
   return createHash("sha256").update(canonical.value, "utf8").digest("hex");
 }
 
+function twoStepDecisionRecordingInput() {
+  const input = decisionRecordingInput();
+  if (input.decisionRecord.result.kind !== "proceed") {
+    throw new Error("expected proceed decision fixture");
+  }
+  const step = input.decisionRecord.result.executionPlan.steps[0]!;
+  const candidate = DecisionRecordSchema.parse({
+    ...input.decisionRecord,
+    decisionHash: "0".repeat(64),
+    result: {
+      ...input.decisionRecord.result,
+      executionPlan: {
+        ...input.decisionRecord.result.executionPlan,
+        steps: [
+          step,
+          {
+            ...step,
+            id: "step:GC-01:0002",
+            idempotencyKey: "idem:ledger:2",
+            conflictKeys: ["conflict:second"],
+            reservationRefs: [{ firmId: LEDGER_ORG, id: "reservation:2" }],
+            verificationRuleRef: { firmId: LEDGER_ORG, id: "verify:2" },
+          },
+        ],
+      },
+    },
+  });
+  const decisionRecord = DecisionRecordSchema.parse({
+    ...candidate,
+    decisionHash: hashPreimage(decisionHashPreimage(candidate)),
+  });
+  return {
+    ...input,
+    decisionRecord,
+    events: [
+      ...input.events.slice(0, -1),
+      LedgerEntrySchema.parse({
+        ...input.events.at(-1)!,
+        decisionHash: decisionRecord.decisionHash,
+      }),
+    ],
+  };
+}
+
 function issuedTraceId(label: string): string {
   return `trace:${createHash("sha256").update(label, "utf8").digest("hex")}`;
 }
@@ -391,13 +435,14 @@ async function measureStatements(
       return db.query<U>(sql, params);
     },
     transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
-      return db.transaction((tx) => fn({
-        ...tx,
-        async query<U>(sql: string, params?: unknown[]) {
+      return db.transaction((tx) => {
+        const query = tx.query.bind(tx);
+        tx.query = async <U>(sql: string, params?: unknown[]) => {
           statements.push(sql);
-          return tx.query<U>(sql, params);
-        },
-      }));
+          return query<U>(sql, params);
+        };
+        return fn(tx);
+      });
     },
   };
   await run(measured);
@@ -773,13 +818,20 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ]);
   });
 
-  it("recognizes transaction authority across separately evaluated bundles", () => {
-    const transaction = {
+  it("recognizes only live driver-issued transaction authority", async () => {
+    let transaction: SqlTx | undefined;
+    await db.transaction(async (tx) => {
+      transaction = tx;
+      expect(isSqlTransaction(tx)).toBe(true);
+    });
+    expect(transaction).toBeDefined();
+    expect(isSqlTransaction(transaction!)).toBe(false);
+    const forged = {
       [Symbol.for("verin.sql-transaction")]: true,
       async query() { return { rows: [] }; },
       async exec() {},
     };
-    expect(isSqlTransaction(transaction)).toBe(true);
+    expect(isSqlTransaction(forged)).toBe(false);
   });
 
   it("L3 detects a promoted exception-trigger link that drifts from the payload", async () => {
@@ -899,11 +951,15 @@ describe("decision ledger storage and L1-L4 verification", () => {
       recordedAt: LEDGER_LATER,
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
+    if (laterFirst.type !== "ApprovalStageEscalated") {
+      throw new Error("expected escalation fixture");
+    }
     const earlierSecond = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageExpired")!,
       id: "ordered:second",
       recordedAt: TS,
       priorDecisionHash: input.decisionRecord.decisionHash,
+      effectiveAt: laterFirst.newExpiresAt,
     });
     const result = await append(db, [laterFirst, earlierSecond]);
     expect(result.map((entry) => [entry.id, entry.sequence])).toEqual([
@@ -998,6 +1054,131 @@ describe("decision ledger storage and L1-L4 verification", () => {
       },
     });
     await expect(append(db, [attributed])).resolves.toHaveLength(1);
+  });
+
+  it("validates approvals and expiry against the latest escalation authority", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const escalationSample = samples.find(
+      (event) => event.type === "ApprovalStageEscalated",
+    )!;
+    const approvalSample = samples.find(
+      (event) => event.type === "ApprovalRecorded",
+    )!;
+    const expirySample = samples.find(
+      (event) => event.type === "ApprovalStageExpired",
+    )!;
+    if (
+      escalationSample.type !== "ApprovalStageEscalated" ||
+      approvalSample.type !== "ApprovalRecorded" ||
+      expirySample.type !== "ApprovalStageExpired"
+    ) {
+      throw new Error("expected approval fixtures");
+    }
+    const escalation = LedgerEntrySchema.parse({
+      ...escalationSample,
+      id: "event:approval:escalation",
+      mode: "replace",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    await expect(append(db, [escalation])).resolves.toHaveLength(1);
+    const approval = {
+      ...approvalSample,
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    };
+    const removedRole = LedgerEntrySchema.parse({
+      ...approval,
+      id: "event:approval:prior",
+      approver: {
+        ...approvalSample.approver,
+        roleIds: [{ firmId: LEDGER_ORG, id: "operations" }],
+      },
+    });
+    await expect(append(db, [removedRole])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "ledger approver role is not authorized by the approval stage",
+    });
+    const escalatedRole = LedgerEntrySchema.parse({
+      ...approval,
+      id: "event:approval:additional-role",
+      approver: {
+        ...approvalSample.approver,
+        roleIds: [{ firmId: LEDGER_ORG, id: "operations-manager" }],
+      },
+    });
+    await expect(append(db, [escalatedRole])).resolves.toHaveLength(1);
+    const staleExpiry = LedgerEntrySchema.parse({
+      ...expirySample,
+      id: "event:approval:expiry-first",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+      effectiveAt: input.decisionRecord.result.kind === "proceed" &&
+          input.decisionRecord.result.authority.mode !== "automatic"
+        ? input.decisionRecord.result.authority.stages[0]!.expiresAt
+        : "",
+    });
+    await expect(append(db, [staleExpiry])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "ledger approval expiry does not match the recorded stage",
+    });
+    const currentExpiry = LedgerEntrySchema.parse({
+      ...expirySample,
+      id: "event:approval:expiry",
+      priorDecisionHash: input.decisionRecord.decisionHash,
+      effectiveAt: escalationSample.newExpiresAt,
+    });
+    await expect(append(db, [currentExpiry])).resolves.toHaveLength(1);
+    const repeatedEscalation = LedgerEntrySchema.parse({
+      ...escalation,
+      id: "event:approval:escalation-second",
+    });
+    await expect(append(db, [repeatedEscalation])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "approval escalation step is already recorded",
+    });
+  });
+
+  it("rejects one execution handle assigned to different steps", async () => {
+    const input = twoStepDecisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const sample = samples.find(
+      (event) => event.type === "ExecutionSucceeded",
+    )!;
+    const statusSample = samples.find(
+      (event) => event.type === "StatusObserved",
+    )!;
+    if (
+      sample.type !== "ExecutionSucceeded" ||
+      statusSample.type !== "StatusObserved"
+    ) {
+      throw new Error("expected execution fixture");
+    }
+    const statusWithoutEvidence = Object.fromEntries(
+      Object.entries(statusSample).filter(([key]) => key !== "evidenceSnapshotRef"),
+    );
+    const status = LedgerEntrySchema.parse({
+      ...statusWithoutEvidence,
+      id: "event:execution:status",
+      executionHandleRef: sample.executionHandleRef,
+    });
+    const first = LedgerEntrySchema.parse({
+      ...sample,
+      id: "event:execution:first",
+      stepId: "step:GC-01:0001",
+    });
+    const second = LedgerEntrySchema.parse({
+      ...sample,
+      id: "event:execution:second",
+      stepId: "step:GC-01:0002",
+    });
+    await expect(append(db, [status, first])).resolves.toHaveLength(2);
+    await expect(append(db, [second])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "execution handle is already assigned to another execution step",
+    });
+    expect(await listDecisionLedger(db, LEDGER_TENANT)).toHaveLength(7);
   });
 
   it("rejects unauthorized execution, verification, reservation, and trigger references", async () => {
@@ -1446,6 +1627,14 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ["namespaced numeric reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
       ...event,
       decisionRef: { firmId: LEDGER_ORG, id: "decision:123456789012" },
+    })],
+    ["firm-shaped name reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      decisionRef: { firmId: LEDGER_ORG, id: "subject:firm-robert" },
+    })],
+    ["firm-shaped account reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      decisionRef: { firmId: LEDGER_ORG, id: "subject:org-123456789012" },
     })],
     ["approval stage", "ApprovalRecorded", (event: Record<string, unknown>) => ({
       ...event,
@@ -3083,17 +3272,15 @@ describe("decision ledger storage and L1-L4 verification", () => {
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     await expect(db.transaction(async (tx) => {
-      const failingTx: SqlTx = {
-        ...tx,
-        async query<T>(sql: string, params?: unknown[]) {
-          if (sql.includes("INSERT INTO decision_ledger")) {
-            throw new TypeError("driver is gone");
-          }
-          return tx.query<T>(sql, params);
-        },
+      const query = tx.query.bind(tx);
+      tx.query = async <T>(sql: string, params?: unknown[]) => {
+        if (sql.includes("INSERT INTO decision_ledger")) {
+          throw new TypeError("driver is gone");
+        }
+        return query<T>(sql, params);
       };
       return appendDecisionEvents(
-        failingTx,
+        tx,
         LEDGER_TENANT,
         [event],
         LEDGER_PROVENANCE,
@@ -3121,23 +3308,22 @@ describe("decision ledger storage and L1-L4 verification", () => {
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     await expect(db.transaction((tx) => {
-      const failingTx: SqlTx = {
-        ...tx,
-        async query<T>(sql: string, params?: unknown[]) {
-          if (method === "query" && sql.includes(statement)) {
-            throw new TypeError("driver is gone");
-          }
-          return tx.query<T>(sql, params);
-        },
-        async exec(sql: string) {
-          if (method === "exec" && sql === statement) {
-            throw new TypeError("driver is gone");
-          }
-          return tx.exec(sql);
-        },
+      const query = tx.query.bind(tx);
+      const exec = tx.exec.bind(tx);
+      tx.query = async <T>(sql: string, params?: unknown[]) => {
+        if (method === "query" && sql.includes(statement)) {
+          throw new TypeError("driver is gone");
+        }
+        return query<T>(sql, params);
+      };
+      tx.exec = async (sql: string) => {
+        if (method === "exec" && sql === statement) {
+          throw new TypeError("driver is gone");
+        }
+        return exec(sql);
       };
       return appendDecisionEvents(
-        failingTx,
+        tx,
         LEDGER_TENANT,
         [event],
         LEDGER_PROVENANCE,
@@ -3149,17 +3335,15 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await recordFixture(db);
     const later = laterEvidenceRecording("evidence:preflight-driver-failure");
     await expect(db.transaction((tx) => {
-      const failingTx: SqlTx = {
-        ...tx,
-        async query<T>(sql: string, params?: unknown[]) {
-          if (sql.includes("SELECT canonical_json FROM evidence_snapshots")) {
-            throw new TypeError("driver is gone");
-          }
-          return tx.query<T>(sql, params);
-        },
+      const query = tx.query.bind(tx);
+      tx.query = async <T>(sql: string, params?: unknown[]) => {
+        if (sql.includes("SELECT canonical_json FROM evidence_snapshots")) {
+          throw new TypeError("driver is gone");
+        }
+        return query<T>(sql, params);
       };
       return appendDecisionEvents(
-        failingTx,
+        tx,
         LEDGER_TENANT,
         [later.event],
         LEDGER_PROVENANCE,
@@ -3182,25 +3366,23 @@ describe("decision ledger storage and L1-L4 verification", () => {
     let rollbackAttempts = 0;
     let releaseAttempts = 0;
     await expect(db.transaction((tx) => {
-      const failingTx: SqlTx = {
-        ...tx,
-        async exec(sql: string) {
-          if (sql === "ROLLBACK TO SAVEPOINT decision_ledger_append") {
-            rollbackAttempts += 1;
-            throw new TypeError("rollback cleanup failed");
+      const exec = tx.exec.bind(tx);
+      tx.exec = async (sql: string) => {
+        if (sql === "ROLLBACK TO SAVEPOINT decision_ledger_append") {
+          rollbackAttempts += 1;
+          throw new TypeError("rollback cleanup failed");
+        }
+        if (sql === "RELEASE SAVEPOINT decision_ledger_append") {
+          releaseAttempts += 1;
+          if (releaseAttempts === 1) {
+            throw { code: "23505", message: "release failed" };
           }
-          if (sql === "RELEASE SAVEPOINT decision_ledger_append") {
-            releaseAttempts += 1;
-            if (releaseAttempts === 1) {
-              throw { code: "23505", message: "release failed" };
-            }
-            throw new TypeError("release cleanup failed");
-          }
-          return tx.exec(sql);
-        },
+          throw new TypeError("release cleanup failed");
+        }
+        return exec(sql);
       };
       return appendDecisionEvents(
-        failingTx,
+        tx,
         LEDGER_TENANT,
         [event],
         LEDGER_PROVENANCE,

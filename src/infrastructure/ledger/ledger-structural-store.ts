@@ -9,6 +9,7 @@ import type {
   LedgerStructureLookup,
   StructuralLedgerEntry,
 } from "./ledger-structural-validator";
+import { executionHandleOwnerEntries } from "./ledger-structural-history";
 
 interface StoredEntryRow {
   readonly sequence: number | string;
@@ -158,6 +159,56 @@ export function storedLedgerStructureLookup(
         [orgId, reservationId, beforeSequence],
       );
       return result.rows[0] ? parseEntry(result.rows[0]) : null;
+    },
+    async approvalEscalations(decisionId, stageId, beforeSequence, limit) {
+      const result = await tx.query<StoredEntryRow>(
+        `SELECT sequence, event_type, schema_version, serializer_version,
+                payload_json
+           FROM decision_ledger ledger
+          WHERE ledger.org_id = $1
+            AND ledger.decision_id = $2
+            AND ledger.event_type = 'ApprovalStageEscalated'
+            AND ledger.payload_json::jsonb #>> '{stageId}' = $3
+            AND ledger.sequence < $4
+          ORDER BY ledger.sequence ASC
+          LIMIT $5`,
+        [orgId, decisionId, stageId, beforeSequence, limit],
+      );
+      return result.rows.map(parseEntry);
+    },
+    async executionHandleEvents(handleId, beforeSequence) {
+      const first = await tx.query<StoredEntryRow>(
+        `SELECT sequence, event_type, schema_version, serializer_version,
+                payload_json
+           FROM decision_ledger ledger
+          WHERE ledger.org_id = $1
+            AND ledger.event_type IN (
+              'ExecutionSucceeded', 'ExecutionPartiallySucceeded',
+              'StatusObserved', 'VerificationStuck'
+            )
+            AND ledger.payload_json::jsonb #>> '{executionHandleRef,id}' = $2
+            AND ledger.sequence < $3
+          ORDER BY ledger.sequence ASC
+          LIMIT 1`,
+        [orgId, handleId, beforeSequence],
+      );
+      const step = await tx.query<StoredEntryRow>(
+        `SELECT sequence, event_type, schema_version, serializer_version,
+                payload_json
+           FROM decision_ledger ledger
+          WHERE ledger.org_id = $1
+            AND ledger.event_type IN (
+              'ExecutionSucceeded', 'ExecutionPartiallySucceeded'
+            )
+            AND ledger.payload_json::jsonb #>> '{executionHandleRef,id}' = $2
+            AND ledger.sequence < $3
+          ORDER BY ledger.sequence ASC
+          LIMIT 1`,
+        [orgId, handleId, beforeSequence],
+      );
+      return executionHandleOwnerEntries(
+        [...first.rows, ...step.rows].map(parseEntry),
+      );
     },
   };
 }

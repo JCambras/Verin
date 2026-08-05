@@ -34,6 +34,9 @@ import {
   DECISION_LEDGER_TOTAL_WITNESS_SQL,
   DECISION_REPLAY_SOURCE_PROVENANCE_SQL,
 } from "./decision-ledger-migration";
+import {
+  DECISION_LEDGER_STRUCTURAL_LOOKUP_INDEXES_SQL,
+} from "./decision-ledger-structural-migration";
 
 export interface Migration {
   /** Monotonic, gap-free version. Recorded in `schema_migrations` once applied. */
@@ -391,6 +394,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 11,
     name: "decision-ledger-total-witness",
     sql: DECISION_LEDGER_TOTAL_WITNESS_SQL,
+  },
+  {
+    version: 12,
+    name: "decision-ledger-structural-lookup-indexes",
+    sql: DECISION_LEDGER_STRUCTURAL_LOOKUP_INDEXES_SQL,
   },
 ];
 

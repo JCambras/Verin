@@ -64,6 +64,8 @@ describe("recorded ledger structural validator", () => {
         activeReservationReads += 1;
         return null;
       },
+      approvalEscalations: async () => [],
+      executionHandleEvents: async () => [],
     };
     const entries: StructuralLedgerEntry[] = events.map((event, sequence) => ({
       event,

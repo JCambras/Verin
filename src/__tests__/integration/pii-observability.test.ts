@@ -19,6 +19,7 @@ import {
   registerTestSpanName,
 } from "@domain/observability/safe-values";
 import { keyedObservabilityId } from "@infra/observability/record-id";
+import { classifyStoreFailure } from "@infra/store/driver-errors";
 
 /**
  * PII-safe observability (v3 §15.4): raw names and account numbers do not
@@ -75,6 +76,12 @@ describe("logs never carry raw names or account numbers", () => {
     expect(safeReason(new Error(`duplicate key value: (${FIXTURES.email}) already exists`))).toBe("unexpected-error");
     expect(safeReason(new Error(`password leaked for ${FIXTURES.householdName} account ${FIXTURES.accountNumber}`))).toBe("unexpected-error");
     expect(safeReason({ code: "23505", message: FIXTURES.email })).toBe("driver-error:23505");
+    expect(classifyStoreFailure({ code: "23505", message: FIXTURES.email }))
+      .toMatchObject({ constraint: true, reason: "driver-error:23505" });
+    expect(isSafeObservabilityPrimitive(
+      "reason",
+      classifyStoreFailure(new Error(FIXTURES.email)).reason,
+    )).toBe(true);
     expect(safeReason({ code: "ALICE", message: "caller-controlled" })).toBe("unexpected-error");
     expect(safeReason({ code: "ABCDE", message: "caller-controlled" })).toBe("unexpected-error");
     expect(safeReason(appError("INTERNAL", "Trusted safe message."))).toBe("app-error:INTERNAL");

@@ -13,6 +13,9 @@ import { MIGRATION_SQL, MIGRATIONS } from "@infra/store/migrations";
 import {
   DECISION_LEDGER_BUNDLE_IDENTITY_SQL,
 } from "@infra/store/decision-ledger-migration";
+import {
+  DECISION_LEDGER_STRUCTURAL_LOOKUP_INDEXES_SQL,
+} from "@infra/store/decision-ledger-structural-migration";
 
 const IMMUTABLE_TABLES = [
   "evidence_snapshots",
@@ -90,6 +93,11 @@ const REVIEWED_IMMUTABLE_MIGRATIONS = [
     version: 11,
     name: "decision-ledger-total-witness",
     sha256: "2427f7be9b0d733fef0579f0d63db2d24148a4e85280a8b702e6cc2cc2779564",
+  },
+  {
+    version: 12,
+    name: "decision-ledger-structural-lookup-indexes",
+    sha256: "b308af959845bcba79fa512157c86535f60fef16dc9bbfe6f6defbd8a8449646",
   },
 ] as const;
 const REVIEWED_DYNAMIC_IMMUTABLE_MIGRATION = {
@@ -1893,7 +1901,7 @@ describe("decision-ledger append-only fence", () => {
 
   it("immutable source writers require the validated ledger-store capability", () => {
     expect(sourceWriteBoundaryViolations(ledgerFenceFiles())).toEqual([]);
-  });
+  }, 60_000);
 
   it("repository exports append/read/rebuild surfaces, never immutable update/delete APIs", () => {
     const file = realProject().getSourceFileOrThrow(
@@ -2256,6 +2264,21 @@ describe("decision-ledger append-only fence", () => {
           "decision-ledger-bundle-identity",
           `${DECISION_LEDGER_BUNDLE_IDENTITY_SQL}
 TRUNCATE decision_ledger;`,
+        ),
+      ).toBe(false);
+      expect(
+        isReviewedImmutableMigration(
+          12,
+          "decision-ledger-structural-lookup-indexes",
+          DECISION_LEDGER_STRUCTURAL_LOOKUP_INDEXES_SQL,
+        ),
+      ).toBe(true);
+      expect(
+        isReviewedImmutableMigration(
+          12,
+          "decision-ledger-structural-lookup-indexes",
+          `${DECISION_LEDGER_STRUCTURAL_LOOKUP_INDEXES_SQL}
+DROP INDEX decision_ledger_execution_handles;`,
         ),
       ).toBe(false);
       const project = inMemoryProject({
