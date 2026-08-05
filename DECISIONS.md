@@ -3652,3 +3652,37 @@ locale data or a new capability or collection carrier is adopted; extend the sha
 authority and its adversarial matrix before allowing it.
 **Revert path:** none while contracts require byte-identical replay and every exported
 tenant boundary must remain behaviorally complete.
+
+### D-112 · 2026-08-05 · reversible · Instance capabilities and nested tenant fallbacks fail closed
+
+Instance property initializers and getter returns now enter the shared capability
+provenance graph when accessed from a constructed class. The same traversal follows
+local aliases, imports, re-exports, and inherited classes, so an instance cannot hide
+an ambient clock or a `node:module` namespace from the contracts or dependency fence.
+
+Ambient capability resolution falls back to declared platform types when expression
+provenance is unresolved. Standard `call`, `apply`, `bind`, `Reflect.apply`, and
+`Reflect.construct` forms retain their underlying Date invocation through aliases,
+imports, and re-exports before the pinned-construction rule. Every ambient Intl service
+and every host-local Date observable is refused in contracts. The one production
+`Intl.NumberFormat` consumer now formats USD minor units with repository code,
+preserving deterministic currency rounding, grouping, signed zero, and non-finite
+output without host locale data.
+
+Tenant occurrence coverage requires multiple legal values at every tenant-bearing
+collection path, including collections nested below scoped records. Zod `default` and
+`catch` wrappers are opaque tenant boundaries because their fallback output bypasses
+inner parsing; they require explicit review instead of inheriting the inner schema's
+coverage.
+
+Contracts measure 4,129/4,150 under ADR-0040. Domain, infrastructure, presentation,
+the runtime registry envelope, fixtures, and recorded hashes do not move.
+
+**Why:** a constructed carrier, ambient type annotation, standard invocation wrapper,
+nested collection, or fallback output cannot erase a capability or tenant edge from a
+charter-critical completeness fence.
+**Revisit-When:** repository-pinned locale data or a new capability carrier, invocation
+wrapper, collection type, or schema fallback is adopted; extend the shared authority
+and its adversarial matrix before relying on it.
+**Revert path:** none while contracts require byte-identical replay and every exported
+tenant boundary must remain behaviorally complete.

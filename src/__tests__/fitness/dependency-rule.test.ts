@@ -241,6 +241,8 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nclass Holder { static module = nodeModule; }\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { static module: typeof nodeModule; }\nHolder.module = nodeModule;\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { static get module() { return nodeModule; } }\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { module = nodeModule; }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { get module() { return nodeModule; } }\nconst load = new Holder().module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -298,6 +300,25 @@ describe("dependency-rule fence", () => {
           "src/domain/evil.ts": [
             `import { Holder } from "./loader";`,
             "const load = Holder.module.createRequire(import.meta.url);",
+            `export const value = load("@infra/store");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
+    it("follows a node:module namespace in an exported instance class field", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/loader.ts": [
+            `import * as nodeModule from "node:module";`,
+            "export class Holder { module = nodeModule; }",
+          ].join("\n"),
+          "src/domain/evil.ts": [
+            `import { Holder } from "./loader";`,
+            "const load = new Holder().module.createRequire(import.meta.url);",
             `export const value = load("@infra/store");`,
           ].join("\n"),
         }),
@@ -1315,6 +1336,20 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "clock retained in an instance class property",
+        [
+          "class Holder { Clock = Date; }",
+          "export const value = new Holder().Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "formatter retained in an instance class getter",
+        [
+          "class Holder { get formatter() { return new Intl.DateTimeFormat(); } }",
+          "export const value = new Holder().formatter.format();",
+        ].join("\n"),
+      ],
+      [
         "formatter retained through Object.freeze",
         [
           "const formatter = Object.freeze(new Intl.DateTimeFormat());",
@@ -1341,6 +1376,10 @@ describe("dependency-rule fence", () => {
           "declare const holder: { formatter(): Intl.DateTimeFormat };",
           "export const value = holder.formatter().format();",
         ].join("\n"),
+      ],
+      [
+        "formatter supplied through an unresolved ambient parameter",
+        "export function format(value: Intl.DateTimeFormat) { return value.format(); }",
       ],
       [
         "Intl formatRange output",
@@ -1458,6 +1497,78 @@ describe("dependency-rule fence", () => {
           "}",
         ].join("\n"),
       ],
+      [
+        "Date call wrapper",
+        "export const value = Date.call(null);",
+      ],
+      [
+        "Date apply wrapper",
+        "export const value = Date.apply(null, []);",
+      ],
+      [
+        "Date bind wrapper",
+        "export const value = Date.bind(null)();",
+      ],
+      [
+        "extracted Date call wrapper",
+        "const invoke = Date.call; export const value = invoke(null);",
+      ],
+      [
+        "extracted Date apply wrapper",
+        "const invoke = Date.apply; export const value = invoke(null, []);",
+      ],
+      [
+        "extracted Date bind wrapper",
+        "const bind = Date.bind; export const value = bind(null)();",
+      ],
+      [
+        "Reflect.apply Date wrapper",
+        "export const value = Reflect.apply(Date, null, []);",
+      ],
+      [
+        "Reflect.construct Date wrapper",
+        "export const value = Reflect.construct(Date, []);",
+      ],
+      [
+        "Intl number formatting",
+        "export const value = new Intl.NumberFormat('en-US').format(1000);",
+      ],
+      [
+        "Intl collation",
+        "export const value = new Intl.Collator('en-US').compare('a', 'b');",
+      ],
+      [
+        "Date locale formatting",
+        "export const value = new Date(0).toLocaleString('en-US', { timeZone: 'UTC' });",
+      ],
+      [
+        "Date timezone offset",
+        "export const value = new Date(0).getTimezoneOffset();",
+      ],
+      [
+        "legacy Date year",
+        "export const value = new Date(0).getYear();",
+      ],
+      [
+        "Date parser",
+        "export const value = Date.parse('2026-08-05');",
+      ],
+      [
+        "typed Intl number formatter",
+        "export function format(value: Intl.NumberFormat) { return value.format(1000); }",
+      ],
+      [
+        "generic Intl formatter constraint",
+        "export function format<T extends Intl.DateTimeFormat>(value: T) { return value.format(); }",
+      ],
+      [
+        "Intl number formatter subclass",
+        "class Formatter extends Intl.NumberFormat {} export const value = new Formatter().format(1000);",
+      ],
+      [
+        "Date subclass timezone offset",
+        "class LocalDate extends Date {} export const value = new LocalDate(0).getTimezoneOffset();",
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -1555,6 +1666,53 @@ describe("dependency-rule fence", () => {
       );
     });
 
+    it("follows an exported instance formatter across modules", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts":
+            "export class Holder { formatter = new Intl.DateTimeFormat(); }",
+          "src/contracts/evil.ts": [
+            `import { Holder } from "./capability";`,
+            "export const value = new Holder().formatter.format();",
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it("follows an exported Date invocation wrapper across modules", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts": "export const invoke = Date.call;",
+          "src/contracts/evil.ts": [
+            `import { invoke } from "./capability";`,
+            "export const value = invoke(null);",
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it("follows a namespace-exported Date invocation wrapper", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts": "export const invoke = Date.call;",
+          "src/contracts/barrel.ts": `export * from "./capability";`,
+          "src/contracts/evil.ts": [
+            `import * as capability from "./barrel";`,
+            "export const value = capability.invoke(null);",
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
     it.each([
       [
         "default clock",
@@ -1620,6 +1778,7 @@ describe("dependency-rule fence", () => {
           "src/contracts/ok.ts": [
             "const Reflect = { get: (_value: unknown, key: string) => key };",
             "const Date = Object.assign((_value?: unknown) => 'safe', { now: () => 1 });",
+            "const invokeDate = Date.call;",
             "const Math = { random: () => 0.5 };",
             "const Function = (value: string) => () => value;",
             "const eval = (value: string) => value;",
@@ -1658,6 +1817,7 @@ describe("dependency-rule fence", () => {
             `  Function.bind(null)("safe")(),`,
             `  (0, eval)("safe"),`,
             "  Date(0),",
+            "  invokeDate(null, 0),",
             "  model.constructor(),",
             "  now(),",
             "  ctor(),",
@@ -1692,9 +1852,13 @@ describe("dependency-rule fence", () => {
             "    format() { return 'safe'; }",
             "    formatToParts() { return []; }",
             "  },",
+            "  NumberFormat: class { format() { return 'safe'; } },",
+            "  Collator: class { compare() { return 0; } },",
             "};",
             `export const descriptor = Object.getOwnPropertyDescriptor({}, "constructor")!.value();`,
             "export const formatted = new Intl.DateTimeFormat().format();",
+            "export const number = new Intl.NumberFormat().format();",
+            "export const compared = new Intl.Collator().compare();",
           ].join("\n"),
         }),
       );
@@ -1761,7 +1925,9 @@ describe("dependency-rule fence", () => {
             "export const pinnedAlias = new Date(instant).toISOString();",
             `export const offset = new Date("2020-01-01T05:30:00+05:30").toISOString();`,
             "export const epoch = new Date(0).toISOString();",
-            `const deterministicMember = false ? "parse" as const : "UTC" as const;`,
+            "export const reflectedEpoch = Reflect.construct(Date, [0]).toISOString();",
+            "export const boundEpoch = new (Date.bind(null, 0))().toISOString();",
+            `const deterministicMember = "UTC" as const;`,
             "export const deterministic = globalThis.Date[deterministicMember];",
             "export const values = [left, right];",
           ].join("\n"),

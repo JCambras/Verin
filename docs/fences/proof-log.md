@@ -5974,3 +5974,49 @@ host-locale refusal, collection path traversal, or multi-entry Set and Map cover
 its paired companion while the corresponding local capability controls remain green.
 
 **Date:** 2026-08-05 (review corrections, D-111).
+
+## F118 · instance capabilities and nested tenant fallbacks fail closed (D-112)
+
+**Invariants:** constructed class instances retain ambient and loader capability
+provenance; ambient Intl and host-local Date behavior cannot enter contracts; every
+nested tenant-bearing collection proves multiple values; Zod fallback wrappers cannot
+inherit validation they bypass at runtime.
+
+The adversarial companions were added before the shared authorities changed. The first
+focused red run failed thirteen dependency cases: instance fields and getters carrying
+`node:module`, `Date`, and `Intl.DateTimeFormat`; an unresolved ambient formatter
+parameter; four Date invocation wrappers; and NumberFormat, Collator, locale-string,
+and timezone-offset observables. The nested collection companion also failed because a
+single reference covered its collapsed collection path. Temporarily removing `default`
+and `catch` from the opaque registry after the fix independently failed both fallback
+companions, proving that inner traversal alone cannot validate substituted output.
+The final provenance audit planted extracted call, apply, and bind wrappers plus named
+and namespace-exported wrapper aliases; all five failed before wrapper provenance was
+connected to the shared cross-module source graph.
+
+Instance sources now share the path-based provenance authority used by static carriers,
+aliases, and module exports. Declared ambient types close unresolved parameter and
+member paths. Date invocation normalization preserves pinned numeric and zoned
+constructions while rejecting implicit clock reads. The retained matrix covers every
+standard Intl service, local Date observables, direct and cross-module instance
+carriers, and project-owned lookalikes.
+
+Tenant coverage marks every collection occurrence independently and requires at least
+two legal values at that exact path. The complete decision-core probe matrix now covers
+nested approval, escalation, explanation, execution, ambiguity, and resolution
+collections. Fallback wrappers are visible schema edges but remain opaque review
+boundaries.
+
+The focused dependency, tenant, and metric suites pass 359 tests. Full fitness passes
+1,096 tests, and the complete serialized Vitest suite passes 1,451. Typecheck, lint,
+knip, the CI-configured production build, `v3:invariants` (6 active-pass, 0
+active-fail), and `golden:validate` (16 signed cases) pass. Production-server
+Playwright passes 17 tests. Contracts measure 4,129/4,150 under ADR-0040; the runtime
+registry inventory is unchanged.
+
+**Revert:** the adversarial companions remain continuous tests. Removing instance
+sources, declared ambient-type fallback, Date wrapper normalization, Intl or local Date
+coverage, nested multi-value paths, or fallback opacity fails its paired companion while
+pinned Date constructions and project-owned capability controls remain green.
+
+**Date:** 2026-08-05 (review corrections, D-112).

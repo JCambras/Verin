@@ -12,7 +12,10 @@ import {
   ts,
   type CallExpression,
   type BinaryExpression,
+  type ClassDeclaration,
+  type ClassExpression,
   type CompilerOptions,
+  type NewExpression,
   type Signature,
   type SourceFile,
   type Symbol as MorphSymbol,
@@ -1161,6 +1164,110 @@ const classStaticValueSourcesAtPathIn = (
   return sources;
 };
 
+const classInstanceValueSourcesAtPathIn = (
+  constructor: Node | undefined,
+  path: readonly ProvenanceSelector[],
+  seenSymbols: ReadonlySet<MorphSymbol> = new Set(),
+): readonly ContainerValueSource[] => {
+  const selector = path[0];
+  if (selector === undefined) return [];
+  const expression = unwrapExpression(constructor);
+  const classLikes: Array<ClassDeclaration | ClassExpression> = [];
+  if (Node.isClassDeclaration(expression) || Node.isClassExpression(expression)) {
+    classLikes.push(expression);
+  } else {
+    const symbol = expression?.getSymbol();
+    if (symbol === undefined) return [];
+    const target = resolvedAliasedSymbol(symbol);
+    if (seenSymbols.has(target)) return [];
+    for (const declaration of target.getDeclarations()) {
+      if (Node.isClassDeclaration(declaration)) {
+        classLikes.push(declaration);
+      } else if (Node.isVariableDeclaration(declaration)) {
+        const initializer = unwrapExpression(declaration.getInitializer());
+        if (Node.isClassExpression(initializer)) classLikes.push(initializer);
+      }
+    }
+  }
+  const sources: ContainerValueSource[] = [];
+  for (const classLike of classLikes) {
+    const sourceFile = classLike.getSourceFile();
+    for (const property of classLike.getProperties()) {
+      if (property.isStatic()) continue;
+      const initializer = property.getInitializer();
+      if (initializer === undefined) continue;
+      const name = propertyNameIn(
+        sourceFile,
+        property.getNameNode(),
+        property.getName(),
+      );
+      if (
+        selector.kind !== "property" ||
+        !(
+          name === null ||
+          selector.name === null ||
+          name === selector.name
+        )
+      ) continue;
+      sources.push({
+        receiver: initializer,
+        remaining: path.slice(1),
+        uncertain: name === null || selector.name === null,
+      });
+    }
+    for (const accessor of classLike.getGetAccessors()) {
+      if (accessor.isStatic()) continue;
+      const name = propertyNameIn(
+        sourceFile,
+        accessor.getNameNode(),
+        accessor.getName(),
+      );
+      if (
+        selector.kind !== "property" ||
+        !(
+          name === null ||
+          selector.name === null ||
+          name === selector.name
+        )
+      ) continue;
+      const returned = callableReturnSourcesIn([accessor]);
+      sources.push(
+        ...returned.sources.map((source) => ({
+          receiver: source.receiver,
+          remaining: path.slice(1),
+          uncertain:
+            source.uncertain === true ||
+            name === null ||
+            selector.name === null,
+        })),
+      );
+      if (returned.unresolved) {
+        sources.push({
+          receiver: accessor,
+          remaining: path.slice(1),
+          uncertain: true,
+        });
+      }
+    }
+    const heritage = classLike.getExtends()?.getExpression();
+    if (heritage !== undefined) {
+      const nextSeen = new Set(seenSymbols);
+      const classSymbol = classLike.getSymbol();
+      if (classSymbol !== undefined) {
+        nextSeen.add(resolvedAliasedSymbol(classSymbol));
+      }
+      sources.push(
+        ...classInstanceValueSourcesAtPathIn(
+          heritage,
+          path,
+          nextSeen,
+        ),
+      );
+    }
+  }
+  return sources;
+};
+
 const assignedContainerNamesAtPathIn = (
   sf: SourceFile,
   symbol: MorphSymbol,
@@ -1402,6 +1509,24 @@ const ambientGlobalNamesAtPathIn = (
     return selected === undefined || Node.isOmittedExpression(selected)
       ? new Set()
       : ambientGlobalNamesAtPathIn(sf, selected, remaining, seen);
+  }
+  if (Node.isNewExpression(expression)) {
+    const names = new Set<string>();
+    for (const source of classInstanceValueSourcesAtPathIn(
+      expression.getExpression(),
+      path,
+    )) {
+      for (const name of ambientGlobalNamesAtPathIn(
+        source.receiver.getSourceFile(),
+        source.receiver,
+        source.remaining,
+        seen,
+        source.uncertain,
+      )) {
+        names.add(name);
+      }
+    }
+    if (names.size > 0) return names;
   }
   const receivers = ambientGlobalNamesIn(sf, expression, seen);
   if (selector.kind === "property") {
@@ -2216,6 +2341,20 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           seen,
           failOnUnknown,
         );
+    }
+    if (Node.isNewExpression(expression) && path.length > 0) {
+      return classInstanceValueSourcesAtPathIn(
+        expression.getExpression(),
+        path,
+      ).some((source) =>
+        (failOnUnknown && source.uncertain) ||
+        isCreateRequireNamespaceAtPath(
+          source.receiver,
+          source.remaining,
+          seen,
+          failOnUnknown,
+        )
+      );
     }
     if (!Node.isIdentifier(expression)) return false;
     if (
@@ -3129,6 +3268,45 @@ function contractCapabilityReferences(
     "formatToParts",
     "resolvedOptions",
   ]);
+  const dateHostTimeMethodNames = new Set([
+    "getDate",
+    "getDay",
+    "getFullYear",
+    "getHours",
+    "getMilliseconds",
+    "getMinutes",
+    "getMonth",
+    "getSeconds",
+    "getTimezoneOffset",
+    "getYear",
+    "setDate",
+    "setFullYear",
+    "setHours",
+    "setMilliseconds",
+    "setMinutes",
+    "setMonth",
+    "setSeconds",
+    "setYear",
+    "toDateString",
+    "toLocaleDateString",
+    "toLocaleString",
+    "toLocaleTimeString",
+    "toString",
+    "toTimeString",
+  ]);
+  const intlInstanceNames = new Set([
+    "Collator",
+    "DateTimeFormat",
+    "DisplayNames",
+    "DurationFormat",
+    "ListFormat",
+    "Locale",
+    "NumberFormat",
+    "PluralRules",
+    "RelativeTimeFormat",
+    "Segmenter",
+    "Segments",
+  ]);
   type DateTimeFormatMethodCapability = {
     readonly boundArguments: readonly Node[] | null;
   };
@@ -3171,6 +3349,14 @@ function contractCapabilityReferences(
     knownNames === undefined
       ? isAmbientGlobal(node, name)
       : knownNames.has(name) || knownNames.has(UNKNOWN_AMBIENT_GLOBAL);
+  const hasKnownAmbientName = (
+    node: Node | undefined,
+    name: string,
+    knownNames?: ReadonlySet<string>,
+  ): boolean =>
+    knownNames === undefined
+      ? isKnownAmbientGlobal(node, name)
+      : knownNames.has(name);
   /**
    * The member node, resolved through the SAME provenance authority that named it -
    * an aliased computed key (`obj[key]` where `const key = "constructor"`) otherwise
@@ -3206,6 +3392,45 @@ function contractCapabilityReferences(
     const type = expression?.getType();
     return type === undefined || type.isAny() || type.isUnknown();
   };
+  const typeHasAmbientSymbol = (
+    type: Type | undefined,
+    names: ReadonlySet<string>,
+    seen: ReadonlySet<string> = new Set(),
+  ): boolean => {
+    if (type === undefined) return false;
+    const key = typeKey(type);
+    if (seen.has(key)) return false;
+    const nextSeen = new Set(seen).add(key);
+    const alternatives = type.isUnion()
+      ? type.getUnionTypes()
+      : type.isIntersection()
+        ? type.getIntersectionTypes()
+        : [];
+    if (
+      alternatives.some((candidate) =>
+        typeHasAmbientSymbol(candidate, names, nextSeen)
+      )
+    ) return true;
+    const symbol = type.getSymbol();
+    const declarations = symbol?.getDeclarations() ?? [];
+    if (symbol !== undefined &&
+      names.has(symbol.getName()) &&
+      declarations.length > 0 &&
+      declarations.every((declaration) =>
+        declaration.getSourceFile().isDeclarationFile()
+      )) return true;
+    return [type.getConstraint(), ...type.getBaseTypes()].some((candidate) =>
+      candidate !== undefined &&
+      typeHasAmbientSymbol(candidate, names, nextSeen)
+    );
+  };
+  const isAmbientDateInstance = (node: Node | undefined): boolean =>
+    typeHasAmbientSymbol(unwrapExpression(node)?.getType(), new Set(["Date"]));
+  const isAmbientIntlInstance = (node: Node | undefined): boolean =>
+    typeHasAmbientSymbol(
+      unwrapExpression(node)?.getType(),
+      intlInstanceNames,
+    );
   const isPinnedDateConstruction = (
     arguments_: readonly Node[],
   ): boolean => {
@@ -3250,6 +3475,250 @@ function contractCapabilityReferences(
           );
         }),
     );
+  };
+  type DateInvocationCapability = {
+    readonly target: Node;
+    readonly method: "call" | "apply" | "bind" | "bound";
+    readonly boundArguments: readonly Node[];
+  };
+  const dateInvocationCapabilityCache = new Map<
+    MorphSymbol,
+    Map<string, readonly DateInvocationCapability[]>
+  >();
+  const dateInvocationCapabilitiesAtPath = (
+    node: Node | undefined,
+    path: readonly ProvenanceSelector[] = [],
+    seenSymbols: ReadonlySet<MorphSymbol> = new Set(),
+  ): readonly DateInvocationCapability[] => {
+    const expression = unwrapExpression(node);
+    if (Node.isVariableDeclaration(expression)) {
+      return dateInvocationCapabilitiesAtPath(
+        expression.getInitializer(),
+        path,
+        seenSymbols,
+      );
+    }
+    if (Node.isConditionalExpression(expression)) {
+      return [
+        ...dateInvocationCapabilitiesAtPath(
+          expression.getWhenTrue(),
+          path,
+          seenSymbols,
+        ),
+        ...dateInvocationCapabilitiesAtPath(
+          expression.getWhenFalse(),
+          path,
+          seenSymbols,
+        ),
+      ];
+    }
+    if (
+      Node.isBinaryExpression(expression) &&
+      PROVENANCE_CHOICE_OPERATORS.has(
+        expression.getOperatorToken().getKind(),
+      )
+    ) {
+      return [
+        ...dateInvocationCapabilitiesAtPath(
+          expression.getLeft(),
+          path,
+          seenSymbols,
+        ),
+        ...dateInvocationCapabilitiesAtPath(
+          expression.getRight(),
+          path,
+          seenSymbols,
+        ),
+      ];
+    }
+    if (
+      Node.isPropertyAccessExpression(expression) ||
+      Node.isElementAccessExpression(expression)
+    ) {
+      const candidates = selectorCandidatesForAccessIn(
+        expression.getSourceFile(),
+        expression,
+      );
+      return candidates.selectors.flatMap((selector) =>
+        dateInvocationCapabilitiesAtPath(
+          expression.getExpression(),
+          [selector, ...path],
+          seenSymbols,
+        )
+      );
+    }
+    if (Node.isCallExpression(expression) && path.length === 0) {
+      return dateInvocationCapabilitiesAtPath(
+        expression.getExpression(),
+        [],
+        seenSymbols,
+      ).filter((capability) => capability.method === "bind").map(
+        (capability) => ({
+          ...capability,
+          method: "bound",
+          boundArguments: [
+            ...capability.boundArguments,
+            ...expression.getArguments().slice(1),
+          ],
+        }),
+      );
+    }
+    const selector = path[0];
+    if (
+      expression !== undefined &&
+      selector?.kind === "property" &&
+      path.length === 1 &&
+      selector.name !== null &&
+      ["call", "apply", "bind"].includes(selector.name) &&
+      ambientGlobalNamesIn(
+        expression.getSourceFile(),
+        expression,
+      ).has("Date")
+    ) {
+      return [{
+        target: expression,
+        method: selector.name as "call" | "apply" | "bind",
+        boundArguments: [],
+      }];
+    }
+    if (Node.isIdentifier(expression)) {
+      const symbol = expression.getSymbol();
+      if (symbol !== undefined) {
+        const target = resolvedAliasedSymbol(symbol);
+        const pathKey = path.map((candidate) =>
+          candidate.kind === "property"
+            ? `property:${candidate.name ?? "*"}`
+            : `index:${candidate.index}`
+        ).join("/");
+        let byPath = dateInvocationCapabilityCache.get(target);
+        if (byPath === undefined) {
+          byPath = new Map();
+          dateInvocationCapabilityCache.set(target, byPath);
+        }
+        const cached = byPath.get(pathKey);
+        if (cached !== undefined) return cached;
+        byPath.set(pathKey, []);
+        if (!seenSymbols.has(target)) {
+          const nextSeen = new Set(seenSymbols).add(target);
+          const sourceFiles = [...new Set(
+            target.getDeclarations()
+              .map((declaration) => declaration.getSourceFile())
+              .filter((sourceFile) => !sourceFile.isDeclarationFile()),
+          )];
+          const declarationSources = target.getDeclarations().flatMap(
+            (declaration): AmbientAliasSource[] => {
+              if (
+                Node.isVariableDeclaration(declaration) ||
+                Node.isParameterDeclaration(declaration) ||
+                Node.isPropertyDeclaration(declaration) ||
+                Node.isPropertyAssignment(declaration)
+              ) {
+                const initializer = declaration.getInitializer();
+                return initializer === undefined
+                  ? []
+                  : [{
+                    at: declaration.getStart(),
+                    receiver: initializer,
+                    selectors: [],
+                  }];
+              }
+              if (Node.isExportAssignment(declaration)) {
+                return [{
+                  at: declaration.getStart(),
+                  receiver: declaration.getExpression(),
+                  selectors: [],
+                }];
+              }
+              if (Node.isBindingElement(declaration)) {
+                return bindingElementSourcesIn(
+                  declaration.getSourceFile(),
+                  declaration,
+                  declaration.getStart(),
+                );
+              }
+              return [];
+            },
+          );
+          const capabilities = [
+            ...moduleExportSymbolsAtPath(target, path).flatMap(
+              (source) =>
+                dateInvocationCapabilitiesAtPath(
+                  source.symbol.getValueDeclaration(),
+                  source.remaining,
+                  nextSeen,
+                ),
+            ),
+            ...declarationSources.flatMap((source) =>
+              source.uncertain === true
+                ? []
+                : dateInvocationCapabilitiesAtPath(
+                  source.receiver,
+                  [...source.selectors, ...path],
+                  nextSeen,
+                )
+            ),
+            ...sourceFiles.flatMap((sourceFile) =>
+              classStaticValueSourcesAtPathIn(
+                sourceFile,
+                target,
+                path,
+              ).flatMap((source) =>
+                source.uncertain
+                  ? []
+                  : dateInvocationCapabilitiesAtPath(
+                    source.receiver,
+                    source.remaining,
+                    nextSeen,
+                  )
+              )
+            ),
+            ...sourceFiles.flatMap((sourceFile) =>
+              containerAssignmentsForSymbolIn(sourceFile, target).flatMap(
+                (assignment) => {
+                  const targets = assignmentPathsForSymbolIn(
+                    sourceFile,
+                    assignment.getLeft(),
+                    target,
+                  );
+                  return targets.paths.flatMap((targetPath) => {
+                    if (
+                      targetPath.length > path.length ||
+                      !targetPath.every((candidate, index) =>
+                        selectorsEqual(candidate, path[index]!)
+                      )
+                    ) return [];
+                    return dateInvocationCapabilitiesAtPath(
+                      assignment.getRight(),
+                      path.slice(targetPath.length),
+                      nextSeen,
+                    );
+                  });
+                },
+              )
+            ),
+          ];
+          byPath.set(pathKey, capabilities);
+          return capabilities;
+        }
+        return [];
+      }
+    }
+    if (Node.isNewExpression(expression) && path.length > 0) {
+      const capabilities = classInstanceValueSourcesAtPathIn(
+        expression.getExpression(),
+        path,
+      ).flatMap((source) =>
+        source.uncertain
+          ? []
+          : dateInvocationCapabilitiesAtPath(
+            source.receiver,
+            source.remaining,
+            seenSymbols,
+          )
+      );
+      if (capabilities.length > 0) return capabilities;
+    }
+    return [];
   };
   const isAmbientDateTimeFormatConstructor = (
     node: Node | undefined,
@@ -3598,6 +4067,21 @@ function contractCapabilityReferences(
         seenSymbols,
       );
     }
+    if (Node.isNewExpression(expression) && path.length > 0) {
+      const capabilities = classInstanceValueSourcesAtPathIn(
+        expression.getExpression(),
+        path,
+      ).flatMap((source) =>
+        source.uncertain
+          ? [{ boundArguments: null }]
+          : dateTimeFormatMethodCapabilitiesAtPath(
+            source.receiver,
+            source.remaining,
+            seenSymbols,
+          )
+      );
+      if (capabilities.length > 0) return capabilities;
+    }
     const selector = path[0];
     if (selector === undefined) return [];
     const remaining = path.slice(1);
@@ -3767,7 +4251,11 @@ function contractCapabilityReferences(
         (ambientReceiverNames ?? ambientGlobalNamesIn(sf, receiver))
           .has("Date") ||
         (ambientReceiverNames ?? ambientGlobalNamesIn(sf, receiver))
-          .has("Math")
+          .has("Math") ||
+        (ambientReceiverNames ?? ambientGlobalNamesIn(sf, receiver))
+          .has("Intl") ||
+        isAmbientDateInstance(receiver) ||
+        isAmbientIntlInstance(receiver)
       ) {
         return "<nondeterministic platform-global>";
       }
@@ -3784,8 +4272,13 @@ function contractCapabilityReferences(
     if (
       (name === "now" &&
         hasAmbientName(receiver, "Date", ambientReceiverNames)) ||
+      (name === "parse" &&
+        hasKnownAmbientName(receiver, "Date", ambientReceiverNames)) ||
       (name === "random" &&
-        hasAmbientName(receiver, "Math", ambientReceiverNames))
+        hasAmbientName(receiver, "Math", ambientReceiverNames)) ||
+      hasKnownAmbientName(receiver, "Intl", ambientReceiverNames) ||
+      (dateHostTimeMethodNames.has(name) && isAmbientDateInstance(receiver)) ||
+      isAmbientIntlInstance(receiver)
     ) {
       return "<nondeterministic platform-global>";
     }
@@ -3888,7 +4381,7 @@ function contractCapabilityReferences(
   }
   const inspectCall = (
     callee: Node,
-    arguments_: readonly Node[],
+    arguments_: readonly Node[] | null,
     line: number,
     construction: boolean,
   ): void => {
@@ -3899,11 +4392,138 @@ function contractCapabilityReferences(
       record(line, "<dynamic-code capability>");
     }
     if (
-      (!construction || !isPinnedDateConstruction(arguments_)) &&
+      (!construction ||
+        arguments_ === null ||
+        !isPinnedDateConstruction(arguments_)) &&
       isAmbientDateCandidate(callee)
     ) {
       record(line, "<nondeterministic platform-global>");
     }
+  };
+  const dateInvocationCarrierKinds = new Set([
+    SyntaxKind.BindingElement,
+    SyntaxKind.ExportSpecifier,
+    SyntaxKind.ImportClause,
+    SyntaxKind.ImportSpecifier,
+    SyntaxKind.NamespaceImport,
+    SyntaxKind.Parameter,
+    SyntaxKind.PropertyAssignment,
+    SyntaxKind.PropertyDeclaration,
+    SyntaxKind.ShorthandPropertyAssignment,
+    SyntaxKind.VariableDeclaration,
+  ]);
+  const mayCarryDateInvocation = (
+    node: Node | undefined,
+    seen: ReadonlySet<Node> = new Set(),
+  ): boolean => {
+    const expression = expressionProvenance(node);
+    if (expression === undefined || seen.has(expression)) return false;
+    const nextSeen = new Set(seen).add(expression);
+    if (
+      Node.isPropertyAccessExpression(expression) ||
+      Node.isElementAccessExpression(expression)
+    ) {
+      const members = memberNameCandidates(expression);
+      if (["call", "apply", "bind"].some((name) => members.names.has(name))) {
+        return true;
+      }
+    }
+    if (Node.isCallExpression(expression)) {
+      return mayCarryDateInvocation(expression.getExpression(), nextSeen);
+    }
+    return (expression.getSymbol()?.getDeclarations() ?? []).some(
+      (declaration) => dateInvocationCarrierKinds.has(declaration.getKind()),
+    );
+  };
+  const argumentListAlternatives = (
+    node: Node | undefined,
+  ): readonly (readonly Node[] | null)[] =>
+    staticArrayElementAlternatives(node) ?? [null];
+  const normalizedDateCallInvocations = (
+    call: CallExpression,
+  ): readonly {
+    readonly callee: Node;
+    readonly arguments: readonly Node[] | null;
+    readonly construction: boolean;
+  }[] => {
+    const reflected = normalizedAmbientBuiltinCall(
+      call,
+      "Reflect",
+      ["apply", "construct"],
+    );
+    if (reflected !== null && reflected.arguments !== null) {
+      const target = reflected.arguments[0];
+      const argumentList = reflected.arguments[
+        reflected.method === "construct" ? 1 : 2
+      ];
+      if (target === undefined) return [];
+      return argumentListAlternatives(argumentList).map((arguments_) => ({
+        callee: target,
+        arguments: arguments_,
+        construction: reflected.method === "construct",
+      }));
+    }
+    const capabilities = mayCarryDateInvocation(call.getExpression())
+      ? dateInvocationCapabilitiesAtPath(call.getExpression())
+      : [];
+    if (capabilities.length > 0) {
+      return capabilities.flatMap((capability) => {
+        if (capability.method === "call") {
+          return [{
+            callee: capability.target,
+            arguments: call.getArguments().slice(1),
+            construction: false,
+          }];
+        }
+        if (capability.method === "apply") {
+          return argumentListAlternatives(call.getArguments()[1]).map(
+            (arguments_) => ({
+              callee: capability.target,
+              arguments: arguments_,
+              construction: false,
+            }),
+          );
+        }
+        if (capability.method === "bound") {
+          return [{
+            callee: capability.target,
+            arguments: [
+              ...capability.boundArguments,
+              ...call.getArguments(),
+            ],
+            construction: false,
+          }];
+        }
+        return [];
+      });
+    }
+    return [{
+      callee: call.getExpression(),
+      arguments: call.getArguments(),
+      construction: false,
+    }];
+  };
+  const normalizedDateConstructions = (
+    call: NewExpression,
+  ): readonly {
+    readonly callee: Node;
+    readonly arguments: readonly Node[] | null;
+  }[] => {
+    const capabilities = mayCarryDateInvocation(call.getExpression())
+      ? dateInvocationCapabilitiesAtPath(call.getExpression()).filter(
+        (capability) => capability.method === "bound",
+      )
+      : [];
+    if (capabilities.length > 0) {
+      return capabilities.map((capability) => ({
+        callee: capability.target,
+        arguments: [
+          ...capability.boundArguments,
+          ...call.getArguments(),
+        ],
+      }));
+    }
+    return [{ callee: call.getExpression(), arguments: call.getArguments() }];
   };
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const callee = unwrapExpression(call.getExpression());
@@ -3939,20 +4559,24 @@ function contractCapabilityReferences(
         "<nondeterministic platform-global>",
       );
     }
-    inspectCall(
-      call.getExpression(),
-      call.getArguments(),
-      call.getStartLineNumber(),
-      false,
-    );
+    for (const invocation of normalizedDateCallInvocations(call)) {
+      inspectCall(
+        invocation.callee,
+        invocation.arguments,
+        call.getStartLineNumber(),
+        invocation.construction,
+      );
+    }
   }
   for (const call of sf.getDescendantsOfKind(SyntaxKind.NewExpression)) {
-    inspectCall(
-      call.getExpression(),
-      call.getArguments(),
-      call.getStartLineNumber(),
-      true,
-    );
+    for (const construction of normalizedDateConstructions(call)) {
+      inspectCall(
+        construction.callee,
+        construction.arguments,
+        call.getStartLineNumber(),
+        true,
+      );
+    }
   }
   return references;
 }

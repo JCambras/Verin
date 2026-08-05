@@ -81,9 +81,7 @@ const TRANSPARENT_SCHEMA_TYPES = new Set([
   "readonly",
   "optional",
   "nullable",
-  "default",
   "prefault",
-  "catch",
   "nonoptional",
   "success",
 ]);
@@ -319,6 +317,10 @@ const schemaEdges = (schema: z.ZodType): SchemaEdge[] => {
     case "promise":
       edges = [edge("innerType", "", definition.innerType)];
       break;
+    case "default":
+    case "catch":
+      edges = [edge("innerType", "", definition.innerType)];
+      break;
     case "function":
       edges = [
         edge("input", "input", definition.input),
@@ -408,8 +410,10 @@ const schemaContainsScopedReferenceCollection = (
 
 const OPAQUE_SCHEMA_TYPES = new Set([
   "any",
+  "catch",
   "unknown",
   "custom",
+  "default",
   "transform",
 ]);
 
@@ -955,6 +959,13 @@ const approvalRequirement = {
     { firmId: "firm-a", id: "advisor" },
   ],
 };
+const secondApprovalRequirement = {
+  ...approvalRequirement,
+  eligibleRoleIds: [
+    { firmId: "firm-a", id: "compliance" },
+    { firmId: "firm-a", id: "principal" },
+  ],
+};
 const escalationStep = {
   ...approvalStage.escalationPath[0]!,
   roleIds: [
@@ -962,12 +973,20 @@ const escalationStep = {
     { firmId: "firm-a", id: "compliance-manager" },
   ],
 };
+const secondEscalationStep = {
+  ...escalationStep,
+  after: "P2D",
+  roleIds: [
+    { firmId: "firm-a", id: "chief-compliance-officer" },
+    { firmId: "firm-a", id: "principal" },
+  ],
+};
 const probedApprovalStage = {
   stageId: "stage:probe",
   order: 0,
   executionMode: "parallel",
-  requirements: [approvalRequirement],
-  escalationPath: [escalationStep],
+  requirements: [approvalRequirement, secondApprovalRequirement],
+  escalationPath: [escalationStep, secondEscalationStep],
   templateRef: { firmId: "firm-a", id: "template:probe" },
   expiresAt: "2026-07-29T13:30:00.000Z",
 };
@@ -988,7 +1007,14 @@ const approvalStageTemplate = {
 const approvalTemplate = {
   firmId: "firm-a",
   id: "template:probe",
-  stages: [approvalStageTemplate],
+  stages: [
+    approvalStageTemplate,
+    {
+      ...approvalStageTemplate,
+      stageId: secondApprovalStage.stageId,
+      order: secondApprovalStage.order,
+    },
+  ],
 };
 const authorityRequirement = {
   mode: "approval",
@@ -1004,7 +1030,7 @@ const specialistAuthorityRequirement = {
     { firmId: "firm-a", id: "compliance-specialist" },
     { firmId: "firm-a", id: "operations-specialist" },
   ],
-  stages: [probedApprovalStage],
+  stages: [probedApprovalStage, secondApprovalStage],
 };
 const actorRef = {
   firmId: "firm-a",
@@ -1055,11 +1081,23 @@ const prohibitedDecisions = prohibitions.map((prohibition) => ({
   kind: "prohibited",
   prohibition,
 }));
-const recursiveExplanationNodes = [
-  explanationNode,
-  instructionExplanationNode,
-  regulatoryExplanationNode,
-].map((child) => ({ ...explanationNode, childNodes: [child] }));
+const multiSourceExplanationNode = {
+  ...explanationNode,
+  sourceRefs: [policySource, instructionSource],
+};
+const explanationLeaves = [policySource, instructionSource].map((source) => ({
+  ...explanationNode,
+  sourceRefs: [source, regulatorySource],
+}));
+const explanationBranches = [policySource, instructionSource].map((source) => ({
+  ...explanationNode,
+  sourceRefs: [source, regulatorySource],
+  childNodes: explanationLeaves,
+}));
+const recursiveExplanationNodes = [{
+  ...multiSourceExplanationNode,
+  childNodes: explanationBranches,
+}];
 const recommendation = {
   ...proceedResult.recommendation!,
   parameters: {
@@ -1067,13 +1105,31 @@ const recommendation = {
     secondSubject: { firmId: "firm-a", id: "subject:two" },
   },
 };
+const executionPrecondition = {
+  ...executionStep.preconditions[0]!,
+  requiredEvidenceSnapshotRefs: [
+    { firmId: "firm-a", id: "evidence:one" },
+    { firmId: "firm-a", id: "evidence:two" },
+  ],
+};
+const secondExecutionPrecondition = {
+  ...executionPrecondition,
+  code: "account-balance-still-current",
+  requiredEvidenceSnapshotRefs: [
+    { firmId: "firm-a", id: "evidence:three" },
+    { firmId: "firm-a", id: "evidence:four" },
+  ],
+};
 const externalAction = {
   targetRef: executionStep.targetRef,
   command: executionStep.command,
   idempotencyKey: executionStep.idempotencyKey,
   conflictKeys: executionStep.conflictKeys,
-  reservationRefs: executionStep.reservationRefs,
-  preconditions: executionStep.preconditions,
+  reservationRefs: [
+    { firmId: "firm-a", id: "reservation:one" },
+    { firmId: "firm-a", id: "reservation:two" },
+  ],
+  preconditions: [executionPrecondition, secondExecutionPrecondition],
   verificationRuleRef: executionStep.verificationRuleRef,
 };
 const compensatingAction = {
@@ -1083,6 +1139,7 @@ const compensatingAction = {
 };
 const probedExecutionStep = {
   ...executionStep,
+  ...externalAction,
   compensatingAction,
 };
 const probedExecutionPlan = {
@@ -1139,13 +1196,6 @@ const prohibitedWithPolicySource = {
     source: explanationNode.sourceRefs[0],
   },
 };
-const executionPrecondition = {
-  ...executionStep.preconditions[0]!,
-  requiredEvidenceSnapshotRefs: [
-    { firmId: "firm-a", id: "evidence:one" },
-    { firmId: "firm-a", id: "evidence:two" },
-  ],
-};
 const roleRefSet = [
   { firmId: "firm-a", id: "advisor" },
   { firmId: "firm-a", id: "operations" },
@@ -1170,6 +1220,14 @@ const secondEvidenceRequest = {
   ...evidenceRequest,
   subjectRef: { firmId: "firm-a", id: "subject:two" },
 };
+const secondAmbiguityRef = {
+  ...ambiguityRef,
+  slotName: "secondary-household",
+  candidateRefs: [
+    { firmId: "firm-a", id: "subject:three" },
+    { firmId: "firm-a", id: "subject:four" },
+  ],
+};
 const resolvableBlocker = {
   code: "missing-balance",
   explanation: "Balance evidence is required.",
@@ -1192,8 +1250,8 @@ const multiBlockerDecision = {
 };
 const resolutionState = {
   bound: [],
-  ambiguous: [ambiguityRef],
-  gaps: [evidenceRequest],
+  ambiguous: [ambiguityRef, secondAmbiguityRef],
+  gaps: [evidenceRequest, secondEvidenceRequest],
 };
 const trigger = {
   kind: "human_request",
@@ -1237,11 +1295,11 @@ const evidenceSnapshot = {
 };
 const comprehensiveExplanationTrace = versionedSources.map((source, index) => ({
   ...explanationNode,
-  sourceRefs: [source],
-  childNodes: [{
-    ...explanationNode,
-    sourceRefs: [versionedSources[(index + 1) % versionedSources.length]!],
-  }],
+  sourceRefs: [
+    source,
+    versionedSources[(index + 1) % versionedSources.length]!,
+  ],
+  childNodes: explanationBranches,
 }));
 const comprehensiveProceedRecord = {
   ...proceedBoundary,
@@ -1363,55 +1421,24 @@ const appendOccurrencePath = (path: string, segment: string): string =>
 
 const MULTIPLE_VALUES_OCCURRENCE = "<multiple>";
 
-const requiredMultipleValuesPath = (
+const requiresMultipleValues = (
   schema: z.ZodType,
   edges: readonly (SchemaEdge & { readonly occurrenceSegment: string })[],
-  root: boolean,
-): readonly string[] | null => {
+): boolean => {
   const current = unwrapSchema(schema);
   const definition = schemaDefinition(current);
   if (
     definition.type === "array" ||
+    definition.type === "record" ||
     definition.type === "set" ||
     definition.type === "map"
   ) {
-    const element = edges.find((edge) =>
-      schemaContainsScopedReference(edge.schema)
-    );
-    return root && element !== undefined
-      ? [`${element.occurrenceSegment}${MULTIPLE_VALUES_OCCURRENCE}`]
-      : null;
+    return edges.some((edge) => schemaContainsScopedReference(edge.schema));
   }
-  if (
-    definition.type !== "object" ||
-    isScopedReferenceSchema(current) ||
-    isTenantAnchorSchema(current)
-  ) {
-    return null;
-  }
-  const tenantEdges = edges.filter((edge) =>
-    schemaContainsScopedReference(edge.schema)
+  return definition.type === "tuple" && edges.some((edge) =>
+    edge.segment === "[]" && schemaContainsScopedReference(edge.schema)
   );
-  if (tenantEdges.length !== 1) return null;
-  const edge = tenantEdges[0]!;
-  const child = unwrapSchema(edge.schema);
-  if (![
-    "array",
-    "set",
-    "map",
-  ].includes(schemaDefinition(child).type)) return null;
-  const element = occurrenceEdges(child).find((candidate) =>
-    schemaContainsScopedReference(candidate.schema)
-  );
-  return element !== undefined && schemaContainsScopedReference(element.schema)
-    ? [edge.occurrenceSegment, `${element.occurrenceSegment}${MULTIPLE_VALUES_OCCURRENCE}`]
-    : null;
 };
-
-const appendOccurrenceSegments = (
-  path: string,
-  segments: readonly string[],
-): string => segments.reduce(appendOccurrencePath, path);
 
 const tenantScopeOccurrencePaths = (
   schema: z.ZodType,
@@ -1434,13 +1461,10 @@ const tenantScopeOccurrencePaths = (
     }
     const ancestors = new Map(next.ancestors).set(current, visits + 1);
     const edges = occurrenceEdges(current);
-    const requiredMultiple = requiredMultipleValuesPath(
-      current,
-      edges,
-      next.path === "$",
-    );
-    if (requiredMultiple !== null) {
-      paths.add(appendOccurrenceSegments(next.path, requiredMultiple));
+    if (requiresMultipleValues(current, edges)) {
+      paths.add(
+        appendOccurrencePath(next.path, MULTIPLE_VALUES_OCCURRENCE),
+      );
     }
     for (const edge of edges) {
       pending.push({
@@ -1490,31 +1514,22 @@ const coveredTenantScopePaths = (
     const nextAncestors = new Map(ancestors).set(current, visits + 1);
     const definition = schemaDefinition(current);
     const edges = occurrenceEdges(current);
-    const requiredMultiple = requiredMultipleValuesPath(
-      current,
-      edges,
-      path === "$",
-    );
-    if (requiredMultiple !== null) {
-      let repeated: unknown = value;
-      for (const segment of requiredMultiple.slice(0, -1)) {
-        if (
-          repeated === null ||
-          typeof repeated !== "object" ||
-          Array.isArray(repeated)
-        ) {
-          repeated = undefined;
-          break;
-        }
-        repeated = (repeated as Record<string, unknown>)[segment];
-      }
-      const repeatedSize = Array.isArray(repeated)
-        ? repeated.length
-        : repeated instanceof Set || repeated instanceof Map
-          ? repeated.size
-          : 0;
+    if (requiresMultipleValues(current, edges)) {
+      const repeatedSize = Array.isArray(value)
+        ? definition.type === "tuple"
+          ? value.length - edges.filter((edge) => edge.segment !== "[]").length
+          : value.length
+        : value instanceof Set || value instanceof Map
+          ? value.size
+          : definition.type === "record" &&
+              value !== null &&
+              typeof value === "object"
+            ? Object.keys(value).length
+            : 0;
       if (repeatedSize >= 2) {
-        covered.add(appendOccurrenceSegments(path, requiredMultiple));
+        covered.add(
+          appendOccurrencePath(path, MULTIPLE_VALUES_OCCURRENCE),
+        );
       }
     }
     const descend = (edge: typeof edges[number], child: unknown): void =>
@@ -2214,6 +2229,64 @@ describe("decision-core tenant-scope fence", () => {
     ).failed).toEqual(["probe.ts:OptionalUnconstrained"]);
   });
 
+  it("requires multi-value coverage for every nested tenant-bearing collection", () => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const NestedCollection = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+      refs: z.array(reference).min(1),
+    }).refine((value) => value.refs[0]?.firmId === value.firmId);
+    const legal = {
+      firmId: "firm-a",
+      id: "record:one",
+      refs: [{ firmId: "firm-a", id: "related:one" }],
+    };
+    const audit = tenantBoundaryAudit(
+      [["probe.ts", { NestedCollection }]],
+      { "probe.ts:NestedCollection": legal },
+    );
+    expect(audit.failed).toEqual(["probe.ts:NestedCollection"]);
+    expect(audit.uncovered.some((path) => path.includes("multiple"))).toBe(true);
+  });
+
+  it.each([
+    [
+      "default",
+      (inner: z.ZodType<ScopedRef[]>, fallback: ScopedRef[]) =>
+        inner.default(fallback),
+    ],
+    [
+      "catch",
+      (inner: z.ZodType<ScopedRef[]>, fallback: ScopedRef[]) =>
+        inner.catch(fallback),
+    ],
+  ] as const)("fails closed on a tenant-bearing %s fallback", (
+    _name,
+    wrap,
+  ) => {
+    const reference = z.strictObject({
+      firmId: z.literal("firm-a"),
+      id: z.string(),
+    });
+    const inner = z.array(reference).min(2) as z.ZodType<ScopedRef[]>;
+    const fallback = [
+      { firmId: "firm-a", id: "one" },
+      { firmId: "firm-b", id: "two" },
+    ];
+    const FallbackBoundary = wrap(inner, fallback);
+    const legal = [
+      { firmId: "firm-a", id: "one" },
+      { firmId: "firm-a", id: "two" },
+    ];
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { FallbackBoundary }]],
+      { "probe.ts:FallbackBoundary": legal },
+    ).unsafe).toEqual(["probe.ts:FallbackBoundary"]);
+  });
+
   it("requires a multi-element probe for tenant-bearing arrays", () => {
     const reference = z.strictObject({
       firmId: z.string(),
@@ -2353,8 +2426,8 @@ describe("decision-core tenant-scope fence", () => {
     );
     expect(audit.failed).toEqual(["probe.ts:UnionBoundary"]);
     expect(audit.uncovered).toEqual([
+      "probe.ts:UnionBoundary:$.<union:1>.refs.<multiple>",
       "probe.ts:UnionBoundary:$.<union:1>.refs.[]",
-      "probe.ts:UnionBoundary:$.<union:1>.refs.[]<multiple>",
     ]);
   });
 
@@ -2366,8 +2439,8 @@ describe("decision-core tenant-scope fence", () => {
     expect([...tenantScopeOccurrencePaths(z.map(reference, reference))].sort())
       .toEqual([
         "$.<map:0>{}",
-        "$.<map:0>{}<multiple>",
         "$.<map:1>{}",
+        "$.<multiple>",
       ]);
   });
 

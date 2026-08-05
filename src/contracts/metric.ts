@@ -29,13 +29,22 @@ export function metric<T extends number | string>(
   return { value, format, provenance };
 }
 
-const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const formatUsdMinor = (value: number): string => {
+  if (Number.isNaN(value)) return "$NaN";
+  if (!Number.isFinite(value)) return `${value < 0 ? "-" : ""}$∞`;
+  const sign = value < 0 || Object.is(value, -0) ? "-" : "";
+  const minor = BigInt(Math.round(Math.abs(value))).toString().padStart(3, "0");
+  const whole = minor.slice(0, -2);
+  const fraction = minor.slice(-2);
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${sign}$${grouped}.${fraction}`;
+};
 
 /** Value only — <Metric> adds the source/asOf label. Money is stored in minor units. */
 export function formatMetricValue(m: DisplayMetric): string {
   switch (m.format) {
     case "currency-minor":
-      return USD.format(Number(m.value) / 100);
+      return formatUsdMinor(Number(m.value));
     case "score":
       return String(Math.round(Number(m.value)));
     case "percent":
