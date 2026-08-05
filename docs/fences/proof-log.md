@@ -6557,3 +6557,29 @@ migration 11 by version, name, and SHA-256 and reject any content extension.
 No probe files remain.
 
 **Date:** 2026-08-04 (review corrections, D-123).
+
+## Ledger mutation witnesses, immutable identifiers, and view metrics (D-124)
+
+**Invariants:** moving an immutable row across tenants compromises both total
+witnesses; actor, reference, correlation, and related immutable strings reject raw
+PII-shaped identifiers before SQL; replayed state counts render only through a
+provenance-bearing metric contract.
+
+The permanent PGlite companions first ran against the pre-correction trigger and
+string classifier. The source tenant remained uncompromised after an ownership move,
+and email, hyphenated human-name, and complete account identifiers were accepted.
+The route companion also observed plain numbers for both replayed state counts.
+
+The metric fence was then proved against the real application tree by replacing one
+sanctioned ledger metric with a naked `.value` render:
+
+```text
+× RULE B: no metric field is rendered in JSX without provenance
+src/app/app/ledger/page.tsx:136 :: metric field 'activeReservations' rendered without provenance
+```
+
+**Revert:** the planted render was removed. Permanent companions retain the
+cross-tenant trigger probe, immutable identifier attacks, view-model metric contract,
+nested sanctioned-render control, and route provenance assertions.
+
+**Date:** 2026-08-05 (review corrections, D-124).

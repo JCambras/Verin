@@ -728,6 +728,45 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.verification.levels.at(-1)).toMatchObject({ level: "L4" });
   });
 
+  it("marks both tenant witnesses compromised when a row changes owner", async () => {
+    await seedOrg(db, LEDGER_OTHER_ORG);
+    await db.query(
+      `INSERT INTO decision_ledger_total_witness
+        (org_id, entry_count, compromised, updated_at)
+       VALUES ($1, 0, false, $3), ($2, 0, false, $3)`,
+      [LEDGER_ORG, LEDGER_OTHER_ORG, TS],
+    );
+    await db.exec(
+      `CREATE TABLE ledger_mutation_probe (org_id text NOT NULL);
+       CREATE TRIGGER ledger_mutation_probe_trigger
+       AFTER UPDATE OR DELETE ON ledger_mutation_probe
+       FOR EACH ROW EXECUTE FUNCTION decision_ledger_total_on_mutation();`,
+    );
+    await db.query(
+      "INSERT INTO ledger_mutation_probe (org_id) VALUES ($1)",
+      [LEDGER_ORG],
+    );
+    await db.query(
+      "UPDATE ledger_mutation_probe SET org_id = $2 WHERE org_id = $1",
+      [LEDGER_ORG, LEDGER_OTHER_ORG],
+    );
+
+    const witnesses = await db.query<{
+      org_id: string;
+      compromised: boolean;
+    }>(
+      `SELECT org_id, compromised
+         FROM decision_ledger_total_witness
+        WHERE org_id IN ($1, $2)
+        ORDER BY org_id`,
+      [LEDGER_ORG, LEDGER_OTHER_ORG],
+    );
+    expect(witnesses.rows).toEqual([
+      { org_id: LEDGER_ORG, compromised: true },
+      { org_id: LEDGER_OTHER_ORG, compromised: true },
+    ]);
+  });
+
   it("recognizes transaction authority across separately evaluated bundles", () => {
     const transaction = {
       [Symbol.for("verin.sql-transaction")]: true,
@@ -1321,6 +1360,30 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ["correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
       ...event,
       correlationId: "Robert Smith",
+    })],
+    ["email correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      correlationId: "victim@example.com",
+    })],
+    ["hyphenated-name correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      correlationId: "Alice-Smith",
+    })],
+    ["account correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      correlationId: "123456789012",
+    })],
+    ["prefixed account correlation", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      correlationId: "account:123456789012",
+    })],
+    ["email actor", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      actor: { firmId: LEDGER_ORG, systemId: "victim@example.com" },
+    })],
+    ["hyphenated-name reference", "DecisionRecorded", (event: Record<string, unknown>) => ({
+      ...event,
+      decisionRef: { firmId: LEDGER_ORG, id: "Alice-Smith" },
     })],
     ["approval stage", "ApprovalRecorded", (event: Record<string, unknown>) => ({
       ...event,

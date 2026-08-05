@@ -3774,3 +3774,27 @@ window cannot pass. ADR-0039 amends ADR-0018's infrastructure ceiling from 9,400
 counts, mutable current codecs, or producer confidence claims.
 **Revert path:** none while the decision ledger is a tenant-isolated replay and
 integrity authority.
+
+### D-124 · 2026-08-05 · reversible · Ledger mutation, identifier, and metric boundaries fail closed
+
+The ledger-total mutation trigger compromises both distinct tenant witnesses when
+an attempted update moves a row between tenants. Deletion and same-tenant updates
+continue to compromise the one affected witness.
+
+Immutable source validation classifies string paths as machine identifiers, open
+tokens, closed tokens, retained codes, references, versions, timestamps, or hashes.
+Machine identifiers and open tokens reject PII-shaped values, complete account
+references when standalone or account-labeled, and human-name shapes before SQL.
+Closed schema tokens retain their versioned enum vocabulary while rejecting PII
+and account references.
+
+Replayed reservation and execution counts are provenance-bearing display metrics
+derived from the verified decision projection. The metric-provenance fence registers
+these view-model fields, asserts their `DisplayMetric` contract, and rejects naked
+renders without misclassifying sanctioned metrics nested inside JSX expressions.
+
+**Why:** a cross-tenant mutation must invalidate both integrity claims, immutable
+identifiers must not become a raw-PII escape, and every displayed count must retain
+its source and observation time.
+**Revert path:** none while bounded ledger verification, immutable PII exclusion,
+and displayed-metric provenance remain active controls.

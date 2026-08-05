@@ -294,7 +294,6 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
 DROP TRIGGER IF EXISTS decision_ledger_total_insert ON decision_ledger;
 CREATE TRIGGER decision_ledger_total_insert AFTER INSERT ON decision_ledger
   FOR EACH ROW EXECUTE FUNCTION decision_ledger_total_on_insert();
@@ -306,11 +305,14 @@ BEGIN
        SET compromised = true, updated_at = now();
     RETURN NULL;
   END IF;
-  INSERT INTO decision_ledger_total_witness
-    (org_id, entry_count, compromised, updated_at)
-  VALUES (COALESCE(NEW.org_id, OLD.org_id), 0, true, now())
-  ON CONFLICT (org_id) DO UPDATE
+  INSERT INTO decision_ledger_total_witness (org_id, entry_count, compromised, updated_at)
+  VALUES (OLD.org_id, 0, true, now()) ON CONFLICT (org_id) DO UPDATE
     SET compromised = true, updated_at = now();
+  IF TG_OP = 'UPDATE' AND NEW.org_id IS DISTINCT FROM OLD.org_id THEN
+    INSERT INTO decision_ledger_total_witness (org_id, entry_count, compromised, updated_at)
+    VALUES (NEW.org_id, 0, true, now()) ON CONFLICT (org_id) DO UPDATE
+      SET compromised = true, updated_at = now();
+  END IF;
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;
   END IF;

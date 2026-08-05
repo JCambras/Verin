@@ -50,6 +50,13 @@ const SANCTIONED_RENDERERS: readonly RendererSpec[] = [
 const EXEMPT_FILES = new Set(SANCTIONED_RENDERERS.map((r) => r.file));
 // Tags whose ATTRIBUTES are exempt from RULE B - only the sanctioned renderers preserve provenance.
 const SANCTIONED_TAGS = new Set(SANCTIONED_RENDERERS.map((r) => r.component));
+const VIEW_METRICS = [
+  {
+    file: "src/app/ledger/model.ts",
+    interfaceName: "DecisionStateView",
+    fields: ["activeReservations", "executionSteps"],
+  },
+] as const;
 
 /** The metric-class field registry, DERIVED from the dictionary's `display` flag (not hand-listed). */
 export function metricFieldNames(dictionary: Record<string, Record<string, FieldSpec>>): Set<string> {
@@ -93,7 +100,11 @@ function localInitializers(sf: SourceFile): Map<string, Node> {
  * cycle-guarded). Returns the offending field name, or null.
  */
 function referencesMetricField(node: Node, locals: Map<string, Node>, metric: Set<string>, seen: Set<string>): string | null {
-  const idents = Node.isIdentifier(node) ? [node] : node.getDescendantsOfKind(SyntaxKind.Identifier);
+  const owner = node.getFirstAncestorByKind(SyntaxKind.JsxExpression);
+  const idents = (Node.isIdentifier(node)
+    ? [node]
+    : node.getDescendantsOfKind(SyntaxKind.Identifier))
+    .filter((id) => id.getFirstAncestorByKind(SyntaxKind.JsxExpression) === owner);
   for (const id of idents) if (metric.has(id.getText())) return id.getText();
   // element access with a string-literal metric key: obj["balanceMinorUnits"]
   for (const ea of node.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
@@ -154,7 +165,10 @@ function appProject(): Project {
 }
 
 describe("metric-provenance fence", () => {
-  const fields = metricFieldNames(DATA_DICTIONARY);
+  const fields = new Set([
+    ...metricFieldNames(DATA_DICTIONARY),
+    ...VIEW_METRICS.flatMap((spec) => spec.fields),
+  ]);
 
   it("derived-completeness: the dictionary declares at least one metric field (else the fence is vacuous)", () => {
     // A zero-size registry means the `display: "metric"` flag went stale and RULE B
@@ -170,6 +184,25 @@ describe("metric-provenance fence", () => {
       offenders.push(...rendererContractViolations(sf, spec));
     }
     expect(offenders, `renderer contract broken:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("keeps registered view-model metrics provenance-bearing", () => {
+    const project = new Project({
+      useInMemoryFileSystem: false,
+      skipAddingFilesFromTsConfig: true,
+    });
+    const offenders: string[] = [];
+    for (const spec of VIEW_METRICS) {
+      const sf = project.addSourceFileAtPath(`${REPO_ROOT}${spec.file}`);
+      const view = sf.getInterface(spec.interfaceName);
+      for (const field of spec.fields) {
+        const type = view?.getProperty(field)?.getTypeNode()?.getText();
+        if (type !== "DisplayMetric<number>") {
+          offenders.push(`${spec.file}:${spec.interfaceName}.${field}`);
+        }
+      }
+    }
+    expect(offenders, `view metrics lost DisplayMetric provenance:\n${offenders.join("\n")}`).toEqual([]);
   });
 
   it("RULE B: no metric field is rendered in JSX without provenance", () => {
@@ -213,6 +246,10 @@ describe("metric-provenance fence", () => {
     });
     it("RULE B PASSES a metric passed as an attribute to <Metric> (provenance preserved)", () => {
       const sf = file(`export default function P(){ const a = {} as any; return <Metric metric={metric(a.balanceMinorUnits, "currency-minor", a.provenance)} />; }`);
+      expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric)).toEqual([]);
+    });
+    it("RULE B PASSES a sanctioned metric nested inside another JSX expression", () => {
+      const sf = file(`export default function P(){ const a = {} as any; return <>{a ? <Metric metric={metric(a.balanceMinorUnits, "currency-minor", a.provenance)} /> : null}</>; }`);
       expect(nakedMetricRenders(sf, "src/app/x/page.tsx", metric)).toEqual([]);
     });
     it("RULE B PASSES a metric passed as an attribute to <FreshValue> (sanctioned renderer)", () => {

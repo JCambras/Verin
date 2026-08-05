@@ -14,6 +14,7 @@ import {
 } from "@contracts/provenance";
 import type { LedgerRegisterViewModel } from "@app/ledger/model";
 import { UNTRUSTED_PROVENANCE_LABEL } from "@app/ledger/provenance";
+import { metric } from "@contracts/metric";
 
 export const runtime = "nodejs";
 const MAX_ENTRIES = 200;
@@ -84,10 +85,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         stageId: stage.stageId,
         status: stage.status,
       })),
-      activeReservations: projection.reservations.filter(
-        (reservation) => reservation.status === "active",
-      ).length,
-      executionSteps: projection.executionSteps.length,
+      activeReservations: metric(
+        projection.reservations.filter(
+          (reservation) => reservation.status === "active",
+        ).length,
+        "count",
+        provenance,
+      ),
+      executionSteps: metric(
+        projection.executionSteps.length,
+        "count",
+        provenance,
+      ),
       exceptionRequested: projection.exceptionRequested,
       lastEventType: projection.lastEventType,
       lastSequence: projection.lastSequence,

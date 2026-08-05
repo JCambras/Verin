@@ -18,6 +18,10 @@ test("principal can inspect the seeded decision ledger and its L1-L4 verdict", a
   await expect(page.getByTestId("ledger-decision-state")).toContainText(
     "dec:GC-01:0001",
   );
+  const firstDecision = page.getByTestId("ledger-decision-state")
+    .getByRole("listitem")
+    .first();
+  await expect(firstDecision.getByTestId("metric-watermark")).toHaveCount(2);
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();

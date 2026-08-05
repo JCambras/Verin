@@ -89,7 +89,7 @@ const REVIEWED_IMMUTABLE_MIGRATIONS = [
   {
     version: 11,
     name: "decision-ledger-total-witness",
-    sha256: "3fe8cc1cce6de74cf6ec9987b113e4ac0236d1f88e9f624a0944466f735fd61c",
+    sha256: "2427f7be9b0d733fef0579f0d63db2d24148a4e85280a8b702e6cc2cc2779564",
   },
 ] as const;
 const REVIEWED_DYNAMIC_IMMUTABLE_MIGRATION = {

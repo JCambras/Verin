@@ -5,6 +5,12 @@ import type {
 } from "@contracts/decision-core/evidence";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import {
+  looksLikePIIValue,
+  PERSON_WORD_SOURCE,
+  sensitiveAccountReferences,
+} from "@contracts/pii";
+import { isMachineRecordId } from "@contracts/record-id";
 
 const REGISTERED_RETAINED_CODES = new Set([
   "active-legal-hold",
@@ -38,12 +44,16 @@ const VERSION_IDENTIFIER = /^\d{1,6}(\.\d{1,6}){0,3}(-[0-9a-z]+(\.[0-9a-z]+)*)?$
 const VERSION_IDENTIFIER_MAX_LENGTH = 32;
 const LEXICAL_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:@/+~-]*$/;
 const LEXICAL_IDENTIFIER_MAX_LENGTH = 160;
+const HUMAN_IDENTIFIER = new RegExp(`^(?:${PERSON_WORD_SOURCE})$`, "u");
+const ACCOUNT_IDENTIFIER_LABEL = /(?:account|acct|routing|iban|number)[.:@/+~-]*$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 type StringClass =
+  | "closed-token"
   | "hash"
-  | "lexical"
+  | "identifier"
+  | "token"
   | "retained-reference"
   | "retained-token"
   | "timestamp"
@@ -54,36 +64,41 @@ const addPaths = (classification: StringClass, paths: readonly string[]) =>
   paths.forEach((path) => STRING_PATH_CLASSES.set(path, classification));
 const addRefs = (paths: readonly string[]) =>
   paths.forEach((path) =>
-    addPaths("lexical", [`${path}.firmId`, `${path}.id`]));
+    addPaths("identifier", [`${path}.firmId`, `${path}.id`]));
 
-addPaths("lexical", [
-  "evidence.firmId", "evidence.id", "evidence.kind",
-  "evidence.schemaVersion", "evidence.freshness",
-  "bundle.firmId", "bundle.id", "bundle.schemaVersion", "bundle.timeZone",
-  "bundle.timeZoneDataVersion", "decision.firmId", "decision.id",
+addPaths("identifier", [
+  "evidence.firmId", "evidence.id", "bundle.firmId", "bundle.id",
+  "decision.firmId", "decision.id",
   "decision.createdBy.firmId",
   "decision.createdBy.actorId", "decision.createdBy.systemId",
-  "decision.result.kind", "decision.result.authority.mode",
   "decision.result.authority.stages[].stageId",
-  "decision.result.authority.stages[].executionMode",
-  "decision.result.authority.stages[].escalationPath[].after",
   "decision.result.executionPlan.id",
   "decision.result.executionPlan.steps[].id",
-  "decision.result.executionPlan.steps[].command.commandType",
   "decision.result.executionPlan.steps[].idempotencyKey",
   "decision.result.executionPlan.steps[].conflictKeys[]",
   "decision.result.executionPlan.steps[].dependsOn[]",
-  "decision.result.executionPlan.steps[].compensatingAction.command.commandType",
   "decision.result.executionPlan.steps[].compensatingAction.idempotencyKey",
   "decision.result.executionPlan.steps[].compensatingAction.conflictKeys[]",
+]);
+addPaths("token", [
+  "evidence.kind", "evidence.schemaVersion", "evidence.freshness",
+  "bundle.schemaVersion", "bundle.timeZone", "bundle.timeZoneDataVersion",
+  "decision.result.authority.stages[].escalationPath[].after",
+  "decision.result.executionPlan.steps[].command.commandType",
+  "decision.result.executionPlan.steps[].compensatingAction.command.commandType",
   "decision.result.blockers[].resolvingEvidence[].evidenceKind",
   "decision.result.blockers[].resolvingEvidence[].suppliableBy[]",
+  "decision.reevaluateWhen[].evidenceKind",
+]);
+addPaths("closed-token", [
+  "decision.result.kind", "decision.result.authority.mode",
+  "decision.result.authority.stages[].executionMode",
   "decision.result.prohibition.source.sourceType",
   "decision.precedenceTrace[].left.sourceType",
   "decision.precedenceTrace[].right.sourceType",
   "decision.precedenceTrace[].resolution",
   "decision.explanationTrace[].sourceRefs[].sourceType",
-  "decision.reevaluateWhen[].kind", "decision.reevaluateWhen[].evidenceKind",
+  "decision.reevaluateWhen[].kind",
   "decision.riskClass", "decision.reversibility",
 ]);
 addPaths("retained-token", [
@@ -166,26 +181,31 @@ const LEDGER_EVENT_TYPES = [
 ] as const;
 for (const type of LEDGER_EVENT_TYPES) {
   const root = `event:${type}`;
-  addPaths("lexical", [
-    `${root}.firmId`, `${root}.id`, `${root}.type`,
+  addPaths("identifier", [
+    `${root}.firmId`, `${root}.id`,
     `${root}.actor.actorId`, `${root}.actor.systemId`, `${root}.correlationId`,
   ]);
+  addPaths("closed-token", [`${root}.type`]);
   addPaths("version", [`${root}.schemaVersion`, `${root}.serializerVersion`]);
   addPaths("timestamp", [`${root}.occurredAt`, `${root}.recordedAt`]);
   addRefs([`${root}.actor.roleIds[]`, `${root}.causationRef`]);
-  addPaths("lexical", [`${root}.actor.firmId`]);
+  addPaths("identifier", [`${root}.actor.firmId`]);
 }
-addPaths("lexical", [
-  "event:ApprovalRecorded.stageId", "event:ApprovalRecorded.outcome",
+addPaths("identifier", [
+  "event:ApprovalRecorded.stageId",
   "event:ApprovalRecorded.approver.firmId",
   "event:ApprovalRecorded.approver.actorId",
   "event:ApprovalStageExpired.stageId", "event:ApprovalStageEscalated.stageId",
-  "event:ApprovalStageEscalated.mode", "event:ReservationCreated.conflictKeys[]",
+  "event:ReservationCreated.conflictKeys[]",
   "event:ExecutionStarted.stepId", "event:ExecutionStarted.idempotencyKey",
   "event:ExecutionSucceeded.stepId", "event:ExecutionPartiallySucceeded.stepId",
   "event:ExecutionPartiallySucceeded.completedParts[]",
   "event:ExecutionPartiallySucceeded.incompleteParts[]",
-  "event:ExecutionFailed.stepId", "event:StatusObserved.status",
+  "event:ExecutionFailed.stepId",
+]);
+addPaths("closed-token", [
+  "event:ApprovalRecorded.outcome", "event:ApprovalStageEscalated.mode",
+  "event:StatusObserved.status",
   "event:VerificationClosed.provenState",
   "event:VerificationStuck.lastObservedStatus",
 ]);
@@ -269,13 +289,55 @@ function requireVersionIdentifier(value: string): void {
   if (!isVersionIdentifier(value)) refuse();
 }
 
-function requireLexicalIdentifier(value: string): void {
+function requireLexicalShape(value: string): void {
   if (
     value.length > LEXICAL_IDENTIFIER_MAX_LENGTH ||
     !LEXICAL_IDENTIFIER.test(value)
   ) {
     refuse();
   }
+}
+
+function requireOpaqueIdentifier(value: string): void {
+  requireLexicalShape(value);
+  if (
+    isMachineRecordId(value) ||
+    (
+      !looksLikePIIValue(value) &&
+      !hasValidAccountReference(value) &&
+      !HUMAN_IDENTIFIER.test(value)
+    )
+  ) {
+    return;
+  }
+  refuse();
+}
+
+function requireOpaqueToken(value: string): void {
+  requireLexicalShape(value);
+  if (
+    looksLikePIIValue(value) ||
+    hasValidAccountReference(value) ||
+    HUMAN_IDENTIFIER.test(value)
+  ) {
+    refuse();
+  }
+}
+
+function requireClosedToken(value: string): void {
+  requireLexicalShape(value);
+  if (looksLikePIIValue(value) || hasValidAccountReference(value)) {
+    refuse();
+  }
+}
+
+function hasValidAccountReference(value: string): boolean {
+  return sensitiveAccountReferences(value).some((reference) =>
+    reference.valid &&
+    (
+      reference.start === 0 && reference.end === value.length ||
+      ACCOUNT_IDENTIFIER_LABEL.test(value.slice(0, reference.start))
+    ));
 }
 
 function requireHash(value: string): void {
@@ -321,8 +383,14 @@ function requireClassifiedStrings(root: string, value: unknown): void {
         canonicalStringPath(current.path),
       );
       if (classification === undefined) refuse();
+      if (classification === "closed-token") {
+        requireClosedToken(current.value);
+      }
       if (classification === "hash") requireHash(current.value);
-      if (classification === "lexical") requireLexicalIdentifier(current.value);
+      if (classification === "identifier") {
+        requireOpaqueIdentifier(current.value);
+      }
+      if (classification === "token") requireOpaqueToken(current.value);
       if (classification === "retained-reference" &&
           !RETAINED_TEXT_REFERENCE.test(current.value)) refuse();
       if (classification === "retained-token") {

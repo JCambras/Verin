@@ -135,6 +135,53 @@ describe("ledger route provenance", () => {
     expect(body.entries[0]!.provenanceLabel).toBeNull();
   });
 
+  it("binds replayed decision counts to their derived provenance", async () => {
+    const asOf = "2026-07-26T13:30:00.000Z";
+    const provenance = deriveArtifactProvenance([{
+      source: "fixture",
+      asOf,
+      confidence: "high",
+    }], asOf);
+    readVerifiedDecisionRegister.mockResolvedValueOnce({
+      verification: {
+        ok: true,
+        entriesChecked: 3,
+        entriesStored: 3,
+        levels: [],
+      },
+      rows: [],
+      rowProvenance: new Map(),
+      decisions: [{
+        projection: {
+          decisionId: "decision:test",
+          disposition: "proceed",
+          approvalMode: "approval",
+          approvalStages: [],
+          reservations: [{ status: "active" }, { status: "released" }],
+          executionSteps: [{ stepId: "step:test" }],
+          exceptionRequested: false,
+          lastEventType: "ExecutionStarted",
+          lastSequence: 3,
+        },
+        provenance,
+      }],
+      decisionsTotal: 1,
+      replaySourceReason: null,
+    });
+
+    const response = await GET(new NextRequest("http://localhost/api/ledger"));
+    const body = await response.json() as {
+      decisions: Array<{
+        activeReservations: unknown;
+        executionSteps: unknown;
+      }>;
+    };
+    expect(body.decisions[0]).toMatchObject({
+      activeReservations: { value: 1, format: "count", provenance },
+      executionSteps: { value: 1, format: "count", provenance },
+    });
+  });
+
   it.each([
     { source: "unknown", asOf: "2026-07-26T13:30:00.000Z", confidence: "high" },
     { source: "verin-crm", asOf: "invalid", confidence: "high" },
