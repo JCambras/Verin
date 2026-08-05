@@ -3621,3 +3621,34 @@ completeness fence.
 adopted; extend the shared traversal and its adversarial matrix before relying on it.
 **Revert path:** none while dependency, determinism, and tenant-boundary fences must
 fail closed across every runtime source and exported contract.
+
+### D-111 · 2026-08-05 · reversible · Capability accessors, namespace exports, and collection probes fail closed
+
+Static getter return values now enter the same capability provenance graph as static
+property initializers and assignments. Namespace-import member resolution reads the
+source module's semantic export inventory, including star re-exports, before following
+the selected value. Callable return discovery covers object methods and accessors,
+transparent ambient Object wrappers retain their wrapped value, and an unresolved
+call result typed as an ambient formatter fails closed.
+
+Every observable ambient `Intl.DateTimeFormat` call is nondeterministic in contracts,
+including range formatting, resolved options, and supported-locale discovery, even
+with an explicit instant, locale, and time zone. Those inputs still depend on the host's
+locale-data implementation and version, so the explicit-instant allowances in D-107,
+D-109, and D-110 are superseded. Project-owned Intl-shaped values remain legal.
+
+Tenant probe coverage and mutation now traverse Set elements plus Map keys and values.
+Tenant-bearing Sets and Maps require multi-entry legal probes, and each contained
+scoped reference is independently re-tenanted through a collection-preserving copy.
+
+These are fence-only corrections. No production contract, runtime schema, fixture
+byte, recorded hash, source ceiling, or runtime registry envelope changed.
+
+**Why:** a getter, namespace import, transparent wrapper, host locale-data lookup, Set,
+or Map cannot erase a capability or tenant edge from a charter-critical completeness
+fence.
+**Revisit-When:** a deterministic formatting implementation with repository-pinned
+locale data or a new capability or collection carrier is adopted; extend the shared
+authority and its adversarial matrix before allowing it.
+**Revert path:** none while contracts require byte-identical replay and every exported
+tenant boundary must remain behaviorally complete.

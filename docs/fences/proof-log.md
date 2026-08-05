@@ -5930,3 +5930,47 @@ or either exported blocker refinement fails its paired companion while the local
 capability and explicit-instant controls remain green.
 
 **Date:** 2026-08-05 (review corrections, D-110).
+
+## F117 · accessor, namespace, formatter, and collection provenance fail closed (D-111)
+
+**Invariants:** static getters and callable returns retain ambient capability
+provenance; namespace imports follow semantic exports and star re-exports; contract
+formatting never depends on host locale data; Set and Map tenant boundaries prove and
+mutate every contained scoped reference across multiple entries.
+
+The companions were added before the shared authorities changed. The first focused red
+run failed thirteen planted cases: a local and cross-module static getter carrying
+`node:module`, static getters carrying `Date` and `Intl.DateTimeFormat`, a formatter
+inside `Object.freeze`, a formatter returned by an object method, namespace-imported
+clock and formatter exports, an explicit-instant formatting allowance, missing
+multi-entry Set and Map coverage, and missing Set and Map tenant mutations. Extending
+the matrix through an object accessor, an unresolved formatter-returning method, and a
+namespace import through a star-re-export barrel exposed three additional misses before
+the final green run. A temporary narrowing back to the two original formatter methods
+then failed all four planted range, resolved-option, and supported-locale cases before
+the complete observable-method registry was restored.
+
+Static accessors now share the return-source authority used by local callables. Module
+namespace selectors resolve through each source file's export symbols. Formatter
+provenance follows transparent ambient Object wrappers, object methods, accessors, and
+ambient result types. Every observable ambient formatter invocation, including range,
+resolved-option, and supported-locale APIs, is refused because explicit instants and
+options do not pin the host CLDR implementation; this supersedes the explicit-instant
+claims in F112 through F116. Local Date-, Intl-, Object-, formatter-, and loader-shaped
+values remain allowed.
+
+Tenant traversal uses typed collection path segments to visit and immutably rewrite Set
+elements and Map keys and values. Occurrence coverage requires at least two values for
+tenant-bearing arrays, Sets, and Maps, while preserving distinct map key and value paths.
+
+The focused dependency and tenant suites pass 320 tests. The full fitness and serialized
+Vitest suites, typecheck, lint, knip, the CI-configured production build,
+`v3:invariants`, and `golden:validate` also pass. No production contract, runtime schema,
+fixture byte, registry byte, recorded hash, or platform line measurement changed.
+
+**Revert:** the adversarial companions remain continuous tests. Removing static accessor
+returns, semantic module exports, transparent or unresolved formatter provenance, the
+host-locale refusal, collection path traversal, or multi-entry Set and Map coverage fails
+its paired companion while the corresponding local capability controls remain green.
+
+**Date:** 2026-08-05 (review corrections, D-111).

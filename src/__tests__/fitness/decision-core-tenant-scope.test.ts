@@ -908,7 +908,20 @@ const crossTenantSource = (source: SourceRef): SourceRef => ({
   versionRef: { ...source.versionRef, firmId: "firm-b" },
 });
 
-type ValuePath = readonly (string | number)[];
+type CollectionValuePathSegment = {
+  readonly collection: "set" | "map-key" | "map-value";
+  readonly index: number;
+};
+type ValuePathSegment = string | number | CollectionValuePathSegment;
+type ValuePath = readonly ValuePathSegment[];
+
+const valuePathSegmentsEqual = (
+  left: ValuePathSegment,
+  right: ValuePathSegment,
+): boolean =>
+  typeof left === "object" && typeof right === "object"
+    ? left.collection === right.collection && left.index === right.index
+    : left === right;
 
 const PROBE_CASES = Symbol("probe-cases");
 type ProbeSet = {
@@ -1357,11 +1370,15 @@ const requiredMultipleValuesPath = (
 ): readonly string[] | null => {
   const current = unwrapSchema(schema);
   const definition = schemaDefinition(current);
-  if (definition.type === "array") {
-    const element = edges[0];
-    return root &&
-        element !== undefined &&
-        schemaContainsScopedReference(element.schema)
+  if (
+    definition.type === "array" ||
+    definition.type === "set" ||
+    definition.type === "map"
+  ) {
+    const element = edges.find((edge) =>
+      schemaContainsScopedReference(edge.schema)
+    );
+    return root && element !== undefined
       ? [`${element.occurrenceSegment}${MULTIPLE_VALUES_OCCURRENCE}`]
       : null;
   }
@@ -1378,8 +1395,14 @@ const requiredMultipleValuesPath = (
   if (tenantEdges.length !== 1) return null;
   const edge = tenantEdges[0]!;
   const child = unwrapSchema(edge.schema);
-  if (schemaDefinition(child).type !== "array") return null;
-  const element = occurrenceEdges(child)[0];
+  if (![
+    "array",
+    "set",
+    "map",
+  ].includes(schemaDefinition(child).type)) return null;
+  const element = occurrenceEdges(child).find((candidate) =>
+    schemaContainsScopedReference(candidate.schema)
+  );
   return element !== undefined && schemaContainsScopedReference(element.schema)
     ? [edge.occurrenceSegment, `${element.occurrenceSegment}${MULTIPLE_VALUES_OCCURRENCE}`]
     : null;
@@ -1485,7 +1508,12 @@ const coveredTenantScopePaths = (
         }
         repeated = (repeated as Record<string, unknown>)[segment];
       }
-      if (Array.isArray(repeated) && repeated.length >= 2) {
+      const repeatedSize = Array.isArray(repeated)
+        ? repeated.length
+        : repeated instanceof Set || repeated instanceof Map
+          ? repeated.size
+          : 0;
+      if (repeatedSize >= 2) {
         covered.add(appendOccurrenceSegments(path, requiredMultiple));
       }
     }
@@ -1597,6 +1625,24 @@ const mixedTenantProbes = (legal: unknown): unknown[] => {
       for (const [index, child] of value.entries()) {
         pending.push({ path: [...path, index], value: child });
       }
+    } else if (value instanceof Set) {
+      for (const [index, child] of [...value].entries()) {
+        pending.push({
+          path: [...path, { collection: "set", index }],
+          value: child,
+        });
+      }
+    } else if (value instanceof Map) {
+      for (const [index, [key, child]] of [...value].entries()) {
+        pending.push({
+          path: [...path, { collection: "map-key", index }],
+          value: key,
+        });
+        pending.push({
+          path: [...path, { collection: "map-value", index }],
+          value: child,
+        });
+      }
     } else {
       for (const [key, child] of Object.entries(value)) {
         pending.push({ path: [...path, key], value: child });
@@ -1617,7 +1663,10 @@ const mixedTenantProbes = (legal: unknown): unknown[] => {
     for (let length = 1; length < path.length; length += 1) {
       const prefix = path.slice(0, length);
       const grouped = tenantFirmIdPaths.filter((candidate) =>
-        prefix.every((segment, index) => candidate[index] === segment)
+        prefix.every((segment, index) =>
+          candidate[index] !== undefined &&
+          valuePathSegmentsEqual(candidate[index]!, segment)
+        )
       );
       if (grouped.length > 1 && grouped.length < tenantFirmIdPaths.length) {
         addGroup(grouped);
@@ -1638,6 +1687,33 @@ const mixedTenantProbes = (legal: unknown): unknown[] => {
             copy[segment] = update(copy[segment], index + 1);
           }
           return copy;
+        }
+        if (value instanceof Set) {
+          if (
+            typeof segment !== "object" ||
+            segment.collection !== "set"
+          ) {
+            throw new Error("invalid set path");
+          }
+          const copy = [...value];
+          copy[segment.index] = update(copy[segment.index], index + 1);
+          return new Set(copy);
+        }
+        if (value instanceof Map) {
+          if (
+            typeof segment !== "object" ||
+            segment.collection === "set"
+          ) {
+            throw new Error("invalid map path");
+          }
+          const copy = [...value.entries()];
+          const entry = copy[segment.index];
+          if (entry === undefined) throw new Error("invalid map index");
+          const [key, child] = entry;
+          copy[segment.index] = segment.collection === "map-key"
+            ? [update(key, index + 1), child]
+            : [key, update(child, index + 1)];
+          return new Map(copy);
         }
         if (typeof segment !== "string") throw new Error("invalid object path");
         const copy = { ...(value as Record<string, unknown>) };
@@ -2165,6 +2241,88 @@ describe("decision-core tenant-scope fence", () => {
     expect(audit.uncovered.some((path) => path.includes("multiple"))).toBe(true);
   });
 
+  it.each([
+    [
+      "set",
+      (reference: z.ZodType<ScopedRef>) =>
+        z.set(reference).min(1).refine((values) => {
+          const firms = [...values].map((value) => value.firmId);
+          return firms.every((firmId) => firmId === firms[0]);
+        }),
+      new Set([{ firmId: "firm-a", id: "one" }]),
+    ],
+    [
+      "map",
+      (reference: z.ZodType<ScopedRef>) =>
+        z.map(reference, reference).refine((values) => {
+          const firms = [...values].flatMap(([key, value]) => [
+            key.firmId,
+            value.firmId,
+          ]);
+          return firms.every((firmId) => firmId === firms[0]);
+        }),
+      new Map([[
+        { firmId: "firm-a", id: "key:one" },
+        { firmId: "firm-a", id: "value:one" },
+      ]]),
+    ],
+  ] as const)("requires a multi-entry probe for tenant-bearing %s values", (
+    _name,
+    buildSchema,
+    legal,
+  ) => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const CollectionBoundary = buildSchema(reference);
+    const audit = tenantBoundaryAudit(
+      [["probe.ts", { CollectionBoundary }]],
+      { "probe.ts:CollectionBoundary": legal },
+    );
+    expect(audit.failed).toEqual(["probe.ts:CollectionBoundary"]);
+    expect(audit.uncovered.some((path) => path.includes("multiple"))).toBe(true);
+  });
+
+  it.each([
+    [
+      "set",
+      (reference: z.ZodType<ScopedRef>) => z.set(reference).min(2),
+      new Set([
+        { firmId: "firm-a", id: "one" },
+        { firmId: "firm-a", id: "two" },
+      ]),
+    ],
+    [
+      "map",
+      (reference: z.ZodType<ScopedRef>) => z.map(reference, reference),
+      new Map([
+        [
+          { firmId: "firm-a", id: "key:one" },
+          { firmId: "firm-a", id: "value:one" },
+        ],
+        [
+          { firmId: "firm-a", id: "key:two" },
+          { firmId: "firm-a", id: "value:two" },
+        ],
+      ]),
+    ],
+  ] as const)("mutates scoped references inside unconstrained %s values", (
+    _name,
+    buildSchema,
+    legal,
+  ) => {
+    const reference = z.strictObject({
+      firmId: z.string(),
+      id: z.string(),
+    });
+    const CollectionBoundary = buildSchema(reference);
+    expect(tenantBoundaryAudit(
+      [["probe.ts", { CollectionBoundary }]],
+      { "probe.ts:CollectionBoundary": legal },
+    ).failed).toEqual(["probe.ts:CollectionBoundary"]);
+  });
+
   it("requires probes to cover every scoped-reference union branch", () => {
     const reference = z.strictObject({
       firmId: z.string(),
@@ -2206,7 +2364,11 @@ describe("decision-core tenant-scope fence", () => {
       id: z.string(),
     });
     expect([...tenantScopeOccurrencePaths(z.map(reference, reference))].sort())
-      .toEqual(["$.<map:0>{}", "$.<map:1>{}"]);
+      .toEqual([
+        "$.<map:0>{}",
+        "$.<map:0>{}<multiple>",
+        "$.<map:1>{}",
+      ]);
   });
 
   it("requires recursive probes to cover child scoped references", () => {

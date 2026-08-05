@@ -240,6 +240,7 @@ describe("dependency-rule fence", () => {
       `import * as nodeModule from "node:module";\nfunction expose() { return nodeModule; }\nconst load = expose().createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { static module = nodeModule; }\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
       `import * as nodeModule from "node:module";\nclass Holder { static module: typeof nodeModule; }\nHolder.module = nodeModule;\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
+      `import * as nodeModule from "node:module";\nclass Holder { static get module() { return nodeModule; } }\nconst load = Holder.module.createRequire(import.meta.url);\nexport const value = load("@infra/store");`,
     ])("createRequire loader %# fails closed", (source) => {
       const v = detectLayerViolations(
         inMemoryProject({ "src/domain/evil.ts": source }),
@@ -274,6 +275,25 @@ describe("dependency-rule fence", () => {
           "src/domain/loader.ts": [
             `import * as nodeModule from "node:module";`,
             "export class Holder { static module = nodeModule; }",
+          ].join("\n"),
+          "src/domain/evil.ts": [
+            `import { Holder } from "./loader";`,
+            "const load = Holder.module.createRequire(import.meta.url);",
+            `export const value = load("@infra/store");`,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((z) => `${z.fromLayer}->${z.toLayer}`)).toContain(
+        "domain->unresolved",
+      );
+    });
+
+    it("follows a node:module namespace in an exported static class getter", () => {
+      const v = detectLayerViolations(
+        inMemoryProject({
+          "src/domain/loader.ts": [
+            `import * as nodeModule from "node:module";`,
+            "export class Holder { static get module() { return nodeModule; } }",
           ].join("\n"),
           "src/domain/evil.ts": [
             `import { Holder } from "./loader";`,
@@ -1281,6 +1301,64 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "clock retained in a static class getter",
+        [
+          "class Holder { static get Clock() { return Date; } }",
+          "export const value = Holder.Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "formatter retained in a static class getter",
+        [
+          "class Holder { static get formatter() { return new Intl.DateTimeFormat(); } }",
+          "export const value = Holder.formatter.format();",
+        ].join("\n"),
+      ],
+      [
+        "formatter retained through Object.freeze",
+        [
+          "const formatter = Object.freeze(new Intl.DateTimeFormat());",
+          "export const value = formatter.format();",
+        ].join("\n"),
+      ],
+      [
+        "formatter returned by an object method",
+        [
+          "const holder = { formatter() { return new Intl.DateTimeFormat(); } };",
+          "export const value = holder.formatter().format();",
+        ].join("\n"),
+      ],
+      [
+        "formatter returned by an object getter",
+        [
+          "const holder = { get formatter() { return new Intl.DateTimeFormat(); } };",
+          "export const value = holder.formatter.format();",
+        ].join("\n"),
+      ],
+      [
+        "formatter returned by an unresolved object method",
+        [
+          "declare const holder: { formatter(): Intl.DateTimeFormat };",
+          "export const value = holder.formatter().format();",
+        ].join("\n"),
+      ],
+      [
+        "Intl formatRange output",
+        "export const value = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC' }).formatRange(0, 1);",
+      ],
+      [
+        "Intl formatRangeToParts output",
+        "export const value = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC' }).formatRangeToParts(0, 1);",
+      ],
+      [
+        "Intl resolved options",
+        "export const value = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC' }).resolvedOptions();",
+      ],
+      [
+        "Intl supported locales",
+        "export const value = Intl.DateTimeFormat.supportedLocalesOf(['en-US']);",
+      ],
+      [
         "implicit Intl format instant",
         "export const value = new Intl.DateTimeFormat().format();",
       ],
@@ -1419,6 +1497,37 @@ describe("dependency-rule fence", () => {
     it.each([
       [
         "clock",
+        "export const Clock = Date;",
+        "export const value = caps.Clock.now();",
+      ],
+      [
+        "formatter",
+        "export const formatter = new Intl.DateTimeFormat();",
+        "export const value = caps.formatter.format();",
+      ],
+    ])("follows a namespace-imported ambient %s across modules", (
+      _name,
+      exported,
+      used,
+    ) => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts": exported,
+          "src/contracts/barrel.ts": `export * from "./capability";`,
+          "src/contracts/evil.ts": [
+            `import * as caps from "./barrel";`,
+            used,
+          ].join("\n"),
+        }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it.each([
+      [
+        "clock",
         "export class Holder { static Clock = Date; }",
         "export const value = Holder.Clock.now();",
       ],
@@ -1479,11 +1588,11 @@ describe("dependency-rule fence", () => {
       );
     });
 
-    it("allows explicit Intl instants through invocation wrappers", () => {
+    it("rejects explicit Intl instants through invocation wrappers", () => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({
           "src/contracts/ok.ts": [
-            "const formatter = new Intl.DateTimeFormat();",
+            "const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC' });",
             "function explicitApplied(condition: boolean) {",
             "  let assignedArgs: [number] = [0];",
             "  if (condition) assignedArgs = [1];",
@@ -1500,7 +1609,9 @@ describe("dependency-rule fence", () => {
           ].join("\n"),
         }),
       );
-      expect(v).toEqual([]);
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
     });
 
     it("local dynamic-code and nondeterminism lookalikes remain allowed", () => {
@@ -1534,9 +1645,6 @@ describe("dependency-rule fence", () => {
             "let assignedPlatform = globals.process;",
             "({ Date: AssignedClock, process: assignedPlatform } = globals);",
             "const { now } = Date;",
-            "const formatter = new Intl.DateTimeFormat();",
-            "const explicitFormat = formatter.format;",
-            "const explicitFormatHolder = [formatter.formatToParts] as const;",
             "const { constructor: ctor } = model;",
             // The SHORTHAND spelling names a new local, so the source property has
             // to be resolved through the receiver - reading the local would call
@@ -1552,8 +1660,6 @@ describe("dependency-rule fence", () => {
             "  Date(0),",
             "  model.constructor(),",
             "  now(),",
-            "  explicitFormat(0),",
-            "  explicitFormatHolder[0](0),",
             "  ctor(),",
             "  constructor(),",
             "  Clock.now(),",
@@ -1566,7 +1672,6 @@ describe("dependency-rule fence", () => {
             "  nestedAssignedRandom(),",
             "  Date[localMember],",
             "  callClock(callableClock),",
-            "  new Intl.DateTimeFormat().format(0),",
             "];",
           ].join("\n"),
         }),
