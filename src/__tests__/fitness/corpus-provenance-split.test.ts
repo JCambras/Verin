@@ -2244,6 +2244,46 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     ).toBe(true);
   });
 
+  it("synthetic authority semantics require one cited signer", () => {
+    const control = structuredClone(
+      real.cases.find(
+        (item) => item.caseId === "CS-clean-fresh-authority",
+      )!,
+    );
+    const signer = control.records.authorizedSigners[0]!;
+    const evidence = control.evidence.find(
+      (entry) => entry.kind === "authority",
+    )!;
+    control.records.authorizedSigners.push({
+      ...signer,
+      id: "authority:ambiguous-signer",
+      authorityScope: "account-view",
+    });
+    control.evidence.push({
+      ...evidence,
+      id: `${evidence.id}-ambiguous`,
+      subjectRef: "authority:ambiguous-signer",
+    });
+    expect(syntheticSemanticProblems([control]).join("\n")).toContain(
+      "authority semantics require exactly one cited signer",
+    );
+  });
+
+  it("synthetic destination integrity derives verification chronology", () => {
+    const control = structuredClone(
+      real.cases.find(
+        (item) => item.caseId === "CS-clean-verified-destination",
+      )!,
+    );
+    const destination = control.records.bankInstructions.find(
+      (entry) => entry.id === control.request.destinationRef,
+    )!;
+    destination.verifiedAt = "2026-07-27T00:00:00.000Z";
+    expect(syntheticSemanticProblems([control]).join("\n")).toContain(
+      "destination verification chronology is invalid",
+    );
+  });
+
   it("a request source account must belong to the request household", () => {
     const world = structuredClone(real.spec.world);
     const cases = structuredClone(real.spec.cases);

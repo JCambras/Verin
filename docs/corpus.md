@@ -69,6 +69,7 @@ manifest, included in `corpusDigest`, and supplied to the provenance-specific re
 | 9 | No sparse arrays, `undefined`, non-finite numbers, or class instances (`canonicalJson` refuses all four). |
 | 10 | LF line endings, pinned by `.gitattributes`. |
 | 11 | Ids are derived, never typed: `conflict:`, `res:`, `idem:`, `subject:`, `bank-instruction:`, `authority:`, `planned-withdrawal:`, `model-assignment:`, and `change:` all come from derivation functions. |
+| 12 | Repository input is read only by named owners through regular files whose canonical targets remain inside the repository. Mutable root aliases and symlink escapes fail closed. |
 
 **Derivation is path-keyed**, `SHA-256(seed ‖ path ‖ field)` - not a stream PRNG. Adding a household
 therefore changes **only that household's cases**, which the determinism fence asserts by inserting one
@@ -184,6 +185,12 @@ effective cross-household authority, correctly treated owner-beneficiary context
 reserves, valid holds, exact thresholds, and time-zone boundaries. Missing, duplicate, unknown, or
 context-free treatment assertions fail closed.
 
+Synthetic authority state requires exactly one cited signer record. Multiple cited signers are rejected
+instead of selecting by emitted order. A verified destination is integral only when its verification
+follows the current instruction change and does not postdate either the source observation or the
+evaluation instant. An unverified destination remains valid awkward context for the signed treatment,
+but chronologically impossible verification cannot substantiate a defect or a clean control.
+
 Instruction-conflict context is also request-bound. Typed terms name the governed action, source,
 target, and required or forbidden polarity. Required terms conflict when the request misses their exact
 target; forbidden terms conflict when the request matches it. Each witness carries the exact firm,
@@ -230,6 +237,9 @@ deliberate per-record property.
 6. "Two business days later" lands on a real weekday in `America/New_York`, and every local rendering
    comes from pinned tz transitions - checked against the **platform time-zone database** by the fence,
    so a hardcoded `-04:00` cannot survive.
+7. Bank-instruction verification, when present, satisfies
+   `changedAt <= verifiedAt <= observedAt <= trigger.asOf`; a missing `changedAt` removes only the first
+   comparison.
 
 Real-derived cases use the separate closed `verin-real-derived-freshness/1.0.0` policy. Each case records
 `evaluation.asOf` and that policy version. Observed evidence must satisfy

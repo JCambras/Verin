@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import {
@@ -14,6 +13,7 @@ import {
   INSTRUCTION_POLARITIES,
 } from "./instruction-conflicts";
 import { parseStrictJson } from "./strict-json";
+import { readRepositoryFile } from "./tree";
 import { specReferenceProblems } from "./world-topology";
 
 export type { CaseLabel, CaseSpec, CasesSpec } from "./case-spec";
@@ -147,6 +147,17 @@ const BankInstructionSchema = z.strictObject({
   changedAt: Instant.nullable(),
   accountRefs: z.array(Slug).min(1),
   observedAt: ObservedAt,
+}).refine((instruction) =>
+  (instruction.changedAt === null ||
+    instruction.changedAt <= instruction.observedAt) &&
+  (instruction.verifiedAt === null ||
+    (
+      instruction.verifiedAt <= instruction.observedAt &&
+      (instruction.changedAt === null ||
+        instruction.changedAt <= instruction.verifiedAt)
+    )), {
+  message: "verification must follow the current change and not postdate observation",
+  path: ["verifiedAt"],
 });
 const PlannedWithdrawalSchema = z.strictObject({
   key: Slug,
@@ -258,7 +269,7 @@ export interface LoadedSpec {
 }
 
 const readSpecFile = (name: string, dir: string): string =>
-  readFileSync(join(dir, name), "utf8");
+  readRepositoryFile(join(dir, name), REPO_ROOT);
 
 export function loadSpec(dir: string = SPEC_DIR): LoadedSpec {
   const rawBytes = Object.fromEntries(

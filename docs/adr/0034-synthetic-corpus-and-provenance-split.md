@@ -173,6 +173,12 @@ signed taxonomy, so an unsupported class cannot enter either denominator by rela
 valid case. Its declarative bytes and exact executable-authority source digests are part of
 `corpusDigest`, so changing a predicate or cross-field rule invalidates signoff.
 
+Synthetic authority state requires exactly one cited signer. Multiple cited signer rows fail instead
+of selecting whichever row sorts first. Destination verification follows the current instruction change
+and cannot postdate the source observation or evaluation instant. Repository input readers accept only
+regular files whose canonical targets remain inside the repository, and static root provenance trusts
+only immutable bindings.
+
 Replay references are entity-kind-scoped. Each real-derived case, request, and reservation carries the
 same exact opaque `firmRef`; reservation identity is the pair `(firmRef, conflictKey)`. Generic replay
 subjects, evidence subjects, and impacted-subject inventories exclude firm references, so no
@@ -304,6 +310,9 @@ preserves the separate fence, schema, and semantic owners under the unchanged 50
 D-129 keeps the ceiling at 8300 against 8138 measured lines after closing dynamic-code and compound-flow
 origins plus recorded time-zone and request-source topology. The 162-line buffer preserves the separate
 fence, semantic, and topology owners under the unchanged 500-line file ceiling.
+D-130 keeps the ceiling at 8300 against 8250 measured lines after sealing repository file reads and
+making synthetic authority and bank-verification evidence unambiguous. The 50-line buffer preserves the
+separate input, semantic, schema, and fence owners under the unchanged 500-line file ceiling.
 
 ## What this PR explicitly does NOT claim
 

@@ -5120,3 +5120,25 @@ captain signoff remains pending.
 foreign source accounts cannot weaken signed corpus acceptance.
 **Revert path:** none while the corpus claims host independence, partition separation, recorded IANA
 semantics, and request-household topology.
+
+### D-130 · 2026-08-05 · reversible · Repository input and synthetic evidence semantics fail closed
+
+Repository-root provenance follows only immutable bindings, so reassignment cannot redirect an approved
+loader after a trusted initializer. All signed spec, schema, signoff, golden-case, and executable-authority
+file reads pass through one runtime boundary that requires a regular file whose canonical target remains
+inside the repository. A worktree symlink cannot import host bytes into corpus truth.
+
+Synthetic authority state requires exactly one cited signer record. Multiple cited signers are rejected
+instead of selecting the first emitted row. Bank-instruction verification is valid only after the current
+change and no later than its source observation or the evaluation instant. The world schema and emitted
+semantic validator enforce the same chronology.
+
+The tooling bucket measures 8250 lines under the unchanged 8300 ceiling. Canonical regeneration produces
+`corpusDigest` `5e945ae5da8f460f637980d2471d298480a14d84040b671b3bfbf187804e9b01`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** mutable aliases, canonical-path escapes, input-order-selected authority, and impossible
+verification chronology cannot become signed replay truth.
+**Revert path:** none while the corpus claims repository-contained inputs and replayable synthetic
+authority and destination evidence.

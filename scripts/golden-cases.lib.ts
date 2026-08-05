@@ -24,10 +24,11 @@
  * so the fence's companion can feed it deliberately broken cases and prove
  * incomplete work cannot pass (charter #4: detection is not verification).
  */
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
 import { LEDGER_EVENT_TYPES } from "../src/contracts/decision-core/ledger";
+import { readRepositoryFile } from "./corpus/tree";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..");
 export const GOLDEN_DIR = join(REPO_ROOT, "fixtures/golden");
@@ -103,7 +104,9 @@ const idsOf = (rows: YamlIdRow[] | undefined): string[] =>
 
 /** Read the live demo scenario matrix and project the shared vocabularies the
  * golden cases must align with. Text may be injected (companion tests). */
-export function loadScenarioRefs(text = readFileSync(SCENARIOS_YAML, "utf8")): ScenarioRefs {
+export function loadScenarioRefs(
+  text = readRepositoryFile(SCENARIOS_YAML, REPO_ROOT),
+): ScenarioRefs {
   const data = (parseDocument(text).toJS() ?? {}) as YamlData;
   const states = data.state_vocabulary ?? [];
   const pick = (cls: string) => new Set(states.filter((s) => s.class === cls).map((s) => String(s.id)));
@@ -128,7 +131,10 @@ export function loadGoldenCases(dir = GOLDEN_DIR): LoadedCase[] {
   return readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
     .sort()
-    .map((f) => ({ rel: `fixtures/golden/${f}`, data: JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown }));
+    .map((f) => ({
+      rel: `fixtures/golden/${f}`,
+      data: JSON.parse(readRepositoryFile(join(dir, f), REPO_ROOT)) as unknown,
+    }));
 }
 
 // ---------- field-presence helpers (a "populated" field is present AND non-empty) ----------

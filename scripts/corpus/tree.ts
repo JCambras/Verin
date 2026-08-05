@@ -1,10 +1,37 @@
-import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  readdirSync,
+} from "node:fs";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 export interface TreeEntry {
   readonly relPath: string;
   readonly kind: "file" | "unsupported";
   readonly bytes: string | null;
+}
+
+export function readRepositoryFile(path: string, repoRoot: string): string {
+  try {
+    const canonicalRoot = realpathSync(repoRoot);
+    const canonicalTarget = realpathSync(path);
+    const pathFromRoot = relative(canonicalRoot, canonicalTarget);
+    if (
+      !lstatSync(path).isFile() ||
+      pathFromRoot === ".." ||
+      pathFromRoot.startsWith(`..${sep}`) ||
+      isAbsolute(pathFromRoot)
+    ) {
+      throw new Error();
+    }
+    return readFileSync(canonicalTarget, "utf8");
+  } catch {
+    throw new Error(
+      "repository input is not a regular file contained in this repository",
+    );
+  }
 }
 
 export function readTree(dir: string, prefix = ""): TreeEntry[] {

@@ -272,6 +272,18 @@ describe("detects (companion): unrealistic or mislabeled timestamps CANNOT pass"
     expect(WorldSpecSchema.safeParse(signer).success).toBe(false);
   });
 
+  it("bank verification follows the current instruction change and source observation", () => {
+    const beforeChange = structuredClone(real.spec.world);
+    beforeChange.bankInstructions[0]!.verifiedAt =
+      "2026-07-20T00:00:00.000Z";
+    expect(WorldSpecSchema.safeParse(beforeChange).success).toBe(false);
+
+    const afterObservation = structuredClone(real.spec.world);
+    afterObservation.bankInstructions[0]!.verifiedAt =
+      "2026-07-27T00:00:00.000Z";
+    expect(WorldSpecSchema.safeParse(afterObservation).success).toBe(false);
+  });
+
   it("withdrawal schedules require valid, strictly increasing months", () => {
     const descending = structuredClone(real.spec.world);
     descending.plannedWithdrawals[0]!.segments.reverse();

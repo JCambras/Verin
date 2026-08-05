@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -21,6 +22,7 @@ import { loadTaxonomy } from "../../../scripts/corpus/defects";
 import { generateSyntheticCases } from "../../../scripts/corpus/generate";
 import { buildInventory, corpusDigest, taxonomySemanticDigest } from "../../../scripts/corpus/manifest";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
+import { loadSignoff } from "../../../scripts/corpus/signoff";
 import { loadSpec, type LoadedSpec } from "../../../scripts/corpus/world";
 import { committedBytesProblems, readCommittedCorpus } from "../../../scripts/corpus/validate";
 
@@ -58,17 +60,18 @@ interface BannedUse {
 }
 
 const REPOSITORY_INPUT_BOUNDARIES = [
-  { file: "/scripts/golden-cases.lib.ts", owner: "loadScenarioRefs", inputs: { "fs.readFileSync": ["SCENARIOS_YAML"] } },
-  { file: "/scripts/golden-cases.lib.ts", owner: "loadGoldenCases", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["join(dir,f)"] } },
-  { file: "/scripts/corpus/scrub-contract.ts", owner: "schemaFromSpec", inputs: { "fs.readFileSync": ["join(SPEC_DIR,name)"] } },
-  { file: "/scripts/corpus/world.ts", owner: "readSpecFile", rootParameters: [1], inputs: { "fs.readFileSync": ["join(dir,name)"] } },
+  { file: "/scripts/golden-cases.lib.ts", owner: "loadScenarioRefs", inputs: {} },
+  { file: "/scripts/golden-cases.lib.ts", owner: "loadGoldenCases", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.readdirSync": ["dir"] } },
+  { file: "/scripts/corpus/scrub-contract.ts", owner: "schemaFromSpec", inputs: {} },
+  { file: "/scripts/corpus/world.ts", owner: "readSpecFile", rootParameters: [1], inputs: {} },
   { file: "/scripts/corpus/tree.ts", owner: "readTree", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.lstatSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["fullPath"] } },
-  { file: "/scripts/corpus/manifest.ts", owner: "realDerivedSchemaBindings", inputs: { "fs.readFileSync": ["join(SPEC_DIR,name)"] } },
-  { file: "/scripts/corpus/semantic-contract.ts", owner: "loadRealDerivedSemanticContract", inputs: { "fs.readFileSync": ["join(SPEC_DIR,REAL_DERIVED_SEMANTIC_CONTRACT_FILE)"] } },
-  { file: "/scripts/corpus/semantic-contract.ts", owner: "realDerivedSemanticContractBinding", inputs: { "fs.readFileSync": ["join(SPEC_DIR,REAL_DERIVED_SEMANTIC_CONTRACT_FILE)", "join(REPO_ROOT,file)"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "readRepositoryFile", rootParameters: [1], inputs: { "fs.lstatSync": ["path"], "fs.readFileSync": ["canonicalTarget"], "fs.realpathSync": ["repoRoot", "path"] } },
+  { file: "/scripts/corpus/manifest.ts", owner: "realDerivedSchemaBindings", inputs: {} },
+  { file: "/scripts/corpus/semantic-contract.ts", owner: "loadRealDerivedSemanticContract", inputs: {} },
+  { file: "/scripts/corpus/semantic-contract.ts", owner: "realDerivedSemanticContractBinding", inputs: {} },
   { file: "/scripts/corpus/defects.ts", owner: "taxonomyProblems", rootParameters: [1], inputs: { "fs.realpathSync": ["repoRoot", "resolve(repoRoot,entry.sourceCitation.file)"], "fs.statSync": ["canonicalTarget"] } },
-  { file: "/scripts/corpus/defects.ts", owner: "loadTaxonomy", rootParameters: [0], inputs: { "fs.readFileSync": ["join(dir,\"defect-taxonomy.json\")"] } },
-  { file: "/scripts/corpus/signoff.ts", owner: "loadSignoff", rootParameters: [0], inputs: { "fs.readFileSync": ["join(dir,SIGNOFF_FILE)"] } },
+  { file: "/scripts/corpus/defects.ts", owner: "loadTaxonomy", rootParameters: [0], inputs: {} },
+  { file: "/scripts/corpus/signoff.ts", owner: "loadSignoff", rootParameters: [0], inputs: {} },
 ] as const;
 
 const repositoryInputRootUses = (
@@ -274,6 +277,12 @@ const repositoryInputRootUses = (
       if (symbol === undefined) return undefined;
       for (const declaration of resolvedSymbol(symbol).getDeclarations()) {
         if (!Node.isVariableDeclaration(declaration)) continue;
+        if (
+          declaration.getParentIfKind(SyntaxKind.VariableDeclarationList)
+              ?.getDeclarationKind() !== "const"
+        ) {
+          continue;
+        }
         const initializer = declaration.getInitializer();
         if (initializer === undefined) continue;
         const value = staticRepositoryPath(initializer, next);
@@ -1803,6 +1812,38 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     ).toHaveLength(4);
   });
 
+  it("rejects a mutable alias that can redirect an approved repository loader", () => {
+    const project = generatorProject();
+    project.createSourceFile(
+      join(CORPUS_SRC, "mutable-root-probe.ts"),
+      'import { loadSpec, REPO_ROOT } from "./world";\nlet dir = REPO_ROOT;\ndir = "/tmp/external-corpus";\nexport const external = loadSpec(dir);\n',
+    );
+    expect(
+      bannedNondeterminismUses(project, REPO_ROOT).some(
+        (use) => use.api === "repository input outside REPO_ROOT",
+      ),
+    ).toBe(true);
+  });
+
+  it("repository readers reject symlinked files whose target leaves REPO_ROOT", () => {
+    const externalDir = mkdtempSync(join(tmpdir(), "verin-corpus-external-"));
+    const localDir = mkdtempSync(join(REPO_ROOT, ".corpus-input-proof-"));
+    try {
+      const externalSignoff = join(externalDir, "SIGNOFF.md");
+      writeFileSync(
+        externalSignoff,
+        "```yaml\ncorpusVersion: 2026.07.0\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null\n```\n",
+      );
+      symlinkSync(externalSignoff, join(localDir, "SIGNOFF.md"));
+      expect(() => loadSignoff(localDir)).toThrow(
+        /regular file contained in this repository/,
+      );
+    } finally {
+      rmSync(localDir, { recursive: true, force: true });
+      rmSync(externalDir, { recursive: true, force: true });
+    }
+  });
+
   it("flags local-module and container-member nondeterministic origins", () => {
     const uses = bannedNondeterminismUses(
       inMemoryProject({
@@ -1961,13 +2002,15 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
       ]),
     );
     expect(
-      bannedNondeterminismUses(
-        inMemoryProject({
-          "/scripts/corpus/world.ts":
-            'import { readFileSync } from "node:fs";\nexport function unboundInput() { return readFileSync("/etc/hostname", "utf8"); }\n',
-        }),
-      ).map((use) => use.api),
-    ).toEqual(["fs.readFileSync"]);
+      new Set(
+        bannedNondeterminismUses(
+          inMemoryProject({
+            "/scripts/corpus/world.ts":
+              'import { readFileSync } from "node:fs";\nexport function unboundInput() { return readFileSync("/etc/hostname", "utf8"); }\n',
+          }),
+        ).map((use) => use.api),
+      ),
+    ).toEqual(new Set(["fs.readFileSync"]));
   });
 
   it("scans every supported executable source extension", () => {

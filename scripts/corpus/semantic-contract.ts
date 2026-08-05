@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import {
@@ -8,6 +7,7 @@ import {
 } from "../../src/contracts/decision-core/serialization";
 import { REAL_DERIVED_EVIDENCE_KINDS } from "./real-derived-policy";
 import { parseStrictJson } from "./strict-json";
+import { readRepositoryFile } from "./tree";
 import { REPO_ROOT, SPEC_DIR } from "./world";
 
 export const REAL_DERIVED_SEMANTIC_CONTRACT_FILE =
@@ -58,6 +58,7 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/signoff.ts",
   "scripts/corpus/strict-json.ts",
   "scripts/corpus/subgraph.ts",
+  "scripts/corpus/synthetic-evidence-integrity.ts",
   "scripts/corpus/synthetic-identity.ts",
   "scripts/corpus/synthetic-instruction-topology.ts",
   "scripts/corpus/synthetic-pending.ts",
@@ -232,9 +233,9 @@ const sha256 = (bytes: string): string =>
   createHash("sha256").update(bytes, "utf8").digest("hex");
 
 export function loadRealDerivedSemanticContract(
-  bytes: string = readFileSync(
+  bytes: string = readRepositoryFile(
     join(SPEC_DIR, REAL_DERIVED_SEMANTIC_CONTRACT_FILE),
-    "utf8",
+    REPO_ROOT,
   ),
 ): RealDerivedSemanticContract {
   return SemanticContractSchema.parse(
@@ -243,14 +244,14 @@ export function loadRealDerivedSemanticContract(
 }
 
 export function realDerivedSemanticContractBinding(
-  dataBytes: string = readFileSync(
+  dataBytes: string = readRepositoryFile(
     join(SPEC_DIR, REAL_DERIVED_SEMANTIC_CONTRACT_FILE),
-    "utf8",
+    REPO_ROOT,
   ),
   authorityBytes: Readonly<Record<string, string>> = Object.fromEntries(
     REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES.map((file) => [
       file,
-      readFileSync(join(REPO_ROOT, file), "utf8"),
+      readRepositoryFile(join(REPO_ROOT, file), REPO_ROOT),
     ]),
   ),
 ): RealDerivedSemanticContractBinding {

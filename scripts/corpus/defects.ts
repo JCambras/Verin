@@ -12,10 +12,11 @@
  *     classes derived from requirements and signed cases; real defect history is
  *     the deferred real-derived partition (docs/corpus-scrub-procedure.md).
  */
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { parseStrictJson } from "./strict-json";
+import { readRepositoryFile } from "./tree";
 import { REPO_ROOT, SPEC_DIR, type CasesSpec } from "./world";
 
 const Slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "lowercase hyphenated slug");
@@ -82,7 +83,7 @@ export function taxonomyProblems(taxonomy: Taxonomy, repoRoot: string = REPO_ROO
 export function loadTaxonomy(dir: string = SPEC_DIR, repoRoot: string = REPO_ROOT): Taxonomy {
   const taxonomy = TaxonomySchema.parse(
     parseStrictJson(
-      readFileSync(join(dir, "defect-taxonomy.json"), "utf8"),
+      readRepositoryFile(join(dir, "defect-taxonomy.json"), repoRoot),
       "defect-taxonomy.json",
     ),
   );

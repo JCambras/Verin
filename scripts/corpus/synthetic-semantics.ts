@@ -9,6 +9,12 @@ import {
   type SemanticDefectRule,
 } from "./semantic-contract";
 import { selectedFundingHasTaxClass } from "./selected-funding";
+import {
+  authorityEffective,
+  destinationNotIntegral,
+  evidenceSubjects,
+  syntheticEvidenceIntegrityProblems,
+} from "./synthetic-evidence-integrity";
 import { selectedCitedPendingActions, syntheticPendingContext } from "./synthetic-pending";
 import {
   syntheticIdentityContext,
@@ -72,6 +78,7 @@ export interface EmittedRecords {
     lastFour: string;
     verifiedAt: string | null;
     changedAt: string | null;
+    observedAt: string;
   }>;
   referencedBankInstructions: Array<{
     id: string;
@@ -186,15 +193,6 @@ export interface EmittedCase {
 }
 
 const contract = loadRealDerivedSemanticContract();
-const evidenceSubjects = (
-  item: EmittedCase,
-  kind: string,
-): Set<string> =>
-  new Set(
-    item.evidence
-      .filter((evidence) => evidence.kind === kind)
-      .map((evidence) => evidence.subjectRef),
-  );
 const assumption = (item: EmittedCase, id: string): boolean =>
   item.assumptions.some((entry) => entry.id === id);
 type ReserveState = "modeled-scalar" | "modeled-segmented" | "missing" | "inactive";
@@ -206,18 +204,6 @@ const reserveState = (item: EmittedCase): ReserveState => {
   return schedules.some((row) => row.segments.length > 1)
     ? "modeled-segmented"
     : "modeled-scalar";
-};
-const authorityEffective = (item: EmittedCase): boolean => {
-  const cited = evidenceSubjects(item, "authority");
-  const signer = item.records.authorizedSigners.find((row) =>
-    cited.has(row.id)
-  );
-  return signer !== undefined &&
-    signer.accountRef === item.request.sourceAccountRef &&
-    ["full", "distribution-request"].includes(signer.authorityScope) &&
-    epochMs(signer.effectiveFrom) <= epochMs(item.trigger.asOf) &&
-    (signer.effectiveTo === null ||
-      epochMs(signer.effectiveTo) > epochMs(item.trigger.asOf));
 };
 const pendingContext = (item: EmittedCase): boolean =>
   syntheticPendingContext(
@@ -285,22 +271,7 @@ const CONTEXT_RULES: Readonly<
     syntheticIdentityContext(item).ambiguous,
   "authority-boundary": (item) =>
     evidenceSubjects(item, "authority").size > 0,
-  "destination-not-integral": (item) => {
-    const instruction = item.records.bankInstructions.find(
-      (row) => row.id === item.request.destinationRef,
-    );
-    const cited = evidenceSubjects(item, "bank-instruction");
-    return instruction === undefined ||
-      instruction.householdRef !== item.request.householdRef ||
-      instruction.verifiedAt === null ||
-      item.records.bankInstructions.some(
-        (row) =>
-          cited.has(row.id) &&
-          row.id !== instruction.id &&
-          row.bank === instruction.bank &&
-          row.lastFour === instruction.lastFour,
-      );
-  },
+  "destination-not-integral": destinationNotIntegral,
   "instruction-conflict-present": (item) =>
     syntheticInstructionConflictAnalysis(item).present,
   "reserve-not-scalar": (item) =>
@@ -389,6 +360,7 @@ export function syntheticSemanticProblems(
 ): string[] {
   const problems: string[] = [];
   for (const item of cases) {
+    problems.push(...syntheticEvidenceIntegrityProblems(item));
     problems.push(...selectedFundingProblems(item));
     problems.push(...syntheticInstructionConflictAnalysis(item).problems);
     problems.push(

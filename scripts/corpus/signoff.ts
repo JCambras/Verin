@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isAlias, isNode, parseDocument, visit } from "yaml";
-import { SPEC_DIR } from "./world";
+import { readRepositoryFile } from "./tree";
+import { REPO_ROOT, SPEC_DIR } from "./world";
 
 export const SIGNOFF_PENDING = "pending-captain";
 export const SIGNOFF_SIGNED = "signed";
@@ -115,4 +115,4 @@ export const isSigned = (signoff: CorpusSignoff, digest: string): boolean =>
   isCanonicalSignedAt(signoff.signedAt) &&
   signoff.signedDigest === digest;
 export const loadSignoff = (dir: string = SPEC_DIR): CorpusSignoff =>
-  parseSignoff(readFileSync(join(dir, SIGNOFF_FILE), "utf8"));
+  parseSignoff(readRepositoryFile(join(dir, SIGNOFF_FILE), REPO_ROOT));

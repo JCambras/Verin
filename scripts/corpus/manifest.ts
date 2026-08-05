@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { canonicalJson, type JsonValue } from "../../src/contracts/decision-core/serialization";
 import type { Taxonomy } from "./defects";
@@ -15,7 +14,8 @@ import {
 } from "./semantic-contract";
 import { CORPUS_SEED } from "./seed";
 import { parseStrictJson } from "./strict-json";
-import { SPEC_DIR, SPEC_FILES, type LoadedSpec } from "./world";
+import { readRepositoryFile } from "./tree";
+import { REPO_ROOT, SPEC_DIR, SPEC_FILES, type LoadedSpec } from "./world";
 
 export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.12.0";
 export const TAXONOMY_DIGEST_PREIMAGE_VERSION = "verin-defect-taxonomy/1.0.0";
@@ -44,7 +44,10 @@ export const currentFreshnessPolicyBinding = (): FreshnessPolicyBinding => ({
 
 export function realDerivedSchemaBindings(
   rawBytes: Readonly<Record<string, string>> = Object.fromEntries(
-    REAL_DERIVED_SCHEMA_FILES.map((name) => [name, readFileSync(join(SPEC_DIR, name), "utf8")]),
+    REAL_DERIVED_SCHEMA_FILES.map((name) => [
+      name,
+      readRepositoryFile(join(SPEC_DIR, name), REPO_ROOT),
+    ]),
   ),
 ): RealDerivedSchemaBinding[] {
   return REAL_DERIVED_SCHEMA_FILES.map((name) => {

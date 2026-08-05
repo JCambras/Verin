@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import {
@@ -21,14 +20,14 @@ import type {
   ReplayPayload,
 } from "./real-derived-types";
 import { parseStrictJson } from "./strict-json";
-import { readTree } from "./tree";
-import { REAL_DERIVED_DIR, SPEC_DIR } from "./world";
+import { readRepositoryFile, readTree } from "./tree";
+import { REAL_DERIVED_DIR, REPO_ROOT, SPEC_DIR } from "./world";
 
 const REPLAY_SCHEMA_FILE = "real-derived-replay-schema.json";
 
 const schemaFromSpec = (name: string): Record<string, unknown> =>
   parseStrictJson(
-    readFileSync(join(SPEC_DIR, name), "utf8"),
+    readRepositoryFile(join(SPEC_DIR, name), REPO_ROOT),
     name,
   ) as Record<string, unknown>;
 
