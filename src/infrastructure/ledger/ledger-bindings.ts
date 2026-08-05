@@ -28,6 +28,14 @@ export interface LedgerAcceptanceVerdict {
   readonly reason: string | null;
 }
 
+interface SequenceRow {
+  event_sequence: number | string;
+}
+
+interface DecisionSequenceRow extends SequenceRow {
+  requires_prior: boolean;
+}
+
 function referencedDecisionId(event: LedgerEntry): string | undefined {
   if ("decisionRef" in event) return event.decisionRef.id;
   if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
@@ -72,6 +80,168 @@ function sourceBindingReason(
       event.bundleHash !== stored.bundle_hash)
   ) return "ledger input bundle hash does not match immutable bundle";
   return null;
+}
+
+async function verifyLedgerHistoryOrdering(
+  tx: SqlQueryable,
+  tenant: TenantContext,
+  entries: readonly SequencedLedgerEvent[],
+): Promise<LedgerAcceptanceVerdict> {
+  assertTenantContext(tenant);
+  const violations: LedgerAcceptanceVerdict[] = [];
+  const decisionEvents = entries.flatMap(({ event, sequence }) => {
+    const id = referencedDecisionId(event);
+    return id
+      ? [{ id, sequence, requiresPrior: event.type !== "DecisionRecorded" }]
+      : [];
+  });
+  if (decisionEvents.length > 0) {
+    const rows = await tx.query<DecisionSequenceRow>(
+      `SELECT selected.event_sequence, selected.requires_prior
+         FROM unnest($2::text[], $3::bigint[], $4::boolean[])
+           AS selected(decision_id, event_sequence, requires_prior)
+        WHERE (
+          selected.requires_prior AND NOT EXISTS (
+            SELECT 1 FROM decision_ledger recorded
+             WHERE recorded.org_id = $1
+               AND recorded.event_type = 'DecisionRecorded'
+               AND recorded.decision_id = selected.decision_id
+               AND recorded.sequence < selected.event_sequence
+          )
+        ) OR (
+          NOT selected.requires_prior AND EXISTS (
+            SELECT 1 FROM decision_ledger recorded
+             WHERE recorded.org_id = $1
+               AND recorded.event_type = 'DecisionRecorded'
+               AND recorded.decision_id = selected.decision_id
+               AND recorded.sequence < selected.event_sequence
+          )
+        )
+        ORDER BY selected.event_sequence ASC
+        LIMIT 1`,
+      [
+        tenant.orgId,
+        decisionEvents.map(({ id }) => id),
+        decisionEvents.map(({ sequence }) => sequence),
+        decisionEvents.map(({ requiresPrior }) => requiresPrior),
+      ],
+    );
+    const row = rows.rows[0];
+    if (row) {
+      violations.push({
+        ok: false,
+        sequence: Number(row.event_sequence),
+        reason: row.requires_prior
+          ? "decision event does not follow its DecisionRecorded fact"
+          : "decision has multiple recording ledger facts",
+      });
+    }
+  }
+  const creations = entries.flatMap(({ event, sequence }) =>
+    event.type === "ReservationCreated"
+      ? [{ id: event.reservationRef.id, sequence }]
+      : []);
+  if (creations.length > 0) {
+    const rows = await tx.query<SequenceRow>(
+      `SELECT selected.event_sequence
+         FROM unnest($2::text[], $3::bigint[])
+           AS selected(reservation_id, event_sequence)
+        WHERE EXISTS (
+          SELECT 1 FROM decision_ledger created
+           WHERE created.org_id = $1
+             AND created.event_type = 'ReservationCreated'
+             AND created.sequence < selected.event_sequence
+             AND created.payload_json::jsonb #>> '{reservationRef,id}' =
+                 selected.reservation_id
+             AND NOT EXISTS (
+               SELECT 1 FROM decision_ledger released
+                WHERE released.org_id = created.org_id
+                  AND released.event_type = 'ReservationReleased'
+                  AND released.reservation_creation_id = created.id
+                  AND released.sequence < selected.event_sequence
+             )
+        )
+        ORDER BY selected.event_sequence ASC
+        LIMIT 1`,
+      [
+        tenant.orgId,
+        creations.map(({ id }) => id),
+        creations.map(({ sequence }) => sequence),
+      ],
+    );
+    if (rows.rows[0]) {
+      violations.push({
+        ok: false,
+        sequence: Number(rows.rows[0].event_sequence),
+        reason: "reservation already has an active immutable generation",
+      });
+    }
+  }
+  const releases = entries.flatMap(({ event, sequence }) =>
+    event.type === "ReservationReleased"
+      ? [{
+          reservationId: event.reservationRef.id,
+          decisionId: event.decisionRef.id,
+          creationId: event.reservationCreationRef.id,
+          sequence,
+        }]
+      : []);
+  if (releases.length > 0) {
+    const rows = await tx.query<SequenceRow>(
+      `SELECT selected.event_sequence
+         FROM unnest($2::text[], $3::text[], $4::text[], $5::bigint[])
+           AS selected(reservation_id, decision_id, creation_id, event_sequence)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM decision_ledger created
+           WHERE created.org_id = $1
+             AND created.id = selected.creation_id
+             AND created.event_type = 'ReservationCreated'
+             AND created.decision_id = selected.decision_id
+             AND created.sequence < selected.event_sequence
+             AND created.payload_json::jsonb #>> '{reservationRef,id}' =
+                 selected.reservation_id
+        )
+        ORDER BY selected.event_sequence ASC
+        LIMIT 1`,
+      [
+        tenant.orgId,
+        releases.map(({ reservationId }) => reservationId),
+        releases.map(({ decisionId }) => decisionId),
+        releases.map(({ creationId }) => creationId),
+        releases.map(({ sequence }) => sequence),
+      ],
+    );
+    if (rows.rows[0]) {
+      violations.push({
+        ok: false,
+        sequence: Number(rows.rows[0].event_sequence),
+        reason: "reservation release does not follow its immutable generation",
+      });
+    }
+  }
+  return violations.sort((left, right) =>
+    (left.sequence ?? 0) - (right.sequence ?? 0))[0] ?? {
+    ok: true,
+    sequence: null,
+    reason: null,
+  };
+}
+
+export async function assertLedgerHistoryOrdering(
+  tx: SqlQueryable,
+  tenant: TenantContext,
+  event: LedgerEntry,
+  sequence: number,
+): Promise<void> {
+  assertTenantContext(tenant);
+  const verdict = await verifyLedgerHistoryOrdering(
+    tx,
+    tenant,
+    [{ event, sequence }],
+  );
+  if (!verdict.ok) {
+    throw appError("STORE_CONSTRAINT", verdict.reason ?? "ledger history ordering is invalid");
+  }
 }
 
 /**
@@ -166,6 +336,8 @@ export async function verifyStoredLedgerEventAcceptance(
       reason: "ledger causal reference does not name a preceding entry",
     };
   }
+  const ordering = await verifyLedgerHistoryOrdering(tx, tenant, entries);
+  if (!ordering.ok) return ordering;
   const evidenceIds = [...new Set(entries.flatMap(({ event }) => {
     if (event.type === "EvidenceSnapshotRecorded") {
       return [event.evidenceSnapshotRef.id];

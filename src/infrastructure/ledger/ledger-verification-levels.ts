@@ -1,5 +1,6 @@
 import type { SqlTx } from "@infra/store/db";
 import type { PIIBearing } from "@contracts/pii";
+import type { GovernedOutput } from "@contracts/authz";
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
 import {
@@ -17,7 +18,8 @@ import {
 } from "./ledger-schema-registry";
 import { verifyStoredLedgerEventAcceptance } from "./ledger-bindings";
 
-export interface DecisionLedgerRow extends PIIBearing {
+export interface DecisionLedgerRow
+  extends PIIBearing, GovernedOutput<"audit.export"> {
   readonly orgId: string;
   readonly id: string;
   readonly sequence: number;

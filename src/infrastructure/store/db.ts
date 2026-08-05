@@ -27,7 +27,13 @@ export interface SqlQueryable {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<SqlResult<T>>;
 }
 
-const SQL_TRANSACTION = Symbol("verin.sql-transaction");
+declare const SQL_TRANSACTION: unique symbol;
+
+const globalTransactionRegistry = globalThis as unknown as {
+  __verinSqlTransactions?: WeakSet<object>;
+};
+const SQL_TRANSACTIONS = globalTransactionRegistry.__verinSqlTransactions ??=
+  new WeakSet<object>();
 
 /**
  * A transaction context. Adds `exec` (a multi-statement script, no params) to the
@@ -48,8 +54,12 @@ export interface SqlDb extends SqlQueryable {
 }
 
 export function isSqlTransaction(value: SqlQueryable): value is SqlTx {
-  return SQL_TRANSACTION in value &&
-    (value as SqlTx)[SQL_TRANSACTION] === true;
+  return SQL_TRANSACTIONS.has(value);
+}
+
+function registerSqlTransaction(value: Omit<SqlTx, typeof SQL_TRANSACTION>): SqlTx {
+  SQL_TRANSACTIONS.add(value);
+  return value as SqlTx;
 }
 
 function wrap(pg: PGlite): SqlDb {
@@ -82,8 +92,7 @@ function wrap(pg: PGlite): SqlDb {
     transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
       return serialize(() =>
         pg.transaction(async (tx) => {
-          const q: SqlTx = {
-            [SQL_TRANSACTION]: true,
+          const q = registerSqlTransaction({
             async query<U>(sql: string, params?: unknown[]) {
               const res = await tx.query<U>(sql, params as unknown[] | undefined);
               return { rows: res.rows };
@@ -91,7 +100,7 @@ function wrap(pg: PGlite): SqlDb {
             async exec(sql: string) {
               await tx.exec(sql);
             },
-          };
+          });
           return fn(q);
         }) as Promise<T>,
       );

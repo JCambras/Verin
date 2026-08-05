@@ -8,6 +8,7 @@ import { appError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import { parseRecordProvenance } from "@contracts/provenance";
 import {
+  assertSameTenant,
   assertTenantContext,
   type TenantContext,
 } from "@contracts/tenant";
@@ -124,11 +125,14 @@ async function listDecisionLedgerForTenant(
 
 export async function listDecisionLedger(
   db: SqlQueryable,
-  grant: ActionGrant<"pii.view">,
+  exportGrant: ActionGrant<"audit.export">,
+  piiGrant: ActionGrant<"pii.view">,
   tail?: number,
 ): Promise<DecisionLedgerRow[]> {
-  assertActionGrant(grant, "pii.view");
-  return listDecisionLedgerForTenant(db, grant.tenant, tail);
+  assertActionGrant(exportGrant, "audit.export");
+  assertActionGrant(piiGrant, "pii.view");
+  assertSameTenant(exportGrant.tenant, piiGrant.tenant);
+  return listDecisionLedgerForTenant(db, exportGrant.tenant, tail);
 }
 
 /**
@@ -139,12 +143,20 @@ export async function listDecisionLedger(
  */
 export async function verifyAndListDecisionLedger(
   db: SqlDb,
-  grant: ActionGrant<"pii.view">,
+  exportGrant: ActionGrant<"audit.export">,
+  piiGrant: ActionGrant<"pii.view">,
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
-  assertActionGrant(grant, "pii.view");
+  assertActionGrant(exportGrant, "audit.export");
+  assertActionGrant(piiGrant, "pii.view");
+  assertSameTenant(exportGrant.tenant, piiGrant.tenant);
   return db.transaction((tx) =>
-    verifyAndListDecisionLedgerTransaction(tx, grant, window));
+    verifyAndListDecisionLedgerTransaction(
+      tx,
+      exportGrant,
+      piiGrant,
+      window,
+    ));
 }
 
 async function verifySnapshotTransaction(
@@ -204,11 +216,14 @@ async function verifySnapshotTransaction(
 
 export async function verifyAndListDecisionLedgerTransaction(
   tx: SqlTx,
-  grant: ActionGrant<"pii.view">,
+  exportGrant: ActionGrant<"audit.export">,
+  piiGrant: ActionGrant<"pii.view">,
   window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
-  assertActionGrant(grant, "pii.view");
-  return verifySnapshotTransaction(tx, grant.tenant, window);
+  assertActionGrant(exportGrant, "audit.export");
+  assertActionGrant(piiGrant, "pii.view");
+  assertSameTenant(exportGrant.tenant, piiGrant.tenant);
+  return verifySnapshotTransaction(tx, exportGrant.tenant, window);
 }
 
 function parseReplayEvents(

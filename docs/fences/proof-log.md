@@ -5960,3 +5960,40 @@ display limit, and proves all fourteen are counted without per-event source quer
 query-count harness remain as detection-is-not-verification companions.
 
 **Date:** 2026-08-05 (review corrections F15-F18, ADR-0042, D-115).
+### PF-202 immutable ledger ordering, transaction authenticity, and bounded origin trust
+
+**Invariants:** L2 and append use immutable decision and reservation order; a genuine SQL
+transaction remains valid across independently evaluated modules; raw ledger disclosure
+requires both governed grants; bounded replay consumes provenance only from verified
+origin edges.
+
+Four real PGlite regressions were added before the production corrections and failed:
+
+```text
+× L2 rejects a correctly rechained decision event before its recording fact
+  expected true to be false
+× accepts a transaction capability created by another module evaluation
+  promise rejected with VALIDATION instead of resolving
+× refuses a competing reservation after its derived index row is deleted
+  competing immutable event was accepted
+× withholds decisions whose true source origins are outside the verified window
+  expected no decisions, received one compliance-eligible projection
+```
+
+The corrected ordering authority is category-batched and sequence-aware, including for
+bounded verification. The reservation regression deletes the derived index before a
+competing append. The transaction regression reevaluates the database module before
+passing its driver-issued capability to the original ledger bundle. The provenance
+regression edits old origin metadata without rechaining it and proves a verified tail
+does not consume those unchecked bytes.
+
+The governed-actions fence also derives both exact grants from every exported row
+disclosure and verifies their contiguous authority prologue. The focused integration,
+governed-action, tenant-context, append-only, and line-budget suites pass after the
+corrections.
+
+**Revert:** no planted production data remains. The reordered chain, deleted cache row,
+module reevaluation, and old-origin tamper remain as detection-is-not-verification
+companions.
+
+**Date:** 2026-08-05 (review corrections F19-F23, ADR-0043, D-116).

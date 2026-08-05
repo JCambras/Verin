@@ -273,6 +273,29 @@ describe("deterministic decision-ledger projections", () => {
     expect((await verifyDecisionLedger(db, LEDGER_TENANT)).ok).toBe(true);
   });
 
+  it("refuses a competing reservation after its derived index row is deleted", async () => {
+    const first = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, first)).ok).toBe(true);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
+    expect((await recordDecision(db, LEDGER_TENANT, second)).ok).toBe(true);
+    const created = allLedgerEventSamples().find(
+      (event) => event.type === "ReservationCreated",
+    )!;
+    await expect(append(db, [created])).resolves.toHaveLength(1);
+    await db.query(
+      "DELETE FROM decision_reservation_index WHERE org_id = $1 AND reservation_id = $2",
+      [LEDGER_ORG, created.reservationRef.id],
+    );
+    const competing = LedgerEntrySchema.parse({
+      ...created,
+      id: "projection:reservation-conflict",
+      decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
+    });
+    await expect(append(db, [competing])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+    });
+  });
+
   it("does not let a delayed release affect a reused reservation identifier", async () => {
     const first = decisionRecordingInput();
     expect((await recordDecision(db, LEDGER_TENANT, first)).ok).toBe(true);
@@ -564,9 +587,14 @@ describe("deterministic decision-ledger projections", () => {
     expect(statements.length).toBeLessThanOrEqual(13);
   });
 
-  it("uses a repeated evidence recording inside the verified register window", async () => {
+  it("withholds decisions whose true source origins are outside the verified window", async () => {
     const first = decisionRecordingInput();
     expect((await recordDecision(db, LEDGER_TENANT, first)).ok).toBe(true);
+    const currentProvenance = {
+      source: "verin-crm",
+      asOf: LEDGER_TIME,
+      confidence: "high",
+    } as const;
     const repeatedEvidenceEvents = first.events.slice(0, -1).map((event, index) =>
       LedgerEntrySchema.parse({
         ...event,
@@ -577,16 +605,27 @@ describe("deterministic decision-ledger projections", () => {
         tx,
         LEDGER_TENANT,
         repeatedEvidenceEvents,
-        LEDGER_PROVENANCE,
+        currentProvenance,
         first.evidenceSnapshots,
       ))).resolves.toHaveLength(first.evidenceSnapshots.length);
+    const second = reusedBundleRecordingInput("dec:GC-01:0002");
     expect(
       (await recordDecision(
         db,
         LEDGER_TENANT,
-        reusedBundleRecordingInput("dec:GC-01:0002"),
+        { ...second, provenance: currentProvenance },
       )).ok,
     ).toBe(true);
+    await db.exec(
+      "ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update",
+    );
+    await db.query(
+      "UPDATE decision_ledger SET prov_source = 'verin-crm' WHERE org_id = $1 AND sequence < 5",
+      [LEDGER_ORG],
+    );
+    await db.exec(
+      "ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update",
+    );
 
     const snapshot = await readVerifiedDecisionRegister(
       db,
@@ -597,9 +636,7 @@ describe("deterministic decision-ledger projections", () => {
     );
     expect(snapshot.verification.ok).toBe(true);
     expect(snapshot.rows).toHaveLength(5);
-    expect(snapshot.decisions.map(({ projection }) => projection.decisionId)).toEqual([
-      "dec:GC-01:0002",
-    ]);
+    expect(snapshot.decisions).toEqual([]);
   });
 
   it("suppresses every register row when stored actor metadata fails verification", async () => {

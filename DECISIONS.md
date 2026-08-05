@@ -3712,3 +3712,25 @@ raises the infrastructure ceiling to 7,050 around the measured 6,927 lines, with
 use claims cannot upgrade immutable synthetic inputs.
 **Revert path:** none while L1-L4 authorizes disclosure and rebuild, source reuse is
 supported, and bounded register replay runs under a tenant lock.
+
+### D-116 · 2026-08-05 · reversible · Ledger ordering, transaction, and disclosure authority is structural
+
+Decision-event and reservation-generation order now derives from immutable ledger facts
+through one set-based authority shared by append, rebuild, and L2. The mutable reservation
+index can no longer authorize a competing active generation after cache deletion.
+
+Transaction authenticity lives in a process-global weak registry shared by separately
+evaluated Next.js bundles. Every exported raw-ledger disclosure requires sealed
+`audit.export` and `pii.view` grants with identical tenant and actor scope, and ledger rows
+carry the audit-export governed-output marker.
+
+Bounded replay uses provenance only when the global first evidence or bundle recording
+edge is inside the verified snapshot. Decisions whose true trust origin lies outside the
+window are withheld rather than relabeled by unchecked historical bytes. ADR-0043 raises
+the infrastructure ceiling to 7,250 around the measured 7,174 lines while retaining the
+500-line file cap.
+
+**Why:** mutable caches, module-local seals, route-only authorization, and provenance
+outside the verified snapshot cannot authenticate immutable history or disclosure.
+**Revert path:** none while L1-L4 authorizes disclosure, reusable source trust belongs to
+the first recording edge, and transaction capabilities cross Next.js bundle boundaries.

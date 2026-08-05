@@ -6,6 +6,7 @@ import {
   expect,
   expectTypeOf,
   it,
+  vi,
 } from "vitest";
 import {
   createMemoryDb,
@@ -443,6 +444,47 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(result.levels.at(-1)?.level).toBe("L2");
   });
 
+  it("L2 rejects a correctly rechained decision event before its recording fact", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const approval = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (event) => event.type === "ApprovalRecorded",
+      )!,
+      decisionHash: input.decisionRecord.decisionHash,
+      inputBundleHash: input.inputBundle.bundleHash,
+    });
+    await expect(append(db, [approval])).resolves.toHaveLength(1);
+    await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
+    await db.query(
+      "UPDATE decision_ledger SET sequence = sequence + 1000 WHERE org_id = $1 AND sequence IN (4,5)",
+      [LEDGER_ORG],
+    );
+    await db.query(
+      `UPDATE decision_ledger
+          SET sequence = CASE WHEN id = $2 THEN 4 ELSE 5 END
+        WHERE org_id = $1 AND id IN ($2,$3)`,
+      [LEDGER_ORG, approval.id, input.events.at(-1)!.id],
+    );
+    await rechainLedger(db);
+    await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
+
+    const full = await verifyDecisionLedger(db, LEDGER_TENANT);
+    expect(full.ok).toBe(false);
+    expect(full.levels.at(-1)).toMatchObject({
+      level: "L2",
+      brokenAtSequence: 4,
+    });
+    const bounded = await verifyAndListDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      2,
+    );
+    expect(bounded.verification.ok).toBe(false);
+    expect(bounded.verification.levels.at(-1)?.level).toBe("L2");
+  });
+
   it("refuses an unregistered recorded schema or serializer version", async () => {
     await recordFixture(db);
     await db.exec("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_no_update");
@@ -516,7 +558,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
       db.transaction((tx) =>
         appendDecisionEvents(tx, LEDGER_TENANT, [event], provenance)),
     ).rejects.toMatchObject({ code: "VALIDATION" });
-    expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(5);
   });
 
   it("holds the tenant lock before reading any verification snapshot", async () => {
@@ -578,7 +624,12 @@ describe("decision ledger storage and L1-L4 verification", () => {
 
   it("a windowed verification checks its own entries and their link to the stored predecessor", async () => {
     await recordFixture(db);
-    const windowed = await verifyAndListDecisionLedger(db, LEDGER_PII_GRANT, 2);
+    const windowed = await verifyAndListDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      2,
+    );
     expect(windowed.verification.ok).toBe(true);
     expect(windowed.verification.entriesChecked).toBe(2);
     expect(windowed.verification.entriesStored).toBe(5);
@@ -590,7 +641,12 @@ describe("decision ledger storage and L1-L4 verification", () => {
       [LEDGER_ORG, "f".repeat(64)],
     );
     await db.exec("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_no_update");
-    const broken = await verifyAndListDecisionLedger(db, LEDGER_PII_GRANT, 2);
+    const broken = await verifyAndListDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      2,
+    );
     expect(broken.verification.ok).toBe(false);
     expect(broken.verification.levels.at(-1)).toMatchObject({
       level: "L1",
@@ -711,7 +767,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await expect(append(db, [exception, later])).rejects.toMatchObject({
       code: "STORE_CONSTRAINT",
     });
-    expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(5);
   });
 
   it("rejects PII in ledger text without rewriting the submitted bytes", async () => {
@@ -742,7 +802,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await expect(append(db, [unformattedAccount])).rejects.toMatchObject({
       code: "PII_VIOLATION",
     });
-    expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(5);
   });
 
   it.each([
@@ -766,7 +830,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
       await expect(append(db, [event])).rejects.toMatchObject({
         code: "PII_VIOLATION",
       });
-      expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
+      expect((await listDecisionLedger(
+        db,
+        LEDGER_EXPORT_GRANT,
+        LEDGER_PII_GRANT,
+      ))).toHaveLength(5);
     },
   );
 
@@ -1224,8 +1292,16 @@ describe("decision ledger storage and L1-L4 verification", () => {
           prevHash: row.prevHash,
           entryHash: row.entryHash,
         }));
-      expect(project(await listDecisionLedger(other, LEDGER_PII_GRANT))).toEqual(
-        project(await listDecisionLedger(db, LEDGER_PII_GRANT)),
+      expect(project(await listDecisionLedger(
+        other,
+        LEDGER_EXPORT_GRANT,
+        LEDGER_PII_GRANT,
+      ))).toEqual(
+        project(await listDecisionLedger(
+          db,
+          LEDGER_EXPORT_GRANT,
+          LEDGER_PII_GRANT,
+        )),
       );
     } finally {
       await other.close();
@@ -1315,7 +1391,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
       [LEDGER_ORG, later.snapshot.id],
     );
     expect(Number(snapshot.rows[0]!.n)).toBe(0);
-    expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(5);
   });
 
   it("rolls back every event when a producer catches a mid-batch refusal", async () => {
@@ -1366,7 +1446,39 @@ describe("decision ledger storage and L1-L4 verification", () => {
       [event],
       LEDGER_PROVENANCE,
     )).rejects.toMatchObject({ code: "VALIDATION" });
-    expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(5);
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(5);
+  });
+
+  it("accepts a transaction capability created by another module evaluation", async () => {
+    vi.resetModules();
+    const bundledStore = await import("@infra/store/db");
+    const bundledDb = await bundledStore.createMemoryDb();
+    try {
+      await seedOrg(bundledDb, LEDGER_ORG);
+      const input = decisionRecordingInput();
+      expect((await recordDecision(bundledDb, LEDGER_TENANT, input)).ok).toBe(
+        true,
+      );
+      const event = LedgerEntrySchema.parse({
+        ...allLedgerEventSamples().find(
+          (sample) => sample.type === "ApprovalStageExpired",
+        )!,
+        priorDecisionHash: input.decisionRecord.decisionHash,
+      });
+      await expect(bundledDb.transaction((tx) =>
+        appendDecisionEvents(
+          tx,
+          LEDGER_TENANT,
+          [event],
+          LEDGER_PROVENANCE,
+        ))).resolves.toHaveLength(1);
+    } finally {
+      await bundledDb.close();
+    }
   });
 
   it("composes CRM mutation, operational audit intent, and ledger append in one transaction", async () => {
@@ -1394,7 +1506,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
       },
     });
     expect(write.ok).toBe(true);
-    expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(6);
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(6);
     expect(
       (await verifyAndListOrgChain(db, LEDGER_EXPORT_GRANT)).rows.at(-1)?.action,
     ).toBe("task.create");
@@ -1429,7 +1545,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
       [LEDGER_ORG, "task-ledger-refused"],
     );
     expect(Number(tasks.rows[0]!.n)).toBe(0);
-    expect((await listDecisionLedger(db, LEDGER_PII_GRANT))).toHaveLength(6);
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(6);
     expect(
       (await verifyAndListOrgChain(db, LEDGER_EXPORT_GRANT)).rows.at(-1)?.action,
     ).toBe("task.create.failed");

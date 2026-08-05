@@ -15,6 +15,7 @@ import {
 
 interface OriginRow {
   source_id: string;
+  sequence: number | string;
   prov_source: string;
   prov_asof: string;
   prov_confidence: string;
@@ -23,6 +24,11 @@ interface OriginRow {
 export interface ReplaySourceOrigins {
   readonly snapshots: ReadonlyMap<string, RecordProvenance>;
   readonly bundles: ReadonlyMap<string, RecordProvenance>;
+}
+
+export interface ReplaySourceOriginSequences {
+  readonly snapshots: ReadonlyMap<string, number>;
+  readonly bundles: ReadonlyMap<string, number>;
 }
 
 function parseOrigins(rows: readonly OriginRow[]): Map<string, RecordProvenance> {
@@ -41,18 +47,25 @@ function parseOrigins(rows: readonly OriginRow[]): Map<string, RecordProvenance>
   return origins;
 }
 
-export async function loadReplaySourceOrigins(
+function originSequences(rows: readonly OriginRow[]): Map<string, number> {
+  return new Map(rows.map((row) => [row.source_id, Number(row.sequence)]));
+}
+
+async function loadOriginRows(
   tx: SqlQueryable,
   tenant: TenantContext,
   evidenceIds: readonly string[],
   bundleIds: readonly string[],
-): Promise<ReplaySourceOrigins> {
+): Promise<{
+  readonly snapshots: readonly OriginRow[];
+  readonly bundles: readonly OriginRow[];
+}> {
   assertTenantContext(tenant);
-  let snapshots = new Map<string, RecordProvenance>();
+  let snapshots: readonly OriginRow[] = [];
   if (evidenceIds.length > 0) {
     const rows = await tx.query<OriginRow>(
       `SELECT DISTINCT ON (evidence_snapshot_id)
-              evidence_snapshot_id AS source_id,
+              evidence_snapshot_id AS source_id, sequence,
               prov_source, prov_asof, prov_confidence
          FROM decision_ledger
         WHERE org_id = $1
@@ -61,13 +74,13 @@ export async function loadReplaySourceOrigins(
         ORDER BY evidence_snapshot_id, sequence ASC`,
       [tenant.orgId, evidenceIds],
     );
-    snapshots = parseOrigins(rows.rows);
+    snapshots = rows.rows;
   }
-  let bundles = new Map<string, RecordProvenance>();
+  let bundles: readonly OriginRow[] = [];
   if (bundleIds.length > 0) {
     const rows = await tx.query<OriginRow>(
       `SELECT DISTINCT ON (record.input_bundle_id)
-              record.input_bundle_id AS source_id,
+              record.input_bundle_id AS source_id, ledger.sequence,
               ledger.prov_source, ledger.prov_asof, ledger.prov_confidence
          FROM decision_ledger ledger
          JOIN decision_records record
@@ -78,9 +91,37 @@ export async function loadReplaySourceOrigins(
         ORDER BY record.input_bundle_id, ledger.sequence ASC`,
       [tenant.orgId, bundleIds],
     );
-    bundles = parseOrigins(rows.rows);
+    bundles = rows.rows;
   }
   return { snapshots, bundles };
+}
+
+export async function loadReplaySourceOrigins(
+  tx: SqlQueryable,
+  tenant: TenantContext,
+  evidenceIds: readonly string[],
+  bundleIds: readonly string[],
+): Promise<ReplaySourceOrigins> {
+  assertTenantContext(tenant);
+  const rows = await loadOriginRows(tx, tenant, evidenceIds, bundleIds);
+  return {
+    snapshots: parseOrigins(rows.snapshots),
+    bundles: parseOrigins(rows.bundles),
+  };
+}
+
+export async function loadReplaySourceOriginSequences(
+  tx: SqlQueryable,
+  tenant: TenantContext,
+  evidenceIds: readonly string[],
+  bundleIds: readonly string[],
+): Promise<ReplaySourceOriginSequences> {
+  assertTenantContext(tenant);
+  const rows = await loadOriginRows(tx, tenant, evidenceIds, bundleIds);
+  return {
+    snapshots: originSequences(rows.snapshots),
+    bundles: originSequences(rows.bundles),
+  };
 }
 
 export async function deriveRecordedDecisionProvenance(

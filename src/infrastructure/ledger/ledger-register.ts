@@ -141,6 +141,7 @@ export async function readVerifiedDecisionRegister(
   return db.transaction(async (tx) => {
     const checked = await verifyAndListDecisionLedgerTransaction(
       tx,
+      exportGrant,
       piiGrant,
       eventWindow,
     );

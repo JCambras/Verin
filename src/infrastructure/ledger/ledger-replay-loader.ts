@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SqlQueryable } from "@infra/store/db";
 import { appError } from "@contracts/errors";
+import type { PIIBearing } from "@contracts/pii";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type {
   DecisionInputBundle,
@@ -24,7 +25,9 @@ import {
 import { canonicalDigest } from "./ledger-canonical";
 import { assertReplaySourcePiiBoundary } from "./ledger-pii";
 import {
+  loadReplaySourceOriginSequences,
   loadReplaySourceOrigins,
+  type ReplaySourceOrigins,
 } from "./ledger-source-provenance";
 import { parseRecordedReplaySource } from "./ledger-source-registry";
 
@@ -77,6 +80,11 @@ interface MembershipRow {
   ordinal: number | string;
 }
 
+interface ParsedDecisionSource extends PIIBearing {
+  readonly record: DecisionRecord;
+  readonly bundle: DecisionInputBundle;
+}
+
 function replaySourceError(reason: string): never {
   throw appError("STORE_CONSTRAINT", reason);
 }
@@ -120,6 +128,34 @@ function requireCanonicalSource<
 
 function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
+}
+
+function verifiedWindowOrigins(
+  entries: readonly RecordedReplayEvent[],
+  parsed: ReadonlyMap<string, ParsedDecisionSource>,
+  sequences: {
+    readonly snapshots: ReadonlyMap<string, number>;
+    readonly bundles: ReadonlyMap<string, number>;
+  },
+): ReplaySourceOrigins {
+  const bySequence = new Map(entries.map((entry) => [entry.sequence, entry]));
+  const snapshots = new Map<string, RecordProvenance>();
+  for (const [id, sequence] of sequences.snapshots) {
+    const entry = bySequence.get(sequence);
+    if (
+      entry?.event.type === "EvidenceSnapshotRecorded" &&
+      entry.event.evidenceSnapshotRef.id === id
+    ) snapshots.set(id, entry.provenance);
+  }
+  const bundles = new Map<string, RecordProvenance>();
+  for (const [id, sequence] of sequences.bundles) {
+    const entry = bySequence.get(sequence);
+    if (
+      entry?.event.type === "DecisionRecorded" &&
+      parsed.get(entry.event.decisionRef.id)?.bundle.id === id
+    ) bundles.set(id, entry.provenance);
+  }
+  return { snapshots, bundles };
 }
 
 function verifyEvidenceRow(
@@ -234,10 +270,7 @@ async function loadReplaySources(
     );
     loaded.rows.forEach((row) => sourceRows.set(row.decision_id, row));
   }
-  const parsed = new Map<string, {
-    readonly record: DecisionRecord;
-    readonly bundle: DecisionInputBundle;
-  }>();
+  const parsed = new Map<string, ParsedDecisionSource>();
   for (const decisionId of decisionIds) {
     const row = sourceRows.get(decisionId);
     if (!row) replaySourceError("decision record is missing during replay");
@@ -283,12 +316,23 @@ async function loadReplaySources(
       verifyEvidenceEvent(entry, evidenceRows.get(entry.event.evidenceSnapshotRef.id));
     }
   });
-  const origins = await loadReplaySourceOrigins(
-    tx,
-    tenant,
-    evidenceIds,
-    bundleIds,
-  );
+  const origins = windowed
+    ? verifiedWindowOrigins(
+        entries,
+        parsed,
+        await loadReplaySourceOriginSequences(
+          tx,
+          tenant,
+          evidenceIds,
+          bundleIds,
+        ),
+      )
+    : await loadReplaySourceOrigins(
+        tx,
+        tenant,
+        evidenceIds,
+        bundleIds,
+      );
   const evidenceSequences = new Map<string, number[]>();
   for (const entry of evidenceEntries) {
     if (entry.event.type !== "EvidenceSnapshotRecorded") continue;
@@ -340,6 +384,7 @@ async function loadReplaySources(
       memberIds.some((id, index) => id !== expectedIds[index])
     ) replaySourceError("decision replay source binding differs during replay");
     if (expectedIds.some((id) => !origins.snapshots.has(id))) {
+      if (windowed) continue;
       replaySourceError("decision evidence has no recording ledger fact");
     }
     expectedIds.forEach((id) => verifyEvidenceRow(
@@ -354,6 +399,7 @@ async function loadReplaySources(
     }
     const bundleOrigin = origins.bundles.get(source.bundle.id);
     if (!bundleOrigin) {
+      if (windowed) continue;
       replaySourceError("decision input bundle has no recording ledger fact");
     }
     decisions.set(entry.event.decisionRef.id, {

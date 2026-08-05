@@ -21,6 +21,7 @@ import {
   foldDecisionProjection,
   type DecisionProjection,
 } from "@domain/ledger/projections";
+import { assertLedgerHistoryOrdering } from "./ledger-bindings";
 
 /**
  * A projection with the provenance of the fold that produced it. A projection is a
@@ -80,47 +81,6 @@ async function loadProjection(
     : { decisionId: id };
 }
 
-async function assertReservationGeneration(
-  tx: SqlTx,
-  event: LedgerEntry,
-  ownerDecisionId: string,
-): Promise<void> {
-  if (event.type === "ReservationCreated") {
-    const active = await tx.query<{ decision_id: string }>(
-      `SELECT decision_id FROM decision_reservation_index
-        WHERE org_id = $1 AND reservation_id = $2 AND status = 'active'
-        FOR UPDATE`,
-      [event.firmId, event.reservationRef.id],
-    );
-    if (active.rows[0]) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "reservation already has an active generation",
-      );
-    }
-  } else if (event.type === "ReservationReleased") {
-    const generation = await tx.query<{ decision_id: string }>(
-      `SELECT decision_id FROM decision_reservation_index
-        WHERE org_id = $1 AND reservation_id = $2 AND creation_entry_id = $3
-        FOR UPDATE`,
-      [
-        event.firmId,
-        event.reservationRef.id,
-        event.reservationCreationRef.id,
-      ],
-    );
-    if (!generation.rows[0]) {
-      throw appError("STORE_CONSTRAINT", "reservation generation does not exist");
-    }
-    if (generation.rows[0].decision_id !== ownerDecisionId) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        "reservation generation belongs to another decision",
-      );
-    }
-  }
-}
-
 async function writeReservationIndex(
   tx: SqlTx,
   projection: PreparedProjection,
@@ -162,6 +122,7 @@ async function prepareProjection(
   if (event.firmId !== tenant.orgId) {
     throw appError("AUTH_FAILED", "projection event tenant does not match write authority");
   }
+  await assertLedgerHistoryOrdering(tx, tenant, event, sequence);
   const loaded = await loadProjection(tx, event.firmId, event);
   if (
     event.type !== "DecisionRecorded" &&
@@ -180,7 +141,6 @@ async function prepareProjection(
     ...(record ? { decisionRecord: record } : {}),
   });
   if (!next) return undefined;
-  await assertReservationGeneration(tx, event, next.decisionId);
   const stateJson = canonicalJson(next as unknown as JsonValue);
   const nextProvenance = deriveArtifactProvenance(
     loaded?.provenance ? [loaded.provenance, provenance] : [provenance],
