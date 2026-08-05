@@ -25,7 +25,14 @@ import {
  * every impostor shape an attacker or a refactor could produce is refused by
  * the runtime seal check repositories call before touching SQL.
  */
-const principal = principalFromIdentity({ userId: "u1", orgId: "org-1", role: "advisor", actor: "a@firm.test", sessionId: "s1" });
+const principal = principalFromIdentity({
+  userId: "u1",
+  orgId: "org-1",
+  role: "advisor",
+  actor: "a@firm.test",
+  sessionId: "s1",
+  sessionLineageId: "lineage-s1",
+});
 
 describe("TenantContext cannot compile from a literal", () => {
   it("rejects literals and unbranded objects at the type level", () => {
@@ -84,6 +91,22 @@ describe("TenantContext cannot parse unless factory-minted", () => {
       role: "advisor",
       actor: "a@firm.test",
       sessionId: "",
+      sessionLineageId: "lineage-s1",
+    })).toThrow();
+    expect(() => principalFromIdentity({
+      userId: "u1",
+      orgId: "org-1",
+      role: "advisor",
+      actor: "a@firm.test",
+      sessionId: "s1",
+    } as never)).toThrow();
+    expect(() => principalFromIdentity({
+      userId: "u1",
+      orgId: "org-1",
+      role: "advisor",
+      actor: "a@firm.test",
+      sessionId: "s1",
+      sessionLineageId: "",
     })).toThrow();
     expect(tenantOf(principal).actor).toEqual({ kind: "human", actorId: "u1" });
     expect(systemTenant("seed", "org-1").actor).toEqual({ kind: "system", actorId: "seed" });
@@ -95,6 +118,7 @@ describe("TenantContext cannot parse unless factory-minted", () => {
       role: "advisor",
       actor: "b@firm.test",
       sessionId: "s2",
+      sessionLineageId: "lineage-s2",
     });
     const delegated = delegatedWriteActor(
       systemWriteActor("esign-webhook", "org-1"),

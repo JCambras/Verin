@@ -16,6 +16,7 @@ const PRINCIPAL = principalFromIdentity({
   role: "ops",
   actor: "advisor@example.test",
   sessionId: "session-test",
+  sessionLineageId: "lineage-session-test",
 });
 const ACTOR = writeActorOf(PRINCIPAL);
 const TENANT = ACTOR.tenant;

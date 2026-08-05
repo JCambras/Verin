@@ -76,6 +76,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       role: "advisor",
       actor: "other@firm.test",
       sessionId: "s2",
+      sessionLineageId: "lineage-s2",
     });
     const otherExecution = authorizeGovernedAction(actorRefOf(otherPrincipal), "execution.initiate");
     const otherPii = authorizeGovernedAction(actorRefOf(otherPrincipal), "pii.view");
@@ -102,6 +103,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
       role: "advisor",
       actor: "other@firm.test",
       sessionId: "s2",
+      sessionLineageId: "lineage-s2",
     });
     const otherPii = authorizeGovernedAction(actorRefOf(otherPrincipal), "pii.view");
     if (!otherPii.ok) throw new Error("other advisor should hold pii.view");

@@ -36,21 +36,19 @@ export function principalFromIdentity(input: {
   readonly role: Role;
   readonly actor: string;
   readonly sessionId: string;
-  readonly sessionLineageId?: string;
+  readonly sessionLineageId: string;
 }): Principal {
   if (
     !input.userId ||
     !input.orgId ||
     !input.actor ||
     !input.sessionId ||
+    !input.sessionLineageId ||
     !isRole(input.role)
   ) {
     throw appError("AUTH_FAILED", "Identity boundary returned an invalid principal.");
   }
-  const principal = {
-    ...input,
-    sessionLineageId: input.sessionLineageId ?? input.sessionId,
-  };
+  const principal = { ...input };
   PRINCIPALS.add(principal);
   return Object.freeze(principal) as unknown as Principal;
 }

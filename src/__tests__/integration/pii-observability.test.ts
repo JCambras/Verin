@@ -35,7 +35,14 @@ afterEach(() => vi.restoreAllMocks());
 
 const ORG = "org-pii";
 const ENTITY_ID = "123e4567-e89b-12d3-a456-123456789012";
-const advisorPrincipal = principalFromIdentity({ userId: "u-pii", orgId: ORG, role: "advisor", actor: "advisor@firm.test", sessionId: "s-pii" });
+const advisorPrincipal = principalFromIdentity({
+  userId: "u-pii",
+  orgId: ORG,
+  role: "advisor",
+  actor: "advisor@firm.test",
+  sessionId: "s-pii",
+  sessionLineageId: "lineage-s-pii",
+});
 const advisorAuthorization = authorizeGovernedAction(actorRefOf(advisorPrincipal), "execution.initiate");
 if (!advisorAuthorization.ok) throw new Error("advisor should hold execution.initiate");
 const advisor = advisorAuthorization.value;
@@ -184,6 +191,7 @@ describe("logs never carry raw names or account numbers", () => {
       role: "advisor",
       actor: "account@firm.test",
       sessionId: "s-account",
+      sessionLineageId: "lineage-s-account",
     }));
     expect(authorityObservabilityId("orgId", accountTenant).value).toBe(REDACTED);
     expect(authorityObservabilityId("actor", accountTenant).value).toBe(REDACTED);
@@ -227,6 +235,7 @@ describe("logs never carry raw names or account numbers", () => {
       role: "advisor",
       actor: "other@firm.test",
       sessionId: "s-other",
+      sessionLineageId: "lineage-s-other",
     }));
     const other = keyedObservabilityId("entityId", otherTenant, crafted);
     const execution = keyedObservabilityId("executionId", advisor.tenant, crafted);
@@ -255,6 +264,7 @@ describe("logs never carry raw names or account numbers", () => {
         role: "advisor",
         actor: "machine@firm.test",
         sessionId: "s-machine",
+        sessionLineageId: "lineage-s-machine",
       }));
       expect(authorityObservabilityId("orgId", tenant).value, value).toBe(value);
     }

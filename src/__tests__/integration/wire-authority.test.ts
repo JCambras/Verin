@@ -20,6 +20,7 @@ const starterPrincipal = principalFromIdentity({
   role: "advisor",
   actor: "starter@firm.test",
   sessionId: "s-starter",
+  sessionLineageId: "lineage-s-starter",
 });
 const otherPrincipal = principalFromIdentity({
   userId: "u-other",
@@ -27,6 +28,7 @@ const otherPrincipal = principalFromIdentity({
   role: "advisor",
   actor: "other@firm.test",
   sessionId: "s-other",
+  sessionLineageId: "lineage-s-other",
 });
 const starterRef = actorRefOf(starterPrincipal);
 const execution = authorizeGovernedAction(starterRef, "execution.initiate");

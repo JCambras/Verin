@@ -51,6 +51,7 @@ const piiGrant = (orgId: string, userId: string) =>
     role: "advisor",
     actor: `${userId}@firm.test`,
     sessionId: `session-${userId}`,
+    sessionLineageId: `lineage-${userId}`,
   })), "pii.view"));
 const grantA = piiGrant(ORG_A, "advisor-a");
 const grantB = piiGrant(ORG_B, "advisor-b");
@@ -61,6 +62,7 @@ const auditGrant = (orgId: string, userId: string) =>
     role: "ops",
     actor: `${userId}@firm.test`,
     sessionId: `session-${userId}`,
+    sessionLineageId: `lineage-${userId}`,
   })), "audit.export"));
 const auditGrantA = auditGrant(ORG_A, "ops-a");
 const auditGrantB = auditGrant(ORG_B, "ops-b");

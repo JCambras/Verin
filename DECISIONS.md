@@ -3603,3 +3603,12 @@ attestation, and activation. Noncanonical evidence still produces an independent
 outcome does not consume add payload and evaluation work without adding proof.
 **Revert path:** restore expiry to the lookup only if the projected effect begins consuming approval
 clock semantics, and remove canonical memoization if setup construction becomes request-specific.
+
+### D-102 · 2026-08-05 · reversible · Principal construction requires stable session lineage
+
+`principalFromIdentity` now requires and validates a non-empty server-issued session lineage. It no
+longer substitutes the rotating session credential, so setup attestation and activation ownership
+cannot change during renewal when an identity projection omits lineage.
+
+**Why:** stable session ownership is a sealed identity invariant, not an optional adapter detail.
+**Revert path:** none while setup state remains scoped to logical login lineage across credential rotation.

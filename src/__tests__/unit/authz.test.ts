@@ -21,7 +21,14 @@ const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
  * mint the sealed ActionGrant.
  */
 function humanActor(role: Role) {
-  const p = principalFromIdentity({ userId: `u-${role}`, orgId: "org-1", role, actor: `${role}@firm.test`, sessionId: "s1" });
+  const p = principalFromIdentity({
+    userId: `u-${role}`,
+    orgId: "org-1",
+    role,
+    actor: `${role}@firm.test`,
+    sessionId: "s1",
+    sessionLineageId: `lineage-${role}`,
+  });
   return actorRefOf(p);
 }
 const systemActor = {
@@ -61,6 +68,7 @@ describe("authorizeGovernedAction denies the unauthorized", () => {
       role: "advisor",
       actor: "advisor@firm.test",
       sessionId: "s1",
+      sessionLineageId: "lineage-s1",
     });
     const forged = {
       kind: "human",
