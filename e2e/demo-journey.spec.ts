@@ -144,6 +144,9 @@ test("the quick start keeps GC-01 identity and withholds unsigned authority", as
   await expectQuickStartStation(page, "safety");
   await expect(page.getByText("Safety check not reached")).toBeVisible();
   await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
+  await expect(
+    page.getByText(/^This journey stopped at Authority:/),
+  ).toBeVisible();
   await checkAxe(page, "safety");
   await snap(page, 7, "safety");
 

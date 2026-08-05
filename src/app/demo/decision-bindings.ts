@@ -145,7 +145,9 @@ function bindingFor(
       createdAt: policyRerun?.recordedAtIso ?? activeDecisionAt(scenario, firm, pass),
       bundleHash,
       ...decisionResult,
-      explanations: sourceCase?.explanations ?? [],
+      explanations: policyRerun
+        ? policyRerun.rerun.explanations
+        : (sourceCase?.explanations ?? []),
     }),
   };
 }

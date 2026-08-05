@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
+import { principalFromIdentity } from "@contracts/principal";
+import { unwrap } from "@contracts/result";
 import {
   bindExactSourceCase,
   firmById,
@@ -15,11 +18,29 @@ import {
 } from "@app/demo/execution-preconditions";
 import { getJourney } from "@app/demo/journey";
 import type { DemoPolicyApprovalEventVM } from "@app/demo/model";
+import {
+  demoPolicyApprovalEventFor,
+  recordDemoPolicyApproval,
+} from "@app/demo/policy-approval-events";
 import { evaluatePolicyRerun } from "@app/demo/policy-rerun";
 import {
   SIGNED_CASE_IDS,
   type SignedCaseVariant,
 } from "@app/demo/signed-cases";
+import { timelineFor } from "@app/demo/timeline";
+
+function policyApprovalGrant(orgId: string) {
+  const principal = principalFromIdentity({
+    userId: `policy-approver-${orgId}`,
+    orgId,
+    role: "cco",
+    actor: `policy-approver-${orgId}@example.test`,
+    sessionId: `session-${orgId}`,
+  });
+  return unwrap(
+    authorizeGovernedAction(actorRefOf(principal), "policy.approve"),
+  );
+}
 
 describe("demo truth boundaries", () => {
   it("requires an explicit exact case whenever signed variants exist", () => {
@@ -87,6 +108,41 @@ describe("demo truth boundaries", () => {
         "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
       fakeClass: "synthetic-fixture",
     });
+  });
+
+  it("classifies incomplete signed approval bindings as an Authority stop", () => {
+    const journey = getJourney(
+      "safe-proceed",
+      "firm-a",
+      "initial",
+      "GC-01-firm-a-happy-path",
+    );
+
+    expect(journey.stopNote).toMatch(
+      /^This journey stopped at Authority: Missing signed approval actor identity, role, and requester bindings\./,
+    );
+    expect(journey.record.stopNote).toBe(journey.stopNote);
+  });
+
+  it("preserves approval chronology without signed actor bindings", () => {
+    const scenario = bindExactSourceCase(
+      scenarioById("safe-proceed"),
+      "firm-a",
+      "GC-01-firm-a-happy-path",
+    );
+    const firm = firmById("firm-a");
+    const approvals = getJourney(
+      scenario.id,
+      firm.id,
+      "initial",
+      "GC-01-firm-a-happy-path",
+    ).record.lifecycle.filter(({ type }) => type === "ApprovalRecorded");
+    const timeline = timelineFor(scenario, firm);
+
+    expect(approvals.map(({ timestampIso }) => timestampIso)).toEqual([
+      timeline.approvalOneAt,
+      timeline.approvalTwoAt,
+    ]);
   });
 
   it("treats a signed evidence summary change as a comparison difference", () => {
@@ -365,6 +421,30 @@ describe("demo truth boundaries", () => {
       executionEligibilityProof(scenario, firm, ineligibleRole, "initial"),
     ).toBe(false);
 
+    const lastApprovalIndex = bound.ledgerEvents.reduce(
+      (last, { type }, index) => type === "ApprovalRecorded" ? index : last,
+      -1,
+    );
+    const expired = {
+      ...bound,
+      ledgerEvents: [
+        ...bound.ledgerEvents.slice(0, lastApprovalIndex + 1),
+        {
+          type: "ApprovalStageExpired",
+          note: "The approved stage later expired.",
+          stageId: "ops-dual-approval",
+          lifecyclePass: "initial" as const,
+          actorId: null,
+          roleId: null,
+          requesterId: null,
+        },
+        ...bound.ledgerEvents.slice(lastApprovalIndex + 1),
+      ],
+    };
+    expect(
+      executionEligibilityProof(scenario, firm, expired, "initial"),
+    ).toBe(false);
+
     const executionIndex = bound.ledgerEvents.findIndex(
       ({ type }) => type === "ExecutionStarted",
     );
@@ -484,6 +564,12 @@ describe("demo truth boundaries", () => {
       executionEligible: false,
       executionPlan: null,
     });
+    expect(rerun.explanations).toContainEqual({
+      code: "activated-reserve-insufficient-liquidity",
+      summary: expect.stringContaining(
+        "activated twelve-month reserve leaves 6400000 minor units of headroom for a 7500000 minor-unit request",
+      ),
+    });
 
     const policyApproval: DemoPolicyApprovalEventVM = {
       eventId: "policy-event-gc10",
@@ -551,10 +637,60 @@ describe("demo truth boundaries", () => {
     );
     expect(proceedBinding.bundleHash).toBe(blockedBinding.bundleHash);
     expect(proceedBinding.decisionHash).not.toBe(blockedBinding.decisionHash);
+    const staleExplanationBinding = policyRerunDecisionBindingFor(
+      scenario,
+      firm,
+      "initial",
+      {
+        ...binding,
+        rerun: {
+          ...rerun,
+          explanations: sourceCaseFor(scenario, firm.id)!.explanations,
+        },
+      },
+    );
+    expect(staleExplanationBinding.bundleHash).toBe(blockedBinding.bundleHash);
+    expect(staleExplanationBinding.decisionHash).not.toBe(
+      blockedBinding.decisionHash,
+    );
     expect(record.decisionBindings.at(-1)).toMatchObject({
       kind: "derived",
       ...blockedBinding,
     });
+  });
+
+  it("retains policy approval authority independently per tenant", () => {
+    const request = {
+      scenarioId: "competing-liquidity",
+      firmId: "firm-a",
+      sourceCaseId: "GC-10-simultaneous-distributions-first",
+      pass: "initial" as const,
+    };
+    const runId = Date.now().toString(36);
+    const tenantA = `retention-a-${runId}`;
+    const tenantB = `retention-b-${runId}`;
+    const retained = unwrap(
+      recordDemoPolicyApproval(policyApprovalGrant(tenantA), request),
+    );
+    const firstEvicted = unwrap(
+      recordDemoPolicyApproval(policyApprovalGrant(tenantB), request),
+    );
+    let newest = firstEvicted;
+    for (let index = 0; index < 256; index += 1) {
+      newest = unwrap(
+        recordDemoPolicyApproval(policyApprovalGrant(tenantB), request),
+      );
+    }
+
+    expect(
+      demoPolicyApprovalEventFor(retained.eventId, tenantA, request),
+    ).toEqual(retained);
+    expect(
+      demoPolicyApprovalEventFor(firstEvicted.eventId, tenantB, request),
+    ).toBeNull();
+    expect(
+      demoPolicyApprovalEventFor(newest.eventId, tenantB, request),
+    ).toEqual(newest);
   });
 
   it("compares every signed evidence row and assigns real audit positions", () => {

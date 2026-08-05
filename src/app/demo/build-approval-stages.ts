@@ -17,6 +17,12 @@ import {
 export const SIGNED_APPROVAL_BINDINGS_WITHHELD =
   "Missing signed approval actor identity, role, and requester bindings. Execution is withheld pending captain-signed approval evidence.";
 
+function approvalAuthorityExpired(
+  events: readonly SignedLedgerEventData[],
+): boolean {
+  return events.some((event) => event.type === "ApprovalStageExpired");
+}
+
 function eventBindingComplete(
   stage: SignedAuthorityStageData,
   event: SignedLedgerEventData,
@@ -33,6 +39,7 @@ export function signedApprovalStageSatisfied(
   events: readonly SignedLedgerEventData[],
   pass: JourneyPass,
 ): boolean {
+  if (approvalAuthorityExpired(events)) return false;
   const approvals = events.filter(
     (event) =>
       event.type === "ApprovalRecorded" &&
@@ -56,6 +63,7 @@ export function signedApprovalPlanSatisfied(
   sourceCase: SignedCaseVariant,
   pass: JourneyPass,
 ): boolean {
+  if (approvalAuthorityExpired(sourceCase.ledgerEvents)) return false;
   if (sourceCase.authority.stages.length === 0) {
     return sourceCase.authority.mode === "automatic";
   }
@@ -80,6 +88,7 @@ export function approvalPlanSatisfied(
   for (const stage of stages) {
     if (
       stage.order <= previousOrder ||
+      stage.expired === true ||
       !stage.satisfied ||
       !Number.isSafeInteger(stage.approvalsRequired) ||
       stage.approvalsRequired <= 0

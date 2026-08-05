@@ -486,6 +486,13 @@ function rawApprovalProof(
   source: Record<string, unknown>,
   pass: "initial" | "revalidated",
 ): boolean {
+  if (
+    rawRows(source, "expectedLedgerEvents").some(
+      (event) => event.type === "ApprovalStageExpired",
+    )
+  ) {
+    return false;
+  }
   const authority = isObj(source.expectedAuthority) ? source.expectedAuthority : null;
   const stages = authority && Array.isArray(authority.stages)
     ? authority.stages.filter(isObj)
@@ -2328,6 +2335,18 @@ function validateSourceTimelines(
         );
       }
     }
+    const approvalInstants = timeline.events
+      .filter(({ kind }) => kind === "ApprovalRecorded")
+      .map(({ instant }) => Date.parse(instant));
+    if (
+      approvalInstants.some(
+        (instant, index) => index > 0 && instant <= approvalInstants[index - 1]!,
+      )
+    ) {
+      problems.push(
+        `${sourceId}: approval chronology collapsed; each signed approval event must retain a later visible instant independent of actor bindings`,
+      );
+    }
     let previous = Number.NEGATIVE_INFINITY;
     for (const [index, event] of timeline.events.entries()) {
       const instant = new Date(event.instant).getTime();
@@ -3040,12 +3059,13 @@ export function validateGoldenDemoSemantics(
       signedStages.length > 0 &&
       !rawApprovalProof(source, executionPass) &&
       !strongerWithheldReason &&
-      !guard.stopNote?.includes(
-        "Missing signed approval actor identity, role, and requester bindings. Execution is withheld pending captain-signed approval evidence.",
-      )
+      (!guard.stopNote?.startsWith("This journey stopped at Authority:") ||
+        !guard.stopNote.includes(
+          "Missing signed approval actor identity, role, and requester bindings. Execution is withheld pending captain-signed approval evidence.",
+        ))
     ) {
       problems.push(
-        `${guard.sourceCaseId}: missing structured signed approval bindings must name the actor, role, and requester gap and withhold execution pending captain-signed evidence`,
+        `${guard.sourceCaseId}: missing structured signed approval bindings must stop at Authority, name the actor, role, and requester gap, and withhold execution pending captain-signed evidence`,
       );
     }
     if (

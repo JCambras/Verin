@@ -34,12 +34,23 @@ interface StoredDemoPolicyApproval extends DemoPolicyApprovalEventVM {
 }
 
 const approvalStore = globalThis as typeof globalThis & {
-  __verinDemoPolicyApprovals?: Map<string, StoredDemoPolicyApproval>;
+  __verinDemoPolicyApprovalsByTenant?: Map<
+    string,
+    Map<string, StoredDemoPolicyApproval>
+  >;
 };
 
-function store(): Map<string, StoredDemoPolicyApproval> {
-  approvalStore.__verinDemoPolicyApprovals ??= new Map();
-  return approvalStore.__verinDemoPolicyApprovals;
+function stores(): Map<string, Map<string, StoredDemoPolicyApproval>> {
+  approvalStore.__verinDemoPolicyApprovalsByTenant ??= new Map();
+  return approvalStore.__verinDemoPolicyApprovalsByTenant;
+}
+
+function tenantStore(orgId: string): Map<string, StoredDemoPolicyApproval> {
+  const existing = stores().get(orgId);
+  if (existing) return existing;
+  const created = new Map<string, StoredDemoPolicyApproval>();
+  stores().set(orgId, created);
+  return created;
 }
 
 function policyHash(
@@ -129,7 +140,7 @@ export function recordDemoPolicyApproval(
     sourceCaseId,
     pass: request.pass,
   });
-  const events = store();
+  const events = tenantStore(grant.tenant.orgId);
   const oldest = events.size >= 256 ? events.keys().next().value : undefined;
   if (oldest) events.delete(oldest);
   events.set(event.eventId, event);
@@ -141,7 +152,7 @@ export function demoPolicyApprovalEventFor(
   tenantOrgId: string,
   context: DemoPolicyApprovalRequest,
 ): DemoPolicyApprovalEventVM | null {
-  const event = store().get(eventId);
+  const event = stores().get(tenantOrgId)?.get(eventId);
   return event &&
     event.tenantOrgId === tenantOrgId &&
     event.scenarioId === context.scenarioId &&

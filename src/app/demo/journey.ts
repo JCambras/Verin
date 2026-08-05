@@ -71,12 +71,22 @@ function stopNoteOf(
   if (sourceCase?.authorityGap?.execution === "withheld") {
     return `This journey stopped at Safety: ${sourceCase.authorityGap.reason}`;
   }
+  const firm = firmById(firmId);
+  const approvals = buildApprovals(scenario, firm, pass);
+  if (
+    sourceCase &&
+    sourceCase.authority.stages.length > 0 &&
+    approvals.mode === "staged" &&
+    !approvals.satisfied
+  ) {
+    return `This journey stopped at Authority: ${executionReachFor(scenario, firm, pass).reason}`;
+  }
   if (liquidityAuthorityFor(scenario, firmId).kind === "missing") {
     return "This journey stopped at Safety: exact signed liquidity authority is unavailable for this scenario and firm.";
   }
   const executionReach = executionReachFor(
     scenario,
-    firmById(firmId),
+    firm,
     pass,
   );
   if (!executionReach.reached) {

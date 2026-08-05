@@ -40,6 +40,11 @@ interface DemoPolicyRerunExecutionPlanVM {
   readonly policyVersion: string;
 }
 
+export interface DemoPolicyRerunExplanationVM {
+  readonly code: string;
+  readonly summary: string;
+}
+
 export interface DemoPolicyRerunResultVM {
   readonly disposition: DispositionKind;
   readonly reserveFloorMinor: number;
@@ -47,6 +52,7 @@ export interface DemoPolicyRerunResultVM {
   readonly executionEligible: boolean;
   readonly executionReason: string;
   readonly executionPlan: DemoPolicyRerunExecutionPlanVM | null;
+  readonly explanations: readonly DemoPolicyRerunExplanationVM[];
 }
 
 export interface DemoPolicyApprovalEventVM {

@@ -6243,3 +6243,31 @@ unknown proof. Each mutation keeps downstream state unavailable or produces a so
 re-signed.
 
 **Date:** 2026-08-05 (D-125).
+
+## F127 · terminal approval authority and exact derived records
+
+**Fences:** `src/__tests__/unit/demo-truth-boundaries.test.ts`,
+`src/__tests__/fitness/golden-cases.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** expired approval authority cannot execute, missing structured approval bindings stop at
+Authority, activated decisions hash their derived explanations, tenant retention cannot cross-evict,
+and approval chronology does not depend on actor identity.
+
+Before the product correction, seven new companions failed. A complete signed quorum followed by
+`ApprovalStageExpired` still passed product and raw execution proof. GC-01's stop note named Safety,
+its two actor-unbound approvals shared one instant, its activated rerun had no derived explanation
+nodes, and 257 approvals from another tenant evicted its retained approval event. The independent
+semantic validator also accepted an expired-after-approval fixture and collapsed approval instants.
+
+The companions now inject each violation separately. Expiry makes both approval proofs false. A stop
+note relabeled Safety produces an Authority-stage diagnostic. Equal approval instants produce an
+approval-chronology diagnostic. Replacing only the rerun explanations with the source case's signed
+nodes preserves the bundle hash but changes the decision hash. Filling one tenant's 256-event quota
+evicts that tenant's oldest event while preserving another tenant's event.
+
+Verification completed with 88 targeted unit and fitness tests, 1,297 full non-UTC tests, 29
+production-build browser tests with accessibility scans, typecheck, lint, golden validation, v3
+invariant reporting, and knip. No signed fixture was edited or re-signed.
+
+**Revert:** every adversarial violation remains isolated inside a companion test.
+
+**Date:** 2026-08-05 (D-126).

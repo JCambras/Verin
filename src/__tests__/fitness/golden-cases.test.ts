@@ -1788,6 +1788,46 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       releasedDemo,
     );
 
+    const authorityExpired = clone();
+    bindApprovalActors(
+      caseById(authorityExpired, "GC-01-firm-a-happy-path"),
+    );
+    const authorityExpiredEvents = caseById(
+      authorityExpired,
+      "GC-01-firm-a-happy-path",
+    ).expectedLedgerEvents as Array<Record<string, unknown>>;
+    const authorityExpiredApproval = authorityExpiredEvents.reduce(
+      (last, event, index) =>
+        event.type === "ApprovalRecorded" ? index : last,
+      -1,
+    );
+    authorityExpiredEvents.splice(authorityExpiredApproval + 1, 0, {
+      type: "ApprovalStageExpired",
+      stageId: "ops-dual-approval",
+      lifecyclePass: "initial",
+      note: "The completed approval stage later expired.",
+    });
+    const authorityExpiredDemo = demoClone();
+    exposeGuard(authorityExpiredDemo, "GC-01-firm-a-happy-path");
+    expectProofFailure(
+      authorityExpired,
+      "GC-01-firm-a-happy-path",
+      authorityExpiredDemo,
+    );
+
+    const wrongStopStage = demoClone();
+    wrongStopStage.executionGuards.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-01-firm-a-happy-path",
+    )!.stopNote =
+      "This journey stopped at Safety: Missing signed approval actor identity, role, and requester bindings. Execution is withheld pending captain-signed approval evidence.";
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, wrongStopStage).some(
+        (problem) =>
+          problem.includes("GC-01-firm-a-happy-path") &&
+          problem.includes("must stop at Authority"),
+      ),
+    ).toBe(true);
+
     const expiredDemo = demoClone();
     const expiredGuard = expiredDemo.executionGuards.find(
       ({ sourceCaseId }) => sourceCaseId === "GC-02-firm-b-happy-path",
@@ -1952,6 +1992,22 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(
       validateGoldenDemoSemantics(clone(), realRefs, approvalAfterRevalidation)
         .some((problem) => problem.includes("unsorted production timeline")),
+    ).toBe(true);
+
+    const collapsedApprovals = demoClone();
+    const collapsedTimeline = collapsedApprovals.sourceTimelines.find(
+      ({ sourceCaseId }) => sourceCaseId === "GC-01-firm-a-happy-path",
+    )!;
+    const visibleApprovals = collapsedTimeline.events.filter(
+      ({ kind }) => kind === "ApprovalRecorded",
+    );
+    visibleApprovals[1]!.instant = visibleApprovals[0]!.instant;
+    expect(
+      validateGoldenDemoSemantics(clone(), realRefs, collapsedApprovals).some(
+        (problem) =>
+          problem.includes("GC-01-firm-a-happy-path") &&
+          problem.includes("approval chronology collapsed"),
+      ),
     ).toBe(true);
 
     const plantedInversion = demoClone();

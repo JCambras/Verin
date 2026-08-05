@@ -63,12 +63,41 @@ export function evaluatePolicyRerun(
         : executionEligible
           ? "The activated reserve rule permits a candidate execution plan; new authority and safety checks remain required before execution."
           : sourceCase.executionEligibility.reason;
+  const horizon = reserveMonths === 12
+    ? "twelve-month"
+    : `${reserveMonths}-month`;
+  const explanations = [
+    {
+      code: "activated-reserve-evaluation",
+      summary: `Activated policy ${policyVersion} applies a ${horizon} reserve floor of ${floor} minor units and derives ${headroom} minor units of headroom.`,
+    },
+    disposition === "blocked" && currentDisposition === "proceed"
+      ? {
+          code: "activated-reserve-insufficient-liquidity",
+          summary: `The activated ${horizon} reserve leaves ${headroom} minor units of headroom for a ${request.amountMinor} minor-unit request, so the derived decision is blocked.`,
+        }
+      : currentDisposition !== "proceed"
+        ? {
+            code: "activated-policy-disposition-preserved",
+            summary: `Activated policy ${policyVersion} does not supersede the signed ${currentDisposition} disposition, so the derived decision remains ${disposition}.`,
+          }
+        : executionEligible
+          ? {
+              code: "activated-reserve-candidate-plan",
+              summary: `The activated ${horizon} reserve covers the ${request.amountMinor} minor-unit request, so the derived decision permits a candidate execution plan subject to new authority and safety checks.`,
+            }
+          : {
+              code: "activated-reserve-execution-withheld",
+              summary: `The activated ${horizon} reserve covers the request, but the derived decision keeps execution withheld: ${executionReason}`,
+            },
+  ];
   return {
     disposition,
     reserveFloorMinor: floor,
     headroomMinor: headroom,
     executionEligible,
     executionReason,
+    explanations,
     executionPlan: executionEligible
       ? {
           action: "money-movement",

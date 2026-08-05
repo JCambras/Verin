@@ -3878,3 +3878,25 @@ while manufacturing approval participants from event counts turns an unsigned qu
 authority.
 **Revert path:** none without captain-signed structured approval bindings and an activated-policy
 evaluator that preserves the same exact result and hash boundaries.
+
+### D-126 · 2026-08-05 · captain-decision · Approval authority remains terminal, scoped, and chronological
+
+`ApprovalStageExpired` is terminal even when complete approvals precede it. Product approval proof
+and the independent raw-fixture validator reject the expired plan. Missing signed actor, role, or
+requester bindings stop the journey at Authority, before Safety. GC-03 retains its stronger signed
+post-review bank-evidence gap without changing its signed fixture.
+
+Activated-policy explanations are derived from the activated reserve, resulting disposition,
+execution eligibility, and candidate plan. The derived decision hash binds those explanations rather
+than the original signed decision's historical explanation nodes. Approval-event retention is capped
+per tenant so one tenant cannot evict another tenant's record authority.
+
+Printable approval chronology comes from the signed stage plan and the case timeline, independently
+of whether the signed events name their actors. Missing actor identity therefore withholds authority
+without collapsing distinct `ApprovalRecorded` instants.
+
+**Why:** approval counts do not survive terminal expiry, a Safety stop cannot describe authority that
+never completed, stale explanations contradict a derived decision, global retention crosses tenant
+ownership, and absent identity must not erase signed chronology.
+**Revert path:** none without preserving the same terminal, tenant-scoped, hash-bound, and
+chronological authority semantics.

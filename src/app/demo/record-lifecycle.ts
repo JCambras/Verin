@@ -1,7 +1,10 @@
 import type { RecordVM } from "./record-model";
-import { buildApprovals } from "./build-decision";
 import { executionReachFor } from "./execution-reach";
-import { formatDemoInstant, timelineFor } from "./timeline";
+import {
+  formatDemoInstant,
+  timelineFor,
+  type DemoTimeline,
+} from "./timeline";
 import {
   hasSignedInvalidationAuthority,
   sourceCaseFor,
@@ -9,6 +12,36 @@ import {
   type JourneyPass,
   type ScenarioData,
 } from "./data";
+import type { SignedCaseVariant } from "./signed-case-types";
+
+function approvalInstantsFor(
+  sourceCase: SignedCaseVariant,
+  timeline: DemoTimeline,
+  pass: JourneyPass,
+): readonly string[] {
+  const ordinary = pass === "revalidated"
+    ? [timeline.freshApprovalOneAt, timeline.freshApprovalTwoAt]
+    : [timeline.approvalOneAt, timeline.approvalTwoAt];
+  let ordinaryIndex = 0;
+  return [...sourceCase.authority.stages]
+    .sort((left, right) => left.order - right.order)
+    .flatMap((stage) =>
+      Array.from({ length: stage.approvalsRequired }, () => {
+        if (stage.stageId === "bank-change-specialist-review") {
+          if (stage.approvalsRequired !== 1) {
+            throw new TypeError("Specialist approval chronology requires one approval.");
+          }
+          return timeline.specialistReviewedAt;
+        }
+        const instant = ordinary[ordinaryIndex];
+        ordinaryIndex += 1;
+        if (!instant) {
+          throw new TypeError("Approval chronology exceeds the demo timeline contract.");
+        }
+        return instant;
+      }),
+    );
+}
 
 function withoutDownstreamExecution(
   lifecycle: RecordVM["lifecycle"],
@@ -66,12 +99,7 @@ export function signedLifecycle(
       ? lifecycle
       : lifecycle.slice(0, invalidatedAt + 1);
   }
-  const approvalInstants = buildApprovals(scenario, firm).stages.flatMap(
-    (stage) =>
-      stage.actors.flatMap((actor) =>
-        actor.timestampIso ? [actor.timestampIso] : [],
-      ),
-  );
+  const approvalInstants = approvalInstantsFor(sourceCase, timeline, pass);
   let evidenceIndex = 0;
   let approvalIndex = 0;
   let statusIndex = 0;
@@ -86,8 +114,11 @@ export function signedLifecycle(
     }
     if (type === "DecisionRecorded") return timeline.decisionAt;
     if (type === "ApprovalRecorded") {
-      const instant = approvalInstants[approvalIndex] ?? timeline.approvalOneAt;
+      const instant = approvalInstants[approvalIndex];
       approvalIndex += 1;
+      if (!instant) {
+        throw new TypeError("Signed approval event exceeds the authority plan.");
+      }
       return instant;
     }
     if (type === "ApprovalStageEscalated") return timeline.escalatedAt;
