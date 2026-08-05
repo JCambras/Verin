@@ -95,6 +95,52 @@ export function duplicateReviewProofIds(text: string): string[] {
   return duplicates;
 }
 
+export function duplicateDecisionIds(text: string): string[] {
+  const firstLine = new Map<string, number>();
+  const duplicates: string[] = [];
+  for (const match of text.matchAll(/^#{2,3}\s+D-(\d{3})\b/gm)) {
+    const id = match[1]!;
+    const line = text.slice(0, match.index).split("\n").length;
+    const first = firstLine.get(id);
+    if (first === undefined) {
+      firstLine.set(id, line);
+    } else {
+      duplicates.push(
+        `DECISIONS.md:${line} :: duplicate D-${id} (first declared at line ${first})`,
+      );
+    }
+  }
+  return duplicates;
+}
+
+export function adrIdentifierProblems(
+  files: Array<{ name: string; text: string }>,
+): string[] {
+  const firstFile = new Map<string, string>();
+  const problems: string[] = [];
+  for (const { name, text } of files) {
+    const fileMatch = /^(\d{4})-[a-z0-9-]+\.md$/.exec(name);
+    if (!fileMatch) continue;
+    const id = fileMatch[1]!;
+    if (id === "0000") continue;
+    const first = firstFile.get(id);
+    if (first === undefined) {
+      firstFile.set(id, name);
+    } else {
+      problems.push(
+        `docs/adr/${name}:1 :: duplicate ADR-${id} (first declared by ${first})`,
+      );
+    }
+    const header = /^# ADR-(\d{4}):/.exec(text);
+    if (header?.[1] !== id) {
+      problems.push(
+        `docs/adr/${name}:1 :: filename ADR-${id} does not match header ${header ? `ADR-${header[1]}` : "(missing)"}`,
+      );
+    }
+  }
+  return problems;
+}
+
 describe("charter-drift fence", () => {
   it("(a) every enforced file/config/fitness mechanism exists on disk", () => {
     const missing: string[] = [];
@@ -171,5 +217,43 @@ describe("charter-drift fence", () => {
     expect(injected).toHaveLength(1);
     expect(injected[0]).toContain("duplicate F103");
     expect(injected[0]).toContain("docs/fences/proof-log.md:");
+  });
+
+  it("decision and ADR identifiers are unique and filename-bound", () => {
+    const decisions = readFileSync(p("DECISIONS.md"), "utf8");
+    const adrDir = p("docs/adr");
+    const adrs = readdirSync(adrDir).map((name) => ({
+      name,
+      text: readFileSync(`${adrDir}/${name}`, "utf8"),
+    }));
+    expect(duplicateDecisionIds(decisions)).toEqual([]);
+    expect(adrIdentifierProblems(adrs)).toEqual([]);
+
+    const duplicateDecision = duplicateDecisionIds(
+      `${decisions}\n### D-098 · injected duplicate\n`,
+    );
+    expect(duplicateDecision).toHaveLength(1);
+    expect(duplicateDecision[0]).toContain("duplicate D-098");
+
+    const duplicateAdr = adrIdentifierProblems([
+      ...adrs,
+      {
+        name: "0040-injected-duplicate.md",
+        text: "# ADR-0040: Injected duplicate\n",
+      },
+    ]);
+    expect(duplicateAdr).toHaveLength(1);
+    expect(duplicateAdr[0]).toContain("duplicate ADR-0040");
+
+    const mismatchedAdr = adrIdentifierProblems([
+      {
+        name: "0041-header-mismatch.md",
+        text: "# ADR-0042: Header mismatch\n",
+      },
+    ]);
+    expect(mismatchedAdr).toHaveLength(1);
+    expect(mismatchedAdr[0]).toContain(
+      "filename ADR-0041 does not match header ADR-0042",
+    );
   });
 });

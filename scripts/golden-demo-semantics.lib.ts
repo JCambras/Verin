@@ -13,7 +13,13 @@ import {
   tryHeadroomMinor,
   tryReserveFloorMinor,
 } from "@contracts/money-movement";
-import { readSignedMoney, type LoadedCase, type ScenarioRefs } from "./golden-cases.lib";
+import {
+  DEFAULT_GOLDEN_AUTHORITY_GAPS,
+  readSignedMoney,
+  type GoldenAuthorityGap,
+  type LoadedCase,
+  type ScenarioRefs,
+} from "./golden-cases.lib";
 
 /** A money value the demo holds, beside exactly what the shipped renderer printed. */
 export interface RenderedMoney {
@@ -27,7 +33,7 @@ export interface SignedTriggerProjection {
   requestRef: string;
   maskedRequestSummary: string;
   requestAt: string;
-  requestAmountMinor: number;
+  requestAmountMinor: number | null;
 }
 
 export interface VisibleEvidenceProjection {
@@ -589,8 +595,15 @@ function signedScheduleEvidenceMinor(
 
 function expectedSignedCaseVariant(
   data: Record<string, unknown>,
+  authorityGaps: GoldenAuthorityGap[] = DEFAULT_GOLDEN_AUTHORITY_GAPS,
 ): Record<string, unknown> | null {
   const signed = readSignedMoney(data);
+  const authorityGap = authorityGaps.find(
+    (gap) => gap.caseId === data.caseId,
+  );
+  const structuredMoneyMissing =
+    authorityGap?.missingAuthorities.includes("structured-money") === true &&
+    data.signedMoney === undefined;
   const trigger = isObj(data.trigger) ? data.trigger : null;
   const authority = isObj(data.expectedAuthority)
     ? data.expectedAuthority
@@ -605,7 +618,7 @@ function expectedSignedCaseVariant(
     ? data.policyVersions
     : null;
   if (
-    !signed ||
+    (!signed && !structuredMoneyMissing) ||
     !trigger ||
     !authority ||
     !eligibility ||
@@ -618,7 +631,22 @@ function expectedSignedCaseVariant(
   ) {
     return null;
   }
-  const revalidation = signed.preExecutionRevalidation;
+  const revalidation = signed?.preExecutionRevalidation ?? null;
+  const stages = Array.isArray(authority.stages)
+    ? authority.stages.filter(isObj)
+    : [];
+  const inferredApprovalBindings = stages.flatMap((stage) =>
+    isMoneyQuantity(stage.approvalsRequired)
+      ? Array.from({ length: stage.approvalsRequired }, () => ({
+          stageId: stage.stageId,
+          lifecyclePass: "initial",
+        }))
+      : [],
+  );
+  let inferredApprovalIndex = 0;
+  const verificationDetailMissing =
+    authorityGap?.missingAuthorities.includes("verification-detail") === true &&
+    verification.observedAt === undefined;
   return {
     caseId: data.caseId,
     scenarioId: data.scenarioRef,
@@ -630,20 +658,22 @@ function expectedSignedCaseVariant(
       requestRef: trigger.requestRef,
       maskedRequestSummary: trigger.maskedRequestSummary,
       requestAt: trigger.asOf,
-      requestAmountMinor: minorFromMajor(signed.requestAmountUsd),
+      requestAmountMinor: minorFromMajor(signed?.requestAmountUsd ?? null),
     },
     money: {
-      currency: signed.currency,
-      cadence: signed.cadence,
-      requestAmountMinor: minorFromMajor(signed.requestAmountUsd),
+      currency: signed?.currency ?? null,
+      cadence: signed?.cadence ?? null,
+      requestAmountMinor: minorFromMajor(signed?.requestAmountUsd ?? null),
       plannedWithdrawalMonthlyMinor: minorFromMajor(
-        signed.plannedWithdrawalMonthlyUsd,
+        signed?.plannedWithdrawalMonthlyUsd ?? null,
       ),
-      reserveFloorMinor: minorFromMajor(signed.reserveFloorUsd),
+      reserveFloorMinor: minorFromMajor(signed?.reserveFloorUsd ?? null),
       availableLiquidityMinor: minorFromMajor(
-        signed.availableLiquidityUsd,
+        signed?.availableLiquidityUsd ?? null,
       ),
-      pendingLiquidityMinor: minorFromMajor(signed.pendingLiquidityUsd),
+      pendingLiquidityMinor: minorFromMajor(
+        signed?.pendingLiquidityUsd ?? null,
+      ),
       preExecutionRevalidation: revalidation
         ? {
             availableLiquidityMinor: minorFromMajor(
@@ -708,24 +738,51 @@ function expectedSignedCaseVariant(
       reservations: eligibility.reservations,
       preconditions: eligibility.preconditions,
     },
-    verification: {
-      reached: verification.reached,
-      observedStatus: verification.observedStatus,
-      settledClaim: verification.settledClaim,
-      observedAt: verification.observedAt,
-      currentReason: verification.currentReason,
-      custodianReason: verification.custodianReason,
-      proves: verification.proves,
-      notProvenYet: verification.notProvenYet,
-      polling: verification.polling,
-      exception: verification.exception,
-      note: verification.note,
-    },
+    verification: verificationDetailMissing
+      ? {
+          reached: verification.reached,
+          observedStatus: verification.observedStatus,
+          settledClaim: verification.settledClaim,
+          observedAt: null,
+          currentReason: null,
+          custodianReason: null,
+          proves: [],
+          notProvenYet: [],
+          polling: {
+            state: "unavailable",
+            reason: "awaiting-captain-signature",
+          },
+          exception: null,
+          note: verification.note,
+        }
+      : {
+          reached: verification.reached,
+          observedStatus: verification.observedStatus,
+          settledClaim: verification.settledClaim,
+          observedAt: verification.observedAt,
+          currentReason: verification.currentReason,
+          custodianReason: verification.custodianReason,
+          proves: verification.proves,
+          notProvenYet: verification.notProvenYet,
+          polling: verification.polling,
+          exception: verification.exception,
+          note: verification.note,
+        },
     ledgerEvents: data.expectedLedgerEvents.filter(isObj).map((event) => ({
       type: event.type,
       note: event.note,
-      stageId: event.stageId ?? null,
-      lifecyclePass: event.lifecyclePass ?? null,
+      stageId:
+        event.stageId ??
+        (event.type === "ApprovalRecorded" &&
+        authorityGap?.missingAuthorities.includes("approval-event-bindings")
+          ? inferredApprovalBindings[inferredApprovalIndex]?.stageId
+          : null),
+      lifecyclePass:
+        event.lifecyclePass ??
+        (event.type === "ApprovalRecorded" &&
+        authorityGap?.missingAuthorities.includes("approval-event-bindings")
+          ? inferredApprovalBindings[inferredApprovalIndex++]?.lifecyclePass
+          : null),
     })),
     explanations: data.expectedExplanationNodes
       .filter(isObj)
@@ -733,12 +790,23 @@ function expectedSignedCaseVariant(
         code: explanation.code,
         summary: explanation.summary,
       })),
+    authorityGap: authorityGap
+      ? {
+          signedAt: authorityGap.signedAt,
+          requiredSince: authorityGap.requiredSince,
+          status: authorityGap.status,
+          execution: authorityGap.execution,
+          reason: authorityGap.reason,
+          missingAuthorities: authorityGap.missingAuthorities,
+        }
+      : null,
   };
 }
 
 function validateSignedCaseVariants(
   cases: LoadedCase[],
   demo: DemoSemanticSnapshot,
+  authorityGaps: GoldenAuthorityGap[],
 ): string[] {
   const problems: string[] = [];
   const variants = demo.signedCaseVariants.filter(isObj);
@@ -754,7 +822,7 @@ function validateSignedCaseVariants(
   for (const { data } of signedCases) {
     if (!isObj(data) || !isNonEmptyString(data.caseId)) continue;
     const actual = variants.find((variant) => variant.caseId === data.caseId);
-    const expected = expectedSignedCaseVariant(data);
+    const expected = expectedSignedCaseVariant(data, authorityGaps);
     if (
       !actual ||
       !expected ||
@@ -783,11 +851,14 @@ export function deriveIndependentDemoBinding(
   demo: DemoSemanticSnapshot,
   record: RecordIdentity,
   pass: "initial" | "revalidated",
+  authorityGaps: GoldenAuthorityGap[] = DEFAULT_GOLDEN_AUTHORITY_GAPS,
 ): { decisionHash: string; bundleHash: string } | null {
   const raw = record.routeSourceCaseId
     ? caseData(cases, record.routeSourceCaseId)
     : undefined;
-  const sourceCase = raw ? expectedSignedCaseVariant(raw) : null;
+  const sourceCase = raw
+    ? expectedSignedCaseVariant(raw, authorityGaps)
+    : null;
   if (raw && !sourceCase) return null;
   const firm = demo.firms.find(
     (candidate) => candidate.id === record.routeFirmId,
@@ -994,7 +1065,11 @@ export function validateStatusVocabularyDocs(docs: { path: string; text: string 
  * headroom that does not cover the canonical request. That last one is the whole
  * point - a proceed the demo's own figures contradict is the defect this catches.
  */
-function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnapshot): string[] {
+function validateDisplayedDecisions(
+  cases: LoadedCase[],
+  demo: DemoSemanticSnapshot,
+  authorityGaps: GoldenAuthorityGap[],
+): string[] {
   const problems: string[] = [];
   if (demo.decisions.length === 0) return ["the demo renders no decision to fence"];
   const canonicalInstant = Date.parse(demo.canonicalRequestAt);
@@ -1112,7 +1187,13 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     boundSourceIds.add(d.sourceCaseId);
     const source = caseData(cases, d.sourceCaseId);
     const signed = source ? readSignedMoney(source) : null;
-    if (!signed) {
+    const authorityGap = authorityGaps.find(
+      (gap) => gap.caseId === d.sourceCaseId,
+    );
+    const structuredMoneyGap =
+      authorityGap?.missingAuthorities.includes("structured-money") ===
+      true;
+    if (!source || (!signed && !structuredMoneyGap)) {
       problems.push(`${at}: names signed case "${d.sourceCaseId}", which is missing or states no signedMoney`);
       continue;
     }
@@ -1128,9 +1209,11 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       );
     }
     const trigger = isObj(source?.trigger) ? source.trigger : null;
-    const sourceRequestMinor = minorFromMajor(signed.requestAmountUsd);
+    const sourceRequestMinor = minorFromMajor(
+      signed?.requestAmountUsd ?? null,
+    );
     const expectedTrigger =
-      trigger && sourceRequestMinor !== null
+      trigger && (sourceRequestMinor !== null || structuredMoneyGap)
         ? {
             description: trigger.description,
             requesterRole: trigger.requesterRole,
@@ -1161,11 +1244,14 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
       );
     }
     if (
-      !candidates.some(
-        ({ id, requestAmountMinor }) =>
-          id === d.sourceCaseId &&
-          requestAmountMinor === d.signedTrigger?.requestAmountMinor,
-      )
+      structuredMoneyGap
+        ? d.signedTrigger?.requestAmountMinor !== null
+        : !candidates.some(
+            ({ id, requestAmountMinor }) =>
+              id === d.sourceCaseId &&
+              requestAmountMinor ===
+                d.signedTrigger?.requestAmountMinor,
+          )
     ) {
       problems.push(
         `${at}: source case "${d.sourceCaseId}" is not a signed exact match for branch, firm, disposition, request, currency, cadence, and reserve policy`,
@@ -1424,8 +1510,12 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
         `${at}: missing planned-withdrawal evidence must leave reserve and policy simulation unavailable`,
       );
     }
-    const availableMinor = minorFromMajor(signed.availableLiquidityUsd);
-    const pendingMinor = minorFromMajor(signed.pendingLiquidityUsd);
+    const availableMinor = minorFromMajor(
+      signed?.availableLiquidityUsd ?? null,
+    );
+    const pendingMinor = minorFromMajor(
+      signed?.pendingLiquidityUsd ?? null,
+    );
     if (d.decisionRole === "primary") {
       const exactSimulationAvailable =
         expectedPlannedMonthly !== null &&
@@ -1465,8 +1555,12 @@ function validateDisplayedDecisions(cases: LoadedCase[], demo: DemoSemanticSnaps
     if (d.pendingActivityMinor !== pendingMinor) {
       problems.push(`${at}: pending-activity drift, ${d.sourceCaseId}=${pendingMinor}, demo=${d.pendingActivityMinor}`);
     }
-    const revalidationAvailableMinor = minorFromMajor(signed.preExecutionRevalidation?.availableLiquidityUsd ?? null);
-    const revalidationPendingMinor = minorFromMajor(signed.preExecutionRevalidation?.pendingLiquidityUsd ?? null);
+    const revalidationAvailableMinor = minorFromMajor(
+      signed?.preExecutionRevalidation?.availableLiquidityUsd ?? null,
+    );
+    const revalidationPendingMinor = minorFromMajor(
+      signed?.preExecutionRevalidation?.pendingLiquidityUsd ?? null,
+    );
     if (
       d.revalidationAvailableCashMinor !== revalidationAvailableMinor ||
       d.revalidationPendingActivityMinor !== revalidationPendingMinor
@@ -1591,6 +1685,7 @@ function localTimelineKey(instant: string, timeZone: string): string | null {
 function validateSourceTimelines(
   cases: LoadedCase[],
   demo: DemoSemanticSnapshot,
+  authorityGaps: GoldenAuthorityGap[],
 ): string[] {
   const problems: string[] = [];
   const sourceIds = new Set(
@@ -1612,6 +1707,10 @@ function validateSourceTimelines(
     );
     const source = caseData(cases, sourceId);
     const trigger = isObj(source?.trigger) ? source.trigger : null;
+    const permitsSignedOffset =
+      authorityGaps
+        .find((gap) => gap.caseId === sourceId)
+        ?.missingAuthorities.includes("canonical-utc-instants") === true;
     if (!timeline) {
       problems.push(`${sourceId}: source-bound demo decision has no visible timeline`);
       continue;
@@ -1817,10 +1916,16 @@ function validateSourceTimelines(
         !Number.isFinite(instant) ||
         new Date(instant).toISOString() !== event.instant
       ) {
-        problems.push(
-          `${sourceId}: visible timeline event ${event.kind} has a non-canonical instant ${event.instant}`,
-        );
-        continue;
+        if (
+          !permitsSignedOffset ||
+          event.kind !== "request" ||
+          event.instant !== timeline.requestAt
+        ) {
+          problems.push(
+            `${sourceId}: visible timeline event ${event.kind} has a non-canonical instant ${event.instant}`,
+          );
+          continue;
+        }
       }
       if (instant < new Date(timeline.requestAt).getTime()) {
         problems.push(
@@ -1864,6 +1969,7 @@ function validateSourceTimelines(
 function validateRecordIdentities(
   cases: LoadedCase[],
   demo: DemoSemanticSnapshot,
+  authorityGaps: GoldenAuthorityGap[],
 ): string[] {
   const problems: string[] = [];
   const decisionIds = new Set<string>();
@@ -1946,6 +2052,7 @@ function validateRecordIdentities(
         demo,
         record,
         bindingPass,
+        authorityGaps,
       );
       if (!expected) {
         problems.push(
@@ -2115,6 +2222,7 @@ export function validateGoldenDemoSemantics(
   cases: LoadedCase[],
   refs: ScenarioRefs,
   demo: DemoSemanticSnapshot,
+  authorityGaps: GoldenAuthorityGap[] = DEFAULT_GOLDEN_AUTHORITY_GAPS,
 ): string[] {
   const problems: string[] = [];
   const canonicalCases = [
@@ -2138,10 +2246,12 @@ export function validateGoldenDemoSemantics(
     }
   }
 
-  problems.push(...validateDisplayedDecisions(cases, demo));
-  problems.push(...validateSignedCaseVariants(cases, demo));
-  problems.push(...validateSourceTimelines(cases, demo));
-  problems.push(...validateRecordIdentities(cases, demo));
+  problems.push(
+    ...validateDisplayedDecisions(cases, demo, authorityGaps),
+  );
+  problems.push(...validateSignedCaseVariants(cases, demo, authorityGaps));
+  problems.push(...validateSourceTimelines(cases, demo, authorityGaps));
+  problems.push(...validateRecordIdentities(cases, demo, authorityGaps));
   problems.push(...validateFirmPolicyInputs(cases, refs, demo));
 
   for (const [caseId, firmId] of canonicalCases) {

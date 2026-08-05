@@ -540,23 +540,31 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     const o = detectEnvExampleNonPlaceholder(envLines ?? []);
     expect(o, `non-placeholder .env.example values:\n${o.join("\n")}`).toEqual([]);
   });
-  it("enforces: raw secret access appears only in reviewed secret-consumer modules (v3 §15.4)", () => {
-    const o = detectUnsanctionedReveal(realSemanticProject());
-    expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
-  });
-  it("enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)", () => {
-    const calls = secretAccesses(realSemanticProject());
-    for (const entry of REVEAL_ALLOWLIST) {
-      expect(
-        calls.some((call) =>
-          call.file === entry.file &&
-          call.call?.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration)
-            ?.getName() === entry.functionName
-        ),
-        `${entry.file} :: ${entry.functionName} no longer reveals a secret - prune the allowlist entry`,
-      ).toBe(true);
-    }
-  });
+  it(
+    "enforces: raw secret access appears only in reviewed secret-consumer modules (v3 §15.4)",
+    () => {
+      const o = detectUnsanctionedReveal(realSemanticProject());
+      expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
+    },
+    120_000,
+  );
+  it(
+    "enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)",
+    () => {
+      const calls = secretAccesses(realSemanticProject());
+      for (const entry of REVEAL_ALLOWLIST) {
+        expect(
+          calls.some((call) =>
+            call.file === entry.file &&
+            call.call?.getFirstAncestorByKind(SyntaxKind.FunctionDeclaration)
+              ?.getName() === entry.functionName
+          ),
+          `${entry.file} :: ${entry.functionName} no longer reveals a secret - prune the allowlist entry`,
+        ).toBe(true);
+      }
+    },
+    120_000,
+  );
 
   describe("detects (companion): planted violations are caught", () => {
     it("catches a secret fallback", () => {

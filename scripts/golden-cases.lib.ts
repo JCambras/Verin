@@ -21,6 +21,7 @@
  * incomplete work cannot pass (charter #4: detection is not verification).
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
 import { TimestampSchema } from "@contracts/decision-core/ids";
@@ -38,6 +39,72 @@ export const GOLDEN_DIR = join(REPO_ROOT, "fixtures/golden");
 export const GOLDEN_DOC = join(REPO_ROOT, "docs/golden-cases.md");
 export const SCENARIOS_YAML = join(REPO_ROOT, "config/demo/scenarios.yaml");
 export const V3_CORE_CONTRACTS = join(REPO_ROOT, "docs/v3/verin-core-contracts.ts");
+export const GOLDEN_AUTHORITY_GAPS = join(
+  REPO_ROOT,
+  "config/demo/golden-authority-gaps.json",
+);
+
+export const GOLDEN_AUTHORITY_GAP_TYPES = [
+  "canonical-utc-instants",
+  "evidence-completeness",
+  "structured-money",
+  "approval-event-bindings",
+  "pre-execution-chronology",
+  "verification-detail",
+] as const;
+
+export type GoldenAuthorityGapType =
+  (typeof GOLDEN_AUTHORITY_GAP_TYPES)[number];
+
+const REQUIRED_GOLDEN_AUTHORITY_GAP_REASON =
+  "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.";
+
+export interface GoldenAuthorityGap {
+  caseId: string;
+  fixtureSha256: string;
+  signedAt: string;
+  requiredSince: string;
+  status: string;
+  execution: string;
+  reason: string;
+  missingAuthorities: string[];
+}
+
+export function loadGoldenAuthorityGaps(
+  text = readFileSync(GOLDEN_AUTHORITY_GAPS, "utf8"),
+): GoldenAuthorityGap[] {
+  const parsed = JSON.parse(text) as {
+    version?: unknown;
+    gaps?: unknown;
+  };
+  if (parsed.version !== 1 || !Array.isArray(parsed.gaps)) return [];
+  return parsed.gaps
+    .filter(
+      (gap): gap is Record<string, unknown> =>
+        typeof gap === "object" &&
+        gap !== null &&
+        !Array.isArray(gap),
+    )
+    .map((gap) => ({
+      caseId: typeof gap.caseId === "string" ? gap.caseId : "",
+      fixtureSha256:
+        typeof gap.fixtureSha256 === "string" ? gap.fixtureSha256 : "",
+      signedAt: typeof gap.signedAt === "string" ? gap.signedAt : "",
+      requiredSince:
+        typeof gap.requiredSince === "string" ? gap.requiredSince : "",
+      status: typeof gap.status === "string" ? gap.status : "",
+      execution: typeof gap.execution === "string" ? gap.execution : "",
+      reason: typeof gap.reason === "string" ? gap.reason : "",
+      missingAuthorities: Array.isArray(gap.missingAuthorities)
+        ? gap.missingAuthorities.filter(
+            (entry): entry is string => typeof entry === "string",
+          )
+        : [],
+    }));
+}
+
+export const DEFAULT_GOLDEN_AUTHORITY_GAPS =
+  loadGoldenAuthorityGaps();
 
 /** The normative documents that state the execution-status vocabulary. All three
  * must state the SAME planes as `@contracts/execution-status`, or the status half
@@ -76,12 +143,12 @@ export const V3_LEDGER_ENTRY_TYPES = [
   "ExceptionDecisionRequested",
 ] as const;
 
-/** The two authority-lapse events D-061 signed into GC-16 that the v3 union does
- * NOT yet carry. The extension is authorized by ADR-0030; prompt 7 adds both to the
+/** The two authority-lapse events D-098 signed into GC-16 that the v3 union does
+ * NOT yet carry. The extension is authorized by ADR-0040; prompt 7 adds both to the
  * canonical union when it lands the ledger, and this list empties back out. */
 export const AUTHORITY_LAPSE_EVENT_TYPES = ["ApprovalStageEscalated", "ApprovalStageExpired"] as const;
 
-/** What a signed golden case may name: the v3 union plus the ADR-0030 extension. */
+/** What a signed golden case may name: the v3 union plus the ADR-0040 extension. */
 export const LEDGER_EVENT_TYPES = [...V3_LEDGER_ENTRY_TYPES, ...AUTHORITY_LAPSE_EVENT_TYPES] as const;
 
 /**
@@ -113,7 +180,7 @@ export function validateLedgerVocabulary(contractsText: string): string[] {
   }
   for (const member of AUTHORITY_LAPSE_EVENT_TYPES) {
     if (ratified.has(member)) {
-      problems.push(`"${member}" is now a ratified v3 LedgerEntry member - collapse it out of the ADR-0030 extension into V3_LEDGER_ENTRY_TYPES`);
+      problems.push(`"${member}" is now a ratified v3 LedgerEntry member - collapse it out of the ADR-0040 extension into V3_LEDGER_ENTRY_TYPES`);
     }
   }
   return problems;
@@ -273,6 +340,7 @@ export function loadScenarioRefs(text = readFileSync(SCENARIOS_YAML, "utf8")): S
 export interface LoadedCase {
   rel: string;
   data: unknown;
+  sourceText?: string;
 }
 
 /** Load every golden-case fixture (*.json under fixtures/golden). */
@@ -281,7 +349,14 @@ export function loadGoldenCases(dir = GOLDEN_DIR): LoadedCase[] {
   return readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
     .sort()
-    .map((f) => ({ rel: `fixtures/golden/${f}`, data: JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown }));
+    .map((f) => {
+      const sourceText = readFileSync(join(dir, f), "utf8");
+      return {
+        rel: `fixtures/golden/${f}`,
+        data: JSON.parse(sourceText) as unknown,
+        sourceText,
+      };
+    });
 }
 
 // ---------- field-presence helpers (a "populated" field is present AND non-empty) ----------
@@ -292,6 +367,142 @@ const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInt
 const isPositiveSafeInt = (v: unknown): v is number =>
   typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 const isNonEmptyArray = (v: unknown): v is unknown[] => Array.isArray(v) && v.length > 0;
+
+function authorityGapCategory(
+  message: string,
+): GoldenAuthorityGapType | null {
+  if (
+    /^(trigger\.asOf|householdEvidence\[\d+\]\.(observedAt|retrievedAt)) must be canonical UTC/.test(
+      message,
+    )
+  ) {
+    return "canonical-utc-instants";
+  }
+  if (message === "evidenceCompleteness must be a non-empty explicit fact matrix") {
+    return "evidence-completeness";
+  }
+  if (message.startsWith("signedMoney must state currency")) {
+    return "structured-money";
+  }
+  if (
+    /^expectedLedgerEvents(?:\[\d+\]\.(stageId|lifecyclePass)| ApprovalRecorded\[\d+\]| approval quorum)/.test(
+      message,
+    )
+  ) {
+    return "approval-event-bindings";
+  }
+  if (message.startsWith("eligible ledger chronology must record")) {
+    return "pre-execution-chronology";
+  }
+  if (
+    message.startsWith("expectedVerificationState.currentReason") ||
+    message.startsWith("expectedVerificationState.proves") ||
+    message.startsWith("expectedVerificationState.notProvenYet") ||
+    message.startsWith("expectedVerificationState.polling") ||
+    message.startsWith("expectedVerificationState.observedAt") ||
+    message.startsWith("submitted verification must")
+  ) {
+    return "verification-detail";
+  }
+  return null;
+}
+
+export function applyGoldenAuthorityGaps(
+  cases: LoadedCase[],
+  rawProblems: string[],
+  gaps: GoldenAuthorityGap[],
+): string[] {
+  const problems = [...rawProblems];
+  const configProblems: string[] = [];
+  const seen = new Set<string>();
+  for (const gap of gaps) {
+    let validGap = true;
+    const at = `config/demo/golden-authority-gaps.json :: ${gap.caseId || "<missing caseId>"}`;
+    if (!gap.caseId || seen.has(gap.caseId)) {
+      configProblems.push(`${at} is missing or duplicated`);
+      continue;
+    }
+    seen.add(gap.caseId);
+    const loaded = cases.find(({ data }) => isObj(data) && data.caseId === gap.caseId);
+    if (!loaded || !isObj(loaded.data)) {
+      configProblems.push(`${at} does not resolve to a loaded golden fixture`);
+      continue;
+    }
+    const signoff = isObj(loaded.data.signoff) ? loaded.data.signoff : null;
+    if (
+      signoff?.status !== "signed" ||
+      signoff.authority !== "captain" ||
+      signoff.signedAt !== gap.signedAt
+    ) {
+      configProblems.push(`${at} does not match its captain signoff at ${gap.signedAt}`);
+      validGap = false;
+    }
+    if (
+      gap.status !== "awaiting-captain-signature" ||
+      gap.execution !== "withheld" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(gap.signedAt) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(gap.requiredSince) ||
+      gap.requiredSince < gap.signedAt ||
+      gap.reason !== REQUIRED_GOLDEN_AUTHORITY_GAP_REASON
+    ) {
+      configProblems.push(`${at} must fail closed with an explicit pending-signature reason`);
+      validGap = false;
+    }
+    if (
+      !/^[0-9a-f]{64}$/.test(gap.fixtureSha256) ||
+      loaded.sourceText === undefined ||
+      createHash("sha256").update(loaded.sourceText).digest("hex") !==
+        gap.fixtureSha256
+    ) {
+      configProblems.push(`${at} fixture bytes drift from the captain-signed SHA-256`);
+      validGap = false;
+    } else if (
+      JSON.stringify(JSON.parse(loaded.sourceText)) !==
+      JSON.stringify(loaded.data)
+    ) {
+      configProblems.push(`${at} loaded data drifts from its signed fixture bytes`);
+      validGap = false;
+    }
+    const declared = new Set(gap.missingAuthorities);
+    if (
+      declared.size === 0 ||
+      declared.size !== gap.missingAuthorities.length ||
+      [...declared].some(
+        (entry) =>
+          !GOLDEN_AUTHORITY_GAP_TYPES.includes(
+            entry as GoldenAuthorityGapType,
+          ),
+      )
+    ) {
+      configProblems.push(`${at} missingAuthorities must be unique, non-empty, and closed`);
+      continue;
+    }
+    const prefix = `${loaded.rel} :: `;
+    const matchingIndexes = problems.flatMap((problem, index) => {
+      if (!problem.startsWith(prefix)) return [];
+      const category = authorityGapCategory(problem.slice(prefix.length));
+      return category && declared.has(category) ? [index] : [];
+    });
+    for (const category of declared) {
+      if (
+        !matchingIndexes.some(
+          (index) =>
+            authorityGapCategory(problems[index]!.slice(prefix.length)) ===
+            category,
+        )
+      ) {
+        configProblems.push(`${at} declares stale authority gap ${category}`);
+        validGap = false;
+      }
+    }
+    if (validGap) {
+      for (const index of matchingIndexes.sort((a, b) => b - a)) {
+        problems.splice(index, 1);
+      }
+    }
+  }
+  return [...problems, ...configProblems];
+}
 
 function validateExecutableLedgerOrder(
   events: unknown[],
@@ -715,7 +926,12 @@ function validateSignedLiquidity(
  * flat list of human-readable problems (empty = every case is complete, well-typed,
  * vocabulary-aligned, internally consistent, and mirrored in the doc).
  */
-export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, docText: string): string[] {
+export function validateGoldenCases(
+  cases: LoadedCase[],
+  refs: ScenarioRefs,
+  docText: string,
+  authorityGaps: GoldenAuthorityGap[] = DEFAULT_GOLDEN_AUTHORITY_GAPS,
+): string[] {
   const problems: string[] = [];
   const seenIds = new Set<string>();
   const seenSpecNames = new Set<string>();
@@ -1088,7 +1304,7 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
       c.expectedLedgerEvents.forEach((l, i) => {
         const at = `expectedLedgerEvents[${i}]`;
         if (!isObj(l)) return P(`${at} is not an object`);
-        if (!(isNonEmptyString(l.type) && (LEDGER_EVENT_TYPES as readonly string[]).includes(l.type))) P(`${at}.type must be a v3 LedgerEntry type or an ADR-0030 authority-lapse event (${AUTHORITY_LAPSE_EVENT_TYPES.join("|")}), got ${JSON.stringify(l.type)}`);
+        if (!(isNonEmptyString(l.type) && (LEDGER_EVENT_TYPES as readonly string[]).includes(l.type))) P(`${at}.type must be a v3 LedgerEntry type or an ADR-0040 authority-lapse event (${AUTHORITY_LAPSE_EVENT_TYPES.join("|")}), got ${JSON.stringify(l.type)}`);
         if (!isNonEmptyString(l.note)) P(`${at}.note missing or empty`);
         if (l.type === "ApprovalRecorded") {
           if (!isNonEmptyString(l.stageId)) {
@@ -1190,5 +1406,5 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
   for (const docId of new Set(docText.match(/\bGC-\d\d-[a-z0-9-]+/g) ?? [])) {
     if (!seenIds.has(docId)) problems.push(`docs/golden-cases.md references case id "${docId}" but no such fixture is loaded (stale doc reference / deleted fixture)`);
   }
-  return problems;
+  return applyGoldenAuthorityGaps(cases, problems, authorityGaps);
 }

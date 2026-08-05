@@ -3290,14 +3290,14 @@ itself. All four are fixed forward:
 enforce the invariant it names (charter #4).
 **Revert path:** the structured block is additive to the fixtures and the validator reads it through
 one helper; removing the block and restoring prose parsing is a single-file change.
-**See also:** [ADR-0039](docs/adr/0039-authority-lapse-ledger-events.md) records the
+**See also:** [ADR-0040](docs/adr/0040-authority-lapse-ledger-events.md) records the
 `ApprovalStageEscalated`/`ApprovalStageExpired` extension of the ratified `LedgerEntry` union that
 D-102 signed into GC-16, with the prompt-7 collapse trigger and a fence against the pinned reference
 - previously carried only as a code comment.
 
-### D-063 · 2026-07-28 · reversible · Demo liquidity is per-branch signed evidence, not a global assumption
+### D-104 · 2026-07-28 · reversible · Demo liquidity is per-branch signed evidence, not a global assumption
 
-Review of D-062 found the demo still carrying two global constants — `AVAILABLE_CASH_MINOR`
+Review of D-103 found the demo still carrying two global constants — `AVAILABLE_CASH_MINOR`
 ($200,000) and `PENDING_DISTRIBUTION_MINOR` ($40,000) — applied to every scenario branch under both
 firms. With the signed schedule corrected to $8,000/month, Firm B's twelve-month floor rose to
 $96,000 and the happy path began contradicting itself on screen: `Amount $75,000.00` printed beside
@@ -3344,7 +3344,7 @@ number that contradicts it is the exact dishonesty the charter's provenance rule
 **Revert path:** the branch liquidity is inert data on `ScenarioData` read through one accessor;
 restoring a single global is a one-line change plus deleting the two fence halves.
 
-### D-064 · 2026-07-28 · reversible · Rendered money is inverted with integer arithmetic; the status vocabulary is one document set
+### D-105 · 2026-07-28 · reversible · Rendered money is inverted with integer arithmetic; the status vocabulary is one document set
 
 Two smaller review findings from the same pass:
 
@@ -3370,9 +3370,9 @@ that cites an annotation it does not contain is not normative.
 **Revert path:** both are pure functions in `scripts/golden-demo-semantics.lib.ts` with injected
 inputs; deleting either leaves the rest of the gate intact.
 
-### D-065 · 2026-07-28 · reversible · Liquidity authority is firm-bound and phase-aware
+### D-106 · 2026-07-28 · reversible · Liquidity authority is firm-bound and phase-aware
 
-Review of D-063 found two ownership defects in the single branch-level liquidity record. First,
+Review of D-104 found two ownership defects in the single branch-level liquidity record. First,
 GC-15's after-approval pending distribution was rendered as if it existed at initial evaluation.
 Second, the same `sourceCaseId` was reused across both firms and across branches that had no matching
 signed numeric case.
@@ -3393,7 +3393,7 @@ false when borrowed from another decision context or shown before it existed.
 **Revert path:** the authority union and its accessor are confined to the demo fake-service
 layer; removing phase or firm binding requires reverting the companion semantic and browser proofs.
 
-### D-066 · 2026-07-28 · reversible · Signed demo authority is exact, paired, and chronological
+### D-107 · 2026-07-28 · reversible · Signed demo authority is exact, paired, and chronological
 
 The demo projects each source-bound request instant from its captain-signed fixture and derives
 every later visible instant through one stable case-relative timeline. The semantic snapshot
@@ -3419,7 +3419,7 @@ pass while all individual artifacts remained internally valid.
 case-specific evidence requirements, and ordered-prefix check are independent pure boundaries and
 can be reverted together with their companion mutations.
 
-### D-067 · 2026-07-28 · reversible · Execution reach requires signed liquidity and satisfied ordered authority
+### D-108 · 2026-07-28 · reversible · Execution reach requires signed liquidity and satisfied ordered authority
 
 Demo reachability now fails closed from structured evidence and authority state. A proceed
 disposition reaches Safety only after every ordered authority stage satisfies its eligible-role,
@@ -3439,9 +3439,9 @@ from `proceed` allowed unsupported branches and incomplete authority stages to l
 **Revert path:** journey pass selection, structured approval stages, and downstream reach guards are
 confined to the demo fake-service and semantic snapshot.
 
-### D-068 · 2026-07-28 · reversible · Invalidation records preserve exact authority and causal bindings
+### D-109 · 2026-07-28 · reversible · Invalidation records preserve exact authority and causal bindings
 
-Review of D-067 found six presentation and fence gaps in the signed journey projection:
+Review of D-108 found six presentation and fence gaps in the signed journey projection:
 
 - GC-15 lifecycle events were selected by the scenario flag alone. The shared authority predicate
   now requires the exact `approval-invalidation` scenario, Firm A, and signed GC-15 source before a
@@ -3469,7 +3469,7 @@ could make contradictory records appear internally complete.
 **Revert path:** the authority predicate, timeline projection, view-model additions, navigation pass,
 and pure semantic checks are isolated to the demo fake-service and its fences.
 
-### D-069 · 2026-07-28 · reversible · Reservation follows current authority and revalidation
+### D-110 · 2026-07-28 · reversible · Reservation follows current authority and revalidation
 
 The executable ledger sequence is decision, required approval, pre-execution evidence
 revalidation, reservation, then execution. If revalidation changes material evidence, the changed
@@ -3492,7 +3492,7 @@ printable record.
 **Revert path:** the chronology projector, pass-aware comparison path, typed exception state, and
 their companion mutations are isolated to the demo fake-service and golden-case fences.
 
-### D-070 · 2026-07-28 · reversible · Signed cases project independently from numeric liquidity
+### D-111 · 2026-07-28 · reversible · Signed cases project independently from numeric liquidity
 
 Every captain-signed golden case now enters one exact typed registry keyed by case identity.
 Scenario and firm selection bind to that identity before numeric liquidity is considered, so a
@@ -3513,7 +3513,7 @@ case-specific signed facts.
 **Revert path:** the fixture parser, scenario-to-case map, view-model fields, and semantic companions
 are confined to the demo fake-service and golden-case fence.
 
-### D-071 · 2026-07-28 · captain-decision · Canonical journey and signed case facts remain separate
+### D-112 · 2026-07-28 · captain-decision · Canonical journey and signed case facts remain separate
 
 The interactive comparison always uses the canonical Smiths $75,000 home-renovation request under
 both firms. A golden case's trigger remains a separate typed fact selected by exact case identity.
@@ -3541,7 +3541,7 @@ examiner record cite facts and authority from another case.
 decision. The typed projection, semantic fence, and browser companions are isolated to the demo
 fake-service.
 
-### D-072 · 2026-07-29 · captain-decision · One exact case projection governs every decision surface
+### D-113 · 2026-07-29 · captain-decision · One exact case projection governs every decision surface
 
 Each signed evidence row owns its displayed value and unit. The interactive canonical request owns
 one firm-neutral request instant, while each golden trigger retains its separate signed instant.
@@ -3566,7 +3566,7 @@ surface still appeared internally complete.
 decision. The fixture fields, projection modules, and adversarial fences are isolated to the demo
 fake-service.
 
-### D-073 · 2026-07-29 · captain-decision · Signed prohibition variants are exact, reachable, and source-classified
+### D-114 · 2026-07-29 · captain-decision · Signed prohibition variants are exact, reachable, and source-classified
 
 Every signed case eligible for one scenario and firm is reachable by its exact case identity. The
 journey binds that identity once and preserves it through every route, surface, record, and export;
@@ -3586,7 +3586,7 @@ unreachable while displaying another case's rule and account facts.
 decision. Exact-case route binding, policy-source classification, workspace projection, and their
 adversarial fences are confined to the demo fake-service.
 
-### D-074 · 2026-07-29 · reversible · Exact route context and launcher variants are structural
+### D-115 · 2026-07-29 · reversible · Exact route context and launcher variants are structural
 
 Every same-journey link now accepts one required route-context value containing scenario, firm,
 selected case, and pass. Printable records, dead-end returns, and evidence revalidation therefore
@@ -3598,12 +3598,12 @@ retain one default entry, while GC-01/GC-02 and GC-03/GC-04 are independently re
 regressions prove all four pair links, both prohibited variants, every NotReached return, the
 printable record, and the revalidated pass.
 
-**Why:** singular firm selection and optional string suffixes made D-073's exact-case guarantee
+**Why:** singular firm selection and optional string suffixes made D-114's exact-case guarantee
 depend on every call site remembering hidden URL state.
 **Revert path:** restore positional link arguments and singular launcher selection only if another
 typed navigation boundary preserves all four context fields and every exact variant.
 
-### D-075 · 2026-07-29 · reversible · Journey pass selects evidence, summaries, and record reach
+### D-116 · 2026-07-29 · reversible · Journey pass selects evidence, summaries, and record reach
 
 One phase selector now governs signed evidence on Workspace, Evidence, Recommendation, derived
 metrics, and printable records. Initial GC-15 routes select the original snapshot, original
@@ -3616,10 +3616,10 @@ All summary builders require the selected pass from the journey boundary.
 latest evidence or inferred revalidation from scenario authority. That allowed a future snapshot to
 appear as an initial alternative and made initial printable records indistinguishable from final
 revalidated records.
-**Revert path:** none while D-068 through D-074 require exact lifecycle identity across navigation
+**Revert path:** none while D-109 through D-115 require exact lifecycle identity across navigation
 and examiner-facing surfaces.
 
-### D-076 · 2026-07-29 · captain-decision · Event and route identity preserve every signed variant
+### D-117 · 2026-07-29 · captain-decision · Event and route identity preserve every signed variant
 
 Every verification proof binds to the ledger event and instant that established it. A later unknown
 or NIGO observation cannot replace the instant of submission acceptance or part completion on the
@@ -3641,7 +3641,7 @@ truth.
 decision. The event projection, exact-case binding, record identity, and arithmetic companion are
 isolated to the demo and golden-case gates.
 
-### D-077 · 2026-07-29 · reversible · Active decision bindings and evidence claims fail closed
+### D-118 · 2026-07-29 · reversible · Active decision bindings and evidence claims fail closed
 
 One demo binding authority now derives the input-bundle and decision SHA-256 values from the exact
 scenario, firm, signed case, lifecycle pass, selected evidence, policy inputs, authority, and
@@ -3664,7 +3664,7 @@ placeholder or an unsupported inference.
 **Revert path:** replace the demo hashing authority when real contract binding primitives land,
 provided they retain exact case and pass inputs and preserve the same fail-closed evidence claims.
 
-### D-078 · 2026-07-29 · reversible · Canonical routes and Safety claims require exact evidence
+### D-119 · 2026-07-29 · reversible · Canonical routes and Safety claims require exact evidence
 
 The signed seven-minute quick start binds directly to the recent-bank-change scenario, Firm A,
 GC-03, and the initial lifecycle pass. It cannot select signed truth through scenario array order.
@@ -3675,10 +3675,10 @@ state that the check was not evaluated and the evidence is unavailable.
 
 **Why:** a signed route without case identity and a verified claim without source evidence both
 replace exact product truth with an unsupported default.
-**Revert path:** none while D-073 through D-077 require exact case identity and fail-closed evidence
+**Revert path:** none while D-114 through D-118 require exact case identity and fail-closed evidence
 claims across every journey surface.
 
-### D-079 · 2026-07-29 · reversible · Authority, validation, simulation, and status boundaries fail closed
+### D-120 · 2026-07-29 · reversible · Authority, validation, simulation, and status boundaries fail closed
 
 Authority restatements now project the selected case's exact signed account reference and explicitly
 state that account-name metadata is unavailable. Both staged and automatic paths use the same
@@ -3697,10 +3697,10 @@ so a coordinated pin update cannot reorder it behind a later status.
 
 **Why:** a signed reference, validation result, simulation, or stable vocabulary is truthful only
 when its ownership and refusal rules survive every path that consumes it.
-**Revert path:** none while D-073 through D-078 require exact-case projection and fail-closed signed
+**Revert path:** none while D-114 through D-119 require exact-case projection and fail-closed signed
 truth across the demo and its gates.
 
-### D-080 · 2026-07-29 · reversible · Schedules, policy inputs, and bindings require exact authority
+### D-121 · 2026-07-29 · reversible · Schedules, policy inputs, and bindings require exact authority
 
 Planned-withdrawal values now come only from the selected signed case and lifecycle pass. Missing
 schedule evidence leaves the workspace value, reserve floor, headroom, and policy simulation
@@ -3716,10 +3716,10 @@ affect the required binding.
 **Why:** canonical fallback values, implicit route selection, eager production parsing, partial
 policy projection, and shape-only hash checks could all make a gate green while the UI displayed or
 bound different product truth.
-**Revert path:** none while D-073 through D-079 require exact-case authority and fail-closed signed
+**Revert path:** none while D-114 through D-120 require exact-case authority and fail-closed signed
 truth across every route, surface, record, and validation boundary.
 
-### D-081 · 2026-07-29 · reversible · Signed route, Safety, and policy activation boundaries fail closed
+### D-122 · 2026-07-29 · reversible · Signed route, Safety, and policy activation boundaries fail closed
 
 Every demo station now requires an explicit case whenever the selected scenario and firm own signed
 variants. The route resolver no longer selects the first variant, so case-less URLs cannot substitute
@@ -3737,10 +3737,10 @@ simulation can compute.
 
 **Why:** array-order fallback, evidence-presence inference, and an always-present approval model each
 allowed one examiner-facing surface to claim more than its exact signed inputs established.
-**Revert path:** none while D-073 through D-080 require exact signed identity and fail-closed evidence
+**Revert path:** none while D-114 through D-121 require exact signed identity and fail-closed evidence
 and simulation authority across every demo surface.
 
-### D-082 · 2026-07-29 · reversible · Execution, provenance, audit, and quorum truth is structural
+### D-123 · 2026-07-29 · reversible · Execution, provenance, audit, and quorum truth is structural
 
 Execution reach now requires exact signed proof for every precondition that must still hold. An
 unresolved proof removes execution eligibility, reservation, execution, verification, and their
@@ -3758,7 +3758,7 @@ signed event history did not establish.
 **Revert path:** replace these demo authorities when the real execution, comparison, audit, and
 approval projections land, provided the same fail-closed structural guarantees remain.
 
-### D-099 · 2026-08-04 · captain-decision · Quick start keeps one executable signed case
+### D-124 · 2026-08-04 · captain-decision · Quick start keeps one executable signed case
 
 The default seven-minute journey binds GC-01 under Firm A from launcher through printable record.
 No station may silently replace that identity with GC-03 or another case. GC-03 remains reachable
@@ -3769,14 +3769,14 @@ Evidence comparison equivalence includes each signed row's summary in both the p
 and the independent semantic validator. A summary-only meaning change therefore prevents a
 policy-only causality claim.
 
-**Why:** D-078 selected GC-03 before D-082's must-hold reachability guard exposed that the case has
+**Why:** D-119 selected GC-03 before D-123's must-hold reachability guard exposed that the case has
 no signed post-review bank evidence. Keeping GC-03 as quick start would either stop the promised
 end-to-end path or require a silent case switch. Ignoring evidence summaries could also label
 materially different signed statements equivalent.
 **Revert path:** none without a new captain decision and newly signed evidence that preserves every
 must-hold execution precondition.
 
-### D-100 · 2026-08-04 · reversible · Signed money authorities receive measured contracts headroom
+### D-125 · 2026-08-04 · reversible · Signed money authorities receive measured contracts headroom
 
 ADR-0039 raises the contracts ceiling from 4,050 to 4,150 after the shared money arithmetic,
 execution-status planes, and metric unit authority bring the measured layer to 4,111 lines. The
@@ -3787,3 +3787,22 @@ Compressing their validation or rationale would make the tree less maintainable 
 scope.
 **Revert path:** remove the signed-money authorities and their consumers, then ratchet the contracts
 ceiling to the newly measured tree through ADR-0018's amendment path.
+
+### D-126 · 2026-08-04 · reversible · Immutable GC-03 truth fails closed through a pinned authority gap
+
+GC-03 is restored byte-for-byte to the captain-signed 2026-07-26 fixture. It is not amended or
+re-signed for the later evidence-completeness contract. A versioned authority-gap manifest binds
+the exact fixture SHA-256, original signoff date, required-since date, fail-closed execution state,
+and each later authority the raw validator independently proves absent.
+
+The golden validator suppresses only the declared diagnostics for those exact signed bytes. Hash
+drift, parsed-data drift, a stale or unknown category, an undeclared diagnostic, or a gap that is not
+awaiting captain signature leaves the gate red. The product parser carries absent structured
+authority as null and the execution reach guard withholds GC-03 before any reservation, execution,
+or verification state can appear. The default quick start remains GC-01 under D-124.
+
+**Why:** accepting rewritten signed evidence would fabricate captain authority, while rejecting the
+original fixture without recording the later contract gap would hide why the signed outcome cannot
+currently execute.
+**Revert path:** remove the gap only when the captain signs replacement material that satisfies the
+later contract and preserves the must-hold execution proof.

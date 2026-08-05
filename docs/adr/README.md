@@ -55,7 +55,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0037](./0037-line-budget-domain-resume-seal.md) | Domain ceiling 1,250 to 1,300 for pre-load resume validation | Accepted (amends ADR-0033) |
 | [0038](./0038-line-budget-observability-identifier-provenance.md) | Domain and infrastructure ceilings for observability identifier provenance | Accepted (amends ADR-0033/0036) |
 | [0039](./0039-line-budget-signed-money-contracts.md) | Contracts ceiling 4,050 to 4,150 for signed money authorities | Accepted (amends ADR-0035) |
-| [0030](./0030-authority-lapse-ledger-events.md) | Authority-lapse ledger events extend the v3 `LedgerEntry` union until prompt 7 lands it | Accepted (deferral with trigger) |
+| [0040](./0040-authority-lapse-ledger-events.md) | Authority-lapse ledger events extend the v3 `LedgerEntry` union until prompt 7 lands it | Accepted (deferral with trigger) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

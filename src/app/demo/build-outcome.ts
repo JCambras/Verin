@@ -394,6 +394,7 @@ export function buildVerification(
     return null;
   }
   const verification = sourceCase.verification;
+  if (verification.observedAt === null) return null;
   const proves = buildVerificationProofs(verification, timeline);
   const appended: ExecutionRowVM[] = [];
   const identifiers = executionIdentifiers(scenario, firm);

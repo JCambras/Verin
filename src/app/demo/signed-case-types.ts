@@ -27,9 +27,9 @@ export type SignedAuthorityMode =
   | "specialist_review";
 
 export interface SignedMoneyData {
-  readonly currency: string;
-  readonly cadence: string;
-  readonly requestAmountMinor: number;
+  readonly currency: string | null;
+  readonly cadence: string | null;
+  readonly requestAmountMinor: number | null;
   readonly plannedWithdrawalMonthlyMinor: number | null;
   readonly reserveFloorMinor: number | null;
   readonly availableLiquidityMinor: number | null;
@@ -187,6 +187,22 @@ export type SignedVerificationData =
         readonly summary: string;
       };
       readonly note: string;
+    }
+  | {
+      readonly reached: true;
+      readonly observedStatus: "submitted";
+      readonly settledClaim: "submitted-is-not-settled";
+      readonly observedAt: null;
+      readonly currentReason: null;
+      readonly custodianReason: null;
+      readonly proves: readonly [];
+      readonly notProvenYet: readonly [];
+      readonly polling: {
+        readonly state: "unavailable";
+        readonly reason: "awaiting-captain-signature";
+      };
+      readonly exception: null;
+      readonly note: string;
     };
 
 export interface SignedLedgerEventData {
@@ -207,7 +223,7 @@ export interface SignedTriggerData {
   readonly requestRef: string;
   readonly maskedRequestSummary: string;
   readonly requestAt: string;
-  readonly requestAmountMinor: number;
+  readonly requestAmountMinor: number | null;
 }
 
 export interface SignedProhibitionData {
@@ -240,4 +256,12 @@ export interface SignedCaseVariant {
   readonly verification: SignedVerificationData;
   readonly ledgerEvents: readonly SignedLedgerEventData[];
   readonly explanations: readonly SignedExplanationData[];
+  readonly authorityGap: {
+    readonly signedAt: string;
+    readonly requiredSince: string;
+    readonly status: "awaiting-captain-signature";
+    readonly execution: "withheld";
+    readonly reason: string;
+    readonly missingAuthorities: readonly string[];
+  } | null;
 }

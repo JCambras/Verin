@@ -10,10 +10,41 @@ import {
 export function parseVerification(
   value: unknown,
   path: string,
+  verificationDetailMissing = false,
 ): SignedVerificationData {
   const verification = asRecord(value, path);
   const reached = asBoolean(verification.reached, `${path}.reached`);
   const note = asString(verification.note, `${path}.note`);
+  if (
+    verificationDetailMissing &&
+    reached &&
+    verification.observedStatus === "submitted" &&
+    verification.settledClaim === "submitted-is-not-settled" &&
+    verification.observedAt === undefined &&
+    verification.currentReason === undefined &&
+    verification.custodianReason === undefined &&
+    verification.proves === undefined &&
+    verification.notProvenYet === undefined &&
+    verification.polling === undefined &&
+    verification.exception === undefined
+  ) {
+    return {
+      reached: true,
+      observedStatus: "submitted",
+      settledClaim: "submitted-is-not-settled",
+      observedAt: null,
+      currentReason: null,
+      custodianReason: null,
+      proves: [],
+      notProvenYet: [],
+      polling: {
+        state: "unavailable",
+        reason: "awaiting-captain-signature",
+      },
+      exception: null,
+      note,
+    };
+  }
   const currentReason = asString(
     verification.currentReason,
     `${path}.currentReason`,

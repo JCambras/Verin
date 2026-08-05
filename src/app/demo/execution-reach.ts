@@ -23,6 +23,13 @@ export function executionReachFor(
   firm: FirmData,
   pass: JourneyPass,
 ): ExecutionReach {
+  const sourceCase = sourceCaseFor(scenario, firm.id);
+  if (sourceCase?.authorityGap?.execution === "withheld") {
+    return {
+      reached: false,
+      reason: sourceCase.authorityGap.reason,
+    };
+  }
   const authority = liquidityAuthorityFor(scenario, firm.id);
   if (authority.kind === "missing") {
     return { reached: false, reason: authority.reason };
@@ -45,7 +52,6 @@ export function executionReachFor(
       reason: "Material evidence changed, so the original authority is void.",
     };
   }
-  const sourceCase = sourceCaseFor(scenario, firm.id);
   if (!sourceCase) {
     return {
       reached: false,

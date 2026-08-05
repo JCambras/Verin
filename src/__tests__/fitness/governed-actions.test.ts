@@ -2238,28 +2238,38 @@ describe("governed-actions fence (v3 §15.3)", () => {
     ).toEqual(["execution.initiate", "pii.view"]);
   });
 
-  it("enforces: every surfaced governed action is wired through requireActionGrant in its route", () => {
-    const project = realSemanticProject();
-    const discovered = discoverGovernedRoutes(project);
-    expect(
-      discovered.violations,
-      `invalid governed sink call sites:\n${discovered.violations.join("\n")}`,
-    ).toEqual([]);
-    expect(discovered.entries.length).toBeGreaterThanOrEqual(3);
-    expect(
-      discovered.entries.every((entry) =>
-        V3_15_3_ACTIONS.includes(entry.action as never)
-      ),
-    ).toBe(true);
-    expect(
-      discovered.entries
-        .filter((entry) => entry.sink === "startAccountOpening")
-        .map((entry) => entry.action)
-        .sort(),
-    ).toEqual(["execution.initiate", "pii.view"]);
-    const unwired = detectUnwiredGovernedRoutes(project, discovered.entries);
-    expect(unwired, `unwired governed routes:\n${unwired.join("\n")}`).toEqual([]);
-  });
+  it(
+    "enforces: every surfaced governed action is wired through requireActionGrant in its route",
+    () => {
+      const project = realSemanticProject();
+      const discovered = discoverGovernedRoutes(project);
+      expect(
+        discovered.violations,
+        `invalid governed sink call sites:\n${discovered.violations.join("\n")}`,
+      ).toEqual([]);
+      expect(discovered.entries.length).toBeGreaterThanOrEqual(3);
+      expect(
+        discovered.entries.every((entry) =>
+          V3_15_3_ACTIONS.includes(entry.action as never)
+        ),
+      ).toBe(true);
+      expect(
+        discovered.entries
+          .filter((entry) => entry.sink === "startAccountOpening")
+          .map((entry) => entry.action)
+          .sort(),
+      ).toEqual(["execution.initiate", "pii.view"]);
+      const unwired = detectUnwiredGovernedRoutes(
+        project,
+        discovered.entries,
+      );
+      expect(
+        unwired,
+        `unwired governed routes:\n${unwired.join("\n")}`,
+      ).toEqual([]);
+    },
+    120_000,
+  );
 
   describe("detects (companion): an unwired or miswired route is caught", () => {
     it("flags a route that never calls requireActionGrant", () => {

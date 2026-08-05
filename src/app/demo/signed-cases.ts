@@ -4,14 +4,10 @@ import {
   type SignedAuthorityStageData,
   type SignedCaseId,
   type SignedCaseVariant,
-  type SignedEvidenceData,
-  type SignedMoneyData,
 } from "./signed-case-types";
 import {
   asArray,
   asBoolean,
-  asMinor,
-  asNullableMinor,
   asNullableString,
   asNumber,
   asPositiveSafeInteger,
@@ -19,102 +15,11 @@ import {
   asString,
   asStringArray,
 } from "./signed-case-fields";
+import { parseEvidence, parseMoney } from "./signed-case-evidence";
+import { signedAuthorityGapFor } from "./signed-case-gaps";
 import { parseVerification } from "./signed-verification";
 
 export * from "./signed-case-types";
-
-function parseMoney(value: unknown, path: string): SignedMoneyData {
-  const money = asRecord(value, path);
-  const revalidation =
-    money.preExecutionRevalidation === undefined
-      ? null
-      : asRecord(money.preExecutionRevalidation, `${path}.preExecutionRevalidation`);
-  return {
-    currency: asString(money.currency, `${path}.currency`),
-    cadence: asString(money.cadence, `${path}.cadence`),
-    requestAmountMinor: asMinor(
-      money.requestAmountUsd,
-      `${path}.requestAmountUsd`,
-    ),
-    plannedWithdrawalMonthlyMinor: asNullableMinor(
-      money.plannedWithdrawalMonthlyUsd,
-      `${path}.plannedWithdrawalMonthlyUsd`,
-    ),
-    reserveFloorMinor: asNullableMinor(
-      money.reserveFloorUsd,
-      `${path}.reserveFloorUsd`,
-    ),
-    availableLiquidityMinor: asNullableMinor(
-      money.availableLiquidityUsd,
-      `${path}.availableLiquidityUsd`,
-    ),
-    pendingLiquidityMinor: asNullableMinor(
-      money.pendingLiquidityUsd,
-      `${path}.pendingLiquidityUsd`,
-    ),
-    preExecutionRevalidation: revalidation
-      ? {
-          availableLiquidityMinor: asMinor(
-            revalidation.availableLiquidityUsd,
-            `${path}.preExecutionRevalidation.availableLiquidityUsd`,
-          ),
-          pendingLiquidityMinor: asMinor(
-            revalidation.pendingLiquidityUsd,
-            `${path}.preExecutionRevalidation.pendingLiquidityUsd`,
-          ),
-        }
-      : null,
-  };
-}
-
-function parseEvidence(value: unknown, path: string): SignedEvidenceData {
-  const evidence = asRecord(value, path);
-  const rawDisplayValue =
-    evidence.displayValue === undefined
-      ? null
-      : asRecord(evidence.displayValue, `${path}.displayValue`);
-  const unit = rawDisplayValue
-    ? asString(rawDisplayValue.unit, `${path}.displayValue.unit`)
-    : null;
-  if (unit !== null && unit !== "USD" && unit !== "USD/month") {
-    throw new TypeError(`${path}.displayValue.unit is unsupported`);
-  }
-  return {
-    evidenceKind: asString(evidence.evidenceKind, `${path}.evidenceKind`),
-    subjectRef: asString(evidence.subjectRef, `${path}.subjectRef`),
-    observedAt: asString(evidence.observedAt, `${path}.observedAt`),
-    retrievedAt: asString(evidence.retrievedAt, `${path}.retrievedAt`),
-    freshness: asString(evidence.freshness, `${path}.freshness`),
-    source: asString(evidence.source, `${path}.source`),
-    provenance: asString(evidence.provenance, `${path}.provenance`),
-    summary: asString(evidence.summary, `${path}.summary`),
-    liquidityPhase:
-      evidence.liquidityPhase === undefined
-        ? null
-        : asString(evidence.liquidityPhase, `${path}.liquidityPhase`),
-    observedAbsent:
-      evidence.observedAbsent === undefined
-        ? false
-        : asBoolean(evidence.observedAbsent, `${path}.observedAbsent`),
-    displayValue:
-      rawDisplayValue && unit
-        ? {
-            valueMinor: asMinor(
-              rawDisplayValue.value,
-              `${path}.displayValue.value`,
-            ),
-            unit,
-          }
-        : null,
-    freshnessWindowDays:
-      evidence.freshnessWindowDays === undefined
-        ? null
-        : asNumber(
-            evidence.freshnessWindowDays,
-            `${path}.freshnessWindowDays`,
-          ),
-  };
-}
 
 function parseStage(value: unknown, path: string): SignedAuthorityStageData {
   const stage = asRecord(value, path);
@@ -175,6 +80,13 @@ function parseVariant(value: unknown): SignedCaseVariant {
   if (!SIGNED_CASE_IDS.includes(caseId as SignedCaseId)) {
     throw new TypeError(`fixture.caseId ${caseId} is unsupported`);
   }
+  const authorityGap = signedAuthorityGapFor(caseId as SignedCaseId);
+  if (authorityGap) {
+    const signoff = asRecord(fixture.signoff, `${caseId}.signoff`);
+    if (signoff.signedAt !== authorityGap.signedAt) {
+      throw new TypeError(`${caseId}.signoff.signedAt drifts from its authority gap`);
+    }
+  }
   const disposition = asString(
     fixture.expectedDisposition,
     `${caseId}.expectedDisposition`,
@@ -187,7 +99,11 @@ function parseVariant(value: unknown): SignedCaseVariant {
     throw new TypeError(`${caseId}.expectedDisposition is unsupported`);
   }
   const trigger = asRecord(fixture.trigger, `${caseId}.trigger`);
-  const money = parseMoney(fixture.signedMoney, `${caseId}.signedMoney`);
+  const money = parseMoney(
+    fixture.signedMoney,
+    `${caseId}.signedMoney`,
+    authorityGap?.missingAuthorities.includes("structured-money") ?? false,
+  );
   const rawProhibition =
     fixture.prohibition === undefined || fixture.prohibition === null
       ? null
@@ -237,6 +153,19 @@ function parseVariant(value: unknown): SignedCaseVariant {
     fixture.policyVersions,
     `${caseId}.policyVersions`,
   );
+  const stages = asArray(
+    authority.stages,
+    `${caseId}.expectedAuthority.stages`,
+  ).map((entry, index) =>
+    parseStage(entry, `${caseId}.expectedAuthority.stages[${index}]`),
+  );
+  const inferredApprovalBindings = stages.flatMap((stage) =>
+    Array.from({ length: stage.approvalsRequired }, () => ({
+      stageId: stage.stageId,
+      lifecyclePass: "initial" as const,
+    })),
+  );
+  let inferredApprovalIndex = 0;
   return {
     caseId: caseId as SignedCaseId,
     scenarioId:
@@ -337,12 +266,7 @@ function parseVariant(value: unknown): SignedCaseVariant {
         : null,
     authority: {
       mode,
-      stages: asArray(
-        authority.stages,
-        `${caseId}.expectedAuthority.stages`,
-      ).map((entry, index) =>
-        parseStage(entry, `${caseId}.expectedAuthority.stages[${index}]`),
-      ),
+      stages,
       note: asString(authority.note, `${caseId}.expectedAuthority.note`),
     },
     executionEligibility: {
@@ -408,6 +332,7 @@ function parseVariant(value: unknown): SignedCaseVariant {
     verification: parseVerification(
       verification,
       `${caseId}.expectedVerificationState`,
+      authorityGap?.missingAuthorities.includes("verification-detail") ?? false,
     ),
     ledgerEvents: asArray(
       fixture.expectedLedgerEvents,
@@ -418,16 +343,21 @@ function parseVariant(value: unknown): SignedCaseVariant {
         ledger.type,
         `${caseId}.expectedLedgerEvents[${index}].type`,
       );
+      const inferred =
+        type === "ApprovalRecorded" &&
+        authorityGap?.missingAuthorities.includes("approval-event-bindings")
+          ? inferredApprovalBindings[inferredApprovalIndex++]
+          : undefined;
       const stageId =
         ledger.stageId === undefined
-          ? null
+          ? (inferred?.stageId ?? null)
           : asString(
               ledger.stageId,
               `${caseId}.expectedLedgerEvents[${index}].stageId`,
             );
       const lifecyclePass =
         ledger.lifecyclePass === undefined
-          ? null
+          ? (inferred?.lifecyclePass ?? null)
           : asString(
               ledger.lifecyclePass,
               `${caseId}.expectedLedgerEvents[${index}].lifecyclePass`,
@@ -478,6 +408,16 @@ function parseVariant(value: unknown): SignedCaseVariant {
         ),
       };
     }),
+    authorityGap: authorityGap
+      ? {
+          signedAt: authorityGap.signedAt,
+          requiredSince: authorityGap.requiredSince,
+          status: authorityGap.status,
+          execution: authorityGap.execution,
+          reason: authorityGap.reason,
+          missingAuthorities: authorityGap.missingAuthorities,
+        }
+      : null,
   };
 }
 

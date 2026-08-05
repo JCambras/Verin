@@ -1,9 +1,11 @@
 import { beforeAll, describe, it, expect } from "vitest";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT } from "./_fence-utils";
 import {
   GOLDEN_DOC,
+  DEFAULT_GOLDEN_AUTHORITY_GAPS,
   REQUIRED_SPEC_NAMES,
   STATUS_VOCABULARY_DOCS,
   V3_CORE_CONTRACTS,
@@ -13,6 +15,7 @@ import {
   validateGoldenCases,
   validateLedgerVocabulary,
   type LoadedCase,
+  type GoldenAuthorityGap,
   type ScenarioRefs,
 } from "../../../scripts/golden-cases.lib";
 import { validateGoldenCaseArtifacts } from "../../../scripts/golden-cases-runner.lib";
@@ -117,6 +120,100 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
   const demoClone = (): DemoSemanticSnapshot =>
     JSON.parse(JSON.stringify(realDemo)) as DemoSemanticSnapshot;
 
+  it("binds every authority gap to immutable signed bytes and real missing authority", () => {
+    const withoutGap = validateGoldenCases(
+      realCases,
+      realRefs,
+      realDoc,
+      [],
+    );
+    for (const expected of [
+      "must be canonical UTC",
+      "evidenceCompleteness",
+      "signedMoney",
+      "stageId",
+      "approval quorum for initial stage bank-change-specialist-review",
+      "pre-execution revalidation",
+      "expectedVerificationState",
+    ]) {
+      expect(withoutGap.some((problem) => problem.includes(expected))).toBe(
+        true,
+      );
+    }
+
+    const badHash = JSON.parse(
+      JSON.stringify(DEFAULT_GOLDEN_AUTHORITY_GAPS),
+    ) as GoldenAuthorityGap[];
+    badHash[0]!.fixtureSha256 = "0".repeat(64);
+    expect(
+      validateGoldenCases(realCases, realRefs, realDoc, badHash).some(
+        (problem) => problem.includes("fixture bytes drift"),
+      ),
+    ).toBe(true);
+
+    const weakenedReason = JSON.parse(
+      JSON.stringify(DEFAULT_GOLDEN_AUTHORITY_GAPS),
+    ) as GoldenAuthorityGap[];
+    weakenedReason[0]!.reason = "Pending evidence.";
+    expect(
+      validateGoldenCases(
+        realCases,
+        realRefs,
+        realDoc,
+        weakenedReason,
+      ).some((problem) =>
+        problem.includes("must fail closed with an explicit pending-signature reason"),
+      ),
+    ).toBe(true);
+
+    const mutated = clone();
+    (
+      caseById(mutated, "GC-03-recent-bank-change-firm-a")
+        .trigger as Record<string, unknown>
+    ).description = "changed after captain signoff";
+    expect(
+      run(mutated).some((problem) =>
+        problem.includes("loaded data drifts from its signed fixture bytes"),
+      ),
+    ).toBe(true);
+
+    const gc01 = realCases.find(
+      ({ data }) =>
+        (data as Record<string, unknown>).caseId ===
+        "GC-01-firm-a-happy-path",
+    )!;
+    const gc01Data = gc01.data as Record<string, unknown>;
+    const gc01Signoff = gc01Data.signoff as Record<string, unknown>;
+    const staleGap: GoldenAuthorityGap = {
+      caseId: "GC-01-firm-a-happy-path",
+      fixtureSha256: createHash("sha256")
+        .update(gc01.sourceText!)
+        .digest("hex"),
+      signedAt: String(gc01Signoff.signedAt),
+      requiredSince: "2026-07-28",
+      status: "awaiting-captain-signature",
+      execution: "withheld",
+      reason: "Awaiting captain-signed authority.",
+      missingAuthorities: ["structured-money"],
+    };
+    expect(
+      validateGoldenCases(realCases, realRefs, realDoc, [staleGap]).some(
+        (problem) => problem.includes("declares stale authority gap"),
+      ),
+    ).toBe(true);
+
+    const unknownGap = JSON.parse(
+      JSON.stringify(DEFAULT_GOLDEN_AUTHORITY_GAPS),
+    ) as GoldenAuthorityGap[];
+    unknownGap[0]!.missingAuthorities = ["invented-authority"];
+    expect(
+      validateGoldenCases(realCases, realRefs, realDoc, unknownGap).some(
+        (problem) =>
+          problem.includes("missingAuthorities must be unique, non-empty, and closed"),
+      ),
+    ).toBe(true);
+  });
+
   it("flags a missing required field (expectedDisposition removed)", () => {
     const cases = clone();
     delete caseById(cases, "GC-01-firm-a-happy-path").expectedDisposition;
@@ -159,7 +256,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(problems.some((p) => p.includes("scenarioRef must be null or a scenarios.yaml scenario id"))).toBe(true);
     expect(problems.some((p) => p.includes("expectedDisposition must be one of proceed|blocked|prohibited"))).toBe(true);
     expect(problems.some((p) => p.includes("provenance must be a scenarios.yaml provenance label"))).toBe(true);
-    expect(problems.some((p) => p.includes("must be a v3 LedgerEntry type or an ADR-0030 authority-lapse event"))).toBe(true);
+    expect(problems.some((p) => p.includes("must be a v3 LedgerEntry type or an ADR-0040 authority-lapse event"))).toBe(true);
   });
 
   it("rejects reservation chronology that bypasses approval or revalidation", () => {
@@ -231,31 +328,10 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
   });
 
   it("requires every authority-stage quorum in each lifecycle pass", () => {
-    const missingSpecialist = clone();
-    const specialistEvents = caseById(
-      missingSpecialist,
-      "GC-03-recent-bank-change-firm-a",
-    ).expectedLedgerEvents as Array<Record<string, unknown>>;
-    specialistEvents.splice(
-      specialistEvents.findIndex(
-        (event) =>
-          event.type === "ApprovalRecorded" &&
-          event.stageId === "bank-change-specialist-review",
-      ),
-      1,
-    );
-    expect(
-      run(missingSpecialist).some((problem) =>
-        problem.includes(
-          "approval quorum for initial stage bank-change-specialist-review requires 1 ApprovalRecorded events, found 0",
-        ),
-      ),
-    ).toBe(true);
-
     const incompleteOps = clone();
     const opsEvents = caseById(
       incompleteOps,
-      "GC-03-recent-bank-change-firm-a",
+      "GC-01-firm-a-happy-path",
     ).expectedLedgerEvents as Array<Record<string, unknown>>;
     opsEvents.splice(
       opsEvents.findIndex(
@@ -314,7 +390,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       "export type LedgerEntry =\n  | ApprovalStageExpired",
     );
     expect(
-      validateLedgerVocabulary(landed).some((p) => p.includes("collapse it out of the ADR-0030 extension")),
+      validateLedgerVocabulary(landed).some((p) => p.includes("collapse it out of the ADR-0040 extension")),
     ).toBe(true);
 
     expect(validateLedgerVocabulary("no union here").some((p) => p.includes("declares no LedgerEntry union"))).toBe(true);
@@ -717,7 +793,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     ).toBe(true);
 
     // A malformed figure is REPORTED, not thrown: a crash would discard every
-    // diagnostic already collected (the D-062 lesson, applied to this fence too).
+    // diagnostic already collected (the D-099 lesson, applied to this fence too).
     const malformed = demoClone();
     malformed.decisions[0]!.availableCashMinor = Number.NaN;
     const malformedProblems = validateGoldenDemoSemantics(clone(), realRefs, malformed);
@@ -1549,7 +1625,9 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
   it("flags a reserve floor stated with no signed monthly-withdrawal authority anywhere", () => {
     const cases = clone();
     for (const { data } of cases) {
-      (data as { signedMoney: Record<string, unknown> }).signedMoney.plannedWithdrawalMonthlyUsd = null;
+      const signedMoney = (data as { signedMoney?: Record<string, unknown> })
+        .signedMoney;
+      if (signedMoney) signedMoney.plannedWithdrawalMonthlyUsd = null;
     }
     const problems = run(cases);
     expect(problems.some((p) => p.includes("no golden case states signedMoney.plannedWithdrawalMonthlyUsd"))).toBe(true);

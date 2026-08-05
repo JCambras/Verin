@@ -2,8 +2,8 @@
 
 **Status:** Accepted
 **Date:** 2026-08-04
-**Deciders:** Build agent (reversible, logged per the decision protocol; D-100)
-**Relates to:** ADR-0018, ADR-0033, ADR-0035, D-061, D-062, charter #1/#3/#4
+**Deciders:** Build agent (reversible, logged per the decision protocol; D-121)
+**Relates to:** ADR-0018, ADR-0033, ADR-0035, D-098, D-099, charter #1/#3/#4
 **Amends:** ADR-0035's contracts ceiling only
 
 ## Context

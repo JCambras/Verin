@@ -1,9 +1,11 @@
 # Verin - Golden-Case Specification (v3 build-sequence prompt 2)
 
-**Status:** Signed truth set - **all 16 cases signed by the captain and reapproved on 2026-07-28**
-for explicit evidence completeness and canonical UTC instants (approval relayed via firstmate).
-Expected results are product truth subject to human signoff, not agent invention (build-sequence
-prompt 2; the signoff authority for every case is the captain).
+**Status:** Signed truth set - **all 16 cases signed by the captain on 2026-07-26; 15 cases
+reapproved on 2026-07-28** for explicit evidence completeness and canonical UTC instants (approval
+relayed via firstmate). GC-03 remains the exact 2026-07-26 signed artifact. Its later authority gap
+is recorded as awaiting captain signature and execution is withheld. Expected results are product
+truth subject to human signoff, not agent invention (build-sequence prompt 2; the signoff authority
+for every case is the captain).
 **Machine mirror:** [`fixtures/golden/*.json`](../fixtures/golden/) - one file per case, validated
 by `pnpm golden:validate` (CI job `golden-cases`) and the `golden-cases` fitness fence.
 **Vocabulary sources:** [`config/demo/scenarios.yaml`](../config/demo/scenarios.yaml) (scenario ids,
@@ -27,7 +29,8 @@ Every case carries a `signoff` block initialized to:
 - The validation gate accepts exactly two signoff shapes: `pending-captain` (signedBy/signedAt
   null) and `signed` (signer and timestamp populated). A signed status without attribution, or any
   other status, fails the build. The captain signed all 16 cases on 2026-07-26 and reapproved the
-  evidence-completeness amendment on 2026-07-28.
+  evidence-completeness amendment for 15 cases on 2026-07-28. GC-03 was not reapproved and remains
+  bound to its original signed bytes.
 - Signing happens per case. A signed case's expected outcomes become binding product truth; changing
   them afterwards requires a new captain decision recorded in the PR.
 - Where a draft had to FIX an answer the demo contract deliberately left open, the case's signoff
@@ -40,7 +43,7 @@ Every case carries a `signoff` block initialized to:
 |---|---|---|---|---|---|---|---|---|
 | GC-01-firm-a-happy-path | Firm A happy path | safe-proceed | firm-a | proceed | dual ops approval (2 distinct, requester excluded) | eligible; 1 instruction | submitted | signed (captain, 2026-07-28) |
 | GC-02-firm-b-happy-path | Firm B happy path | safe-proceed | firm-b | proceed | automatic (below $100k threshold) | eligible; 1 instruction | submitted | signed (captain, 2026-07-28) |
-| GC-03-recent-bank-change-firm-a | recent bank change | recent-bank-change-block | firm-a | proceed | specialist review, then dual ops approval | eligible after both stages | submitted | signed (captain, 2026-07-28) |
+| GC-03-recent-bank-change-firm-a | recent bank change | recent-bank-change-block | firm-a | proceed | specialist review, then dual ops approval | signed outcome: eligible after both stages; demo withheld pending signed post-review evidence | signed outcome: submitted; demo not reached while evidence is absent | signed (captain, 2026-07-26) |
 | GC-04-recent-bank-change-firm-b | recent bank change | recent-bank-change-block | firm-b | blocked | none (blocked carries no authority) | not eligible | not reached | signed (captain, 2026-07-28) |
 | GC-05-insufficient-liquidity | insufficient liquidity | - (single-request variant; see note) | firm-b | blocked | none | not eligible | not reached | signed (captain, 2026-07-28) |
 | GC-06-household-restriction | household restriction | permanent-prohibition | firm-a | prohibited | none | not eligible | not reached | signed (captain, 2026-07-28) |
@@ -55,13 +58,21 @@ Every case carries a `signoff` block initialized to:
 | GC-15-approval-invalidation | approval invalidation after evidence change | approval-invalidation | firm-a | proceed | dual ops approval, invalidated, re-run on new hash | eligible after re-approval | submitted | signed (captain, 2026-07-28) |
 | GC-16-specialist-review-expiration | specialist-review expiration and escalation | specialist-review-expiration | firm-a | proceed | specialist review escalated → expired unresolved | not eligible (authority unresolved) | not reached | signed (captain, 2026-07-28) |
 
+GC-03's signed disposition, authority, execution eligibility, chronology, and verification outcome
+remain unchanged. The live demo cannot claim that outcome has been established because the signed
+artifact has no post-review bank-instruction evidence and does not carry the later completeness,
+structured-money, event-binding, chronology, or verification-detail authorities. The SHA-256-pinned
+gap in [`config/demo/golden-authority-gaps.json`](../config/demo/golden-authority-gaps.json) records
+that absence without changing or re-signing the fixture. Execution remains withheld pending captain
+signature.
+
 Notes on the two structural choices in the matrix mapping:
 
 - **GC-05** has `scenarioRef: null`: the prompt-2 spec requires a SINGLE-request insufficient-liquidity
   case, while the scenario matrix's `competing-liquidity` is the two-request variant (GC-10/GC-11).
   The matrix stays untouched (its ids are append-only, and adding a branch is a captain-approved
   demo-contract change); the fixture records the reason in `scenarioRefNote`.
-- **The `competing-liquidity` branch is firm-split** in the matrix (D-063). Both signed cases are
+- **The `competing-liquidity` branch is firm-split** in the matrix (D-100). Both signed cases are
   firm-a and run on a $160,000 pool: either $75,000 request alone clears Firm A's $48,000 six-month
   reserve, both together do not. Under Firm B's $96,000 twelve-month reserve the SAME single request
   is recorded as blocked before a live reservation matters. No signed numeric case binds that
@@ -107,7 +118,7 @@ recorded, never filled in.
 
 ## 5. Required fields per case (the validation contract)
 
-Every case - in this document and in its fixture - states all of:
+The 2026-07-28 validation contract requires every case to state all of:
 
 1. **trigger** - kind (`human_request`/`system_event`), description, requester role, masked-request
    summary, `asOf`;
@@ -137,7 +148,7 @@ Every case - in this document and in its fixture - states all of:
 11. **expected ledger events** - ordered event types with notes, drawn from the ratified v3
     `LedgerEntry` union PLUS the two authority-lapse events (`ApprovalStageEscalated`,
     `ApprovalStageExpired`) the union does not yet declare. That extension is authorized and
-    trigger-bound by [ADR-0030](./adr/0030-authority-lapse-ledger-events.md); the validator fences
+    trigger-bound by [ADR-0040](./adr/0040-authority-lapse-ledger-events.md); the validator fences
     the transcribed union against the pinned reference and fails when prompt 7 lands either event,
     so the extension collapses instead of shadowing the canonical member;
 12. **expected verification state** - a closed state carrying reached flag, observed status
@@ -177,13 +188,20 @@ authority stages, execution eligibility, or a reached verification state (v3 inv
 proceed case must state a real authority mode; the partial-Salesforce case must carry the deferral
 marking; every case id here must exist as a fixture and vice versa.
 
+GC-03 is the one immutable 2026-07-26 artifact that does not yet satisfy every later field above.
+Its exact fixture hash and each missing authority category are declared in the authority-gap
+manifest. The validator accepts only those exact, independently reproduced diagnostics and refuses
+execution. A changed fixture hash, an unrecognized or stale gap category, an undeclared diagnostic,
+or a gap that does not remain fail-closed fails the build.
+
 ## 6. The cases
 
 Amounts, balances, and dates below are synthetic fixture values (provenance `synthetic-fixture`,
-charter #3); the household is the Smiths shape required by the demo contract §2. Fixture instants use
-the canonical `YYYY-MM-DDTHH:MM:SS.mmmZ` UTC form; descriptive dates below render in the demo world's
-America/New_York zone. Shared numbers: planned withdrawals $8,000/month, so the Firm A reserve is
-$48,000 and the Firm B reserve is $96,000.
+charter #3); the household is the Smiths shape required by the demo contract §2. The 15 amended
+fixtures use canonical `YYYY-MM-DDTHH:MM:SS.mmmZ` UTC instants. GC-03 retains the offsets in its
+immutable signed artifact. Descriptive dates below render in the demo world's America/New_York
+zone. Shared numbers outside the GC-03 authority gap are planned withdrawals $8,000/month, so the
+Firm A reserve is $48,000 and the Firm B reserve is $96,000.
 
 Every execution-eligible ledger follows one governed sequence: the decision is recorded, required
 approvals are recorded, evidence is revalidated immediately before execution, the reservation is
@@ -244,8 +262,7 @@ decision is recorded, and its required approvals are acquired before the reserva
   before asOf), unverified.
 - **Firm configuration:** firm-a (§4) - recent bank change routes to specialist review.
 - **Household evidence:** changed bank instruction (fresh snapshot OF the change); balance $420,000;
-  $8,000 monthly schedule and $48,000 reserve; destination restriction satisfied; no pending
-  liquidity activity observed.
+  reserve satisfied.
 - **Policy versions / household instructions:** as GC-01 (destination restriction still satisfied -
   the changed instruction remains household-titled).
 - **Expected disposition:** proceed.
@@ -257,10 +274,15 @@ decision is recorded, and its required approvals are acquired before the reserva
 - **Expected explanation nodes:** recent-bank-change-detected; specialist-review-required;
   dual-approval-required.
 - **Expected ledger events:** EvidenceSnapshotRecorded → DecisionRecorded → ApprovalRecorded
-  (specialist) → ApprovalRecorded ×2 (ops) → EvidenceSnapshotRecorded (pre-execution revalidation)
-  → ReservationCreated → ExecutionStarted → ExecutionSucceeded → StatusObserved.
+  (specialist) → ApprovalRecorded ×2 (ops) → ReservationCreated → ExecutionStarted →
+  ExecutionSucceeded → StatusObserved.
 - **Expected verification state:** reached; `submitted`.
-- **Signoff:** signed (captain, 2026-07-28).
+- **Signoff:** signed (captain, 2026-07-26).
+
+**Authority gap, not signed case content:** the signed artifact has no post-review bank-instruction
+evidence and was not amended or re-signed for the 2026-07-28 completeness contract. The demo states
+that signed post-review bank-instruction evidence is absent and withholds execution pending
+captain-signed evidence. Its signed expected outcome remains unchanged.
 
 ### GC-04-recent-bank-change-firm-b - recent bank change (Firm B arm)
 
@@ -572,14 +594,15 @@ labels flip only when prompt 27 lands against the real sandbox.
 ## 8. Validation
 
 - `pnpm golden:validate` - runs [`scripts/golden-cases-validate.ts`](../scripts/golden-cases-validate.ts)
-  (CI job `golden-cases`, blocking): every required §5 field present and populated in every fixture,
-  evidence completeness and canonical UTC instants enforced, amount/unit/schedule/reserve/status
+  (CI job `golden-cases`, blocking): every required §5 field present and populated in each of the 15
+  reapproved fixtures, evidence completeness and canonical UTC instants enforced, amount/unit/schedule/reserve/status
   semantics aligned with the live demo and scenarios.yaml, branch-and-firm source binding and
   phased revalidation enforced, every exact signed source represented, request-relative visible
   event order enforced, GC-16 fixture and visible event order enforced, structural consistency
   (§5) enforced, doc/fixture ids in sync, all twelve spec-required case names covered, at least
-  twelve cases, and every signoff in one of the two legal §1 shapes (all reapproved by the captain,
-  2026-07-28).
+  twelve cases, and every signoff in one of the two legal §1 shapes. GC-03 remains byte-exact to its
+  2026-07-26 captain signature; its later missing authorities are exact, SHA-256-bound, and
+  execution-withheld pending captain signature.
 - The `golden-cases` fitness fence (`src/__tests__/fitness/golden-cases.test.ts`) runs the same
   validator inside `pnpm test` and ships the adversarial companion proving a broken or prematurely
   signed case CANNOT pass (charter #4: detection is not verification).

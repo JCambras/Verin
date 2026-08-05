@@ -28,6 +28,7 @@ import {
   liquidityAuthorityFor,
   outcomeClassFor,
   scenarioById,
+  sourceCaseFor,
   sourceCaseIdsFor,
   type JourneyPass,
   type ScenarioData,
@@ -61,6 +62,10 @@ function stopNoteOf(
   if (disposition === "prohibited") return "This journey stopped at Decision: the prohibition is not resolvable by evidence or authority.";
   if (disposition === "blocked") return "This journey stopped at Decision: the named conditions must be resolved before authority can be requested.";
   if (scenario.spec.specialistExpired) return "This journey stopped at Authority: the specialist review escalated to the operations manager, then expired unresolved.";
+  const sourceCase = sourceCaseFor(scenario, firmId);
+  if (sourceCase?.authorityGap?.execution === "withheld") {
+    return `This journey stopped at Safety: ${sourceCase.authorityGap.reason}`;
+  }
   if (liquidityAuthorityFor(scenario, firmId).kind === "missing") {
     return "This journey stopped at Safety: exact signed liquidity authority is unavailable for this scenario and firm.";
   }

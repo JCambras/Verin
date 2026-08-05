@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "gaps": [
+    {
+      "caseId": "GC-03-recent-bank-change-firm-a",
+      "fixtureSha256": "b2cf9e75a025bcf556f547e186aa8e142bad00d22cf4b36e7632afc3915bab5e",
+      "signedAt": "2026-07-26",
+      "requiredSince": "2026-07-28",
+      "status": "awaiting-captain-signature",
+      "execution": "withheld",
+      "reason": "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
+      "missingAuthorities": [
+        "canonical-utc-instants",
+        "evidence-completeness",
+        "structured-money",
+        "approval-event-bindings",
+        "pre-execution-chronology",
+        "verification-detail"
+      ]
+    }
+  ]
+}

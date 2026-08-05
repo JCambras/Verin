@@ -80,6 +80,8 @@ export function compareComparisonEvidence(
   const triggerEquivalent =
     sourceA !== null &&
     sourceB !== null &&
+    sourceA.trigger.requestAmountMinor !== null &&
+    sourceB.trigger.requestAmountMinor !== null &&
     sourceA.trigger.requestAmountMinor ===
       sourceB.trigger.requestAmountMinor &&
     sourceA.trigger.requestAt === sourceB.trigger.requestAt;

@@ -43,7 +43,7 @@ on its own and is subordinate to the ratified documents below.
 | [0027](../adr/0027-demo-first-wave0-labeled-fakes.md) | Wave 0 walking skeleton on internally-labeled fakes is charter-legal (charter #5 extension; no mock theater) |
 | [0028](../adr/0028-demo-design-language.md) | Demo UI uses the ESTABLISHED Verin design system; v3 visual prescriptions rejected; v3 UX semantics re-expressed via `docs/demo-design-language.md` |
 | [0029](../adr/0029-decision-core-contracts.md) | Prompt 5 landed: the §5 decision-core contracts as Zod strict schemas in `src/contracts/decision-core/`; contracts ceiling re-baselined 600→3500 (amends ADR-0018); invariants 7-9 active |
-| [0030](../adr/0030-authority-lapse-ledger-events.md) | Signed GC-16 names `ApprovalStageEscalated`/`ApprovalStageExpired`, absent from the ratified `LedgerEntry` union: a NAMED extension, fenced against the pinned reference, that collapses when prompt 7 lands the ledger |
+| [0040](../adr/0040-authority-lapse-ledger-events.md) | Signed GC-16 names `ApprovalStageEscalated`/`ApprovalStageExpired`, absent from the ratified `LedgerEntry` union: a NAMED extension, fenced against the pinned reference, that collapses when prompt 7 lands the ledger |
 
 ## The 30 invariants, phase-gated
 

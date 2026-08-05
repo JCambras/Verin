@@ -406,6 +406,7 @@ export function liquidityAuthorityFor(scenario: ScenarioData, firmId: string): L
     ?.map((caseId): SignedRelatedDecisionAuthority | null => {
       const related = SIGNED_CASE_BY_ID[caseId];
       if (
+        related.money.requestAmountMinor === null ||
         related.money.availableLiquidityMinor === null ||
         related.money.pendingLiquidityMinor === null
       ) {
