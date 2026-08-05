@@ -196,7 +196,13 @@ export function buildEvidence(
   const sourceCase = sourceCaseFor(scenario, firm.id);
   const evidence = evidenceForPass(sourceCase, pass);
   const rows: EvidenceRowVM[] = evidence.map(projectEvidenceRow);
-  if (!sourceCase) {
+  if (sourceCase?.authorityGap) {
+    rows.push({
+      kind: "missing",
+      text: sourceCase.authorityGap.reason,
+      fakeClass: "synthetic-fixture",
+    });
+  } else if (!sourceCase) {
     rows.push({
       kind: "missing",
       text: `Missing exact signed evidence authority for ${scenario.id}/${firm.id}. No unrelated case was substituted.`,

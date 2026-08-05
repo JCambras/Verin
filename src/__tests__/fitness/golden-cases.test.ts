@@ -1292,6 +1292,165 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         ),
       ),
     ).toBe(true);
+
+    const exactComparisonCases = () => {
+      const cases = clone();
+      const source = caseById(cases, "GC-01-firm-a-happy-path");
+      const target = caseById(cases, "GC-02-firm-b-happy-path");
+      target.trigger = JSON.parse(JSON.stringify(source.trigger));
+      target.householdEvidence = JSON.parse(
+        JSON.stringify(source.householdEvidence),
+      );
+      return cases;
+    };
+    const exactComparisonDemo = () => {
+      const demo = demoClone();
+      const decision = demo.decisions.find(
+        ({ sourceCaseId, decisionRole }) =>
+          sourceCaseId === "GC-01-firm-a-happy-path" &&
+          decisionRole === "primary",
+      )!;
+      decision.comparisonDescription =
+        "The same household and request have exact signed equivalent evidence; differences are driven by policy provenance, not code.";
+      decision.comparisonDispositionReason =
+        "Same evidence - the outcome differs because policy differs.";
+      return demo;
+    };
+    const exactProblems = validateGoldenDemoSemantics(
+      exactComparisonCases(),
+      realRefs,
+      exactComparisonDemo(),
+    );
+    expect(
+      exactProblems.some((problem) =>
+        problem.includes("attributes a disposition difference solely to policy"),
+      ),
+    ).toBe(false);
+
+    const omittedFieldMutations: Array<
+      readonly [string, (target: Record<string, unknown>) => void]
+    > = [
+      [
+        "request meaning",
+        (target) => {
+          (target.trigger as Record<string, unknown>).description =
+            "A materially different request";
+        },
+      ],
+      [
+        "requester",
+        (target) => {
+          (target.trigger as Record<string, unknown>).requesterRole =
+            "client";
+        },
+      ],
+      [
+        "request identity",
+        (target) => {
+          (target.trigger as Record<string, unknown>).requestRef =
+            "req:different";
+        },
+      ],
+      [
+        "request timing",
+        (target) => {
+          (target.trigger as Record<string, unknown>).asOf =
+            "2026-07-26T13:31:00.000Z";
+        },
+      ],
+      [
+        "money inputs",
+        (target) => {
+          const money = target.signedMoney as Record<string, unknown>;
+          money.plannedWithdrawalMonthlyUsd =
+            Number(money.plannedWithdrawalMonthlyUsd) + 1;
+        },
+      ],
+      [
+        "domain configuration",
+        (target) => {
+          (
+            target.policyVersions as Record<string, unknown>
+          ).domainConfigVersionId = "money-movement@different";
+        },
+      ],
+      [
+        "household instruction",
+        (target) => {
+          const instructions = target.householdInstructions as Array<
+            Record<string, unknown>
+          >;
+          instructions[0]!.summary = "A materially different instruction";
+        },
+      ],
+      [
+        "non-firm prohibition authority",
+        (target) => {
+          target.prohibition = {
+            source: {
+              sourceType: "regulatory",
+              sourceId: "regulatory-hold",
+              versionId: "regulation@different",
+            },
+            scope: "scope:distribution",
+            reasonCode: "legal-hold",
+            explanation: "A regulatory hold controls this request.",
+          };
+        },
+      ],
+      [
+        "regulatory authority",
+        (target) => {
+          (
+            target.policyVersions as Record<string, unknown>
+          ).regulatoryVersionId = "regulation@different";
+        },
+      ],
+    ];
+    for (const [label, mutate] of omittedFieldMutations) {
+      const cases = exactComparisonCases();
+      mutate(caseById(cases, "GC-02-firm-b-happy-path"));
+      const problems = validateGoldenDemoSemantics(
+        cases,
+        realRefs,
+        exactComparisonDemo(),
+      );
+      expect(
+        problems.some((problem) =>
+          problem.includes(
+            "attributes a disposition difference solely to policy",
+          ),
+        ),
+        label,
+      ).toBe(true);
+    }
+
+    const authorityGapCases = exactComparisonCases();
+    const authorityGapProblems = validateGoldenDemoSemantics(
+      authorityGapCases,
+      realRefs,
+      exactComparisonDemo(),
+      [
+        ...DEFAULT_GOLDEN_AUTHORITY_GAPS,
+        {
+          caseId: "GC-02-firm-b-happy-path",
+          fixtureSha256: "0".repeat(64),
+          signedAt: "2026-07-28",
+          requiredSince: "2026-08-05",
+          status: "awaiting-captain-signature",
+          execution: "withheld",
+          reason: "Awaiting signed authority",
+          missingAuthorities: ["verification-detail"],
+        },
+      ],
+    );
+    expect(
+      authorityGapProblems.some((problem) =>
+        problem.includes(
+          "attributes a disposition difference solely to policy",
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("flags a verified bank-instruction claim without exact evidence", () => {
@@ -1379,6 +1538,23 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(gc03.stopNote).toContain(
       "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
     );
+    const hiddenEvidenceGap = demoClone();
+    hiddenEvidenceGap.decisions.find(
+      ({ sourceCaseId, decisionRole }) =>
+        sourceCaseId === "GC-03-recent-bank-change-firm-a" &&
+        decisionRole === "primary",
+    )!.evidenceGaps = [];
+    expect(
+      validateGoldenDemoSemantics(
+        clone(),
+        realRefs,
+        hiddenEvidenceGap,
+      ).some((problem) =>
+        problem.includes(
+          "direct Evidence surface omits the signed authority gap and execution-withheld reason",
+        ),
+      ),
+    ).toBe(true);
     gc03.safetyChecks = [
       {
         label: "Bank instruction unchanged since the decision",

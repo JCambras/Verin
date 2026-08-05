@@ -13,6 +13,23 @@ export interface DemoAuditPosition {
   readonly sequence: number;
 }
 
+function pairOrdinals(left: number, right: number): number {
+  if (
+    !Number.isSafeInteger(left) ||
+    !Number.isSafeInteger(right) ||
+    left < 0 ||
+    right < 0
+  ) {
+    throw new TypeError("Audit-position ordinals must be non-negative safe integers");
+  }
+  const sum = left + right;
+  const paired = (sum * (sum + 1)) / 2 + right;
+  if (!Number.isSafeInteger(paired)) {
+    throw new TypeError("Audit-position allocation exceeds the safe integer range");
+  }
+  return paired;
+}
+
 export function auditPositionFor(
   scenario: ScenarioData,
   firmId: FirmData["id"],
@@ -21,25 +38,31 @@ export function auditPositionFor(
   const scenarioIndex = SCENARIOS.findIndex(
     (candidate) => candidate.id === scenario.id,
   );
-  const firmIds = Object.keys(FIRMS).sort();
+  const firmIds = Object.keys(FIRMS);
   const firmIndex = firmIds.indexOf(firmId);
   const caseId = sourceCaseFor(scenario, firmId)?.caseId;
   const caseIndex = caseId
     ? SIGNED_CASE_IDS.indexOf(caseId)
-    : SIGNED_CASE_IDS.length;
-  if (scenarioIndex < 0 || firmIndex < 0 || caseIndex < 0) {
+    : -1;
+  if (
+    scenarioIndex < 0 ||
+    firmIndex < 0 ||
+    (caseId !== undefined && caseIndex < 0)
+  ) {
     throw new TypeError(
       `Cannot assign an audit position to ${scenario.id}/${firmId}/${caseId ?? "unsigned"}/${pass}`,
     );
   }
+  const caseOrdinal = caseIndex + 1;
+  const identityOrdinal = pairOrdinals(
+    pairOrdinals(scenarioIndex, firmIndex),
+    caseOrdinal,
+  );
   return {
     orgId: "demo-org",
     sequence:
       214 +
-      (((scenarioIndex * firmIds.length + firmIndex) *
-        (SIGNED_CASE_IDS.length + 1) +
-        caseIndex) *
-        2 +
-        (pass === "revalidated" ? 1 : 0)),
+      identityOrdinal * 2 +
+      (pass === "revalidated" ? 1 : 0),
   };
 }

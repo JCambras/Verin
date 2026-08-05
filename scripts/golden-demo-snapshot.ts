@@ -192,6 +192,9 @@ function displayedDecisions(): DisplayedDecision[] {
         requestAmountMinor: requestFor(scenario, firm.id).amountMinor,
         signedTrigger: signedTrigger(sourceCase),
         visibleEvidence,
+        evidenceGaps: journey.evidence.rows.flatMap((row) =>
+          row.kind === "missing" ? [row.text] : [],
+        ),
         workspaceAccounts,
         prohibition,
         policyTraceRows: journey.policyTrace.rows.map(
@@ -270,6 +273,7 @@ function displayedDecisions(): DisplayedDecision[] {
                   requestAmountMinor: decision.requestAmountMinor,
                   signedTrigger: signedTrigger(relatedSource ?? null),
                   visibleEvidence: [],
+                  evidenceGaps: [],
                   workspaceAccounts: [],
                   prohibition: null,
                   policyTraceRows: [],

@@ -6161,3 +6161,32 @@ file-and-line diagnostic.
 **Revert:** all injected duplicates remain inside the companion test.
 
 **Date:** 2026-08-04 (D-122).
+
+## F124 · direct authority gaps, append-stable audit positions, and complete comparison inputs
+
+**Fences:** `src/__tests__/unit/demo-truth-boundaries.test.ts`,
+`src/__tests__/fitness/golden-cases.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** an existing signed case does not hide its later authority gap on Evidence, appending a
+signed case does not renumber an existing audit position, and policy-only causality requires equality
+across every material signed non-policy input.
+
+Before the product correction, the unit companion failed because GC-03 Evidence contained three
+signed rows and no missing-authority row. Removing the corrected projection reproduced the browser
+failure at `e2e/demo-journey.spec.ts:927`, where the direct Evidence route omitted the exact
+execution-withheld reason. The semantic companion deletes the projected gap and requires the
+independent validator to name the direct Evidence omission.
+
+Restoring the mutable signed-case-count radix changed Firm B's existing sequence from 250 to 252 when
+the companion appended one case id. The append-stable ordinal pairing keeps the complete prior
+`(orgId, sequence)` value unchanged and still leaves lifecycle passes distinct.
+
+Removing the non-policy input normalization made request-meaning mutations pass the unit comparison
+and the raw-fixture semantic companion. The final mutation table independently changes request meaning,
+requester, request identity, money inputs, domain configuration, household instructions, regulatory
+authority, and non-firm prohibition authority. Each mutation prevents equivalence, while the control
+case with identical inputs permits the policy-only claim.
+
+**Revert:** every adversarial mutation remains inside a companion or was removed immediately after its
+recorded failure.
+
+**Date:** 2026-08-05 (D-123).

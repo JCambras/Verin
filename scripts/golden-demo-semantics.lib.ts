@@ -74,6 +74,7 @@ export interface DisplayedDecision {
   requestAmountMinor: number;
   signedTrigger: SignedTriggerProjection | null;
   visibleEvidence: VisibleEvidenceProjection[];
+  evidenceGaps: string[];
   workspaceAccounts: Array<{
     evidence: VisibleEvidenceProjection;
     unavailableFields: string[];
@@ -458,35 +459,140 @@ function comparisonEvidenceRows(
     );
 }
 
-function comparisonEvidenceSignature(
+function comparisonInputSignature(
   source: Record<string, unknown> | undefined,
+  authorityGap: GoldenAuthorityGap | undefined,
 ): string | null {
-  const trigger = isObj(source?.trigger) ? source.trigger : null;
-  const money = source ? readSignedMoney(source) : null;
   const evidence = comparisonEvidenceRows(source);
-  return trigger && money && evidence
+  const inputs = comparisonNonPolicyInputRows(source, authorityGap);
+  return evidence && inputs
     ? JSON.stringify({
-        requestAt: trigger.asOf,
-        requestAmountUsd: money.requestAmountUsd,
         evidence: evidence.map(({ signature }) => signature),
+        inputs: inputs.map(({ signature }) => signature),
       })
     : null;
 }
 
-function comparisonEvidenceDifferenceLabels(
-  sourceA: Record<string, unknown> | undefined,
-  sourceB: Record<string, unknown> | undefined,
+function comparisonNonPolicyInputRows(
+  source: Record<string, unknown> | undefined,
+  authorityGap: GoldenAuthorityGap | undefined,
+): Array<{ label: string; signature: string }> | null {
+  const trigger = isObj(source?.trigger) ? source.trigger : null;
+  const money = source ? readSignedMoney(source) : null;
+  const policyVersions = isObj(source?.policyVersions)
+    ? source.policyVersions
+    : null;
+  const householdInstructions = Array.isArray(
+    source?.householdInstructions,
+  )
+    ? source.householdInstructions.filter(isObj).sort((left, right) =>
+        String(left.versionId).localeCompare(String(right.versionId)) ||
+        JSON.stringify(left).localeCompare(JSON.stringify(right)),
+      )
+    : null;
+  if (!trigger || !money || !policyVersions || !householdInstructions) {
+    return null;
+  }
+  const prohibition = isObj(source?.prohibition)
+    ? source.prohibition
+    : null;
+  const prohibitionSource = isObj(prohibition?.source)
+    ? prohibition.source
+    : null;
+  const nonFirmProhibition =
+    prohibitionSource?.sourceType === "firm_policy" ? null : prohibition;
+  const householdInstructionVersionIds = Array.isArray(
+    policyVersions.householdInstructionVersionIds,
+  )
+    ? [...policyVersions.householdInstructionVersionIds].sort()
+    : policyVersions.householdInstructionVersionIds;
+  return [
+    {
+      label: "signed request meaning",
+      signature: JSON.stringify({
+        description: trigger.description,
+        maskedRequestSummary: trigger.maskedRequestSummary,
+      }),
+    },
+    {
+      label: "signed requester",
+      signature: JSON.stringify(trigger.requesterRole),
+    },
+    {
+      label: "signed request identity",
+      signature: JSON.stringify(trigger.requestRef),
+    },
+    {
+      label: "signed request timing and amount",
+      signature: JSON.stringify({
+        requestAt: trigger.asOf,
+        requestAmountUsd: money.requestAmountUsd,
+      }),
+    },
+    {
+      label: "signed money inputs",
+      signature: JSON.stringify({
+        currency: money.currency,
+        cadence: money.cadence,
+        plannedWithdrawalMonthlyUsd:
+          money.plannedWithdrawalMonthlyUsd,
+        availableLiquidityUsd: money.availableLiquidityUsd,
+        pendingLiquidityUsd: money.pendingLiquidityUsd,
+        preExecutionRevalidation: null,
+      }),
+    },
+    {
+      label: "domain configuration authority",
+      signature: JSON.stringify(
+        policyVersions.domainConfigVersionId,
+      ),
+    },
+    {
+      label: "household instruction authority",
+      signature: JSON.stringify({
+        versionIds: householdInstructionVersionIds,
+        instructions: householdInstructions,
+      }),
+    },
+    {
+      label: "regulatory authority",
+      signature: JSON.stringify(policyVersions.regulatoryVersionId),
+    },
+    {
+      label: "non-firm prohibition authority",
+      signature: JSON.stringify(nonFirmProhibition),
+    },
+    {
+      label: "signed authority completeness",
+      signature: JSON.stringify(
+        authorityGap
+          ? {
+              signedAt: authorityGap.signedAt,
+              requiredSince: authorityGap.requiredSince,
+              status: authorityGap.status,
+              execution: authorityGap.execution,
+              reason: authorityGap.reason,
+              missingAuthorities: [
+                ...authorityGap.missingAuthorities,
+              ].sort(),
+            }
+          : null,
+      ),
+    },
+  ];
+}
+
+function changedComparisonLabels(
+  rowsA: Array<{ key?: string; label: string; signature: string }>,
+  rowsB: Array<{ key?: string; label: string; signature: string }>,
 ): string[] {
-  const rowsA = comparisonEvidenceRows(sourceA);
-  const rowsB = comparisonEvidenceRows(sourceB);
-  if (!rowsA || !rowsB) return [];
   const keys = new Set([
-    ...rowsA.map(({ key }) => key),
-    ...rowsB.map(({ key }) => key),
+    ...rowsA.map((row) => row.key ?? row.label),
+    ...rowsB.map((row) => row.key ?? row.label),
   ]);
   return [...keys].sort().flatMap((key) => {
-    const a = rowsA.filter((row) => row.key === key);
-    const b = rowsB.filter((row) => row.key === key);
+    const a = rowsA.filter((row) => (row.key ?? row.label) === key);
+    const b = rowsB.filter((row) => (row.key ?? row.label) === key);
     return JSON.stringify(a.map(({ signature }) => signature)) ===
       JSON.stringify(b.map(({ signature }) => signature))
       ? []
@@ -494,9 +600,32 @@ function comparisonEvidenceDifferenceLabels(
   });
 }
 
-function comparisonHasEquivalentEvidence(
+function comparisonDifferenceLabels(
+  sourceA: Record<string, unknown> | undefined,
+  sourceB: Record<string, unknown> | undefined,
+  authorityGaps: GoldenAuthorityGap[],
+): string[] {
+  const rowsA = comparisonEvidenceRows(sourceA);
+  const rowsB = comparisonEvidenceRows(sourceB);
+  const inputsA = comparisonNonPolicyInputRows(
+    sourceA,
+    authorityGaps.find((gap) => gap.caseId === sourceA?.caseId),
+  );
+  const inputsB = comparisonNonPolicyInputRows(
+    sourceB,
+    authorityGaps.find((gap) => gap.caseId === sourceB?.caseId),
+  );
+  if (!rowsA || !rowsB || !inputsA || !inputsB) return [];
+  return [
+    ...changedComparisonLabels(rowsA, rowsB),
+    ...changedComparisonLabels(inputsA, inputsB),
+  ];
+}
+
+function comparisonHasEquivalentInputs(
   cases: LoadedCase[],
   decision: DisplayedDecision,
+  authorityGaps: GoldenAuthorityGap[],
 ): boolean {
   const own = decision.sourceCaseId
     ? caseData(cases, decision.sourceCaseId)
@@ -508,9 +637,19 @@ function comparisonHasEquivalentEvidence(
       data.scenarioRef === decision.scenarioId &&
       data.firm === otherFirmId,
   );
-  const ownSignature = comparisonEvidenceSignature(own);
-  const counterpartSignature = comparisonEvidenceSignature(
+  const ownSignature = comparisonInputSignature(
+    own,
+    authorityGaps.find((gap) => gap.caseId === own?.caseId),
+  );
+  const counterpartSignature = comparisonInputSignature(
     counterpart && isObj(counterpart.data) ? counterpart.data : undefined,
+    authorityGaps.find(
+      (gap) =>
+        gap.caseId ===
+        (counterpart && isObj(counterpart.data)
+          ? counterpart.data.caseId
+          : undefined),
+    ),
   );
   return (
     ownSignature !== null &&
@@ -1096,15 +1235,16 @@ function validateDisplayedDecisions(
         data.scenarioRef === d.scenarioId &&
         data.firm === comparisonFirmId,
     );
-    const comparisonDifferences = comparisonEvidenceDifferenceLabels(
+    const comparisonDifferences = comparisonDifferenceLabels(
       ownComparisonSource,
       counterpart && isObj(counterpart.data)
         ? counterpart.data
         : undefined,
+      authorityGaps,
     );
     if (
       d.decisionRole === "primary" &&
-      !comparisonHasEquivalentEvidence(cases, d)
+      !comparisonHasEquivalentInputs(cases, d, authorityGaps)
     ) {
       if (
         !d.comparisonDescription?.toLowerCase().includes(
@@ -1190,6 +1330,14 @@ function validateDisplayedDecisions(
     const authorityGap = authorityGaps.find(
       (gap) => gap.caseId === d.sourceCaseId,
     );
+    if (
+      authorityGap &&
+      !d.evidenceGaps.includes(authorityGap.reason)
+    ) {
+      problems.push(
+        `${at}: direct Evidence surface omits the signed authority gap and execution-withheld reason`,
+      );
+    }
     const structuredMoneyGap =
       authorityGap?.missingAuthorities.includes("structured-money") ===
       true;

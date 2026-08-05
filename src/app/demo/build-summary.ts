@@ -81,7 +81,7 @@ function bankChangeHandlingLabel(firm: FirmData): string {
     : "Blocked until independently verified";
 }
 
-function evidenceDifferenceCopy(
+function comparisonDifferenceCopy(
   comparison: ComparisonEvidenceResult,
 ): string {
   const unavailable = [
@@ -102,7 +102,7 @@ function evidenceDifferenceCopy(
       ? [`signed values differ for ${comparison.changed.join(", ")}`]
       : []),
   ];
-  return `The complete signed evidence sets differ: ${differences.join("; ")}.`;
+  return `The complete signed evidence and non-policy input sets differ: ${differences.join("; ")}.`;
 }
 
 export function buildComparison(
@@ -125,7 +125,7 @@ export function buildComparison(
     pass,
   );
   const equivalentEvidence = evidenceComparison.equivalent;
-  const evidenceDifference = evidenceDifferenceCopy(evidenceComparison);
+  const comparisonDifference = comparisonDifferenceCopy(evidenceComparison);
   const policyA =
     sourceA?.policyVersions.firmPolicyVersionId ?? a.policyVersion;
   const policyB =
@@ -189,7 +189,7 @@ export function buildComparison(
             why: {
               reason: equivalentEvidence
                 ? "Same household, same request, and exact signed equivalent evidence - the outcome differs because the approved policy version differs, with zero code change."
-                : `${evidenceDifference} The outcome is not attributed solely to policy.`,
+                : `${comparisonDifference} The outcome is not attributed solely to policy.`,
             },
           }
         : {}),
@@ -198,7 +198,7 @@ export function buildComparison(
   return {
     description: equivalentEvidence
       ? "The same household and the same request under exact signed equivalent evidence. The differences below are driven by policy provenance, not code."
-      : `The same household and request are shown. ${evidenceDifference}`,
+      : `The same household and request are shown. ${comparisonDifference}`,
     columns: [
       {
         firmId: a.id,

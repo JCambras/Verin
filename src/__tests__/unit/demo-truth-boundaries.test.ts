@@ -6,7 +6,12 @@ import {
   sourceCaseFor,
 } from "@app/demo/data";
 import { compareComparisonEvidence } from "@app/demo/comparison-evidence";
+import { auditPositionFor } from "@app/demo/audit-position";
 import { getJourney } from "@app/demo/journey";
+import {
+  SIGNED_CASE_IDS,
+  type SignedCaseVariant,
+} from "@app/demo/signed-cases";
 
 describe("demo truth boundaries", () => {
   it("requires an explicit exact case whenever signed variants exist", () => {
@@ -68,6 +73,12 @@ describe("demo truth boundaries", () => {
     expect(journey.stopNote).toContain(
       "Execution is withheld pending captain-signed evidence",
     );
+    expect(journey.evidence.rows).toContainEqual({
+      kind: "missing",
+      text:
+        "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
+      fakeClass: "synthetic-fixture",
+    });
   });
 
   it("treats a signed evidence summary change as a comparison difference", () => {
@@ -104,6 +115,138 @@ describe("demo truth boundaries", () => {
         "account-balance · subject:smiths-joint-taxable",
       ],
     });
+  });
+
+  it("compares every material non-policy input", () => {
+    const source = sourceCaseFor(
+      scenarioById("safe-proceed"),
+      "firm-a",
+    )!;
+    const same = structuredClone(source);
+    const mutations: Array<
+      readonly [string, (value: SignedCaseVariant) => SignedCaseVariant]
+    > = [
+      [
+        "signed request meaning",
+        (value) => ({
+          ...value,
+          trigger: {
+            ...value.trigger,
+            description: "A materially different request",
+          },
+        }),
+      ],
+      [
+        "signed requester",
+        (value) => ({
+          ...value,
+          trigger: { ...value.trigger, requesterRole: "client" },
+        }),
+      ],
+      [
+        "signed request identity",
+        (value) => ({
+          ...value,
+          trigger: { ...value.trigger, requestRef: "req:other" },
+        }),
+      ],
+      [
+        "signed request timing and amount",
+        (value) => ({
+          ...value,
+          trigger: {
+            ...value.trigger,
+            requestAt: "2026-07-26T13:31:00.000Z",
+          },
+        }),
+      ],
+      [
+        "signed money inputs",
+        (value) => ({
+          ...value,
+          money: {
+            ...value.money,
+            plannedWithdrawalMonthlyMinor:
+              (value.money.plannedWithdrawalMonthlyMinor ?? 0) + 1,
+          },
+        }),
+      ],
+      [
+        "domain configuration authority",
+        (value) => ({
+          ...value,
+          policyVersions: {
+            ...value.policyVersions,
+            domainConfigVersionId: "money-movement@different",
+          },
+        }),
+      ],
+      [
+        "household instruction authority",
+        (value) => ({
+          ...value,
+          householdInstructions: value.householdInstructions.map(
+            (instruction, index) =>
+              index === 0
+                ? { ...instruction, summary: "Different instruction" }
+                : instruction,
+          ),
+        }),
+      ],
+      [
+        "regulatory authority",
+        (value) => ({
+          ...value,
+          policyVersions: {
+            ...value.policyVersions,
+            regulatoryVersionId: "regulation@different",
+          },
+        }),
+      ],
+      [
+        "non-firm prohibition authority",
+        (value) => ({
+          ...value,
+          prohibition: {
+            source: {
+              sourceType: "regulatory",
+              sourceId: "regulatory-hold",
+              versionId: "regulation@different",
+            },
+            scope: "scope:distribution",
+            reasonCode: "legal-hold",
+            explanation: "A regulatory hold controls this request.",
+          },
+        }),
+      ],
+      [
+        "signed authority completeness",
+        (value) => ({
+          ...value,
+          authorityGap: {
+            signedAt: "2026-07-26",
+            requiredSince: "2026-07-28",
+            status: "awaiting-captain-signature",
+            execution: "withheld",
+            reason: "Awaiting signed authority",
+            missingAuthorities: ["verification-detail"],
+          },
+        }),
+      ],
+    ];
+
+    expect(
+      compareComparisonEvidence(source, same, "initial").equivalent,
+    ).toBe(true);
+    for (const [label, mutate] of mutations) {
+      expect(
+        compareComparisonEvidence(
+          source,
+          mutate(structuredClone(same)),
+          "initial",
+        ),
+      ).toMatchObject({ equivalent: false, changed: [label] });
+    }
   });
 
   it("binds verification proofs to causal events", () => {
@@ -171,6 +314,22 @@ describe("demo truth boundaries", () => {
     expect(firmA.record.hashes.auditPosition.sequence).not.toBe(
       gc07.record.hashes.auditPosition.sequence,
     );
+  });
+
+  it("keeps prior audit positions stable when a signed case is appended", () => {
+    const scenario = scenarioById("safe-proceed");
+    const before = auditPositionFor(scenario, "firm-b", "initial");
+    const mutableIds = SIGNED_CASE_IDS as unknown as string[];
+    const appendedId = "GC-99-appended-case";
+
+    mutableIds.push(appendedId);
+    try {
+      expect(auditPositionFor(scenario, "firm-b", "initial")).toEqual(
+        before,
+      );
+    } finally {
+      expect(mutableIds.pop()).toBe(appendedId);
+    }
   });
 
   it("withholds policy approval until exact-case simulation is computed", () => {

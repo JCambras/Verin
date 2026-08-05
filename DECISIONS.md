@@ -3806,3 +3806,24 @@ original fixture without recording the later contract gap would hide why the sig
 currently execute.
 **Revert path:** remove the gap only when the captain signs replacement material that satisfies the
 later contract and preserves the must-hold execution proof.
+
+### D-123 · 2026-08-05 · reversible · Evidence gaps and comparison identities remain structurally stable
+
+Every direct GC-03 Evidence projection appends the existing signed authority-gap reason even though
+the case has initial signed rows. Safety, execution reach, and the printable record continue to use
+the same reason without changing the captain-signed fixture.
+
+Demo audit positions now pair append-only scenario, firm, and case ordinals without using a mutable
+registry length as a radix. The unsigned slot is ordinal zero, signed cases begin at one, lifecycle
+pass remains the final bit, and appending a case cannot renumber an existing record.
+
+Cross-firm equivalence now compares signed evidence plus request meaning, requester, request identity,
+request timing and amount, non-policy money inputs, domain configuration, household instructions,
+regulatory authority, non-firm prohibition authority, and signed-authority completeness. Firm policy
+versions, firm reserve floors, and firm-policy prohibitions remain the intentional comparison variables.
+The product projection and raw-fixture semantic validator normalize these inputs independently.
+
+**Why:** a present case is not proof that later execution authority exists, a mutable radix is not a
+stable audit identity, and evidence equality alone cannot justify a policy-only causality claim.
+**Revert path:** none while D-119, D-120, and D-122 require fail-closed execution truth and exact
+examiner-facing identity.

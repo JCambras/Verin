@@ -923,6 +923,10 @@ test("missing bank-instruction evidence fails closed on Safety and Record", asyn
 
   const changedContext =
     "scenario=recent-bank-change-block&firm=firm-a&case=GC-03-recent-bank-change-firm-a";
+  await page.goto(`/app/demo/evidence?${changedContext}`);
+  await expect(page.locator("main")).toContainText(
+    "Signed post-review bank-instruction evidence is absent. Execution is withheld pending captain-signed evidence.",
+  );
   for (const station of ["safety", "record"]) {
     await page.goto(`/app/demo/${station}?${changedContext}`);
     const surface =
