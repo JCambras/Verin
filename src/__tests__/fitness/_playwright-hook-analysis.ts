@@ -4,7 +4,10 @@ import {
   type BinaryExpression,
   type SourceFile,
 } from "ts-morph";
-import { reflectApplyTarget } from "./_callable-indirection";
+import {
+  reflectApplyTarget,
+  reflectGetAccess,
+} from "./_callable-indirection";
 
 const PLAYWRIGHT_HOOK_MEMBERS = new Set([
   "beforeAll",
@@ -240,6 +243,14 @@ function playwrightTestValue(
   if (seen.has(normalized)) return false;
   seen.add(normalized);
   if (directTestImport(normalized)) return true;
+  const reflected = reflectGetAccess(normalized);
+  if (
+    reflected !== undefined &&
+    (reflected.name === undefined || reflected.name === "test") &&
+    namespaceImportValue(reflected.receiver, new Set(seen))
+  ) {
+    return true;
+  }
   const access = memberAccess(normalized);
   if (
     access?.name === "test" &&
@@ -772,6 +783,15 @@ function playwrightHookValue(
   const normalized = unwrapExpression(node);
   if (seen.has(normalized)) return false;
   seen.add(normalized);
+  const reflected = reflectGetAccess(normalized);
+  if (
+    reflected !== undefined &&
+    playwrightTestValue(reflected.receiver, new Set(seen)) &&
+    (reflected.name === undefined ||
+      PLAYWRIGHT_HOOK_MEMBERS.has(reflected.name))
+  ) {
+    return true;
+  }
   if (Node.isElementAccessExpression(normalized)) {
     const name = staticStringValue(normalized.getArgumentExpression());
     if (

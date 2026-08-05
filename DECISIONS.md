@@ -6153,7 +6153,7 @@ impossibilities).
 `evaluate-primitives.ts`, and delete the evaluate case, property family H, and the two
 temporal-typed world paths (`standing-preference.effectiveOn`, `intent.requestedOn`).
 
-### D-061 · 2026-07-28 · captain-decision · Gate A owns invariants 1, 2, 4, 5; invariant 3 is gated at B
+### D-186 · 2026-07-28 · captain-decision · Gate A owns invariants 1, 2, 4, 5; invariant 3 is gated at B
 
 Gate A (Wave A, prompts 4-7) required all five foundation invariants, but invariant 3 ("no core module,
 directory, or evaluator branch is named for a decision domain") cannot activate until prompt 10 migrates
@@ -6525,6 +6525,16 @@ nor register tests or suites; **(5)** Gate 0 pins its `first` query helper to th
 single-value semantics used by every resolver; and **(6)** Gate 0 and Axe evidence share one hardened
 Playwright hook-provenance authority. PF-001, PF-030, PF-031, and PF-032 record the real red injections,
 focused companions, and restored green proofs.
+
+The captain-approved identity, reflection, and result-ownership review (2026-08-05) amended ADR-0039
+in place a thirty-first time: **(1)** the Gate A decision entry is D-186, leaving the existing prompt-6
+security decision as the sole D-061; only Gate A proof references moved; **(2)** Vitest registration
+analysis resolves the invoked target of `Reflect.apply`; **(3)** one shared callable-indirection helper
+supplies static `Reflect.get` provenance to Vitest and Playwright analyzers, with unresolved Playwright
+keys failing closed for neutralizers and hooks; and **(4)** the complete-suite and v3 runners
+canonicalize result names to exact repository-relative paths and reject duplicate exact results, so a
+passing suffix-matching shadow file cannot satisfy an omitted fence. PF-001, PF-024, and PF-031 record
+the red reproductions, focused companions, and restored green proofs.
 
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle

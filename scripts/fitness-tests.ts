@@ -56,7 +56,7 @@ try {
 
 const problems = [
   ...(reportProblem === undefined ? [] : [reportProblem]),
-  ...fitnessInventoryProblems(fitnessFiles, results, run.status),
+  ...fitnessInventoryProblems(fitnessFiles, results, run.status, ROOT),
 ];
 if (problems.length > 0) {
   if (run.stderr.trim() !== "") console.error(run.stderr.trim());

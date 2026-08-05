@@ -27,6 +27,10 @@ import {
   VITEST_TEST_INCLUDE,
 } from "../../../scripts/fitness-tests.lib";
 import { isProvablyReachable } from "./_ast-control-flow";
+import {
+  reflectApplyTarget,
+  reflectGetAccess,
+} from "./_callable-indirection";
 import { moduleReferences } from "./_fence-utils";
 
 /**
@@ -410,6 +414,8 @@ function staticRegistrationMember(
   node: Node,
 ): { receiver: Node; name?: string } | undefined {
   const normalized = unwrapRegistrationExpression(node);
+  const reflected = reflectGetAccess(normalized);
+  if (reflected !== undefined) return reflected;
   if (Node.isPropertyAccessExpression(normalized)) {
     return {
       receiver: normalized.getExpression(),
@@ -507,6 +513,16 @@ function vitestCallablePaths(
   const normalized = unwrapRegistrationExpression(node);
   if (seen.has(normalized)) return [];
   seen.add(normalized);
+  const reflected = reflectGetAccess(normalized);
+  if (reflected !== undefined) {
+    return vitestCallablePaths(
+      reflected.receiver,
+      new Set(seen),
+    ).map((path) => ({
+      ...path,
+      members: [...path.members, reflected.name ?? "*"],
+    }));
+  }
   if (Node.isTaggedTemplateExpression(normalized)) {
     const paths = vitestCallablePaths(
       normalized.getTag(),
@@ -801,7 +817,10 @@ function isVitestRegistrationPath(path: VitestCallablePath): boolean {
     path.caseCollections.length > 0 ||
     path.members
       .slice(1)
-      .some((member) => NEUTRALIZING_VITEST_OPTIONS.has(member))
+      .some(
+        (member) =>
+          member === "*" || NEUTRALIZING_VITEST_OPTIONS.has(member),
+      )
   );
 }
 
@@ -890,7 +909,9 @@ function disabledVitestRegistrationProblemsInFile(
   return file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
     .flatMap((call) =>
-      vitestCallablePaths(call.getExpression())
+      vitestCallablePaths(
+        reflectApplyTarget(call) ?? call.getExpression(),
+      )
         .filter(isVitestRegistrationPath)
         .flatMap((path) => {
           const members = path.members;
@@ -914,6 +935,10 @@ const registrationAnalysisProject = new Project({
 });
 const registrationGraphProject = new Project({
   tsConfigFilePath: p("tsconfig.json"),
+  skipAddingFilesFromTsConfig: true,
+});
+const registrationFilesystemAnalysisProject = new Project({
+  useInMemoryFileSystem: true,
   skipAddingFilesFromTsConfig: true,
 });
 let registrationAnalysisSequence = 0;
@@ -1041,10 +1066,19 @@ function inlineRegistrationModulePath(
     null;
 }
 
+const filesystemRegistrationResolutionCache = new Map<
+  string,
+  string | undefined | null
+>();
+
 function filesystemRegistrationModulePath(
   importer: string,
   specifier: string,
 ): string | undefined | null {
+  const cacheKey = `${importer}\0${specifier}`;
+  if (filesystemRegistrationResolutionCache.has(cacheKey)) {
+    return filesystemRegistrationResolutionCache.get(cacheKey);
+  }
   const importerPath = resolve(root, importer);
   const resolvedModule = ts.resolveModuleName(
     specifier,
@@ -1053,7 +1087,7 @@ function filesystemRegistrationModulePath(
     registrationGraphProject.getModuleResolutionHost(),
   ).resolvedModule;
   if (resolvedModule === undefined) {
-    return specifier.startsWith(".") ||
+    const result = specifier.startsWith(".") ||
       specifier.startsWith("@/") ||
       specifier.startsWith("@app/") ||
       specifier.startsWith("@contracts/") ||
@@ -1061,6 +1095,8 @@ function filesystemRegistrationModulePath(
       specifier.startsWith("@infra/")
       ? null
       : undefined;
+    filesystemRegistrationResolutionCache.set(cacheKey, result);
+    return result;
   }
   const resolvedPath = resolve(resolvedModule.resolvedFileName);
   if (
@@ -1068,6 +1104,7 @@ function filesystemRegistrationModulePath(
     resolvedPath.split(sep).includes("node_modules") ||
     resolvedPath.endsWith(".d.ts")
   ) {
+    filesystemRegistrationResolutionCache.set(cacheKey, undefined);
     return undefined;
   }
   const fromRoot = relative(root, resolvedPath);
@@ -1076,9 +1113,124 @@ function filesystemRegistrationModulePath(
     fromRoot.startsWith(`..${sep}`) ||
     isAbsolute(fromRoot)
   ) {
+    filesystemRegistrationResolutionCache.set(cacheKey, null);
     return null;
   }
-  return normalizedRegistrationPath(fromRoot);
+  const result = normalizedRegistrationPath(fromRoot);
+  filesystemRegistrationResolutionCache.set(cacheKey, result);
+  return result;
+}
+
+interface RegistrationModuleAnalysis {
+  readonly references: readonly RegistrationRuntimeReference[];
+  readonly registrations: readonly string[];
+}
+
+const filesystemRegistrationAnalysisCache = new Map<
+  string,
+  RegistrationModuleAnalysis
+>();
+
+function analyzeRegistrationModule(
+  project: Project,
+  path: string,
+  source: string,
+): RegistrationModuleAnalysis {
+  const file = project.createSourceFile(`/${path}`, source, {
+    overwrite: true,
+  });
+  return {
+    references: registrationRuntimeReferences(file),
+    registrations: file
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .flatMap((call) =>
+        vitestCallablePaths(
+          reflectApplyTarget(call) ?? call.getExpression(),
+        )
+          .filter(isVitestRegistrationPath)
+          .map(
+            (registration) =>
+              `${path}:${call.getStartLineNumber()} imported fitness helper must not register Vitest ${registration.members.join(".")}`,
+          ),
+      ),
+  };
+}
+
+function filesystemRegistrationModuleAnalysis(
+  path: string,
+): RegistrationModuleAnalysis | undefined {
+  const cached = filesystemRegistrationAnalysisCache.get(path);
+  if (cached !== undefined) return cached;
+  if (!existsSync(p(path))) return undefined;
+  const analysis = analyzeRegistrationModule(
+    registrationFilesystemAnalysisProject,
+    path,
+    readFileSync(p(path), "utf8"),
+  );
+  filesystemRegistrationAnalysisCache.set(path, analysis);
+  return analysis;
+}
+
+function importedFilesystemVitestRegistrationProblems(
+  entrySource: string,
+  entryName: string,
+): string[] {
+  const normalizedEntry = normalizedRegistrationPath(entryName);
+  const diskEntrySource = existsSync(p(normalizedEntry))
+    ? readFileSync(p(normalizedEntry), "utf8")
+    : undefined;
+  const transientProject = new Project({
+    useInMemoryFileSystem: true,
+    skipAddingFilesFromTsConfig: true,
+  });
+  const problems: string[] = [];
+  const reachable = new Set<string>();
+  const pending = [normalizedEntry];
+  while (pending.length > 0) {
+    const path = pending.pop()!;
+    if (reachable.has(path)) continue;
+    const analysis =
+      path === normalizedEntry && entrySource !== diskEntrySource
+        ? analyzeRegistrationModule(
+            transientProject,
+            path,
+            entrySource,
+          )
+        : filesystemRegistrationModuleAnalysis(path);
+    if (analysis === undefined) {
+      problems.push(`${path}:1 imported fitness module cannot be read`);
+      continue;
+    }
+    reachable.add(path);
+    if (path !== normalizedEntry) {
+      problems.push(...analysis.registrations);
+    }
+    for (const reference of analysis.references) {
+      if (reference.specifier === undefined) {
+        problems.push(
+          `${path}:${reference.line} imported fitness graph requires literal runtime module references`,
+        );
+        continue;
+      }
+      if (path !== normalizedEntry && reference.specifier === "vitest") {
+        problems.push(
+          `${path}:${reference.line} imported fitness helper must not import the Vitest runtime`,
+        );
+      }
+      const resolved = filesystemRegistrationModulePath(
+        path,
+        reference.specifier,
+      );
+      if (resolved === null) {
+        problems.push(
+          `${path}:${reference.line} local runtime import '${reference.specifier}' cannot be resolved`,
+        );
+      } else if (resolved !== undefined) {
+        pending.push(resolved);
+      }
+    }
+  }
+  return problems;
 }
 
 function importedVitestRegistrationProblems(
@@ -1086,15 +1238,18 @@ function importedVitestRegistrationProblems(
   entryName: string,
   importSources: RegistrationImportSources,
 ): string[] {
-  const inlineSources =
-    importSources === true
-      ? undefined
-      : Object.fromEntries(
-          Object.entries(importSources).map(([path, source]) => [
-            normalizedRegistrationPath(path),
-            source,
-          ]),
-        );
+  if (importSources === true) {
+    return importedFilesystemVitestRegistrationProblems(
+      entrySource,
+      entryName,
+    );
+  }
+  const inlineSources = Object.fromEntries(
+    Object.entries(importSources).map(([path, source]) => [
+      normalizedRegistrationPath(path),
+      source,
+    ]),
+  );
   const sources = new Map<string, string>([
     [normalizedRegistrationPath(entryName), entrySource],
   ]);
@@ -1110,10 +1265,7 @@ function importedVitestRegistrationProblems(
     if (reachable.has(path)) continue;
     const source =
       sources.get(path) ??
-      inlineSources?.[path] ??
-      (importSources === true && existsSync(p(path))
-        ? readFileSync(p(path), "utf8")
-        : undefined);
+      inlineSources[path];
     if (source === undefined) {
       problems.push(
         `${path}:1 imported fitness module cannot be read`,
@@ -1127,7 +1279,9 @@ function importedVitestRegistrationProblems(
       const registrations = file
         .getDescendantsOfKind(SyntaxKind.CallExpression)
         .flatMap((call) =>
-          vitestCallablePaths(call.getExpression())
+          vitestCallablePaths(
+            reflectApplyTarget(call) ?? call.getExpression(),
+          )
             .filter(isVitestRegistrationPath)
             .map(
               (registration) =>
@@ -1151,14 +1305,11 @@ function importedVitestRegistrationProblems(
           `${path}:${reference.line} imported fitness helper must not import the Vitest runtime`,
         );
       }
-      const resolved =
-        inlineSources === undefined
-          ? filesystemRegistrationModulePath(path, reference.specifier)
-          : inlineRegistrationModulePath(
-              path,
-              reference.specifier,
-              inlineSources,
-            );
+      const resolved = inlineRegistrationModulePath(
+        path,
+        reference.specifier,
+        inlineSources,
+      );
       if (resolved === null) {
         problems.push(
           `${path}:${reference.line} local runtime import '${reference.specifier}' cannot be resolved`,
@@ -1336,6 +1487,13 @@ describe("mutable option alias", options, () => {});`,
       `const cases = [1];
 describe.each(cases)("mutable case alias", () => {});`,
       "describe.each``(\"empty tagged suite\", () => {});",
+      `import { describe } from "vitest";
+Reflect.apply(describe.skip, describe, ["reflectively disabled", () => {}]);`,
+      `import { describe } from "vitest";
+Reflect.get(describe, "skip")("reflected member", () => {});`,
+      `import { describe } from "vitest";
+const member = Math.random() > 0.5 ? "skip" : "noop";
+Reflect.get(describe, member)("unresolved reflected member", () => {});`,
       `if (false) {
   describe("dead suite", () => {
     it("never registers", () => {});
@@ -1437,6 +1595,19 @@ suite.skip("application suite", () => {});`,
       "nested-fence.ts:2 imported fitness helper must not register Vitest describe.skip",
       "nested-fence.ts:1 imported fitness helper must not import the Vitest runtime",
     ]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `import "./nested-fence";\nimport { it } from "vitest";\nit("live companion", () => {});`,
+        "fitness.test.ts",
+        {
+          "nested-fence.ts":
+            `import { describe } from "vitest";\nReflect.apply(describe.skip, describe, ["disabled enforcement", () => {}]);`,
+        },
+      ),
+    ).toEqual([
+      "nested-fence.ts:2 imported fitness helper must not register Vitest describe.skip",
+      "nested-fence.ts:1 imported fitness helper must not import the Vitest runtime",
+    ]);
   });
 
   it("(b' companion) rejects a missing fitness result even when Vitest exits successfully", () => {
@@ -1465,6 +1636,38 @@ suite.skip("application suite", () => {});`,
         0,
       ),
     ).toEqual([]);
+    expect(
+      fitnessInventoryProblems(
+        ["src/__tests__/fitness/charter-drift.test.ts"],
+        [
+          {
+            name: "src/shadow/src/__tests__/fitness/charter-drift.test.ts",
+            status: "passed",
+          },
+        ],
+        0,
+      ),
+    ).toContain(
+      "src/__tests__/fitness/charter-drift.test.ts produced no result",
+    );
+    expect(
+      fitnessInventoryProblems(
+        ["src/__tests__/fitness/charter-drift.test.ts"],
+        [
+          {
+            name: "src/__tests__/fitness/charter-drift.test.ts",
+            status: "passed",
+          },
+          {
+            name: `${process.cwd()}/src/__tests__/fitness/charter-drift.test.ts`,
+            status: "passed",
+          },
+        ],
+        0,
+      ),
+    ).toContain(
+      "src/__tests__/fitness/charter-drift.test.ts produced duplicate results",
+    );
   });
 
   it("(b' companion) recursively inventories nested fitness tests", () => {

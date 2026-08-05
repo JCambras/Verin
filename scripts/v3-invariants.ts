@@ -39,6 +39,10 @@ import {
   type Invariant as GateInvariant,
   type Registry as GateRegistry,
 } from "./v3-gates.lib";
+import {
+  indexFitnessTestResults,
+  type FitnessTestResult,
+} from "./fitness-tests.lib";
 
 interface Mechanism {
   type: string;
@@ -141,7 +145,7 @@ const active = registry.invariants.filter((i) => i.status === "active");
 const gateFences = Object.values(registry.gates).flatMap((g) => g.requires.filter((r) => r.kind === "fitness").map((r) => r.ref!));
 const fitnessFiles = [...new Set([...active.flatMap((i) => i.mechanisms.filter((m) => m.type === "fitness").map((m) => m.ref)), ...gateFences])];
 
-const fileResults = new Map<string, boolean>();
+let reportedFitnessResults: FitnessTestResult[] = [];
 let fitnessRunStatus: number | null = 0;
 if (fitnessFiles.length > 0) {
   const outDir = mkdtempSync(join(tmpdir(), "v3-invariants-"));
@@ -170,14 +174,10 @@ if (fitnessFiles.length > 0) {
   fitnessRunStatus = run.status;
   try {
     interface VitestJson {
-      testResults: Array<{ name: string; status: string }>;
+      testResults: FitnessTestResult[];
     }
     const report = JSON.parse(readFileSync(outFile, "utf8")) as VitestJson;
-    for (const tr of report.testResults) {
-      const name = tr.name.replace(/\\/g, "/");
-      const ref = fitnessFiles.find((f) => name.endsWith(f));
-      if (ref) fileResults.set(ref, tr.status === "passed");
-    }
+    reportedFitnessResults = report.testResults;
   } catch {
     if (run.status !== 0) console.error(run.stderr || run.stdout);
   } finally {
@@ -185,6 +185,17 @@ if (fitnessFiles.length > 0) {
   }
 }
 
+const indexedFitnessResults = indexFitnessTestResults(
+  fitnessFiles,
+  reportedFitnessResults,
+  ROOT,
+);
+const fileResults = indexedFitnessResults.fileResults;
+if (indexedFitnessResults.problems.length > 0) {
+  fail(
+    `mapped fitness result problems:\n  - ${indexedFitnessResults.problems.join("\n  - ")}`,
+  );
+}
 const fitnessFailures = mappedFitnessProblems(
   fitnessFiles,
   fileResults,

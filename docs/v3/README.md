@@ -108,7 +108,9 @@ The blocking test job invokes a direct runner once for the complete unit, integr
 That runner recursively enumerates every fitness file through the same matcher and include glob used by
 Vitest, covering `.test.ts`, `.test.tsx`, `.spec.ts`, and `.spec.tsx`, and shares the inventory with
 charter disabled/orphan analysis and the companion meta-fence. Vitest include or exclude drift therefore
-cannot silently omit a fence or nested subtree, and no fitness file executes twice.
+cannot silently omit a fence or nested subtree, and no fitness file executes twice. Both the complete
+suite and v3 runner associate results only by exact canonical repository-relative path and reject
+duplicate exact results, so a passing suffix-matching shadow file is not evidence.
 The shared v3 validator pins the complete mechanism tuple set for every shipped active invariant and
 requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
 be redirected to an unrelated passing fence and a new active guarantee cannot bypass ratchet review.
@@ -162,9 +164,9 @@ wrappers are normalized, and required tests plus directly registered hooks rejec
 and fail annotations from callback parameters or `test.info()` return values. Positive Axe-helper aliases
 must be stable and unreassigned; neutralizers invoked through `bind`, `call`, `apply`, or direct and bound
 `Reflect.apply` values are followed through stable aliases and nested reflective invocation, as are
-transitively invoked local neutralizer helpers,
-and unresolved local callable
-indirection fails closed.
+transitively invoked local neutralizer helpers. Static `Reflect.get` reads of Playwright neutralizers
+and hooks use the same shared provenance analysis, and unresolved keys rooted at the Playwright API fail
+closed. Unresolved local callable indirection also fails closed.
 Required route callbacks admit only their typed loops and stable canonical login call, and the shared
 login helper is pinned to exactly two plain required parameters and the uninstrumented browser flow;
 authenticated scans pass the stable principal explicitly. Required specifications may register no
@@ -190,7 +192,9 @@ credited. Conditional callback exits before a required scan are rejected as non-
 disabled or focused Vitest fences through symbol-aware AST registration analysis, including computed
 members, aliases, the `suite` registration alias, unshadowed Vitest globals, `globalThis`, and Node
 `global` paths, neutralizing registration options, `todo`, `fails`, `skipIf`, and `runIf`, while
-preserving locally shadowed application callables. Parameterized `.each` and `.for` registrations must
+preserving locally shadowed application callables. Reflective registrations invoked through
+`Reflect.apply` or obtained from `Reflect.get` remain visible, with unresolved reflected members failing
+closed. Parameterized `.each` and `.for` registrations must
 carry immediate literal or direct frozen, statically non-empty case collections, and registration
 options follow the same immutable-input rule. Fitness registrations must also be direct reachable
 module-scope statements or direct statements inside an enabled reachable module-scope `describe` /

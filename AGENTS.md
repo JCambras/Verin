@@ -190,7 +190,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
 The test job also runs `scripts/fitness-tests.ts`, which recursively enumerates every Vitest-admitted
 fitness extension through the same matcher used by Vitest and requires a per-file result even if include
-or exclude configuration drifts.
+or exclude configuration drifts. The complete-suite and v3 runners associate results only by exact
+canonical repository-relative path and reject duplicate exact results.
 
 ## Sharp edges (hard-won — read before touching these areas)
 
@@ -267,7 +268,7 @@ or exclude configuration drifts.
   Playwright symbols, rejects TestInfo neutralizers from callback parameters or `test.info()` values in
   required tests and their registered hooks, requires stable positive helper provenance, follows
   neutralizers invoked through `bind`, `call`, `apply`, or direct and bound `Reflect.apply` values and
-  transitively invoked local helpers, and
+  transitively invoked local helpers, follows static `Reflect.get` reads of neutralizers and hooks, and
   fails closed on unresolved local callable indirection and unresolved computed Playwright members,
   proves Playwright forbids focused exclusion and
   selects the required specs, derives the complete Next `page.tsx` inventory, and binds every public,
@@ -293,7 +294,8 @@ or exclude configuration drifts.
   page coverage is credited only to the winning Next route. Hook provenance follows object-property
   callables, member writes, direct or aliased `Object.assign`, `Object.defineProperty`, and `Reflect.set`
   mutations, and unresolved reflective or computed
-  ambient CommonJS loaders are non-evidence.
+  ambient CommonJS loaders are non-evidence. Vitest registrations invoked through `Reflect.apply` or
+  obtained through `Reflect.get` remain visible, and unresolved reflected members fail closed.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered

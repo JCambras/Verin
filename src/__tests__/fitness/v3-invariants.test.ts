@@ -22,6 +22,7 @@ import {
   type CiJob,
   type Registry as GateRegistry,
 } from "../../../scripts/v3-gates.lib";
+import { indexFitnessTestResults } from "../../../scripts/fitness-tests.lib";
 
 /**
  * V3-INVARIANT REGISTRY FENCE (ADR-0023; v3 §17 preamble: CI reports active,
@@ -549,6 +550,38 @@ describe("v3-invariant registry fence", () => {
           0,
         ),
       ).toEqual([]);
+    });
+    it("matches mapped fitness results by exact repository-relative path", () => {
+      const ref = "src/__tests__/fitness/v3-invariants.test.ts";
+      const indexed = indexFitnessTestResults(
+        [ref],
+        [
+          {
+            name: `/repo/src/shadow/${ref}`,
+            status: "passed",
+          },
+        ],
+        "/repo",
+      );
+      expect(
+        mappedFitnessProblems([ref], indexed.fileResults, 0),
+      ).toEqual([`${ref} produced no result`]);
+      expect(runnerSource).not.toContain(
+        "fitnessFiles.find((f) => name.endsWith(f))",
+      );
+      expect(runnerSource).toContain(
+        "indexFitnessTestResults(\n  fitnessFiles,",
+      );
+      expect(
+        indexFitnessTestResults(
+          [ref],
+          [
+            { name: ref, status: "passed" },
+            { name: `/repo/${ref}`, status: "passed" },
+          ],
+          "/repo",
+        ).problems,
+      ).toEqual([`${ref} produced duplicate results`]);
     });
     it("blocks a failed mapped-fitness invocation before any invariant or gate state output", () => {
       expect(

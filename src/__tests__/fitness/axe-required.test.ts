@@ -24,7 +24,10 @@ import {
 } from "../../../e2e/axe-routes";
 import { DEMO_SURFACES } from "../../app/demo/surface-contract";
 import { isProvablyReachable } from "./_ast-control-flow";
-import { reflectApplyTarget } from "./_callable-indirection";
+import {
+  reflectApplyTarget,
+  reflectGetAccess,
+} from "./_callable-indirection";
 import { hasRegisteredPlaywrightHook } from "./_playwright-hook-analysis";
 import {
   moduleReferences,
@@ -1621,6 +1624,19 @@ function couldBeNamedImportMemberExpression(
       moduleName,
       imported,
       member,
+    )
+  ) {
+    return true;
+  }
+  const reflected = reflectGetAccess(normalized);
+  if (
+    reflected !== undefined &&
+    (reflected.name === undefined || reflected.name === member) &&
+    couldBeNamedImportIdentifier(
+      reflected.receiver,
+      moduleName,
+      imported,
+      new Set(seen),
     )
   ) {
     return true;
@@ -3398,6 +3414,9 @@ export const DEMO_AXE_ROUTES = routes;`;
       const wrappers = [
         `const hooks = { install: test.beforeEach };
 hooks.install(() => undefined);`,
+        `Reflect.get(test, "beforeEach")(() => undefined);`,
+        `const hook = Math.random() > 0.5 ? "beforeEach" : "noop";
+Reflect.get(test, hook)(() => undefined);`,
         `test["before" + "Each"](() => undefined);`,
         `const base = { install: test.beforeEach };
 const hooks = { ...base };
@@ -4021,6 +4040,9 @@ invoke(test.${"fixme"}, test, [true, "file disabled"]);`,
   Reflect,
   [test.${"fail"}, test, [true, "expected failure"]],
 );`,
+        `Reflect.get(test, "${"skip"}")(true, "file disabled");`,
+        `const member = Math.random() > 0.5 ? "${"fixme"}" : "noop";
+Reflect.get(test, member)(true, "file disabled");`,
         `(Reflect.apply.bind(Reflect) as typeof Reflect.apply)(
   test.${"skip"},
   test,

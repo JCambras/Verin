@@ -1114,33 +1114,33 @@ ${body}
       `)).toEqual([]);
     });
 
-    const grantPairParams = [
+    describe.each(Object.freeze([
       `db: SqlDb,
           executionGrant: ActionGrant<"execution.initiate">,
           piiGrant: ActionGrant<"pii.view">,`,
       `db: SqlDb,
           piiGrant: ActionGrant<"pii.view">,
           executionGrant: ActionGrant<"execution.initiate">,`,
-    ];
-
-    it.each(grantPairParams)("PASSES a grant pair in either parameter order when both are asserted and compared", (params) => {
-      expect(dualAuthorityViolations(`
+    ]))("a grant pair in either parameter order", (params) => {
+      it("PASSES when both are asserted and compared", () => {
+        expect(dualAuthorityViolations(`
           assertActionGrant(executionGrant, "execution.initiate");
           assertActionGrant(piiGrant, "pii.view");
           assertSameTenant(piiGrant.tenant, executionGrant.tenant);
           return db.query("SELECT 1");
-      `, params)).toEqual([]);
-    });
+        `, params)).toEqual([]);
+      });
 
-    it.each(grantPairParams)("rejects a grant pair in either parameter order without the cross-authority proof", (params) => {
-      expect(dualAuthorityViolations(`
+      it("rejects without the cross-authority proof", () => {
+        expect(dualAuthorityViolations(`
           assertActionGrant(executionGrant, "execution.initiate");
           assertActionGrant(piiGrant, "pii.view");
           return db.query("SELECT 1");
-      `, params)).toHaveLength(1);
+        `, params)).toHaveLength(1);
+      });
     });
 
-    const mixedGrantPairs = [
+    describe.each(Object.freeze([
       {
         params: `db: SqlDb,
           executionGrant: ActionGrant<"execution.initiate">,
@@ -1201,22 +1201,18 @@ ${body}
         execution: "executionGrant",
         pii: "piiGrant",
       },
-    ];
-
-    it.each(mixedGrantPairs)(
-      "rejects a mixed direct/wrapped grant pair without its pairwise scope proof",
+    ]))(
+      "a mixed direct/wrapped grant pair",
       ({ params, execution, pii }) => {
+        it("rejects without its pairwise scope proof", () => {
         expect(dualAuthorityViolations(`
           assertActionGrant(${execution}, "execution.initiate");
           assertActionGrant(${pii}, "pii.view");
           return db.query("SELECT 1");
         `, params)).toHaveLength(1);
-      },
-    );
+        });
 
-    it.each(mixedGrantPairs)(
-      "accepts a mixed direct/wrapped grant pair with both assertions and its scope proof",
-      ({ params, execution, pii }) => {
+        it("accepts both assertions with its scope proof", () => {
         const executionRef = execution.includes(".") ? "capturedExecutionGrant" : execution;
         const piiRef = pii.includes(".") ? "capturedPiiGrant" : pii;
         const captures = [
@@ -1234,6 +1230,7 @@ ${body}
           assertSameTenant(${executionRef}.tenant, ${piiRef}.tenant);
           return db.query("SELECT 1");
         `, params)).toEqual([]);
+        });
       },
     );
 
@@ -1641,7 +1638,9 @@ ${body}
           const rows = db.query("SELECT 1");
           assertSameTenant(executionGrant.tenant, piiGrant.tenant);
           return rows;
-      `, grantPairParams[0])).toHaveLength(1);
+      `, `db: SqlDb,
+          executionGrant: ActionGrant<"execution.initiate">,
+          piiGrant: ActionGrant<"pii.view">,`)).toHaveLength(1);
     });
 
     it("rejects the same omission when the GRANT is declared before the tenant", () => {
