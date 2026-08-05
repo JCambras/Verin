@@ -17,6 +17,8 @@ the ADR-0028 gate is satisfied).
 
 Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what was decided and why.
 
+The standing product thesis lives in [`docs/product-guide.md`](./docs/product-guide.md) - test every design, prompt, and demo choice against it.
+
 Demo work is governed by [`docs/demo-contract.md`](./docs/demo-contract.md) (the normative Phase 1
 investor-demo contract, D-034) with its machine-usable matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
 and acceptance map [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md). Salesforce is

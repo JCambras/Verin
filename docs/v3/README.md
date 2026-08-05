@@ -12,6 +12,8 @@ There is exactly ONE constitution: [`CHARTER.md`](../../CHARTER.md). The v3 arch
 never beside it. Where v3 and the charter conflict, the resolution is recorded in an ADR below - never
 resolved silently (v3's own rule, §0.5 and orchestrator rule 4).
 
+The standing product thesis that all v3 work serves is [`docs/product-guide.md`](../product-guide.md).
+
 ## The documents
 
 | File | What it is |
