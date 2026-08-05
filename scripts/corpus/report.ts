@@ -1,4 +1,4 @@
-import { corpusDigest as computeCorpusDigest, type CaseInventoryEntry, type FreshnessPolicyBinding } from "./manifest";
+import { corpusDigest as computeCorpusDigest, type CaseInventoryEntry, type CorpusAuthorityBindings } from "./manifest";
 import { isSigned, signoffProblems, type CorpusSignoff } from "./signoff";
 
 export type ReasonCode =
@@ -156,7 +156,7 @@ export interface ReportInput {
   readonly corpusDigest: string;
   readonly seed: string;
   readonly taxonomyDigest: string;
-  readonly freshnessPolicy: FreshnessPolicyBinding;
+  readonly authority: CorpusAuthorityBindings;
   readonly signoff: CorpusSignoff;
   readonly inventory: readonly CaseInventoryEntry[];
   readonly syntheticOutcomes: readonly SyntheticCaseOutcome[];
@@ -164,7 +164,11 @@ export interface ReportInput {
 }
 
 function buildCorpusReport(input: ReportInput) {
-  const inventoryDigest = computeCorpusDigest(input.corpusVersion, input.seed, input.taxonomyDigest, input.inventory, input.freshnessPolicy);
+  // Every digest input comes from `input`: the reporter reads no file, so a
+  // companion's fully-specified ReportInput is what it actually measures.
+  const inventoryDigest = computeCorpusDigest(
+    input.corpusVersion, input.seed, input.taxonomyDigest, input.inventory, input.authority,
+  );
   if (inventoryDigest !== input.corpusDigest) {
     throw new Error(
       `corpus report: manifest inventory digest ${inventoryDigest} does not match corpusDigest ${input.corpusDigest}`,

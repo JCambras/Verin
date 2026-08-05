@@ -17,10 +17,6 @@ import {
   type RealDerivedCaseOutcome,
   type SyntheticCaseOutcome,
 } from "./corpus/report";
-import {
-  currentFreshnessPolicyBinding,
-  taxonomySemanticDigest,
-} from "./corpus/manifest";
 import { CORPUS_SEED } from "./corpus/seed";
 import { validateCorpus } from "./corpus/validate";
 
@@ -52,8 +48,8 @@ console.log(renderCorpusReport({
   corpusVersion: result.spec.world.corpusVersion,
   corpusDigest: result.corpusDigest,
   seed: CORPUS_SEED,
-  taxonomyDigest: taxonomySemanticDigest(result.taxonomy),
-  freshnessPolicy: currentFreshnessPolicyBinding(),
+  taxonomyDigest: result.taxonomyDigest,
+  authority: result.authority,
   signoff: result.signoff,
   inventory: result.inventory,
   syntheticOutcomes,

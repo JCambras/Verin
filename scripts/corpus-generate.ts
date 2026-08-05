@@ -42,7 +42,7 @@ const inventory = [
   ...buildInventory(files),
   ...buildInventory(realDerivedFiles, "real-derived"),
 ];
-const manifest = buildManifest(spec, taxonomy, files, CORPUS_SEED, inventory);
+const manifest = buildManifest(spec, taxonomy, inventory, CORPUS_SEED);
 const signatureProblems = generatedSignatureProblems([...files, manifest]);
 if (signatureProblems.length > 0) {
   throw new Error(

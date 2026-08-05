@@ -13,11 +13,10 @@
  */
 import { createHash } from "node:crypto";
 
-/** Root seed. A STRING, never a number, so it is readable in the manifest. */
+/** Root seed. A STRING, never a number, so it is readable in the manifest.
+ * It is NOT a second corpus version: signoff and `corpusDigest` bind to
+ * `spec.world.corpusVersion`, the only source of truth for that value. */
 export const CORPUS_SEED = "verin-corpus/2026.07.0";
-
-/** The corpus version the signoff and `corpusDigest` are bound to. */
-export const CORPUS_VERSION = "2026.07.0";
 
 /** ASCII unit separator - cannot appear in a path or field name, so
  * derive("aU+001Fb", "c") and derive("a", "bU+001Fc") cannot collide. */
@@ -59,14 +58,6 @@ export function deriveIntInRange(
     throw new Error(`corpus seed: bad range [${min}, ${max}]`);
   }
   return min + deriveIndex(seed, path, field, max - min + 1);
-}
-
-/** One of `choices`. Empty choices is a generator bug, not a silent undefined. */
-export function derivePick<T>(seed: string, path: string, field: string, choices: readonly T[]): T {
-  if (choices.length === 0) {
-    throw new Error(`corpus seed: derivePick over an empty choice set at ${path}.${field}`);
-  }
-  return choices[deriveIndex(seed, path, field, choices.length)]!;
 }
 
 /** A lowercase-hex opaque token of `bytes` bytes - the only identifier form the

@@ -5142,3 +5142,30 @@ captain signoff remains pending.
 verification chronology cannot become signed replay truth.
 **Revert path:** none while the corpus claims repository-contained inputs and replayable synthetic
 authority and destination evidence.
+
+### D-131 · 2026-08-05 · reversible · Repository-input refusals name their cause and one authority binding backs every digest
+
+Every refusal from the single repository-input read path names the input and distinguishes a missing
+path, an escape from the repository, and a non-regular file. Containment is decided on the canonical
+target, which is also the path read, so an in-repository symlink resolves normally and only a target
+that leaves the repository is refused. The blocking `corpus` job can no longer fail with a message that
+names no file.
+
+The versioned semantics a corpus is digested under - freshness policy, both real-derived JSON Schemas,
+and the real-derived semantic contract with its executable authorities - are resolved once per validation
+and passed explicitly to the manifest, to the digest recomputed beside it, and to the measurement report.
+The manifest's `corpusDigest` and the validator's are the same object by construction rather than two
+equal-by-coincidence rebuilds of the same ~50 hashed files, and `renderCorpusReport` reads no file: a
+fully specified `ReportInput` is exactly what it measures. `buildManifest` takes only the inventory it
+publishes, so a supplied inventory can no longer disagree with a separate file list. The dead
+`CORPUS_VERSION` and `derivePick` exports are gone; `spec.world.corpusVersion` is the only corpus version.
+
+The tooling bucket measures 8276 lines under the unchanged 8300 ceiling. Canonical regeneration produces
+`corpusDigest` `7c9030abc5582face72119990c0839f3e37695428fe220527519db6c820cda7d`. The real-derived
+partition remains empty and deferred, generated-file ownership remains intact, and captain signoff
+remains pending.
+
+**Why:** an anonymous refusal is unusable in a blocking gate, a second unenforced source of truth for a
+signoff-bound value drifts silently, and a digest rebuilt independently in two places is only accidentally
+the same digest.
+**Revert path:** none while the corpus reads repository-contained inputs and binds signoff to a digest.

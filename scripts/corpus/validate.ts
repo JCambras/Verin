@@ -27,10 +27,12 @@ import {
   buildInventory,
   corpusDigest,
   buildManifest,
+  currentAuthorityBindings,
   generatedSignatureProblems,
   generatorDigest,
   taxonomySemanticDigest,
   type CaseInventoryEntry,
+  type CorpusAuthorityBindings,
 } from "./manifest";
 import {
   inspectRealDerivedPartition,
@@ -259,11 +261,16 @@ export interface CorpusValidation {
   readonly realDerivedFiles: readonly GeneratedFile[];
   readonly inventory: readonly CaseInventoryEntry[];
   readonly signoff: CorpusSignoff;
+  readonly authority: CorpusAuthorityBindings;
+  readonly taxonomyDigest: string;
   readonly corpusDigest: string;
   readonly problems: readonly string[];
 }
 
-/** The whole check, over the committed tree. */
+/** The whole check, over the committed tree. `root` selects the corpus DATA -
+ * spec, signoff, generated tree, real-derived intake - and nothing else. The
+ * versioned semantics the corpus is checked and digested UNDER are always this
+ * repository's, because they are the ones this process executes. */
 export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_SEED): CorpusValidation {
   const spec = loadSpec(join(root, "spec"));
   const taxonomy = loadTaxonomy(join(root, "spec"));
@@ -280,7 +287,11 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
     ...buildInventory(generated),
     ...buildInventory(realDerivedFiles, "real-derived"),
   ];
-  const manifest = buildManifest(spec, taxonomy, generated, seed, inventory);
+  // ONE authority binding for the same reason: the manifest's digest and the
+  // digest recomputed below are then over the same semantics by construction,
+  // and the ~50-file authority set is read and hashed once per validation.
+  const authority = currentAuthorityBindings();
+  const manifest = buildManifest(spec, taxonomy, inventory, seed, authority);
   const committed = readCommittedCorpus(root);
   const cases = generated.map((file) => file.value as unknown as EmittedCase);
   const realDerivedCases = realDerivedFiles.map(
@@ -290,11 +301,13 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
   const goldenCaseIds = new Set(
     loadGoldenCases().map((entry) => String((entry.data as Record<string, unknown>).caseId)),
   );
+  const taxonomyDigest = taxonomySemanticDigest(taxonomy);
   const digest = corpusDigest(
     spec.world.corpusVersion,
     seed,
-    taxonomySemanticDigest(taxonomy),
+    taxonomyDigest,
     inventory,
+    authority,
   );
   const signoff = loadSignoff(join(root, "spec"));
   const problems = [
@@ -320,6 +333,8 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
     realDerivedFiles,
     inventory,
     signoff,
+    authority,
+    taxonomyDigest,
     corpusDigest: digest,
     problems,
   };

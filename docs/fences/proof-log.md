@@ -8179,3 +8179,34 @@ Canonical regeneration produced `corpusDigest`
 remains empty, captain signoff remains pending, and all 1,477 unit, integration, and fitness tests pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-130 review hardening).
+
+## PF-217 · named repository-input refusals and single-source digest authority · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (D-131, ADR-0034):** every repository-input refusal names the input and its reason, containment
+is decided on the canonical target that is also read, and one resolved authority binding backs both the
+manifest digest and any digest recomputed beside it.
+
+**Injection 1 - anonymous refusal.** Restored the blanket `catch` that discarded the path and the reason,
+so a renamed spec file failed the blocking `corpus` job with one message naming no file.
+
+**Injection 2 - pre-canonical file test.** Restored `lstatSync(path).isFile()`, so containment was decided
+on the canonical target while the regular-file test ran against the un-resolved path and refused every
+in-repository symlink.
+
+**Observed failure:**
+```
+expected [Function] to throw error matching /"[^"]*SIGNOFF\.md" resolves outside this repository/
+Error: repository input ".corpus-input-proof-pY1V45/SIGNOFF.md" is not a regular file
+  ❯ readRepositoryFile scripts/corpus/tree.ts:44:11
+```
+
+**Standing companions:** a missing input must be refused by name; an in-repository symlink must be read;
+a directory in a file's place must be refused as not a regular file; and a symlink target outside the
+canonical root must be refused as an escape.
+
+**Revert:** both injections remain as temporary-directory companions in the determinism fence. Canonical
+regeneration produced `corpusDigest`
+`7c9030abc5582face72119990c0839f3e37695428fe220527519db6c820cda7d`, the real-derived partition remains
+empty, captain signoff remains pending, and all 1,478 unit, integration, and fitness tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-131 review hardening).

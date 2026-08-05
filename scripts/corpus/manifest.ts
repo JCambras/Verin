@@ -42,6 +42,21 @@ export const currentFreshnessPolicyBinding = (): FreshnessPolicyBinding => ({
   version: REAL_DERIVED_FRESHNESS_POLICY_VERSION, digest: freshnessPolicySemanticDigest(),
 });
 
+/** The versioned semantics a corpus is digested UNDER, resolved from the
+ * repository that executes the validation. One resolved value passed explicitly
+ * is what makes two digests over the same inventory the same object rather than
+ * two independent rebuilds of the same ~50 hashed files. */
+export interface CorpusAuthorityBindings {
+  readonly freshnessPolicy: FreshnessPolicyBinding;
+  readonly realDerivedSchemas: readonly RealDerivedSchemaBinding[];
+  readonly semanticContract: RealDerivedSemanticContractBinding;
+}
+export const currentAuthorityBindings = (): CorpusAuthorityBindings => ({
+  freshnessPolicy: currentFreshnessPolicyBinding(),
+  realDerivedSchemas: realDerivedSchemaBindings(),
+  semanticContract: realDerivedSemanticContractBinding(),
+});
+
 export function realDerivedSchemaBindings(
   rawBytes: Readonly<Record<string, string>> = Object.fromEntries(
     REAL_DERIVED_SCHEMA_FILES.map((name) => [
@@ -85,11 +100,9 @@ export function corpusDigest(
   seed: string,
   taxonomyDigest: string,
   entries: readonly CaseInventoryEntry[],
-  freshnessPolicy: FreshnessPolicyBinding = currentFreshnessPolicyBinding(),
-  realDerivedSchemas: readonly RealDerivedSchemaBinding[] = realDerivedSchemaBindings(),
-  semanticContract: RealDerivedSemanticContractBinding =
-    realDerivedSemanticContractBinding(),
+  authority: CorpusAuthorityBindings = currentAuthorityBindings(),
 ): string {
+  const { freshnessPolicy, realDerivedSchemas, semanticContract } = authority;
   const preimage: JsonValue = {
     hashKind: "verin-corpus",
     preimageVersion: CORPUS_DIGEST_PREIMAGE_VERSION,
@@ -194,9 +207,9 @@ export const REAL_DERIVED_DEFERRAL: {
 export function buildManifest(
   spec: LoadedSpec,
   taxonomy: Taxonomy,
-  files: readonly GeneratedFile[],
+  inventory: readonly CaseInventoryEntry[],
   seed: string = CORPUS_SEED,
-  inventory: readonly CaseInventoryEntry[] = buildInventory(files),
+  authority: CorpusAuthorityBindings = currentAuthorityBindings(),
 ): GeneratedFile {
   const synthetic = inventory.filter((entry) => entry.partition === "synthetic");
   const realDerived = inventory.filter((entry) => entry.partition === "real-derived");
@@ -206,9 +219,7 @@ export function buildManifest(
   const realControls = realDerived.filter((entry) => entry.labelKind === "clean-control");
   const generator = generatorDigest(seed, spec.rawBytes);
   const taxonomyDigest = taxonomySemanticDigest(taxonomy);
-  const freshnessPolicy = currentFreshnessPolicyBinding();
-  const realDerivedSchemas = realDerivedSchemaBindings();
-  const semanticContract = realDerivedSemanticContractBinding();
+  const { freshnessPolicy, realDerivedSchemas, semanticContract } = authority;
   const value: JsonValue = {
     __generated: {
       generator: "scripts/corpus-generate.ts",
@@ -233,9 +244,7 @@ export function buildManifest(
       seed,
       taxonomyDigest,
       inventory,
-      freshnessPolicy,
-      realDerivedSchemas,
-      semanticContract,
+      authority,
     ),
     taxonomyDigest,
     taxonomyDigestPreimageVersion: TAXONOMY_DIGEST_PREIMAGE_VERSION,

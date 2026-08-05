@@ -32,6 +32,7 @@ import {
   buildInventory,
   buildManifest,
   corpusDigest,
+  currentAuthorityBindings,
   currentFreshnessPolicyBinding,
   generatedSignatureProblems,
   REAL_DERIVED_SCHEMA_FILES,
@@ -1508,26 +1509,19 @@ const reportInput = (
   const corpusVersion = overrides.corpusVersion ?? "x";
   const seed = overrides.seed ?? "test-seed";
   const taxonomyDigest = overrides.taxonomyDigest ?? "test-taxonomy-digest";
-  const freshnessPolicy =
-    overrides.freshnessPolicy ?? currentFreshnessPolicyBinding();
+  const authority = overrides.authority ?? currentAuthorityBindings();
   const inventory =
     overrides.inventory ??
     inventoryOf(syntheticOutcomes, realDerivedOutcomes);
   const digest =
     overrides.corpusDigest ??
-    corpusDigest(
-      corpusVersion,
-      seed,
-      taxonomyDigest,
-      inventory,
-      freshnessPolicy,
-    );
+    corpusDigest(corpusVersion, seed, taxonomyDigest, inventory, authority);
   return {
     corpusVersion,
     corpusDigest: digest,
     seed,
     taxonomyDigest,
-    freshnessPolicy,
+    authority,
     signoff:
       overrides.signoff ?? signedSignoff(corpusVersion, digest),
     inventory,
@@ -1678,9 +1672,8 @@ describe("corpus-provenance-split fence", () => {
     const manifest = buildManifest(
       real.spec,
       real.taxonomy,
-      real.generated,
-      CORPUS_SEED,
       [...syntheticInventory, ...realInventory],
+      CORPUS_SEED,
     );
     const partition = (manifest.value as any).partitions.realDerived;
     expect(partition.total).toBe(1);
@@ -1939,7 +1932,7 @@ describe("corpus-provenance-split fence", () => {
         CORPUS_SEED,
         taxonomySemanticDigest(real.taxonomy),
         real.inventory,
-        changed,
+        { ...real.authority, freshnessPolicy: changed },
       ),
     ).not.toBe(real.corpusDigest);
   });
@@ -1969,8 +1962,7 @@ describe("corpus-provenance-split fence", () => {
         CORPUS_SEED,
         taxonomySemanticDigest(real.taxonomy),
         real.inventory,
-        currentFreshnessPolicyBinding(),
-        changed,
+        { ...real.authority, realDerivedSchemas: changed },
       ),
     ).not.toBe(real.corpusDigest);
   });
@@ -3050,9 +3042,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         CORPUS_SEED,
         taxonomySemanticDigest(real.taxonomy),
         real.inventory,
-        currentFreshnessPolicyBinding(),
-        realDerivedSchemaBindings(),
-        changedAuthority,
+        { ...real.authority, semanticContract: changedAuthority },
       ),
     ).not.toBe(real.corpusDigest);
   });

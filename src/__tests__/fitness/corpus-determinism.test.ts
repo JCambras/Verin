@@ -65,7 +65,7 @@ const REPOSITORY_INPUT_BOUNDARIES = [
   { file: "/scripts/corpus/scrub-contract.ts", owner: "schemaFromSpec", inputs: {} },
   { file: "/scripts/corpus/world.ts", owner: "readSpecFile", rootParameters: [1], inputs: {} },
   { file: "/scripts/corpus/tree.ts", owner: "readTree", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.lstatSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["fullPath"] } },
-  { file: "/scripts/corpus/tree.ts", owner: "readRepositoryFile", rootParameters: [1], inputs: { "fs.lstatSync": ["path"], "fs.readFileSync": ["canonicalTarget"], "fs.realpathSync": ["repoRoot", "path"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "readRepositoryFile", rootParameters: [1], inputs: { "fs.statSync": ["canonicalTarget"], "fs.readFileSync": ["canonicalTarget"], "fs.realpathSync": ["repoRoot", "path"] } },
   { file: "/scripts/corpus/manifest.ts", owner: "realDerivedSchemaBindings", inputs: {} },
   { file: "/scripts/corpus/semantic-contract.ts", owner: "loadRealDerivedSemanticContract", inputs: {} },
   { file: "/scripts/corpus/semantic-contract.ts", owner: "realDerivedSemanticContractBinding", inputs: {} },
@@ -1825,22 +1825,45 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
     ).toBe(true);
   });
 
+  const PENDING_SIGNOFF_BYTES =
+    "```yaml\ncorpusVersion: 2026.07.0\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null\n```\n";
+
   it("repository readers reject symlinked files whose target leaves REPO_ROOT", () => {
     const externalDir = mkdtempSync(join(tmpdir(), "verin-corpus-external-"));
     const localDir = mkdtempSync(join(REPO_ROOT, ".corpus-input-proof-"));
     try {
       const externalSignoff = join(externalDir, "SIGNOFF.md");
-      writeFileSync(
-        externalSignoff,
-        "```yaml\ncorpusVersion: 2026.07.0\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null\n```\n",
-      );
+      writeFileSync(externalSignoff, PENDING_SIGNOFF_BYTES);
       symlinkSync(externalSignoff, join(localDir, "SIGNOFF.md"));
       expect(() => loadSignoff(localDir)).toThrow(
-        /regular file contained in this repository/,
+        /"[^"]*SIGNOFF\.md" resolves outside this repository/,
       );
     } finally {
       rmSync(localDir, { recursive: true, force: true });
       rmSync(externalDir, { recursive: true, force: true });
+    }
+  });
+
+  // A refusal that names neither the input nor the reason is unusable in the
+  // blocking `corpus` job, and "reject every symlink" is not the containment
+  // rule - the canonical target is what is checked and what is read.
+  it("repository readers name the missing input and accept an in-repository symlink", () => {
+    const localDir = mkdtempSync(join(REPO_ROOT, ".corpus-input-proof-"));
+    try {
+      expect(() => loadSignoff(localDir)).toThrow(
+        /"[^"]*SIGNOFF\.md" does not exist/,
+      );
+      const target = join(localDir, "signoff-source.md");
+      writeFileSync(target, PENDING_SIGNOFF_BYTES);
+      symlinkSync(target, join(localDir, "SIGNOFF.md"));
+      expect(loadSignoff(localDir).status).toBe("pending-captain");
+      rmSync(join(localDir, "SIGNOFF.md"));
+      mkdirSync(join(localDir, "SIGNOFF.md"));
+      expect(() => loadSignoff(localDir)).toThrow(
+        /"[^"]*SIGNOFF\.md" is not a regular file/,
+      );
+    } finally {
+      rmSync(localDir, { recursive: true, force: true });
     }
   });
 

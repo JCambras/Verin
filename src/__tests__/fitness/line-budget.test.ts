@@ -68,16 +68,18 @@ const CEILINGS = {
   // replay-intake review. D-085 raises it to 5900 against 5747 measured lines.
   // D-086 raises it to 6200 against 5996 measured lines for outcome-based
   // semantics, request-bound conflict topology, schema-driven uniqueness, and
-  // assignment-aware determinism enforcement. Current amendment history and
-  // measurements are recorded in ADR-0034. D-122 raises it to 8000 against
+  // assignment-aware determinism enforcement. D-122 raises it to 8000 against
   // 7941 measured lines for exact pending-action balance accounting. D-124
   // keeps it at 8000 against 7989 lines after settled-outgoing reconciliation.
   // D-125 raises it to 8100 against 8018 lines for transitive determinism
-  // provenance and restriction lifecycle recomputation.
-  // The ratchet-down after
-  // the corpus generator's first
-  // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,
-  // never averaged into a platform layer.
+  // provenance and restriction lifecycle recomputation. D-128 (ADR-0034) raises
+  // it to 8300 for the conflict-safe corpus substrate; the PR-11a review round
+  // then removed dead seed exports and the duplicate authority-binding rebuild
+  // and named every repository-read refusal, leaving 8276 measured lines against
+  // that unchanged ceiling. Every raise above is a MEASURED ADR amendment
+  // recorded in ADR-0034, never a code change - a ceiling raised without a
+  // measurement beside it is a ceiling nobody is holding. Tooling is REPORTED
+  // SEPARATELY, never averaged into a platform layer.
   tooling: 8300,
 } as const;
 
