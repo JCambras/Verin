@@ -3560,3 +3560,32 @@ container is adopted; extend the semantic traversal and its adversarial matrix
 before relying on it.
 **Revert path:** none while dependency, determinism, and tenant-scope fences must
 fail closed across project modules and complete schema trees.
+
+### D-109 · 2026-08-05 · reversible · Ambient capabilities survive export assignments, inheritance, and invocation wrappers
+
+Export assignments now contribute their expressions to the shared ambient alias
+provenance graph. The existing fence already caught `export default Date`, but a
+default or `export =` assignment containing an `Intl.DateTimeFormat` instance lost
+its instance provenance at the importing module. Both assignment forms now retain
+the same source as named exports.
+
+Class `extends` expressions are capability sources. A subclass of `Date` or
+`Intl.DateTimeFormat` therefore retains the ambient constructor it inherits rather
+than borrowing project ownership from its class declaration.
+
+Formatter methods now carry their bound arguments through aliases, containers,
+function returns, and property assignments. Calls through `call`, `apply`, `bind`,
+and `Reflect.apply` normalize to the underlying formatter method before the explicit
+instant check. A proven explicit instant remains deterministic in every supported
+form, while a missing, undefined, spread, or unresolved argument list fails closed.
+
+These are fence-only corrections. No production contract, runtime schema, fixture
+byte, recorded hash, source ceiling, or runtime JSON envelope changed.
+
+**Why:** module syntax, class ownership, and standard invocation wrappers cannot
+erase a clock capability from a charter-critical determinism fence.
+**Revisit-When:** a new module export, inheritance, or callable wrapper form is
+adopted; extend the shared provenance authority and its adversarial companion before
+relying on it.
+**Revert path:** none while contracts must remain deterministic across ordinary
+TypeScript and JavaScript forms.

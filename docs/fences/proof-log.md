@@ -5849,3 +5849,40 @@ module references fails the edit-invalidation companion. The corresponding local
 capability and complete legal probes remain green.
 
 **Date:** 2026-08-05 (review corrections, D-108).
+
+## F115 · export, heritage, and invocation provenance fail closed (D-109)
+
+**Invariants:** ambient clock capabilities retain provenance through default and
+`export =` assignments, class inheritance, and the standard callable invocation
+wrappers; a proven explicit formatter instant remains deterministic.
+
+The companions were added before the shared provenance changes. The first focused
+run failed seven planted cases: an ambient `Date` subclass, an ambient
+`Intl.DateTimeFormat` subclass, formatter calls through `call`, `apply`,
+`Reflect.apply`, and an extracted `bind` result, plus a default-exported formatter
+instance. Removing only the export-assignment source after the fix independently
+failed both formatter cases:
+```
+× follows an ambient default formatter export assignment
+× follows an ambient export-equals formatter export assignment
+```
+
+The retained controls prove the rule is about provenance rather than spelling.
+Project-owned Date-, Intl-, and formatter-shaped values remain allowed. Direct,
+called, applied, reflected, and bound formatter methods remain allowed when their
+effective argument list proves one explicit instant. Existing default and
+`export =` clock controls remain green as well.
+
+The focused dependency suite passes 229 tests. Full fitness passes 1,035 tests,
+and the complete serialized Vitest suite passes 1,381. Typecheck, lint, knip, the
+CI-configured production build, `v3:invariants` (6 active-pass, 0 active-fail),
+and `golden:validate` (16 signed cases) also pass. No production contract, runtime
+schema, fixture byte, registry byte, recorded hash, or platform line measurement
+changed.
+
+**Revert:** the adversarial companions remain continuous tests. Removing export
+assignments, class heritage, bound-argument propagation, or invocation normalization
+from the shared provenance authority fails its exact companion while the local and
+explicit-instant controls remain green.
+
+**Date:** 2026-08-05 (review corrections, D-109).

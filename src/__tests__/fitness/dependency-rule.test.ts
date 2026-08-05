@@ -1202,6 +1202,20 @@ describe("dependency-rule fence", () => {
         ].join("\n"),
       ],
       [
+        "ambient clock subclass",
+        [
+          "class Clock extends Date {}",
+          "export const value = Clock.now();",
+        ].join("\n"),
+      ],
+      [
+        "ambient formatter subclass",
+        [
+          "class Formatter extends Intl.DateTimeFormat {}",
+          "export const value = new Formatter().format();",
+        ].join("\n"),
+      ],
+      [
         "implicit Intl format instant",
         "export const value = new Intl.DateTimeFormat().format();",
       ],
@@ -1261,6 +1275,35 @@ describe("dependency-rule fence", () => {
           "export const value = expose()();",
         ].join("\n"),
       ],
+      [
+        "call-wrapped implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "export const value = formatter.format.call(formatter);",
+        ].join("\n"),
+      ],
+      [
+        "apply-wrapped implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "export const value = formatter.formatToParts.apply(formatter, []);",
+        ].join("\n"),
+      ],
+      [
+        "Reflect.apply-wrapped implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "export const value = Reflect.apply(formatter.format, formatter, []);",
+        ].join("\n"),
+      ],
+      [
+        "bound implicit Intl format instant",
+        [
+          "const formatter = new Intl.DateTimeFormat();",
+          "const format = formatter.format.bind(formatter);",
+          "export const value = format();",
+        ].join("\n"),
+      ],
     ])("ambient nondeterminism is rejected: %s", (_name, source) => {
       const v = detectContractsExternalImportViolations(
         inMemoryProject({ "src/contracts/evil.ts": source }),
@@ -1295,6 +1338,57 @@ describe("dependency-rule fence", () => {
       expect(v.map((violation) => violation.specifier)).toContain(
         "<nondeterministic platform-global>",
       );
+    });
+
+    it.each([
+      [
+        "default clock",
+        "export default Date;",
+        "import Clock from \"./capability\";\nexport const value = Clock.now();",
+      ],
+      [
+        "default formatter",
+        "export default new Intl.DateTimeFormat();",
+        "import formatter from \"./capability\";\nexport const value = formatter.format();",
+      ],
+      [
+        "export-equals clock",
+        "export = Date;",
+        "import Clock = require(\"./capability\");\nexport const value = Clock.now();",
+      ],
+      [
+        "export-equals formatter",
+        "export = new Intl.DateTimeFormat();",
+        "import formatter = require(\"./capability\");\nexport const value = formatter.format();",
+      ],
+    ])("follows an ambient %s export assignment", (_name, exported, used) => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/capability.ts": exported,
+          "src/contracts/evil.ts": used,
+        }),
+      );
+      expect(v.map((violation) => violation.specifier)).toContain(
+        "<nondeterministic platform-global>",
+      );
+    });
+
+    it("allows explicit Intl instants through invocation wrappers", () => {
+      const v = detectContractsExternalImportViolations(
+        inMemoryProject({
+          "src/contracts/ok.ts": [
+            "const formatter = new Intl.DateTimeFormat();",
+            "const bound = formatter.format.bind(formatter, 0);",
+            "export const values = [",
+            "  formatter.format.call(formatter, 0),",
+            "  formatter.formatToParts.apply(formatter, [0]),",
+            "  Reflect.apply(formatter.format, formatter, [0]),",
+            "  bound(),",
+            "];",
+          ].join("\n"),
+        }),
+      );
+      expect(v).toEqual([]);
     });
 
     it("local dynamic-code and nondeterminism lookalikes remain allowed", () => {

@@ -438,6 +438,13 @@ const AMBIENT_ALIAS_SOURCE_CACHE = new WeakMap<
   Map<MorphSymbol, AmbientAliasSource[]>
 >();
 
+const classExtendsExpression = (node: Node | undefined): Node | undefined => {
+  const expression = unwrapExpression(node);
+  return Node.isClassDeclaration(expression) || Node.isClassExpression(expression)
+    ? expression.getExtends()?.getExpression()
+    : undefined;
+};
+
 const functionSymbolIn = (
   declaration: Node,
 ): MorphSymbol | undefined => {
@@ -667,7 +674,7 @@ const ambientAliasSourcesIn = (
       if (receiver !== undefined) {
         sources.push({
           at: declaration.getStart(),
-          receiver,
+          receiver: classExtendsExpression(receiver) ?? receiver,
           selectors: [],
         });
       }
@@ -683,6 +690,26 @@ const ambientAliasSourcesIn = (
           });
         }
       }
+      continue;
+    }
+    if (Node.isClassDeclaration(declaration)) {
+      const receiver = classExtendsExpression(declaration);
+      if (receiver !== undefined) {
+        sources.push({
+          at: declaration.getStart(),
+          receiver,
+          selectors: [],
+        });
+      }
+      continue;
+    }
+    if (Node.isExportAssignment(declaration)) {
+      const expression = declaration.getExpression();
+      sources.push({
+        at: declaration.getStart(),
+        receiver: classExtendsExpression(expression) ?? expression,
+        selectors: [],
+      });
       continue;
     }
     if (Node.isBindingElement(declaration)) {
@@ -1260,6 +1287,10 @@ function ambientGlobalNamesIn(
   seen: Set<MorphSymbol> = new Set(),
 ): ReadonlySet<string> {
   const expression = unwrapExpression(node);
+  const heritage = classExtendsExpression(expression);
+  if (heritage !== undefined) {
+    return ambientGlobalNamesIn(sf, heritage, seen);
+  }
   if (Node.isConditionalExpression(expression)) {
     return new Set([
       ...ambientGlobalNamesIn(sf, expression.getWhenTrue(), seen),
@@ -2752,9 +2783,12 @@ type ContractCapabilityReference = {
 function contractCapabilityReferences(
   sf: SourceFile,
 ): ContractCapabilityReference[] {
+  type DateTimeFormatMethodCapability = {
+    readonly boundArguments: readonly Node[] | null;
+  };
   const dateTimeFormatMethodCache = new Map<
     MorphSymbol,
-    Map<string, boolean>
+    Map<string, readonly DateTimeFormatMethodCapability[]>
   >();
   const containerAssignmentsBySourceFile = new WeakMap<
     SourceFile,
@@ -2920,6 +2954,10 @@ function contractCapabilityReferences(
     seenSymbols: ReadonlySet<MorphSymbol> = new Set(),
   ): boolean => {
     const expression = unwrapExpression(node);
+    const heritage = classExtendsExpression(expression);
+    if (heritage !== undefined) {
+      return isAmbientDateTimeFormatConstructor(heritage, seenSymbols);
+    }
     if (
       Node.isPropertyAccessExpression(expression) ||
       Node.isElementAccessExpression(expression)
@@ -3009,25 +3047,25 @@ function contractCapabilityReferences(
           isAmbientDateTimeFormatInstance(source.receiver, nextSeen)),
     );
   };
-  const isAmbientDateTimeFormatMethodAtPath = (
+  const dateTimeFormatMethodCapabilitiesAtPath = (
     node: Node | undefined,
     path: readonly ProvenanceSelector[] = [],
     seenSymbols: ReadonlySet<MorphSymbol> = new Set(),
-  ): boolean => {
+  ): readonly DateTimeFormatMethodCapability[] => {
     const expression = unwrapExpression(node);
     if (Node.isConditionalExpression(expression)) {
-      return (
-        isAmbientDateTimeFormatMethodAtPath(
+      return [
+        ...dateTimeFormatMethodCapabilitiesAtPath(
           expression.getWhenTrue(),
           path,
           seenSymbols,
-        ) ||
-        isAmbientDateTimeFormatMethodAtPath(
+        ),
+        ...dateTimeFormatMethodCapabilitiesAtPath(
           expression.getWhenFalse(),
           path,
           seenSymbols,
-        )
-      );
+        ),
+      ];
     }
     if (
       Node.isBinaryExpression(expression) &&
@@ -3035,18 +3073,18 @@ function contractCapabilityReferences(
         expression.getOperatorToken().getKind(),
       )
     ) {
-      return (
-        isAmbientDateTimeFormatMethodAtPath(
+      return [
+        ...dateTimeFormatMethodCapabilitiesAtPath(
           expression.getLeft(),
           path,
           seenSymbols,
-        ) ||
-        isAmbientDateTimeFormatMethodAtPath(
+        ),
+        ...dateTimeFormatMethodCapabilitiesAtPath(
           expression.getRight(),
           path,
           seenSymbols,
-        )
-      );
+        ),
+      ];
     }
     if (
       Node.isPropertyAccessExpression(expression) ||
@@ -3056,26 +3094,48 @@ function contractCapabilityReferences(
         expression.getSourceFile(),
         expression,
       );
-      return (
-        candidates.selectors.some((selector) =>
-          isAmbientDateTimeFormatMethodAtPath(
+      return [
+        ...candidates.selectors.flatMap((selector) =>
+          dateTimeFormatMethodCapabilitiesAtPath(
             expression.getExpression(),
             [selector, ...path],
             seenSymbols,
           )
-        ) ||
-        (candidates.unresolved &&
-          isAmbientDateTimeFormatMethodAtPath(
+        ),
+        ...(candidates.unresolved
+          ? dateTimeFormatMethodCapabilitiesAtPath(
             expression.getExpression(),
             [{ kind: "property", name: null }, ...path],
             seenSymbols,
-          ))
-      );
+          )
+          : []),
+      ];
     }
     if (Node.isCallExpression(expression)) {
+      const callee = unwrapExpression(expression.getExpression());
+      if (
+        Node.isPropertyAccessExpression(callee) ||
+        Node.isElementAccessExpression(callee)
+      ) {
+        const members = memberNameCandidates(callee);
+        if (members.names.has("bind")) {
+          return dateTimeFormatMethodCapabilitiesAtPath(
+            callee.getExpression(),
+            path,
+            seenSymbols,
+          ).map((capability) => ({
+            boundArguments: capability.boundArguments === null
+              ? null
+              : [
+                ...capability.boundArguments,
+                ...expression.getArguments().slice(1),
+              ],
+          }));
+        }
+      }
       const returns = functionReturnSourcesIn(expression);
-      return returns.sources.some((source) =>
-        isAmbientDateTimeFormatMethodAtPath(
+      return returns.sources.flatMap((source) =>
+        dateTimeFormatMethodCapabilitiesAtPath(
           source.receiver,
           [...source.selectors, ...path],
           seenSymbols,
@@ -3084,7 +3144,7 @@ function contractCapabilityReferences(
     }
     if (Node.isIdentifier(expression)) {
       const symbol = expression.getSymbol();
-      if (symbol === undefined) return false;
+      if (symbol === undefined) return [];
       const provenance = ambientAliasSourcesAcrossModulesIn(
         expression.getSourceFile(),
         symbol,
@@ -3098,23 +3158,15 @@ function contractCapabilityReferences(
         pathKey,
       );
       if (cached !== undefined) return cached;
-      if (seenSymbols.has(provenance.symbol)) return false;
+      if (seenSymbols.has(provenance.symbol)) return [];
       const nextSeen = new Set(seenSymbols).add(provenance.symbol);
-      if (
-        provenance.sources.some((source) =>
-          isAmbientDateTimeFormatMethodAtPath(
-            source.receiver,
-            [...source.selectors, ...path],
-            nextSeen,
-          )
+      const capabilities = provenance.sources.flatMap((source) =>
+        dateTimeFormatMethodCapabilitiesAtPath(
+          source.receiver,
+          [...source.selectors, ...path],
+          nextSeen,
         )
-      ) {
-        const symbolCache = dateTimeFormatMethodCache.get(provenance.symbol) ??
-          new Map();
-        symbolCache.set(pathKey, true);
-        dateTimeFormatMethodCache.set(provenance.symbol, symbolCache);
-        return true;
-      }
+      );
       for (const sourceFile of provenance.sourceFiles) {
         for (const assignment of containerAssignmentsFor(
           sourceFile,
@@ -3130,32 +3182,29 @@ function contractCapabilityReferences(
               targetPath.length <= path.length &&
               targetPath.every((selector, index) =>
                 selectorsEqual(selector, path[index]!),
-              ) &&
-              isAmbientDateTimeFormatMethodAtPath(
-                assignment.getRight(),
-                path.slice(targetPath.length),
-                nextSeen,
               )
             ) {
-              const symbolCache =
-                dateTimeFormatMethodCache.get(provenance.symbol) ?? new Map();
-              symbolCache.set(pathKey, true);
-              dateTimeFormatMethodCache.set(provenance.symbol, symbolCache);
-              return true;
+              capabilities.push(
+                ...dateTimeFormatMethodCapabilitiesAtPath(
+                  assignment.getRight(),
+                  path.slice(targetPath.length),
+                  nextSeen,
+                ),
+              );
             }
           }
         }
       }
-      if (seenSymbols.size === 0) {
+      if (seenSymbols.size === 0 || capabilities.length > 0) {
         const symbolCache = dateTimeFormatMethodCache.get(provenance.symbol) ??
           new Map();
-        symbolCache.set(pathKey, false);
+        symbolCache.set(pathKey, capabilities);
         dateTimeFormatMethodCache.set(provenance.symbol, symbolCache);
       }
-      return false;
+      return capabilities;
     }
     const selector = path[0];
-    if (selector === undefined) return false;
+    if (selector === undefined) return [];
     const remaining = path.slice(1);
     if (
       selector.kind === "property" &&
@@ -3165,15 +3214,15 @@ function contractCapabilityReferences(
         selector.name === "formatToParts") &&
       isAmbientDateTimeFormatInstance(expression, seenSymbols)
     ) {
-      return true;
+      return [{ boundArguments: [] }];
     }
     if (
       selector.kind === "property" &&
       Node.isObjectLiteralExpression(expression)
     ) {
-      return expression.getProperties().some((property) => {
+      return expression.getProperties().flatMap((property) => {
         if (Node.isSpreadAssignment(property)) {
-          return isAmbientDateTimeFormatMethodAtPath(
+          return dateTimeFormatMethodCapabilitiesAtPath(
             property.getExpression(),
             path,
             seenSymbols,
@@ -3183,15 +3232,15 @@ function contractCapabilityReferences(
           !Node.isPropertyAssignment(property) &&
           !Node.isShorthandPropertyAssignment(property)
         ) {
-          return false;
+          return [];
         }
         const name = propertyNameIn(
           expression.getSourceFile(),
           property.getNameNode(),
           property.getName(),
         );
-        if (selector.name !== null && name !== selector.name) return false;
-        return isAmbientDateTimeFormatMethodAtPath(
+        if (selector.name !== null && name !== selector.name) return [];
+        return dateTimeFormatMethodCapabilitiesAtPath(
           Node.isPropertyAssignment(property)
             ? property.getInitializer()
             : property.getNameNode(),
@@ -3202,16 +3251,74 @@ function contractCapabilityReferences(
     }
     if (selector.kind === "index" && Node.isArrayLiteralExpression(expression)) {
       const element = expression.getElements()[selector.index];
-      return element !== undefined &&
-        !Node.isOmittedExpression(element) &&
-        !Node.isSpreadElement(element) &&
-        isAmbientDateTimeFormatMethodAtPath(
-          element,
-          remaining,
-          seenSymbols,
-        );
+      if (
+        element === undefined ||
+        Node.isOmittedExpression(element) ||
+        Node.isSpreadElement(element)
+      ) {
+        return [];
+      }
+      return dateTimeFormatMethodCapabilitiesAtPath(
+        element,
+        remaining,
+        seenSymbols,
+      );
     }
-    return false;
+    return [];
+  };
+  const appendDateTimeFormatArguments = (
+    capabilities: readonly DateTimeFormatMethodCapability[],
+    arguments_: readonly Node[] | null,
+  ): readonly DateTimeFormatMethodCapability[] =>
+    capabilities.map((capability) => ({
+      boundArguments: capability.boundArguments === null || arguments_ === null
+        ? null
+        : [...capability.boundArguments, ...arguments_],
+    }));
+  const dateTimeFormatInvocations = (
+    call: CallExpression,
+  ): readonly DateTimeFormatMethodCapability[] => {
+    const reflected = normalizedAmbientBuiltinCall(call, "Reflect", ["apply"]);
+    if (reflected !== null && reflected.arguments !== null) {
+      const [target, , argumentList] = reflected.arguments;
+      const capabilities = dateTimeFormatMethodCapabilitiesAtPath(target);
+      if (capabilities.length > 0) {
+        return appendDateTimeFormatArguments(
+          capabilities,
+          staticArrayElements(argumentList),
+        );
+      }
+    }
+    const callee = unwrapExpression(call.getExpression());
+    if (
+      Node.isPropertyAccessExpression(callee) ||
+      Node.isElementAccessExpression(callee)
+    ) {
+      const members = memberNameCandidates(callee);
+      const wrappers = ["call", "apply", "bind"].filter((name) =>
+        members.names.has(name)
+      );
+      const capabilities = wrappers.length > 0
+        ? dateTimeFormatMethodCapabilitiesAtPath(callee.getExpression())
+        : [];
+      if (capabilities.length > 0 && wrappers.includes("call")) {
+        return appendDateTimeFormatArguments(
+          capabilities,
+          call.getArguments().slice(1),
+        );
+      }
+      if (capabilities.length > 0 && wrappers.includes("apply")) {
+        return appendDateTimeFormatArguments(
+          capabilities,
+          staticArrayElements(call.getArguments()[1]),
+        );
+      }
+      if (capabilities.length > 0 && wrappers.includes("bind")) return [];
+    }
+    return appendDateTimeFormatArguments(
+      dateTimeFormatMethodCapabilitiesAtPath(callee),
+      call.getArguments(),
+    );
   };
   const hasExplicitIntlInstant = (
     arguments_: readonly Node[],
@@ -3419,10 +3526,11 @@ function contractCapabilityReferences(
         );
       }
     }
-    if (
-      isAmbientDateTimeFormatMethodAtPath(call.getExpression()) &&
-      !hasExplicitIntlInstant(call.getArguments())
-    ) {
+    const dateTimeFormatCalls = dateTimeFormatInvocations(call);
+    if (dateTimeFormatCalls.some((invocation) =>
+      invocation.boundArguments === null ||
+      !hasExplicitIntlInstant(invocation.boundArguments)
+    )) {
       record(
         call.getStartLineNumber(),
         "<nondeterministic platform-global>",
