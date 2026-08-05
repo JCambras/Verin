@@ -529,13 +529,13 @@
     },
     {
       "id": "v3-gate-ordering",
-      "title": "Every gate of the ratified sequence is registered with typed requirements; nothing a gate requires is proven after it closes; activation ownership, complete gate metadata, and complete requirement sets are ratcheted; Gate A owns 1/2/4/5 and references prompt-5 guarantees 7/8/9, while Gate B requires 3 (ADR-0030)",
+      "title": "Every gate of the ratified sequence is registered with typed requirements; nothing a gate requires is proven after it closes; activation ownership, complete gate metadata, and complete requirement sets are ratcheted; Gate A owns 1/2/4/5 and references prompt-5 guarantees 7/8/9, while Gate B requires 3 (ADR-0055)",
       "status": "enforced",
       "phase": "v3-0",
       "mechanisms": [
         {
           "type": "adr",
-          "ref": "docs/adr/0030-gate-a-invariant-ordering.md"
+          "ref": "docs/adr/0055-gate-a-invariant-ordering.md"
         },
         {
           "type": "config",

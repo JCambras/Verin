@@ -31,7 +31,7 @@ import {
 } from "../../../scripts/v3-gates.lib";
 
 /**
- * V3 GATE-ORDERING FENCE (ADR-0030; captain rulings `gate-a-ordering`,
+ * V3 GATE-ORDERING FENCE (ADR-0055; captain rulings `gate-a-ordering`,
  * `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3` and
  * `gatea-fix-review-3`, 2026-07-28). A phase gate that
  * requires something which lands in a LATER wave is unreachable by construction
@@ -132,7 +132,7 @@ describe("v3 gate-ordering fence", () => {
     expect(registered).toEqual(RATIFIED_GATE_RANGES);
   });
 
-  it("enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry", () => {
+  it("enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry", () => {
     expect(requiredInvariantIds(registry.gates.A)).toEqual([1, 2, 4, 5, 7, 8, 9]);
     expect(requiredInvariantIds(registry.gates.B)).toContain(3);
     expect(registry.invariants.find((i) => i.id === 3)?.gate).toBe("B");
@@ -1073,7 +1073,7 @@ describe("v3 gate-ordering fence", () => {
           () => true,
         ).some((problem) =>
           problem.includes(
-            "cross-gate invariant proof points drifted from the ADR-0030 ratchet",
+            "cross-gate invariant proof points drifted from the ADR-0055 ratchet",
           ),
         ),
       ).toBe(true);
@@ -1137,7 +1137,7 @@ describe("v3 gate-ordering fence", () => {
       const unpinned = clone(registry);
       delete unpinned.invariants.find((invariant) => invariant.id === 3)!.activationMechanisms;
       expect(gateOrderingProblems(unpinned, () => true)).toContain(
-        "invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activation requires the two prompt-10 domain artifacts and exact domain-configuration fitness mechanism pinned by ADR-0030",
+        "invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activation requires the two prompt-10 domain artifacts and exact domain-configuration fitness mechanism pinned by ADR-0055",
       );
 
       const unrelated = clone(registry);
@@ -1147,7 +1147,7 @@ describe("v3 gate-ordering fence", () => {
         { type: "fitness", ref: "src/__tests__/fitness/no-bare-throw.test.ts" },
       ];
       expect(gateOrderingProblems(unrelated, () => true)).toContain(
-        "invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' without required activation mechanism fitness:src/__tests__/fitness/domain-configuration.test.ts - an unrelated fitness mechanism cannot prove this activation boundary (ADR-0030)",
+        "invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' without required activation mechanism fitness:src/__tests__/fitness/domain-configuration.test.ts - an unrelated fitness mechanism cannot prove this activation boundary (ADR-0055)",
       );
 
       const missing = clone(registry);

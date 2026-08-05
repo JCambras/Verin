@@ -16,6 +16,8 @@ export interface FitnessTestResult {
 export function completeTestRunArguments(outputFile: string): string[] {
   return [
     "run",
+    "--maxWorkers=1",
+    "--fileParallelism=false",
     "--reporter=json",
     `--outputFile=${outputFile}`,
   ];

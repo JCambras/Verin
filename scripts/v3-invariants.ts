@@ -14,7 +14,7 @@
  * fenced by src/__tests__/fitness/v3-invariants.test.ts; the ratified-document
  * SHA-256 pins are re-verified here AND by the arch-version fence.
  *
- * Gates (ADR-0030) declare their wave, prompt range, structural predecessors,
+ * Gates (ADR-0055) declare their wave, prompt range, structural predecessors,
  * entry condition, outcome, and a list of TYPED requirements. This report is itself a document subject to
  * the honesty ruling, so it does not merely PRINT the registry: it re-runs the
  * whole gate rule set from the shared core (scripts/v3-gates.lib.ts) that the
@@ -99,7 +99,7 @@ for (const inv of registry.invariants) {
     structural.push(`invariant ${inv.id}: active but maps to no runnable fitness mechanism`);
   }
 }
-// The WHOLE gate rule set (ADR-0030), not a subset: ordering, activation-ownership
+// The WHOLE gate rule set (ADR-0055), not a subset: ordering, activation-ownership
 // integrity, prose/structured agreement, activation-artifact honesty, and the
 // no-empty-requirement-set rule. Same shared core the v3-gate-ordering fence proves
 // adversarially, so this report can never emit a claim that fence would reject.
@@ -245,7 +245,7 @@ for (const inv of registry.invariants) {
   stateById.set(inv.id, state);
   counts[state] += 1;
   const id = `#${String(inv.id).padStart(2, " ")}`;
-  // Groups no longer imply a gate (ADR-0030 split the foundation group across gates A and B),
+  // Groups no longer imply a gate (ADR-0055 split the foundation group across gates A and B),
   // so each line carries its own. The not-yet-active line is already dim - nesting dim() there
   // would emit a reset mid-line and un-dim the rest.
   const at = dim(`  [gate ${inv.gate}]`);
@@ -262,7 +262,7 @@ for (const inv of registry.invariants) {
   }
 }
 
-// ---------- gate readiness (ADR-0030: typed requirements; an undecidable gate is NEVER green) ----------
+// ---------- gate readiness (ADR-0055: typed requirements; an undecidable gate is NEVER green) ----------
 console.log(bold("\n  PHASE GATES"));
 console.log(dim("  green (every typed requirement met) · not yet green (a requirement is unmet) · not-yet-verifiable (an outcome clause nothing can decide yet)\n"));
 const GATE_STATE_WIDTH = "○ not-yet-verifiable".length;

@@ -542,14 +542,6 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       declaration.getSourceFile().isDeclarationFile(),
     );
   };
-  const isAmbientCommonJsObject = (node: Node | undefined): boolean => {
-    const expression = expressionProvenance(node);
-    return (
-      Node.isIdentifier(expression) &&
-      expression.getText() === "module" &&
-      isAmbientGlobalReference(expression)
-    );
-  };
   /**
    * A `require` MEMBER is the CommonJS loader only when it hangs off an ambient
    * global, or when the member itself is declared ambiently (`const m = module;
@@ -1193,16 +1185,6 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     if (
       mayBePropertyKey(argument, "require") &&
       isAmbientRequireMember(access.getExpression(), argument)
-    ) {
-      refs.push({
-        specifier: null,
-        line: access.getStartLineNumber(),
-        kind: "require-reference",
-      });
-    }
-    if (
-      memberName === null &&
-      isAmbientCommonJsObject(access.getExpression())
     ) {
       refs.push({
         specifier: null,

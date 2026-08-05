@@ -1,5 +1,5 @@
 /**
- * V3 PHASE-GATE MODEL - the SHARED core of the gate constitution (ADR-0030;
+ * V3 PHASE-GATE MODEL - the SHARED core of the gate constitution (ADR-0055;
  * captain rulings `gate-a-ordering`, `gatea-opus-review-1`, `gatea-fix-review-2`,
  * `gatea-review-3` and `gatea-fix-review-3`, 2026-07-28).
  *
@@ -97,6 +97,16 @@ export interface InvariantMechanism {
 export const ACTIVE_MECHANISM_RATCHET: Readonly<
   Record<number, readonly InvariantMechanism[]>
 > = {
+  1: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/llm-pii-boundary.test.ts",
+    },
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/tokenized-factory-only.test.ts",
+    },
+  ],
   2: [
     {
       type: "fitness",
@@ -105,6 +115,10 @@ export const ACTIVE_MECHANISM_RATCHET: Readonly<
     {
       type: "fitness",
       ref: "src/__tests__/fitness/decision-core-tenant-scope.test.ts",
+    },
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/tenant-context-required.test.ts",
     },
   ],
   5: [
@@ -290,15 +304,15 @@ export const GATE_METADATA_RATCHET: Readonly<
     entryCondition:
       "Gate 0 is green: Wave 0 (prompts 1-3) has landed and the seven-minute journey is clickable on labeled fake data (ADR-0027).",
     outcome:
-      "Foundation invariants 1, 2, 4, and 5 are active and green (Wave A, prompts 4-7), and the prompt-5 structural guarantees of invariants 7, 8, and 9 are required at their earliest complete proof point without moving their Gate D activation ownership. Gate D later re-asserts invariants 7, 8, and 9 over evaluator behavior. Invariant 3 is NOT a Gate A requirement: its activation prerequisite is prompt 10, in Wave B, so requiring it here made Gate A unreachable by construction (ADR-0030).",
+      "Foundation invariants 1, 2, 4, and 5 are active and green (Wave A, prompts 4-7), and the prompt-5 structural guarantees of invariants 7, 8, and 9 are required at their earliest complete proof point without moving their Gate D activation ownership. Gate D later re-asserts invariants 7, 8, and 9 over evaluator behavior. Invariant 3 is NOT a Gate A requirement: its activation prerequisite is prompt 10, in Wave B, so requiring it here made Gate A unreachable by construction (ADR-0055).",
   },
   B: {
     wave: "B",
     entryGates: ["A"],
     entryCondition:
-      "Wave B may not begin until prompts 5, 6, and 7 have landed AND Gate A is green: its owned foundation invariants 1, 2, 4, and 5 and its earliest-proof references to invariants 7, 8, and 9 are active and green (ADR-0030).",
+      "Wave B may not begin until prompts 5, 6, and 7 have landed AND Gate A is green: its owned foundation invariants 1, 2, 4, and 5 and its earliest-proof references to invariants 7, 8, and 9 are active and green (ADR-0055).",
     outcome:
-      "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch named for a decision domain) is active and green once prompt 10 migrates the ADR-0010 account-opening flow definition into config/domains/, and invariant 16 (no arbitrary executable code in firm policy configuration) is active and green once prompt 9 lands the closed policy AST (Wave B, prompts 8-11; ADR-0030).",
+      "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch named for a decision domain) is active and green once prompt 10 migrates the ADR-0010 account-opening flow definition into config/domains/, and invariant 16 (no arbitrary executable code in firm policy configuration) is active and green once prompt 9 lands the closed policy AST (Wave B, prompts 8-11; ADR-0055).",
   },
   C: {
     wave: "C",
@@ -567,7 +581,7 @@ export interface CiWorkflow extends Map<string, CiJob> {
  * anything but literal `false` swallows the failure; ANY `if:` makes the run
  * conditional, and a GitHub expression is not decidable here - so both are treated as
  * neutralizing. Fail-closed on purpose: an `if:` that is genuinely always true still
- * has to be re-stated in the registry's terms rather than trusted (ADR-0030).
+ * has to be re-stated in the registry's terms rather than trusted (ADR-0055).
  */
 function neutralizerOf(node: unknown): string | undefined {
   const n = node as { "continue-on-error"?: unknown; if?: unknown } | null;
@@ -1355,7 +1369,7 @@ export function gateRatchetProblems(reg: Registry): string[] {
       JSON.stringify(check.expected)
     ) {
       problems.push(
-        `${check.label} drifted from the ADR-0030 ratchet; expected ${JSON.stringify(check.expected)}, received ${JSON.stringify(check.actual)}`,
+        `${check.label} drifted from the ADR-0055 ratchet; expected ${JSON.stringify(check.expected)}, received ${JSON.stringify(check.actual)}`,
       );
     }
   }
@@ -1457,7 +1471,7 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
       if (req.kind === "ci-gate" && (typeof req.command !== "string" || req.command.trim().length === 0)) {
         problems.push(
           `gate ${key}: the 'ci-gate' requirement '${requirementLabel(req)}' must name the command that blocking job runs - ` +
-            `a job name matching a comment, a path, or an unrelated step is not evidence (ADR-0030)`,
+            `a job name matching a comment, a path, or an unrelated step is not evidence (ADR-0055)`,
         );
       } else if (req.kind === "ci-gate" && simpleShellCommand(req.command!) === undefined) {
         problems.push(
@@ -1476,7 +1490,7 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
     if (Array.isArray(requires) && !requires.some(isMechanized)) {
       problems.push(
         `gate ${key}: declares no machine-checkable requirement (${MECHANIZED_KINDS.join(" | ")}) - ` +
-          `a gate with nothing to decide would read green merely by being registered (ADR-0030)`,
+          `a gate with nothing to decide would read green merely by being registered (ADR-0055)`,
       );
     }
   }
@@ -1506,7 +1520,7 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
     if (!requiredInvariantIds(gate).includes(inv.id)) {
       problems.push(
         `gate ${inv.gate}: owns invariant ${inv.id} (its activation gate) but does not require it - ` +
-          `activation ownership and gate requirements drifted apart (ADR-0030)`,
+          `activation ownership and gate requirements drifted apart (ADR-0055)`,
       );
     }
   }
@@ -1523,7 +1537,7 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
       problems.push(
         `gate ${key} (wave ${gate.wave}, prompts ${gate.prompts.join("-")}): requires ${requirementLabel(req)}${owned}, which is ` +
           `not proven until ${point.how} - AFTER this gate closes at prompt ${closesAt}. The gate could never go green without ` +
-          `faking activation - require it at a gate that covers prompt ${point.at} (ADR-0030).`,
+          `faking activation - require it at a gate that covers prompt ${point.at} (ADR-0055).`,
       );
     }
   }
@@ -1540,7 +1554,7 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
       };
       if (JSON.stringify(actual) !== JSON.stringify(INVARIANT_THREE_ACTIVATION_REQUIREMENTS)) {
         problems.push(
-          `${tag}: activation requires the two prompt-10 domain artifacts and exact domain-configuration fitness mechanism pinned by ADR-0030`,
+          `${tag}: activation requires the two prompt-10 domain artifacts and exact domain-configuration fitness mechanism pinned by ADR-0055`,
         );
       }
     }
@@ -1576,7 +1590,7 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
       } else if (inv.status === "active") {
         for (const artifact of artifacts) {
           if (!exists(artifact)) {
-            problems.push(`${tag}: marked 'active' but its activation artifact ${artifact} does not exist - claiming an unimplemented invariant (ADR-0030)`);
+            problems.push(`${tag}: marked 'active' but its activation artifact ${artifact} does not exist - claiming an unimplemented invariant (ADR-0055)`);
           }
         }
       }
@@ -1607,12 +1621,12 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
           if (!mapped) {
             problems.push(
               `${tag}: marked 'active' without required activation mechanism ${required.type}:${required.ref} - ` +
-                `an unrelated fitness mechanism cannot prove this activation boundary (ADR-0030)`,
+                `an unrelated fitness mechanism cannot prove this activation boundary (ADR-0055)`,
             );
           } else if (!exists(required.ref)) {
             problems.push(
               `${tag}: marked 'active' but required activation mechanism ${required.type}:${required.ref} does not exist - ` +
-                `claiming an unimplemented invariant (ADR-0030)`,
+                `claiming an unimplemented invariant (ADR-0055)`,
             );
           }
         }
@@ -1634,7 +1648,7 @@ export function gateOrderingProblems(reg: Registry, exists: (path: string) => bo
     for (const named of entryGates) {
       const prior = gates[named];
       if (!prior) {
-        problems.push(`gate ${key}: entryGates depends on "Gate ${named}", which is not registered - nothing can compute or report it (ADR-0030)`);
+        problems.push(`gate ${key}: entryGates depends on "Gate ${named}", which is not registered - nothing can compute or report it (ADR-0055)`);
       } else if (Array.isArray(prior.prompts) && prior.prompts[1] >= gate.prompts[0]) {
         problems.push(`gate ${key}: entryGates depends on "Gate ${named}" [${prior.prompts.join("-")}], which does not close before gate ${key} opens`);
       }

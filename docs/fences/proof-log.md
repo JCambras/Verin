@@ -9257,7 +9257,7 @@ reverted tree.
 
 ## PF-030 · v3 gate-ordering fence · `src/__tests__/fitness/v3-gate-ordering.test.ts`
 
-**Invariant (ADR-0030, captain ruling `gate-a-ordering` 2026-07-28; v3 §17 "never fake green"):** no
+**Invariant (ADR-0055, captain ruling `gate-a-ordering` 2026-07-28; v3 §17 "never fake green"):** no
 phase gate may require an invariant whose activation prerequisite lands in a later wave. Gate A requires
 invariants 1, 2, 4, and 5; invariant 3 is required at Gate B because its prerequisite is prompt 10. No
 document, proof, or UI may claim invariant 3 is implemented before prompt 10 exists.
@@ -9271,13 +9271,13 @@ set `gates.A.requires` to `[1,2,3,4,5]`.
 ```
 FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave
 AssertionError: v3-invariants.json gate-ordering problems:
-invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): gated at A (wave A, prompts 4-7) but its activation prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - move the invariant to the gate that covers prompt 10 (ADR-0030).
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): gated at A (wave A, prompts 4-7) but its activation prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - move the invariant to the gate that covers prompt 10 (ADR-0055).
  ❯ src/__tests__/fitness/v3-gate-ordering.test.ts:174:92
 ```
 The runner caught it independently (defense in depth, blocking CI job `v3-invariants`):
 ```
 v3-invariants: registry/pin problems:
-  - invariant 3: gated at A (prompts 4-7) but activates at prompt 10 - the gate could never go green (ADR-0030)
+  - invariant 3: gated at A (prompts 4-7) but activates at prompt 10 - the gate could never go green (ADR-0055)
 ```
 
 **Injection 2 - claim invariant 3 is implemented before prompt 10 exists.** Flipped invariant 3 to
@@ -9288,8 +9288,8 @@ neighbouring registry fence.
 ```
 FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave
 AssertionError: v3-invariants.json gate-ordering problems:
-invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/account-opening.yaml does not exist - claiming an unimplemented invariant (ADR-0030)
-invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/money-movement.yaml does not exist - claiming an unimplemented invariant (ADR-0030)
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/account-opening.yaml does not exist - claiming an unimplemented invariant (ADR-0055)
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/money-movement.yaml does not exist - claiming an unimplemented invariant (ADR-0055)
 ```
 
 **Injection 3 - dodge the ordering rule by understating the machine-readable prerequisite.** Moved
@@ -9314,11 +9314,11 @@ cannot be green by always failing).
 `vitest run src/__tests__/fitness/v3-gate-ordering.test.ts` → `Tests 10 passed (10)`, `pnpm v3:invariants`
 → `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)`.
 
-**Date:** 2026-07-28 (ADR-0030, D-061).
+**Date:** 2026-07-28 (ADR-0055, D-061).
 
 ### PF-030 (continued) · review round `gatea-opus-review-1` · complete gate model, one shared rule set
 
-**What changed (ADR-0030, amended in place).** All nine gates of the ratified sequence are registered;
+**What changed (ADR-0055, amended in place).** All nine gates of the ratified sequence are registered;
 `gates.<G>.requires` became a list of TYPED requirements (`invariant` | `artifact` | `fitness` |
 `ci-gate` | `evidence`); activation OWNERSHIP was separated from gate REQUIREMENT; a gate with no
 machine-checkable requirement is rejected; and the rule set moved to `scripts/v3-gates.lib.ts` so the
@@ -9334,12 +9334,12 @@ applied to the real `v3-invariants.json`, each observed failing, each reverted.
 ```
 FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
 AssertionError: v3-invariants.json gate-ordering problems:
-gate C: declares no machine-checkable requirement (invariant | artifact | fitness | ci-gate) - a gate with nothing to decide would read green merely by being registered (ADR-0030)
+gate C: declares no machine-checkable requirement (invariant | artifact | fitness | ci-gate) - a gate with nothing to decide would read green merely by being registered (ADR-0055)
 ```
 The runner refused to print the report at all (blocking CI job `v3-invariants`, exit 1):
 ```
 v3-invariants: registry/pin problems:
-  - gate C: declares no machine-checkable requirement (invariant | artifact | fitness | ci-gate) - a gate with nothing to decide would read green merely by being registered (ADR-0030)
+  - gate C: declares no machine-checkable requirement (invariant | artifact | fitness | ci-gate) - a gate with nothing to decide would read green merely by being registered (ADR-0055)
 ```
 
 **Injection 5 - activation ownership drifting from the requirement list.** Removed invariant 3 from gate
@@ -9350,8 +9350,8 @@ direction only.
 ```
 FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
 AssertionError: v3-invariants.json gate-ordering problems:
-gate B: owns invariant 3 (its activation gate) but does not require it - activation ownership and gate requirements drifted apart (ADR-0030)
-FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry
+gate B: owns invariant 3 (its activation gate) but does not require it - activation ownership and gate requirements drifted apart (ADR-0055)
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry
 AssertionError: expected [] to deeply equal [ 3 ]
 ```
 
@@ -9363,12 +9363,12 @@ ordering rule must still decide.
 ```
 FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
 AssertionError: v3-invariants.json gate-ordering problems:
-gate 0 (wave 0, prompts 1-3): requires #3 (activation is owned by gate B), whose prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - require it at the gate that covers prompt 10 (ADR-0030).
+gate 0 (wave 0, prompts 1-3): requires #3 (activation is owned by gate B), whose prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - require it at the gate that covers prompt 10 (ADR-0055).
 ```
 Independently caught by the runner:
 ```
 v3-invariants: registry/pin problems:
-  - gate 0 (wave 0, prompts 1-3): requires #3 (activation is owned by gate B), whose prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - require it at the gate that covers prompt 10 (ADR-0030).
+  - gate 0 (wave 0, prompts 1-3): requires #3 (activation is owned by gate B), whose prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - require it at the gate that covers prompt 10 (ADR-0055).
 ```
 
 **Injection 7 - the reported defect: an entry condition depending on an unregistered gate.** Deleted gate
@@ -9378,7 +9378,7 @@ C, leaving gate D's `entryCondition` citing "Gate C is green" - a precondition n
 ```
 FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
 AssertionError: v3-invariants.json gate-ordering problems:
-gate D: entryCondition depends on "Gate C", which is not registered - nothing can compute or report it (ADR-0030)
+gate D: entryCondition depends on "Gate C", which is not registered - nothing can compute or report it (ADR-0055)
 FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: every gate of the ratified prompt sequence is registered, over its ratified prompt range
 AssertionError: expected [ '0', 'A', 'B', 'D', 'E', 'F', …(2) ] to deeply equal [ '0', 'A', 'B', 'C', 'D', 'E', …(3) ]
 ```
@@ -9390,8 +9390,8 @@ ordering rule and would have printed a report claiming invariant 3 was implement
 **Observed failure (verbatim), invariant 3 flipped to `active` with a real fitness mechanism:**
 ```
 v3-invariants: registry/pin problems:
-  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/account-opening.yaml does not exist - claiming an unimplemented invariant (ADR-0030)
-  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/money-movement.yaml does not exist - claiming an unimplemented invariant (ADR-0030)
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/account-opening.yaml does not exist - claiming an unimplemented invariant (ADR-0055)
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/money-movement.yaml does not exist - claiming an unimplemented invariant (ADR-0055)
 ```
 **and, understating the structured prerequisite while the prose still named prompt 10:**
 ```
@@ -9414,7 +9414,7 @@ injection (verified by string comparison);
 `548 passed`, `pnpm v3:invariants` → `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)` with
 all nine gates printed and NONE green (gate 0 `not-yet-verifiable`; A-I `not yet green`).
 
-**Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-opus-review-1`).
+**Date:** 2026-07-28 (ADR-0055 amended, D-061; captain review ruling `gatea-opus-review-1`).
 
 ### PF-030 (continued, 2nd review round) · ruling `gatea-fix-review-2` · proof points, structural CI evidence, two ratchets
 
@@ -9432,7 +9432,7 @@ Injections 4, 5, 7 and 8 still reproduce verbatim. Everything else below is curr
 output captured in this round; `v3-invariants.json` and `.github/workflows/ci.yml` were each restored
 from a pre-injection copy and verified identical with `diff -q` after every injection.
 
-**What changed (ADR-0030, amended in place again).** The ordering rule now decides from a requirement's
+**What changed (ADR-0055, amended in place again).** The ordering rule now decides from a requirement's
 PROOF POINT rather than from a status short-circuit, so a gate referencing an invariant a LATER gate owns
 fails whether or not that invariant is already active; both prose scanners cover every spelling the
 registry uses (ranges, comma lists, conjunctions, lower-case gate names); a `ci-gate` requirement must
@@ -9449,9 +9449,9 @@ activation-ownership map and every gate's invariant requirement set in the fence
 ```
  FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
 AssertionError: v3-invariants.json gate-ordering problems:
-gate A (wave A, prompts 4-7): requires #7 (activation owned by gate D), which is not proven until prompt 19, where gate D proves its activation - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 19 (ADR-0030).: expected [ Array(1) ] to deeply equal []
+gate A (wave A, prompts 4-7): requires #7 (activation owned by gate D), which is not proven until prompt 19, where gate D proves its activation - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 19 (ADR-0055).: expected [ Array(1) ] to deeply equal []
 
- FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry
 AssertionError: expected [ 1, 2, 4, 5, 7 ] to deeply equal [ 1, 2, 4, 5 ]
 
  FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's invariant requirement set is the ruled one
@@ -9460,7 +9460,7 @@ AssertionError: expected { '0': [], A: [ 1, 2, 4, 5, 7 ], …(7) } to deeply equ
 The runner refused to print the report at all (blocking CI job `v3-invariants`, exit 1):
 ```
 v3-invariants: registry/pin problems:
-  - gate A (wave A, prompts 4-7): requires #7 (activation owned by gate D), which is not proven until prompt 19, where gate D proves its activation - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 19 (ADR-0030).
+  - gate A (wave A, prompts 4-7): requires #7 (activation owned by gate D), which is not proven until prompt 19, where gate D proves its activation - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 19 (ADR-0055).
 ```
 
 **Injection 10 - the reported ci-gate substring hole.** Deleted the whole `e2e:` job from
@@ -9517,12 +9517,12 @@ The previous scanner compiled without `/i`, so a lower-case gate name skipped ru
 ```
  FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
 AssertionError: v3-invariants.json gate-ordering problems:
-gate C: entryCondition depends on "Gate Z", which is not registered - nothing can compute or report it (ADR-0030): expected [ Array(1) ] to deeply equal []
+gate C: entryCondition depends on "Gate Z", which is not registered - nothing can compute or report it (ADR-0055): expected [ Array(1) ] to deeply equal []
 ```
 Independently caught by the runner:
 ```
 v3-invariants: registry/pin problems:
-  - gate C: entryCondition depends on "Gate Z", which is not registered - nothing can compute or report it (ADR-0030)
+  - gate C: entryCondition depends on "Gate Z", which is not registered - nothing can compute or report it (ADR-0055)
 ```
 
 **Injection 14 - the reported ratchet gap: an invariant pushed to a LATER gate with both requirement
@@ -9559,9 +9559,9 @@ now three checks catch it independently.
 ```
  FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
 AssertionError: v3-invariants.json gate-ordering problems:
-gate A (wave A, prompts 4-7): requires #3, which is not proven until prompt 10 - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 10 (ADR-0030).: expected [ Array(1) ] to deeply equal []
+gate A (wave A, prompts 4-7): requires #3, which is not proven until prompt 10 - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 10 (ADR-0055).: expected [ Array(1) ] to deeply equal []
 
- FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry
 AssertionError: expected [ 1, 2, 3, 4, 5 ] to deeply equal [ 1, 2, 4, 5 ]
 
  FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): the ratified activation-ownership map of all 30 invariants
@@ -9570,7 +9570,7 @@ AssertionError: expected { '1': 'A', '2': 'A', '3': 'A', …(27) } to deeply equ
 Independently caught by the runner (exit 1, no report printed):
 ```
 v3-invariants: registry/pin problems:
-  - gate A (wave A, prompts 4-7): requires #3, which is not proven until prompt 10 - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 10 (ADR-0030).
+  - gate A (wave A, prompts 4-7): requires #3, which is not proven until prompt 10 - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 10 (ADR-0055).
 ```
 (The `(activation owned by gate X)` clause seen in injection 9 is absent here because this injection
 moves invariant 3's OWNERSHIP to gate A as well, so the requiring gate is the owner.)
@@ -9595,7 +9595,7 @@ every injection and verified byte-identical with `diff -q`; `git status` clean o
 `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)` with all nine gates printed and NONE green
 (gate 0 `not-yet-verifiable`; A-I `not yet green`).
 
-**Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-fix-review-2`).
+**Date:** 2026-07-28 (ADR-0055 amended, D-061; captain review ruling `gatea-fix-review-2`).
 
 ### PF-030 (continued, 3rd review round) · ruling `gatea-review-3` · a real YAML parse, shell-comment honesty, and a complete awaiting line
 
@@ -9726,7 +9726,7 @@ case asserting an unmet requirement does not hide the undecidable ones from `blo
 and verified byte-identical with `diff -q` (`git status` clean of the file); `scripts/v3-gates.lib.ts`
 and `scripts/v3-invariants.ts` restored the same way after injection 20.
 
-**Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-review-3`).
+**Date:** 2026-07-28 (ADR-0055 amended, D-061; captain review ruling `gatea-review-3`).
 
 ### PF-030 (continued, 4th review round) · ruling `gatea-fix-review-3` · a complete requirement ratchet, blocking-job evidence, and one CI authority
 
@@ -9879,7 +9879,7 @@ Ten gates, none green.
 verified byte-identical with `diff -q` (`git status` reports the file unmodified against HEAD);
 `v3-invariants.json` restored the same way after injection 21.
 
-**Date:** 2026-07-28 (ADR-0030 amended, D-061; captain review ruling `gatea-fix-review-3`).
+**Date:** 2026-07-28 (ADR-0055 amended, D-061; captain review ruling `gatea-fix-review-3`).
 
 ### PF-030 (continued, 5th review round) · complete outcomes, structural entry gates, prompt ratchets, and executable CI commands
 
@@ -9952,7 +9952,7 @@ changing a non-invariant prompt changes the complete requirement ratchet.
 reports 5 active-pass, 0 active-fail, and 25 not-yet-active; every gate remains non-green and its
 `awaiting:` line includes structural predecessor blockers plus the new outcome evidence.
 
-**Date:** 2026-07-28 (ADR-0030 and D-061 amended by the captain-approved outcome-completeness review).
+**Date:** 2026-07-28 (ADR-0055 and D-061 amended by the captain-approved outcome-completeness review).
 
 ### PF-031 · Axe execution coverage · `src/__tests__/fitness/axe-required.test.ts`
 
@@ -10043,7 +10043,7 @@ bindings.
 
 **Revert:** all five injections were restored immediately with `apply_patch`.
 
-**Date:** 2026-07-28 (ADR-0030 and D-061 amended by the captain-approved earliest-proof review).
+**Date:** 2026-07-28 (ADR-0055 and D-061 amended by the captain-approved earliest-proof review).
 
 ### PF-031 (continued) · awaited, reachable, assertion-bearing Axe scans
 
@@ -10107,7 +10107,7 @@ companion gives an evidence job `needs: disabled`, where the dependency has `if:
 **Revert:** both injected files were restored immediately with `apply_patch`. The focused governance run
 passes 73 tests across gate ordering, invariant integrity, charter drift, and Axe coverage.
 
-**Date:** 2026-07-28 (ADR-0030 and D-061 amended by the captain-approved enforcement-completeness review).
+**Date:** 2026-07-28 (ADR-0055 and D-061 amended by the captain-approved enforcement-completeness review).
 
 ### PF-031 (continued) · sanctioned assertions and registered Playwright tests
 
@@ -10165,7 +10165,7 @@ FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') e
 
 **Observed failure (verbatim):**
 ```text
-FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0030) are the ones in the registry
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry
 -       "ref": "src/__tests__/fitness/domain-configuration.test.ts",
 +       "ref": "src/__tests__/fitness/no-bare-throw.test.ts",
 ```
@@ -10178,7 +10178,7 @@ activation ratchet pins both YAML artifacts and the exact fitness path.
 
 **Revert:** both injections were restored immediately with `apply_patch`.
 
-**Date:** 2026-07-28 (ADR-0030 and D-061 amended by the captain-approved false-green boundary review).
+**Date:** 2026-07-28 (ADR-0055 and D-061 amended by the captain-approved false-green boundary review).
 
 ### PF-031 (continued) · unmaskable Axe scope and animation settlement
 
@@ -10215,7 +10215,7 @@ complete scan, and direct assertion continue to pass.
 
 ### PF-032 · Gate 0 demo surface completeness · `src/__tests__/fitness/demo-surface-completeness.test.ts`
 
-**Invariant (Gate 0, ADR-0030):** every required `docs/demo-contract.md` section 4 product surface is
+**Invariant (Gate 0, ADR-0055):** every required `docs/demo-contract.md` section 4 product surface is
 represented by the typed surface manifest, backed by an existing component and dynamic route case,
 captured in contract order by the canonical journey, and reached after a loaded-state assertion by the
 blocking E2E suite.
@@ -10236,7 +10236,7 @@ problem, while the real contract and implementation produce none.
 **Revert:** the manifest value was restored immediately. The focused surface-completeness and
 skeleton-honesty fences pass, and `pnpm v3:invariants` reports Gate 0 `green`.
 
-**Date:** 2026-07-28 (ADR-0030 and D-061 execution-reachability review).
+**Date:** 2026-07-28 (ADR-0055 and D-061 execution-reachability review).
 
 ### PF-030 (continued, 9th review round) · workflow reachability, governed root, and direct entry points
 
@@ -10282,7 +10282,7 @@ pins every enforced CI command.
 
 **Revert:** all three workflow injections were removed immediately with `apply_patch`.
 
-**Date:** 2026-07-28 (ADR-0030 and D-061 execution-reachability review).
+**Date:** 2026-07-28 (ADR-0055 and D-061 execution-reachability review).
 
 ### PF-031 (continued) · Playwright selection, required routes, and annotation aliases
 
@@ -10318,7 +10318,7 @@ aliases while valid imported aliases remain accepted.
 **Revert:** both real injections were removed immediately with `apply_patch`; the focused Axe fence
 passes.
 
-**Date:** 2026-07-28 (ADR-0030 and D-061 execution-reachability review).
+**Date:** 2026-07-28 (ADR-0055 and D-061 execution-reachability review).
 
 ### PF-031 (continued) · effective configuration, route ownership, safe messages, and namespace symbols
 
@@ -10349,7 +10349,7 @@ cannot satisfy the refusal cases by rejecting every namespace symbol.
 **Revert:** the injected second configuration argument was removed immediately. The focused Axe fence
 then passed all 10 tests.
 
-**Date:** 2026-07-29 (ADR-0030 and D-061 executable-evidence review).
+**Date:** 2026-07-29 (ADR-0055 and D-061 executable-evidence review).
 
 ### PF-030 (continued, 11th review round) · mapped gate fitness is blocking
 
@@ -10372,7 +10372,7 @@ then accepts a complete passing result map.
 
 **Revert:** the record screenshot call was restored immediately.
 
-**Date:** 2026-07-29 (ADR-0030 and D-061 enforcement-integrity review).
+**Date:** 2026-07-29 (ADR-0055 and D-061 enforcement-integrity review).
 
 ### PF-001 (continued) · effective charter mechanism ratchet
 
@@ -10462,7 +10462,7 @@ alias, and bound reflective callables invoked through `call` and `apply`.
 
 ### PF-032 (continued) · bound Reflect.apply hook registration
 
-**Invariant (Gate 0, ADR-0030):** binding `Reflect.apply` cannot hide a Playwright hook from canonical
+**Invariant (Gate 0, ADR-0055):** binding `Reflect.apply` cannot hide a Playwright hook from canonical
 journey isolation.
 
 **Injection - register `test.beforeEach` through bound reflection.** Added a bound
@@ -10518,7 +10518,7 @@ passed, and the complete fitness-inventory command passed all inventoried files.
 
 ### PF-024 (continued) · injected ratchet drift exits the real runner nonzero
 
-**Invariant (v3 §17 and ADR-0030):** shared constitution ratchet drift reaches a real blocking process
+**Invariant (v3 §17 and ADR-0055):** shared constitution ratchet drift reaches a real blocking process
 exit, not merely a syntactically visible `fail` call.
 
 **Continuous executable injection:** the companion writes a registry copy whose Gate B outcome violates
@@ -10562,7 +10562,7 @@ tests.
 
 ### PF-032 (continued) · stable screenshot helpers and URL identity
 
-**Invariant (Gate 0, ADR-0030):** canonical screenshots are produced by the validated helpers that
+**Invariant (Gate 0, ADR-0055):** canonical screenshots are produced by the validated helpers that
 remain active at runtime, and every supported URL scenario and firm reaches the exact requested branch.
 
 **Injection - reassign the canonical screenshot helper.** Replaced `snap` after its validated
@@ -10591,7 +10591,7 @@ tests.
 
 ### PF-030 (continued) · shared exact gate ratchets block the runner
 
-**Invariant (ADR-0030):** the blocking v3 runner must enforce the same exact gate ownership, proof-point,
+**Invariant (ADR-0055):** the blocking v3 runner must enforce the same exact gate ownership, proof-point,
 activation-prerequisite, metadata, requirement, and prompt-range ratchets as the fitness fence.
 
 **Injection 25 - narrow Gate B's outcome.** Replaced Gate B's complete outcome with
@@ -10601,7 +10601,7 @@ activation-prerequisite, metadata, requirement, and prompt-range ratchets as the
 **Observed failure (verbatim):**
 ```text
 v3-invariants: gate constitution problems:
-  - gate metadata drifted from the ADR-0030 ratchet
+  - gate metadata drifted from the ADR-0055 ratchet
 ```
 
 **Companions added:** the shared validator rejects ratchet-only changes to ownership, prompt-5 proof
@@ -10668,7 +10668,7 @@ unscanned public page, and fail closed on an unclassified route shape.
 
 ### PF-032 (continued) · reflective hooks cannot alter Gate 0 evidence
 
-**Invariant (Gate 0, ADR-0030):** a canonical journey hook cannot hide behind reflective registration
+**Invariant (Gate 0, ADR-0055):** a canonical journey hook cannot hide behind reflective registration
 and inject controls or replace screenshot evidence.
 
 **Injection 19 - register a hook through `Reflect.apply`.** Added
@@ -10745,7 +10745,7 @@ assignment.
 
 ### PF-032 (continued) · renderer branch identifiers preserve resolved context
 
-**Invariant (Gate 0, ADR-0030):** every rendered demo surface receives the exact resolved scenario and
+**Invariant (Gate 0, ADR-0055):** every rendered demo surface receives the exact resolved scenario and
 firm identifiers, either directly from the validated query inputs or from the journey returned for
 those inputs.
 
@@ -10768,7 +10768,7 @@ fields while accepting identifiers derived from the resolved query or matching j
 
 ### PF-024 (continued) · blocking runner enforces the shared active ratchet
 
-**Invariant (v3 §17, ADR-0030):** the authoritative `v3:invariants` command rejects active-ID and
+**Invariant (v3 §17, ADR-0055):** the authoritative `v3:invariants` command rejects active-ID and
 mechanism-tuple drift before it can report an unreviewed invariant as `active-pass`.
 
 **Injection 6 - activate an unratcheted invariant through a passing fence.** Changed invariant 1 from
@@ -10792,7 +10792,7 @@ fatal structural-problem path.
 
 ### PF-024 (continued) · exact active-invariant ratchet membership
 
-**Invariant (v3 §17, ADR-0030):** every active invariant has a reviewed, pinned mechanism tuple set, and
+**Invariant (v3 §17, ADR-0055):** every active invariant has a reviewed, pinned mechanism tuple set, and
 the set of active invariant IDs exactly equals the mechanism-ratchet keys.
 
 **Injection 5 - activate an unratcheted invariant.** Changed invariant 1 from `not-yet-active` to
@@ -10845,7 +10845,7 @@ bracket type assertion wrapper.
 
 ### PF-032 (continued) · exact ratified Gate 0 surface identities
 
-**Invariant (Gate 0, ADR-0030):** the mutable demo contract and typed manifest preserve the exact twelve
+**Invariant (Gate 0, ADR-0055):** the mutable demo contract and typed manifest preserve the exact twelve
 surface identities ratified in the SHA-pinned `docs/v3/verin-demo-contract-v1.md` section 4 contract.
 
 **Injection 10 - coordinate a mutable surface rename.** Renamed surface 11 from
@@ -10889,7 +10889,7 @@ AssertionError: playwright.config.ts:1 must select every required Axe specificat
 
 ### PF-032 (continued) · route identity and loaded screenshot ownership
 
-**Invariant (Gate 0, ADR-0030):** every manifest station returns the component imported from its exact
+**Invariant (Gate 0, ADR-0055):** every manifest station returns the component imported from its exact
 manifest path, and every canonical screenshot verifies that station's URL and loaded marker before
 capture.
 
@@ -10921,7 +10921,7 @@ generic URL assertion or body-only loaded marker.
 
 ### PF-032 (continued) · awaited screenshot execution and non-empty artifacts
 
-**Invariant (Gate 0, ADR-0030):** each canonical screenshot call is a direct awaited statement of the
+**Invariant (Gate 0, ADR-0055):** each canonical screenshot call is a direct awaited statement of the
 registered journey test. The `snap` helper directly awaits `page.screenshot`, writes the manifest-derived
 name into `demo-screens`, and proves the returned capture is non-empty.
 
@@ -10946,11 +10946,11 @@ write.
 **Revert:** the real `await` was restored immediately. The focused surface-completeness fence then
 passed both tests, and the combined focused run passed all 12 tests.
 
-**Date:** 2026-07-29 (ADR-0030 and D-061 executable-evidence review).
+**Date:** 2026-07-29 (ADR-0055 and D-061 executable-evidence review).
 
 ### PF-030 (continued, 12th review round) · runner schedulability is independent of shell selection
 
-**Invariant (ADR-0030):** a mapped CI command is evidence only when its job names a supported,
+**Invariant (ADR-0055):** a mapped CI command is evidence only when its job names a supported,
 schedulable POSIX GitHub-hosted runner. An explicit shell cannot substitute for `runs-on`.
 
 **Injection 12 - remove the runner while keeping an explicit shell.** Removed
@@ -11023,7 +11023,7 @@ or command tuple and also rejects tuple additions or removal.
 
 ### PF-030 (continued, 13th review round) · matrix reachability is blocking evidence
 
-**Invariant (ADR-0030):** a mapped CI command is evidence only when at least one structurally proven job
+**Invariant (ADR-0055):** a mapped CI command is evidence only when at least one structurally proven job
 instance executes it and can fail the workflow. A matrix whose exclusions remove every combination
 proves no execution.
 
@@ -11079,7 +11079,7 @@ accepted, while reassigned collection aliases and reachable callback exits befor
 
 ### PF-032 (continued) · conditional screenshot exits and runtime artifacts
 
-**Invariant (Gate 0, ADR-0030):** the canonical screenshot calls are provably reachable, and the blocking
+**Invariant (Gate 0, ADR-0055):** the canonical screenshot calls are provably reachable, and the blocking
 E2E job verifies the produced artifact set at runtime. Every canonical PNG must exist and be non-empty;
 missing uploads fail instead of warning.
 
@@ -11159,7 +11159,7 @@ both fence files and all 17 tests.
 
 ### PF-032 (continued) · resolved route invocation and authentic launcher capture
 
-**Invariant (Gate 0, ADR-0030):** every dynamic station reaches the component selected by its resolved
+**Invariant (Gate 0, ADR-0055):** every dynamic station reaches the component selected by its resolved
 route value, and the canonical launcher artifact is an awaited screenshot of the loaded launcher page,
 not arbitrary non-empty bytes.
 
@@ -11216,7 +11216,7 @@ parameters, and `test.info()` neutralizers in directly registered hooks.
 
 ### PF-032 (continued) · reachable route return, clickable transitions, and blocking upload
 
-**Invariant (Gate 0, ADR-0030):** every dynamic station reaches the validated route return, the canonical
+**Invariant (Gate 0, ADR-0055):** every dynamic station reaches the validated route return, the canonical
 journey traverses the ordered product route graph through real controls, and the screenshot upload
 executes with blocking failure semantics.
 
@@ -11301,7 +11301,7 @@ fence files and all 20 tests; the complete fitness suite passed all 447 tests.
 
 ### PF-032 (continued) · resolved journey inputs and closed callback graph
 
-**Invariant (Gate 0, ADR-0030):** the dynamic page must request the exact resolved scenario and firm, and
+**Invariant (Gate 0, ADR-0055):** the dynamic page must request the exact resolved scenario and firm, and
 the canonical clickable journey must use the real product controls without manufacturing replacements
 or navigating through another test-side mechanism.
 
@@ -11378,7 +11378,7 @@ files and all 22 tests.
 
 ### PF-032 (continued) · canonical hook isolation and approval binding
 
-**Invariant (Gate 0, ADR-0030):** no Playwright hook may inject controls or replace screenshot evidence
+**Invariant (Gate 0, ADR-0055):** no Playwright hook may inject controls or replace screenshot evidence
 for the canonical journey, and policy activation must derive only from the resolved
 `first(sp.approved) === "1"` query input.
 
@@ -11440,7 +11440,7 @@ report. A synthetic report inserted before the guard and a neutralized guard are
 
 ### PF-030 (continued) · Gate D requires distinct prompt-17 evaluator proof
 
-**Invariant (ADR-0030 / D-061):** Gate A may use prompt-5 structural proof for invariants 7, 8, and 9,
+**Invariant (ADR-0055 / D-061):** Gate A may use prompt-5 structural proof for invariants 7, 8, and 9,
 but Gate D cannot reuse those global `active-pass` bits as proof of prompt-17 evaluator behavior.
 
 **Injection:** removed Gate D's prompt-17 evaluator property-test evidence entry from
@@ -11448,7 +11448,7 @@ but Gate D cannot reuse those global `active-pass` bits as proof of prompt-17 ev
 
 **Observed failure (verbatim):**
 ```text
-complete typed gate requirements drifted from the ADR-0030 ratchet
+complete typed gate requirements drifted from the ADR-0055 ratchet
 ```
 
 The focused gate fence exited 1 with four failing cases. Its continuous companion independently supplied
@@ -11487,7 +11487,7 @@ runner passed with all 33 fitness files executed inside the full suite.
 
 ### PF-030 (continued) · complete cross-gate proof-point ratchet
 
-**Invariant (ADR-0030 / D-061):** every invariant referenced by a gate other than its activation owner
+**Invariant (ADR-0055 / D-061):** every invariant referenced by a gate other than its activation owner
 retains the ratified prompt at which its complete proof first exists.
 
 **Injection:** changed invariant 16's `activationPrompts` from `[9]` to `[1]` and changed its
@@ -11496,7 +11496,7 @@ unchanged.
 
 **Observed failure (verbatim):**
 ```text
-cross-gate invariant proof points drifted from the ADR-0030 ratchet; expected {"1":[6],"7":[5],"8":[5],"9":[5],"11":[15],"16":[9],"18":[18],"19":[18]}, received {"1":[6],"7":[5],"8":[5],"9":[5],"11":[15],"16":[1],"18":[18],"19":[18]}
+cross-gate invariant proof points drifted from the ADR-0055 ratchet; expected {"1":[6],"7":[5],"8":[5],"9":[5],"11":[15],"16":[9],"18":[18],"19":[18]}, received {"1":[6],"7":[5],"8":[5],"9":[5],"11":[15],"16":[1],"18":[18],"19":[18]}
 ```
 
 The focused gate-ordering fence exited 1. The continuous companion separately proves that the general
@@ -11509,7 +11509,7 @@ ordering rules accept the matching earlier prompt while the complete cross-gate 
 
 ### PF-031 (continued) · complete local Axe import graph
 
-**Invariant (charter #9 / ADR-0030):** a local module imported by required Axe evidence cannot patch the
+**Invariant (charter #9 / ADR-0055):** a local module imported by required Axe evidence cannot patch the
 Axe runtime or register Playwright hooks before a required scan.
 
 **Injection:** side-effect imported `e2e/axe-import-poison.ts` from the required smoke specification.
@@ -11566,7 +11566,7 @@ charter and Axe run passed all 37 tests.
 
 ### PF-031 (continued) · CommonJS provenance and graph-root enforcement
 
-**Invariant (charter #9 / ADR-0030):** every named root and transitive local module in the Axe evidence
+**Invariant (charter #9 / ADR-0055):** every named root and transitive local module in the Axe evidence
 graph rejects Playwright hooks and unsanctioned Axe imports, and indirect CommonJS loader provenance
 cannot hide a module from that graph.
 
@@ -11600,7 +11600,7 @@ A locally declared application object whose property is named `require` remains 
 
 ### PF-001 (continued) · Vitest options and global-object registrations
 
-**Invariant (charter operating model / ADR-0030):** an enforcement suite cannot be neutralized through
+**Invariant (charter operating model / ADR-0055):** an enforcement suite cannot be neutralized through
 Vitest registration options or an unshadowed global-object path while another test keeps its file green.
 
 **Injection:** added both `describe("injected options bypass", { skip: true }, () => {})` and
@@ -11627,7 +11627,7 @@ passed all 122 tests.
 
 ### PF-002 (continued) · unresolved computed CommonJS members
 
-**Invariant (ADR-0001 / ADR-0030):** a computed member on ambient `module` cannot conceal a runtime
+**Invariant (ADR-0001 / ADR-0055):** a computed member on ambient `module` cannot conceal a runtime
 dependency from layer enforcement or the complete Axe evidence graph.
 
 **Injection:** created `src/domain/review-commonjs.ts` with an ambient module call whose loader member
@@ -11652,7 +11652,7 @@ passed all 122 tests.
 
 ### PF-031 (continued) · stable routes, hook objects, and Next route ownership
 
-**Invariant (charter #9 / ADR-0030):** required accessibility evidence uses process-stable route
+**Invariant (charter #9 / ADR-0055):** required accessibility evidence uses process-stable route
 collections, rejects Playwright hooks hidden in object properties, and credits a concrete URL only to
 the Next page that actually wins route resolution.
 
@@ -11694,7 +11694,7 @@ restored focused charter, dependency, and Axe run passed all 122 tests.
 
 ### PF-031 (continued) · mutable hook wrappers and exact Axe helper syntax
 
-**Invariant (charter #9 / ADR-0030):** a reachable Axe evidence module cannot register a Playwright
+**Invariant (charter #9 / ADR-0055):** a reachable Axe evidence module cannot register a Playwright
 hook through a mutable object wrapper, and the sanctioned helper cannot execute hidden syntax before
 or during the scan.
 
@@ -11736,7 +11736,7 @@ spread-wrapper, destructured, bound, reflective, and transitive callable cases r
 
 ### PF-001 (continued) · Node global and parameterized Vitest registration coverage
 
-**Invariant (charter operating model / ADR-0030):** a fitness fence cannot be neutralized through
+**Invariant (charter operating model / ADR-0055):** a fitness fence cannot be neutralized through
 Node's alias of the global object or through a parameterized registration that produces zero tests.
 
 **Injection 1:** added `(global as any).describe.skip(...)` to the real charter-drift fence.
@@ -11768,7 +11768,7 @@ non-empty literal and frozen collections, and empty versus non-empty tagged tabl
 
 ### PF-001 (continued) · fitness registration reachability
 
-**Invariant (charter operating model / ADR-0030):** a fitness registration must execute during module
+**Invariant (charter operating model / ADR-0055):** a fitness registration must execute during module
 collection. A registration hidden in dead control flow or an uncalled helper cannot preserve a green file
 through an unrelated live companion.
 
@@ -11791,7 +11791,7 @@ inside enabled reachable module-scope suite callbacks, and rejects every unresol
 
 ### PF-031 (continued) · reflective Playwright hook writes
 
-**Invariant (charter #9 / ADR-0030):** no module in the complete Axe evidence graph can install a
+**Invariant (charter #9 / ADR-0055):** no module in the complete Axe evidence graph can install a
 Playwright hook through reflective property mutation.
 
 **Injection:** imported `test` in `e2e/helpers.ts`, wrote `test.beforeEach` into an object with
@@ -11812,7 +11812,7 @@ wrappers, and unresolved reflective keys. Unresolved reflective writes fail clos
 
 ### PF-032 (continued) · exact canonical screenshot options
 
-**Invariant (Gate 0 / ADR-0030):** canonical screenshot evidence captures the rendered product with
+**Invariant (Gate 0 / ADR-0055):** canonical screenshot evidence captures the rendered product with
 exactly the governed output path and `fullPage: true`; masking or other content-altering options are
 non-evidence.
 
@@ -11834,7 +11834,7 @@ all 108 tests.
 
 ### PF-030 (continued) · inherited CI execution environment
 
-**Invariant (ADR-0030):** an exact command is blocking evidence only when inherited workflow, job, and
+**Invariant (ADR-0055):** an exact command is blocking evidence only when inherited workflow, job, and
 step environment configuration cannot redirect or instrument its shell, loader, package manager, or
 runtime.
 
@@ -11858,7 +11858,7 @@ TypeScript runners, package managers, and safe application variables.
 
 ### PF-001 (continued) · immutable Vitest registration inputs
 
-**Invariant (charter operating model / ADR-0030):** registration options and parameterized case
+**Invariant (charter operating model / ADR-0055):** registration options and parameterized case
 collections must be immediate literals whose registration meaning cannot change before Vitest consumes
 them. Mutable aliases are non-evidence even when their initializer was safe.
 
@@ -11882,7 +11882,7 @@ literals remain accepted.
 
 ### PF-031 (continued) · computed Playwright members and ambient builtin loaders
 
-**Invariant (charter #9 / ADR-0030):** every reachable Axe evidence module must expose statically
+**Invariant (charter #9 / ADR-0055):** every reachable Axe evidence module must expose statically
 decidable Playwright member access and a complete runtime local import graph. Computed hook or
 neutralizer names and ambient `process.getBuiltinModule("module")` loader construction cannot escape
 the graph.
@@ -11909,7 +11909,7 @@ loader remains outside this authority.
 
 ### PF-031 (continued) · exact login parameters and explicit credentials
 
-**Invariant (charter #9 / ADR-0030):** the canonical Axe login helper has exactly two plain parameters
+**Invariant (charter #9 / ADR-0055):** the canonical Axe login helper has exactly two plain parameters
 with no executable defaults, and every authenticated route scan passes the stable principal explicitly.
 
 **Injection:** changed the real login helper's credentials parameter to default through
@@ -11931,7 +11931,7 @@ passed.
 
 ### PF-030 (continued) · job-container execution environment
 
-**Invariant (ADR-0030):** an exact governed command is blocking evidence only when its complete inherited
+**Invariant (ADR-0055):** an exact governed command is blocking evidence only when its complete inherited
 workflow, job, job-container, and step environment cannot redirect or instrument execution.
 
 **Injection:** ran the real `e2e` job in a declared container carrying
@@ -11952,7 +11952,7 @@ language runtimes, and package managers, while safe application variables remain
 
 ### PF-030 (continued) - governed CI predecessor and container provenance
 
-**Invariant (ADR-0030):** an exact governed command is evidence only when every earlier step has an
+**Invariant (ADR-0055):** an exact governed command is evidence only when every earlier step has an
 approved immutable purpose and any job container uses the ratcheted image and execution shape.
 
 **Injection 1:** added `echo ./injected-bin >> $GITHUB_PATH` immediately before the real
@@ -11983,7 +11983,7 @@ focused suites passed.
 
 ### PF-031 (continued) - imported neutralizers and shared hook provenance
 
-**Invariant (charter #9 / ADR-0030):** every module in the reachable Axe graph rejects Playwright
+**Invariant (charter #9 / ADR-0055):** every module in the reachable Axe graph rejects Playwright
 neutralizers, and Gate 0 uses the same complete hook-provenance authority as the Axe fence.
 
 **Injection 1:** side-effect imported a real local module from `e2e/helpers.ts`; the imported module
@@ -12012,7 +12012,7 @@ neutralizers plus object literals, member writes, `Object.assign`, `Object.defin
 
 ### PF-001 (continued) - imported fitness registration ownership
 
-**Invariant (charter operating model / ADR-0030):** every fitness entry owns its reachable Vitest
+**Invariant (charter operating model / ADR-0055):** every fitness entry owns its reachable Vitest
 registrations; a disabled registration cannot move into an imported helper while an unrelated
 companion keeps the inventoried entry green.
 
@@ -12035,7 +12035,7 @@ runtime ownership.
 
 ### PF-032 (continued) - identity-preserving query extraction
 
-**Invariant (Gate 0 / ADR-0030):** the dynamic route must preserve scalar query values and select only
+**Invariant (Gate 0 / ADR-0055):** the dynamic route must preserve scalar query values and select only
 the first member of an array before the scenario, firm, and approval resolvers consume them.
 
 **Injection:** changed the real route's `first` helper to return a fixed supported scenario value.

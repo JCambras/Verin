@@ -7,7 +7,7 @@ each non-negotiable to the fence/gate/procedure that enforces it, and the charte
 (`src/__tests__/fitness/charter-drift.test.ts`) fails the build if any enforced mapping goes stale.
 
 **Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
-governed decision and execution layer; ADRs 0023-0030). The 30 v3 invariants are phase-gated in
+governed decision and execution layer; ADRs 0023-0029 and 0055). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
 stores activation only - pass/fail is computed, never fake green). **The registry, not the prompt-sequence
 prose, is the authoritative statement of what each gate requires**: all ten gates (0, A, B, C, D, E, F,
@@ -22,7 +22,7 @@ unrelated naming fence cannot activate it. One shared rule
 set (`scripts/v3-gates.lib.ts`) is enforced by BOTH the gate-ordering fence and the blocking runner - it
 rejects a gate requiring anything whose PROOF POINT (last `activationPrompts` entry, else the owning
 gate's closing prompt) falls after that gate closes, a gate with no machine-checkable requirement, and a
-`ci-gate` that does not name the command its blocking job runs (ADR-0030 - Gate A owns 1/2/4/5 and
+`ci-gate` that does not name the command its blocking job runs (ADR-0055 - Gate A owns 1/2/4/5 and
 references prompt-5 guarantees 7/8/9;
 Gate D separately awaits prompt-17 evaluator property tests for 7/8/9 so the prompt-5 `active-pass`
 state cannot satisfy both proof contexts; invariant 3 is required at Gate B because its prerequisite is
@@ -52,12 +52,12 @@ gate cannot report green while a predecessor is non-green. Five ratchets in the 
 30-invariant gate-assignment map, the complete cross-gate proof-point map, invariant 3's
 activation artifacts and fitness mechanism, complete gate metadata (wave, predecessor chain, entry
 condition, outcome), and every gate's COMPLETE TYPED requirement set including each non-invariant proof
-prompt: moving one, including deleting an `evidence` clause, is an ADR-0030 + ADR-0023 amendment, never a
+prompt: moving one, including deleting an `evidence` clause, is an ADR-0055 + ADR-0023 amendment, never a
 registry edit alone. The ratified documents registered in
 `v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
 whole directory: editing a registered document requires updating its pin in the same PR, and a new
 ratified document must be registered in the PR that adds it - but a conflict between v3's letter and this
-repo is resolved by an ADR, never by editing the ratified bytes (ADR-0024, ADR-0026, ADR-0030).
+repo is resolved by an ADR, never by editing the ratified bytes (ADR-0024, ADR-0026, ADR-0055).
 `docs/v3/README.md` is not registered: it is
 the navigation index, and it originates nothing normative, only restating registered documents, ADRs, the
 charter, and `DECISIONS.md` entries, so a new normative statement originates in one of those instead (D-099).
