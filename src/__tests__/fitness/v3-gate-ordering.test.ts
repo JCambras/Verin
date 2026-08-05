@@ -1136,6 +1136,68 @@ describe("v3 gate-ordering fence", () => {
       expect(ciJobRuns(valid, "quality", "pnpm lint")).toBe(true);
     });
 
+    it("rejects invalid workflow, job, and step field value schemas", () => {
+      const invalid = [
+        ["name:", "  nested: value"],
+        ["permissions: []"],
+        ["defaults:", "  run:", "    shell: []"],
+        ["concurrency:", "  group: []", "  cancel-in-progress: true"],
+        [
+          "jobs:",
+          "  quality:",
+          "    name: []",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    timeout-minutes: []",
+          "    steps:",
+          "      - run: pnpm lint",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - run: pnpm lint",
+          "        timeout-minutes: []",
+        ],
+        [
+          "jobs:",
+          "  quality:",
+          "    runs-on: ubuntu-latest",
+          "    steps:",
+          "      - uses: actions/checkout@v7",
+          "        with: []",
+          "      - run: pnpm lint",
+        ],
+      ];
+      for (const fragment of invalid) {
+        const complete = fragment.includes("jobs:")
+          ? fragment
+          : [
+              ...fragment,
+              "jobs:",
+              "  quality:",
+              "    runs-on: ubuntu-latest",
+              "    steps:",
+              "      - run: pnpm lint",
+            ];
+        const jobs = parseCiFixture([...complete, ""].join("\n"));
+        expect(
+          ciJobRuns(jobs, "quality", "pnpm lint"),
+          complete.join("\n"),
+        ).toBe(false);
+        expect(ciJobRunProblem(jobs, "quality", "pnpm lint")).toContain(
+          "workflow does not provide normal blocking evidence",
+        );
+      }
+    });
+
     it("diagnoses a neutralized command separately from a missing command", () => {
       const neutralized = parseCiFixture(
         ["jobs:", "  quality:", "    runs-on: ubuntu-latest", "    steps:", "      - continue-on-error: true", "        run: pnpm lint", ""].join("\n"),

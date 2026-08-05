@@ -975,6 +975,297 @@ const REUSABLE_JOB_FIELDS = [
   "with",
 ] as const;
 
+const WORKFLOW_FIELDS = [
+  "concurrency",
+  "defaults",
+  "env",
+  "jobs",
+  "name",
+  "on",
+  "permissions",
+  "run-name",
+] as const;
+
+function nonEmptyString(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function scalarValue(value: unknown): boolean {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function scalarMappingProblem(
+  value: unknown,
+  label: string,
+): string | undefined {
+  const mapping = literalMapping(value);
+  if (mapping === undefined) return `${label} must be a literal mapping`;
+  return Object.values(mapping).every(scalarValue)
+    ? undefined
+    : `${label} values must be literal scalars`;
+}
+
+function stringOrStringArray(value: unknown): boolean {
+  return (
+    nonEmptyString(value) ||
+    (Array.isArray(value) &&
+      value.length > 0 &&
+      value.every(nonEmptyString))
+  );
+}
+
+function conditionValue(value: unknown): boolean {
+  return typeof value === "boolean" || nonEmptyString(value);
+}
+
+function timeoutValue(value: unknown): boolean {
+  return (
+    (typeof value === "number" &&
+      Number.isInteger(value) &&
+      value > 0) ||
+    nonEmptyString(value)
+  );
+}
+
+function permissionsProblem(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (value === "read-all" || value === "write-all") {
+    return undefined;
+  }
+  const mapping = literalMapping(value);
+  return mapping !== undefined &&
+    Object.values(mapping).every((permission) =>
+      ["read", "write", "none"].includes(String(permission)),
+    )
+    ? undefined
+    : "permissions must be 'read-all', 'write-all', or a literal permission mapping";
+}
+
+function defaultsProblem(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const defaults = literalMapping(value);
+  const run = literalMapping(defaults?.run);
+  if (
+    defaults === undefined ||
+    !hasOnlyKeys(defaults, ["run"]) ||
+    run === undefined ||
+    !hasOnlyKeys(run, ["shell", "working-directory"])
+  ) {
+    return "defaults must contain only a literal run mapping";
+  }
+  if (run.shell !== undefined && !nonEmptyString(run.shell)) {
+    return "defaults.run.shell must be a non-empty string";
+  }
+  return run["working-directory"] === undefined ||
+    nonEmptyString(run["working-directory"])
+    ? undefined
+    : "defaults.run.working-directory must be a non-empty string";
+}
+
+function concurrencyProblem(value: unknown): string | undefined {
+  if (value === undefined || nonEmptyString(value)) return undefined;
+  const mapping = literalMapping(value);
+  if (
+    mapping === undefined ||
+    !hasOnlyKeys(mapping, ["group", "cancel-in-progress"]) ||
+    !nonEmptyString(mapping.group)
+  ) {
+    return "concurrency must be a non-empty string or a literal group mapping";
+  }
+  return mapping["cancel-in-progress"] === undefined ||
+    conditionValue(mapping["cancel-in-progress"])
+    ? undefined
+    : "concurrency.cancel-in-progress must be a boolean or expression string";
+}
+
+function commonStepFieldProblem(
+  record: Readonly<Record<string, unknown>>,
+  prefix: string,
+): string | undefined {
+  if (record.name !== undefined && !nonEmptyString(record.name)) {
+    return `${prefix} name must be a non-empty string`;
+  }
+  if (record.id !== undefined && !nonEmptyString(record.id)) {
+    return `${prefix} id must be a non-empty string`;
+  }
+  if (record.if !== undefined && !conditionValue(record.if)) {
+    return `${prefix} if must be a boolean or expression string`;
+  }
+  if (
+    record["continue-on-error"] !== undefined &&
+    !conditionValue(record["continue-on-error"])
+  ) {
+    return `${prefix} continue-on-error must be a boolean or expression string`;
+  }
+  if (
+    record["timeout-minutes"] !== undefined &&
+    !timeoutValue(record["timeout-minutes"])
+  ) {
+    return `${prefix} timeout-minutes must be a positive integer or expression string`;
+  }
+  return record.env === undefined
+    ? undefined
+    : scalarMappingProblem(record.env, `${prefix} env`);
+}
+
+function commonJobFieldProblem(
+  record: Readonly<Record<string, unknown>>,
+  prefix: string,
+): string | undefined {
+  if (record.name !== undefined && !nonEmptyString(record.name)) {
+    return `${prefix} name must be a non-empty string`;
+  }
+  if (record.if !== undefined && !conditionValue(record.if)) {
+    return `${prefix} if must be a boolean or expression string`;
+  }
+  if (record.needs !== undefined && !stringOrStringArray(record.needs)) {
+    return `${prefix} needs must be a non-empty string or string array`;
+  }
+  const permissionProblem = permissionsProblem(record.permissions);
+  if (permissionProblem !== undefined) return `${prefix} ${permissionProblem}`;
+  const concurrency = concurrencyProblem(record.concurrency);
+  if (concurrency !== undefined) return `${prefix} ${concurrency}`;
+  return undefined;
+}
+
+function containerSchemaProblem(
+  value: unknown,
+  label: string,
+): string | undefined {
+  if (nonEmptyString(value)) return undefined;
+  const mapping = literalMapping(value);
+  if (
+    mapping === undefined ||
+    !hasOnlyKeys(mapping, [
+      "credentials",
+      "env",
+      "image",
+      "options",
+      "ports",
+      "volumes",
+    ]) ||
+    !nonEmptyString(mapping.image)
+  ) {
+    return `${label} must be a string or literal container mapping with an image`;
+  }
+  if (mapping.credentials !== undefined) {
+    const credentials = literalMapping(mapping.credentials);
+    if (
+      credentials === undefined ||
+      !hasOnlyKeys(credentials, ["password", "username"]) ||
+      !nonEmptyString(credentials.username) ||
+      !nonEmptyString(credentials.password)
+    ) {
+      return `${label} credentials must contain string username and password values`;
+    }
+  }
+  if (mapping.env !== undefined) {
+    const environment = scalarMappingProblem(mapping.env, `${label} env`);
+    if (environment !== undefined) return environment;
+  }
+  if (mapping.options !== undefined && !nonEmptyString(mapping.options)) {
+    return `${label} options must be a non-empty string`;
+  }
+  if (
+    mapping.ports !== undefined &&
+    (!Array.isArray(mapping.ports) ||
+      !mapping.ports.every((port) =>
+        typeof port === "number" || nonEmptyString(port),
+      ))
+  ) {
+    return `${label} ports must be an array of strings or numbers`;
+  }
+  return mapping.volumes === undefined ||
+    (Array.isArray(mapping.volumes) && mapping.volumes.every(nonEmptyString))
+    ? undefined
+    : `${label} volumes must be a string array`;
+}
+
+function localJobFieldProblem(
+  record: Readonly<Record<string, unknown>>,
+  prefix: string,
+): string | undefined {
+  if (
+    record["continue-on-error"] !== undefined &&
+    !conditionValue(record["continue-on-error"])
+  ) {
+    return `${prefix} continue-on-error must be a boolean or expression string`;
+  }
+  if (
+    record["timeout-minutes"] !== undefined &&
+    !timeoutValue(record["timeout-minutes"])
+  ) {
+    return `${prefix} timeout-minutes must be a positive integer or expression string`;
+  }
+  if (record["runs-on"] !== undefined && !stringOrStringArray(record["runs-on"])) {
+    return `${prefix} runs-on must be a non-empty string or string array`;
+  }
+  const defaults = defaultsProblem(record.defaults);
+  if (defaults !== undefined) return `${prefix} ${defaults}`;
+  if (record.env !== undefined) {
+    const environment = scalarMappingProblem(record.env, `${prefix} env`);
+    if (environment !== undefined) return environment;
+  }
+  if (record.outputs !== undefined) {
+    const outputs = scalarMappingProblem(
+      record.outputs,
+      `${prefix} outputs`,
+    );
+    if (outputs !== undefined) return outputs;
+  }
+  if (record.environment !== undefined) {
+    if (!nonEmptyString(record.environment)) {
+      const environment = literalMapping(record.environment);
+      if (
+        environment === undefined ||
+        !hasOnlyKeys(environment, ["name", "url"]) ||
+        !nonEmptyString(environment.name) ||
+        (environment.url !== undefined && !nonEmptyString(environment.url))
+      ) {
+        return `${prefix} environment must be a string or literal name/url mapping`;
+      }
+    }
+  }
+  if (record.strategy !== undefined) {
+    const strategy = literalMapping(record.strategy);
+    if (
+      strategy === undefined ||
+      !hasOnlyKeys(strategy, ["fail-fast", "matrix", "max-parallel"]) ||
+      (strategy["fail-fast"] !== undefined &&
+        !conditionValue(strategy["fail-fast"])) ||
+      (strategy["max-parallel"] !== undefined &&
+        !timeoutValue(strategy["max-parallel"])) ||
+      (strategy.matrix !== undefined &&
+        literalMapping(strategy.matrix) === undefined)
+    ) {
+      return `${prefix} strategy contains invalid field values`;
+    }
+  }
+  if (record.container !== undefined) {
+    const container = containerSchemaProblem(
+      record.container,
+      `${prefix} container`,
+    );
+    if (container !== undefined) return container;
+  }
+  if (record.services !== undefined) {
+    const services = literalMapping(record.services);
+    if (services === undefined) return `${prefix} services must be a literal mapping`;
+    for (const [name, service] of Object.entries(services)) {
+      const serviceProblem = containerSchemaProblem(
+        service,
+        `${prefix} service '${name}'`,
+      );
+      if (serviceProblem !== undefined) return serviceProblem;
+    }
+  }
+  return undefined;
+}
+
 function ciStepShapeProblem(
   step: unknown,
   index: number,
@@ -987,12 +1278,23 @@ function ciStepShapeProblem(
   if (hasRun === hasUses) {
     return `${prefix} must declare exactly one of run or uses`;
   }
+  const commonProblem = commonStepFieldProblem(record, prefix);
+  if (commonProblem !== undefined) return commonProblem;
   if (hasRun) {
     if (typeof record.run !== "string" || record.run.trim() === "") {
       return `${prefix} run must be a non-empty string`;
     }
     if (Object.hasOwn(record, "with")) {
       return `${prefix} run step cannot declare with`;
+    }
+    if (record.shell !== undefined && !nonEmptyString(record.shell)) {
+      return `${prefix} shell must be a non-empty string`;
+    }
+    if (
+      record["working-directory"] !== undefined &&
+      !nonEmptyString(record["working-directory"])
+    ) {
+      return `${prefix} working-directory must be a non-empty string`;
     }
     return hasOnlyKeys(record, RUN_STEP_FIELDS)
       ? undefined
@@ -1010,9 +1312,9 @@ function ciStepShapeProblem(
   if (!hasOnlyKeys(record, USES_STEP_FIELDS)) {
     return `${prefix} uses step contains unsupported fields`;
   }
-  return record.with !== undefined && literalMapping(record.with) === undefined
-    ? `${prefix} with must be a literal mapping`
-    : undefined;
+  return record.with === undefined
+    ? undefined
+    : scalarMappingProblem(record.with, `${prefix} with`);
 }
 
 function ciJobShapeProblem(
@@ -1021,6 +1323,8 @@ function ciJobShapeProblem(
 ): string | undefined {
   const record = literalMapping(job);
   if (record === undefined) return `job '${key}' is not a literal mapping`;
+  const commonProblem = commonJobFieldProblem(record, `job '${key}'`);
+  if (commonProblem !== undefined) return commonProblem;
   if (Object.hasOwn(record, "uses")) {
     if (typeof record.uses !== "string" || record.uses.trim() === "") {
       return `job '${key}' uses must be a non-empty string`;
@@ -1028,14 +1332,18 @@ function ciJobShapeProblem(
     if (!hasOnlyKeys(record, REUSABLE_JOB_FIELDS)) {
       return `job '${key}' reusable-workflow form cannot declare local execution fields`;
     }
-    if (record.with !== undefined && literalMapping(record.with) === undefined) {
-      return `job '${key}' with must be a literal mapping`;
+    const reusableFields = localJobFieldProblem(record, `job '${key}'`);
+    if (reusableFields !== undefined) return reusableFields;
+    if (record.with !== undefined) {
+      const withProblem = scalarMappingProblem(
+        record.with,
+        `job '${key}' with`,
+      );
+      if (withProblem !== undefined) return withProblem;
     }
-    return record.secrets === undefined ||
-      record.secrets === "inherit" ||
-      literalMapping(record.secrets) !== undefined
+    return record.secrets === undefined || record.secrets === "inherit"
       ? undefined
-      : `job '${key}' secrets must be 'inherit' or a literal mapping`;
+      : scalarMappingProblem(record.secrets, `job '${key}' secrets`);
   }
   if (!hasOnlyKeys(record, LOCAL_JOB_FIELDS)) {
     return `job '${key}' local-execution form contains unsupported fields`;
@@ -1043,6 +1351,8 @@ function ciJobShapeProblem(
   if (!Object.hasOwn(record, "runs-on")) {
     return `job '${key}' local-execution form is missing runs-on`;
   }
+  const localFields = localJobFieldProblem(record, `job '${key}'`);
+  if (localFields !== undefined) return localFields;
   if (!Array.isArray(record.steps) || record.steps.length === 0) {
     return `job '${key}' local-execution form requires non-empty steps`;
   }
@@ -1055,8 +1365,31 @@ function ciJobShapeProblem(
 }
 
 function ciWorkflowShapeProblem(
-  declared: Readonly<Record<string, unknown>>,
+  workflow: unknown,
 ): string | undefined {
+  const record = literalMapping(workflow);
+  if (record === undefined) return "workflow is not a literal mapping";
+  if (!hasOnlyKeys(record, WORKFLOW_FIELDS)) {
+    return "workflow contains unsupported fields";
+  }
+  if (record.name !== undefined && !nonEmptyString(record.name)) {
+    return "workflow name must be a non-empty string";
+  }
+  if (record["run-name"] !== undefined && !nonEmptyString(record["run-name"])) {
+    return "workflow run-name must be a non-empty string";
+  }
+  const permissionProblem = permissionsProblem(record.permissions);
+  if (permissionProblem !== undefined) return `workflow ${permissionProblem}`;
+  const defaults = defaultsProblem(record.defaults);
+  if (defaults !== undefined) return `workflow ${defaults}`;
+  const concurrency = concurrencyProblem(record.concurrency);
+  if (concurrency !== undefined) return `workflow ${concurrency}`;
+  if (record.env !== undefined) {
+    const environment = scalarMappingProblem(record.env, "workflow env");
+    if (environment !== undefined) return environment;
+  }
+  const declared = literalMapping(record.jobs);
+  if (declared === undefined) return "workflow jobs must be a literal mapping";
   return Object.entries(declared)
     .map(([key, job]) => ciJobShapeProblem(key, job))
     .find((problem) => problem !== undefined);
@@ -1165,7 +1498,7 @@ export function parseCiJobs(yamlText: string): CiWorkflow {
   const declared = (doc as { jobs?: unknown } | null)?.jobs;
   if (typeof declared !== "object" || declared === null || Array.isArray(declared)) return jobs;
   const declaredJobs = declared as Record<string, unknown>;
-  const shapeProblem = ciWorkflowShapeProblem(declaredJobs);
+  const shapeProblem = ciWorkflowShapeProblem(doc);
   if (activationProblem !== undefined || shapeProblem !== undefined) {
     jobs.workflowProblem = activationProblem ?? shapeProblem;
   }
@@ -1279,7 +1612,6 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
   const job = jobs.get(ref);
   if (job === undefined) return { state: "missing-job" };
   const workflowProblem = (jobs as CiWorkflow).workflowProblem;
-  if (workflowProblem !== undefined) return { state: "inactive-workflow", reason: workflowProblem };
   const relevant = job.steps.filter(
     (step) =>
       commandMatches(step.blockingTokens, required.tokens) ||
@@ -1299,14 +1631,23 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
       step.unsafePredecessor === undefined &&
       commandMatches(step.blockingTokens, required.tokens),
   );
-  if (blocking !== undefined) return { state: "proven" };
   const neutralized = relevant.find((step) => step.neutralizedBy !== undefined);
   if (neutralized?.neutralizedBy !== undefined) {
     return { state: "neutralized", reason: `step ${neutralized.neutralizedBy}` };
   }
   const unsupportedRunner = relevant.find((step) => step.unsupportedRunner !== undefined);
-  if (unsupportedRunner?.unsupportedRunner !== undefined) {
+  if (
+    unsupportedRunner?.unsupportedRunner !== undefined &&
+    unsupportedRunner.unsupportedRunner !== "missing runs-on"
+  ) {
     return { state: "unsafe-runner", reason: unsupportedRunner.unsupportedRunner };
+  }
+  const unsafeEnvironment = relevant.find((step) => step.unsafeEnvironment !== undefined);
+  if (unsafeEnvironment?.unsafeEnvironment !== undefined) {
+    return { state: "unsafe-environment", reason: unsafeEnvironment.unsafeEnvironment };
+  }
+  if (workflowProblem !== undefined) {
+    return { state: "inactive-workflow", reason: workflowProblem };
   }
   const unsupported = relevant.find((step) => step.unsupportedShell !== undefined);
   if (unsupported?.unsupportedShell !== undefined) {
@@ -1315,10 +1656,6 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
   const wrongDirectory = relevant.find((step) => step.unsupportedWorkingDirectory !== undefined);
   if (wrongDirectory?.unsupportedWorkingDirectory !== undefined) {
     return { state: "unsafe-working-directory", reason: wrongDirectory.unsupportedWorkingDirectory };
-  }
-  const unsafeEnvironment = relevant.find((step) => step.unsafeEnvironment !== undefined);
-  if (unsafeEnvironment?.unsafeEnvironment !== undefined) {
-    return { state: "unsafe-environment", reason: unsafeEnvironment.unsafeEnvironment };
   }
   const unsafeContainer = relevant.find(
     (step) => step.unsafeContainer !== undefined,
@@ -1336,6 +1673,13 @@ export function ciJobCommandStatus(jobs: Map<string, CiJob>, ref: string, comman
     return {
       state: "unsafe-predecessor",
       reason: unsafePredecessor.unsafePredecessor,
+    };
+  }
+  if (blocking !== undefined) return { state: "proven" };
+  if (unsupportedRunner?.unsupportedRunner !== undefined) {
+    return {
+      state: "unsafe-runner",
+      reason: unsupportedRunner.unsupportedRunner,
     };
   }
   if (relevant.length > 0) return { state: "unsafe-shell" };

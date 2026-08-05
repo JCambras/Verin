@@ -12076,6 +12076,76 @@ keeping ordinary enabled registrations green.
 
 **Date:** 2026-08-05.
 
+### PF-001 (continued) - intrinsic aliases and higher-order Vitest registration
+
+**Invariant (charter operating model / ADR-0039 / D-098):** a disabled Vitest registration remains
+visible when a local helper invokes a caller-supplied registration function, including one reached
+through a stable or computed global `Reflect` alias.
+
+**Injection:** added a real `registerDisabled(fn)` helper to
+`src/__tests__/fitness/arch-version.test.ts` and called it with `describe.skip`.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/arch-version.test.ts:56 disabled/focused Vitest registration describe.skip
+```
+
+The pre-fix focused reproductions accepted higher-order registration and stable or computed global
+`Reflect` aliases. Continuous companions cover the untyped helper form, `Reflect.apply`, `Reflect.get`,
+computed member names, and global-object aliases. The per-source invocation index and parameter-path
+cache preserve the bounded audit: the real-tree red run completed its scan in 13.54 seconds.
+
+**Revert:** removed the injected helper and call. The restored charter-drift suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-031 (continued) - intrinsic aliases and higher-order Playwright hooks
+
+**Invariant (charter #9 / ADR-0039 / D-098):** a required Axe module cannot register a Playwright hook
+through a local callable parameter, a stable global `Reflect` alias, or an `Object.assign` mutation
+reached through a stable global `Object` alias.
+
+**Injections:** first added a real `installInjectedHook(fn)` helper to `e2e/smoke.spec.ts` and supplied
+`test.beforeEach`. A second real-tree run stored `test.beforeEach` through `const O = Object;
+O.assign(...)` and invoked it through `const R = Reflect; R.apply(...)`.
+
+**Observed failure (verbatim, both runs):**
+```text
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+The pre-fix focused reproductions accepted each form. Continuous companions cover untyped higher-order
+helpers, stable and computed global intrinsic aliases, computed member names, and intrinsic mutation
+provenance for both hooks and neutralizers.
+
+**Revert:** removed each injected hook form after its red run. The restored Axe suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-030 (continued) - complete GitHub field value schemas
+
+**Invariant (ADR-0039 / D-098):** a governed command is evidence only when every supported workflow,
+job, container, and step field has a GitHub-valid value shape across the complete workflow.
+
+**Injection:** added `timeout-minutes: []` to the real `v3-invariants` command step in
+`.github/workflows/ci.yml`.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci workflow does not provide normal blocking evidence: job 'v3-invariants' step 5 timeout-minutes must be a positive integer or expression string
+```
+
+The pre-fix focused reproduction accepted the malformed timeout and reported the command proven.
+Continuous companions reject invalid root, job, reusable-job, container, run-step, and uses-step value
+schemas, including malformed nested mappings and scalars, while retaining the existing specific runner
+and inherited-environment diagnostics.
+
+**Revert:** removed the invalid timeout. The restored 67-test gate-ordering suite passed.
+
+**Date:** 2026-08-05.
+
 ### PF-031 (continued) - reflective Playwright reads
 
 **Invariant (charter #9 / ADR-0039 / D-186):** a required Axe module cannot obtain a Playwright

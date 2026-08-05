@@ -6,6 +6,8 @@ import {
 } from "ts-morph";
 import {
   callableExpressionAlternatives,
+  isGlobalIntrinsicCallable,
+  localFunctionParameterValues,
   reflectApplyResolution,
   reflectGetResolution,
 } from "./_callable-indirection";
@@ -198,22 +200,6 @@ function indirectCallableTarget(node: Node): Node | undefined {
     : undefined;
 }
 
-function isUnshadowedGlobal(node: Node, name: string): boolean {
-  const normalized = unwrapExpression(node);
-  return (
-    Node.isIdentifier(normalized) &&
-    normalized.getText() === name &&
-    !(normalized
-      .getSymbol()
-      ?.getDeclarations()
-      .some(
-        (declaration) =>
-          declaration.getSourceFile() === normalized.getSourceFile(),
-      ) ??
-      false)
-  );
-}
-
 function namespaceImportValue(
   node: Node,
   seen = new Set<Node>(),
@@ -290,6 +276,16 @@ function playwrightTestValue(
     return true;
   }
   if (!Node.isIdentifier(normalized)) return false;
+  const parameterValues = localFunctionParameterValues(normalized);
+  if (
+    parameterValues !== undefined &&
+    (!parameterValues.complete ||
+      parameterValues.values.some((source) =>
+        playwrightTestValue(source, new Set(seen)),
+      ))
+  ) {
+    return true;
+  }
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
   return [
     ...precedingAssignmentValues(normalized),
@@ -434,56 +430,11 @@ function isGlobalStaticCallable(
   memberName: string,
   seen = new Set<Node>(),
 ): boolean {
-  const normalized = unwrapExpression(node);
-  if (seen.has(normalized)) return false;
-  seen.add(normalized);
-  const access = memberAccess(normalized);
-  if (
-    access?.name === memberName &&
-    isUnshadowedGlobal(access.receiver, globalName)
-  ) {
-    return true;
-  }
-  const indirect = indirectCallableTarget(normalized);
-  if (
-    indirect !== undefined &&
-    isGlobalStaticCallable(
-      indirect,
-      globalName,
-      memberName,
-      new Set(seen),
-    )
-  ) {
-    return true;
-  }
-  if (!Node.isIdentifier(normalized)) return false;
-  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
-  if (
-    declarations.some((declaration) => {
-      if (!Node.isBindingElement(declaration)) return false;
-      const property =
-        declaration.getPropertyNameNode() ??
-        declaration.getNameNode();
-      if (staticPropertyName(property) !== memberName) return false;
-      const variable = declaration.getFirstAncestorByKind(
-        SyntaxKind.VariableDeclaration,
-      );
-      const initializer = variable?.getInitializer();
-      return (
-        initializer !== undefined &&
-        isUnshadowedGlobal(initializer, globalName)
-      );
-    })
-  ) {
-    return true;
-  }
-  return objectAliasSources(normalized).some((source) =>
-    isGlobalStaticCallable(
-      source,
-      globalName,
-      memberName,
-      new Set(seen),
-    ),
+  return isGlobalIntrinsicCallable(
+    node,
+    globalName,
+    memberName,
+    seen,
   );
 }
 
@@ -862,6 +813,16 @@ function playwrightHookValue(
     return true;
   }
   if (!Node.isIdentifier(normalized)) return false;
+  const parameterValues = localFunctionParameterValues(normalized);
+  if (
+    parameterValues !== undefined &&
+    (!parameterValues.complete ||
+      parameterValues.values.some((source) =>
+        playwrightHookValue(source, new Set(seen)),
+      ))
+  ) {
+    return true;
+  }
   const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
   if (
     declarations.some((declaration) => {

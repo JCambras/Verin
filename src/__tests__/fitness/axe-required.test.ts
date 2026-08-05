@@ -26,6 +26,8 @@ import { DEMO_SURFACES } from "../../app/demo/surface-contract";
 import { isProvablyReachable } from "./_ast-control-flow";
 import {
   callableExpressionAlternatives,
+  isGlobalIntrinsicCallable,
+  localFunctionParameterValues,
   reflectApplyResolution,
   reflectGetResolution,
 } from "./_callable-indirection";
@@ -1107,55 +1109,11 @@ function isGlobalStaticCallable(
   memberName: string,
   seen = new Set<Node>(),
 ): boolean {
-  const normalized = unwrapExpression(node);
-  if (seen.has(normalized)) return false;
-  seen.add(normalized);
-  const access = memberAccess(normalized);
-  if (
-    access?.name === memberName &&
-    isUnshadowedGlobal(access.receiver, globalName)
-  ) {
-    return true;
-  }
-  const boundTarget = indirectCallableTarget(normalized);
-  if (
-    boundTarget !== undefined &&
-    isGlobalStaticCallable(
-      boundTarget,
-      globalName,
-      memberName,
-      new Set(seen),
-    )
-  ) {
-    return true;
-  }
-  if (!Node.isIdentifier(normalized)) return false;
-  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
-  if (
-    declarations.some((declaration) => {
-      if (!Node.isBindingElement(declaration)) return false;
-      const property =
-        declaration.getPropertyNameNode() ?? declaration.getNameNode();
-      if (staticPropertyName(property) !== memberName) return false;
-      const variable = declaration.getFirstAncestorByKind(
-        SyntaxKind.VariableDeclaration,
-      );
-      const initializer = variable?.getInitializer();
-      return (
-        initializer !== undefined &&
-        isUnshadowedGlobal(initializer, globalName)
-      );
-    })
-  ) {
-    return true;
-  }
-  return objectAliasSources(normalized).some((source) =>
-    isGlobalStaticCallable(
-      source,
-      globalName,
-      memberName,
-      new Set(seen),
-    ),
+  return isGlobalIntrinsicCallable(
+    node,
+    globalName,
+    memberName,
+    seen,
   );
 }
 
@@ -1626,6 +1584,21 @@ function couldBeNamedImportIdentifier(
     return true;
   }
   if (!Node.isIdentifier(normalized)) return false;
+  const parameterValues = localFunctionParameterValues(normalized);
+  if (
+    parameterValues !== undefined &&
+    (!parameterValues.complete ||
+      parameterValues.values.some((source) =>
+        couldBeNamedImportIdentifier(
+          source,
+          moduleName,
+          imported,
+          new Set(seen),
+        ),
+      ))
+  ) {
+    return true;
+  }
   return precedingAssignmentValues(normalized).some((assigned) =>
     couldBeNamedImportIdentifier(
       assigned,
@@ -1722,6 +1695,22 @@ function couldBeNamedImportMemberExpression(
     return true;
   }
   if (!Node.isIdentifier(normalized)) return false;
+  const parameterValues = localFunctionParameterValues(normalized);
+  if (
+    parameterValues !== undefined &&
+    (!parameterValues.complete ||
+      parameterValues.values.some((source) =>
+        couldBeNamedImportMemberExpression(
+          source,
+          moduleName,
+          imported,
+          member,
+          new Set(seen),
+        ),
+      ))
+  ) {
+    return true;
+  }
   const declarationSources =
     normalized
       .getSymbol()
@@ -3541,6 +3530,14 @@ hooks.install(() => undefined);`,
 Object.assign(hooks, { install: test.beforeEach });
 hooks.install(() => undefined);`,
         `const hooks: Record<string, unknown> = {};
+const O = Object;
+O.assign(hooks, { install: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
+const O = globalThis.Object;
+O["ass" + "ign"](hooks, { install: test.beforeEach });
+hooks.install(() => undefined);`,
+        `const hooks: Record<string, unknown> = {};
 const assign = Object.assign;
 assign(hooks, { install: test.beforeEach });
 const alias = hooks;
@@ -3593,6 +3590,13 @@ const install = (
 ) => Reflect.set(target, "install", value);
 install(hooks, test.beforeEach);
 hooks.install(() => undefined);`,
+        `function install(fn) {
+  fn(() => undefined);
+}
+install(test.beforeEach);`,
+        `const R = Reflect;
+R.apply(test.beforeEach, test, [() => undefined]);`,
+        `Reflect["ap" + "ply"](test.beforeEach, test, [() => undefined]);`,
       ];
       for (const wrapper of wrappers) {
         const wrappedHook = completeSources();
@@ -4123,6 +4127,15 @@ disable(true, "file disabled");`,
         `test.${"skip"}.call(test, true, "file disabled");`,
         `test.${"fixme"}.apply(test, [true, "file disabled"]);`,
         `Reflect.apply(test.${"skip"}, test, [true, "file disabled"]);`,
+        `const R = Reflect;
+R.apply(test.${"skip"}, test, [true, "file disabled"]);`,
+        `const R = globalThis["Ref" + "lect"];
+R.apply(test.${"skip"}, test, [true, "file disabled"]);`,
+        `Reflect["ap" + "ply"](test.${"skip"}, test, [true, "file disabled"]);`,
+        `function neutralize(fn) {
+  fn(true, "file disabled");
+}
+neutralize(test.${"skip"});`,
         `const invoke = Reflect.apply;
 invoke(test.${"fixme"}, test, [true, "file disabled"]);`,
         `Reflect.apply.call(

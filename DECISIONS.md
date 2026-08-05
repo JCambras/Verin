@@ -6547,6 +6547,18 @@ the charter audit bounded while preserving exact path ownership. PF-001, PF-030,
 real red reproductions, focused companions, and restored green proofs. Gate A and Gate B requirements,
 ownership, proof points, and readiness semantics are unchanged.
 
+The captain-approved intrinsic-alias, higher-order, and workflow-schema review (2026-08-05) amended
+ADR-0039 in place a thirty-third time: **(1)** shared callable provenance resolves stable global
+`Reflect` and `Object` aliases plus statically computed intrinsic and member names; **(2)** locally
+invoked callable parameters inherit every caller-supplied value, so a higher-order helper cannot hide a
+Vitest registration, Playwright neutralizer, or Playwright hook; **(3)** `Object.assign` mutation through
+an intrinsic alias remains visible to hook provenance; and **(4)** the structured CI authority validates
+supported workflow, job, container, and step field value schemas across the complete workflow before
+accepting command evidence. A per-source invocation index and parameter-path cache preserve the bounded
+charter audit. PF-001, PF-030, and PF-031 record focused companions, real red injections, and restored
+green proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics are
+unchanged.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.

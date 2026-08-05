@@ -1,6 +1,6 @@
 # ADR-0055: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
-**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28, 2026-07-29, and 2026-08-05 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, the captain-approved registration-option, declarative-route, and precedence review, the captain-approved callable-member, helper-syntax, and parameterized-registration review, the captain-approved registration-input, computed-member, login, builtin-loader, and container-environment review, the captain-approved CI provenance, imported-registration, query-helper, and shared-hook review, and the captain-approved identity, reflection, and result-ownership review
+**Status:** Accepted (amends ADR-0023); amended in place 2026-07-28, 2026-07-29, and 2026-08-05 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, the captain-approved registration-option, declarative-route, and precedence review, the captain-approved callable-member, helper-syntax, and parameterized-registration review, the captain-approved registration-input, computed-member, login, builtin-loader, and container-environment review, the captain-approved CI provenance, imported-registration, query-helper, and shared-hook review, the captain-approved identity, reflection, and result-ownership review, the captain-approved composite-callable and executable-workflow review, and the captain-approved intrinsic-alias, higher-order, and workflow-schema review
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved through 2026-08-05), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -371,6 +371,21 @@ exact non-mutating document-animation settlement
 before its complete WCAG scan. Playwright selection settings, route groups, loaded-state markers, and
 imported annotation aliases are part of that proof.
 
+**Callable provenance includes reflective aliases and local higher-order flow.** The shared
+callable-indirection authority resolves stable aliases of the global `Reflect` and `Object` intrinsics,
+including statically computed intrinsic and member names. Vitest registrations, Playwright
+neutralizers, and Playwright hooks remain visible through those aliases, through `Object.assign`
+property mutation, and when a local helper invokes a callable parameter supplied by its caller.
+Incomplete local invocation or reflective provenance fails closed. A per-source invocation index and
+parameter-path cache keep the complete charter audit bounded at its prior runtime.
+
+**GitHub-invalid field values invalidate workflow evidence.** The structured CI authority validates
+the supported workflow, local-job, reusable-job, container, run-step, and uses-step field schemas,
+including nested mappings and scalar value types, before any command is accepted. A malformed field in
+any job invalidates the workflow globally. Existing runner and inherited-environment diagnostics remain
+specific for the governed command, but neither classification can make malformed workflow evidence
+blocking.
+
 **Reading key for the ratified documents.** `docs/v3/verin-prompt-sequence-v3.md:186` still reads
 "Gate A: Foundation invariants 1-5 are active and green." The ratified v3 documents are committed
 verbatim and SHA-256-pinned; per `docs/v3/README.md` and v3 orchestrator rule 4, a conflict between v3's
@@ -466,7 +481,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   v3 runner both invoke the same validator.
 - Every `ci-gate`, in a gate requirement and in an invariant mechanism alike, names the `command` its
   blocking job runs, checked against a real YAML parse of `.github/workflows/ci.yml` plus a restricted
-  shell-command parse. The workflow must carry unfiltered normal `push` and `pull_request` triggers,
+  shell-command parse. Every supported workflow, job, container, and step field must also satisfy its
+  complete value schema across the workflow before any command is evidence. The workflow must carry
+  unfiltered normal `push` and `pull_request` triggers,
   effective working directories must resolve to the repository root, and mapped controls invoke direct
   owned entry points rather than `package.json` scripts. Only a dedicated simple command can prove execution. Comments, echo arguments,
   short-circuited expressions, heredocs, compound commands, step names, environment values, and `uses:`
@@ -512,7 +529,9 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   `Object.defineProperty`, and `Reflect.set` through stable aliases and `bind` / `call` / `apply`
   wrappers. Unresolved reflective property writes fail closed.
   Direct, aliased, and reflective `Reflect.apply` invocations are resolved through the same callable
-  provenance, so neither a neutralizer nor a registered hook can hide behind reflective dispatch.
+  provenance, including stable global-intrinsic aliases, computed intrinsic members, and local
+  higher-order parameter flow, so neither a neutralizer nor a registered hook can hide behind
+  reflective dispatch. `Object.assign` mutation through a stable global `Object` alias is included.
   Optional assertion messages must be structurally side-effect-free. The
   `v3-invariants-phase-gated` and `v3-gate-ordering` mappings both name and ratchet
   `pnpm exec tsx scripts/v3-invariants.ts`.
@@ -541,7 +560,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Reflective callable resolution composes direct or bound `Reflect.apply`, `Function.call`, and
   `Function.apply` layers before returning every possible invoked target, including conditional,
   logical, and sequence callees, every initializer and preceding assignment source, stable aliases,
-  and bound callables invoked through `call` or `apply`. Incomplete resolution is non-evidence. Gate 0
+  computed global-intrinsic members, locally invoked callable parameters, and bound callables invoked
+  through `call` or `apply`. Incomplete resolution is non-evidence. Gate 0
   also requires `snap` and `snapLauncher` to remain unreassigned and proves every supported URL
   scenario and firm resolver preserves the supplied identity.
 - The v3 runner accepts an explicit registry path for validation tooling. Its companion executes the

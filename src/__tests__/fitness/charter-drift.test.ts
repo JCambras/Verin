@@ -29,6 +29,7 @@ import {
 import { isProvablyReachable } from "./_ast-control-flow";
 import {
   callableExpressionAlternatives,
+  localFunctionParameterValues,
   precedingCallableAssignmentValues,
   reflectApplyResolution,
   reflectGetResolution,
@@ -482,6 +483,12 @@ function isVitestGlobalObject(
   );
 }
 
+const vitestParameterPathCache = new WeakMap<
+  object,
+  readonly VitestCallablePath[]
+>();
+const vitestParameterPathInProgress = new WeakSet<object>();
+
 function vitestCallablePaths(
   node: Node,
   seen = new Set<Node>(),
@@ -602,6 +609,36 @@ function vitestCallablePaths(
     );
   }
   if (!Node.isIdentifier(normalized)) return [];
+  const parameterKey = normalized.getSymbol()?.compilerSymbol;
+  if (parameterKey !== undefined) {
+    const cached = vitestParameterPathCache.get(parameterKey);
+    if (cached !== undefined) return [...cached];
+    if (vitestParameterPathInProgress.has(parameterKey)) return [];
+  }
+  const parameterValues = localFunctionParameterValues(normalized);
+  if (parameterValues !== undefined) {
+    if (parameterKey !== undefined) {
+      vitestParameterPathInProgress.add(parameterKey);
+    }
+    const paths = parameterValues.values.flatMap((value) =>
+      vitestCallablePaths(value, new Set(seen)),
+    );
+    const resolved = !parameterValues.complete && paths.length > 0
+      ? [
+          ...paths,
+          {
+            members: ["*", "*"],
+            conditions: [],
+            caseCollections: [],
+          },
+        ]
+      : paths;
+    if (parameterKey !== undefined) {
+      vitestParameterPathInProgress.delete(parameterKey);
+      vitestParameterPathCache.set(parameterKey, resolved);
+    }
+    return resolved;
+  }
   if (isVitestGlobalObject(normalized)) {
     return [{ members: [], conditions: [], caseCollections: [] }];
   }
@@ -1514,6 +1551,22 @@ describe.each(cases)("mutable case alias", () => {});`,
       "describe.each``(\"empty tagged suite\", () => {});",
       `import { describe } from "vitest";
 Reflect.apply(describe.skip, describe, ["reflectively disabled", () => {}]);`,
+      `import { describe } from "vitest";
+const R = Reflect;
+R.apply(describe.skip, describe, ["reflect alias disabled", () => {}]);`,
+      `import { describe } from "vitest";
+Reflect["ap" + "ply"](describe.skip, describe, ["computed reflect disabled", () => {}]);`,
+      `import { describe } from "vitest";
+const R = globalThis.Reflect;
+R.get(describe, "skip")("global reflect alias disabled", () => {});`,
+      `import { describe } from "vitest";
+const R = globalThis["Ref" + "lect"];
+R.apply(describe.skip, describe, ["computed global reflect disabled", () => {}]);`,
+      `import { it } from "vitest";
+function register(fn) {
+  fn("higher-order disabled", () => {});
+}
+register(it.skip);`,
       `import { describe } from "vitest";
 (true ? describe.skip : describe)("conditionally disabled", () => {});`,
       `import { describe } from "vitest";
