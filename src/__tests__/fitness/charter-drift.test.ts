@@ -623,11 +623,11 @@ function vitestCallablePaths(
     const paths = parameterValues.values.flatMap((value) =>
       vitestCallablePaths(value, new Set(seen)),
     );
-    const resolved = !parameterValues.complete && paths.length > 0
+    const resolved = !parameterValues.complete
       ? [
           ...paths,
           {
-            members: ["*", "*"],
+            members: ["*"],
             conditions: [],
             caseCollections: [],
           },
@@ -906,6 +906,7 @@ function vitestRegistrationPathIsDisabled(
   );
   return (
     ["xit", "xtest", "xdescribe"].includes(path.members[0] ?? "") ||
+    path.members[0] === "*" ||
     path.members
       .slice(1)
       .some((member) => NEUTRALIZING_VITEST_OPTIONS.has(member)) ||
@@ -1592,6 +1593,31 @@ function register(fn) {
   fn("higher-order disabled", () => {});
 }
 register(it.skip);`,
+      `import { it } from "vitest";
+class Registrar {
+  constructor(fn) {
+    fn("constructor disabled", () => {});
+  }
+}
+new Registrar(it.skip);`,
+      `import { it } from "vitest";
+function register(fn) {
+  fn("spread disabled", () => {});
+}
+register(...([it.skip] as const));`,
+      `import { describe } from "vitest";
+const holder = { R: Reflect };
+const { R } = holder;
+R.apply(describe.skip, describe, ["destructured intrinsic disabled", () => {}]);`,
+      `import { describe } from "vitest";
+Object.getOwnPropertyDescriptor(describe, "skip")!.value("descriptor disabled", () => {});`,
+      `import { describe } from "vitest";
+Object["getOwn" + "PropertyDescriptor"](describe, "skip")!.value("computed descriptor disabled", () => {});`,
+      `import { describe } from "vitest";
+Reflect.getOwnPropertyDescriptor(describe, "skip")!.value("reflect descriptor disabled", () => {});`,
+      `import { describe } from "vitest";
+const descriptors = Object.getOwnPropertyDescriptors(describe);
+descriptors.skip.value("descriptor map disabled", () => {});`,
       `import { describe } from "vitest";
 (true ? describe.skip : describe)("conditionally disabled", () => {});`,
       `import { describe } from "vitest";
@@ -1697,9 +1723,16 @@ suite.skip("application suite", () => {});`,
 }`,
       ),
     ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `const application = { handler: () => undefined };
+const member = Math.random() > 0.5 ? "handler" : "missing";
+Object.getOwnPropertyDescriptor(application, member)?.value();`,
+      ),
+    ).toEqual([]);
   });
 
-  it("(b companion) detects disabled Vitest registration passed into an imported helper", () => {
+  it("(b companion) detects disabled Vitest registration passed into imported callables", () => {
     const source = `import { it } from "vitest";
 import { register } from "./registration-barrel";
 register(it.skip);`;
@@ -1713,6 +1746,24 @@ register(it.skip);`;
           "src/__tests__/fitness/registration-helper.ts":
             `export function register(fn: (...args: unknown[]) => unknown) {
   fn("disabled", () => undefined);
+}`,
+        },
+      ),
+    ).not.toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `import { it } from "vitest";
+import { Registrar } from "./registration-barrel";
+new Registrar(it.skip);`,
+        "src/__tests__/fitness/example.test.ts",
+        {
+          "src/__tests__/fitness/registration-barrel.ts":
+            `export { Registrar } from "./registration-helper";`,
+          "src/__tests__/fitness/registration-helper.ts":
+            `export class Registrar {
+  constructor(fn: (...args: unknown[]) => unknown) {
+    fn("disabled", () => undefined);
+  }
 }`,
         },
       ),

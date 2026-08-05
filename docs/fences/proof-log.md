@@ -12352,3 +12352,70 @@ replace the policy-authoring approval binding with a literal.
 **Revert:** restored `journey.workspace`. The restored Gate 0 surface suite passed.
 
 **Date:** 2026-08-05.
+
+### PF-001 (continued) - constructor, empty, destructured, and descriptor Vitest provenance
+
+**Invariant (charter operating model / ADR-0039 / D-099):** disabled Vitest registration stays visible
+through constructor parameters, incomplete parameter flow with no recovered values, destructured stable
+intrinsic holders, and Object or Reflect property descriptors.
+
+**Injection:** added all four forms to the real
+`src/__tests__/fitness/dependency-rule.test.ts` entry. Before the fix, the full charter-drift test passed
+all 16 tests with those registrations present.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/dependency-rule.test.ts:16 disabled/focused Vitest registration it.skip
+src/__tests__/fitness/dependency-rule.test.ts:21 disabled/focused Vitest registration *
+src/__tests__/fitness/dependency-rule.test.ts:28 disabled/focused Vitest registration describe.skip
+src/__tests__/fitness/dependency-rule.test.ts:32 disabled/focused Vitest registration describe.skip
+```
+
+Focused companions cover `new Registrar(it.skip)`, an unresolved spread argument, a destructured
+`Reflect` holder, singular Object and Reflect descriptors, and the plural Object descriptor map.
+
+**Revert:** removed all four real registrations. The restored charter-drift suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-031 (continued) - constructor and descriptor Playwright hooks
+
+**Invariant (charter #9 / ADR-0039 / D-099):** the required Axe evidence graph cannot hide a Playwright
+hook through constructor parameters, a destructured intrinsic holder, or Object or Reflect property
+descriptors.
+
+**Injection:** added those forms to the real `e2e/smoke.spec.ts` graph. Before the fix, all 28 Axe
+fitness tests passed with the hidden hooks present.
+
+**Observed failure (verbatim):**
+```text
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+Focused companions cover constructor installation, a destructured `Reflect.get`, singular Object and
+Reflect descriptors, and the plural Object descriptor map.
+
+**Revert:** removed the real hooks. The restored Axe suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-030 (continued) - complete GitHub trigger ownership
+
+**Invariant (ADR-0039 / D-099):** a governed command is evidence only when the complete workflow trigger
+declaration is valid and contains exactly the unfiltered normal `push` and `pull_request` events.
+
+**Injection:** replaced the real trigger mapping with `on: [push, pull_request, 1]`. Before the fix, all
+67 gate-ordering tests passed and the governed commands remained proven.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci workflow does not provide normal blocking evidence: workflow trigger list must contain only push and pull_request
+```
+
+Focused companions reject non-string and extra array entries plus unsupported mapping events, while
+retaining both exact array orderings and the unfiltered mapping form.
+
+**Revert:** restored the real trigger mapping. The restored gate-ordering suite passed.
+
+**Date:** 2026-08-05.

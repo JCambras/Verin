@@ -6570,6 +6570,17 @@ is bound to its exact journey view model, resolved identifier spread, and query-
 PF-001, PF-030, PF-031, and PF-032 record focused companions, real red injections, and restored green
 proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics are unchanged.
 
+The captain-approved trigger, constructor, and descriptor-provenance review (2026-08-05) amended
+ADR-0039 in place a thirty-fifth time: **(1)** the blocking workflow accepts only the complete normal
+`push` and `pull_request` trigger set, rejecting extra, non-string, duplicate, filtered, or unsupported
+events before command evidence is considered; **(2)** constructor calls and parameters participate in
+the shared callable invocation index; **(3)** incomplete callable-parameter provenance is unsafe even
+when no known path was recovered; **(4)** destructured intrinsic aliases resolve through stable holder
+properties; and **(5)** Object and Reflect descriptor reads retain the receiver and member provenance
+of callable values. PF-001, PF-030, and PF-031 record the focused companions, real red injections, and
+restored green proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics
+are unchanged.
+
 **Why:** a gate that can only be passed by lying about activation is the exact fake-green failure v3 §17
 and charter #5 forbid; moving the requirement to the gate that covers its prerequisite removes the cycle
 without weakening the invariant or re-ordering the build against its own dependencies.
@@ -6578,3 +6589,24 @@ list - of any requirement kind, including deleting an `evidence` clause - its `w
 `entryCondition`, `outcome`, or any
 invariant's `gate`, is an amendment to ADR-0055, ADR-0023, and all five ratchets in
 `scripts/v3-gates.lib.ts`, never a registry edit alone.
+
+### D-099 · 2026-08-05 · reversible · CI triggers and callable provenance fail closed across construction and descriptors
+
+Five review findings were legitimate symptoms of two shared ownership gaps. The structured CI authority
+validated jobs and steps but accepted partially valid trigger declarations, while callable provenance
+modeled ordinary calls and direct property reads without covering construction, empty incomplete
+parameter flow, destructured intrinsic holders, or property descriptors.
+
+The CI trigger boundary now admits only complete unfiltered `push` and `pull_request` declarations in
+mapping or array form. The shared callable invocation index includes `new` expressions and constructor
+parameters, parameter analysis emits an unsafe root whenever provenance is incomplete, destructured
+intrinsics inherit stable object-property provenance, and Object or Reflect descriptor reads retain the
+original receiver and member. Vitest disabled-registration and Playwright hook analysis consume the same
+shared result.
+
+**Alternatives rejected:** validate only the two required events while ignoring extras (GitHub can reject
+the whole workflow); special-case class names in each consumer (the next constructor form would drift);
+and add descriptor syntax separately to Vitest and Playwright (two security authorities would diverge).
+
+**Revert path:** revert this changeset to restore partial trigger acceptance and call-only callable
+provenance. Gate A and Gate B semantics remain unchanged.

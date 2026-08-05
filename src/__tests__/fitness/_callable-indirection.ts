@@ -2,6 +2,7 @@ import {
   Node,
   SyntaxKind,
   type CallExpression,
+  type NewExpression,
   type Project,
   type SourceFile,
   type Symbol as MorphSymbol,
@@ -91,6 +92,7 @@ const assignmentCache = new WeakMap<
 const precedingAssignmentCache = new WeakMap<Node, readonly Node[]>();
 const identifierSourceCache = new WeakMap<Node, readonly Node[]>();
 const sourceUsesReflectCache = new WeakMap<SourceFile, boolean>();
+const sourceUsesDescriptorReadCache = new WeakMap<SourceFile, boolean>();
 
 function sourceUsesReflect(sourceFile: SourceFile): boolean {
   const cached = sourceUsesReflectCache.get(sourceFile);
@@ -111,6 +113,26 @@ function sourceUsesReflect(sourceFile: SourceFile): boolean {
         ));
   sourceUsesReflectCache.set(sourceFile, usesReflect);
   return usesReflect;
+}
+
+function sourceUsesDescriptorRead(sourceFile: SourceFile): boolean {
+  const cached = sourceUsesDescriptorReadCache.get(sourceFile);
+  if (cached !== undefined) return cached;
+  const descriptorMembers = new Set([
+    "getOwnPropertyDescriptor",
+    "getOwnPropertyDescriptors",
+  ]);
+  const usesDescriptorRead =
+    sourceFile.getFullText().includes("getOwnPropertyDescriptor") ||
+    sourceFile
+      .getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
+      .some((access) =>
+        descriptorMembers.has(
+          staticStringValue(access.getArgumentExpression()) ?? "",
+        ),
+      );
+  sourceUsesDescriptorReadCache.set(sourceFile, usesDescriptorRead);
+  return usesDescriptorRead;
 }
 
 function simpleAssignments(
@@ -358,6 +380,41 @@ function stableObjectPropertyResolution(
   return { values, complete };
 }
 
+function bindingElementValueResolution(
+  declaration: Node,
+  seen = new Set<Node>(),
+): CallableResolution<Node> | undefined {
+  if (!Node.isBindingElement(declaration)) return undefined;
+  const property =
+    declaration.getPropertyNameNode() ?? declaration.getNameNode();
+  const name = staticPropertyName(property);
+  const variable = declaration.getFirstAncestorByKind(
+    SyntaxKind.VariableDeclaration,
+  );
+  const initializer = variable?.getInitializer();
+  if (name === undefined || initializer === undefined) {
+    return { values: [], complete: false };
+  }
+  const propertyResolution = stableObjectPropertyResolution(
+    initializer,
+    name,
+    seen,
+  );
+  const defaultValue = declaration.getInitializer();
+  if (propertyResolution === undefined) {
+    return defaultValue === undefined
+      ? undefined
+      : { values: [defaultValue], complete: false };
+  }
+  return {
+    values: [
+      ...propertyResolution.values,
+      ...(defaultValue === undefined ? [] : [defaultValue]),
+    ],
+    complete: propertyResolution.complete,
+  };
+}
+
 interface IntrinsicObjectResolution {
   readonly matches: boolean;
   readonly complete: boolean;
@@ -449,6 +506,35 @@ function globalIntrinsicObjectResolution(
     })
   ) {
     return { matches: true, complete: true, resolved: true };
+  }
+  const bindingResolutions = declarations
+    .map((declaration) =>
+      bindingElementValueResolution(declaration, new Set(seen)),
+    )
+    .filter(
+      (resolution): resolution is CallableResolution<Node> =>
+        resolution !== undefined,
+    );
+  if (bindingResolutions.length > 0) {
+    const resolutions = bindingResolutions.flatMap((binding) =>
+      binding.values.map((source) =>
+        globalIntrinsicObjectResolution(
+          source,
+          intrinsicName,
+          new Set(seen),
+        ),
+      ),
+    );
+    return {
+      matches: resolutions.some((resolution) => resolution.matches),
+      complete:
+        bindingResolutions.every((resolution) => resolution.complete) &&
+        resolutions.length > 0 &&
+        resolutions.every(
+          (resolution) => resolution.resolved && resolution.complete,
+        ),
+      resolved: true,
+    };
   }
   const sources = identifierValueSources(normalized);
   if (sources.length === 0) {
@@ -763,6 +849,8 @@ interface LocalInvocation {
   readonly arguments?: readonly Node[];
 }
 
+type LocalInvocationExpression = CallExpression | NewExpression;
+
 interface LocalCallableIdentityResolution {
   readonly keys: ReadonlySet<object>;
   readonly complete: boolean;
@@ -773,7 +861,8 @@ function localParameterOwner(node: Node): Node | undefined {
   return Node.isFunctionDeclaration(parent) ||
     Node.isFunctionExpression(parent) ||
     Node.isArrowFunction(parent) ||
-    Node.isMethodDeclaration(parent)
+    Node.isMethodDeclaration(parent) ||
+    Node.isConstructorDeclaration(parent)
     ? parent
     : undefined;
 }
@@ -787,6 +876,25 @@ function localFunctionIdentityKeys(owner: Node): Set<object> {
   ) {
     for (const key of symbolIdentityKeys(owner.getNameNode()?.getSymbol())) {
       keys.add(key);
+    }
+  }
+  if (Node.isConstructorDeclaration(owner)) {
+    const classLike = owner.getParent();
+    if (
+      Node.isClassDeclaration(classLike) ||
+      Node.isClassExpression(classLike)
+    ) {
+      for (const key of symbolIdentityKeys(classLike.getNameNode()?.getSymbol())) {
+        keys.add(key);
+      }
+      const variable = classLike.getFirstAncestorByKind(
+        SyntaxKind.VariableDeclaration,
+      );
+      if (variable?.getInitializer() === classLike) {
+        for (const key of symbolIdentityKeys(variable.getNameNode().getSymbol())) {
+          keys.add(key);
+        }
+      }
     }
   }
   const variable = owner.getFirstAncestorByKind(
@@ -810,6 +918,23 @@ function localFunctionIdentityNames(owner: Node): Set<string> {
   ) {
     const name = owner.getName();
     if (name !== undefined) names.add(name);
+  }
+  if (Node.isConstructorDeclaration(owner)) {
+    const classLike = owner.getParent();
+    if (
+      Node.isClassDeclaration(classLike) ||
+      Node.isClassExpression(classLike)
+    ) {
+      const name = classLike.getName();
+      if (name !== undefined) names.add(name);
+      const variable = classLike.getFirstAncestorByKind(
+        SyntaxKind.VariableDeclaration,
+      );
+      if (variable?.getInitializer() === classLike) {
+        const variableName = variable.getNameNode();
+        if (Node.isIdentifier(variableName)) names.add(variableName.getText());
+      }
+    }
   }
   const variable = owner.getFirstAncestorByKind(
     SyntaxKind.VariableDeclaration,
@@ -889,9 +1014,14 @@ function localCallableIdentityResolution(
   };
 }
 
-function localInvocation(call: CallExpression): LocalInvocation {
-  const callable = unwrapExpression(call.getExpression());
-  const args = call.getArguments();
+function localInvocation(
+  invocation: LocalInvocationExpression,
+): LocalInvocation {
+  const callable = unwrapExpression(invocation.getExpression());
+  const args = invocation.getArguments();
+  if (Node.isNewExpression(invocation)) {
+    return { target: callable, arguments: args };
+  }
   if (isGlobalIntrinsicCallable(callable, "Reflect", "apply")) {
     return {
       target: args[0] ?? callable,
@@ -916,7 +1046,7 @@ function localInvocation(call: CallExpression): LocalInvocation {
 
 interface ProjectInvocationIndex {
   readonly sourceFiles: readonly SourceFile[];
-  readonly callsByIdentity: Map<object, CallExpression[]>;
+  readonly callsByIdentity: Map<object, LocalInvocationExpression[]>;
 }
 
 const projectInvocationIndexCache = new WeakMap<
@@ -948,13 +1078,15 @@ function projectInvocationIndex(project: Project): ProjectInvocationIndex {
     cached.sourceFiles.every((sourceFile) => sourceFiles.includes(sourceFile));
   const callsByIdentity = canExtend
     ? cached.callsByIdentity
-    : new Map<object, CallExpression[]>();
+    : new Map<object, LocalInvocationExpression[]>();
   const indexedFiles = canExtend ? new Set(cached.sourceFiles) : new Set();
-  for (const call of sourceFiles
-    .filter((sourceFile) => !indexedFiles.has(sourceFile))
-    .flatMap((sourceFile) =>
-      sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression),
-    )) {
+  const newSourceFiles = sourceFiles.filter(
+    (sourceFile) => !indexedFiles.has(sourceFile),
+  );
+  for (const call of newSourceFiles.flatMap((sourceFile) => [
+    ...sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression),
+    ...sourceFile.getDescendantsOfKind(SyntaxKind.NewExpression),
+  ])) {
     const invocation = localInvocation(call);
     const identity = localCallableIdentityResolution(invocation.target);
     for (const key of identity.keys) {
@@ -979,7 +1111,7 @@ const localParameterValueCache = new WeakMap<
 >();
 const callIdentifierIndexCache = new WeakMap<
   SourceFile,
-  ReadonlyMap<string, readonly CallExpression[]>
+  ReadonlyMap<string, readonly LocalInvocationExpression[]>
 >();
 const localAliasDependencyCache = new WeakMap<
   SourceFile,
@@ -1020,15 +1152,16 @@ function callableReferenceNames(
 
 function callIdentifierIndex(
   sourceFile: SourceFile,
-): ReadonlyMap<string, readonly CallExpression[]> {
+): ReadonlyMap<string, readonly LocalInvocationExpression[]> {
   const cached = callIdentifierIndexCache.get(sourceFile);
   if (cached !== undefined) return cached;
-  const index = new Map<string, CallExpression[]>();
+  const index = new Map<string, LocalInvocationExpression[]>();
   for (const identifier of sourceFile.getDescendantsOfKind(
     SyntaxKind.Identifier,
   )) {
-    const call = identifier.getFirstAncestorByKind(
-      SyntaxKind.CallExpression,
+    const call = identifier.getAncestors().find(
+      (ancestor): ancestor is LocalInvocationExpression =>
+        Node.isCallExpression(ancestor) || Node.isNewExpression(ancestor),
     );
     if (call === undefined) continue;
     const name = identifier.getText();
@@ -1132,7 +1265,7 @@ export function localFunctionParameterValues(
     return undefined;
   }
   const identityKeys = localFunctionIdentityKeys(owner);
-  const candidateCalls = new Set<CallExpression>();
+  const candidateCalls = new Set<LocalInvocationExpression>();
   const invocationIndex = callIdentifierIndex(owner.getSourceFile());
   for (const name of localFunctionCandidateNames(owner)) {
     for (const call of invocationIndex.get(name) ?? []) {
@@ -1294,17 +1427,192 @@ function compositionalReflectGetResolution(
       };
 }
 
+const DESCRIPTOR_CALLABLE_MEMBERS = new Set(["get", "set", "value"]);
+
+function descriptorSourceResolution(
+  node: Node,
+  seen = new Set<Node>(),
+): CallableResolution<ReflectedPropertyAccess> | undefined {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return { values: [], complete: false };
+  seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (expandsCallableExpression(normalized, alternatives)) {
+    return combineResolutions(
+      alternatives.map((alternative) =>
+        descriptorSourceResolution(alternative, new Set(seen)),
+      ),
+    );
+  }
+  if (Node.isIdentifier(normalized)) {
+    const sources = identifierValueSources(normalized);
+    if (sources.length > 0) {
+      return combineResolutions(
+        sources.map((source) =>
+          descriptorSourceResolution(source, new Set(seen)),
+        ),
+      );
+    }
+  }
+  if (!Node.isCallExpression(normalized)) return undefined;
+  const invocation = localInvocation(normalized);
+  if (
+    !isGlobalIntrinsicCallable(
+      invocation.target,
+      "Object",
+      "getOwnPropertyDescriptor",
+    ) &&
+    !isGlobalIntrinsicCallable(
+      invocation.target,
+      "Reflect",
+      "getOwnPropertyDescriptor",
+    )
+  ) {
+    return undefined;
+  }
+  const receiver = invocation.arguments?.[0];
+  const name = staticStringValue(invocation.arguments?.[1]);
+  return receiver === undefined
+    ? { values: [], complete: false }
+    : {
+        values: [{ receiver, name }],
+        complete: true,
+      };
+}
+
+function descriptorMapPropertyResolution(
+  node: Node,
+  name: string | undefined,
+  seen = new Set<Node>(),
+): CallableResolution<ReflectedPropertyAccess> | undefined {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return { values: [], complete: false };
+  seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (expandsCallableExpression(normalized, alternatives)) {
+    const resolution = combineResolutions(
+      alternatives.map((alternative) =>
+        descriptorMapPropertyResolution(
+          alternative,
+          name,
+          new Set(seen),
+        ),
+      ),
+    );
+    return resolution;
+  }
+  if (Node.isIdentifier(normalized)) {
+    const sources = identifierValueSources(normalized);
+    if (sources.length > 0) {
+      const resolution = combineResolutions(
+        sources.map((source) =>
+          descriptorMapPropertyResolution(source, name, new Set(seen)),
+        ),
+      );
+      return resolution;
+    }
+  }
+  const member = staticMemberAccess(normalized);
+  if (member?.name !== undefined) {
+    const property = stableObjectPropertyResolution(
+      member.receiver,
+      member.name,
+    );
+    if (property !== undefined) {
+      const resolution = combineResolutions(
+        property.values.map((source) =>
+          descriptorMapPropertyResolution(source, name, new Set(seen)),
+        ),
+      );
+      if (resolution !== undefined) {
+        return {
+          values: resolution.values,
+          complete: property.complete && resolution.complete,
+        };
+      }
+    }
+  }
+  if (!Node.isCallExpression(normalized)) return undefined;
+  const invocation = localInvocation(normalized);
+  if (
+    !isGlobalIntrinsicCallable(
+      invocation.target,
+      "Object",
+      "getOwnPropertyDescriptors",
+    )
+  ) {
+    return undefined;
+  }
+  const receiver = invocation.arguments?.[0];
+  return receiver === undefined
+    ? { values: [], complete: false }
+    : {
+        values: [{ receiver, name }],
+        complete: true,
+      };
+}
+
+function descriptorCallableResolution(
+  node: Node,
+  seen = new Set<Node>(),
+): CallableResolution<ReflectedPropertyAccess> | undefined {
+  const normalized = unwrapExpression(node);
+  if (seen.has(normalized)) return { values: [], complete: false };
+  seen.add(normalized);
+  const alternatives = callableExpressionAlternatives(normalized);
+  if (expandsCallableExpression(normalized, alternatives)) {
+    return combineResolutions(
+      alternatives.map((alternative) =>
+        descriptorCallableResolution(alternative, new Set(seen)),
+      ),
+    );
+  }
+  const callableMember = staticMemberAccess(normalized);
+  if (
+    callableMember === undefined ||
+    (callableMember.name !== undefined &&
+      !DESCRIPTOR_CALLABLE_MEMBERS.has(callableMember.name))
+  ) {
+    return undefined;
+  }
+  const direct = descriptorSourceResolution(
+    callableMember.receiver,
+    new Set(seen),
+  );
+  const selected = staticMemberAccess(callableMember.receiver);
+  const mapped = selected === undefined
+    ? undefined
+    : descriptorMapPropertyResolution(
+        selected.receiver,
+        selected.name,
+        new Set(seen),
+      );
+  const resolution = direct === undefined
+    ? mapped
+    : mapped === undefined
+      ? direct
+      : combineResolutions([direct, mapped]);
+  if (resolution === undefined) return undefined;
+  return resolution;
+}
+
 export function reflectGetResolution(
   node: Node,
 ): CallableResolution<ReflectedPropertyAccess> | undefined {
-  if (!sourceUsesReflect(node.getSourceFile())) return undefined;
+  if (
+    !sourceUsesReflect(node.getSourceFile()) &&
+    !sourceUsesDescriptorRead(node.getSourceFile())
+  ) {
+    return undefined;
+  }
   const normalized = unwrapExpression(node);
-  return Node.isCallExpression(normalized)
+  const reflected = Node.isCallExpression(normalized)
     ? compositionalReflectGetResolution(
         normalized.getExpression(),
         normalized.getArguments(),
       )
     : undefined;
+  return reflected ?? descriptorCallableResolution(normalized);
 }
 
 function compositionalReflectApplyResolution(

@@ -82,7 +82,9 @@ parse of `.github/workflows/ci.yml` plus a restricted shell-command parse of eac
 effective workflow/job/step shell and working directory. The workflow must run on unfiltered normal
 `push` and `pull_request` events, mapped commands must execute from the repository root, and CI-backed
 requirements invoke their owned binaries or source entry points directly rather than through mutable
-package-script aliases. The
+package-script aliases. The trigger declaration contains only those two normal events, in mapping or
+array form; an extra, non-string, duplicate, filtered, or unsupported trigger makes the workflow
+non-evidence. The
 required command must be a dedicated simple command whose exit status controls its step, so a command
 named only in a comment, an echo argument, a short-circuited expression, a heredoc, a step `name:`, an
 `env:` value, or a failure-neutralizing expression proves nothing. Neither does one in a job or step
@@ -206,8 +208,11 @@ module-scope statements or direct statements inside an enabled reachable module-
 local runtime import graph of every fitness entry is inspected, and imported helpers may not import
 Vitest or register tests or suites. Callable parameters in reachable imported and re-exported helpers
 inherit every caller-supplied value, so cross-module higher-order registration cannot hide from that
-ownership check. Stable global intrinsic aliases held in object properties are resolved, and incomplete
-computed property provenance fails closed.
+ownership check. Constructor calls and parameters participate in the same invocation index. Stable
+global intrinsic aliases held in object properties or destructured through stable holders are resolved,
+and callable values read through Object or Reflect property descriptors retain their original receiver
+and member provenance. Incomplete parameter and computed-property provenance fails closed even when no
+known path was recovered.
 Per
 **ADR-0055**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,

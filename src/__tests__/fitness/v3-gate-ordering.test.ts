@@ -750,8 +750,12 @@ describe("v3 gate-ordering fence", () => {
         parseCiJobs(
           [
             "name: ci",
-            "on:",
-            ...trigger.split("\n").map((line) => `  ${line}`),
+            ...(trigger.startsWith("[")
+              ? [`on: ${trigger}`]
+              : [
+                  "on:",
+                  ...trigger.split("\n").map((line) => `  ${line}`),
+                ]),
             "jobs:",
             "  audit-chain-verify:",
             "    runs-on: ubuntu-latest",
@@ -762,6 +766,10 @@ describe("v3 gate-ordering fence", () => {
         );
       for (const trigger of [
         "workflow_dispatch:",
+        "[push, pull_request, 1]",
+        "[push, pull_request, workflow_dispatch]",
+        "push:\npull_request:\nworkflow_dispatch:",
+        "push:\npull_request:\nunknown_event:",
         "push:\n  branches: [main]\npull_request:",
         "push:\n  paths: [src/**]\npull_request:",
         "push:\npull_request:\n  branches-ignore: [release]",
@@ -769,6 +777,7 @@ describe("v3 gate-ordering fence", () => {
         expect(ciJobRuns(workflow(trigger), "audit-chain-verify", "pnpm audit:chain"), trigger).toBe(false);
       }
       expect(ciJobRuns(workflow("push:\npull_request:"), "audit-chain-verify", "pnpm audit:chain")).toBe(true);
+      expect(ciJobRuns(workflow("[pull_request, push]"), "audit-chain-verify", "pnpm audit:chain")).toBe(true);
     });
 
     it("requires mapped CI commands to run from the repository root", () => {

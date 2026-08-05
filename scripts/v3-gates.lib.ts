@@ -862,9 +862,18 @@ function approvedPrerequisiteProblem(
 
 function workflowTriggerProblem(doc: unknown): string | undefined {
   const trigger = (doc as { on?: unknown } | null)?.on;
+  const requiredEvents = new Set(["push", "pull_request"]);
   if (Array.isArray(trigger)) {
-    const events = new Set(trigger);
-    return events.has("push") && events.has("pull_request")
+    if (
+      trigger.length !== requiredEvents.size ||
+      trigger.some(
+        (event) =>
+          typeof event !== "string" || !requiredEvents.has(event),
+      )
+    ) {
+      return "workflow trigger list must contain only push and pull_request";
+    }
+    return new Set(trigger).size === requiredEvents.size
       ? undefined
       : "workflow must run on every push and pull_request event";
   }
@@ -872,6 +881,12 @@ function workflowTriggerProblem(doc: unknown): string | undefined {
     return "workflow must run on every push and pull_request event";
   }
   const configured = trigger as Record<string, unknown>;
+  const unsupportedEvent = Object.keys(configured).find(
+    (event) => !requiredEvents.has(event),
+  );
+  if (unsupportedEvent !== undefined) {
+    return `workflow trigger '${unsupportedEvent}' is not supported for blocking evidence`;
+  }
   for (const event of ["push", "pull_request"]) {
     if (!Object.hasOwn(configured, event)) {
       return `workflow is missing the '${event}' trigger`;

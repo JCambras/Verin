@@ -3603,6 +3603,27 @@ hooks.install(() => undefined);`,
   fn(() => undefined);
 }
 install(test.beforeEach);`,
+        `class Installer {
+  constructor(fn) {
+    fn(() => undefined);
+  }
+}
+new Installer(test.beforeEach);`,
+        `const holder = { R: Reflect };
+const { R } = holder;
+R.get(test, "beforeEach")(() => undefined);`,
+        `Object.getOwnPropertyDescriptor(test, "beforeEach")!.value(
+  () => undefined,
+);`,
+        `Object["getOwn" + "PropertyDescriptor"](
+  test,
+  "beforeEach",
+)!.value(() => undefined);`,
+        `Reflect.getOwnPropertyDescriptor(test, "beforeEach")!.value(
+  () => undefined,
+);`,
+        `const descriptors = Object.getOwnPropertyDescriptors(test);
+descriptors.beforeEach.value(() => undefined);`,
         `const R = Reflect;
 R.apply(test.beforeEach, test, [() => undefined]);`,
         `const intrinsics = { R: Reflect };
@@ -3624,7 +3645,7 @@ ${VALID_AXE_ROUTES}`;
       }
     });
 
-    it("rejects Playwright hooks passed into imported higher-order helpers", () => {
+    it("rejects Playwright hooks passed into imported callables", () => {
       const fixture = completeSources();
       fixture["e2e/axe-routes.ts"] =
         `import { test } from "@playwright/test";
@@ -3638,6 +3659,23 @@ ${VALID_AXE_ROUTES}`;
   fn(() => undefined);
 }`;
       expect(axeCoverageProblems(fixture)).toContain(
+        "e2e/install-hook.ts:1 reachable local Axe evidence module must not register Playwright hooks",
+      );
+      const constructorFixture = completeSources();
+      constructorFixture["e2e/axe-routes.ts"] =
+        `import { test } from "@playwright/test";
+import { Installer } from "./install-barrel";
+new Installer(test.beforeEach);
+${VALID_AXE_ROUTES}`;
+      constructorFixture["e2e/install-barrel.ts"] =
+        `export { Installer } from "./install-hook";`;
+      constructorFixture["e2e/install-hook.ts"] =
+        `export class Installer {
+  constructor(fn: (...args: unknown[]) => unknown) {
+    fn(() => undefined);
+  }
+}`;
+      expect(axeCoverageProblems(constructorFixture)).toContain(
         "e2e/install-hook.ts:1 reachable local Axe evidence module must not register Playwright hooks",
       );
     });
@@ -3672,6 +3710,16 @@ ${VALID_AXE_ROUTES}`;
             `const test = { beforeEach: () => undefined };
 const member = Math.random() > 0.5 ? "beforeEach" : "noop";
 void test[member];`,
+          ),
+        ),
+      ).toBe(false);
+      expect(
+        hasRegisteredPlaywrightHook(
+          project.createSourceFile(
+            "/e2e/application-descriptor.ts",
+            `const application = { handler: () => undefined };
+const member = Math.random() > 0.5 ? "handler" : "missing";
+Object.getOwnPropertyDescriptor(application, member)?.value();`,
           ),
         ),
       ).toBe(false);
@@ -4199,6 +4247,16 @@ select = Reflect.get.bind(Reflect, test, "${"fixme"}");
 select()(true, "file disabled");`,
         `const member = Math.random() > 0.5 ? "${"fixme"}" : "noop";
 Reflect.get(test, member)(true, "file disabled");`,
+        `Object.getOwnPropertyDescriptor(test, "${"skip"}")!.value(
+  true,
+  "file disabled",
+);`,
+        `Reflect.getOwnPropertyDescriptor(test, "${"fixme"}")!.value(
+  true,
+  "file disabled",
+);`,
+        `const descriptors = Object.getOwnPropertyDescriptors(test);
+descriptors.${"fail"}.value(true, "expected failure");`,
         `(Reflect.apply.bind(Reflect) as typeof Reflect.apply)(
   test.${"skip"},
   test,
