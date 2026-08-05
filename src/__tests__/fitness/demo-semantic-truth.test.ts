@@ -3661,30 +3661,38 @@ describe("demo semantic-truth fence", () => {
     if (impact?.attributionKind !== "exact-case") return;
     expect(impact?.selectionEffects).toBeDefined();
     if (!impact?.selectionEffects) return;
+    expect(impact.selectionEffects.materialGroupIds).toEqual([
+      "reserve",
+      "freshness",
+      "bank-change",
+      "threshold",
+    ]);
     for (const firmId of ["firm-a", "firm-b"] as const) {
-      expect(impact.selectionEffects[firmId]).toHaveLength(162);
+      const selectionKeys = Object.keys(
+        impact.selectionEffects.firms[firmId],
+      );
+      expect(selectionKeys).toHaveLength(54);
       expect(
-        new Set(
-          impact.selectionEffects[firmId].map(
-            (candidate) => candidate.selectionKey,
+        selectionKeys.every((selectionKey) =>
+          impact.selectionEffects!.materialGroupIds.every((groupId) =>
+            selectionKey.includes(`${groupId}=`),
           ),
-        ).size,
-      ).toBe(162);
+        ),
+      ).toBe(true);
       expect(
-        impact.selectionEffects[firmId].every((candidate) =>
-          SETUP_POLICY_GROUP_IDS.every((groupId) =>
-            candidate.selectionKey.includes(`${groupId}=`),
-          ),
+        selectionKeys.every(
+          (selectionKey) => !selectionKey.includes("expiry="),
         ),
       ).toBe(true);
     }
 
     const effectFor = (selections: SetupSelections) =>
-      impact.selectionEffects!["firm-b"].find(
-        (candidate) =>
-          candidate.selectionKey ===
-          setupFirmSelectionKey(selections["firm-b"]),
-      )?.effect;
+      impact.selectionEffects!.firms["firm-b"][
+        setupFirmSelectionKey(
+          selections["firm-b"],
+          impact.selectionEffects!.materialGroupIds,
+        )
+      ];
     const belowThreshold = setupSelections();
     belowThreshold["firm-b"]["bank-change"] = "specialist";
     belowThreshold["firm-b"].threshold = "100000";
@@ -3704,6 +3712,24 @@ describe("demo semantic-truth fence", () => {
     expect(effectFor(dualApproval)?.detail).toContain(
       "$25,000 threshold",
     );
+    dualApproval["firm-b"].expiry = "2d-5d";
+    expect(effectFor(dualApproval)?.summary).toBe(
+      "Specialist review, then two distinct operations approvers",
+    );
+  });
+
+  it("enforces: the canonical setup definition is memoized and immutable", () => {
+    const first = buildMoneyMovementSetup();
+    const equivalent = buildMoneyMovementSetup(
+      decisionEvidenceSnapshotFor(
+        scenarioById("recent-bank-change-block"),
+      ),
+    );
+
+    expect(equivalent).toBe(first);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.impacts)).toBe(true);
+    expect(Object.isFrozen(first.impacts[0])).toBe(true);
   });
 
   it("enforces: signed-impact attribution matches every material preview input exactly", () => {

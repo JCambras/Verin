@@ -11,6 +11,7 @@ import {
   type ExactCaseImpactVM,
   type MoneyMovementSetupVM,
   type SetupFirmId,
+  type SetupPolicyGroupId,
   type SetupSelections,
 } from "./setup-model";
 import {
@@ -104,56 +105,55 @@ function bankImpactEffect(
 function bankImpactSelectionEffects(
   cases: Readonly<Record<SetupFirmId, SignedImpactCase>>,
 ): NonNullable<ExactCaseImpactVM["selectionEffects"]> {
+  const materialGroupIds = [
+    "reserve",
+    "freshness",
+    "bank-change",
+    "threshold",
+  ] as const satisfies readonly SetupPolicyGroupId[];
   const result = {
-    "firm-a": [] as {
-      selectionKey: string;
-      effect: ChoiceEffectVM;
-    }[],
-    "firm-b": [] as {
-      selectionKey: string;
-      effect: ChoiceEffectVM;
-    }[],
+    "firm-a": {} as Record<string, ChoiceEffectVM>,
+    "firm-b": {} as Record<string, ChoiceEffectVM>,
   };
   for (const firmId of ["firm-a", "firm-b"] as const) {
     for (const reserve of ["6-months", "9-months", "12-months"]) {
       for (const freshness of ["7-days", "14-days", "30-days"]) {
         for (const bankChange of ["specialist", "block"]) {
           for (const threshold of ["25000", "50000", "100000"]) {
-            for (const expiry of ["4h-2d", "1d-3d", "2d-5d"]) {
-              const firmSelections = {
-                reserve,
-                freshness,
-                "bank-change": bankChange,
-                threshold,
-                expiry,
-              };
-              const selections: SetupSelections = {
-                "firm-a":
-                  firmId === "firm-a"
-                    ? firmSelections
-                    : DEFAULT_SETUP_SELECTIONS["firm-a"],
-                "firm-b":
-                  firmId === "firm-b"
-                    ? firmSelections
-                    : DEFAULT_SETUP_SELECTIONS["firm-b"],
-              };
-              result[firmId].push({
-                selectionKey:
-                  setupFirmSelectionKey(firmSelections),
-                effect: bankImpactEffect(
-                  selections,
-                  firmId,
-                  cases[firmId].evaluationEvidence,
-                  cases[firmId].fixture.trigger.asOf,
-                ),
-              });
-            }
+            const firmSelections: SetupSelections[SetupFirmId] = {
+              reserve,
+              freshness,
+              "bank-change": bankChange,
+              threshold,
+              expiry: DEFAULT_SETUP_SELECTIONS[firmId].expiry,
+            };
+            const selections: SetupSelections = {
+              "firm-a":
+                firmId === "firm-a"
+                  ? firmSelections
+                  : DEFAULT_SETUP_SELECTIONS["firm-a"],
+              "firm-b":
+                firmId === "firm-b"
+                  ? firmSelections
+                  : DEFAULT_SETUP_SELECTIONS["firm-b"],
+            };
+            result[firmId][
+              setupFirmSelectionKey(
+                firmSelections,
+                materialGroupIds,
+              )
+            ] = bankImpactEffect(
+              selections,
+              firmId,
+              cases[firmId].evaluationEvidence,
+              cases[firmId].fixture.trigger.asOf,
+            );
           }
         }
       }
     }
   }
-  return result;
+  return { materialGroupIds, firms: result };
 }
 
 function evidenceDate(

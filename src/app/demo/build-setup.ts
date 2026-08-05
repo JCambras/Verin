@@ -38,7 +38,45 @@ import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
 } from "./decision-evidence";
+import {
+  hashCanonicalPreimage,
+  toJsonValue,
+} from "./decision-identity";
 import { setupVersionDigestFor } from "./setup-version";
+
+const CANONICAL_SETUP_EVIDENCE = decisionEvidenceSnapshotFor(
+  scenarioById("recent-bank-change-block"),
+);
+
+function setupEvidenceKey(
+  evidence: DecisionEvidenceSnapshot,
+): string {
+  return hashCanonicalPreimage(
+    toJsonValue({
+      hashKind: "money-movement-demo-setup-evidence",
+      preimageVersion:
+        "money-movement-demo-setup-evidence/1.0.0",
+      evidence,
+    }),
+  );
+}
+
+const CANONICAL_SETUP_EVIDENCE_KEY = setupEvidenceKey(
+  CANONICAL_SETUP_EVIDENCE,
+);
+let canonicalSetup: MoneyMovementSetupVM | undefined;
+
+function deepFreeze<T>(value: T): T {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Object.isFrozen(value)
+  ) {
+    return value;
+  }
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return Object.freeze(value);
+}
 
 /** Whole dollars from integer minor units, for the one place a signed liquidity basis
  * is stated as prose. The numbers are never restated by hand. */
@@ -245,10 +283,11 @@ function group(
 }
 
 export function buildMoneyMovementSetup(
-  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(
-    scenarioById("recent-bank-change-block"),
-  ),
+  evidence: DecisionEvidenceSnapshot = CANONICAL_SETUP_EVIDENCE,
 ): MoneyMovementSetupVM {
+  const canonicalEvidence =
+    setupEvidenceKey(evidence) === CANONICAL_SETUP_EVIDENCE_KEY;
+  if (canonicalEvidence && canonicalSetup) return canonicalSetup;
   const reserveA = [reserveOption(6, "Signed"), reserveOption(9, "Supported"), reserveOption(12, "Supported")];
   const reserveB = [reserveOption(6, "Supported"), reserveOption(9, "Supported"), reserveOption(12, "Signed")];
   const freshA = [freshnessOption(7, "Supported"), freshnessOption(14, "Supported"), freshnessOption(30, "Signed")];
@@ -355,8 +394,11 @@ export function buildMoneyMovementSetup(
     },
     fakeClass: "deterministic-engine-output",
   };
-  return {
+  const setup = {
     ...definition,
     setupVersionDigest: setupVersionDigestFor(definition, evidence),
   };
+  if (!canonicalEvidence) return setup;
+  canonicalSetup = deepFreeze(structuredClone(setup));
+  return canonicalSetup;
 }

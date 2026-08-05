@@ -34,8 +34,10 @@ export type SetupSelections = Record<
 
 export function setupFirmSelectionKey(
   selections: SetupSelections[SetupFirmId],
+  groupIds: readonly SetupPolicyGroupId[] =
+    SETUP_POLICY_GROUP_IDS,
 ): string {
-  return SETUP_POLICY_GROUP_IDS.map(
+  return groupIds.map(
     (groupId) => `${groupId}=${selections[groupId]}`,
   ).join("|");
 }
@@ -229,15 +231,15 @@ export interface ExactCaseImpactVM {
   readonly facts: string;
   readonly groupId: SetupPolicyGroupVM["id"];
   readonly attribution: SignedImpactAttributionVM;
-  readonly selectionEffects?: Readonly<
-    Record<
-      SetupFirmId,
-      readonly {
-        readonly selectionKey: string;
-        readonly effect: ChoiceEffectVM;
-      }[]
-    >
-  >;
+  readonly selectionEffects?: {
+    readonly materialGroupIds: readonly SetupPolicyGroupId[];
+    readonly firms: Readonly<
+      Record<
+        SetupFirmId,
+        Readonly<Record<string, ChoiceEffectVM>>
+      >
+    >;
+  };
 }
 
 export interface UniversalRuleImpactVM {

@@ -3590,3 +3590,16 @@ authority surface and printable record.
 escalation actor without a distinct current role and expiry contradicts the signed GC-16 outcome.
 **Revert path:** replace this projection only when a persisted authority workflow supplies equivalent
 immutable decision requirements and versioned runtime stage instances.
+
+### D-101 · 2026-08-05 · reversible · Setup impact lookup binds only material choices
+
+The recent-bank impact lookup now binds reserve, freshness, bank-change handling, and threshold.
+Approval expiry is excluded because the bounded evaluator does not read it for this projection. Each
+firm therefore carries 54 directly keyed effects instead of 162 wrapped entries. The canonical setup
+definition is content-matched on its evidence, cloned, deeply frozen, and reused across page rendering,
+attestation, and activation. Noncanonical evidence still produces an independent definition.
+
+**Why:** setup-version identity must bind every visible outcome, but repeated copies for an input the
+outcome does not consume add payload and evaluation work without adding proof.
+**Revert path:** restore expiry to the lookup only if the projected effect begins consuming approval
+clock semantics, and remove canonical memoization if setup construction becomes request-specific.

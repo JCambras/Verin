@@ -139,11 +139,12 @@ export function ImpactBody({
             : null;
           const selectionEffect = (firmId: SetupFirmId) =>
             exactCase
-              ? impact.selectionEffects?.[firmId].find(
-                  (candidate) =>
-                    candidate.selectionKey ===
-                    setupFirmSelectionKey(selections[firmId]),
-                )?.effect
+              ? impact.selectionEffects?.firms[firmId][
+                  setupFirmSelectionKey(
+                    selections[firmId],
+                    impact.selectionEffects?.materialGroupIds,
+                  )
+                ]
               : undefined;
           const effectA =
             selectionEffect("firm-a") ?? a?.signedCaseEffect;
