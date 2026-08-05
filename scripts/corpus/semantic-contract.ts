@@ -88,7 +88,13 @@ export const TREATMENT_SELECTOR_VALUES = {
   fixed: ["fixed"],
   "authority-state": ["effective", "ineffective"],
   "reserve-state": ["modeled-scalar", "modeled-segmented", "missing"],
-  "pending-availability": ["unchanged", "settled-included", "settled-excluded"],
+  "pending-availability": [
+    "unchanged",
+    "settled-incoming-included",
+    "settled-incoming-excluded",
+    "settled-outgoing-included",
+    "settled-outgoing-excluded",
+  ],
   "threshold-comparator": ["strict", "inclusive"],
 } as const;
 
@@ -101,7 +107,7 @@ const TreatmentSelectorSchema = z.enum([
 ]);
 
 const SemanticContractSchema = z.strictObject({
-  contractVersion: z.literal("verin-real-derived-semantics/1.9.0"),
+  contractVersion: z.literal("verin-real-derived-semantics/1.10.0"),
   defectRules: z.array(z.strictObject({
     id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     contextRule: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),

@@ -22,8 +22,10 @@ export type PendingActionState = (typeof PENDING_ACTION_STATES)[number];
 
 export type PendingAvailabilitySelector =
   | "unchanged"
-  | "settled-included"
-  | "settled-excluded";
+  | "settled-incoming-included"
+  | "settled-incoming-excluded"
+  | "settled-outgoing-included"
+  | "settled-outgoing-excluded";
 
 const ACTION_KIND_REGISTRY: Readonly<
   Record<
@@ -72,12 +74,19 @@ export function pendingAvailabilitySelector(
   state: PendingActionState,
   availableMinorIncludesAction: boolean,
 ): PendingAvailabilitySelector {
-  if (!pendingActionLiquidityTreatment(kind, state).increasesAvailableLiquidity) {
-    return "unchanged";
+  const treatment = pendingActionLiquidityTreatment(kind, state);
+  if (state !== "settled") return "unchanged";
+  if (treatment.increasesAvailableLiquidity) {
+    return availableMinorIncludesAction
+      ? "settled-incoming-included"
+      : "settled-incoming-excluded";
   }
-  return availableMinorIncludesAction
-    ? "settled-included"
-    : "settled-excluded";
+  if (treatment.direction === "outgoing") {
+    return availableMinorIncludesAction
+      ? "settled-outgoing-included"
+      : "settled-outgoing-excluded";
+  }
+  return "unchanged";
 }
 
 export function pendingAvailabilityAdjustmentMinor(
@@ -87,7 +96,9 @@ export function pendingAvailabilityAdjustmentMinor(
   amountMinor: bigint,
 ): bigint | null {
   const treatment = pendingActionLiquidityTreatment(kind, state);
-  const expectedEffect = treatment.reducesEffectiveLiquidity
+  const expectedEffect =
+    treatment.reducesEffectiveLiquidity ||
+      (state === "settled" && treatment.direction === "outgoing")
     ? -amountMinor
     : treatment.increasesAvailableLiquidity
       ? amountMinor

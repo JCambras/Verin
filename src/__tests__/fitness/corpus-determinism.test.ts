@@ -69,15 +69,26 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
     seen.add(key);
   };
   for (const sf of project.getSourceFiles()) {
-    const origins = new Map<string, string>([
-      ["Math", "Math"],
-      ["Date", "Date"],
-      ["performance", "performance"],
-      ["process", "process"],
-      ["crypto", "crypto"],
-      ["Intl", "Intl"],
-      ["globalThis", "globalThis"],
-      ["global", "global"],
+    type OriginSet = ReadonlySet<string>;
+    const originSet = (...values: Array<string | undefined>): OriginSet | undefined => {
+      const result = new Set(values.filter((value): value is string => value !== undefined));
+      return result.size === 0 ? undefined : result;
+    };
+    const mergeOrigins = (
+      ...values: Array<OriginSet | undefined>
+    ): OriginSet | undefined => {
+      const result = new Set(values.flatMap((value) => [...(value ?? [])]));
+      return result.size === 0 ? undefined : result;
+    };
+    const origins = new Map<string, OriginSet>([
+      ["Math", new Set(["Math"])],
+      ["Date", new Set(["Date"])],
+      ["performance", new Set(["performance"])],
+      ["process", new Set(["process"])],
+      ["crypto", new Set(["crypto"])],
+      ["Intl", new Set(["Intl"])],
+      ["globalThis", new Set(["globalThis"])],
+      ["global", new Set(["global"])],
     ]);
     const cryptoRandomMembers = new Set([
       "randomUUID",
@@ -90,13 +101,26 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       "generateKeySync",
       "generateKeyPair",
       "generateKeyPairSync",
+      "generatePrime",
+      "generatePrimeSync",
+    ]);
+    const processRuntimeMembers = new Set([
+      "env",
+      "hrtime",
+      "uptime",
+      "cpuUsage",
+      "resourceUsage",
+      "memoryUsage",
+      "availableMemory",
+      "constrainedMemory",
+      "getActiveResourcesInfo",
+      "cwd",
     ]);
     const bannedCalls = new Set([
       "Math.random",
       "Date.now",
       "performance.now",
-      "process.hrtime",
-      "process.env",
+      ...[...processRuntimeMembers].map((name) => `process.${name}`),
       ...[...cryptoRandomMembers].flatMap((name) => [
         `crypto.${name}`,
         `crypto.webcrypto.${name}`,
@@ -126,6 +150,12 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       base === "globalThis" || base === "global"
         ? ambientRoots.has(member) ? member : undefined
         : `${base}.${member}`;
+    const memberOrigins = (
+      bases: OriginSet | undefined,
+      member: string,
+    ): OriginSet | undefined => mergeOrigins(
+      ...[...(bases ?? [])].map((base) => originSet(memberOrigin(base, member))),
+    );
     const unwrap = (input: Node): Node => {
       let node = input;
       while (
@@ -233,73 +263,139 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       callable: CallableShape,
       call: Node,
       trail: ReadonlySet<string>,
-      bindings: ReadonlyMap<string, string>,
-    ): ReadonlyMap<string, string> => {
+      bindings: ReadonlyMap<string, OriginSet>,
+    ): ReadonlyMap<string, OriginSet> => {
       const next = new Map(bindings);
       const arguments_ = Node.isCallExpression(call) ? call.getArguments() : [];
-      for (const [index, parameter] of callable.parameters.entries()) {
-        const name = parameter.getFirstChildByKind(SyntaxKind.Identifier);
-        const origin = originOf(arguments_[index], trail, bindings);
-        if (name !== undefined && origin !== undefined) {
-          next.set(name.getText(), origin);
+      const bindParameter = (
+        pattern: Node,
+        argument: Node | undefined,
+        path: readonly string[] = [],
+      ): void => {
+        if (Node.isIdentifier(pattern)) {
+          const value = memberValueOrigins(argument, path, trail, bindings);
+          const merged = mergeOrigins(next.get(pattern.getText()), value);
+          if (merged !== undefined) next.set(pattern.getText(), merged);
+          return;
         }
+        if (Node.isObjectBindingPattern(pattern)) {
+          for (const element of pattern.getElements()) {
+            bindParameter(
+              element.getNameNode(),
+              argument,
+              [...path, element.getPropertyNameNode()?.getText() ?? element.getNameNode().getText()],
+            );
+          }
+          return;
+        }
+        if (Node.isArrayBindingPattern(pattern)) {
+          for (const [index, element] of pattern.getElements().entries()) {
+            if (Node.isBindingElement(element)) {
+              bindParameter(element.getNameNode(), argument, [...path, String(index)]);
+            }
+          }
+        }
+      };
+      for (const [index, parameter] of callable.parameters.entries()) {
+        const name = Node.isParameterDeclaration(parameter)
+          ? parameter.getNameNode()
+          : parameter.getFirstChild((child) =>
+            Node.isIdentifier(child) ||
+            Node.isObjectBindingPattern(child) ||
+            Node.isArrayBindingPattern(child)
+          );
+        if (name !== undefined) bindParameter(name, arguments_[index]);
       }
       return next;
     };
-    const memberValueOrigin = (
-      input: Node,
-      member: string,
+    const memberValueOrigins = (
+      input: Node | undefined,
+      path: readonly string[],
       trail: ReadonlySet<string>,
-      bindings: ReadonlyMap<string, string>,
-    ): string | undefined => {
+      bindings: ReadonlyMap<string, OriginSet>,
+    ): OriginSet | undefined => {
+      if (input === undefined) return undefined;
       const node = unwrap(input);
-      const key = `${nodeKey(node)}:${member}`;
+      if (path.length === 0) return originOf(node, trail, bindings);
+      const member = path[0]!;
+      const rest = path.slice(1);
+      const key = `${nodeKey(node)}:${path.join(".")}`;
       if (trail.has(key)) return undefined;
       const next = new Set(trail);
       next.add(key);
+      const directTrail = new Set(next);
+      directTrail.add(nodeKey(node));
+      const direct = rest.reduce<OriginSet | undefined>(
+        (value, part) => memberOrigins(value, part),
+        memberOrigins(originOf(node, directTrail, bindings), member),
+      );
+      const candidates: Array<OriginSet | undefined> = [direct];
       if (Node.isObjectLiteralExpression(node)) {
         for (const property of [...node.getProperties()].reverse()) {
           if (
             Node.isPropertyAssignment(property) &&
             property.getName() === member
           ) {
-            return originOf(property.getInitializer(), next, bindings);
+            candidates.push(memberValueOrigins(
+              property.getInitializer(),
+              rest,
+              next,
+              bindings,
+            ));
           }
           if (
             Node.isShorthandPropertyAssignment(property) &&
             property.getName() === member
           ) {
-            return originOf(property.getNameNode(), next, bindings);
-          }
-          if (Node.isSpreadAssignment(property)) {
-            const origin = memberValueOrigin(
-              property.getExpression(),
-              member,
+            candidates.push(memberValueOrigins(
+              property.getNameNode(),
+              rest,
               next,
               bindings,
-            );
-            if (origin !== undefined) return origin;
+            ));
+          }
+          if (Node.isSpreadAssignment(property)) {
+            candidates.push(memberValueOrigins(
+              property.getExpression(),
+              path,
+              next,
+              bindings,
+            ));
           }
         }
       }
       if (Node.isArrayLiteralExpression(node) && /^\d+$/.test(member)) {
-        return originOf(
+        candidates.push(memberValueOrigins(
           node.getElements()[Number(member)],
+          rest,
           next,
           bindings,
-        );
+        ));
       }
       if (Node.isConditionalExpression(node)) {
-        return memberValueOrigin(
+        candidates.push(memberValueOrigins(
           node.getWhenTrue(),
-          member,
+          path,
           next,
           bindings,
-        ) ?? memberValueOrigin(
+        ), memberValueOrigins(
           node.getWhenFalse(),
-          member,
+          path,
           next,
           bindings,
+        ));
+      }
+      if (
+        Node.isBinaryExpression(node) &&
+        [
+          SyntaxKind.BarBarToken,
+          SyntaxKind.AmpersandAmpersandToken,
+          SyntaxKind.QuestionQuestionToken,
+        ].includes(node.getOperatorToken().getKind())
+      ) {
+        candidates.push(
+          memberValueOrigins(node.getLeft(), path, next, bindings),
+          memberValueOrigins(node.getRight(), path, next, bindings),
         );
       }
       if (Node.isCallExpression(node)) {
@@ -307,13 +403,12 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         for (const callable of callableShapes(target)) {
           const nested = callBindings(callable, node, next, bindings);
           for (const returned of callable.returns) {
-            const origin = memberValueOrigin(
+            candidates.push(memberValueOrigins(
               returned,
-              member,
+              path,
               next,
               nested,
-            );
-            if (origin !== undefined) return origin;
+            ));
           }
         }
       }
@@ -326,21 +421,20 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
               ? declaration.getExpression()
               : undefined;
         if (value === undefined) continue;
-        const origin = memberValueOrigin(
+        candidates.push(memberValueOrigins(
           value,
-          member,
+          path,
           next,
           bindings,
-        );
-        if (origin !== undefined) return origin;
+        ));
       }
-      return undefined;
+      return mergeOrigins(...candidates);
     };
-    const declarationOrigin = (
+    const declarationOrigins = (
       declaration: Node,
       trail: ReadonlySet<string>,
-      bindings: ReadonlyMap<string, string>,
-    ): string | undefined => {
+      bindings: ReadonlyMap<string, OriginSet>,
+    ): OriginSet | undefined => {
       if (
         Node.isVariableDeclaration(declaration) ||
         Node.isPropertyAssignment(declaration)
@@ -364,9 +458,9 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           const property =
             declaration.getPropertyNameNode()?.getText() ??
             declaration.getNameNode().getText();
-          return memberValueOrigin(
+          return memberValueOrigins(
             initializer,
-            property,
+            [property],
             trail,
             bindings,
           );
@@ -375,9 +469,9 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           const index = pattern.getElements().indexOf(declaration);
           return index < 0
             ? undefined
-            : memberValueOrigin(
+            : memberValueOrigins(
                 initializer,
-                String(index),
+                [String(index)],
                 trail,
                 bindings,
               );
@@ -388,8 +482,8 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
     function originOf(
       input: Node | undefined,
       trail: ReadonlySet<string> = new Set(),
-      bindings: ReadonlyMap<string, string> = new Map(),
-    ): string | undefined {
+      bindings: ReadonlyMap<string, OriginSet> = new Map(),
+    ): OriginSet | undefined {
       if (input === undefined) return undefined;
       const node = unwrap(input);
       if (Node.isIdentifier(node)) {
@@ -410,39 +504,32 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         return specifier !== undefined &&
             (Node.isStringLiteral(specifier) ||
               Node.isNoSubstitutionTemplateLiteral(specifier))
-          ? moduleOrigin(specifier.getLiteralText())
+          ? originSet(moduleOrigin(specifier.getLiteralText()))
           : undefined;
       }
       if (Node.isCallExpression(node)) {
         const target = unwrap(node.getExpression());
-        for (const callable of callableShapes(target)) {
+        return mergeOrigins(...callableShapes(target).flatMap((callable) => {
           const nested = callBindings(callable, node, next, bindings);
-          const returned = callable.returns
-            .map((expression) => originOf(expression, next, nested))
-            .find((origin) => origin !== undefined);
-          if (returned !== undefined) return returned;
-        }
+          return callable.returns.map((expression) =>
+            originOf(expression, next, nested)
+          );
+        }));
       }
       if (Node.isIdentifier(node)) {
-        return symbolDeclarations(node)
-          .map((declaration) =>
-            declarationOrigin(declaration, next, bindings)
-          )
-          .find((origin) => origin !== undefined);
+        return mergeOrigins(...symbolDeclarations(node).map((declaration) =>
+          declarationOrigins(declaration, next, bindings)
+        ));
       }
       if (Node.isPropertyAccessExpression(node)) {
         const base = originOf(node.getExpression(), next, bindings);
-        if (base !== undefined) return memberOrigin(base, node.getName());
-        return memberValueOrigin(
-          node.getExpression(),
-          node.getName(),
-          next,
-          bindings,
-        ) ?? symbolDeclarations(node.getNameNode())
-          .map((declaration) =>
-            declarationOrigin(declaration, next, bindings)
-          )
-          .find((origin) => origin !== undefined);
+        return mergeOrigins(
+          memberOrigins(base, node.getName()),
+          memberValueOrigins(node.getExpression(), [node.getName()], next, bindings),
+          ...symbolDeclarations(node.getNameNode()).map((declaration) =>
+            declarationOrigins(declaration, next, bindings)
+          ),
+        );
       }
       if (Node.isElementAccessExpression(node)) {
         const base = originOf(node.getExpression(), next, bindings);
@@ -451,30 +538,33 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           argument !== undefined &&
           (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
         ) {
-          return base !== undefined
-            ? memberOrigin(base, argument.getLiteralText())
-            : memberValueOrigin(
-                node.getExpression(),
-                argument.getLiteralText(),
-                next,
-                bindings,
-              );
+          return mergeOrigins(
+            memberOrigins(base, argument.getLiteralText()),
+            memberValueOrigins(
+              node.getExpression(),
+              [argument.getLiteralText()],
+              next,
+              bindings,
+            ),
+          );
         }
         if (
           argument !== undefined &&
           Node.isNumericLiteral(argument)
         ) {
-          return memberValueOrigin(
+          return memberValueOrigins(
             node.getExpression(),
-            argument.getLiteralText(),
+            [argument.getLiteralText()],
             next,
             bindings,
           );
         }
       }
       if (Node.isConditionalExpression(node)) {
-        return originOf(node.getWhenTrue(), next, bindings) ??
-          originOf(node.getWhenFalse(), next, bindings);
+        return mergeOrigins(
+          originOf(node.getWhenTrue(), next, bindings),
+          originOf(node.getWhenFalse(), next, bindings),
+        );
       }
       if (
         Node.isBinaryExpression(node) &&
@@ -484,32 +574,23 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           SyntaxKind.QuestionQuestionToken,
         ].includes(node.getOperatorToken().getKind())
       ) {
-        return originOf(node.getLeft(), next, bindings) ??
-          originOf(node.getRight(), next, bindings);
+        return mergeOrigins(
+          originOf(node.getLeft(), next, bindings),
+          originOf(node.getRight(), next, bindings),
+        );
       }
       return undefined;
     }
-    const sensitive = (origin: string): boolean =>
-      origin === "Date" ||
-      origin === "Intl" ||
-      bannedCalls.has(origin) ||
-      origin.startsWith("crypto.") ||
-      origin.startsWith("process.env") ||
-      origin.startsWith("process.hrtime");
-    const setOrigin = (name: string, origin: string): boolean => {
+    const setOrigins = (name: string, value: OriginSet): boolean => {
       const current = origins.get(name);
-      if (
-        current !== undefined &&
-        (current === origin || sensitive(current) || !sensitive(origin))
-      ) {
-        return false;
-      }
-      origins.set(name, origin);
+      const merged = mergeOrigins(current, value)!;
+      if (current !== undefined && merged.size === current.size) return false;
+      origins.set(name, merged);
       return true;
     };
-    const bindOrigin = (
+    const bindOrigins = (
       name: Node,
-      origin: string,
+      value: OriginSet,
       source: Node = name,
     ): boolean => {
       if (
@@ -517,9 +598,9 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         Node.isPropertyAccessExpression(name) ||
         Node.isElementAccessExpression(name)
       ) {
-        const changed = setOrigin(name.getText(), origin);
-        if (bannedCalls.has(origin)) {
-          record(source, apiName(origin), sf);
+        const changed = setOrigins(name.getText(), value);
+        for (const origin of value) {
+          if (bannedCalls.has(origin)) record(source, apiName(origin), sf);
         }
         return changed;
       }
@@ -528,28 +609,37 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           const local = element.getNameNode();
           const property =
             element.getPropertyNameNode()?.getText() ?? local.getText();
-          const bound = memberOrigin(origin, property);
+          const bound = memberOrigins(value, property);
           return bound === undefined
             ? false
-            : bindOrigin(local, bound, element);
+            : bindOrigins(local, bound, element);
+        }).some(Boolean);
+      }
+      if (Node.isArrayBindingPattern(name)) {
+        return name.getElements().map((element, index) => {
+          if (!Node.isBindingElement(element)) return false;
+          const bound = memberOrigins(value, String(index));
+          return bound === undefined
+            ? false
+            : bindOrigins(element.getNameNode(), bound, element);
         }).some(Boolean);
       }
       if (Node.isObjectLiteralExpression(name)) {
         return name.getProperties().map((property) => {
           if (Node.isPropertyAssignment(property)) {
-            const bound = memberOrigin(origin, property.getName());
+            const bound = memberOrigins(value, property.getName());
             if (bound === undefined) return false;
-            return bindOrigin(
+            return bindOrigins(
               property.getInitializer()!,
               bound,
               property,
             );
           }
           if (!Node.isShorthandPropertyAssignment(property)) return false;
-          const bound = memberOrigin(origin, property.getName());
+          const bound = memberOrigins(value, property.getName());
           return bound === undefined
             ? false
-            : bindOrigin(property.getNameNode(), bound, property);
+            : bindOrigins(property.getNameNode(), bound, property);
         }).some(Boolean);
       }
       return false;
@@ -560,8 +650,12 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       const namespace = declaration.getNamespaceImport()?.getText();
       const defaultImport = declaration.getDefaultImport()?.getText();
       const base = moduleOrigin(moduleName);
-      if (base !== undefined && namespace !== undefined) origins.set(namespace, base);
-      if (base !== undefined && defaultImport !== undefined) origins.set(defaultImport, base);
+      if (base !== undefined && namespace !== undefined) {
+        origins.set(namespace, new Set([base]));
+      }
+      if (base !== undefined && defaultImport !== undefined) {
+        origins.set(defaultImport, new Set([base]));
+      }
       for (const specifier of declaration.getNamedImports()) {
         const imported = specifier.getName();
         const local = specifier.getAliasNode()?.getText() ?? imported;
@@ -569,13 +663,13 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           normalizedModuleName === "crypto" &&
             (cryptoRandomMembers.has(imported) || imported === "webcrypto")
             ? `crypto.${imported}` :
-            normalizedModuleName === "process" && (imported === "hrtime" || imported === "env") ?
+            normalizedModuleName === "process" && processRuntimeMembers.has(imported) ?
               `process.${imported}` :
               normalizedModuleName === "perf_hooks" && imported === "performance" ? "performance" :
                 undefined;
         if (origin === undefined) continue;
-        origins.set(local, origin);
-        if (bannedCalls.has(origin)) record(specifier, imported, sf);
+        origins.set(local, new Set([origin]));
+        if (bannedCalls.has(origin)) record(specifier, apiName(origin), sf);
       }
     }
     let changed = true;
@@ -584,12 +678,12 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       for (const declaration of sf.getDescendantsOfKind(
         SyntaxKind.VariableDeclaration,
       )) {
-        const initializerOrigin = originOf(declaration.getInitializer());
-        if (initializerOrigin !== undefined) {
+        const initializerOrigins = originOf(declaration.getInitializer());
+        if (initializerOrigins !== undefined) {
           changed =
-            bindOrigin(
+            bindOrigins(
               declaration.getNameNode(),
-              initializerOrigin,
+              initializerOrigins,
             ) || changed;
         }
       }
@@ -599,12 +693,12 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
         if (assignment.getOperatorToken().getKind() !== SyntaxKind.EqualsToken) {
           continue;
         }
-        const origin = originOf(assignment.getRight());
-        if (origin !== undefined) {
+        const value = originOf(assignment.getRight());
+        if (value !== undefined) {
           changed =
-            bindOrigin(
+            bindOrigins(
               unwrap(assignment.getLeft()),
-              origin,
+              value,
               assignment,
             ) || changed;
         }
@@ -615,22 +709,19 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
           ? localFunctions.get(target.getText())
           : undefined;
         if (callable === undefined) continue;
-        for (const [index, parameter] of callable.parameters.entries()) {
-          const origin = originOf(call.getArguments()[index]);
-          if (origin !== undefined) {
-            changed =
-              bindOrigin(
-                parameter.getFirstChildByKind(SyntaxKind.Identifier) ??
-                  parameter,
-                origin,
-                parameter,
-              ) || changed;
-          }
+        const parameterBindings = callBindings(
+          callable,
+          call,
+          new Set(),
+          new Map(),
+        );
+        for (const [name, value] of parameterBindings) {
+          changed = setOrigins(name, value) || changed;
         }
       }
     }
     for (const call of sf.getDescendantsOfKind(SyntaxKind.NewExpression)) {
-      if (originOf(call.getExpression()) === "Date" && call.getArguments().length === 0) {
+      if (originOf(call.getExpression())?.has("Date") === true && call.getArguments().length === 0) {
         record(call, "new Date() (argless)", sf);
       }
     }
@@ -645,13 +736,14 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
       ) {
         record(call, "non-literal dynamic import", sf);
       }
-      const origin = originOf(call.getExpression());
-      if (origin === "Date") {
-        record(call, "Date() (callable)", sf);
-      } else if (origin !== undefined && bannedCalls.has(origin)) {
-        record(call, apiName(origin), sf);
-      } else if (origin?.startsWith("process.hrtime.") === true) {
-        record(call, "process.hrtime", sf);
+      for (const origin of originOf(call.getExpression()) ?? []) {
+        if (origin === "Date") {
+          record(call, "Date() (callable)", sf);
+        } else if (bannedCalls.has(origin)) {
+          record(call, apiName(origin), sf);
+        } else if (origin.startsWith("process.hrtime.")) {
+          record(call, "process.hrtime", sf);
+        }
       }
     }
     const accesses = [
@@ -669,15 +761,14 @@ export function bannedNondeterminismUses(project: Project, root = ""): BannedUse
               Node.isNoSubstitutionTemplateLiteral(argument))
           ? argument.getLiteralText()
           : "";
-      const origin = originOf(access);
-      if (origin !== undefined && bannedCalls.has(origin)) {
-        record(access, apiName(origin), sf);
-      }
-      if (origin === "process.env" || origin?.startsWith("process.env.") === true) {
-        record(access, "process.env", sf);
-      }
-      if (origin === "Intl" || origin?.startsWith("Intl.") === true) {
-        record(access, "Intl", sf);
+      for (const origin of originOf(access) ?? []) {
+        if (bannedCalls.has(origin)) record(access, apiName(origin), sf);
+        if (origin === "process.env" || origin.startsWith("process.env.")) {
+          record(access, "process.env", sf);
+        }
+        if (origin === "Intl" || origin.startsWith("Intl.")) {
+          record(access, "Intl", sf);
+        }
       }
       if (/^toLocale(String|DateString|TimeString)$/.test(name) || name === "localeCompare") {
         record(access, name, sf);
@@ -1024,6 +1115,43 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
       }),
     );
     expect(uses.filter((use) => use.api === "process.env")).toHaveLength(4);
+  });
+
+  it("flags every sensitive conditional, logical, and callable-return origin", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject(
+        file(
+          "declare const flag: boolean;\nconst conditional = flag ? Math : process;\nvoid conditional.env.SEED;\nconst logical = Math || process;\nvoid logical.env.SEED;\nfunction runtime() { return flag ? Math : process; }\nvoid runtime().env.SEED;\n",
+        ),
+      ),
+    );
+    expect(uses.filter((use) => use.api === "process.env")).toHaveLength(3);
+  });
+
+  it("flags origins passed through nested object and array parameter patterns", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject({
+        "/src/contracts/helper.ts":
+          "export const pickObject = ({ runtime }: { runtime: any }) => runtime;\nexport const pickNested = ({ box: { runtime } }: { box: { runtime: any } }) => runtime;\nexport const pickArray = ([runtime]: [any]) => runtime;\n",
+        "/src/contracts/consumer.ts":
+          'import { pickArray, pickNested, pickObject } from "./helper";\nvoid pickObject({ runtime: process }).env.SEED;\nvoid pickNested({ box: { runtime: process } }).env.SEED;\nvoid pickArray([process]).env.SEED;\n',
+      }),
+    );
+    expect(uses.filter((use) => use.api === "process.env")).toHaveLength(3);
+  });
+
+  it("flags process runtime clocks and crypto prime generation", () => {
+    const uses = bannedNondeterminismUses(
+      inMemoryProject({
+        "/src/contracts/direct.ts":
+          "void process.uptime();\nvoid crypto.generatePrime(8, () => undefined);\nvoid crypto.generatePrimeSync(8);\n",
+        "/src/contracts/imported.ts":
+          'import { generatePrime as prime } from "node:crypto";\nimport { uptime } from "node:process";\nvoid prime(8, () => undefined);\nvoid uptime();\n',
+      }),
+    );
+    expect(new Set(uses.map((use) => use.api))).toEqual(
+      new Set(["process.uptime", "generatePrime", "generatePrimeSync"]),
+    );
   });
 
   it("scans every supported executable source extension", () => {

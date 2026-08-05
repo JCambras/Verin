@@ -4962,3 +4962,25 @@ The real-derived partition remains empty and deferred, and captain signoff remai
 **Why:** executable coverage cannot depend on a filename suffix or module boundary, and source-reported
 availability must be reconciled with the signed action treatment before sufficiency can be evaluated.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+
+### D-124 · 2026-08-05 · reversible · Alternate origins, parameter binding, ambient APIs, and settled debits fail closed
+
+The corpus determinism fence carries every possible origin through conditional and logical arms, callable
+returns, declarations, and fixed containers. Object and array parameter patterns bind recursively from
+their corresponding argument members. Runtime-state process APIs and entropy-producing prime generation
+join the closed nondeterminism registry, including direct, imported, aliased, and destructured forms.
+
+Pending-action availability now distinguishes settled incoming and outgoing directions. A settled
+outgoing debit already reflected in source-reported availability is preserved; one not yet reflected is
+debited exactly once. The replay schema advances to `verin-real-derived-replay/1.9.0`, and the semantic
+contract advances to `verin-real-derived-semantics/1.10.0` with explicit included and excluded outgoing
+treatments.
+
+The tooling bucket measures 7989 lines under the unchanged 8000 ceiling. Canonical regeneration produces
+`corpusDigest` `77388ead4e7cfd738954dc7b9915b32ecdcca7b013208ac20664505c643182c9`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** one safe branch cannot hide a reachable nondeterministic origin, parameter destructuring cannot
+erase provenance, and settled debits cannot be added back or omitted during funding reconciliation.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.

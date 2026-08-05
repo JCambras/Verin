@@ -7889,3 +7889,41 @@ closed, and the semantic contract literal cannot revert to reducing-only wording
 remains empty, captain signoff remains pending, and the focused companions pass.
 
 **Date:** 2026-08-05 (v3 prompt 11, D-123 review hardening).
+
+---
+
+## PF-210 · alternate origins, parameter bindings, ambient APIs, and settled debits · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-124, ADR-0034):** every possible dataflow origin remains visible; nested parameter
+patterns preserve argument provenance; runtime clocks and entropy APIs are closed; and settled outgoing
+debits remain reflected exactly once in effective availability.
+
+**Injection 1 - alternate origin hidden.** Selected `Math` before `process` in conditional, logical, and
+callable-return alternatives, then read `runtime.env.SEED`.
+
+**Injection 2 - destructured parameter.** Passed `process` through object, nested-object, and array
+parameter patterns before reading its environment.
+
+**Injection 3 - unregistered ambient APIs.** Called `process.uptime()`, `crypto.generatePrime()`, and
+`crypto.generatePrimeSync()` through direct and imported forms.
+
+**Injection 4 - settled debit reversed.** Reconciled a settled outgoing debit once with the source
+balance already reflecting it and once with the source balance excluding it.
+
+**Observed failure:**
+```
+expected [] to have a length of 3 but got 0
+expected Set{} to deeply equal Set{ 'process.uptime', 'generatePrime', 'generatePrimeSync' }
+expected 500n to be 0n
+```
+
+**Standing companions:** conditional, logical, declaration, container, and callable-return paths merge
+all possible origins; cross-module callable parameters recursively bind fixed object and array members;
+direct and imported process clocks and crypto prime generation are detected; settled outgoing actions
+select direction-specific included or excluded treatments and reconcile to zero or one debit.
+
+**Revert:** every injection was replaced by a standing in-memory companion. Canonical regeneration
+produced `corpusDigest` `77388ead4e7cfd738954dc7b9915b32ecdcca7b013208ac20664505c643182c9`,
+the real-derived partition remains empty, captain signoff remains pending, and all 1,436 tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-124 review hardening).

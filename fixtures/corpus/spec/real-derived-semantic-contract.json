@@ -1,5 +1,5 @@
 {
-  "contractVersion": "verin-real-derived-semantics/1.9.0",
+  "contractVersion": "verin-real-derived-semantics/1.10.0",
   "defectRules": [
     { "id": "authority-scope-error", "contextRule": "authority-boundary", "treatmentSelector": "authority-state", "treatments": [
       { "selectorValue": "effective", "expectedTreatment": "accept-effective-authority", "defectTreatment": "reject-effective-authority-by-membership" },
@@ -39,8 +39,10 @@
     ] },
     { "id": "pending-activity-miscount", "contextRule": "nonreducing-pending-action-present", "treatmentSelector": "pending-availability", "treatments": [
       { "selectorValue": "unchanged", "expectedTreatment": "exclude-nonreducing-pending", "defectTreatment": "count-nonreducing-pending" },
-      { "selectorValue": "settled-included", "expectedTreatment": "preserve-settled-incoming-availability", "defectTreatment": "omit-settled-incoming-availability" },
-      { "selectorValue": "settled-excluded", "expectedTreatment": "credit-settled-incoming-availability", "defectTreatment": "omit-settled-incoming-availability" }
+      { "selectorValue": "settled-incoming-included", "expectedTreatment": "preserve-settled-incoming-availability", "defectTreatment": "omit-settled-incoming-availability" },
+      { "selectorValue": "settled-incoming-excluded", "expectedTreatment": "credit-settled-incoming-availability", "defectTreatment": "omit-settled-incoming-availability" },
+      { "selectorValue": "settled-outgoing-included", "expectedTreatment": "preserve-settled-outgoing-availability", "defectTreatment": "omit-settled-outgoing-availability" },
+      { "selectorValue": "settled-outgoing-excluded", "expectedTreatment": "debit-settled-outgoing-availability", "defectTreatment": "omit-settled-outgoing-availability" }
     ] },
     { "id": "restriction-lifecycle-error", "contextRule": "restriction-not-in-force", "treatmentSelector": "fixed", "treatments": [
       { "selectorValue": "fixed", "expectedTreatment": "apply-restriction-lifecycle", "defectTreatment": "ignore-restriction-lifecycle" }

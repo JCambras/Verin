@@ -40,6 +40,7 @@ import {
   PENDING_ACTION_KINDS,
   PENDING_ACTION_STATES,
   pendingActionLiquidityTreatment,
+  pendingAvailabilityAdjustmentMinor,
   pendingAvailabilitySelector,
 } from "../../../scripts/corpus/pending-actions";
 import {
@@ -477,7 +478,7 @@ const realDerivedCase = (
     TIME_ZONE_RULE_REF,
   ],
   replayPayload: {
-    schemaVersion: "verin-real-derived-replay/1.8.0",
+    schemaVersion: "verin-real-derived-replay/1.9.0",
     request: {
       firmRef: FIRM_REF,
       requestRef: REQUEST_REF,
@@ -1316,7 +1317,7 @@ describe("corpus-provenance-split fence", () => {
     expect(changed).not.toEqual(original);
     expect(original.map((binding) => binding.id)).toEqual([
       "verin-real-derived-case/1.4.0",
-      "verin-real-derived-replay/1.8.0",
+      "verin-real-derived-replay/1.9.0",
     ]);
     expect(
       corpusDigest(
@@ -1627,6 +1628,31 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         expect(treatment.increasesAvailableLiquidity).toBe(expectedIncrease);
       }
     }
+  });
+
+  it("reconciles settled outgoing debits exactly once", () => {
+    expect(
+      pendingAvailabilitySelector("outgoing-debit", "settled", true),
+    ).toBe("settled-outgoing-included");
+    expect(
+      pendingAvailabilitySelector("outgoing-debit", "settled", false),
+    ).toBe("settled-outgoing-excluded");
+    expect(
+      pendingAvailabilityAdjustmentMinor(
+        "outgoing-debit",
+        "settled",
+        true,
+        500n,
+      ),
+    ).toBe(0n);
+    expect(
+      pendingAvailabilityAdjustmentMinor(
+        "outgoing-debit",
+        "settled",
+        false,
+        500n,
+      ),
+    ).toBe(-500n);
   });
 
   it("a defect class carried by NO case is flagged (an unexercised class is decoration)", () => {
@@ -1993,7 +2019,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
   it("the signed manifest binds the executable real-derived semantic contract", () => {
     const manifest = real.manifest.value as Record<string, unknown>;
     expect(manifest.realDerivedSemanticContractVersion).toBe(
-      "verin-real-derived-semantics/1.9.0",
+      "verin-real-derived-semantics/1.10.0",
     );
     expect(manifest.realDerivedSemanticContractDigest).toMatch(
       /^[0-9a-f]{64}$/,

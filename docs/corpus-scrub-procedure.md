@@ -126,7 +126,7 @@ label           {kind: "defect", defectClassId} | {kind: "clean-control", contro
 occurredAt      canonical UTC instant
 evaluation      {asOf, freshnessPolicyVersion: "verin-real-derived-freshness/1.0.0"}
 subjects        [entity-kind:tok:…]
-replayPayload   verin-real-derived-replay/1.8.0 closed payload
+replayPayload   verin-real-derived-replay/1.9.0 closed payload
 evidence        [{id, evidenceKind, subjectRef, sourceRef, observationState, observedAt, retrievedAt, freshness}]
 reservations    [{firmRef, family, conflictKey}]
 ```
@@ -158,7 +158,9 @@ same-household, source-owner-aligned, and sufficient in aggregate for the reques
 availability adjustment for any cited action not already reflected in `availableMinor`. Every action
 states `availableMinorIncludesAction`; omitting it is invalid. Settled incoming credits use
 `preserve-settled-incoming-availability` when already included and
-`credit-settled-incoming-availability` otherwise, so a replay cannot omit or double-count settled value.
+`credit-settled-incoming-availability` otherwise. Settled outgoing debits use the parallel
+`preserve-settled-outgoing-availability` or `debit-settled-outgoing-availability` treatments, so a replay
+cannot omit or double-count settled value in either direction.
 An instruction-conflict witness must name the exact request and household, every referenced instruction
 must belong to that household, and impacted subjects must intersect the request source account or
 destination instruction.

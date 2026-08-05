@@ -70,7 +70,8 @@ const CEILINGS = {
   // semantics, request-bound conflict topology, schema-driven uniqueness, and
   // assignment-aware determinism enforcement. Current amendment history and
   // measurements are recorded in ADR-0034. D-122 raises it to 8000 against
-  // 7941 measured lines for exact pending-action balance accounting.
+  // 7941 measured lines for exact pending-action balance accounting. D-124
+  // keeps it at 8000 against 7989 lines after settled-outgoing reconciliation.
   // The ratchet-down after
   // the corpus generator's first
   // post-prompt-19 simplification pass now has real work to do. Tooling is REPORTED SEPARATELY,

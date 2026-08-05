@@ -99,8 +99,10 @@ credit, unknown, and unclassified actions do not, and incoming value cannot incr
 settlement. Every pending action records whether its effect is already included in the source-reported
 `availableMinor`. A settled incoming credit already included in that figure uses
 `preserve-settled-incoming-availability`; one not yet included uses
-`credit-settled-incoming-availability`. Funding applies no second adjustment to an included action and
-exactly one signed adjustment to an excluded action.
+`credit-settled-incoming-availability`. A settled outgoing debit already included uses
+`preserve-settled-outgoing-availability`; one not yet included uses
+`debit-settled-outgoing-availability`. Funding applies no second adjustment to an included action and
+exactly one directional adjustment to an excluded action.
 
 Funding is never inferred from available accounts in either partition. Every synthetic request and
 real-derived payload names an explicit, duplicate-free `selectedFundingRefs` set. Synthetic selections
@@ -307,7 +309,7 @@ one.
 `corpusDigest` uses the versioned `verin-corpus/1.12.0` preimage. It covers each case's partition, id,
 byte digest, label kind, and label id across both inventories, plus the versioned semantic digests of
 defect-taxonomy definitions, the real-derived per-kind freshness policy, and both versioned real-derived
-JSON Schemas. It also binds `verin-real-derived-semantics/1.9.0`: the strict declarative context,
+JSON Schemas. It also binds `verin-real-derived-semantics/1.10.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
 its exact bytes, and exact digests for the complete repository-local runtime dependency closure rooted at
