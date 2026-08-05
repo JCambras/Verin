@@ -3044,8 +3044,10 @@ It carries an explicit authority chain so the repo keeps ONE north-star chain ra
 than two rival ones: subordinate to `CHARTER.md`, the ratified v3 direction, and the
 two normative demo documents (`docs/demo-contract.md`, `docs/demo-design-language.md`),
 and stating the thesis that `PRODUCT-DIRECTION.md` serves rather than competing with
-it. Every one of those wins on conflict, so a session told to test demo choices against
-the thesis has stated precedence instead of an apparent override.
+it. Every one of those - `PRODUCT-DIRECTION.md` included - wins on conflict, so a session
+told to test demo choices against the thesis has stated precedence instead of an apparent
+override. The `README.md` and `AGENTS.md` pointers name that same set, so the precedence
+reads identically at all three entry points.
 It does not satisfy ADR-0023's open C7 item (a `PRODUCT-DIRECTION.md` v2 under the v3
 framing), which stays open. The thesis carries a build-honesty label: it is the
 product aim, and no continuous-learning or self-configuration subsystem exists today.
@@ -3073,30 +3075,49 @@ self-configuration capability is designed, leaving the directive unrecorded.
 No code, fixture, fence, or pinned document depends on it. D-099 stands independently of
 this revert.
 
-## D-099 - The v3 pin covers five documents; the index carries nothing normative
+## D-099 - The v3 pin covers the registered documents; the index carries nothing normative
 
 **Date:** 2026-08-05 · **Reversible** · Relates to: D-098, ADR-0023, ADR-0018,
 charter #1/#5, DO-NOT-PORT #8
 
 `README.md`, `AGENTS.md`, and `docs/v3/README.md` each stated the SHA-256 pin as a
-universal rule over `docs/v3/`. It never was one: `v3-invariants.json` pins exactly five
-documents - `verin-architecture-v3.md`, `verin-prompt-sequence-v3.md`,
-`verin-demo-contract-v1.md`, `verin-core-contracts.ts`, and `marriage-map.md` - and the
-arch-version fence (`src/__tests__/fitness/arch-version.test.ts`) verifies only the pins
-listed there. `docs/v3/README.md` itself is the exception, and the exception was written
-down nowhere, so a session adding content to the index would believe it byte-protected
-when it is not. All three documents now name the actual pinned set and state the
-exception.
+universal rule over `docs/v3/`. It never was one: the arch-version fence
+(`src/__tests__/fitness/arch-version.test.ts`) iterates `registry.documents` from
+`v3-invariants.json` and nothing else - it never reads the directory - so the pin covers
+the REGISTERED set (today `verin-architecture-v3.md`, `verin-prompt-sequence-v3.md`,
+`verin-demo-contract-v1.md`, `verin-core-contracts.ts`, `marriage-map.md`), and a file
+under `docs/v3/` that is absent from the registry is simply invisible to it.
+`docs/v3/README.md` is the unregistered file today, and that was written down nowhere, so
+a session adding content to the index would believe it byte-protected when it is not.
+
+The three documents therefore claim only what the fence verifies: the registry-listed set
+is pinned, the fence covers that registry and not the directory, and a new ratified
+document must be registered in the PR that adds it. Naming a fixed count ("the five
+ratified documents") or an exclusivity property ("the one file here that is NOT pinned")
+was itself unverified prose: a sixth ratified document added without a pin would silently
+falsify all three statements while the build stayed green. Fixed counts are gone; the
+statements now track the registry.
 
 That exception carries a rule: `docs/v3/README.md` is navigation, not ratified content,
-so nothing normative may live in it - normative statements belong in a pinned document,
-an ADR, or the charter. This is deliberately recorded as prose with a stated owner rather
-than as an invariant, because no mechanism can detect normativity in a file the fence does
-not cover; a fenced-sounding claim with no fence behind it is the DO-NOT-PORT #8 failure.
-It is a review obligation on any PR touching that index. The rule was applied on entry:
-the D-098 pointer added to the index is a pure pointer, and the product guide's own
-authority-chain and governed-activation citations resolve to the pinned
-`docs/v3/verin-architecture-v3.md` with the index as a secondary hop.
+so nothing normative may live in it - normative statements belong in a registered
+document, an ADR, or the charter. This is deliberately recorded as prose with a stated
+owner rather than as an invariant, because no mechanism can detect normativity in a file
+the fence does not cover; a fenced-sounding claim with no fence behind it is the
+DO-NOT-PORT #8 failure. Its enforcement hook is a conditional item in
+`.github/pull_request_template.md` (the shape the charter-amendment item already uses),
+so the obligation is surfaced to a reviewer on any PR touching that index instead of
+living only in prose. The rule was applied on entry: the D-098 pointer added to the index
+is a pure pointer, and the product guide's own authority-chain and governed-activation
+citations resolve to the pinned `docs/v3/verin-architecture-v3.md` with the index as a
+secondary hop.
+
+**Optional future hardening (not taken here - this PR is docs-only):** the registration
+half IS mechanizable even though normativity is not. The arch-version fence could read
+`docs/v3/`, assert every entry except `README.md` appears in `registry.documents`, and
+ship the companion proving an unregistered file fails. That would make "the index is the
+only unregistered file" a self-maintaining fact rather than prose, and it would catch a
+ratified document landing byte-unprotected. It belongs in a PR that can prove the new
+fence adversarially (charter #1), not in this documentation change.
 
 **Alternatives rejected:** pin `docs/v3/README.md` too (a navigation index would then
 demand a pin bump for every link edit, and the pin would assert ratified status it does
@@ -3104,6 +3125,7 @@ not have); leave the overbroad phrasing and rely on the fence to be discovered b
 reading; or state the index rule as a normative invariant with no enforcing mechanism.
 
 **Revert path:** restore the "every doc under `docs/v3/` is pinned" phrasing in the three
-documents and delete this entry. No code, fixture, fence, or pinned document changes;
-`v3-invariants.json` and the arch-version fence are untouched, since this corrects the
-prose describing them, not their behavior.
+documents, remove the v3-index item from `.github/pull_request_template.md`, and delete
+this entry. No code, fixture, fence, or pinned document changes; `v3-invariants.json` and
+the arch-version fence are untouched, since this corrects the prose describing them, not
+their behavior.

@@ -1,14 +1,17 @@
 # docs/v3 - the ratified Verin v3 architecture direction
 
 **Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
-**ADR-0023 through ADR-0028** (`docs/adr/`). The five ratified documents in the table below are committed
-**verbatim** from the ratified sources; each of those five has its SHA-256 pinned in
-[`v3-invariants.json`](../../v3-invariants.json) and verified by the arch-version fence
-(`src/__tests__/fitness/arch-version.test.ts`), so build work can never silently target a stale or edited
-copy. If one of them legitimately changes, update its pin **in the same PR** and review the invariant
-registry for drift. **This index page is the one file here that is NOT pinned** - it is navigation, not
-ratified content, so nothing normative may live in it; normative statements belong in a pinned document,
-an ADR, or the charter (D-099).
+**ADR-0023 through ADR-0028** (`docs/adr/`). The ratified documents in the table below are committed
+**verbatim** from the ratified sources; the arch-version fence
+(`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
+[`v3-invariants.json`](../../v3-invariants.json) against their SHA-256 pins, so build work can never
+silently target a stale or edited copy of a registered document. The fence covers that registry, not this
+directory: a file under `docs/v3/` that is absent from `v3-invariants.json` is not byte-protected, so a
+new ratified document must be registered there in the PR that adds it. If a registered document
+legitimately changes, update its pin **in the same PR** and review the invariant registry for drift.
+**This index page is deliberately not registered** - it is navigation, not ratified content, so nothing
+normative may live in it; normative statements belong in a registered document, an ADR, or the charter
+(D-099).
 
 There is exactly ONE constitution: [`CHARTER.md`](../../CHARTER.md). The v3 architecture doc's own
 "supersedes prior documents" header is read through ADR-0023: v3 is ratified INTO the charter machinery,

@@ -28,6 +28,10 @@ pipeline). Fill this out honestly — a false checkbox is a control failure.
 
 - [ ] This PR changes `CHARTER.md`. It references the amending ADR: `docs/adr/____`. (Silent charter edits fail review — charter operating model.)
 
+## v3 index (only if `docs/v3/README.md` changed)
+
+- [ ] This PR changes `docs/v3/README.md`. The change is navigation only - nothing normative (D-099). That index is not registered in `v3-invariants.json`, so the arch-version fence does not byte-protect it; normative statements belong in a registered document, an ADR, or the charter. A new ratified document under `docs/v3/` is registered with its SHA-256 pin in this same PR.
+
 ## AI authorship
 
 - [ ] The AI tool and prompt/task are documented in the commit message(s).
