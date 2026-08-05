@@ -77,7 +77,6 @@ export function buildPolicyAuthoring(
     pass,
     toVersion,
   );
-  const twelveMonthFloor = rerun?.reserveFloorMinor ?? null;
   const simulationInputs = liquidityInputs(
     scenario,
     firm,
@@ -96,6 +95,25 @@ export function buildPolicyAuthoring(
   let simulationDelta: SimulationDeltaRowVM[];
   if (!planned || !currentFloor) {
     simulationDelta = unavailableScheduleRows(disposition);
+  } else if (rerun === null) {
+    simulationDelta = [
+      {
+        label: "Smith household reserve floor",
+        before: { metric: currentFloor },
+        after: { display: "Not simulated without signed numeric authority" },
+      },
+      {
+        label: "Available after reserve",
+        before: { display: "Missing signed branch-and-firm liquidity authority" },
+        after: { display: "Not simulated without signed numeric authority" },
+      },
+      {
+        label: "This request",
+        before: { badge: DISPOSITION_BADGES[disposition] },
+        after: { display: "Not simulated without signed numeric authority" },
+      },
+      CORPUS_IMPACT_UNAVAILABLE,
+    ];
   } else if (
     isFirmA &&
     newHeadroom !== null &&
@@ -107,7 +125,7 @@ export function buildPolicyAuthoring(
         before: { metric: currentFloor },
         after: {
           metric: derivedMetric(
-            twelveMonthFloor!,
+            rerun.reserveFloorMinor,
             "currency-minor",
             simulationInputs,
             planned.observedAt,
@@ -134,41 +152,6 @@ export function buildPolicyAuthoring(
             DISPOSITION_BADGES[
               simulatedDisposition ?? disposition
             ],
-        },
-      },
-      CORPUS_IMPACT_UNAVAILABLE,
-    ];
-  } else if (isFirmA) {
-    simulationDelta = [
-      {
-        label: "Smith household reserve floor",
-        before: { metric: currentFloor },
-        after: {
-          metric: derivedMetric(
-            twelveMonthFloor!,
-            "currency-minor",
-            simulationInputs,
-            planned.observedAt,
-          ),
-        },
-      },
-      {
-        label: "Available after reserve",
-        before: {
-          display:
-            "Missing signed branch-and-firm liquidity authority",
-        },
-        after: {
-          display:
-            "Not simulated without signed numeric authority",
-        },
-      },
-      {
-        label: "This request",
-        before: { badge: DISPOSITION_BADGES[disposition] },
-        after: {
-          display:
-            "Not simulated without signed numeric authority",
         },
       },
       CORPUS_IMPACT_UNAVAILABLE,

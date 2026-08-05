@@ -110,14 +110,20 @@ identity without a case switch.
 
 Surface: **7 Pre-execution safety check**.
 
-- [ ] Pre-execution revalidation timestamp shown.
-- [ ] Conflict keys and reservation shown.
+- [ ] Pre-execution revalidation timestamp shown only from an exactly bound signed event payload.
+- [ ] Conflict keys and reservation shown only from an exactly bound signed reservation payload.
 - [ ] No duplicate or jointly-invalid movement possible (competing request visibly blocked).
 - [ ] Stable idempotency key shown.
 
 Backing: refreshed `EvidenceSnapshotRecorded` entries, `ReservationCreated` (conflict keys,
 expiry); on the invalidation branch `ApprovalInvalidated` (+ `ReservationReleased` where a
 reservation is given up).
+
+Open authority: current fixtures do not carry the structured event payloads needed to bind the
+active lifecycle pass, canonical event instant, decision and input-bundle hashes, evidence snapshot
+ids, reservation id, conflict keys, reservation expiry, idempotency key, consumed reservation ids,
+or invalidation replacement hashes. Notes, event position, and separate eligibility metadata do not
+close this gap. Every affected path remains withheld pending captain-signed structured events.
 
 Structural order: after every required structured approval binding is complete,
 `ReservationCreated` follows the final still-valid `ApprovalRecorded` and the pre-execution evidence
@@ -200,6 +206,9 @@ Surface: **12 Printable examiner-grade decision artifact**.
       execution, status, unresolved verification obligations, any derived exception decision.
 - [ ] Missing structured approval authority removes every downstream execution projection while
       preserving the signed historical outcome and naming the captain-signature gap.
+- [ ] Missing structured execution-event authority names the exact signed event and fields that are
+      absent, removes downstream execution projections, and leaves user-clickable withheld stations
+      leading to Comparison and Policy Authoring.
 - [ ] Immutable identifiers and hashes present throughout.
 - [ ] The artifact replays byte-identically (contract §8).
 - [ ] Any artifact derived from labeled-synthetic or fake inputs is watermarked as a demonstration

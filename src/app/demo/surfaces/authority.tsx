@@ -100,7 +100,12 @@ export function AuthoritySurface({
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{stopNote}</p>
       )}
 
-      <JourneyNav back={{ href: demoHref("policy-trace", routeContext), label: "Back to the policy trace" }} />
+      <JourneyNav
+        back={{ href: demoHref("policy-trace", routeContext), label: "Back to the policy trace" }}
+        {...(!journeyContinues
+          ? { forward: { href: demoHref("safety", routeContext), label: "Inspect the withheld safety check" } }
+          : {})}
+      />
     </SurfaceShell>
   );
 }

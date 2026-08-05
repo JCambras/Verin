@@ -140,7 +140,7 @@ test("the quick start keeps GC-01 identity and withholds unsigned authority", as
   await checkAxe(page, "authority");
   await snap(page, 6, "authority");
 
-  await page.goto(`/app/demo/safety?${QUICK_START_QUERY}`);
+  await page.getByRole("link", { name: "Inspect the withheld safety check" }).click();
   await expectQuickStartStation(page, "safety");
   await expect(page.getByText("Safety check not reached")).toBeVisible();
   await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
@@ -150,14 +150,14 @@ test("the quick start keeps GC-01 identity and withholds unsigned authority", as
   await checkAxe(page, "safety");
   await snap(page, 7, "safety");
 
-  await page.goto(`/app/demo/execution?${QUICK_START_QUERY}`);
+  await page.getByRole("link", { name: "Inspect the withheld execution" }).click();
   await expectQuickStartStation(page, "execution");
   await expect(page.getByText("Execution not reached")).toBeVisible();
   await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
   await checkAxe(page, "execution");
   await snap(page, 8, "execution");
 
-  await page.goto(`/app/demo/verification?${QUICK_START_QUERY}`);
+  await page.getByRole("link", { name: "Inspect the withheld verification" }).click();
   await expectQuickStartStation(page, "verification");
   await expect(page.getByText("Verification not reached")).toBeVisible();
   await expect(page.getByText(/missing signed approval actor identity/i)).toBeVisible();
@@ -165,7 +165,7 @@ test("the quick start keeps GC-01 identity and withholds unsigned authority", as
   await snap(page, 9, "verification");
 
   // 10 - Firm A / Firm B: policy versions head the columns; differing rows marked.
-  await page.goto(`/app/demo/comparison?${QUICK_START_QUERY}`);
+  await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
   await expectQuickStartStation(page, "comparison");
   await expect(page.getByText("firm-b-policy@2026.07.1").first()).toBeVisible();
   await expect(page.getByText("$48,000.00", { exact: true })).toBeVisible();
@@ -468,6 +468,14 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   ).toBeVisible();
   await expect(page.getByText(/47 days before asOf/)).toBeVisible();
   await expect(page.getByText("retrieved Jul 26, 14:00:05").first()).toBeVisible();
+  await page.goto("/app/demo/policy-authoring?scenario=stale-evidence&firm=firm-a&case=GC-09-stale-evidence");
+  const staleReserveSimulation = page.getByRole("row", {
+    name: /Smith household reserve floor/,
+  });
+  await expect(staleReserveSimulation).toContainText(
+    "Not simulated without signed numeric authority",
+  );
+  await expect(staleReserveSimulation).not.toContainText("$0.00");
   await page.goto("/app/demo/evidence?scenario=ambiguous-instruction&firm=firm-a&case=GC-08-ambiguous-household");
   await expect(page.getByText(/subject:smiths-robert-ana/)).toBeVisible();
   await expect(page.getByText(/subject:smith-family-trust/)).toBeVisible();
@@ -530,21 +538,15 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
   await expect(page.getByText("Execution not reached")).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  // Delayed NIGO: first-class appended row with its resolving affordance.
   await page.goto("/app/demo/safety?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo");
-  await page.getByRole("button", { name: "Verify source" }).click();
-  await expect(page.getByText("idem:GC-14:smiths-75000-2026-08-15")).toBeVisible();
-  await expect(page.getByText("res:GC-14:liquidity")).toBeVisible();
-  await expect(page.getByText("PT30M")).toBeVisible();
-  await expect(page.getByText("conflict:smiths-liquidity")).toBeVisible();
+  await expect(page.getByText("Signed execution bindings remain incomplete")).toBeVisible();
+  await expect(page.getByText(/expectedLedgerEvents\[3\] ReservationCreated/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Verify source" })).toHaveCount(0);
   await page.goto("/app/demo/verification?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo");
-  await expect(page.getByText("Returned NIGO", { exact: true })).toBeVisible();
-  await expect(page.getByText(/signature date predates form version/).first()).toBeVisible();
-  await expect(page.getByText(/Status polling stopped after terminal NIGO/)).toBeVisible();
-  await expect(page.getByText(/Next status poll/)).toHaveCount(0);
-  await expect(page.getByTestId("exception-decision-requested")).toContainText("delayed-nigo");
-  await expect(page.getByTestId("exception-decision-requested")).toContainText("StatusObserved");
-  await expect(page.getByRole("button", { name: "Fix and resubmit the authorization" })).toBeVisible();
+  await expect(page.getByText("Verification not reached")).toBeVisible();
+  await expect(page.getByText(/captain-signed structured event bindings/)).toBeVisible();
+  await expect(page.getByText("Returned NIGO", { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId("exception-decision-requested")).toHaveCount(0);
   await checkAxe(page, "verification-delayed-nigo");
   await snap(page, 17, "verification-delayed-nigo");
 
@@ -960,64 +962,27 @@ test("exact demo route context survives every inspective and dead-end link", asy
   await expect(page.getByTestId("derived-decision")).toBeVisible();
 });
 
-test("verification proof provenance stays bound to each signed event", async ({ page }) => {
+test("verification stays withheld until signed events carry exact bindings", async ({ page }) => {
   await login(page, PRINCIPAL);
 
   await page.goto(
     "/app/demo/verification?scenario=safe-proceed&firm=firm-b&case=GC-02-firm-b-happy-path",
   );
-  const submittedProof = page
-    .getByRole("region", {
-      name: "What this status proves",
-    })
-    .getByRole("listitem")
-    .filter({ hasText: "Submission accepted by the capability" });
-  await expect(submittedProof).toHaveAttribute(
-    "data-proof-event",
-    "ExecutionSucceeded",
-  );
-  await expect(submittedProof).toHaveAttribute(
-    "data-event-instant",
-    "2026-07-26T13:59:10.000Z",
-  );
+  await expect(page.getByText("Verification not reached")).toBeVisible();
+  await expect(page.getByText(/expectedLedgerEvents\[4\] ExecutionStarted/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "What this status proves" })).toHaveCount(0);
 
   await page.goto(
     "/app/demo/verification?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo",
   );
-  const nigoProofs = page.getByRole("region", {
-    name: "What this status proves",
-  });
-  await expect(
-    nigoProofs.getByRole("listitem").filter({
-      hasText: "Submission accepted by the capability",
-    }),
-  ).toHaveAttribute("data-proof-event", "ExecutionSucceeded");
-  await expect(
-    nigoProofs.getByRole("listitem").filter({
-      hasText: "Submission accepted by the capability",
-    }),
-  ).toHaveAttribute("data-event-instant", "2026-07-26T21:44:10.000Z");
-  await expect(
-    nigoProofs.getByRole("listitem").filter({
-      hasText: "Custodian returned the instruction NIGO",
-    }),
-  ).toHaveAttribute("data-proof-event", "StatusObserved");
-  await expect(
-    nigoProofs.getByRole("listitem").filter({
-      hasText: "Custodian returned the instruction NIGO",
-    }),
-  ).toHaveAttribute("data-event-instant", "2026-07-28T21:44:00.000Z");
+  await expect(page.getByText("Verification not reached")).toBeVisible();
+  await expect(page.getByText(/expectedLedgerEvents\[4\] ExecutionStarted/)).toBeVisible();
   await page.goto(
     "/app/demo/record?scenario=delayed-nigo&firm=firm-b&case=GC-14-delayed-nigo",
   );
-  await expect(
-    page
-      .getByRole("region", {
-        name: "Verification state at time of export",
-      })
-      .getByRole("listitem")
-      .filter({ hasText: "Submission accepted by the capability" }),
-  ).toHaveAttribute("data-event-instant", "2026-07-26T21:44:10.000Z");
+  await expect(page.getByRole("region", { name: "Verification state at time of export" })).toContainText(
+    /captain-signed structured event bindings/,
+  );
 });
 
 test("printable records carry exact route and lifecycle identity", async ({ page }) => {
@@ -1323,8 +1288,6 @@ test("every fake-backed demo surface carries a visible dev provenance badge", as
     "policy-trace",
     "authority",
     "safety",
-    "execution",
-    "verification",
     "comparison",
     "policy-authoring",
     "record",
@@ -1333,5 +1296,10 @@ test("every fake-backed demo surface carries a visible dev provenance badge", as
     await page.goto(`/app/demo/${s}?scenario=safe-proceed&firm=firm-b&case=GC-02-firm-b-happy-path`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     expect(await page.getByTestId("dev-provenance-badge").count(), `surface ${s} must carry a dev provenance badge`).toBeGreaterThan(0);
+  }
+  for (const s of ["execution", "verification"]) {
+    await page.goto(`/app/demo/${s}?scenario=safe-proceed&firm=firm-b&case=GC-02-firm-b-happy-path`);
+    await expect(page.getByText(/not reached/i)).toBeVisible();
+    await expect(page.getByTestId("dev-provenance-badge")).toHaveCount(0);
   }
 });

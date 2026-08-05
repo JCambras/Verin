@@ -98,11 +98,12 @@ export function buildSafety(
     (entry) => entry.evidenceKind === "bank-instruction",
   ) ?? [];
   const invalidatedPass = invalidationAuthority && pass === "initial";
-  const executionEligible = executionReachFor(
+  const executionReach = executionReachFor(
     scenario,
     firm,
     pass,
-  ).reached;
+  );
+  const executionEligible = executionReach.reached;
   const checks: SafetyCheckVM[] = authority.kind === "missing"
     ? [
         {
@@ -129,6 +130,15 @@ export function buildSafety(
             detail: `${initialPending?.summary ?? "Initial pending evidence unavailable"} ${refreshedPending?.summary ?? "Refreshed pending evidence unavailable"}`,
           },
         ]
+      : !executionEligible
+        ? [
+            {
+              label: "Signed execution bindings remain incomplete",
+              status: "pending",
+              statusLabel: "Execution withheld",
+              detail: executionReach.reason ?? "Exact signed structured execution bindings are unavailable.",
+            },
+          ]
       : invalidationAuthority && pass === "revalidated" && refreshed
         ? [
             {
@@ -209,7 +219,7 @@ export function buildSafety(
   return {
     spine: buildSpine("Safety", invalidatedPass ? { status: "voided", label: "Approval voided" } : undefined),
     revalidatedAt: fact(
-      `Material evidence re-checked ${formatDemoInstant(timeline.revalidatedAt)}`,
+      `${executionEligible ? "Material evidence re-checked" : "Safety authority evaluated"} ${formatDemoInstant(timeline.revalidatedAt)}`,
       "deterministic-engine-output",
       timeline.revalidatedAt,
       formatDemoInstant(timeline.revalidatedAt),

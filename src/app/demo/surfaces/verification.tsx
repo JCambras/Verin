@@ -20,9 +20,11 @@ export function VerificationSurface({
   routeContext: DemoRouteContext;
 }) {
   if (!vm) {
+    const stoppedAtDecision = stopNote?.startsWith("This journey stopped at Decision:") === true;
     return (
       <SurfaceShell title="Verification" description="What the returned status proves for an in-flight decision.">
-        <NotReached title="Verification not reached" stopNote={stopNote} backHref={demoHref("decision", routeContext)} />
+        <NotReached title="Verification not reached" stopNote={stopNote} backHref={demoHref(stoppedAtDecision ? "decision" : "execution", routeContext)} />
+        {!stoppedAtDecision ? <JourneyNav forward={{ href: demoHref("comparison", routeContext), label: "Compare Firm A and Firm B" }} /> : null}
       </SurfaceShell>
     );
   }

@@ -4,7 +4,8 @@ import {
 } from "./build-safety-check";
 import {
   approvalBindingProof,
-  executionEligibilityProof,
+  executionProofGapReason,
+  executionProofGaps,
 } from "./execution-preconditions";
 import { SIGNED_APPROVAL_BINDINGS_WITHHELD } from "./build-approval-stages";
 import {
@@ -29,9 +30,10 @@ export function executionReachFor(
 ): ExecutionReach {
   const sourceCase = sourceCaseFor(scenario, firm.id);
   if (sourceCase?.authorityGap?.execution === "withheld") {
+    const gaps = executionProofGaps(scenario, firm, sourceCase, pass);
     return {
       reached: false,
-      reason: sourceCase.authorityGap.reason,
+      reason: `${sourceCase.authorityGap.reason} ${executionProofGapReason(gaps)}`,
     };
   }
   const authority = liquidityAuthorityFor(scenario, firm.id);
@@ -57,9 +59,10 @@ export function executionReachFor(
     sourceCase.authority.stages.length > 0 &&
     !approvalBindingProof(scenario, firm, sourceCase, pass)
   ) {
+    const gaps = executionProofGaps(scenario, firm, sourceCase, pass);
     return {
       reached: false,
-      reason: SIGNED_APPROVAL_BINDINGS_WITHHELD,
+      reason: `${SIGNED_APPROVAL_BINDINGS_WITHHELD} ${executionProofGapReason(gaps)}`,
     };
   }
   if (
@@ -77,7 +80,8 @@ export function executionReachFor(
     ),
     eligibility.preconditions,
   );
-  if (!executionEligibilityProof(scenario, firm, sourceCase, pass)) {
+  const proofGaps = executionProofGaps(scenario, firm, sourceCase, pass);
+  if (proofGaps.length > 0) {
     const unmet = eligibility.preconditions.find(
       (precondition) =>
         precondition.mustStillHoldAtExecution &&
@@ -89,7 +93,7 @@ export function executionReachFor(
       reason:
         unmet
           ? POST_REVIEW_BANK_EVIDENCE_WITHHELD
-          : "Execution eligibility lacks exact signed proof for every active must-hold condition.",
+          : executionProofGapReason(proofGaps),
     };
   }
   return { reached: true, reason: null };

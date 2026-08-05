@@ -428,6 +428,60 @@ function rawEventIndexes(source: Record<string, unknown>, type: string): number[
   );
 }
 
+interface RawExecutionBindings {
+  readonly active: { readonly decisionHash: string; readonly bundleHash: string };
+  readonly initial: { readonly decisionHash: string; readonly bundleHash: string };
+}
+
+function independentExecutionBindings(
+  cases: LoadedCase[],
+  demo: DemoSemanticSnapshot,
+  sourceCaseId: string,
+  pass: "initial" | "revalidated",
+  authorityGaps: GoldenAuthorityGap[],
+): RawExecutionBindings | null {
+  const record = demo.recordIdentities.find(
+    (candidate) =>
+      candidate.routeSourceCaseId === sourceCaseId &&
+      candidate.routePass === pass,
+  ) ?? demo.recordIdentities.find(
+    (candidate) => candidate.routeSourceCaseId === sourceCaseId,
+  );
+  if (!record) return null;
+  const active = deriveIndependentDemoBinding(
+    cases,
+    demo,
+    record,
+    pass,
+    authorityGaps,
+  );
+  const initial = pass === "initial"
+    ? active
+    : deriveIndependentDemoBinding(
+        cases,
+        demo,
+        record,
+        "initial",
+        authorityGaps,
+      );
+  return active && initial ? { active, initial } : null;
+}
+
+function rawEventInstant(event: Record<string, unknown>): number | null {
+  if (!isNonEmptyString(event.recordedAt)) return null;
+  const parsed = Date.parse(event.recordedAt);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === event.recordedAt
+    ? parsed
+    : null;
+}
+
+function rawStringMembers(value: unknown, expected: readonly string[]): boolean {
+  return Array.isArray(value) &&
+    value.every(isNonEmptyString) &&
+    sameMembers(value, expected) &&
+    value.length === expected.length;
+}
+
 function rawActiveDecisionIndex(
   source: Record<string, unknown>,
   pass: "initial" | "revalidated",
@@ -447,31 +501,96 @@ function rawActiveApprovalIndexes(
   );
 }
 
-function rawReservationProof(source: Record<string, unknown>): boolean {
+function rawReservationProof(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+  bindings: RawExecutionBindings | null,
+): boolean {
+  if (!bindings) return false;
   const eligibility = isObj(source.expectedExecutionEligibility)
     ? source.expectedExecutionEligibility
     : null;
   const reservations = eligibility && Array.isArray(eligibility.reservations)
     ? eligibility.reservations.filter(isObj)
     : [];
-  const created = rawEventIndexes(source, "ReservationCreated").at(-1) ?? -1;
-  const execution = rawEventIndexes(source, "ExecutionStarted")[0] ?? Number.MAX_SAFE_INTEGER;
-  const released = rawEventIndexes(source, "ReservationReleased").some(
-    (index) => index > created && index < execution,
+  const events = rawRows(source, "expectedLedgerEvents");
+  const startCandidates = events.filter(
+    (event) =>
+      event.type === "ExecutionStarted" &&
+      (event.lifecyclePass === pass || event.lifecyclePass == null),
   );
+  const starts = startCandidates.filter(
+    (event) =>
+      event.lifecyclePass === pass &&
+      rawEventInstant(event) !== null &&
+      event.decisionHash === bindings.active.decisionHash &&
+      event.inputBundleHash === bindings.active.bundleHash,
+  );
+  const start = startCandidates.length === 1 && starts.length === 1
+    ? starts[0]!
+    : null;
+  const startAt = start ? rawEventInstant(start) : null;
+  const reservationIds = reservations.flatMap((reservation) =>
+    isNonEmptyString(reservation.reservationId) ? [reservation.reservationId] : [],
+  );
+  const startBound = start !== null &&
+    startAt !== null &&
+    start.decisionHash === bindings.active.decisionHash &&
+    start.inputBundleHash === bindings.active.bundleHash &&
+    start.idempotencyKey === eligibility?.idempotencyKey &&
+    rawStringMembers(start.reservationIds, reservationIds);
   return reservations.length > 0 &&
     reservations.every((reservation) => {
       const keys = Array.isArray(reservation.conflictKeys)
         ? reservation.conflictKeys.filter(isNonEmptyString)
         : [];
+      const ttl = typeof reservation.expiresAfter === "string"
+        ? rawDurationMilliseconds(reservation.expiresAfter)
+        : null;
+      const candidates = events.filter(
+        (event) =>
+          event.type === "ReservationCreated" &&
+          (event.lifecyclePass === pass || event.lifecyclePass == null) &&
+          (event.reservationId === reservation.reservationId || event.reservationId == null),
+      );
+      const exact = candidates.filter(
+        (event) =>
+          event.lifecyclePass === pass &&
+          event.reservationId === reservation.reservationId,
+      );
+      const created = candidates.length === 1 && exact.length === 1
+        ? exact[0]!
+        : null;
+      const createdAt = created ? rawEventInstant(created) : null;
+      const expectedExpiry = createdAt !== null && ttl !== null
+        ? new Date(createdAt + ttl).toISOString()
+        : null;
+      const releasedBeforeStart = events.some((event) => {
+        const releasedAt = rawEventInstant(event);
+        return event.type === "ReservationReleased" &&
+          event.lifecyclePass === pass &&
+          event.reservationId === reservation.reservationId &&
+          releasedAt !== null &&
+          createdAt !== null &&
+          startAt !== null &&
+          releasedAt > createdAt &&
+          releasedAt < startAt;
+      });
       return isNonEmptyString(reservation.reservationId) &&
         keys.length > 0 &&
-        typeof reservation.expiresAfter === "string" &&
-        rawDurationMilliseconds(reservation.expiresAfter) !== null;
+        ttl !== null &&
+        created !== null &&
+        createdAt !== null &&
+        created.decisionHash === bindings.active.decisionHash &&
+        created.inputBundleHash === bindings.active.bundleHash &&
+        rawStringMembers(created.conflictKeys, keys) &&
+        created.reservationExpiresAt === expectedExpiry &&
+        startAt !== null &&
+        createdAt <= startAt &&
+        startAt <= Date.parse(expectedExpiry ?? "") &&
+        !releasedBeforeStart;
     }) &&
-    created >= 0 &&
-    created < execution &&
-    !released;
+    startBound;
 }
 
 function rawDurationMilliseconds(value: string): number | null {
@@ -485,7 +604,9 @@ function rawDurationMilliseconds(value: string): number | null {
 function rawApprovalProof(
   source: Record<string, unknown>,
   pass: "initial" | "revalidated",
+  bindings: RawExecutionBindings | null,
 ): boolean {
+  if (!bindings) return false;
   if (
     rawRows(source, "expectedLedgerEvents").some(
       (event) => event.type === "ApprovalStageExpired",
@@ -497,19 +618,43 @@ function rawApprovalProof(
   const stages = authority && Array.isArray(authority.stages)
     ? authority.stages.filter(isObj)
     : [];
-  if (stages.length === 0) return authority?.mode === "automatic";
+  const events = rawRows(source, "expectedLedgerEvents");
+  const decisionCandidates = events.filter(
+    (event) =>
+      event.type === "DecisionRecorded" &&
+      (event.lifecyclePass === pass || event.lifecyclePass == null),
+  );
+  const decisions = decisionCandidates.filter(
+    (event) =>
+      event.lifecyclePass === pass &&
+      event.decisionHash === bindings.active.decisionHash &&
+      event.inputBundleHash === bindings.active.bundleHash &&
+      rawEventInstant(event) !== null,
+  );
+  const decisionAt = decisions.length === 1 ? rawEventInstant(decisions[0]!) : null;
+  if (stages.length === 0) {
+    return authority?.mode === "automatic" &&
+      decisionCandidates.length === 1 &&
+      decisionAt !== null;
+  }
   const decision = rawActiveDecisionIndex(source, pass);
   const approvals = rawActiveApprovalIndexes(source, pass);
-  const reservation = rawEventIndexes(source, "ReservationCreated").at(-1) ?? -1;
   const required = stages.reduce(
     (count, stage) =>
       count + (Number.isSafeInteger(stage.approvalsRequired) ? Number(stage.approvalsRequired) : 0),
     0,
   );
-  return decision >= 0 &&
+  const approvalCandidates = events.filter(
+    (event) =>
+      event.type === "ApprovalRecorded" &&
+      (event.lifecyclePass === pass || event.lifecyclePass == null),
+  );
+  return decisionCandidates.length === 1 &&
+    decisions.length === 1 &&
+    decision >= 0 &&
     required > 0 &&
     approvals.length === required &&
-    approvals.every((index) => index > decision && index < reservation) &&
+    approvalCandidates.length === required &&
     stages.every((stage) => {
       const stageApprovals = rawRows(source, "expectedLedgerEvents").filter(
         (event) =>
@@ -522,7 +667,12 @@ function rawApprovalProof(
         Number(stage.approvalsRequired) > 0 &&
         stageApprovals.length === stage.approvalsRequired &&
         stageApprovals.every((approval) =>
-          rawApprovalBindingComplete(approval, stage),
+          rawApprovalBindingComplete(approval, stage) &&
+          approval.decisionHash === bindings.active.decisionHash &&
+          approval.inputBundleHash === bindings.active.bundleHash &&
+          rawEventInstant(approval) !== null &&
+          decisionAt !== null &&
+          rawEventInstant(approval)! > decisionAt,
         ) &&
         (stage.distinctActorsRequired !== true ||
           new Set(stageApprovals.map((approval) => approval.actorId)).size ===
@@ -567,41 +717,70 @@ function rawCompletedApprovalBindings(
   );
 }
 
+function rawAuthorityPlanSatisfied(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+): boolean {
+  const authority = isObj(source.expectedAuthority) ? source.expectedAuthority : null;
+  const stages = authority && Array.isArray(authority.stages)
+    ? authority.stages.filter(isObj)
+    : [];
+  if (rawRows(source, "expectedLedgerEvents").some(
+    (event) => event.type === "ApprovalStageExpired" &&
+      (event.lifecyclePass === pass || event.lifecyclePass == null),
+  )) return false;
+  if (stages.length === 0) return authority?.mode === "automatic";
+  const completed = rawCompletedApprovalBindings(source, pass);
+  return stages.every((stage) => {
+    const stageEvents = completed.filter((event) => event.stageId === stage.stageId);
+    const required = Number(stage.approvalsRequired);
+    return Number.isSafeInteger(required) &&
+      required > 0 &&
+      stageEvents.length === required &&
+      (stage.distinctActorsRequired !== true ||
+        new Set(stageEvents.map((event) => event.actorId)).size === required);
+  });
+}
+
 function rawEvidenceProof(
   source: Record<string, unknown>,
   pass: "initial" | "revalidated",
   required: string[],
+  bindings: RawExecutionBindings | null,
 ): boolean {
-  if (required.length === 0) return false;
-  const phase = pass === "revalidated"
-    ? "pre-execution-revalidation"
-    : "initial-decision";
+  if (required.length === 0 || !bindings) return false;
+  const phase = "pre-execution-revalidation";
   const evidence = rawRows(source, "householdEvidence").filter(
     (entry) =>
-      entry.liquidityPhase === null ||
-      entry.liquidityPhase === undefined ||
-      entry.liquidityPhase === phase,
+      entry.liquidityPhase === phase &&
+      entry.freshness === "fresh" &&
+      isNonEmptyString(entry.snapshotId),
   );
-  if (!required.every((ref) =>
-    evidence.some((entry) => entry.subjectRef === ref && entry.freshness === "fresh"))) {
+  if (!required.every((ref) => evidence.some((entry) => entry.subjectRef === ref))) {
     return false;
   }
-  const snapshots = rawEventIndexes(source, "EvidenceSnapshotRecorded");
-  const decision = rawActiveDecisionIndex(source, pass);
-  const finalAuthority = rawActiveApprovalIndexes(source, pass).at(-1) ?? decision;
-  const reservation = rawEventIndexes(source, "ReservationCreated").at(-1) ?? Number.MAX_SAFE_INTEGER;
-  const invalidated = rawEventIndexes(source, "ApprovalInvalidated").at(-1) ?? -1;
-  const originalApproval = rawRows(source, "expectedLedgerEvents").flatMap(
-    (event, index) =>
-      event.type === "ApprovalRecorded" && event.lifecyclePass === "initial"
-        ? [index]
-        : [],
-  ).at(-1) ?? -1;
-  return pass === "revalidated"
-    ? snapshots.some(
-        (index) => index > originalApproval && index < invalidated && invalidated < decision,
-      )
-    : snapshots.some((index) => index > finalAuthority && index < reservation);
+  const selected = evidence.filter((entry) => required.includes(String(entry.subjectRef)));
+  const ids = selected.map((entry) => String(entry.snapshotId));
+  if (new Set(ids).size !== ids.length) return false;
+  const snapshotCandidates = rawRows(source, "expectedLedgerEvents").filter(
+    (event) =>
+      event.type === "EvidenceSnapshotRecorded" &&
+      (event.lifecyclePass === pass || event.lifecyclePass == null) &&
+      (event.evidencePhase === phase || event.evidencePhase == null),
+  );
+  const snapshots = snapshotCandidates.filter(
+    (event) =>
+      event.lifecyclePass === pass &&
+      event.evidencePhase === phase &&
+      event.decisionHash === bindings.active.decisionHash &&
+      event.inputBundleHash === bindings.active.bundleHash &&
+      rawStringMembers(event.evidenceSnapshotIds, ids) &&
+      rawEventInstant(event) !== null &&
+      selected.every(
+        (entry) => Date.parse(String(entry.retrievedAt)) <= rawEventInstant(event)!,
+      ),
+  );
+  return snapshotCandidates.length === 1 && snapshots.length === 1;
 }
 
 function rawVerifiedBankEvidence(entry: Record<string, unknown>): boolean {
@@ -617,6 +796,7 @@ function rawPreconditionHolds(
   source: Record<string, unknown>,
   pass: "initial" | "revalidated",
   precondition: Record<string, unknown>,
+  bindings: RawExecutionBindings | null,
 ): boolean {
   if (precondition.mustStillHoldAtExecution !== true) return true;
   const required = Array.isArray(precondition.requiredEvidence)
@@ -624,41 +804,38 @@ function rawPreconditionHolds(
     : [];
   switch (precondition.code) {
     case "material-evidence-fresh-at-execution":
-      return rawEvidenceProof(source, pass, required);
+      return rawEvidenceProof(source, pass, required, bindings);
     case "approval-bound-to-decision-hash": {
-      const events = rawRows(source, "expectedLedgerEvents");
-      const decision = events[rawActiveDecisionIndex(source, pass)];
-      const approvals = rawActiveApprovalIndexes(source, pass).map((index) => events[index]);
       return required.length === 0 &&
-        rawApprovalProof(source, pass) &&
-        typeof decision?.note === "string" &&
-        /input-bundle hash/i.test(decision.note) &&
-        approvals.some((event) => typeof event?.note === "string" && /decision hash/i.test(event.note));
+        rawApprovalProof(source, pass, bindings);
     }
     case "reservation-still-held":
-      return required.length === 0 && rawReservationProof(source);
+      return required.length === 0 && rawReservationProof(source, pass, bindings);
     case "bank-instruction-independently-verified":
       return required.length > 0 && required.every((ref) =>
         rawRows(source, "householdEvidence").some(
           (entry) => entry.subjectRef === ref && rawVerifiedBankEvidence(entry),
         ));
     case "input-bundle-hash-unchanged-since-approval": {
-      const events = rawRows(source, "expectedLedgerEvents");
-      const invalidated = rawEventIndexes(source, "ApprovalInvalidated").at(-1) ?? -1;
-      const decision = rawActiveDecisionIndex(source, pass);
-      const approvals = rawActiveApprovalIndexes(source, pass);
-      const reservation = rawEventIndexes(source, "ReservationCreated").at(-1) ?? -1;
-      const invalidationNote = events[invalidated]?.note;
+      if (!bindings) return false;
+      const invalidationCandidates = rawRows(source, "expectedLedgerEvents").filter(
+        (event) => event.type === "ApprovalInvalidated",
+      );
+      const invalidations = invalidationCandidates.filter(
+        (event) =>
+          rawEventInstant(event) !== null &&
+          event.priorDecisionHash === bindings.initial.decisionHash &&
+          event.priorInputBundleHash === bindings.initial.bundleHash &&
+          event.replacementDecisionHash === bindings.active.decisionHash &&
+          event.replacementInputBundleHash === bindings.active.bundleHash,
+      );
       return pass === "revalidated" &&
-        rawEvidenceProof(source, pass, required) &&
-        rawApprovalProof(source, pass) &&
-        invalidated >= 0 &&
-        decision > invalidated &&
-        approvals.length > 0 &&
-        approvals.every((index) => index > decision && index < reservation) &&
-        typeof invalidationNote === "string" &&
-        /prior decision hash/i.test(invalidationNote) &&
-        /new bundle hash/i.test(invalidationNote);
+        rawEvidenceProof(source, pass, required, bindings) &&
+        rawApprovalProof(source, pass, bindings) &&
+        invalidationCandidates.length === 1 &&
+        invalidations.length === 1 &&
+        bindings.initial.decisionHash !== bindings.active.decisionHash &&
+        bindings.initial.bundleHash !== bindings.active.bundleHash;
     }
     default:
       return false;
@@ -668,6 +845,7 @@ function rawPreconditionHolds(
 function rawExecutionEligibilityProof(
   source: Record<string, unknown>,
   pass: "initial" | "revalidated",
+  bindings: RawExecutionBindings | null,
 ): boolean {
   const eligibility = isObj(source.expectedExecutionEligibility)
     ? source.expectedExecutionEligibility
@@ -676,9 +854,113 @@ function rawExecutionEligibilityProof(
     ? eligibility.preconditions.filter(isObj)
     : [];
   return eligibility?.eligible === true &&
-    rawReservationProof(source) &&
-    rawApprovalProof(source, pass) &&
-    preconditions.every((precondition) => rawPreconditionHolds(source, pass, precondition));
+    rawReservationProof(source, pass, bindings) &&
+    rawApprovalProof(source, pass, bindings) &&
+    preconditions.every((precondition) => rawPreconditionHolds(source, pass, precondition, bindings));
+}
+
+function rawExecutionProofGaps(
+  source: Record<string, unknown>,
+  pass: "initial" | "revalidated",
+  bindings: RawExecutionBindings | null,
+): string[] {
+  if (!bindings) return ["independent decision and input-bundle hashes"];
+  const events = rawRows(source, "expectedLedgerEvents");
+  const eligibility = isObj(source.expectedExecutionEligibility)
+    ? source.expectedExecutionEligibility
+    : null;
+  const reservations = eligibility && Array.isArray(eligibility.reservations)
+    ? eligibility.reservations.filter(isObj)
+    : [];
+  const gaps: string[] = [];
+  const field = (
+    event: Record<string, unknown>,
+    index: number,
+    name: string,
+    valid: boolean,
+  ) => {
+    if (!valid) {
+      gaps.push(`expectedLedgerEvents[${index}] ${String(event.type)} lacks exact structured ${name}`);
+    }
+  };
+  events.forEach((event, index) => {
+    if (event.type === "DecisionRecorded" && (event.lifecyclePass === pass || event.lifecyclePass == null)) {
+      field(event, index, `lifecyclePass=${pass}`, event.lifecyclePass === pass);
+      field(event, index, "recordedAt", rawEventInstant(event) !== null);
+      field(event, index, "decisionHash", event.decisionHash === bindings.active.decisionHash);
+      field(event, index, "inputBundleHash", event.inputBundleHash === bindings.active.bundleHash);
+    }
+    if (event.type === "ApprovalRecorded" && event.lifecyclePass === pass) {
+      field(event, index, "actorId", isNonEmptyString(event.actorId));
+      field(event, index, "roleId", isNonEmptyString(event.roleId));
+      field(event, index, "requesterId", isNonEmptyString(event.requesterId));
+      field(event, index, "recordedAt", rawEventInstant(event) !== null);
+      field(event, index, "decisionHash", event.decisionHash === bindings.active.decisionHash);
+      field(event, index, "inputBundleHash", event.inputBundleHash === bindings.active.bundleHash);
+    }
+    if (event.type === "EvidenceSnapshotRecorded" && (event.lifecyclePass === pass || event.lifecyclePass == null)) {
+      field(event, index, `lifecyclePass=${pass}`, event.lifecyclePass === pass);
+      field(event, index, "evidencePhase=pre-execution-revalidation", event.evidencePhase === "pre-execution-revalidation");
+      field(event, index, "recordedAt", rawEventInstant(event) !== null);
+      field(event, index, "evidenceSnapshotIds", Array.isArray(event.evidenceSnapshotIds) && event.evidenceSnapshotIds.length > 0);
+      field(event, index, "decisionHash", event.decisionHash === bindings.active.decisionHash);
+      field(event, index, "inputBundleHash", event.inputBundleHash === bindings.active.bundleHash);
+    }
+    if (event.type === "ReservationCreated" && (event.lifecyclePass === pass || event.lifecyclePass == null)) {
+      const reservation = reservations.find(
+        (candidate) => candidate.reservationId === event.reservationId,
+      );
+      const recordedAt = rawEventInstant(event);
+      const ttl = reservation && typeof reservation.expiresAfter === "string"
+        ? rawDurationMilliseconds(reservation.expiresAfter)
+        : null;
+      const expiry = recordedAt !== null && ttl !== null
+        ? new Date(recordedAt + ttl).toISOString()
+        : null;
+      field(event, index, `lifecyclePass=${pass}`, event.lifecyclePass === pass);
+      field(event, index, "recordedAt", recordedAt !== null);
+      field(event, index, "decisionHash", event.decisionHash === bindings.active.decisionHash);
+      field(event, index, "inputBundleHash", event.inputBundleHash === bindings.active.bundleHash);
+      field(event, index, "reservationId", reservation !== undefined);
+      field(event, index, "conflictKeys", Boolean(reservation) && rawStringMembers(event.conflictKeys, Array.isArray(reservation?.conflictKeys) ? reservation.conflictKeys.filter(isNonEmptyString) : []));
+      field(event, index, "reservationExpiresAt", expiry !== null && event.reservationExpiresAt === expiry);
+    }
+    if (event.type === "ExecutionStarted" && (event.lifecyclePass === pass || event.lifecyclePass == null)) {
+      field(event, index, `lifecyclePass=${pass}`, event.lifecyclePass === pass);
+      field(event, index, "recordedAt", rawEventInstant(event) !== null);
+      field(event, index, "decisionHash", event.decisionHash === bindings.active.decisionHash);
+      field(event, index, "inputBundleHash", event.inputBundleHash === bindings.active.bundleHash);
+      field(event, index, "idempotencyKey", event.idempotencyKey === eligibility?.idempotencyKey);
+      field(event, index, "reservationIds", rawStringMembers(event.reservationIds, reservations.flatMap((reservation) => isNonEmptyString(reservation.reservationId) ? [reservation.reservationId] : [])));
+    }
+    if (event.type === "ApprovalInvalidated") {
+      field(event, index, "recordedAt", rawEventInstant(event) !== null);
+      field(event, index, "priorDecisionHash", event.priorDecisionHash === bindings.initial.decisionHash);
+      field(event, index, "priorInputBundleHash", event.priorInputBundleHash === bindings.initial.bundleHash);
+      field(event, index, "replacementDecisionHash", event.replacementDecisionHash === bindings.active.decisionHash);
+      field(event, index, "replacementInputBundleHash", event.replacementInputBundleHash === bindings.active.bundleHash);
+    }
+  });
+  const requiredEvidence = eligibility && Array.isArray(eligibility.preconditions)
+    ? eligibility.preconditions.filter(isObj).flatMap((precondition) =>
+        precondition.mustStillHoldAtExecution === true && Array.isArray(precondition.requiredEvidence)
+          ? precondition.requiredEvidence.filter(isNonEmptyString)
+          : [],
+      )
+    : [];
+  for (const subjectRef of new Set(requiredEvidence)) {
+    const bound = rawRows(source, "householdEvidence").some(
+      (entry) =>
+        entry.subjectRef === subjectRef &&
+        entry.liquidityPhase === "pre-execution-revalidation" &&
+        entry.freshness === "fresh" &&
+        isNonEmptyString(entry.snapshotId),
+    );
+    if (!bound) {
+      gaps.push(`${subjectRef} has no fresh pre-execution evidence row with a structured snapshotId`);
+    }
+  }
+  return [...new Set(gaps)];
 }
 
 function comparisonEvidenceRows(
@@ -2244,8 +2526,15 @@ function validateSourceTimelines(
     const executionPass = expectedLedgerTypes.includes("ApprovalInvalidated")
       ? "revalidated"
       : "initial";
+    const executionBindings = independentExecutionBindings(
+      cases,
+      demo,
+      sourceId,
+      executionPass,
+      authorityGaps,
+    );
     const executionProofComplete = source
-      ? rawExecutionEligibilityProof(source, executionPass)
+      ? rawExecutionEligibilityProof(source, executionPass, executionBindings)
       : false;
     const eventKinds = timeline.events.map(({ kind }) => kind);
     if (eligibility === true) {
@@ -3004,12 +3293,30 @@ export function validateGoldenDemoSemantics(
         (event) => isObj(event) && event.type === "ApprovalInvalidated",
       );
     const executionPass = hasDerivedPass ? "revalidated" : "initial";
+    const executionBindings = independentExecutionBindings(
+      cases,
+      demo,
+      guard.sourceCaseId,
+      executionPass,
+      authorityGaps,
+    );
     const unmetMustHold = expectedPreconditions.find((precondition) => {
-      return !rawPreconditionHolds(source, executionPass, precondition);
+      return !rawPreconditionHolds(
+        source,
+        executionPass,
+        precondition,
+        executionBindings,
+      );
     });
     const executionProofComplete = rawExecutionEligibilityProof(
       source,
       executionPass,
+      executionBindings,
+    );
+    const structuredGaps = rawExecutionProofGaps(
+      source,
+      executionPass,
+      executionBindings,
     );
     const reservationTtls = expectedReservations.flatMap((reservation) =>
       typeof reservation.expiresAfter === "string"
@@ -3040,6 +3347,25 @@ export function validateGoldenDemoSemantics(
         `${guard.sourceCaseId}: unresolved execution proof ${String(unmetMustHold?.code ?? "authority-or-reservation")} must expose no execution eligibility, reservation, execution, or verification state`,
       );
     }
+    if (!executionProofComplete && expected?.eligible === true) {
+      const unreported = structuredGaps.find((gap) => {
+        const [event, field] = gap.split(" lacks exact structured ");
+        if (field === undefined) {
+          const subject = gap.split(" has no ")[0]!;
+          return !guard.stopNote?.includes(subject) ||
+            !guard.stopNote.includes("structured snapshotId");
+        }
+        return !guard.stopNote?.includes(event!) || !guard.stopNote.includes(field);
+      });
+      if (
+        !guard.stopNote?.includes("Execution is withheld pending captain-signed structured event bindings.") ||
+        unreported
+      ) {
+        problems.push(
+          `${guard.sourceCaseId}: withheld execution must report each missing signed structured event binding; unreported ${unreported ?? "withholding statement"}`,
+        );
+      }
+    }
     const signedAuthority = isObj(source.expectedAuthority)
       ? source.expectedAuthority
       : null;
@@ -3057,7 +3383,7 @@ export function validateGoldenDemoSemantics(
       );
     if (
       signedStages.length > 0 &&
-      !rawApprovalProof(source, executionPass) &&
+      !rawApprovalProof(source, executionPass, executionBindings) &&
       !strongerWithheldReason &&
       (!guard.stopNote?.startsWith("This journey stopped at Authority:") ||
         !guard.stopNote.includes(
@@ -3272,21 +3598,41 @@ export function validateGoldenDemoSemantics(
   const delayedNigo = demo.executionGuards.find(
     (guard) => guard.sourceCaseId === "GC-14-delayed-nigo",
   );
+  const gc14 = caseData(cases, "GC-14-delayed-nigo");
+  const gc14ExecutionProof = gc14
+    ? rawExecutionEligibilityProof(
+        gc14,
+        "initial",
+        independentExecutionBindings(
+          cases,
+          demo,
+          "GC-14-delayed-nigo",
+          "initial",
+          authorityGaps,
+        ),
+      )
+    : false;
   if (
-    delayedNigo?.polling?.state !== "stopped" ||
-    delayedNigo.exceptionDecision?.eventType !==
-      "ExceptionDecisionRequested" ||
-    delayedNigo.exceptionDecision.reason !== "delayed-nigo" ||
-    delayedNigo.exceptionDecision.triggeringLedgerEvent !== "StatusObserved" ||
-    !delayedNigo.verificationProves.some((proof) =>
-      proof.display.includes("signature date predates form version"),
-    ) ||
-    delayedNigo.verificationNotProvenYet.some((claim) =>
-      claim.includes("will not be returned"),
-    )
+    gc14ExecutionProof
+      ? delayedNigo?.polling?.state !== "stopped" ||
+        delayedNigo.exceptionDecision?.eventType !== "ExceptionDecisionRequested" ||
+        delayedNigo.exceptionDecision.reason !== "delayed-nigo" ||
+        delayedNigo.exceptionDecision.triggeringLedgerEvent !== "StatusObserved" ||
+        !delayedNigo.verificationProves.some((proof) =>
+          proof.display.includes("signature date predates form version"),
+        ) ||
+        delayedNigo.verificationNotProvenYet.some((claim) =>
+          claim.includes("will not be returned"),
+        )
+      : delayedNigo?.polling !== null ||
+        delayedNigo.exceptionDecision !== null ||
+        delayedNigo.verificationProves.length > 0 ||
+        delayedNigo.verificationNotProvenYet.length > 0 ||
+        delayedNigo.executionRows.length > 0 ||
+        delayedNigo.verificationState !== null
   ) {
     problems.push(
-      "GC-14 must render observed NIGO with the exact custodian reason, stop polling, and open a typed exception decision",
+      "GC-14 must project delayed NIGO only after structured signed execution authority is complete",
     );
   }
 
@@ -3418,7 +3764,7 @@ export function validateGoldenDemoSemantics(
         }
       }
     });
-    const signedApprovalSatisfied = rawApprovalProof(data, plan.pass);
+    const signedApprovalSatisfied = rawAuthorityPlanSatisfied(data, plan.pass);
     if (plan.satisfied !== signedApprovalSatisfied) {
       problems.push(
         `${String(data.caseId)}: rendered authority satisfaction contradicts structured signed actor, role, requester, stage, pass, and quorum bindings`,
@@ -3435,8 +3781,15 @@ export function validateGoldenDemoSemantics(
     cases,
     "GC-10-simultaneous-distributions-first",
   );
+  const gc10Bindings = independentExecutionBindings(
+    cases,
+    demo,
+    "GC-10-simultaneous-distributions-first",
+    "initial",
+    authorityGaps,
+  );
   const expectedGc10Reservations =
-    gc10Source && rawExecutionEligibilityProof(gc10Source, "initial") ? 1 : 0;
+    gc10Source && rawExecutionEligibilityProof(gc10Source, "initial", gc10Bindings) ? 1 : 0;
   if (gc10Reservation.length !== expectedGc10Reservations) {
     problems.push(
       "GC-10 reservation causality must appear exactly when structured signed execution authority is complete",
@@ -3488,11 +3841,18 @@ export function validateGoldenDemoSemantics(
   const gc15FreshApprovalBindings = gc15
     ? rawCompletedApprovalBindings(gc15, "revalidated")
     : [];
+  const gc15Bindings = independentExecutionBindings(
+    cases,
+    demo,
+    "GC-15-approval-invalidation",
+    "revalidated",
+    authorityGaps,
+  );
   const gc15FreshApprovalProof = gc15
-    ? rawApprovalProof(gc15, "revalidated")
+    ? rawAuthorityPlanSatisfied(gc15, "revalidated")
     : false;
   const gc15ExecutionProof = gc15
-    ? rawExecutionEligibilityProof(gc15, "revalidated")
+    ? rawExecutionEligibilityProof(gc15, "revalidated", gc15Bindings)
     : false;
   const downstreamEventTypes = new Set([
     "ReservationCreated",
@@ -3642,7 +4002,17 @@ export function validateGoldenDemoSemantics(
   const exceptionDecision = demo.partialReceipt.exceptionDecision;
   const recordExceptionDecision = demo.partialReceipt.recordExceptionDecision;
   const gc13ExecutionProof = gc13
-    ? rawExecutionEligibilityProof(gc13, "initial")
+    ? rawExecutionEligibilityProof(
+        gc13,
+        "initial",
+        independentExecutionBindings(
+          cases,
+          demo,
+          "GC-13-partial-salesforce-success",
+          "initial",
+          authorityGaps,
+        ),
+      )
     : false;
   const gc13FixtureComplete =
     gc13Explanation.includes("instruction-created") &&

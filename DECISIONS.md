@@ -3900,3 +3900,25 @@ never completed, stale explanations contradict a derived decision, global retent
 ownership, and absent identity must not erase signed chronology.
 **Revert path:** none without preserving the same terminal, tenant-scoped, hash-bound, and
 chronological authority semantics.
+
+### D-127 · 2026-08-05 · captain-decision · Execution authority requires exact signed event payloads
+
+Event order, event notes, and separate fixture metadata no longer prove execution authority. The
+active `DecisionRecorded`, pre-execution `EvidenceSnapshotRecorded`, `ReservationCreated`, and
+`ExecutionStarted` events must carry exact structured lifecycle, timestamp, decision, input-bundle,
+evidence-snapshot, reservation, conflict, expiry, and idempotency bindings. Revalidation also binds
+the exact prior and replacement hashes on `ApprovalInvalidated`. Product reach and the independent
+raw-fixture semantic fence compare those payloads to independently derived expected values.
+
+No signed fixture currently carries the complete payload. Every affected execution path, including
+GC-02's automatic-authority path and the delayed-NIGO path, is therefore withheld without changing
+or re-signing historical outcomes. This supersedes D-125's statement that GC-02 is independently
+executable. Each surfaced stop identifies the exact signed event and missing
+fields. The GC-01 quick start preserves its identity and uses clickable withheld Safety, Execution,
+and Verification stations to continue into Comparison and Policy Authoring. A missing policy-rerun
+result renders financial values unavailable rather than coercing absent authority to zero.
+
+**Why:** positional joins and prose matching allowed unrelated signed facts to be assembled into an
+execution proof that no event payload actually recorded.
+**Revert path:** none until the captain signs structured event payloads that satisfy the same exact,
+independently validated bindings.

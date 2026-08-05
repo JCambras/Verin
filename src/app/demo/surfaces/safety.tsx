@@ -29,9 +29,11 @@ export function SafetySurface({
   routeContext: DemoRouteContext;
 }) {
   if (!vm) {
+    const stoppedAtDecision = stopNote?.startsWith("This journey stopped at Decision:") === true;
     return (
       <SurfaceShell title="Safety before execution" description="Pre-execution revalidation for an in-flight decision.">
-        <NotReached title="Safety check not reached" stopNote={stopNote} backHref={demoHref("decision", routeContext)} />
+        <NotReached title="Safety check not reached" stopNote={stopNote} backHref={demoHref(stoppedAtDecision ? "decision" : "authority", routeContext)} />
+        {!stoppedAtDecision ? <JourneyNav forward={{ href: demoHref("execution", routeContext), label: "Inspect the withheld execution" }} /> : null}
       </SurfaceShell>
     );
   }
@@ -152,7 +154,12 @@ export function SafetySurface({
         <PrimaryLink href={demoHref("execution", routeContext)}>Execute the movement</PrimaryLink>
       ) : null}
 
-      <JourneyNav back={{ href: demoHref("authority", routeContext), label: "Back to authority" }} />
+      <JourneyNav
+        back={{ href: demoHref("authority", routeContext), label: "Back to authority" }}
+        {...(!journeyContinues && !vm.invalidation
+          ? { forward: { href: demoHref("execution", routeContext), label: "Inspect the withheld execution" } }
+          : {})}
+      />
     </SurfaceShell>
   );
 }

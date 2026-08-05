@@ -11,7 +11,10 @@ import {
 } from "@app/demo/data";
 import { compareComparisonEvidence } from "@app/demo/comparison-evidence";
 import { auditPositionFor } from "@app/demo/audit-position";
-import { policyRerunDecisionBindingFor } from "@app/demo/decision-bindings";
+import {
+  decisionBindingFor,
+  policyRerunDecisionBindingFor,
+} from "@app/demo/decision-bindings";
 import {
   executionEligibilityProof,
   isVerifiedPostReviewBankEvidence,
@@ -349,21 +352,125 @@ describe("demo truth boundaries", () => {
     const firm = firmById("firm-a");
     const source = sourceCaseFor(scenario, firm.id)!;
     expect(executionEligibilityProof(scenario, firm, source, "initial")).toBe(false);
+    const binding = decisionBindingFor(scenario, firm, "initial");
+    const timeline = timelineFor(scenario, firm);
+    const required = new Set(
+      source.executionEligibility.preconditions.flatMap(
+        ({ requiredEvidence }) => requiredEvidence,
+      ),
+    );
+    const preExecutionEvidence = source.evidence
+      .filter(({ subjectRef }) => required.has(subjectRef))
+      .map((entry, index) => ({
+        ...entry,
+        snapshotId: `snapshot-${index + 1}`,
+        freshness: "fresh" as const,
+        liquidityPhase: "pre-execution-revalidation" as const,
+        retrievedAt: timeline.revalidatedAt,
+      }));
     let approvalIndex = 0;
+    let snapshotIndex = 0;
     const bound = {
       ...source,
+      evidence: [...source.evidence, ...preExecutionEvidence],
       ledgerEvents: source.ledgerEvents.map((event) => {
-        if (event.type !== "ApprovalRecorded") return event;
-        approvalIndex += 1;
-        return {
-          ...event,
-          actorId: `actor-${approvalIndex}`,
-          roleId: "operations",
-          requesterId: "requester-1",
-        };
+        if (event.type === "DecisionRecorded") {
+          return {
+            ...event,
+            lifecyclePass: "initial" as const,
+            recordedAt: timeline.decisionAt,
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+          };
+        }
+        if (event.type === "ApprovalRecorded") {
+          approvalIndex += 1;
+          return {
+            ...event,
+            actorId: `actor-${approvalIndex}`,
+            roleId: "operations",
+            requesterId: "requester-1",
+            recordedAt: approvalIndex === 1
+              ? timeline.approvalOneAt
+              : timeline.approvalTwoAt,
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+          };
+        }
+        if (event.type === "EvidenceSnapshotRecorded") {
+          snapshotIndex += 1;
+          return snapshotIndex === 1
+            ? {
+                ...event,
+                lifecyclePass: "initial" as const,
+                evidencePhase: "initial-decision" as const,
+                recordedAt: timeline.initialEvidenceSnapshotAt,
+              }
+            : {
+                ...event,
+                lifecyclePass: "initial" as const,
+                evidencePhase: "pre-execution-revalidation" as const,
+                recordedAt: timeline.revalidatedAt,
+                evidenceSnapshotIds: preExecutionEvidence.map(({ snapshotId }) => snapshotId),
+                decisionHash: binding.decisionHash,
+                inputBundleHash: binding.bundleHash,
+              };
+        }
+        if (event.type === "ReservationCreated") {
+          return {
+            ...event,
+            lifecyclePass: "initial" as const,
+            recordedAt: timeline.reservationAt,
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+            reservationId: source.executionEligibility.reservations[0]!.reservationId,
+            conflictKeys: source.executionEligibility.reservations[0]!.conflictKeys,
+            reservationExpiresAt: new Date(
+              Date.parse(timeline.reservationAt) + 30 * 60 * 1_000,
+            ).toISOString(),
+          };
+        }
+        if (event.type === "ExecutionStarted") {
+          return {
+            ...event,
+            lifecyclePass: "initial" as const,
+            recordedAt: timeline.executionAt,
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+            idempotencyKey: source.executionEligibility.idempotencyKey!,
+            reservationIds: source.executionEligibility.reservations.map(
+              ({ reservationId }) => reservationId,
+            ),
+          };
+        }
+        return event;
       }),
     };
     expect(executionEligibilityProof(scenario, firm, bound, "initial")).toBe(true);
+
+    const ambiguousDecision = {
+      ...bound,
+      ledgerEvents: [
+        ...bound.ledgerEvents,
+        {
+          type: "DecisionRecorded",
+          note: "Additional unbound decision event.",
+          stageId: null,
+          lifecyclePass: null,
+          actorId: null,
+          roleId: null,
+          requesterId: null,
+        },
+      ],
+    };
+    expect(
+      executionEligibilityProof(
+        scenario,
+        firm,
+        ambiguousDecision,
+        "initial",
+      ),
+    ).toBe(false);
 
     const stale = {
       ...bound,
@@ -375,13 +482,25 @@ describe("demo truth boundaries", () => {
     };
     expect(executionEligibilityProof(scenario, firm, stale, "initial")).toBe(false);
 
-    const unbound = {
+    const missingApproval = {
       ...bound,
       ledgerEvents: bound.ledgerEvents.filter(
         ({ type }) => type !== "ApprovalRecorded",
       ),
     };
-    expect(executionEligibilityProof(scenario, firm, unbound, "initial")).toBe(false);
+    expect(executionEligibilityProof(scenario, firm, missingApproval, "initial")).toBe(false);
+
+    for (const key of ["decisionHash", "inputBundleHash"] as const) {
+      const unbound = {
+        ...bound,
+        ledgerEvents: bound.ledgerEvents.map((event) =>
+          event.type === "DecisionRecorded"
+            ? { ...event, [key]: "0".repeat(64) }
+            : event,
+        ),
+      };
+      expect(executionEligibilityProof(scenario, firm, unbound, "initial")).toBe(false);
+    }
 
     for (const key of ["actorId", "roleId", "requesterId"] as const) {
       const missingBinding = {
@@ -456,10 +575,14 @@ describe("demo truth boundaries", () => {
           type: "ReservationReleased",
           note: "Reservation released before execution.",
           stageId: null,
-          lifecyclePass: null,
+          lifecyclePass: "initial" as const,
           actorId: null,
           roleId: null,
           requesterId: null,
+          recordedAt: new Date(
+            Date.parse(timeline.executionAt) - 1_000,
+          ).toISOString(),
+          reservationId: source.executionEligibility.reservations[0]!.reservationId,
         },
         ...bound.ledgerEvents.slice(executionIndex),
       ],
@@ -505,13 +628,13 @@ describe("demo truth boundaries", () => {
     })).toBe(true);
   });
 
-  it("binds verification proofs to causal events", () => {
-    const submitted = getJourney(
+  it("withholds verification until causal events carry structured bindings", () => {
+    const automatic = getJourney(
       "safe-proceed",
       "firm-b",
       "initial",
       "GC-02-firm-b-happy-path",
-    ).verification?.proves[0];
+    ).verification;
     const unsignedStaged = getJourney(
       "safe-proceed",
       "firm-a",
@@ -523,25 +646,11 @@ describe("demo truth boundaries", () => {
       "firm-b",
       "initial",
       "GC-14-delayed-nigo",
-    ).verification?.proves;
+    ).verification;
 
-    expect(submitted?.ledgerEvent).toBe("ExecutionSucceeded");
-    expect(submitted?.provenance.asOf).toBe(
-      "2026-07-26T13:59:10.000Z",
-    );
+    expect(automatic).toBeNull();
     expect(unsignedStaged).toBeNull();
-    expect(nigo?.[0]).toMatchObject({
-      ledgerEvent: "ExecutionSucceeded",
-      provenance: {
-        asOf: "2026-07-26T21:44:10.000Z",
-      },
-    });
-    expect(nigo?.[1]).toMatchObject({
-      ledgerEvent: "StatusObserved",
-      provenance: {
-        asOf: "2026-07-28T21:44:00.000Z",
-      },
-    });
+    expect(nigo).toBeNull();
   });
 
   it("binds an activated policy rerun to its recomputed outcome", () => {
@@ -751,6 +860,17 @@ describe("demo truth boundaries", () => {
   });
 
   it("withholds policy approval until exact-case simulation is computed", () => {
+    const staleSimulation = getJourney(
+      "stale-evidence",
+      "firm-a",
+      "initial",
+      "GC-09-stale-evidence",
+    ).policyAuthoring.simulationDelta;
+    expect(staleSimulation[0]).toMatchObject({
+      label: "Smith household reserve floor",
+      after: { display: "Not simulated without signed numeric authority" },
+    });
+    expect(staleSimulation[0]?.after).not.toHaveProperty("metric");
     expect(
       getJourney(
         "permanent-prohibition",

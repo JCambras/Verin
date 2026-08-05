@@ -17,6 +17,7 @@ import {
 } from "./signed-case-fields";
 import { parseEvidence, parseMoney } from "./signed-case-evidence";
 import { signedAuthorityGapFor } from "./signed-case-gaps";
+import { parseLedgerEvents } from "./signed-case-ledger";
 import { parseVerification } from "./signed-verification";
 
 export * from "./signed-case-types";
@@ -169,7 +170,6 @@ function parseVariant(value: unknown): SignedCaseVariant {
       lifecyclePass: "initial" as const,
     })),
   );
-  let inferredApprovalIndex = 0;
   return {
     caseId: caseId as SignedCaseId,
     scenarioId:
@@ -339,82 +339,13 @@ function parseVariant(value: unknown): SignedCaseVariant {
       `${caseId}.expectedVerificationState`,
       authorityGap?.missingAuthorities.includes("verification-detail") ?? false,
     ),
-    ledgerEvents: asArray(
+    ledgerEvents: parseLedgerEvents(
       fixture.expectedLedgerEvents,
-      `${caseId}.expectedLedgerEvents`,
-    ).map((entry, index) => {
-      const ledger = asRecord(entry, `${caseId}.expectedLedgerEvents[${index}]`);
-      const type = asString(
-        ledger.type,
-        `${caseId}.expectedLedgerEvents[${index}].type`,
-      );
-      const inferred =
-        type === "ApprovalRecorded" &&
-        authorityGap?.missingAuthorities.includes("approval-event-bindings")
-          ? inferredApprovalBindings[inferredApprovalIndex++]
-          : undefined;
-      const stageId =
-        ledger.stageId === undefined
-          ? (inferred?.stageId ?? null)
-          : asString(
-              ledger.stageId,
-              `${caseId}.expectedLedgerEvents[${index}].stageId`,
-            );
-      const lifecyclePass =
-        ledger.lifecyclePass === undefined
-          ? (inferred?.lifecyclePass ?? null)
-          : asString(
-              ledger.lifecyclePass,
-              `${caseId}.expectedLedgerEvents[${index}].lifecyclePass`,
-            );
-      if (
-        lifecyclePass !== null &&
-        lifecyclePass !== "initial" &&
-        lifecyclePass !== "revalidated"
-      ) {
-        throw new TypeError(
-          `${caseId}.expectedLedgerEvents[${index}].lifecyclePass is unsupported`,
-        );
-      }
-      if (
-        type === "ApprovalRecorded" &&
-        (stageId === null || lifecyclePass === null)
-      ) {
-        throw new TypeError(
-          `${caseId}.expectedLedgerEvents[${index}] approval binding is incomplete`,
-        );
-      }
-      return {
-        type,
-        note: asString(
-          ledger.note,
-          `${caseId}.expectedLedgerEvents[${index}].note`,
-        ),
-        stageId,
-        lifecyclePass,
-        actorId:
-          ledger.actorId === undefined
-            ? null
-            : asString(
-                ledger.actorId,
-                `${caseId}.expectedLedgerEvents[${index}].actorId`,
-              ),
-        roleId:
-          ledger.roleId === undefined
-            ? null
-            : asString(
-                ledger.roleId,
-                `${caseId}.expectedLedgerEvents[${index}].roleId`,
-              ),
-        requesterId:
-          ledger.requesterId === undefined
-            ? null
-            : asString(
-                ledger.requesterId,
-                `${caseId}.expectedLedgerEvents[${index}].requesterId`,
-              ),
-      };
-    }),
+      caseId,
+      authorityGap?.missingAuthorities.includes("approval-event-bindings")
+        ? inferredApprovalBindings
+        : [],
+    ),
     explanations: asArray(
       fixture.expectedExplanationNodes,
       `${caseId}.expectedExplanationNodes`,

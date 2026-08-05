@@ -13,7 +13,7 @@ end-to-end journey.
 
 ## How to read this document
 
-The body below is the captain-authored v1 contract, adopted in full. Four recorded directives are
+The body below is the captain-authored v1 contract, adopted in full. Six recorded directives are
 integrated as annotations:
 
 1. **Salesforce deferral (captain ruling, 2026-07-26).** Sandbox access does not yet exist. Every
@@ -62,8 +62,18 @@ integrated as annotations:
    including GC-01 and GC-13, lack the actor, role, and requester bindings. Their signed outcomes remain
    product truth, but execution is withheld pending captain-signed approval evidence. The default quick
    start remains GC-01 with no silent case switch, so its Authority-to-Verification segment is open.
-   GC-02 remains independently executable under its signed automatic authority and is not substituted
-   into the GC-01 run.
+   GC-02 is not substituted into the GC-01 run.
+6. **Structured execution-event authority (captain-recorded Firstmate ruling, 2026-08-05).** Event
+   order, event notes, and separately stored execution metadata do not prove an execution binding.
+   A path is executable only when signed event payloads exactly bind the active lifecycle pass,
+   canonical event instant, decision hash, input-bundle hash, pre-execution evidence snapshot ids,
+   reservation id, conflict keys, reservation expiry, idempotency key, and consumed reservation ids.
+   Revalidation additionally requires exact prior and replacement decision and input-bundle hashes.
+   The current signed fixtures lack these structured payloads, so every affected path, including
+   GC-02, remains withheld pending captain-signed structured event bindings. Historical signed
+   outcomes remain unchanged. The quick start exposes the withheld Safety, Execution, and
+   Verification stations through user-clickable links, then continues to Comparison and Policy
+   Authoring without switching cases.
 
 Canonical observed-status ids: `submitted`, `in-flight`, `completed`, `rejected`, `nigo`, `unknown`.
 
@@ -176,6 +186,14 @@ pending and the journey states that execution is withheld pending captain-signed
 
 Only after structured approval authority is complete, Verin refreshes material evidence, checks
 pending actions, creates reservations, and invalidates approval if facts changed.
+
+Event order and prose are not authority. The refreshed `EvidenceSnapshotRecorded` must carry the
+exact evidence snapshot ids, active hashes, pass, phase, and instant. `ReservationCreated` must carry
+the exact reservation id, conflict keys, expiry, active hashes, pass, and instant.
+`ExecutionStarted` must carry the exact idempotency key, consumed reservation ids, active hashes,
+pass, and instant. When evidence changes, `ApprovalInvalidated` must carry the exact prior and
+replacement decision and input-bundle hashes. Any absent or unequal payload keeps Safety,
+Execution, and Verification explicitly withheld.
 
 For every executable decision, `ReservationCreated` follows the final still-valid
 `ApprovalRecorded` when approval is required, follows pre-execution evidence revalidation, and
@@ -353,6 +371,9 @@ Phase 1 is complete only when:
   evidence (currently open for GC-01 / GC-02);
 - staged execution is supported by captain-signed actor, eligible-role, and requester bindings
   (currently open for GC-01 and the other staged fixtures);
+- execution is supported by captain-signed structured event payloads that exactly bind evidence,
+  decisions, reservations, idempotency, lifecycle pass, and event instants (currently open for all
+  affected fixtures, including GC-02);
 - the natural-language policy path ends in a structured approved version;
 - the complete decision artifact replays byte-identically;
 - a cold reviewer understands the category without a long architecture explanation.

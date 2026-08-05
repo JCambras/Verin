@@ -69,7 +69,8 @@ function stopNoteOf(
   if (scenario.spec.specialistExpired) return "This journey stopped at Authority: the specialist review escalated to the operations manager, then expired unresolved.";
   const sourceCase = sourceCaseFor(scenario, firmId);
   if (sourceCase?.authorityGap?.execution === "withheld") {
-    return `This journey stopped at Safety: ${sourceCase.authorityGap.reason}`;
+    const firm = firmById(firmId);
+    return `This journey stopped at Safety: ${executionReachFor(scenario, firm, pass).reason}`;
   }
   const firm = firmById(firmId);
   const approvals = buildApprovals(scenario, firm, pass);

@@ -41,6 +41,7 @@ export interface SignedMoneyData {
 }
 
 export interface SignedEvidenceData {
+  readonly snapshotId?: string;
   readonly evidenceKind: string;
   readonly subjectRef: string;
   readonly observedAt: string;
@@ -213,6 +214,20 @@ export interface SignedLedgerEventData {
   readonly actorId: string | null;
   readonly roleId: string | null;
   readonly requesterId: string | null;
+  readonly recordedAt?: string;
+  readonly evidencePhase?: "initial-decision" | "pre-execution-revalidation";
+  readonly evidenceSnapshotIds?: readonly string[];
+  readonly decisionHash?: string;
+  readonly inputBundleHash?: string;
+  readonly priorDecisionHash?: string;
+  readonly priorInputBundleHash?: string;
+  readonly replacementDecisionHash?: string;
+  readonly replacementInputBundleHash?: string;
+  readonly reservationId?: string;
+  readonly conflictKeys?: readonly string[];
+  readonly reservationExpiresAt?: string;
+  readonly idempotencyKey?: string;
+  readonly reservationIds?: readonly string[];
 }
 
 export interface SignedExplanationData {

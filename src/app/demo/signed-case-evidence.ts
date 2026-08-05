@@ -90,6 +90,14 @@ export function parseEvidence(
     throw new TypeError(`${path}.displayValue.unit is unsupported`);
   }
   return {
+    ...(evidence.snapshotId === undefined
+      ? {}
+      : {
+          snapshotId: asString(
+            evidence.snapshotId,
+            `${path}.snapshotId`,
+          ),
+        }),
     evidenceKind: asString(evidence.evidenceKind, `${path}.evidenceKind`),
     subjectRef: asString(evidence.subjectRef, `${path}.subjectRef`),
     observedAt: asString(evidence.observedAt, `${path}.observedAt`),

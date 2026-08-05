@@ -19,9 +19,11 @@ export function ExecutionSurface({
   routeContext: DemoRouteContext;
 }) {
   if (!vm) {
+    const stoppedAtDecision = stopNote?.startsWith("This journey stopped at Decision:") === true;
     return (
       <SurfaceShell title="Execution" description="The external instruction timeline for an in-flight decision.">
-        <NotReached title="Execution not reached" stopNote={stopNote} backHref={demoHref("decision", routeContext)} />
+        <NotReached title="Execution not reached" stopNote={stopNote} backHref={demoHref(stoppedAtDecision ? "decision" : "safety", routeContext)} />
+        {!stoppedAtDecision ? <JourneyNav forward={{ href: demoHref("verification", routeContext), label: "Inspect the withheld verification" }} /> : null}
       </SurfaceShell>
     );
   }

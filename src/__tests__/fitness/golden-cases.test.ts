@@ -1725,11 +1725,108 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       guard.verificationReached = true;
       return guard;
     };
+    const bindAutomaticExecution = (
+      cases: LoadedCase[],
+      demo: DemoSemanticSnapshot,
+    ) => {
+      const source = caseById(cases, "GC-02-firm-b-happy-path");
+      const evidence = source.householdEvidence as Array<Record<string, unknown>>;
+      const preconditions = (
+        source.expectedExecutionEligibility as Record<string, unknown>
+      ).preconditions as Array<Record<string, unknown>>;
+      const required = new Set(
+        preconditions.flatMap((precondition) =>
+          Array.isArray(precondition.requiredEvidence)
+            ? precondition.requiredEvidence.filter(
+                (value): value is string => typeof value === "string",
+              )
+            : [],
+        ),
+      );
+      const preExecution = evidence
+        .filter((entry) => required.has(String(entry.subjectRef)))
+        .map((entry, index) => ({
+          ...entry,
+          snapshotId: `signed-snapshot-${index + 1}`,
+          liquidityPhase: "pre-execution-revalidation",
+          freshness: "fresh",
+          retrievedAt: "2026-07-26T20:02:00.000Z",
+        }));
+      evidence.push(...preExecution);
+      const record = demo.recordIdentities.find(
+        (candidate) =>
+          candidate.routeSourceCaseId === "GC-02-firm-b-happy-path" &&
+          candidate.routePass === "initial",
+      )!;
+      const binding = deriveIndependentDemoBinding(
+        cases,
+        demo,
+        record,
+        "initial",
+      )!;
+      const events = source.expectedLedgerEvents as Array<Record<string, unknown>>;
+      let snapshot = 0;
+      for (const event of events) {
+        if (event.type === "DecisionRecorded") {
+          Object.assign(event, {
+            lifecyclePass: "initial",
+            recordedAt: "2026-07-26T20:01:00.000Z",
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+          });
+        }
+        if (event.type === "EvidenceSnapshotRecorded") {
+          snapshot += 1;
+          if (snapshot === 1) {
+            Object.assign(event, {
+              lifecyclePass: "initial",
+              evidencePhase: "initial-decision",
+              recordedAt: "2026-07-26T20:00:00.000Z",
+            });
+          } else {
+            Object.assign(event, {
+              lifecyclePass: "initial",
+              evidencePhase: "pre-execution-revalidation",
+              recordedAt: "2026-07-26T20:02:00.000Z",
+              evidenceSnapshotIds: preExecution.map((entry) => entry.snapshotId),
+              decisionHash: binding.decisionHash,
+              inputBundleHash: binding.bundleHash,
+            });
+          }
+        }
+        if (event.type === "ReservationCreated") {
+          Object.assign(event, {
+            lifecyclePass: "initial",
+            recordedAt: "2026-07-26T20:03:00.000Z",
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+            reservationId: "res:GC-02:liquidity",
+            conflictKeys: ["conflict:smiths-liquidity"],
+            reservationExpiresAt: "2026-07-26T20:33:00.000Z",
+          });
+        }
+        if (event.type === "ExecutionStarted") {
+          Object.assign(event, {
+            lifecyclePass: "initial",
+            recordedAt: "2026-07-26T20:04:00.000Z",
+            decisionHash: binding.decisionHash,
+            inputBundleHash: binding.bundleHash,
+            idempotencyKey: "idem:GC-02:smiths-75000-2026-08-15",
+            reservationIds: ["res:GC-02:liquidity"],
+          });
+        }
+      }
+      const guard = exposeGuard(demo, "GC-02-firm-b-happy-path");
+      guard.reservationAtIso = "2026-07-26T20:03:00.000Z";
+      guard.executionAtIso = "2026-07-26T20:04:00.000Z";
+      return { source, guard };
+    };
     const expectProofFailure = (
       cases: LoadedCase[],
       sourceCaseId: string,
       demo: DemoSemanticSnapshot = demoClone(),
     ) => {
+      exposeGuard(demo, sourceCaseId);
       expect(
         validateGoldenDemoSemantics(cases, realRefs, demo).some(
           (problem) =>
@@ -1828,20 +1925,71 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       ),
     ).toBe(true);
 
+    const complete = clone();
+    const completeDemo = demoClone();
+    bindAutomaticExecution(complete, completeDemo);
+    expect(
+      validateGoldenDemoSemantics(complete, realRefs, completeDemo).some(
+        (problem) =>
+          problem.includes("GC-02-firm-b-happy-path") &&
+          problem.includes("unresolved execution proof"),
+      ),
+    ).toBe(false);
+
+    const expired = clone();
     const expiredDemo = demoClone();
-    const expiredGuard = expiredDemo.executionGuards.find(
-      ({ sourceCaseId }) => sourceCaseId === "GC-02-firm-b-happy-path",
-    )!;
+    const { guard: expiredGuard } = bindAutomaticExecution(
+      expired,
+      expiredDemo,
+    );
     expiredGuard.executionAtIso = new Date(
       Date.parse(expiredGuard.reservationAtIso!) + 31 * 60 * 1_000,
     ).toISOString();
     expect(
-      validateGoldenDemoSemantics(clone(), realRefs, expiredDemo).some(
+      validateGoldenDemoSemantics(expired, realRefs, expiredDemo).some(
         (problem) => problem.includes(
           "reservation is not valid through the rendered execution instant",
         ),
       ),
     ).toBe(true);
+
+    for (const [eventType, field] of [
+      ["DecisionRecorded", "decisionHash"],
+      ["EvidenceSnapshotRecorded", "evidenceSnapshotIds"],
+      ["ReservationCreated", "conflictKeys"],
+      ["ExecutionStarted", "idempotencyKey"],
+    ] as const) {
+      const drifted = clone();
+      const driftedDemo = demoClone();
+      const { source } = bindAutomaticExecution(drifted, driftedDemo);
+      const event = (source.expectedLedgerEvents as Array<Record<string, unknown>>)
+        .filter((candidate) => candidate.type === eventType)
+        .at(-1)!;
+      event[field] = field.endsWith("Ids") || field === "conflictKeys"
+        ? ["wrong-binding"]
+        : "wrong-binding";
+      expectProofFailure(
+        drifted,
+        "GC-02-firm-b-happy-path",
+        driftedDemo,
+      );
+    }
+
+    const ambiguous = clone();
+    const ambiguousDemo = demoClone();
+    const { source: ambiguousSource } = bindAutomaticExecution(
+      ambiguous,
+      ambiguousDemo,
+    );
+    (ambiguousSource.expectedLedgerEvents as Array<Record<string, unknown>>).push({
+      type: "DecisionRecorded",
+      note: "Additional unbound decision event.",
+    });
+    expectProofFailure(
+      ambiguous,
+      "GC-02-firm-b-happy-path",
+      ambiguousDemo,
+    );
 
     const refreshed = clone();
     bindApprovalActors(
@@ -2692,7 +2840,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     expect(
       staleProblems.some((problem) =>
         problem.includes(
-          "GC-14 must render observed NIGO with the exact custodian reason",
+          "GC-14 must project delayed NIGO only after structured signed execution authority is complete",
         ),
       ),
     ).toBe(true);
@@ -2722,15 +2870,18 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       (guard) =>
         guard.sourceCaseId === "GC-14-delayed-nigo",
     )!;
-    gc14Receipt.executionRows[0]!.timestampIso =
-      "2026-07-26T21:14:00.000Z";
+    gc14Receipt.executionReached = true;
+    gc14Receipt.executionRows.push({
+      status: "submitted",
+      timestampIso: "2026-07-26T21:14:00.000Z",
+    });
     expect(
       validateGoldenDemoSemantics(
         clone(),
         realRefs,
         receiptDrift,
       ).some((problem) =>
-        problem.includes("wrong event-specific instant"),
+        problem.includes("unresolved execution proof"),
       ),
     ).toBe(true);
 
@@ -2739,9 +2890,12 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
       (guard) =>
         guard.sourceCaseId === "GC-14-delayed-nigo",
     )!;
-    for (const proof of gc14Proofs.verificationProves) {
-      proof.observedAtIso = "2026-07-28T21:14:00.000Z";
-    }
+    gc14Proofs.verificationReached = true;
+    gc14Proofs.verificationProves.push({
+      display: "Submission accepted by the capability",
+      ledgerEvent: "ExecutionSucceeded",
+      observedAtIso: "2026-07-28T21:14:00.000Z",
+    });
     expect(
       validateGoldenDemoSemantics(
         clone(),
@@ -2749,31 +2903,7 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
         proofDrift,
       ).some((problem) =>
         problem.includes(
-          "verification proof provenance must bind each claim",
-        ),
-      ),
-    ).toBe(true);
-
-    const causalEventDrift = demoClone();
-    const nigoProof = causalEventDrift.executionGuards
-      .find(
-        (guard) =>
-          guard.sourceCaseId === "GC-14-delayed-nigo",
-      )!
-      .verificationProves.find(
-        ({ display }) =>
-          display === "Submission accepted by the capability",
-      )!;
-    nigoProof.ledgerEvent = "StatusObserved";
-    nigoProof.observedAtIso = "2026-07-28T21:44:00.000Z";
-    expect(
-      validateGoldenDemoSemantics(
-        clone(),
-        realRefs,
-        causalEventDrift,
-      ).some((problem) =>
-        problem.includes(
-          "verification proof provenance must bind each claim to its own signed ledger event instant",
+          "unresolved execution proof",
         ),
       ),
     ).toBe(true);
@@ -2782,16 +2912,21 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const gc14 = stateDrift.executionGuards.find(
       (guard) => guard.sourceCaseId === "GC-14-delayed-nigo",
     )!;
-    gc14.verificationState!.custodianReason = "signature missing";
-    gc14.verificationState!.observedAtIso =
-      "2026-07-26T21:44:00.000Z";
+    gc14.verificationReached = true;
+    gc14.verificationState = {
+      observedStatus: "nigo",
+      settledClaim: "not-settled",
+      observedAtIso: "2026-07-26T21:44:00.000Z",
+      currentReason: "signature missing",
+      custodianReason: "signature missing",
+    };
     expect(
       validateGoldenDemoSemantics(
         clone(),
         realRefs,
         stateDrift,
       ).some((problem) =>
-        problem.includes("rendered verification state drifts"),
+        problem.includes("unresolved execution proof"),
       ),
     ).toBe(true);
 

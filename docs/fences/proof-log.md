@@ -6271,3 +6271,35 @@ invariant reporting, and knip. No signed fixture was edited or re-signed.
 **Revert:** every adversarial violation remains isolated inside a companion test.
 
 **Date:** 2026-08-05 (D-126).
+
+## F128 · exact structured execution-event authority
+
+**Fences:** `src/__tests__/unit/demo-truth-boundaries.test.ts`,
+`src/__tests__/fitness/golden-cases.test.ts`, and `e2e/demo-journey.spec.ts`.
+**Invariant:** execution authority comes only from exact structured signed event payloads, never from
+event position, notes, or separately stored metadata. Missing numeric policy authority also remains
+unavailable rather than becoming zero.
+
+The product companion first proves a complete synthetic event chain can execute. It then changes
+decision and input-bundle hashes, evidence snapshot ids, approval actors and roles, reservation ids
+and conflict keys, reservation expiry and release timing, idempotency keys, and consumed reservation
+ids one at a time. Each mutation makes execution proof false. The independent raw-fixture companion
+derives expected hashes separately, proves a complete automatic-authority chain, and repeats
+decision, snapshot, reservation, idempotency, and expiry mutations. Visible execution then produces
+an unresolved-proof diagnostic. A second unbound decision beside the complete chain also fails in
+both implementations. Current fixtures remain withheld, and each stop names the signed event index
+and exact missing fields.
+
+Browser proof follows the quick-start links from Authority through withheld Safety, Execution, and
+Verification into Comparison and Policy Authoring without a direct navigation shortcut or case
+switch. The GC-09 policy simulation renders missing signed numeric authority as unavailable and
+never as `$0.00`.
+
+Verification completed with 364 focused unit and fitness tests, 1,297 full non-UTC tests, all 17 demo
+browser tests with accessibility scans, typecheck, lint, golden validation, v3 invariant reporting,
+knip, and the production build under the CI placeholder environment. No signed fixture was edited or
+re-signed.
+
+**Revert:** every adversarial violation remains isolated inside a companion test.
+
+**Date:** 2026-08-05 (D-127).
