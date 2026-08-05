@@ -6473,3 +6473,19 @@ preimage contained `requesterParticipation.mode = excluded` and both authority r
 only `expiresAfter`. The production-browser path failed after receiving `P3D after this stage arms`
 instead of `2026-07-31T14:05:00.000Z`. The corrected focused semantic fence and the same production
 browser path pass with the setup and decision identities aligned to their governing semantics.
+
+### PF-188 trusted factories cannot be forwarded beyond reviewed call sites
+
+A reviewed owner could return or callback-pass `systemTenant`, after which an app module with no
+direct privileged-module import could invoke it. D-104's source-file prefilter skipped that app file,
+while the module-access and factory-result-laundering analyses reported no violation.
+
+**Adversarial proof:** a test-first in-memory boundary returned and callback-passed `systemTenant`
+from the reviewed `discardedAuditEventWork` owner, then invoked both forwarded values in
+`src/app/evil.ts`. Before correction, the focused companion failed at
+`tokenized-factory-only.test.ts:2573` because the detector returned no downstream hit. The detector
+now reports all three non-call references at the reviewed source and the invocations at
+`src/app/evil.ts:4` and `src/app/evil.ts:5`. Reintroducing the prefilter makes the two downstream
+line assertions fail. The real-project direct-call enforcement and reviewed-callsite liveness tests
+pass in 3.44 seconds, and the complete 79-test fence passes in 17.60 seconds under the unchanged
+timeout.

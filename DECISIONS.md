@@ -3716,3 +3716,17 @@ specialist expiration remains distinct receipt state.
 decision hash and shown on the exported record.
 **Revert path:** restore a second presentation projection only if it is derived directly from the
 structured requirement and proven byte-consistent on both surfaces.
+
+### D-109 · 2026-08-05 · reversible · Trusted factories cannot escape reviewed call sites
+
+The trusted-factory callsite analysis again scans every shipped source file. A reviewed owner may
+invoke its assigned factory directly, but it may not return, pass, bind, or otherwise expose the
+factory function itself. The callsite-liveness proof now requires the reviewed reference to remain a
+direct invocation. This supersedes D-104's direct-import reachability prefilter.
+
+**Why:** an allowed owner could forward a privileged factory to a module with no direct factory
+import. That downstream invocation was outside the prefilter, privileged-module access analysis,
+and factory-result laundering analysis. The split enforcement tests keep the complete real-project
+scan below the fixed timeout without narrowing its security scope.
+**Revert path:** replace whole-program scanning only with a transitive value-provenance analysis that
+proves forwarded, widened, returned, and callback-passed factory functions remain visible.

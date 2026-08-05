@@ -126,10 +126,6 @@ const TRUSTED_FACTORY_CALLS = [
   },
 ] as const;
 
-const TRUSTED_FACTORY_MODULE_PATHS = new Set<string>(
-  TRUSTED_FACTORY_CALLS.map((factory) => factory.declaration),
-);
-
 const REVIEWED_FACTORY_EXPORTS = new Map<string, ReadonlySet<string>>([
   ["src/contracts/authz.ts", new Set(["actorRefOf", "authorizeGovernedAction"])],
   ["src/contracts/principal.ts", new Set([
@@ -270,6 +266,11 @@ function enclosingOwner(node: Node): string | null {
     }
   }
   return null;
+}
+
+function isDirectCallTarget(node: Node): boolean {
+  const parent = node.getParent();
+  return Node.isCallExpression(parent) && parent.getExpression() === node;
 }
 
 function resolvedModulePath(
@@ -1149,16 +1150,6 @@ function detectDirectUntrustedFactoryCalls(project: Project): string[] {
       (!normalized.startsWith("src/") && !normalized.startsWith("scripts/")) ||
       normalized.includes("/__tests__/")
     ) continue;
-    const directlyReachesFactoryModule =
-      TRUSTED_FACTORY_MODULE_PATHS.has(normalized) ||
-      sf.getImportDeclarations().some((declaration) => {
-        const target = declaration.getModuleSpecifierSourceFile();
-        return target !== undefined &&
-          TRUSTED_FACTORY_MODULE_PATHS.has(
-            normalizedPath(target.getFilePath()),
-          );
-      });
-    if (!directlyReachesFactoryModule) continue;
     // Identifier covers a member access too — `ns.principalFromIdentity`'s NAME node
     // is itself an Identifier that resolves to the factory — so a separate
     // PropertyAccessExpression source could never fire alone, and unprovable
@@ -1188,9 +1179,10 @@ function detectDirectUntrustedFactoryCalls(project: Project): string[] {
       const owner = enclosingOwner(reference);
       if (
         factory &&
-        !factory.allowed.some((scope) =>
-          scope.file === normalized && scope.owner === owner
-        )
+        (!isDirectCallTarget(reference) ||
+          !factory.allowed.some((scope) =>
+            scope.file === normalized && scope.owner === owner
+          ))
       ) {
         const violation = `${normalized}:${reference.getStartLineNumber()} - ${factory.name} referenced outside its reviewed boundary${owner ? ` (${owner})` : ""}`;
         if (!seen.has(violation)) {
@@ -1372,7 +1364,8 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
             const target = functionTarget(identifier.getType());
             return target?.name === factory.name &&
               target.declaration === factory.declaration &&
-              enclosingOwner(identifier) === scope.owner;
+              enclosingOwner(identifier) === scope.owner &&
+              isDirectCallTarget(identifier);
           }),
           `${scope.file} :: ${scope.owner} no longer references ${factory.name}`,
         ).toBe(true);
@@ -2549,6 +2542,43 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
         hit.includes("systemTenant") && hit.includes("mintForAnyone")
       )).toBe(true);
     });
+
+    it("catches a trusted factory forwarded through a reviewed boundary", () => {
+      const project = sealedFixture(
+        "/src/infrastructure/audit/audit-store.ts",
+        `
+          import { systemTenant } from "../../contracts/tenant";
+          export function discardedAuditEventWork(
+            consume?: (factory: typeof systemTenant) => void,
+          ) {
+            consume?.(systemTenant);
+            return systemTenant;
+          }
+        `,
+      );
+      project.createSourceFile(
+        "/src/app/evil.ts",
+        `
+          import { discardedAuditEventWork } from "../infrastructure/audit/audit-store";
+          const mint = discardedAuditEventWork();
+          mint("seed", "victim");
+          discardedAuditEventWork((forwarded) => forwarded("seed", "victim"));
+        `,
+      );
+      const hits = detectUntrustedFactoryCalls(project);
+      const sourceHits = hits.filter((hit) =>
+        hit.startsWith("src/infrastructure/audit/audit-store.ts:") &&
+        hit.includes("systemTenant")
+      );
+      expect(sourceHits).toHaveLength(3);
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:4") && hit.includes("systemTenant")
+      )).toBe(true);
+      expect(hits.some((hit) =>
+        hit.startsWith("src/app/evil.ts:5") && hit.includes("systemTenant")
+      )).toBe(true);
+    });
+
     it("catches privileged result wrappers exported by factory declaration modules", () => {
       const project = inMemoryProject({
         "/src/contracts/tenant.ts": `
