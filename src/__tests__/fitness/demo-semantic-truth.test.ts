@@ -23,6 +23,7 @@ import {
   LOW_HEADROOM_LIQUIDITY,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
   SMITHS_LIQUIDITY,
+  approvalExpiryAt,
   decisionConfigurationFor,
   demoTimelineViolations,
   firmById,
@@ -4280,15 +4281,22 @@ describe("demo semantic-truth fence", () => {
     }
   });
 
-  it("enforces: the journey approval clock is the shared catalog entry its id hashes", () => {
+  it("enforces: the journey requirement derives from the approval clock its id hashes", () => {
     const clock = APPROVAL_CLOCKS[decisionConfigurationFor(firmById("firm-a")).approvalClockId];
     expect(clock, "the hashed approval-clock id has no catalog entry").toBeDefined();
     const approvals = getJourney("safe-proceed", "firm-a").approvals;
     expect(approvals?.mode).toBe("staged");
     if (approvals?.mode !== "staged") return;
     const stage = approvals.stages[0];
-    expect(stage?.escalation).toBe(clock!.escalation);
-    expect(stage?.expiry).toBe(clock!.expiry);
+    expect(stage?.decisionRequirement.expiresAt).toBe(
+      approvalExpiryAt(
+        DEMO_TIMELINE.decisionCreatedAt,
+        clock!.expiresAfter,
+      ),
+    );
+    expect(stage?.decisionRequirement.escalationPath[0]?.after).toBe(
+      clock!.escalationAfter,
+    );
   });
 
   it("enforces: the reserve floor carries ONE derivation trace on the setup step and the snapshot", () => {

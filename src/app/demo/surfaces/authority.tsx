@@ -10,6 +10,7 @@ import { ApprovalStagePanel } from "@app/presentation/approval-stage-panel";
 import { Metric } from "@app/presentation/metric";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { DEV_BADGE_TEXT, type ApprovalVM } from "../model";
+import { AuthorityRequirementDetails } from "./authority-requirement-details";
 import { RearmedAuthorityStage } from "./rearmed-authority-stage";
 import { JourneyNav, NotReached, PrimaryLink, SurfaceShell, demoHref } from "./shared";
 
@@ -145,9 +146,10 @@ export function AuthoritySurface({
               title: s.title,
               requirement: s.requirement,
               actors: s.actors,
-              ...(s.expiry ? { expiry: s.expiry } : {}),
-              ...(s.escalation ? { escalation: s.escalation } : {}),
             }}
+          />
+          <AuthorityRequirementDetails
+            requirement={s.decisionRequirement}
           />
           {s.rearmedStage ? (
             <RearmedAuthorityStage stage={s.rearmedStage} />

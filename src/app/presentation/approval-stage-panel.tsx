@@ -1,11 +1,10 @@
 /**
  * ApprovalStagePanel (design language §7.2) - one card per approval stage: the
  * requirement in plain words (quorum, distinct-actor, requester exclusion as
- * sentences, never icon grammar), actor slots as rows with StatusBadges, expiry as a
- * quiet trailing label, escalation as information rather than alarm. The requester's
- * approve control is ABSENT, not disabled - eligibility is server-enforced and the
- * UI reflects reality. A voided actor row stays (append-only UI) and recedes to the
- * 0.7 opacity floor - the same grammar as stale data, which a voided approval is.
+ * sentences, never icon grammar), and actor slots as rows with StatusBadges. The
+ * requester's approve control is ABSENT, not disabled - eligibility is server-enforced
+ * and the UI reflects reality. A voided actor row stays (append-only UI) and recedes
+ * to the 0.7 opacity floor - the same grammar as stale data, which a voided approval is.
  */
 import { StatusBadge } from "./ui";
 
@@ -21,8 +20,6 @@ export interface ApprovalStageProps {
   readonly title: string;
   readonly requirement: string;
   readonly actors: readonly ApprovalActorSlot[];
-  readonly expiry?: string;
-  readonly escalation?: string;
 }
 
 export function ApprovalStagePanel({ stage }: { stage: ApprovalStageProps }) {
@@ -49,13 +46,6 @@ export function ApprovalStagePanel({ stage }: { stage: ApprovalStageProps }) {
           </li>
         ))}
       </ul>
-      {stage.expiry || stage.escalation ? (
-        <p className="text-xs text-slate-600">
-          {stage.expiry}
-          {stage.expiry && stage.escalation ? " · " : ""}
-          {stage.escalation}
-        </p>
-      ) : null}
     </section>
   );
 }

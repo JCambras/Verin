@@ -112,8 +112,6 @@ export function evaluateAuthorityPlan(
         statusLabel: `Reviewed · ${demoTimestampLabel(DEMO_TIMELINE.specialistReviewedAt)}`,
       },
     ],
-    expiry: "Expires after 2 days",
-    escalation: "Escalates after 1 day to operations manager",
   } as const;
   if (!dualApproval) {
     return {
@@ -164,8 +162,6 @@ export function evaluateAuthorityPlan(
         : "Two approvals required from distinct operations approvers. The requester cannot approve.",
     stepState: "done",
     actors: operationsActors,
-    expiry: approvalClock.expiry,
-    escalation: approvalClock.escalation,
   };
   const stages: [ApprovalStageVM, ...ApprovalStageVM[]] =
     requiresSpecialist

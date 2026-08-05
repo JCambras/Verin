@@ -779,11 +779,24 @@ test("the UI does not invent decisions: dispositions are the recorded contract o
 
   await page.goto("/app/demo/authority?scenario=specialist-review-expiration&firm=firm-a");
   await expect(page.getByText(/^Expired ·/)).toBeVisible();
-  await expect(page.getByText(/Escalates to: operations manager/)).toBeVisible();
+  const liveSpecialistRequirement = page.getByTestId(
+    "authority-requirement-bank-change-specialist-review",
+  );
+  await expect(liveSpecialistRequirement).toContainText("P1D");
+  await expect(liveSpecialistRequirement).toContainText(
+    "operations-manager",
+  );
   const rearmedStage = page.getByTestId("rearmed-authority-stage");
   await expect(rearmedStage).toContainText("operations-manager");
   await expect(rearmedStage).toContainText("2026-07-30T14:15:00.000Z");
   await expect(rearmedStage).toContainText("2026-08-01T14:15:00.000Z");
+  const livePendingOperationsRequirement = page.getByTestId(
+    "authority-requirement-ops-dual-approval",
+  );
+  await expect(livePendingOperationsRequirement).toContainText(
+    "2026-07-31T14:05:00.000Z",
+  );
+  await expect(page.getByText("Expires after 3 days")).toHaveCount(0);
   const rearmedStageText = await rearmedStage.textContent();
   await checkAxe(page, "authority-specialist-rearmed");
   await snap(page, 18, "authority-specialist-rearmed");

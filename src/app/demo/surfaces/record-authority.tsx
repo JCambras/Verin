@@ -114,13 +114,6 @@ export function RecordAuthority({
               </li>
             ))}
           </ul>
-          {stage.expiry || stage.escalation ? (
-            <p className="text-xs text-slate-600">
-              {stage.expiry}
-              {stage.expiry && stage.escalation ? " · " : ""}
-              {stage.escalation}
-            </p>
-          ) : null}
         </div>
       ))}
     </>

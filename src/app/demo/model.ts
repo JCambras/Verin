@@ -250,8 +250,6 @@ export interface ApprovalStageVM {
   readonly requirement: string;
   readonly stepState: StationState;
   readonly actors: readonly ActorSlotVM[];
-  readonly expiry?: string;
-  readonly escalation?: string;
 }
 
 export interface UnreachedAuthorityVM {

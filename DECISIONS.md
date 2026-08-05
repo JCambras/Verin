@@ -3704,3 +3704,15 @@ the evaluator, runtime, and export claim. A later stage becoming eligible after 
 requires invalidation or a derived decision, not retroactive extension of the approved decision.
 **Revert path:** none while requester participation remains unbound in setup, the real policy
 lifecycle remains deferred, and v3 authority instantiation remains ratified.
+
+### D-108 · 2026-08-05 · reversible · Live and printable authority share structured stage requirements
+
+Approval stages no longer carry separate free-text expiry and escalation fields. The live authority
+surface and printable record render the same structured decision requirement, including its immutable
+absolute expiration, eligible roles, quorum, requester eligibility, and escalation path. Re-armed
+specialist expiration remains distinct receipt state.
+
+**Why:** a relative display clock could contradict the absolute decision-time expiry bound into the
+decision hash and shown on the exported record.
+**Revert path:** restore a second presentation projection only if it is derived directly from the
+structured requirement and proven byte-consistent on both surfaces.

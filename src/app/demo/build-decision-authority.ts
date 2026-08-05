@@ -68,8 +68,6 @@ function buildStages(
             statusLabel: `Awaiting review · expires ${demoTimestampLabel(rearmedStage.expiresAt)}`,
           },
         ],
-        expiry: `Original stage expired ${demoTimestampLabel(decisionRequirement.expiresAt)}`,
-        escalation: `Escalates to: operations manager · re-armed ${demoTimestampLabel(rearmedStage.activatedAt)} · fresh expiry ${demoTimestampLabel(rearmedStage.expiresAt)}`,
       });
     } else {
       stages.push({
@@ -93,8 +91,6 @@ function buildStages(
                 statusLabel: "Awaiting review",
               },
         ],
-        expiry: "Expires after 2 days",
-        escalation: "Escalates after 1 day to operations manager",
       });
     }
   }
@@ -168,8 +164,6 @@ function buildStages(
               },
             ]),
       ],
-      expiry: approvalClock.expiry,
-      escalation: approvalClock.escalation,
     });
   }
   return stages;
