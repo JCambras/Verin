@@ -5337,3 +5337,53 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+
+### PF-188 primitive-catalog fence (v3 prompt 8): registry integrity, doc sync, domain neutrality, purity
+
+The prompt-8 decision-primitive vocabulary (ADR-0039, D-102) introduces four
+invariants: primitive-set-version.json mirrors the shipped catalog in both
+directions; docs/primitive-rationale.md covers every primitive with no
+phantoms; the primitives module stays domain-neutral in identifiers and
+non-prose strings (falsification prose is the one reviewed exemption); and the
+module references no clock, randomness, tz/locale machinery, or scheduling
+globals.
+
+**Adversarial proof (four injections, each reverted after failing):**
+
+1. Renamed the published key `availability.gross` to `availability.cash` in
+   the live catalog. The domain-neutrality check failed naming
+   `src/contracts/primitives/quantity.ts:136: cash` and `:161: cash`.
+2. Removed `net-availability` from primitive-set-version.json. The registry
+   check failed with "catalog id net-availability missing from registry", and
+   the real-registry companion failed alongside it.
+3. Added `export const injectedNow = Date.now();` to the live values module.
+   The purity check failed naming `src/contracts/primitives/values.ts:65:
+   Date`.
+4. Renamed the doc heading for `evidence-reconciliation`. The doc-sync check
+   failed with both the missing-section and the phantom-primitive messages.
+
+Companions additionally prove: a registry with an unshipped id, wrong version,
+dropped provisional flag, non-canonical order, malformed shape, or a future
+primitive colliding with a shipped id all fail; a domain word in an identifier,
+string, or template segment is caught with file:line while the same word in
+falsification prose is not; Math.random, aliased Math, element-access Math,
+and Intl fail closed while pure Math members pass; and the scanned module is
+asserted to be the real five files so a renamed path cannot pass vacuously.
+
+### PF-188 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/fitness/primitive-catalog.test.ts
+                                                             # 18 tests passed
+corepack pnpm test                                           # 58 files, 1,277 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm knip                                           # clean
+corepack pnpm v3:invariants                                  # 6 active-pass, 0 active-fail
+corepack pnpm golden:validate                                # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 5 tests passed (contracts ceiling per ADR-0040)
+APP_ENV=development <test-only placeholder env> corepack pnpm build
+                                                             # compiled and generated all routes
+corepack pnpm test:e2e                                       # production build and 17 tests passed
+```

@@ -43,6 +43,13 @@ branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces 
 `src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Landing a real path = replace the
 corresponding builder and remove its `DevProvenanceBadge` in the SAME PR (design §11.3).
 
+The decision-primitive vocabulary (v3 prompt 8, ADR-0039) lives at `src/contracts/primitives/`
+(six primitives, set 1.0.0, provisional), mirrored by root `primitive-set-version.json` and
+`docs/primitive-rationale.md` (razor, falsification criteria, cross-domain matrix) - the
+`primitive-catalog` fence keeps all three in sync, domain-neutral, and pure. Adding or
+stretching a primitive is a version bump through the declared-future list, never a quiet edit;
+prompts 9-10 consume the catalog (published keys -> AST context vocabulary; bindings -> config).
+
 ## Non-negotiable working rules (from the charter)
 
 - **Fence every invariant in the same PR that states it**, and prove it adversarially (inject a

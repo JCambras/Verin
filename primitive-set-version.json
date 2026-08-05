@@ -1,0 +1,27 @@
+{
+  "description": "PRIMITIVE-SET VERSION REGISTRY (v3 prompt 8; ADR-0039; captain ratification waveb-design-ratification 2026-07-26). Mirrors src/contracts/primitives/catalog.ts - the primitive-catalog fence fails the build if the two disagree in either direction, so this file can never claim a vocabulary the code does not ship. The set version is pinned into every DecisionInputBundle.primitiveSetVersion and versions independently of the policy-AST grammar (prompt 9). PROVISIONAL: the vocabulary is expected to be falsified and revised; each primitive's kill criterion lives in docs/primitive-rationale.md. Declared future primitives arrive only through a version bump here, never as quiet catalog additions.",
+  "version": "1.0.0",
+  "provisional": true,
+  "primitives": [
+    "candidate-selection",
+    "evidence-reconciliation",
+    "horizon-projection",
+    "net-availability",
+    "restriction-screen",
+    "sufficiency-check"
+  ],
+  "declaredFuturePrimitives": [
+    {
+      "id": "allocation-vector",
+      "activatedBy": "a real case requiring multi-candidate quantity allocation, falsifying candidate-selection's single-winner model"
+    },
+    {
+      "id": "deviation-from-target",
+      "activatedBy": "trading-wave ratio and drift rules, falsifying sufficiency-check's integer floor/cap shape"
+    },
+    {
+      "id": "windowed-event-count",
+      "activatedBy": "velocity and frequency rules, which would otherwise smuggle aggregation into restriction-screen matching"
+    }
+  ]
+}

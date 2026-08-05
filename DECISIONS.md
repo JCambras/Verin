@@ -3229,3 +3229,82 @@ below high.
 
 **Revert path:** each selector deletes independently once its consumer bumps past
 the advisory range, at which point the range matches nothing.
+
+## D-102 - Prompt-8 primitive catalog lands in contracts/primitives with executable falsification guards
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: ADR-0023, ADR-0029,
+ADR-0039, ADR-0040, marriage-map C6, waveb-design-ratification, charter #1/#2/#4
+
+The v3 prompt-8 deliverable `src/primitives/catalog.ts` is re-baselined to
+`src/contracts/primitives/catalog.ts` per marriage-map C6 (v3 module paths
+become subsystems inside the four fenced layers - the ruling that landed
+prompt 5 at `src/contracts/decision-core/`). The catalog is pure Zod schemas
+and total pure functions, which is the contracts layer's definition; placing it
+there also keeps it inside the chartered knip vocabulary exemption while
+prompt 10 has no runtime consumer yet, and lets the prompt-9 loader import it
+without a layer escape.
+
+Implementation choices the ratified design left open, fixed here and recorded
+in docs/primitive-rationale.md: the projection window is half-open
+[anchor, anchor + months) with end-of-month clamping; the tz projection of
+bundle.asOf to the anchor date happens once in the evaluation harness so the
+contracts layer never touches tz data; reconciliation below two assertions is
+vacuously consistent (sufficiency belongs to the validation stage) and
+contradictions cite snapshot references never values; exactly-one refuses
+exclusion parameters as self-contradictory; ranked-behind alternatives carry
+the fixed code ranked-behind-selection; published-key maps declare per-key
+presence (always/conditional) and outputs are fenced to stay inside them.
+
+Falsification criteria are executable: each primitive's ratified kill case
+(conditional claims, backward projection, ratio bounds, quantity allocation,
+aggregate restrictions, trust hierarchies) is asserted unrepresentable in the
+unit suite, so quiet schema growth fails the build and forces the declared
+version-bump path.
+
+**Alternatives rejected:** a literal `src/primitives/` fifth top-level
+directory (unclassified by the dependency fence, unbudgeted, and a reopening of
+the ratified four-layer architecture); placing the catalog in `src/domain/`
+(would need a D-013-style knip escape and blocks the prompt-9 contracts loader
+from importing it); documenting falsification criteria as prose only.
+
+**Revert path:** ADR-0039's revert path (delete the module, registry, doc,
+fence, and unit suite; restore the ADR-0035 ceiling).
+
+## D-103 - FreshValue-faded content pinned to slate-800+ where usages passed lighter slate
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: ADR-0012, D-036, D-100,
+docs/demo-design-language.md, charter #9
+
+**Superseded in part by D-100**, which landed on `main` independently while this
+branch was in flight and fixes the same date-driven axe failure one level down:
+`FreshValue` now owns `text-slate-800` whenever it fades, so the guarantee holds
+for every call site rather than the four named below. D-100 rejected call-site
+recoloring as its alternative for exactly that reason. The four spans recorded
+here are therefore redundant, not wrong - they pin the same color the component
+now applies - and are kept only so this entry matches the code that shipped with
+it. Removing them is a no-op against D-100 and needs no further decision.
+
+The demo-journey axe gate failed on main in this environment: the workspace
+account card renders custodian text as slate-600 INSIDE a FreshValue fade, and
+the walking skeleton's fixture asOf dates have aged past the 7-day tier since
+landing, so the flattened color dropped to 4.34:1 - a date-driven time bomb
+that was green in CI when the surface merged. The documented design-language
+rule already covers it: secondary text inside a faded block must be slate-800
+or darker.
+
+Fix: the four call sites whose FreshValue children inherited slate-600/700
+(workspace household line, workspace custodian line, workspace pending
+activity, safety revalidated-at) now wrap the faded content in a slate-800
+span. Full-opacity labels around them keep their secondary slate. slate-800 at
+the 0.7 opacity floor measures about 5.3:1 on the card surface.
+
+Known residual: FreshValue's contract (children must be slate-800+) is prose
+plus this fix, not yet a fence; a usage-level check belongs to the demo lane's
+surface fences if the pattern recurs.
+
+**Alternatives rejected:** forcing slate-900 inside FreshValue itself (silently
+recolors compliant call sites); raising the opacity floor (weakens the
+freshness-as-opacity design language); darkening the whole paragraphs
+(recolors full-opacity labels that already pass).
+
+**Revert path:** drop the four spans.

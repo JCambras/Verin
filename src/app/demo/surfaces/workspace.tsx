@@ -18,7 +18,11 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
       description={`Advised by ${vm.household.advisor}`}
     >
       <p className="flex items-center gap-2 text-xs text-slate-600">
-        <FreshValue provenance={vm.household.provenance}>Household record</FreshValue>
+        {/* Faded content must hold slate-800+ (demo design language; slate-600
+            under the >=7-day opacity tiers lands below the 4.5:1 AA floor). */}
+        <FreshValue provenance={vm.household.provenance}>
+          <span className="text-slate-800">Household record</span>
+        </FreshValue>
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.household.fakeClass]} />
       </p>
 
@@ -33,7 +37,10 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
                 <Metric metric={a.balance} />
               </p>
               <p className="flex items-center gap-2 text-xs text-slate-600">
-                Custodian: <FreshValue provenance={a.custodian.provenance}>{a.custodian.display}</FreshValue>
+                Custodian:{" "}
+                <FreshValue provenance={a.custodian.provenance}>
+                  <span className="text-slate-800">{a.custodian.display}</span>
+                </FreshValue>
                 <DevProvenanceBadge label={DEV_BADGE_TEXT[a.fakeClass]} />
               </p>
             </li>
@@ -58,7 +65,9 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
           </div>
         </dl>
         <p className="text-sm text-slate-700">
-          <FreshValue provenance={vm.pendingActivity.provenance}>{vm.pendingActivity.display}</FreshValue>
+          <FreshValue provenance={vm.pendingActivity.provenance}>
+            <span className="text-slate-800">{vm.pendingActivity.display}</span>
+          </FreshValue>
         </p>
       </section>
 
