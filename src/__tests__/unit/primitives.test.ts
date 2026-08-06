@@ -289,6 +289,21 @@ describe("horizon-projection", () => {
     expect(published["projection.total"]).toBe(usd(3));
   });
 
+  it("stays total at the last representable anchor, saturating the window end", () => {
+    expect(addCalendarMonths(IsoDateSchema.parse("9999-12-31"), 1200)).toBe("9999-12-31");
+    expect(addCalendarMonths(IsoDateSchema.parse("0001-01-01"), -1200)).toBe("0001-01-01");
+    const published = evaluateParsed(
+      horizonProjection,
+      projectionInput(1200, [{ dueOn: "9999-12-30", amountMinor: usd(7) }], "9999-12-01"),
+    );
+    expect(published["projection.horizon"]).toEqual({
+      startsOn: "9999-12-01",
+      endsOnExclusive: "9999-12-31",
+      months: 1200,
+    });
+    expect(published["projection.total"]).toBe(usd(7));
+  });
+
   it("FALSIFICATION GUARD: backward projection and non-sum aggregation are unrepresentable", () => {
     expect(
       horizonProjection.parameterSchema.safeParse({
@@ -683,6 +698,20 @@ describe("restriction-screen", () => {
       "regulatory",
       "household_instruction",
     ]);
+  });
+
+  it("refuses an inherited slot name rather than screening against Object.prototype", () => {
+    const inherited = restrictionScreen.inputSchema.safeParse({
+      parameters: {
+        restrictionKinds: [{ kind: "account-holds", polarity: "deny-list" }],
+        subjectsInScope: ["constructor"],
+      },
+      evidence: {
+        restrictions: [{ ...regulatoryHold(titled), appliesToSlot: "constructor" }],
+      },
+      context: { subjects: {} },
+    });
+    expect(inherited.success).toBe(false);
   });
 
   it("FALSIFICATION GUARD: aggregate-based restrictions are unrepresentable", () => {

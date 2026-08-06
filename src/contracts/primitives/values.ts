@@ -36,14 +36,19 @@ const pad = (value: number, width: number): string => String(value).padStart(wid
 /**
  * Calendar-month addition with end-of-month clamping (2026-01-31 + P1M ->
  * 2026-02-28): the only calendar arithmetic the v1 vocabulary performs.
- * Deterministic by construction - no Date, no Intl, no tz data.
+ * Deterministic by construction - no Date, no Intl, no tz data - and TOTAL for
+ * every parseable anchor: a target outside the four-digit ISO year range
+ * saturates at the range edge instead of rendering an unparseable date.
  */
 export const addCalendarMonths = (date: IsoDate, months: number): IsoDate => {
   const year = Number(date.slice(0, 4));
   const month = Number(date.slice(5, 7));
   const day = Number(date.slice(8, 10));
-  const zeroBased = year * 12 + (month - 1) + months;
+  const zeroBased = year * 12 + (month - 1) + Math.trunc(months);
   const targetYear = Math.floor(zeroBased / 12);
+  if (!(targetYear >= 1 && targetYear <= 9999)) {
+    return IsoDateSchema.parse(targetYear < 1 ? "0001-01-01" : "9999-12-31");
+  }
   const targetMonth = (zeroBased % 12) + 1;
   const clampedDay = Math.min(day, daysInMonth(targetYear, targetMonth));
   return IsoDateSchema.parse(

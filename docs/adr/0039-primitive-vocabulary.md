@@ -44,9 +44,11 @@ module paths into them - the same ruling that landed prompt 5 at `src/contracts/
 - **Fences (same PR, charter #1/#4):** the `primitive-catalog` fence enforces registry/catalog
   agreement in both directions, rationale-doc coverage without phantoms, domain-neutral naming
   (identifiers and non-prose strings; falsification prose is the one exemption because the prompt
-  requires it to name real cases), and purity (no clock, randomness, tz/locale machinery, or
-  scheduling globals). Each check has companions proving the incomplete form cannot pass;
-  adversarial injection proofs are logged as PF-188.
+  requires it to name real cases), purity (no clock, randomness, tz/locale machinery - including
+  `localeCompare` and the `toLocale*` members, which name no global - or scheduling globals), and
+  evidence-kind declarations resolving to real parameters of their own entry's schema. Each check
+  has companions proving the incomplete form cannot pass; adversarial injection proofs are logged
+  as PF-188 and PF-189.
 - **Falsification tests are executable:** each primitive's ratified kill criterion is asserted in
   unit tests as currently-unrepresentable (conditional claims, backward projections, ratio
   bounds, quantity allocation, aggregate restrictions, trust hierarchies all fail to parse), so

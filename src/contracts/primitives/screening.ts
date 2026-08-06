@@ -161,7 +161,9 @@ const RestrictionScreenInputSchema = z
     );
     const slots = new Set(input.parameters.subjectsInScope);
     for (const slot of slots) {
-      if (!(slot in input.context.subjects)) {
+      // OWN properties only: `in` would resolve a kebab-valid slot such as
+      // "constructor" through Object.prototype and bind a function as a subject.
+      if (!Object.hasOwn(input.context.subjects, slot)) {
         ctx.addIssue({
           code: "custom",
           message: "subject in scope has no bound subject reference",
@@ -245,25 +247,31 @@ export const restrictionScreen = {
     for (const entry of input.parameters.restrictionKinds) {
       matchedByKind[entry.kind] = false;
     }
+    // Own entries only, matching the parse boundary's prototype-chain refusal.
+    const subjects = new Map(Object.entries(input.context.subjects));
     for (const restriction of input.evidence.restrictions) {
-      const subject = input.context.subjects[restriction.appliesToSlot]!;
-      const member = restriction.entryRefs.some(
-        (candidate) => compareScopedReferences(candidate, subject) === 0,
-      );
+      const subject = subjects.get(restriction.appliesToSlot) ?? null;
+      const member =
+        subject !== null &&
+        restriction.entryRefs.some(
+          (candidate) => compareScopedReferences(candidate, subject) === 0,
+        );
+      // An unresolvable slot never CLEARS a restriction: it matches, fail-closed.
       const violated =
-        restriction.polarity === "deny-list" ? member : !member;
+        subject === null || (restriction.polarity === "deny-list" ? member : !member);
       if (!violated) continue;
       matchedByKind[restriction.kind] = true;
+      const subjectRef = subject === null ? null : { ...subject };
       matches.push({
         appliesToSlot: restriction.appliesToSlot,
         kind: restriction.kind,
         // A deny-list violation names the entry that captured the subject; an
         // allow-list violation has no matched entry - the absence IS the match.
-        matchedEntryRef: restriction.polarity === "deny-list" ? { ...subject } : null,
+        matchedEntryRef: restriction.polarity === "deny-list" ? subjectRef : null,
         polarity: restriction.polarity,
         sourceRef: { ...restriction.sourceRef },
         sourceType: restriction.sourceType,
-        subjectRef: { ...subject },
+        subjectRef,
         versionRef: { ...restriction.versionRef },
       });
     }

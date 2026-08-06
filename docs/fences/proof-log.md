@@ -5387,3 +5387,55 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+
+### PF-189 primitive-catalog fence: locale purity and evidence-kind declarations
+
+Review of the prompt-8 vocabulary found the purity check overclaiming and the
+evidence-kind declarations unanchored. The fence header, ADR-0039, and PF-188
+all say the purity check covers "tz/locale machinery", but `IMPURE_GLOBALS`
+only matched the `Intl` IDENTIFIER: `localeCompare` and the `toLocale*`
+formatters are the realistic way ICU collation and formatting enter a
+comparator, and they name no global at all. Separately,
+`CatalogPrimitive.evidenceKindParameters` listed raw parameter NAMES with no
+structural link to the entry's own `parameterSchema`, so a rename compiled,
+type-checked, and passed every gate while leaving the prompt-9 loader binding a
+dangling name. The fence now carries a fifth invariant (e) and a locale-member
+check on any receiver, including element-access forms.
+
+**Adversarial proof (three injections, each reverted after failing):**
+
+1. Added `export const compareSegments = (a: KeySegment, b: KeySegment): number
+   => a.localeCompare(b);` to the live values module. The purity check failed
+   naming `src/contracts/primitives/values.ts:70: localeCompare`.
+2. Renamed the live `claimEvidenceKinds` parameter to `renamedClaimKinds`
+   throughout quantity.ts, leaving `evidenceKindParameters` untouched - the
+   exact silent rename the finding described. The new check failed with
+   "net-availability declares evidence-kind parameter claimEvidenceKinds,
+   absent from its schema", while typecheck stayed clean - proving the check is
+   what catches this class.
+3. Reverted the `Object.hasOwn` slot guard in restriction-screen's input schema
+   back to `slot in input.context.subjects`. The unit case "refuses an
+   inherited slot name rather than screening against Object.prototype" failed,
+   proving the guard is load-bearing: without it a binding declaring
+   `subjectsInScope: ["constructor"]` with NO bound subject parsed clean, and
+   evaluate published a fabricated deny-list match carrying full source
+   attribution and `subjectRef: {}`.
+
+Companions additionally prove: an element-access `n["toLocaleString"]()` is
+caught while codepoint comparison passes untouched; a dangling evidence-kind
+name fails while a name declared by one arm of a discriminated union passes;
+and a schema the key walk cannot see through is refused rather than passing
+over an empty key set (so the check can never go vacuous).
+
+### PF-189 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/fitness/primitive-catalog.test.ts \
+  src/__tests__/unit/primitives.test.ts                      # 71 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm knip                                           # clean
+corepack pnpm golden:validate                                # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 5 tests passed (contracts under the ADR-0040 ceiling)
+```

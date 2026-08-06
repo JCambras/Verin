@@ -13,7 +13,7 @@ import {
 
 /**
  * PRIMITIVE-CATALOG FENCE (v3 prompt 8; ADR-0039; charter #1/#4; D-102).
- * Four invariants, each with companions proving the incomplete form CANNOT
+ * Five invariants, each with companions proving the incomplete form CANNOT
  * pass:
  *  (a) REGISTRY INTEGRITY - primitive-set-version.json and the catalog agree
  *      in both directions (ids, canonical order, version, provisional flag),
@@ -31,6 +31,9 @@ import {
  *  (d) PURITY - the primitives module never references a clock, randomness,
  *      tz/locale machinery, or scheduling globals: primitive evaluation must
  *      be a pure function of its parsed input, or byte-identical replay dies.
+ *  (e) EVIDENCE-KIND DECLARATIONS - every name in an entry's
+ *      evidenceKindParameters is a real parameter of that entry's own schema,
+ *      so a rename cannot leave the prompt-9 loader binding a dangling name.
  */
 
 const PRIMITIVES_DIR_SEGMENT = "src/contracts/primitives";
@@ -103,6 +106,56 @@ export function rationaleDocViolations(doc: string, ids: readonly string[]): str
   }
   if (!doc.includes(PRIMITIVE_SET_VERSION)) out.push("doc does not state the set version");
   if (!doc.toLowerCase().includes("provisional")) out.push("doc does not state the vocabulary is provisional");
+  return out;
+}
+
+/**
+ * Every parameter name a parameter schema can accept, across union arms and
+ * through the `.readonly()` wrapper the catalog's schemas carry.
+ */
+const parameterSchemaKeys = (
+  schema: z.ZodType,
+  out: Set<string> = new Set(),
+): Set<string> => {
+  if (schema instanceof z.ZodReadonly) {
+    return parameterSchemaKeys(schema.unwrap() as z.ZodType, out);
+  }
+  if (schema instanceof z.ZodObject) {
+    for (const key of Object.keys(schema.shape)) out.add(key);
+  } else if (schema instanceof z.ZodUnion) {
+    for (const option of schema.options as readonly z.ZodType[]) {
+      parameterSchemaKeys(option, out);
+    }
+  }
+  return out;
+};
+
+type EvidenceKindEntry = {
+  readonly id: string;
+  readonly parameterSchema: z.ZodType;
+  readonly evidenceKindParameters: readonly string[];
+};
+
+/**
+ * The evidence-kind declaration check: a parameter NAME that no longer exists
+ * on its own schema would still compile and type-check, leaving the prompt-9
+ * loader resolving a dangling name at bind time.
+ */
+export function evidenceKindParameterViolations(
+  entries: readonly EvidenceKindEntry[],
+): string[] {
+  const out: string[] = [];
+  for (const entry of entries) {
+    const keys = parameterSchemaKeys(entry.parameterSchema);
+    if (keys.size === 0) {
+      out.push(`${entry.id} exposes no parameter names - the schema walk went blind`);
+    }
+    for (const name of entry.evidenceKindParameters) {
+      if (!keys.has(name)) {
+        out.push(`${entry.id} declares evidence-kind parameter ${name}, absent from its schema`);
+      }
+    }
+  }
   return out;
 }
 
@@ -192,12 +245,45 @@ const IMPURE_GLOBALS = new Set([
   "setImmediate", "queueMicrotask", "globalThis", "process", "fetch",
 ]);
 
+/**
+ * ICU-dependent members. Collation and formatting vary with the Node build's
+ * ICU data and the ambient default locale, so a comparator or formatter
+ * reaching one of these breaks byte-identical replay just as surely as a clock
+ * read - and none of them mentions the `Intl` global.
+ */
+const LOCALE_MEMBERS = new Set([
+  "localeCompare", "toLocaleString", "toLocaleDateString", "toLocaleTimeString",
+  "toLocaleLowerCase", "toLocaleUpperCase",
+]);
+
+/** The locale-sensitive member reached by `x.member` or `x["member"]`, if any. */
+const localeMemberName = (node: Node): string | null => {
+  let name: string | null = null;
+  if (Node.isPropertyAccessExpression(node)) {
+    name = node.getName();
+  } else if (Node.isElementAccessExpression(node)) {
+    const argument = node.getArgumentExpression();
+    if (
+      argument !== undefined &&
+      (Node.isStringLiteral(argument) || Node.isNoSubstitutionTemplateLiteral(argument))
+    ) {
+      name = argument.getLiteralValue();
+    }
+  }
+  return name !== null && LOCALE_MEMBERS.has(name) ? name : null;
+};
+
 export function impurityViolations(project: Project): PrimitiveModuleViolation[] {
   const out: PrimitiveModuleViolation[] = [];
   for (const sourceFile of project.getSourceFiles()) {
     const file = sourceFile.getFilePath();
     if (!isPrimitivesModulePath(file)) continue;
     sourceFile.forEachDescendant((node) => {
+      const locale = localeMemberName(node);
+      if (locale !== null) {
+        out.push({ file, line: node.getStartLineNumber(), token: locale });
+        return;
+      }
       if (!Node.isIdentifier(node)) return;
       const name = node.getText();
       if (IMPURE_GLOBALS.has(name)) {
@@ -262,6 +348,11 @@ describe("primitive-catalog fence", () => {
   it("enforces: the primitives module is pure (no clock, randomness, tz, or scheduling)", () => {
     const violations = impurityViolations(project);
     expect(violations, formatViolations(violations)).toEqual([]);
+  });
+
+  it("enforces: every declared evidence-kind parameter exists on its own schema", () => {
+    const violations = evidenceKindParameterViolations(PRIMITIVE_CATALOG);
+    expect(violations, violations.join("\n")).toEqual([]);
   });
 
   it("enforces: the scanned module is the real one, not a stale path (charter #4)", () => {
@@ -428,6 +519,61 @@ describe("primitive-catalog fence", () => {
         }),
       );
       expect(pure).toEqual([]);
+    });
+
+    it("locale-sensitive members are caught with file:line; codepoint ordering survives", () => {
+      const collation = impurityViolations(
+        inMemoryProject({
+          "src/contracts/primitives/evil.ts":
+            `export const order = (a: string, b: string) => a.localeCompare(b);`,
+        }),
+      );
+      expect(collation.map((x) => x.token)).toContain("localeCompare");
+      expect(collation[0]).toMatchObject({ line: 1, token: "localeCompare" });
+      const formatting = impurityViolations(
+        inMemoryProject({
+          "src/contracts/primitives/evil.ts":
+            `export const show = (n: number) => n["toLocaleString"]();`,
+        }),
+      );
+      expect(formatting.map((x) => x.token)).toContain("toLocaleString");
+      const codepoint = impurityViolations(
+        inMemoryProject({
+          "src/contracts/primitives/ok.ts":
+            `export const order = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);`,
+        }),
+      );
+      expect(codepoint).toEqual([]);
+    });
+
+    it("a renamed or dangling evidence-kind parameter fails", () => {
+      const renamed = evidenceKindParameterViolations([
+        {
+          id: "net-availability",
+          parameterSchema: z.strictObject({ renamedClaimKinds: z.string() }).readonly(),
+          evidenceKindParameters: ["claimEvidenceKinds"],
+        },
+      ]);
+      expect(renamed.some((m) => m.includes("claimEvidenceKinds"))).toBe(true);
+      // A union arm declaring the name keeps the whole entry legal; an
+      // unwalkable schema is refused rather than passing over an empty key set.
+      expect(
+        evidenceKindParameterViolations([
+          {
+            id: "two-armed",
+            parameterSchema: z.discriminatedUnion("mode", [
+              z.strictObject({ mode: z.literal("a"), kindParameter: z.string() }),
+              z.strictObject({ mode: z.literal("b") }),
+            ]),
+            evidenceKindParameters: ["kindParameter"],
+          },
+        ]),
+      ).toEqual([]);
+      expect(
+        evidenceKindParameterViolations([
+          { id: "opaque", parameterSchema: z.string(), evidenceKindParameters: [] },
+        ]).some((m) => m.includes("went blind")),
+      ).toBe(true);
     });
 
     it("aliased and element-access Math escapes fail closed", () => {

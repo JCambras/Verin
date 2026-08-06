@@ -178,9 +178,9 @@ const HorizonProjectionParameterSchema = z
   .strictObject({
     seriesEvidenceKind: SegmentEvidenceKindSchema,
     /**
-     * Bounded at 100 years so the projected window end stays a four-digit ISO
-     * year: an unbounded horizon would overflow the date form inside evaluate,
-     * turning a bad binding into a thrown error instead of a parse refusal.
+     * Bounded at 100 years: a horizon no operating rule can mean is a binding
+     * error, refused here rather than absorbed by the end-of-range saturation
+     * that keeps addCalendarMonths total.
      */
     horizonMonths: z.int().positive().max(1200),
     direction: z.literal("forward"),
