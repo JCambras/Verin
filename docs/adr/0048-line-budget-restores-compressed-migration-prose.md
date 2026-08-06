@@ -1,14 +1,14 @@
-# ADR-0046: The infrastructure ceiling absorbs restored migration prose
+# ADR-0048: The infrastructure ceiling absorbs restored migration prose
 
 **Status:** Accepted
 **Date:** 2026-08-06
 **Deciders:** Founding architect
-**Amends:** ADR-0018 and ADR-0045
+**Amends:** ADR-0018 and ADR-0047
 **Relates to:** Charter non-negotiables #1, #4, #10
 
 ## Context
 
-ADR-0045 left infrastructure at 7,700 against a measured 7,652. Later prompt-7 review
+ADR-0047 left infrastructure at 7,700 against a measured 7,652. Later prompt-7 review
 corrections consumed that room down to 11 lines, and one of those corrections paid for
 itself by compressing explanatory comments out of `src/infrastructure/store/migrations.ts` -
 a file `CLAUDE.md` and `AGENTS.md` both send readers to for sharp-edge knowledge. The

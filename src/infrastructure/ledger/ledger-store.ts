@@ -474,7 +474,12 @@ export async function appendDecisionEvents(
     await preflightEvidenceSnapshots(tx, tenant, snapshots);
     await tx.exec("SAVEPOINT decision_ledger_append");
     savepointOpen = true;
-    await insertEvidenceSnapshots(tx, tenant, snapshots, prepared.value.at(-1)!.event.recordedAt);
+    await insertEvidenceSnapshots(
+      tx,
+      tenant,
+      snapshots,
+      prepared.value.at(-1)!.event.recordedAt,
+    );
     const appended = await appendPrepared(
       tx,
       tenant,

@@ -38,5 +38,10 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
     testTimeout: 20000,
+    // Integration `beforeEach` hooks create a PGlite instance, run every migration, and
+    // seed - strictly MORE work than the test bodies this 20s budget was raised for. The
+    // default 10s hook budget made that setup the suite's flakiest step under parallel
+    // load, failing a different file each run while every one passed in isolation.
+    hookTimeout: 20000,
   },
 });

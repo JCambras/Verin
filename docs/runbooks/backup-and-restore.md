@@ -33,6 +33,13 @@ fail this drill (SEC 17a-4 / SOC 2 CC7.4).
 
 ## Production procedure
 
+**Steps 3 and 4 are gated on the managed-Postgres adapter, which is deferred (D-006/ADR-0004).**
+`getConfig()` requires `store.driver=postgres` under `APP_ENV=production` and `createDb` refuses that
+driver with `STORE_UNAVAILABLE`, so `pnpm audit:chain` and `pnpm ledger:rebuild` cannot open a
+production store today - they exercise this procedure against PGlite in dev/CI and staging. Both are
+written to work unchanged once the adapter lands; until then, treat the verification steps below as
+the procedure the adapter must satisfy, not as commands to run against a production instance.
+
 1. **Backup:** managed Postgres automated backups + PITR (RPO ≤ 24h). Verify the latest backup timestamp.
 2. **Restore:** provision a fresh instance from the target snapshot/PITR point (RTO ≤ 4h).
 3. **Verify:** run `pnpm audit:chain` against the restored store; confirm both per-org chains verify and row

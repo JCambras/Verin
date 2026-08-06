@@ -1,9 +1,9 @@
-# ADR-0045: Frozen ledger codecs and register availability
+# ADR-0047: Frozen ledger codecs and register availability
 
 **Status:** Accepted
 **Date:** 2026-08-05
 **Deciders:** Founding architect
-**Amends:** ADR-0018, ADR-0039, and ADR-0044
+**Amends:** ADR-0018, ADR-0041, and ADR-0046
 **Relates to:** Charter non-negotiables #1, #2, #4, #7, #10, #13; v3 invariants 2, 4, 5, 23, 30
 
 ## Context
@@ -15,7 +15,7 @@ approval stages and execution steps belonged to the immutable decision. Recorded
 registries also derived their only key and schema from the current contracts, so a
 routine version bump could remove the parser needed by retained history.
 
-ADR-0044 correctly requires complete-chain request verification, but its transaction
+ADR-0046 correctly requires complete-chain request verification, but its transaction
 held the tenant append lock while loading, hashing, and validating every retained row.
 That converted an authenticated read into an append-availability risk. Bounded replay
 also counted only in-window `DecisionRecorded` omissions, not recent decision-scoped

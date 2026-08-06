@@ -1,10 +1,10 @@
-# ADR-0044: Full-chain register verification with bounded disclosure
+# ADR-0046: Full-chain register verification with bounded disclosure
 
 **Status:** Accepted
 **Date:** 2026-08-05
 **Deciders:** Founding architect
-**Amends:** ADR-0039 and ADR-0043
-**Amended by:** ADR-0045
+**Amends:** ADR-0041 and ADR-0045
+**Amended by:** ADR-0047
 **Relates to:** Charter non-negotiables #1, #2, #4, #7, #13; v3 invariants 2, 4, 5, 23, 30
 
 ## Context

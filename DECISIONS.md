@@ -3396,7 +3396,7 @@ were before.
 ## D-105 - Prompt-7 decision ledger is a synchronous sibling, not an audit-log extension
 
 **Date:** 2026-07-28 · **Reversible** · Relates to: ADR-0007, ADR-0018,
-ADR-0019, ADR-0041, v3 prompt 7, charter #1/#2/#7/#13
+ADR-0019, ADR-0043, v3 prompt 7, charter #1/#2/#7/#13
 
 The decision and replay storage foundation lands as an independent
 `decision_ledger` chain beside the unchanged operational `audit_log`. Immutable
@@ -3412,12 +3412,12 @@ The `/app/ledger` register makes the source reachable and read-only; the seeded
 chain is visibly labeled `Synthetic fixture`. Existing demo fake decision and
 status histories remain because this prompt lands no real producers. They become
 deletion/switchover candidates only with the later decision, approval, and
-execution prompts. ADR-0041 records the topology, retention extension, forward-only
+execution prompts. ADR-0043 records the topology, retention extension, forward-only
 migration, and ADR-0018 ceiling amendments.
 
 ## D-106 - Ledger provenance, reservation ownership, and register verification scope
 
-**Date:** 2026-07-28 · **Reversible** · Relates to: D-105, ADR-0041, charter #4/#5
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-105, ADR-0043, charter #4/#5
 
 Review of D-105 surfaced four storage-level gaps, all fixed in the same forward-only
 migration rather than a follow-up one.
@@ -3462,7 +3462,7 @@ optional and defaults to the full chain.
 
 ## D-107 - Ledger failure diagnosis, post-decision evidence, and derived-state labeling
 
-**Date:** 2026-07-28 · **Reversible** · Relates to: D-105, D-106, ADR-0041, charter #4/#5
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-105, D-106, ADR-0043, charter #4/#5
 
 Review of D-103 surfaced four gaps in the ledger's failure and labeling behavior. All are
 fixed in place; none needs a new migration.
@@ -3533,7 +3533,7 @@ source. Derived projection provenance is persisted with the cache, including own
 events, so request-path reads are bounded by selected decisions rather than event history.
 
 The post-review implementation measures contracts at 3875 lines and infrastructure at 4187 lines.
-ADR-0039 amends ADR-0018 ceilings to 4000 and 4300 respectively, retaining explicit headroom without
+ADR-0041 amends ADR-0018 ceilings to 4000 and 4300 respectively, retaining explicit headroom without
 changing the 500-line file cap.
 
 **Why:** append-only history cannot rely on mutable caches, unbound provenance, reusable ownerless
@@ -3579,7 +3579,7 @@ later generation. Status observations that precede step mapping are reconciled b
 execution handle when the real step arrives.
 
 The complete implementation measures contracts at 3884 lines and infrastructure at
-4736 lines. ADR-0039 amends ADR-0018's infrastructure ceiling to 4800 while keeping
+4736 lines. ADR-0041 amends ADR-0018's infrastructure ceiling to 4800 while keeping
 the 500-line file cap.
 
 **Why:** append-only truth cannot tolerate structural transaction ambiguity,
@@ -3601,7 +3601,7 @@ verified replay sources instead of trusting mutable projection rows. The anti-fo
 fence assigns every immutable table to one exact insert owner.
 
 The completed implementation measures contracts at 3927 lines and infrastructure at
-5003 lines. ADR-0039 amends ADR-0018's infrastructure ceiling to 5100 while preserving
+5003 lines. ADR-0041 amends ADR-0018's infrastructure ceiling to 5100 while preserving
 the 500-line file cap.
 
 **Why:** a cryptographic claim must bind the exact bundle and the exact state displayed,
@@ -3624,13 +3624,13 @@ use registered, PII-safe error metadata, and projection rebuild reports its entr
 from the single atomic verification-and-replay transaction.
 
 The completed implementation measures contracts at 4,539 lines, domain at 1,584,
-and infrastructure at 6,507. ADR-0040 raises only the infrastructure ceiling to
+and infrastructure at 6,507. ADR-0042 raises only the infrastructure ceiling to
 6,550 with bounded headroom and leaves the 500-line file cap unchanged.
 
 **Why:** transaction capability alone does not prove tenant ownership, immutable
 identifiers cannot accept human-shaped text, and failed integrity verification cannot
 authorize disclosure of the bytes that failed verification.
-**Relates to:** ADR-0039, ADR-0040.
+**Relates to:** ADR-0041, ADR-0042.
 **Revert path:** restore the raw-org boundaries and single-grant register only if the
 sealed-authority, PII-retention, governed-disclosure, and metric-provenance invariants
 are withdrawn together.
@@ -3689,7 +3689,7 @@ older occurrence was outside the window. ADR-0019 now states that the bounded re
 an operator view and defers a complete decision-ledger examiner export until the first
 examiner or regulated-customer requirement.
 
-The corrected implementation measures infrastructure at 6,608 lines. ADR-0041 raises the
+The corrected implementation measures infrastructure at 6,608 lines. ADR-0043 raises the
 ceiling to 6,650 with 42 lines of bounded headroom; contracts, domain, presentation, and
 the 500-line file cap remain unchanged.
 
@@ -3713,8 +3713,8 @@ producer remains a demonstration and cannot feed a compliance decision.
 
 Register replay batch-loads evidence, decisions, bundles, memberships, and source
 origins before folding and reuses the verified row snapshot. A 14-decision regression
-falls from 65 statements to a constant category-bounded query count. ADR-0039's
-migration guidance now names versions 4 and 5. ADR-0042 records the trust ownership and
+falls from 65 statements to a constant category-bounded query count. ADR-0041's
+migration guidance now names versions 4 and 5. ADR-0044 records the trust ownership and
 raises the infrastructure ceiling to 7,050 around the measured 6,927 lines, with the
 500-line cap unchanged.
 
@@ -3736,7 +3736,7 @@ carry the audit-export governed-output marker.
 
 Bounded replay uses provenance only when the global first evidence or bundle recording
 edge is inside the verified snapshot. Decisions whose true trust origin lies outside the
-window are withheld rather than relabeled by unchecked historical bytes. ADR-0043 raises
+window are withheld rather than relabeled by unchecked historical bytes. ADR-0045 raises
 the infrastructure ceiling to 7,250 around the measured 7,174 lines while retaining the
 500-line file cap.
 
@@ -3759,13 +3759,13 @@ second partial account-number scan after their grammar and general PII checks pa
 
 Migration version 6 adds partial indexes for source origins and reservation history.
 Savepoint-protected batches advance their anchor and checkpoint once at the batch head.
-The corrected infrastructure layer measures 7,231/7,250, so the existing ADR-0043
+The corrected infrastructure layer measures 7,231/7,250, so the existing ADR-0045
 ceiling remains unchanged.
 
 **Why:** a predecessor hash cannot authenticate arbitrary promoted facts outside a
 verified tail, and integrity failures or bounded omissions must never appear as missing
 history.
-**Relates to:** ADR-0039, ADR-0043, ADR-0044.
+**Relates to:** ADR-0041, ADR-0045, ADR-0046.
 **Revert path:** none while historical facts authorize L2 ordering and the register
 returns a verified integrity verdict.
 
@@ -3788,14 +3788,14 @@ Gate and rebuild retain the lock. Bounded replay counts every decision-scoped ev
 cannot materialize because a recording or source-origin prerequisite is outside the
 displayed window.
 
-ADR-0045 raises the contracts ceiling to 4,650 around the measured 4,598 lines and
+ADR-0047 raises the contracts ceiling to 4,650 around the measured 4,598 lines and
 the infrastructure ceiling to 7,700 around 7,652. The domain and presentation ceilings
 are unchanged.
 
 **Why:** immutable history needs permanent decoders and structural semantic bindings,
 and a complete-chain operator read must not block tenant writes for retention-linear
 verification work.
-**Relates to:** ADR-0039, ADR-0044, ADR-0045.
+**Relates to:** ADR-0041, ADR-0046, ADR-0047.
 **Revert path:** none while retained ledger versions require replay and full-chain
 request verification remains the disclosure authority.
 
@@ -3864,7 +3864,7 @@ annotation stays, and the call site now records the measurement.
 **Why:** a production allowlist that carries fixtures, a version gate pinned to one build,
 a duplicated fold, an unvalidatable column, and an unreachable read are each a claim the
 code cannot keep.
-**Relates to:** ADR-0039, D-104, D-105, D-106, D-107, D-108.
+**Relates to:** ADR-0041, D-104, D-105, D-106, D-107, D-108.
 **Revert path:** the seams, the version grammar, and the fences are additive; migration 7
 is forward-only and the deleted reads have verified successors.
 
@@ -3890,10 +3890,10 @@ the new unit test passes on the fix and fails on the old memo.
 
 **The bounded chain start is removed rather than revived.** `LedgerSnapshot.start` and
 `verifyStoredByteChain`'s `start` parameter were the last plumbing of the tail-verification
-design ADR-0044 replaced, constructed as `undefined` at both shipped call sites and covered
-by nothing. Reviving them would re-open exactly what ADR-0044 closed - a stored predecessor
+design ADR-0046 replaced, constructed as `undefined` at both shipped call sites and covered
+by nothing. Reviving them would re-open exactly what ADR-0046 closed - a stored predecessor
 hash proves continuity, not that the predecessor or its promoted columns are authentic -
-and ADR-0044 names measured request latency, not review, as the trigger for an
+and ADR-0046 names measured request latency, not review, as the trigger for an
 authenticated checkpoint design. The parameter is gone; verification stays GENESIS-rooted.
 
 **D-106 upheld again.** Review reported the Turbopack trace annotation as an inert
@@ -3903,9 +3903,9 @@ stays.
 
 **Why:** a drill that cannot run is not evidence, a memo that depends on traversal order is
 not a boundary, and dead plumbing for a rejected design is an invitation to rebuild it.
-**Relates to:** ADR-0039, ADR-0044, D-106, D-116.
+**Relates to:** ADR-0041, ADR-0046, D-106, D-116.
 **Revert path:** the drill tenant is one constant, the memo change is additive, and the
-bounded start returns only with the authenticated checkpoint design ADR-0044 defers.
+bounded start returns only with the authenticated checkpoint design ADR-0046 defers.
 
 ### D-121 · 2026-08-06 · reversible · Derived cursors, verification verdicts, and reachability say what they know
 
@@ -3917,7 +3917,7 @@ exactly the shape migration 7 removed for `created_sequence`. Migration 8 drops 
 table forward-only (migration 4 keeps its shipped DDL) and the three writers go with it.
 The ordering facts it duplicated already live in the immutable ledger and its
 independently maintained anchor. The bounded checkpoint-reuse verification the cursor
-was plumbing for is NOT revived here: ADR-0044/ADR-0045 ratified GENESIS-rooted
+was plumbing for is NOT revived here: ADR-0046/ADR-0047 ratified GENESIS-rooted
 full-chain verification and named MEASURED request latency, not review, as the trigger
 for an authenticated-checkpoint design. That design stays deferred to that trigger, and
 request-path verification stays linear in retained entries by the ratified trade.
@@ -3957,7 +3957,7 @@ scrolling to the block comment above it.
 **Why:** a cursor no reader validates, a verdict that hides which failure it saw, and a
 reachability rule a subsystem can satisfy from inside are each a check that reports more
 confidence than it has.
-**Relates to:** ADR-0039, ADR-0044, ADR-0045, D-106, D-116, D-117.
+**Relates to:** ADR-0041, ADR-0046, ADR-0047, D-106, D-116, D-117.
 **Revert path:** migration 8 is forward-only and additive; the narrowed catch, the
 transitive fence, and the inline pointer are each independently revertible.
 
@@ -4001,14 +4001,14 @@ recovery is attempted defensively, and the classified value reaches the caller e
 **Why:** a replay is only as trustworthy as the facts it refuses to accept, and a stored
 row that names the wrong decoder or a verdict that loses its reason are both failures
 that surface as a mystery months later.
-**Relates to:** ADR-0039, ADR-0044, ADR-0045, D-115, D-116, D-118.
+**Relates to:** ADR-0041, ADR-0046, ADR-0047, D-115, D-116, D-118.
 **Revert path:** the plan binding, the decision-row codec key, the moved ordering proof,
 and the defensive recovery are each independently revertible; no migration changed.
 
 ### D-123 · 2026-08-06 · reversible · A ceiling absorbs the correction; documentation never pays for it
 
 **The compressed migration prose is restored, and the ceiling that squeezed it is amended**
-(key `ledger-fresh6-budget-headroom`, ADR-0046). An earlier prompt-7 correction bought its
+(key `ledger-fresh6-budget-headroom`, ADR-0048). An earlier prompt-7 correction bought its
 lines by compressing the explanatory comments out of `src/infrastructure/store/migrations.ts` -
 the `schema_migrations` CREATE-IF-NOT-EXISTS bootstrap note, the version-1 baseline rationale,
 and the `Migration`/`PreflightProbe` field documentation - a file `CLAUDE.md` and `AGENTS.md`
@@ -4016,9 +4016,9 @@ both send readers to for sharp-edge knowledge. That is the exact failure the lin
 fence's own header names: a ceiling with no headroom converts review findings into
 documentation deletions. The file measured 507 lines before that compression, so the PER-FILE
 ceiling was squeezing it too - both ADR-0018 ratchets were being paid in prose. The comments
-are restored, ADR-0046 raises infrastructure from 7,700 to 7,800 against a measured 7,701,
+are restored, ADR-0048 raises infrastructure from 7,700 to 7,800 against a measured 7,701,
 and `migrations.ts` takes the first pinned `max-file-size` entry at 520 against a measured 510
-with ADR-0046 as the architecture-review note that map requires - both through the amendment
+with ADR-0048 as the architecture-review note that map requires - both through the amendment
 paths ADR-0018 owns rather than a silent fence edit.
 
 **The compensating-action widening is proven, not just written.** D-119's plan binding admits
@@ -4040,16 +4040,16 @@ to read red as noise.
 months later as a reader following a pointer to nothing, a binding branch that only ever
 proves its refusal is detection without verification, and a flaky documented command erodes
 the signal every other fence depends on.
-**Relates to:** ADR-0018, ADR-0045, ADR-0046, D-116, D-119.
-**Revert path:** ADR-0046 and the two ceiling figures revert together with the restored
+**Relates to:** ADR-0018, ADR-0047, ADR-0048, D-116, D-119.
+**Revert path:** ADR-0048 and the two ceiling figures revert together with the restored
 comments; the fixture, its test, and the script flags are independently revertible.
 
 ### D-124 · 2026-08-06 · reversible · The per-file ratchet gets the headroom the layer ratchet got
 
-**ADR-0046's own principle now applies at both ratchets** (ADR-0047). ADR-0046 ended the
+**ADR-0048's own principle now applies at both ratchets** (ADR-0049). ADR-0048 ended the
 exhausted-headroom failure at the LAYER ceiling - infrastructure 7,800 against a measured
 7,701 - and then re-created it one ratchet down: the first pinned `max-file-size` entry gave
-`src/infrastructure/store/migrations.ts` 520 against a measured 510. ADR-0046 itself records
+`src/infrastructure/store/migrations.ts` 520 against a measured 510. ADR-0048 itself records
 that the file measured 507 before the compression, so the per-file ceiling was the binding
 constraint that bought the prose deletion. The pin rises to 560, fifty lines of bounded room
 sized like the layer amendment: the twelve restored lines plus a few near-term corrections,
@@ -4065,8 +4065,8 @@ module leads with its imports.
 **Why:** a ceiling ten lines above measurement is not discipline, it is a scheduled choice
 between an ADR amendment and deleting the documentation `CLAUDE.md` and `AGENTS.md` point
 readers at - fixing that at one ratchet while leaving it at the other closes nothing.
-**Relates to:** ADR-0018, ADR-0046, ADR-0047, D-120.
-**Revert path:** ADR-0047 and the pin figure revert together; the import move is independently
+**Relates to:** ADR-0018, ADR-0048, ADR-0049, D-120.
+**Revert path:** ADR-0049 and the pin figure revert together; the import move is independently
 revertible.
 
 ### D-125 · 2026-08-06 · reversible · The whole append is classified, and a recorded figure is a measurement
@@ -4083,12 +4083,12 @@ with a rollback to a savepoint that never existed, and `storeFailure` still retu
 `AppError` unchanged - the typed `NOT_FOUND` from the tenant lock reaches the caller as
 `NOT_FOUND`, now with the log line it always owed.
 
-**A figure recorded in the ratchet is a measurement, not a memory.** ADR-0047's commit hoisted
+**A figure recorded in the ratchet is a measurement, not a memory.** ADR-0049's commit hoisted
 one import into `recorded-version-registry.ts` and left `line-budget.test.ts` and the D-121
 proof-log entry both reading infrastructure 7,701 against a measured 7,702, the proof log
 asserting "unchanged" about the commit that changed it. Both records are corrected, and this
-round's classification restructure returns the layer to 7,701 measured. The ADR-0039
-`Amended by` line stopped at ADR-0044 while ADR-0040 and ADR-0045 both declare they amend it,
+round's classification restructure returns the layer to 7,701 measured. The ADR-0041
+`Amended by` line stopped at ADR-0046 while ADR-0042 and ADR-0047 both declare they amend it,
 so a reader following the ledger chain never reached the frozen-codec and non-locking
 verification decisions that govern the shipped code; both are appended.
 
@@ -4099,7 +4099,7 @@ extractor (`decisionRef.id`, else `priorDecisionRef.id`) is written six times -
 four `undefined`. It is a structural property of the `LedgerEntry` union, so its home is
 `contracts/decision-core/ledger.ts`, which every one of those modules may import, including
 the domain projector that cannot import infrastructure. The same key carries the ADR
-back-reference convention: ADR-0040, 0041, 0042, 0045, and 0046 carry no `Amended by` line
+back-reference convention: ADR-0042, 0041, 0042, 0045, and 0046 carry no `Amended by` line
 though each is amended later, so the convention is either completed across the chain or
 dropped for `docs/adr/README.md` as the single index. The same key also carries
 `correlationId`, removed from the register view model by D-123: it is the natural spine of a
@@ -4110,7 +4110,7 @@ wrap-up mode is in force; the trigger is the next prompt that touches the ledger
 **Why:** an unclassified failure at the ledger's only write chokepoint is undiagnosable
 exactly when an operator needs it most, and a ratchet whose recorded figure drifts from its
 measurement trains the next agent to trust the record instead of re-measuring.
-**Relates to:** ADR-0018, ADR-0039, ADR-0045, ADR-0047, D-116, D-118, D-121.
+**Relates to:** ADR-0018, ADR-0041, ADR-0047, ADR-0049, D-116, D-118, D-121.
 **Revert path:** the prologue restructure, the corrected figures, and the ADR back-reference
 are independently revertible; the deferral is a note.
 
@@ -4134,6 +4134,15 @@ emptiness means the seed never ran. An empty ledger in `staging`/`production` is
 explicitly - "the post-decision append surface is deferred (D-116)" - and passes. Emptiness is
 forgiven only where the charter's own design produced it, never as a blanket exit 0.
 
+**Corrected by D-124: the `production` arm is forward-looking, not exercised behavior.** Only
+`staging` reaches the deferred-empty verdict today. `getConfig()` requires
+`store.driver=postgres` under `APP_ENV=production` and `createDb` refuses that driver with
+`STORE_UNAVAILABLE` (D-006/ADR-0004), so both scripts fail at store creation in production long
+before the verdict is consulted. The paragraph above justified the arm with a production restore
+operator; that operator cannot run these commands until the managed-Postgres adapter lands. The
+arm and its runbook steps are the procedure that adapter must satisfy, and the dev/CI behavior is
+unchanged.
+
 **A field that reaches no surface leaves the contract (charter #5).** `LedgerEntryView.correlationId`
 and the top-level `verification.entriesChecked`/`entriesStored` crossed `/api/ledger` and were
 typed into the view model, but `/app/ledger` renders neither: the per-level `entriesChecked` is
@@ -4142,7 +4151,7 @@ interface fields, so nothing else would have caught them. All three are removed 
 model and the route payload rather than grown into the page; `correlationId` is recorded as a
 candidate for a future examiner surface under `ledger-followup-decision-id-extractor`.
 
-**ADR-0043 does not amend ADR-0039.** Its own header declares it amends ADR-0018 and ADR-0042,
+**ADR-0045 does not amend ADR-0041.** Its own header declares it amends ADR-0018 and ADR-0044,
 and `docs/adr/README.md` agrees; it was a stale carry-over on the `Amended by` line D-122
 corrected, so it is dropped. A back-reference that names a decision which does not govern the
 file is the same defect as one that omits a decision which does.
@@ -4150,6 +4159,54 @@ file is the same defect as one that omits a decision which does.
 **Why:** a gate that cannot tell a ratified empty state from unseeded data either reads a
 healthy restore as a break at the worst possible moment or lets a broken CI gate pass green,
 and both failures come from the same missing distinction.
-**Relates to:** ADR-0039, ADR-0044, ADR-0045, D-116, D-118, D-122; charter #4, #5.
+**Relates to:** ADR-0041, ADR-0046, ADR-0047, D-116, D-118, D-122; charter #4, #5.
 **Revert path:** the shared verdict, the view-model removals, and the ADR back-reference are
 independently revertible; restoring the old guards is a one-line change in each script.
+
+### D-127 · 2026-08-06 · reversible · Formatting is not a currency for ceilings either
+
+**The ledger's write chokepoint is pinned** (ADR-0050). ADR-0049 closed the exhausted-headroom
+failure at the first per-file pin and recorded that no other file needed the correction. The
+binding constraint had simply moved to the DEFAULT ceiling:
+`src/infrastructure/ledger/ledger-store.ts` measured exactly 500 at ADR-0049, and D-122's
+prologue-classification fix bought its own lines back by folding a six-line
+`insertEvidenceSnapshots(...)` call onto one, landing at 499 where the unfolded form would have
+measured 504 and failed the fence. That fold was a ceiling being paid
+in code shape rather than in prose - the same anti-pattern in a cheaper disguise, on the decision
+ledger's SOLE write chokepoint and the module this branch corrects most often. The call is
+restored to its multi-line form and the file takes the second pinned entry at 550 against a
+measured 504: forty-six lines of bounded room, sized like the `migrations.ts` pin. Splitting was
+rejected on the file's own merits - `ledger-bindings.ts`, `ledger-sources.ts`,
+`ledger-projection-store.ts`, and `ledger-verification.ts` are already the seams, and what remains
+is one append transaction whose savepoint guards the caller's. Every other shipped file this
+branch touched was re-measured; the closest is `ledger-replay-loader.ts` at 493/500, outside the
+threshold this correction applies and named in ADR-0050 as the next candidate. Layer ceilings do
+not move: the restored formatting measures infrastructure 7,706/7,800, and
+`line-budget.test.ts` records that measurement.
+
+**D-123's `production` arm is forward-looking, and the runbook now says so.** D-123 justified the
+deferred-empty verdict with a production restore operator reading exit(1) as a corrupted chain,
+but that operator cannot occur yet: production requires the postgres driver and `createDb` refuses
+it with `STORE_UNAVAILABLE` (D-006/ADR-0004), so `pnpm audit:chain` and `pnpm ledger:rebuild` fail
+at store creation there, and only `staging` reaches the verdict today. D-123 carries the
+correction, `scripts/decision-ledger-vacuity.ts` states which arm is exercised and which awaits
+the adapter, and `docs/runbooks/backup-and-restore.md` marks its steps 3-4 as the procedure that
+adapter must satisfy rather than commands to run against a production instance. The guard, the
+verdict, and the dev/CI behavior are unchanged; building the postgres adapter stays out of scope.
+
+**Hook timeouts match the test timeout the same PGlite slowness bought.** `vitest.config.ts`
+raised `testTimeout` to 20s for PGlite and left `hookTimeout` at the 10s default, though the
+integration `beforeEach` hooks create an instance, run every migration, and seed - more work than
+the bodies. Verifying this round's fixes surfaced it twice: a full run failed
+`tenant-isolation.test.ts`, the next failed `store-schema.test.ts`'s setup hook, and both files
+passed in isolation. A suite that fails a different file each run trains everyone to ignore red
+(charter #8, the same reason the clock is pinned non-UTC), so the hook budget now matches.
+
+**Why:** a ratchet that can only be satisfied by reformatting teaches the next agent that ceilings
+are paid in readability, and a decision entry justified by a scenario the deferral makes
+impossible is read by a later agent as behavior someone exercised.
+**Relates to:** ADR-0004, ADR-0018, ADR-0048, ADR-0049, ADR-0050, D-006, D-116, D-120, D-121,
+D-122, D-123.
+**Revert path:** ADR-0050 and the pin revert together with the call's formatting; the D-123
+correction, the script comment, and the runbook note are documentation and independently
+revertible; the hook budget is one line in `vitest.config.ts`.

@@ -1,10 +1,10 @@
-# ADR-0043: Ledger history authority and bounded disclosure hardening
+# ADR-0045: Ledger history authority and bounded disclosure hardening
 
 **Status:** Accepted
 **Date:** 2026-08-05
 **Deciders:** Founding architect
-**Amends:** ADR-0018 and ADR-0042
-**Amended by:** ADR-0044
+**Amends:** ADR-0018 and ADR-0044
+**Amended by:** ADR-0046
 **Relates to:** Charter non-negotiables #1, #4, #7, #13; v3 invariants 2, 5, 6, 13, 30
 
 ## Context
@@ -60,7 +60,7 @@ single authority at every acceptance and disclosure boundary.
 A correctly chained but causally impossible decision or reservation event fails at L2.
 Deleting derived reservation state cannot authorize a second active generation. Raw
 ledger bytes cannot cross an exported boundary without both governed grants. Bounded
-replay never consumes provenance bytes it did not verify. ADR-0044 later requires the
+replay never consumes provenance bytes it did not verify. ADR-0046 later requires the
 request path to authenticate the full chain before selecting that bounded replay window.
 
 ## Revisit When

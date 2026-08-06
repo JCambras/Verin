@@ -5660,7 +5660,7 @@ anchor. Each attack is rejected or detected at its claimed layer.
 
 **Revert:** removed the planted source file. The fence and all companions pass.
 
-**Date:** 2026-07-28 (v3 prompt 7, ADR-0041, D-105).
+**Date:** 2026-07-28 (v3 prompt 7, ADR-0043, D-105).
 
 ### PF-194 decision-ledger anti-fork fence widened to every immutable source table
 ## Decision-ledger anti-fork fence widened to every immutable source table (D-110)
@@ -5702,7 +5702,7 @@ reproduces the online fold byte-identically.
 
 **Revert:** restored the guard. All four projection companions pass.
 
-**Date:** 2026-07-28 (review follow-up to v3 prompt 7, ADR-0041, D-106).
+**Date:** 2026-07-28 (review follow-up to v3 prompt 7, ADR-0043, D-106).
 
 ### PF-196 a swallowed mid-batch refusal leaves a verifiable anchor
 ## A swallowed mid-batch refusal leaves a verifiable anchor (D-111)
@@ -5742,7 +5742,7 @@ AssertionError: expected false to be true
 
 **Revert:** restored the join over every contributing row.
 
-**Date:** 2026-07-28 (review follow-up to D-106, ADR-0041, D-107).
+**Date:** 2026-07-28 (review follow-up to D-106, ADR-0043, D-107).
 
 ### PF-198 decision-ledger residual review corrections
 ## Decision-ledger residual review corrections (D-114)
@@ -5780,7 +5780,7 @@ cannot affect a reused reservation.
 **Revert:** no planted source remains. The focused typecheck, ledger contract,
 integration, and projection suites pass.
 
-**Date:** 2026-07-28 (review corrections F1-F9, ADR-0041, D-110).
+**Date:** 2026-07-28 (review corrections F1-F9, ADR-0043, D-110).
 
 ## Decision-ledger binding and verified register corrections (D-111)
 ## Decision-ledger binding and verified register corrections (D-115)
@@ -5821,7 +5821,7 @@ src/infrastructure/ledger/ledger-store.ts:56
 
 **Revert:** removed the planted raw insert. The focused correction suite passes.
 
-**Date:** 2026-07-28 (review corrections F1-F7, ADR-0041, D-111).
+**Date:** 2026-07-28 (review corrections F1-F7, ADR-0043, D-111).
 ## Decision-ledger authority, retention, and disclosure corrections (D-112)
 ## Decision-ledger authority, retention, and disclosure corrections (D-116)
 
@@ -5858,9 +5858,9 @@ x suppresses every register row when stored actor metadata fails verification
 
 **Revert:** restored all three guards. The focused 164-test boundary suite and the full
 1,278-test non-UTC suite pass. Typecheck, lint, knip, the 500-line cap, and the measured
-ADR-0042 line ceiling also pass.
+ADR-0044 line ceiling also pass.
 
-**Date:** 2026-08-04 (review corrections F1-F9, ADR-0041/0042, D-112).
+**Date:** 2026-08-04 (review corrections F1-F9, ADR-0043/0042, D-112).
 ### PF-199 decision-ledger retention and constructed-SQL anti-fork coverage
 ### PF-204 decision-ledger retention and constructed-SQL anti-fork coverage
 
@@ -5931,12 +5931,12 @@ value for immutable inserts and every preflight for a read-only `SELECT` head.
 
 After the corrections, the five focused append-only, size, budget, decision-ledger, and
 projection suites pass 86 tests. The line-budget companion measures infrastructure at
-6,608 lines under the ADR-0041 ceiling.
+6,608 lines under the ADR-0043 ceiling.
 
 **Revert:** no planted production source remains. The in-memory SQL sources and runtime
 payloads stay as detection-is-not-verification companions.
 
-**Date:** 2026-08-05 (review corrections F10-F14, ADR-0041, D-114).
+**Date:** 2026-08-05 (review corrections F10-F14, ADR-0043, D-114).
 ### PF-201 ledger acceptance, source trust, and batched register replay
 ### PF-206 ledger acceptance, source trust, and batched register replay
 
@@ -5967,7 +5967,7 @@ display limit, and proves all fourteen are counted without per-event source quer
 **Revert:** no planted production data remains. The correctly rechained rows and
 query-count harness remain as detection-is-not-verification companions.
 
-**Date:** 2026-08-05 (review corrections F15-F18, ADR-0042, D-115).
+**Date:** 2026-08-05 (review corrections F15-F18, ADR-0044, D-115).
 ### PF-202 immutable ledger ordering, transaction authenticity, and bounded origin trust
 ### PF-207 immutable ledger ordering, transaction authenticity, and bounded origin trust
 
@@ -6005,7 +6005,7 @@ corrections.
 module reevaluation, and old-origin tamper remain as detection-is-not-verification
 companions.
 
-**Date:** 2026-08-05 (review corrections F19-F23, ADR-0043, D-116).
+**Date:** 2026-08-05 (review corrections F19-F23, ADR-0045, D-116).
 ### PF-203 immutable write forms and ledger compatibility bindings
 ### PF-208 immutable write forms and ledger compatibility bindings
 
@@ -6042,13 +6042,13 @@ anchor and complete ledger together without `FOR UPDATE` or a transaction.
 
 After correction, the focused append-only, contract, ledger, projection, and budget
 suites pass. The line-budget companion measures contracts at 4,598 lines and
-infrastructure at 7,652 under the ADR-0045 ceilings.
+infrastructure at 7,652 under the ADR-0047 ceilings.
 
 **Revert:** no planted production SQL or invalid history remains. The in-memory write
 forms, privileged rechain, query harness, and frozen-schema pins remain as
 detection-is-not-verification companions.
 
-**Date:** 2026-08-05 (review corrections F30-F35, ADR-0045, D-118).
+**Date:** 2026-08-05 (review corrections F30-F35, ADR-0047, D-118).
 ---
 
 ### PF-209 ledger-pii-vocabulary + ledger-reachability · `src/__tests__/fitness/ledger-pii-vocabulary.test.ts`, `src/__tests__/fitness/ledger-reachability.test.ts`
@@ -6200,7 +6200,7 @@ immutable execution step", "ledger reservation is absent from the immutable exec
 plan", "ledger conflict keys differ from the immutable execution plan", "ledger
 verification rule is absent from the immutable execution plan"), and each is asserted by
 message, not only by code. The line-budget companion measures contracts at 4,598 lines
-and infrastructure at 7,689 under the ADR-0045 ceilings.
+and infrastructure at 7,689 under the ADR-0047 ceilings.
 
 **Revert:** no planted binding bypass, ordering re-proof, or savepoint form remains.
 
@@ -6231,7 +6231,7 @@ refuses a shared key), and the same test asserts the unrelated key is still refu
 proven in both directions, not merely reached.
 
 The line-budget companion measures contracts 4,598, domain 1,584, infrastructure 7,701,
-and presentation 928 under the ADR-0046 ceilings, after restoring the migration prose an
+and presentation 928 under the ADR-0048 ceilings, after restoring the migration prose an
 earlier correction had compressed away to fit the previous ceilings. `migrations.ts`
 measured 507 lines before that compression, so the per-file ratchet was squeezing it too;
 it now carries the first pinned `max-file-size` entry (520 against a measured 510), and
@@ -6244,7 +6244,7 @@ that fence's companion still flags a synthetic file one line over the default.
 
 ## The raised per-file pin still fences (D-128)
 
-**Invariant:** the `max-file-size` pin ADR-0047 raises for
+**Invariant:** the `max-file-size` pin ADR-0049 raises for
 `src/infrastructure/store/migrations.ts` (520 to 560, against a measured 510) is a real
 ceiling with bounded headroom, not an exemption - the file is still measured and still
 fails one line over.
@@ -6263,7 +6263,7 @@ still flags a synthetic file one line over the default and passes a small one, s
 default is unaffected by the pin; `migrations.ts` remains the ONLY pinned entry, so no
 other file sits near its ceiling under the same squeeze. The line-budget companion
 measures contracts 4,598, domain 1,584, and presentation 928 under unmoved ceilings,
-since ADR-0047 amends no layer ceiling. **Corrected under D-122:** infrastructure
+since ADR-0049 amends no layer ceiling. **Corrected under D-122:** infrastructure
 measured 7,702, not the 7,701 first recorded here - the same commit hoisted the
 `appError` import in `recorded-version-registry.ts`, one added infrastructure line.
 
@@ -6305,7 +6305,7 @@ the tenant lock still reaches the caller unchanged rather than collapsing into `
 
 The line-budget companion measures contracts 4,598, domain 1,584, infrastructure 7,701,
 and presentation 928: the classification restructure folded one call onto a single line,
-returning the layer to the figure ADR-0046 recorded. No ceiling moved and `migrations.ts`
+returning the layer to the figure ADR-0048 recorded. No ceiling moved and `migrations.ts`
 still measures 510 against its 560 pin.
 
 **Revert:** no planted prologue-outside-the-try shape remains in `ledger-store.ts`.
@@ -6360,3 +6360,61 @@ entries at exit 0, and `ledger:rebuild` replays 5 entries into 1 projection at e
 **Revert:** no planted verdict remains in `scripts/decision-ledger-vacuity.ts`.
 
 **Date:** 2026-08-06 (review corrections, D-130).
+---
+
+## The second per-file pin still fences (D-131)
+
+**Invariant:** the `max-file-size` pin ADR-0050 adds for
+`src/infrastructure/ledger/ledger-store.ts` (550 against a measured 504, with the folded
+`insertEvidenceSnapshots(...)` call restored to its multi-line form) is a real ceiling with
+bounded headroom, not an exemption - the file is still measured and still fails one line over.
+
+**Injection:** appended 47 padding lines to `src/infrastructure/ledger/ledger-store.ts`,
+taking it from 504 to 551.
+
+```text
+FAIL  src/__tests__/fitness/max-file-size.test.ts > max-file-size fence > enforces: no shipped file exceeds its ceiling (default 500)
+AssertionError: oversized files (split them):
+src/infrastructure/ledger/ledger-store.ts: 551 > 550: expected [ Array(1) ] to deeply equal []
+```
+
+The injection was reverted and the file measures 504 again. The fence's own companion still
+flags a synthetic file one line over the DEFAULT and passes a small one, so neither pin
+weakens the default. Every other shipped file was re-measured with this fence's algorithm:
+`migrations.ts` 510/560, `ledger-replay-loader.ts` 493/500 (the closest unpinned file, outside
+the threshold this correction applies), and nothing else above 445. The line-budget companion
+measures contracts 4,598, domain 1,584, infrastructure 7,706, and presentation 928 - the
+restored formatting is the +5 on infrastructure, against an unmoved 7,800 ceiling.
+
+**Revert:** no planted padding remains in `ledger-store.ts`.
+
+**Date:** 2026-08-06 (review corrections, D-131).
+
+---
+
+## D-130's production arm is forward-looking, and the record now says so (D-131)
+
+**Invariant:** a DECISIONS entry describes behavior that can occur. D-130 justified the
+deferred-empty vacuity verdict with a production restore operator; production cannot reach that
+verdict until the managed-Postgres adapter lands (D-006/ADR-0004), so `staging` is the arm
+exercised today. Verified against the shipped scripts:
+
+```text
+APP_ENV=production VERIN_STORE_DRIVER=postgres DATABASE_URL=postgres://...
+  audit-chain-verify error: STORE_UNAVAILABLE: postgres store adapter is deferred
+  (ADR-0004/D-006); use VERIN_STORE_DRIVER=pglite for dev/CI
+
+APP_ENV=production VERIN_STORE_DRIVER=pglite
+  Error: FATAL: invalid configuration: store.driver: PROD_REQUIRES_POSTGRES:
+  production must use the postgres store driver
+```
+
+Both refusals land at store creation and config validation respectively - before
+`decisionLedgerVacuity` is consulted at all. No guard, verdict, or dev/CI behavior changed:
+D-130 carries the correction, the script header names which arm is exercised and which awaits
+the adapter, and `docs/runbooks/backup-and-restore.md` marks its steps 3-4 as the procedure
+that adapter must satisfy.
+
+**Revert:** documentation and a comment; the shipped verdict is untouched.
+
+**Date:** 2026-08-06 (review corrections, D-131).

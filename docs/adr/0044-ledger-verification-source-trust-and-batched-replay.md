@@ -1,9 +1,9 @@
-# ADR-0042: Ledger verification, source trust, and batched replay
+# ADR-0044: Ledger verification, source trust, and batched replay
 
 **Status:** Accepted
 **Date:** 2026-08-05
 **Deciders:** Founding architect
-**Amends:** ADR-0018, ADR-0039, and ADR-0041
+**Amends:** ADR-0018, ADR-0041, and ADR-0043
 **Relates to:** Charter non-negotiables #1, #3, #4, #7, #13; v3 invariants 5, 6, 13, 30
 
 ## Context
@@ -36,7 +36,7 @@ last option already has append-only, tenant-scoped, hash-bound storage.
   evidence rows, and first recording edges before folding. Query count is bounded by
   source categories rather than event count, and verification returns the rows it
   already read instead of selecting the window twice.
-- Correct ADR-0039's migration history: version 4 creates the ledger foundation and
+- Correct ADR-0041's migration history: version 4 creates the ledger foundation and
   version 5 adds replay-source schema identity and reservation-generation ownership.
 - Raise the infrastructure ceiling from 6,650 to 7,050 lines. The corrected layer
   measures 6,927 lines, leaving 123 lines of bounded headroom. The 500-line file cap is

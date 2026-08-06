@@ -56,9 +56,16 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0038](./0038-line-budget-observability-identifier-provenance.md) | Domain and infrastructure ceilings for observability identifier provenance | Accepted (amends ADR-0033/0036) |
 | [0039](./0039-primitive-vocabulary.md) | Decision-primitive vocabulary (v3 prompt 8): six-primitive catalog in `contracts/primitives`, versioned + provisional + falsification-tested | Accepted |
 | [0040](./0040-line-budget-primitive-vocabulary.md) | Contracts ceiling 4,050 to 5,460 for the primitive catalog | Accepted (amends ADR-0035) |
-| [0041](./0041-sibling-decision-ledger.md) | Sibling append-only decision ledger and replay storage (v3 prompt 7); ceiling amendments compose with the prompt-8 catalog | Accepted (amends ADR-0007/0018/0019) |
-| [0042](./0042-line-budget-ledger-review-hardening.md) | Infrastructure ceiling for sealed ledger authority and verified disclosure | Accepted (amends ADR-0018/0041) |
-| [0043](./0043-line-budget-ledger-retention-hardening.md) | Infrastructure ceiling for fail-closed ledger retention and bounded replay | Accepted (amends ADR-0018/0042) |
+| [0041](./0041-sibling-decision-ledger.md) | Sibling append-only decision ledger and replay storage | Accepted (amends ADR-0007, ADR-0018, and ADR-0019) |
+| [0042](./0042-line-budget-ledger-review-hardening.md) | Infrastructure line budget for ledger review hardening | Accepted (amends ADR-0018 and ADR-0041) |
+| [0043](./0043-line-budget-ledger-retention-hardening.md) | Infrastructure line budget for ledger retention hardening | Accepted (amends ADR-0018 and ADR-0042) |
+| [0044](./0044-ledger-verification-source-trust-and-batched-replay.md) | Ledger verification, source trust, and batched replay | Accepted (amends ADR-0018, ADR-0041, and ADR-0043) |
+| [0045](./0045-ledger-history-authority-hardening.md) | Ledger history authority and bounded disclosure hardening | Accepted (amends ADR-0018 and ADR-0044) |
+| [0046](./0046-ledger-full-chain-register-verification.md) | Full-chain register verification with bounded disclosure | Accepted (amends ADR-0041 and ADR-0045) |
+| [0047](./0047-ledger-codecs-and-register-availability.md) | Frozen ledger codecs and register availability | Accepted (amends ADR-0018, ADR-0041, and ADR-0046) |
+| [0048](./0048-line-budget-restores-compressed-migration-prose.md) | The infrastructure ceiling absorbs restored migration prose | Accepted (amends ADR-0018 and ADR-0047) |
+| [0049](./0049-per-file-pin-headroom.md) | The per-file pin gets the same bounded headroom as the layer ceiling | Accepted (amends ADR-0018 and ADR-0048) |
+| [0050](./0050-ledger-store-per-file-pin.md) | The ledger's write chokepoint is pinned rather than compressed | Accepted (amends ADR-0018 and ADR-0049) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

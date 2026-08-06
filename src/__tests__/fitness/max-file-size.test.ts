@@ -13,16 +13,23 @@ import { relative, join } from "node:path";
  */
 const DEFAULT_CEILING = 500;
 const CEILINGS: Record<string, number> = {
-  // ADR-0046/ADR-0047 (the architecture-review note this map requires). The ledger DDL
+  // ADR-0048/ADR-0049 (the architecture-review note this map requires). The ledger DDL
   // already lives in its own module; what remains is the baseline schema and the runner
   // that applies it, and separating those would put a migration's DDL in a different
   // file from the code proving its ledger prefix. The 12 restored lines of sharp-edge
   // prose are documentation this file is POINTED AT for, so the pin is the honest cost.
-  // MEASURED 510 at ADR-0047: the pin carries bounded correction headroom for the same
+  // MEASURED 510 at ADR-0049: the pin carries bounded correction headroom for the same
   // reason the layer ceiling does — a ceiling that cannot absorb a correction just
   // converts review findings into documentation deletions, which is how this file's
   // prose was deleted once already.
   "src/infrastructure/store/migrations.ts": 560,
+  // ADR-0050 (the architecture-review note for this entry). The ledger's sole write
+  // chokepoint sat one line under the default, and the previous round bought that line by
+  // folding a six-line call onto one - the same "pay the ceiling in formatting" move
+  // ADR-0048 and ADR-0049 exist to end. The natural seams (bindings, sources, projections,
+  // verification) are already extracted into siblings, so the remaining content is the
+  // append transaction itself. MEASURED 504 with the call restored to its readable form.
+  "src/infrastructure/ledger/ledger-store.ts": 550,
 };
 
 function lines(file: string): number {
