@@ -55,7 +55,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0037](./0037-line-budget-domain-resume-seal.md) | Domain ceiling 1,250 to 1,300 for pre-load resume validation | Accepted (amends ADR-0033) |
 | [0038](./0038-line-budget-observability-identifier-provenance.md) | Domain and infrastructure ceilings for observability identifier provenance | Accepted (amends ADR-0033/0036) |
 | [0039](./0039-primitive-vocabulary.md) | Decision-primitive vocabulary (v3 prompt 8): six-primitive catalog in `contracts/primitives`, versioned + provisional + falsification-tested | Accepted |
-| [0040](./0040-line-budget-primitive-vocabulary.md) | Contracts ceiling 4,050 to 5,400 for the primitive catalog | Accepted (amends ADR-0035) |
+| [0040](./0040-line-budget-primitive-vocabulary.md) | Contracts ceiling 4,050 to 5,460 for the primitive catalog | Accepted (amends ADR-0035) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

@@ -31,6 +31,16 @@ A **primitive** is a named, versioned, **pure** function:
   binds - this is what makes AST paths closable at load time.
 - **Invocation** is bound by domain configuration (prompt 10), never by the evaluator
   branching on a domain - the evaluator runs whatever the configuration bound.
+- **At most once per domain configuration.** A primitive is bound AT MOST ONCE per domain
+  configuration (captain ruling `p8-review-askuser-2`). Four primitives publish unscoped
+  keys - `sufficiency.*`, `availability.*`, `projection.*`, `restrictions.*` - and those
+  key shapes stay ratified verbatim, so a second binding of the same primitive would
+  silently overwrite the first one's published facts and the AST would evaluate a
+  wrong-but-plausible fact rather than fail. Prompt 10's config load MUST therefore reject
+  a double-binding fail-closed, with a precise error naming the primitive and both
+  bindings; last-write-wins is not an option. Falsification path: a real configuration that
+  needs one primitive twice (a reserve floor AND a per-transaction cap, both
+  `sufficiency-check`) forces binding-namespaced published keys under a set version bump.
 
 **The razor, applied in both directions:**
 
@@ -94,9 +104,14 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   2026-02-28). The anchor date is the bundle's asOf instant projected into the bundle's
   time zone ONCE by the evaluation harness; the primitive itself never touches tz data,
   which keeps its arithmetic pure integer math.
-- **Parameters:** `seriesEvidenceKind`, `horizonMonths` (positive integer - the target
-  of the ratified natural-language policy moment), `direction` (literal `forward` in v1;
-  a backward projection is a parse error today and a version bump tomorrow).
+- **Parameters:** `seriesEvidenceKind`, `horizonMonths` (positive integer bounded at 1200,
+  one hundred years - the target of the ratified natural-language policy moment), `direction`
+  (literal `forward` in v1; a backward projection is a parse error today and a version bump
+  tomorrow). The bound exists for totality: the window end is calendar arithmetic on a
+  four-digit ISO year, so an unbounded horizon could name a year the date type cannot
+  express. `addCalendarMonths` stays total regardless by saturating at `9999-12-31` rather
+  than rendering an unparseable date, and the parse-boundary cap keeps that saturation an
+  unreachable backstop instead of a silently wrong window.
 - **Applicable evidence:** one schedule-class snapshot projecting to dated flows
   (`dueOn`, `amountMinor`).
 - **Possible effects:** publishes `projection.total` (the 48,000/96,000 USD reserve
@@ -157,10 +172,15 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   retirement-account alternative rejected for the configured taxable-event reason), so
   ambiguity semantics stay uniform everywhere.
 - **Possible effects:** publishes `selection.<slot>.outcome` (always) and, conditionally,
-  `selection.<slot>.selectedRef`, `selection.<slot>.alternatives` (with `rejectedBecause`
-  codes; ranked-behind survivors carry `ranked-behind-selection`),
+  `selection.<slot>.selectedRef`, `selection.<slot>.alternatives`, and
   `selection.<slot>.openQuestion` (feeding `ResolutionState.ambiguous` and the blocked
-  decision's structured question).
+  decision's structured question). `alternatives` carries the exclusion trace on EVERY
+  outcome - every non-selected candidate with its configured `rejectedBecause` code, in
+  canonical order, ranked-behind survivors carrying `ranked-behind-selection` - and is
+  absent only when nothing was excluded or ranked behind (captain rulings
+  `p8-review-askuser-4` and `-5`). An empty outcome without its trace cannot explain why no
+  candidate survived, and an ambiguous one without it hides from the human answering the
+  question that a candidate was filtered out before the question was ever asked.
 - **Falsification test:** a real case requiring multi-candidate allocation with
   quantities (split 75,000 USD across two sources pro-rata) or pairwise-interacting
   selection (tax-lot selection). Single-winner selection is then wrong and the declared
@@ -189,6 +209,19 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   `regulatory`, outranking everything in the precedence trace) both draw their
   prohibition source from this attribution, never from the firm AST's `prohibit` effect:
   a firm rule cannot impersonate a client mandate or a regulation.
+- **Absent evidence is the validation stage's problem, not the screen's** (captain ruling
+  `p8-review-askuser-5`, mirroring the `evidence-reconciliation` split).
+  `restrictions.matched.<kind> = false` means "screened against everything supplied"; it
+  NEVER means "the restriction evidence was verified present", so a bundle assembled
+  without restriction lists screens clean by construction. A domain configuration that
+  binds `restriction-screen` MUST therefore declare its restriction-source evidence kinds
+  as required evidence, and prompt 10's config-load cross-check of that obligation is
+  BINDING and fail-closed: a configuration binding the screen without a restriction-source
+  evidence requirement for every bound restriction kind is a config load error naming the
+  primitive and the undeclared kinds, so validation blocks before evaluation can publish a
+  clear screen over evidence nobody assembled. Falsification path: if prompt 10 cannot
+  express that linkage, `restrictionKinds[]` entries gain `sourceEvidenceKinds` under a
+  primitive-set version bump.
 - **Falsification test:** a restriction whose applicability requires computation, not
   matching - "no more than two distributions per quarter" is an aggregate-based
   restriction, and forcing it through the screen would smuggle aggregation into

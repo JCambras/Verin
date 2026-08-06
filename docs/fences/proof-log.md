@@ -5496,3 +5496,61 @@ corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
                                                              # amended with the re-measured figure in the
                                                              # follow-up that also lands the rationale-doc updates.
 ```
+
+### PF-191 the exclusion trace reaches EVERY selection outcome; ADR-0040 re-measured
+
+PF-190 landed the exclusion trace on the empty outcome only, and the key
+descriptor codified the gap ("absent only on the ambiguous outcome"). The same
+justification applies to ambiguity: `single-eligible` over three candidates
+where one carries a configured exclusion classification publishes two candidates
+in `openQuestion` and no record that a third was filtered out or why, so the
+human answering the structured question cannot see it (captain ruling
+`p8-review-askuser-5`). `candidate-selection` now publishes
+`selection.<slot>.alternatives` on every outcome through one shared helper, and
+the key is genuinely conditional: present whenever candidates were excluded or
+ranked behind, absent only when neither happened, which is exactly what the
+descriptor now says.
+
+**Adversarial proof (two injections, each reverted after failing):**
+
+1. Dropped the trace spread from the `ambiguous` record. The unit case "explains
+   an ambiguous outcome with the exclusion trace of the candidates it filtered
+   out" failed at `src/__tests__/unit/primitives.test.ts` with "expected
+   undefined to deeply equal [ { ref: {…}, …(1) } ]", proving the assertion reads
+   the published trace rather than the outcome code, and that the excluded
+   candidate's configured `reasonCode` is what it checks.
+2. Forced the trace helper's guard to `false` so alternatives published
+   unconditionally (an empty array when nothing was excluded). The unit case
+   "omits the trace only when nothing was excluded or ranked behind" failed
+   ("expected true to be false"), proving the conditional presence the descriptor
+   declares is enforced and not incidentally true.
+
+The published-key subset invariant is re-proved for the new emission: the
+key-discipline case list now evaluates `candidate-selection` on an ambiguous
+input as well as the selected and all-excluded ones, so all three outcomes are
+checked against the declared map (canonical order, valid descriptors, every
+produced key declared, every `always` key produced).
+
+`docs/primitive-rationale.md` records this round's rulings alongside the
+behavior: the every-outcome `alternatives` semantics, the at-most-once binding
+rule with prompt-10's fail-closed double-binding rejection, the
+restriction-screen absent-evidence split (`matched.<kind> = false` means
+"screened against everything supplied", never "evidence verified present"), and
+the 1200-month horizon bound with its totality rationale.
+
+### PF-191 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/unit/primitives.test.ts \
+  src/__tests__/fitness/primitive-catalog.test.ts               # 75 tests passed
+corepack pnpm typecheck                                         # clean
+corepack pnpm lint                                              # clean
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                # 5 tests passed. Re-measured with the fence's own
+                                # algorithm: contracts 5418, domain 1298,
+                                # infrastructure 3484, presentation 928. ADR-0040 is
+                                # amended in place (it is part of this unmerged PR) to
+                                # a 5,460 contracts ceiling - the measured total plus
+                                # bounded correction room. Any further increase stays a
+                                # measured ADR amendment, never a code change.
+```

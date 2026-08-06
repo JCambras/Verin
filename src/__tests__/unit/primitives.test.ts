@@ -562,6 +562,32 @@ describe("candidate-selection", () => {
     ]);
   });
 
+  it("explains an ambiguous outcome with the exclusion trace of the candidates it filtered out", () => {
+    const first = { ref: ref("subject-a"), classifications: [] };
+    const second = { ref: ref("subject-b"), classifications: [] };
+    const published = evaluateParsed(
+      candidateSelection,
+      selectionInput([first, second, deferred], "single-eligible"),
+    );
+    expect(published["selection.source-account.outcome"]).toBe("ambiguous");
+    expect(published["selection.source-account.openQuestion"]).toEqual({
+      candidateRefs: [first.ref, second.ref],
+      humanQuestionCode: "which-subject",
+    });
+    expect(published["selection.source-account.alternatives"]).toEqual([
+      { ref: deferred.ref, rejectedBecause: "taxable-event-source" },
+    ]);
+  });
+
+  it("omits the trace only when nothing was excluded or ranked behind", () => {
+    const sole = evaluateParsed(
+      candidateSelection,
+      selectionInput([{ ref: ref("subject-a"), classifications: [] }], "single-eligible"),
+    );
+    expect(sole["selection.source-account.outcome"]).toBe("selected");
+    expect("selection.source-account.alternatives" in sole).toBe(false);
+  });
+
   it("refuses exactly-one bindings that configure exclusions - a self-contradiction", () => {
     expect(
       candidateSelection.inputSchema.safeParse(selectionInput([taxable], "exactly-one")).success,
@@ -949,6 +975,22 @@ describe("published-key discipline", () => {
           candidateSelection,
           selectionInput(
             [{ ref: ref("subject-a"), classifications: ["taxable-event-on-distribution"] }],
+            "single-eligible",
+          ),
+        ),
+      },
+      {
+        keys: candidateSelection.publishedKeys(
+          candidateSelection.parameterSchema.parse(selectionParameters),
+        ),
+        output: evaluateParsed(
+          candidateSelection,
+          selectionInput(
+            [
+              { ref: ref("subject-a"), classifications: [] },
+              { ref: ref("subject-b"), classifications: [] },
+              { ref: ref("subject-c"), classifications: ["taxable-event-on-distribution"] },
+            ],
             "single-eligible",
           ),
         ),

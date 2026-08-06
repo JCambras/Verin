@@ -184,7 +184,7 @@ export const candidateSelection = {
     const slot = parameters.subjectSlot;
     return {
       [`selection.${slot}.alternatives`]: publishedStructured(
-        "Non-selected candidates with their rejection reason codes; on the empty outcome, every excluded candidate. Absent only on the ambiguous outcome.",
+        "Non-selected candidates with their rejection reason codes, on every outcome: present whenever candidates were excluded or ranked behind, absent only when neither happened.",
         "conditional",
       ),
       [`selection.${slot}.openQuestion`]: publishedStructured(
@@ -219,30 +219,37 @@ export const candidateSelection = {
         survivors.push(candidate);
       }
     }
+    // Every outcome owes its trace: without the reason codes the binding
+    // configured, a candidate that was excluded or ranked behind is invisible
+    // both to the human answering an ambiguity and to any explanation surface,
+    // and "no candidate survived" cannot be explained at all.
+    const trace = (alternatives: readonly Alternative[]): PublishedFactRecord =>
+      alternatives.length === 0
+        ? {}
+        : {
+            [keyOf("alternatives")]: alternatives.map((alternative) => ({
+              ref: { ...alternative.ref },
+              rejectedBecause: alternative.rejectedBecause,
+            })),
+          };
     const ambiguous = (candidates: readonly Candidate[]): PublishedFactRecord => ({
+      ...trace(rejected),
       [keyOf("openQuestion")]: {
         candidateRefs: candidates.map((candidate) => ({ ...candidate.ref })),
         humanQuestionCode: input.parameters.ambiguityQuestionCode,
       },
       [keyOf("outcome")]: "ambiguous",
     });
-    const trace = (alternatives: readonly Alternative[]) =>
-      alternatives.map((alternative) => ({
-        ref: { ...alternative.ref },
-        rejectedBecause: alternative.rejectedBecause,
-      }));
     const selected = (
       winner: Candidate,
       alternatives: readonly Alternative[],
     ): PublishedFactRecord => ({
-      [keyOf("alternatives")]: trace(alternatives),
+      ...trace(alternatives),
       [keyOf("outcome")]: "selected",
       [keyOf("selectedRef")]: { ...winner.ref },
     });
-    // An empty outcome still owes its trace: without the exclusion reason codes
-    // the binding configured, "no candidate survived" cannot be explained.
     const empty: PublishedFactRecord = {
-      [keyOf("alternatives")]: trace(rejected),
+      ...trace(rejected),
       [keyOf("outcome")]: "empty",
     };
 

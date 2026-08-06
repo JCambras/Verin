@@ -1,4 +1,4 @@
-# ADR-0040: Contracts ceiling raised to 5,400 for the decision-primitive catalog
+# ADR-0040: Contracts ceiling raised to 5,460 for the decision-primitive catalog
 
 **Status:** Accepted
 **Date:** 2026-08-05
@@ -20,21 +20,31 @@ never a code change.
 
 ## Decision
 
-Raise the contracts ceiling from 4,050 to 5,400. Domain remains 1,350, infrastructure remains
+Raise the contracts ceiling from 4,050 to 5,460. Domain remains 1,350, infrastructure remains
 3,550, and presentation remains 6,000.
 
-Measured with the fence's own algorithm after the prompt-8 catalog landed:
+Measured with the fence's own algorithm after the prompt-8 catalog and its review hardening
+landed:
 
 | Layer | Measured | Ceiling | Headroom |
 |---|---:|---:|---:|
-| contracts | 5,353 | 5,400 | 47 |
+| contracts | 5,418 | 5,460 | 42 |
 | domain | 1,298 | 1,350 | 52 |
 | infrastructure | 3,484 | 3,550 | 66 |
+
+The figure this ADR is amended to covers the catalog AS REVIEWED, not the first draft of it:
+review of the shipped primitives added the horizon bound with its saturation contract, the
+own-property slot lookup, the restriction-list uniqueness refinement, the precomputed ranking
+positions, and the exclusion trace `candidate-selection` now publishes on every outcome. Those
+are the corrections the headroom exists to absorb, so they are inside the measured baseline
+rather than a reason to shrink documentation - the first amendment (5,400 on a 5,353 baseline)
+was measured before them and went red the moment they landed.
 
 The headroom is bounded correction room (the ADR-0033 lesson: a zero-headroom ceiling converts
 review findings into documentation deletions), not growth room. Prompt 9's AST schemas will need
 their own measured amendment when they land - that is the ADR-0018 discipline working, not a
-reason to over-provision now.
+reason to over-provision now. Any FURTHER increase is likewise a measured ADR amendment, never a
+code change.
 
 ## Revert path
 
