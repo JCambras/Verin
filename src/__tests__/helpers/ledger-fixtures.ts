@@ -280,6 +280,60 @@ export function reusedBundleRecordingInput(decisionId: string): RecordDecisionIn
   };
 }
 
+/** The compensation's OWN idempotency key - the schema forbids reusing the step's. */
+export const PLAN_COMPENSATION_IDEMPOTENCY_KEY = registerTestLedgerIdentifier(
+  "test:idem:compensate",
+);
+
+/**
+ * The same recording whose single plan step also carries a compensating action. The
+ * compensation is a retry-safe external action in its own right, so the key it
+ * declares is plan-authorized exactly as the step's own key is.
+ */
+export function compensatedRecordingInput(): RecordDecisionInput {
+  const first = decisionRecordingInput();
+  const raw = JSON.parse(JSON.stringify(first.decisionRecord)) as Record<
+    string,
+    unknown
+  > & {
+    result: { executionPlan: { steps: Record<string, unknown>[] } };
+  };
+  const step = raw.result.executionPlan.steps[0]!;
+  const action = { ...step };
+  delete action.id;
+  delete action.dependsOn;
+  delete action.compensatingAction;
+  step.compensatingAction = {
+    ...action,
+    idempotencyKey: PLAN_COMPENSATION_IDEMPOTENCY_KEY,
+    reasonCode: "custodian-timeout",
+  };
+  const candidate = DecisionRecordSchema.parse({
+    ...raw,
+    decisionHash: "0".repeat(64),
+  });
+  const decisionRecord = DecisionRecordSchema.parse({
+    ...candidate,
+    decisionHash: createHash("sha256")
+      .update(
+        unwrap(canonicalJson(decisionHashPreimage(candidate) as never)),
+        "utf8",
+      )
+      .digest("hex"),
+  });
+  return {
+    ...first,
+    decisionRecord,
+    events: first.events.map((event) =>
+      event.type === "DecisionRecorded"
+        ? LedgerEntrySchema.parse({
+          ...event,
+          decisionHash: decisionRecord.decisionHash,
+        })
+        : event),
+  };
+}
+
 /**
  * Evidence gathered AFTER the decision, with the event that records it - the pair a
  * verification-time `StatusObserved` cites.

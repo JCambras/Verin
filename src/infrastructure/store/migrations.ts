@@ -25,15 +25,22 @@ import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
-import { DECISION_LEDGER_GENERATIONS_SQL, DECISION_LEDGER_HISTORY_INDEXES_SQL, DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL, DECISION_LEDGER_RESERVATION_SEQUENCE_DROP_SQL, DECISION_LEDGER_SQL } from "./decision-ledger-migration";
+import {
+  DECISION_LEDGER_GENERATIONS_SQL,
+  DECISION_LEDGER_HISTORY_INDEXES_SQL,
+  DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL,
+  DECISION_LEDGER_RESERVATION_SEQUENCE_DROP_SQL,
+  DECISION_LEDGER_SQL,
+} from "./decision-ledger-migration";
+
 export interface Migration {
-  /** Monotonic, gap-free version, recorded once applied. */
+  /** Monotonic, gap-free version. Recorded in `schema_migrations` once applied. */
   readonly version: number;
   /** Stable slug (kebab-case) - documents intent in `schema_migrations` and logs. */
   readonly name: string;
-  /** Idempotent-where-possible DDL, run in one transaction. */
+  /** Idempotent-where-possible DDL for this version. Runs as one transaction. */
   readonly sql: string;
-  /** READ-ONLY probes before DDL; a non-zero count refuses the upgrade. */
+  /** READ-ONLY probes run before this version's DDL; a non-zero count refuses the upgrade. */
   readonly preflight?: readonly PreflightProbe[];
 }
 
@@ -43,15 +50,17 @@ export interface Migration {
  * deletes, rewrites, or re-points a row a human put there.
  */
 export interface PreflightProbe {
-  /** Constraint this probe stands in for, named in diagnostics. */
+  /** The constraint this probe stands in for - the diagnostic names it. */
   readonly relationship: string;
-  /** Child -> parent columns for an actionable diagnostic. */
+  /** Child -> parent columns, so the diagnostic is actionable without the source. */
   readonly subject: string;
   readonly sql: string;
 }
 
-// Bookkeeping table bootstrapped before any version runs. Global infrastructure,
-// with no tenant data and classified NON_TENANT by the org-id-required fence.
+// Bookkeeping table: which migration versions this store has applied. Bootstrapped
+// (CREATE IF NOT EXISTS) before any version runs, so `runMigrations` can read it on a
+// virgin store. Global infra table - no tenant data, keyed by version (classified
+// NON_TENANT in the org-id-required fence).
 export const SCHEMA_MIGRATIONS_DDL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version integer PRIMARY KEY,
@@ -60,9 +69,11 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 `;
 
-// Version 1 - hardened baseline: timestamptz columns, tenant foreign keys, and the
-// lookup indexes used by household detail and the load gate. A virgin store has no
-// earlier text-column data to convert (D-016).
+// Version 1 - hardened baseline (deep-review r6 finding #6): timestamptz for every
+// temporal column, the household_id / org_id foreign keys, and the lookup indexes the
+// household detail view + load gate need. On a virgin store this simply builds the
+// hardened schema; there is no prior text-column data to convert (D-016 designated
+// this the first real schema change).
 const BASELINE_SQL = `
 CREATE TABLE IF NOT EXISTS orgs (
   id text PRIMARY KEY,

@@ -4004,3 +4004,42 @@ that surface as a mystery months later.
 **Relates to:** ADR-0039, ADR-0044, ADR-0045, D-115, D-116, D-118.
 **Revert path:** the plan binding, the decision-row codec key, the moved ordering proof,
 and the defensive recovery are each independently revertible; no migration changed.
+
+### D-123 · 2026-08-06 · reversible · A ceiling absorbs the correction; documentation never pays for it
+
+**The compressed migration prose is restored, and the ceiling that squeezed it is amended**
+(key `ledger-fresh6-budget-headroom`, ADR-0046). An earlier prompt-7 correction bought its
+lines by compressing the explanatory comments out of `src/infrastructure/store/migrations.ts` -
+the `schema_migrations` CREATE-IF-NOT-EXISTS bootstrap note, the version-1 baseline rationale,
+and the `Migration`/`PreflightProbe` field documentation - a file `CLAUDE.md` and `AGENTS.md`
+both send readers to for sharp-edge knowledge. That is the exact failure the line-budget
+fence's own header names: a ceiling with no headroom converts review findings into
+documentation deletions. The file measured 507 lines before that compression, so the PER-FILE
+ceiling was squeezing it too - both ADR-0018 ratchets were being paid in prose. The comments
+are restored, ADR-0046 raises infrastructure from 7,700 to 7,800 against a measured 7,701,
+and `migrations.ts` takes the first pinned `max-file-size` entry at 520 against a measured 510
+with ADR-0046 as the architecture-review note that map requires - both through the amendment
+paths ADR-0018 owns rather than a silent fence edit.
+
+**The compensating-action widening is proven, not just written.** D-119's plan binding admits
+each step AND the compensating action it carries, but no fixture carried one, so the widened
+branch never executed: the proof showed the step-owned half REFUSING, never the compensation
+half ACCEPTING. `compensatedRecordingInput` records a plan whose step declares a compensation
+with its own idempotency key, and the ledger integration suite asserts an `ExecutionStarted`
+citing that key is accepted while an unrelated key is still refused with its own reason.
+
+**`pnpm test:fitness` runs the way the gate does.** The convenience script CLAUDE.md points
+agents at inherited vitest's default file parallelism, so several workers each rebuilt the
+whole type-checked ts-morph Project at once and four to six semantic fences timed out at 20s -
+on a clean tree, with a varying set each run. `pnpm test` never saw it because it already
+pins `--maxWorkers=1 --fileParallelism=false`; the subset script now pins the same, and all
+908 fitness tests pass. A documented command that fails on an untouched checkout trains agents
+to read red as noise.
+
+**Why:** paying a correction with prose the agent-memory files promise is a loss that surfaces
+months later as a reader following a pointer to nothing, a binding branch that only ever
+proves its refusal is detection without verification, and a flaky documented command erodes
+the signal every other fence depends on.
+**Relates to:** ADR-0018, ADR-0045, ADR-0046, D-116, D-119.
+**Revert path:** ADR-0046 and the two ceiling figures revert together with the restored
+comments; the fixture, its test, and the script flags are independently revertible.

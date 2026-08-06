@@ -54,7 +54,9 @@ import {
   LEDGER_PROVENANCE,
   LEDGER_TENANT,
   LEDGER_WRITE_ACTOR,
+  PLAN_COMPENSATION_IDEMPOTENCY_KEY,
   allLedgerEventSamples,
+  compensatedRecordingInput,
   decisionRecordingInput,
   laterEvidenceRecording,
 } from "../helpers/ledger-fixtures";
@@ -528,6 +530,26 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ))).toHaveLength(5);
     // The plan-authorized values, unchanged, are the ones history accepts.
     await expect(append(db, [started, created, closed])).resolves.toHaveLength(3);
+    expect((await verifyDecisionLedger(db, LEDGER_TENANT)).ok).toBe(true);
+  });
+
+  it("authorizes the compensating action's own key, and still refuses an unrelated one", async () => {
+    const input = compensatedRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const started = allLedgerEventSamples().find(
+      (event) => event.type === "ExecutionStarted",
+    )!;
+    await expect(append(db, [LedgerEntrySchema.parse({
+      ...started,
+      idempotencyKey: UNPLANNED_ID,
+    })])).rejects.toMatchObject({
+      code: "STORE_CONSTRAINT",
+      message: "ledger idempotency key is absent from the immutable execution step",
+    });
+    await expect(append(db, [LedgerEntrySchema.parse({
+      ...started,
+      idempotencyKey: PLAN_COMPENSATION_IDEMPOTENCY_KEY,
+    })])).resolves.toHaveLength(1);
     expect((await verifyDecisionLedger(db, LEDGER_TENANT)).ok).toBe(true);
   });
 

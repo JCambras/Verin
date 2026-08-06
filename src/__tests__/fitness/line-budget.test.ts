@@ -32,7 +32,7 @@ import { relative } from "node:path";
 // fit this ceiling - the exact anti-pattern the paragraph above names - and raised
 // infrastructure to absorb it. MEASURED on the composed tree that also carries ADR-0040's
 // prompt-8 primitive catalog: contracts 6010/6050 (40), domain 1584/1650 (66), infrastructure
-// 7690/7750 (60), presentation 928/6000. A figure recorded here is a MEASUREMENT, so
+// 7701/7750 (49), presentation 928/6000. A figure recorded here is a MEASUREMENT, so
 // re-measure it in the commit that changes a layer - ADR-0049's import hoist left this
 // line reading a stale figure while the layer had moved, and the whole ratchet chain rests
 // on the recorded figure being the measured one. Any FURTHER increase remains a measured

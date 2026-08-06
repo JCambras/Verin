@@ -6205,3 +6205,38 @@ and infrastructure at 7,689 under the ADR-0045 ceilings.
 **Revert:** no planted binding bypass, ordering re-proof, or savepoint form remains.
 
 **Date:** 2026-08-06 (review corrections F38, D-126).
+---
+
+## The compensating-action widening accepts, not only refuses (D-127)
+
+**Invariant:** the plan binding admits the compensating action a step carries, so an
+`ExecutionStarted` citing the compensation's OWN idempotency key is accepted while an
+unrelated key is still refused. D-126 proved the refusal; nothing proved the acceptance,
+because no recording fixture carried a compensation and the widened branch never ran.
+
+**Injection** (the widening itself): replaced
+`step.compensatingAction ? [step, step.compensatingAction] : [step]` with `[step]` in
+`planActions`, collapsing the plan to its steps alone.
+
+```text
+FAIL … > authorizes the compensating action's own key, and still refuses an unrelated one
+  src/__tests__/integration/decision-ledger.test.ts:552
+  promise rejected "{ code: 'STORE_CONSTRAINT', …(1) }" instead of resolving
+```
+
+The injection was reverted. `compensatedRecordingInput` records the golden proceed plan
+with a compensating action whose idempotency key differs from the step's (the schema
+refuses a shared key), and the same test asserts the unrelated key is still refused with
+"ledger idempotency key is absent from the immutable execution step" - so the branch is
+proven in both directions, not merely reached.
+
+The line-budget companion measures contracts 4,598, domain 1,584, infrastructure 7,701,
+and presentation 928 under the ADR-0046 ceilings, after restoring the migration prose an
+earlier correction had compressed away to fit the previous ceilings. `migrations.ts`
+measured 507 lines before that compression, so the per-file ratchet was squeezing it too;
+it now carries the first pinned `max-file-size` entry (520 against a measured 510), and
+that fence's companion still flags a synthetic file one line over the default.
+
+**Revert:** no planted `planActions` narrowing remains.
+
+**Date:** 2026-08-06 (review corrections, D-127).

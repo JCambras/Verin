@@ -13,7 +13,12 @@ import { relative, join } from "node:path";
  */
 const DEFAULT_CEILING = 500;
 const CEILINGS: Record<string, number> = {
-  // (empty at foundation start — no file is grandfathered above the default)
+  // ADR-0046 (the architecture-review note this map requires). The ledger DDL already
+  // lives in its own module; what remains is the baseline schema and the runner that
+  // applies it, and separating those would put a migration's DDL in a different file
+  // from the code proving its ledger prefix. The 12 restored lines of sharp-edge prose
+  // are documentation this file is POINTED AT for, so the pin is the honest cost.
+  "src/infrastructure/store/migrations.ts": 520,
 };
 
 function lines(file: string): number {
