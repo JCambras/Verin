@@ -4043,3 +4043,28 @@ the signal every other fence depends on.
 **Relates to:** ADR-0018, ADR-0045, ADR-0046, D-116, D-119.
 **Revert path:** ADR-0046 and the two ceiling figures revert together with the restored
 comments; the fixture, its test, and the script flags are independently revertible.
+
+### D-124 · 2026-08-06 · reversible · The per-file ratchet gets the headroom the layer ratchet got
+
+**ADR-0046's own principle now applies at both ratchets** (ADR-0047). ADR-0046 ended the
+exhausted-headroom failure at the LAYER ceiling - infrastructure 7,800 against a measured
+7,701 - and then re-created it one ratchet down: the first pinned `max-file-size` entry gave
+`src/infrastructure/store/migrations.ts` 520 against a measured 510. ADR-0046 itself records
+that the file measured 507 before the compression, so the per-file ceiling was the binding
+constraint that bought the prose deletion. The pin rises to 560, fifty lines of bounded room
+sized like the layer amendment: the twelve restored lines plus a few near-term corrections,
+and still sixty over the 500 default so the pin keeps measuring something. It remains the only
+pinned entry, so no other file needed the same correction, and the map still ONLY SHRINKS as a
+code change.
+
+**The bottom-of-file `appError` import in `recorded-version-registry.ts` moved to the top.**
+It resolved (ESM hoists, and `@contracts/errors` opens no cycle back into infrastructure), but
+it read as a missing import to anyone scanning the module head while every sibling ledger
+module leads with its imports.
+
+**Why:** a ceiling ten lines above measurement is not discipline, it is a scheduled choice
+between an ADR amendment and deleting the documentation `CLAUDE.md` and `AGENTS.md` point
+readers at - fixing that at one ratchet while leaving it at the other closes nothing.
+**Relates to:** ADR-0018, ADR-0046, ADR-0047, D-120.
+**Revert path:** ADR-0047 and the pin figure revert together; the import move is independently
+revertible.

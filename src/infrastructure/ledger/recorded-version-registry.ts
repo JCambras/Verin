@@ -1,3 +1,5 @@
+import { appError } from "@contracts/errors";
+
 interface RecordedVersion<T> {
   readonly schemaVersion: string;
   readonly serializerVersion: string;
@@ -46,4 +48,3 @@ export function createRecordedVersionRegistry<T>(
     },
   };
 }
-import { appError } from "@contracts/errors";

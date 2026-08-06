@@ -6240,3 +6240,31 @@ that fence's companion still flags a synthetic file one line over the default.
 **Revert:** no planted `planActions` narrowing remains.
 
 **Date:** 2026-08-06 (review corrections, D-127).
+---
+
+## The raised per-file pin still fences (D-128)
+
+**Invariant:** the `max-file-size` pin ADR-0047 raises for
+`src/infrastructure/store/migrations.ts` (520 to 560, against a measured 510) is a real
+ceiling with bounded headroom, not an exemption - the file is still measured and still
+fails one line over.
+
+**Injection:** appended 51 padding lines to `src/infrastructure/store/migrations.ts`,
+taking it from 510 to 561.
+
+```text
+FAIL  src/__tests__/fitness/max-file-size.test.ts > max-file-size fence > enforces: no shipped file exceeds its ceiling (default 500)
+AssertionError: oversized files (split them):
+src/infrastructure/store/migrations.ts: 561 > 560
+```
+
+The injection was reverted and the file measures 510 again. The fence's own companion
+still flags a synthetic file one line over the default and passes a small one, so the
+default is unaffected by the pin; `migrations.ts` remains the ONLY pinned entry, so no
+other file sits near its ceiling under the same squeeze. The line-budget companion
+measures contracts 4,598, domain 1,584, infrastructure 7,701, and presentation 928 -
+unchanged, since ADR-0047 touches no layer ceiling.
+
+**Revert:** no planted padding remains in `migrations.ts`.
+
+**Date:** 2026-08-06 (review corrections, D-128).
