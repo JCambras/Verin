@@ -31,15 +31,23 @@ A **primitive** is a named, versioned, **pure** function:
   binds - this is what makes AST paths closable at load time.
 - **Invocation** is bound by domain configuration (prompt 10), never by the evaluator
   branching on a domain - the evaluator runs whatever the configuration bound.
-- **At most once per domain configuration.** A primitive is bound AT MOST ONCE per domain
-  configuration (captain ruling `p8-review-askuser-2`). Four primitives publish unscoped
-  keys - `sufficiency.*`, `availability.*`, `projection.*`, `restrictions.*` - and those
-  key shapes stay ratified verbatim, so a second binding of the same primitive would
-  silently overwrite the first one's published facts and the AST would evaluate a
-  wrong-but-plausible fact rather than fail. Prompt 10's config load MUST therefore reject
-  a double-binding fail-closed, with a precise error naming the primitive and both
+- **Binding multiplicity is bounded by published-key scope** (captain rulings
+  `p8-review-askuser-2` and `-6`). The four primitives whose published keys are UNSCOPED -
+  `net-availability`, `horizon-projection`, `sufficiency-check`, `restriction-screen`,
+  publishing `availability.*`, `projection.*`, `sufficiency.*`, `restrictions.*` - are
+  bound AT MOST ONCE per domain configuration: those key shapes stay ratified verbatim, so
+  a second binding would silently overwrite the first one's published facts and the AST
+  would evaluate a wrong-but-plausible fact rather than fail. The two parameter-scoped
+  primitives - `candidate-selection` (scoped by `subjectSlot`) and
+  `evidence-reconciliation` (scoped by `factKind`) - MAY be bound several times per
+  configuration, but every binding MUST carry a distinct key scope. That is what the
+  ratified money-movement configuration already does: it binds `candidate-selection`
+  twice, at the bind stage for `target-record` (GC-08) and at the evaluate stage for
+  `source-account` (GC-01). Prompt 10's config load owes the fail-closed check on both
+  halves - a second binding of an unscoped primitive, or two bindings of a scoped one
+  sharing a key scope, is rejected with a precise error naming the primitive and both
   bindings; last-write-wins is not an option. Falsification path: a real configuration that
-  needs one primitive twice (a reserve floor AND a per-transaction cap, both
+  needs one UNSCOPED primitive twice (a reserve floor AND a per-transaction cap, both
   `sufficiency-check`) forces binding-namespaced published keys under a set version bump.
 
 **The razor, applied in both directions:**
@@ -82,7 +90,14 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
 - **Applicable evidence:** one resource observation (balance-class) plus zero or more
   claim observations (pending-activity-class, active-reservation-class), each citing its
   snapshot reference; claims are nonnegative integers in minor units; a claim of an
-  undeclared kind is a parse error, never silently summed or dropped.
+  undeclared kind is a parse error, never silently summed or dropped. One snapshot may
+  legitimately contribute SEVERAL claim observations - a single active-reservations
+  snapshot yields one row per reservation - so `claims` carries no per-(claimKind,
+  snapshotRef) uniqueness refinement, and de-duplicating assembler-side repeats is the
+  evidence assembler's obligation (captain ruling `p8-review-askuser-6`). A repeat fails
+  conservative: it double-counts the claim, understating `availability.net`, so it
+  over-blocks and never over-permits. Whether the evidence-assembly contract should force
+  per-(claimKind, snapshotRef) aggregation is a recorded follow-up for prompt 14.
 - **Possible effects:** publishes `availability.gross`, `availability.net`, and
   `availability.claims.<kind>` (zero when no claims of that kind are present) - the
   per-kind breakdown is what lets GC-11's sibling-reservation blocker be named
@@ -175,12 +190,16 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   `selection.<slot>.selectedRef`, `selection.<slot>.alternatives`, and
   `selection.<slot>.openQuestion` (feeding `ResolutionState.ambiguous` and the blocked
   decision's structured question). `alternatives` carries the exclusion trace on EVERY
-  outcome - every non-selected candidate with its configured `rejectedBecause` code, in
-  canonical order, ranked-behind survivors carrying `ranked-behind-selection` - and is
-  absent only when nothing was excluded or ranked behind (captain rulings
-  `p8-review-askuser-4` and `-5`). An empty outcome without its trace cannot explain why no
-  candidate survived, and an ambiguous one without it hides from the human answering the
-  question that a candidate was filtered out before the question was ever asked.
+  outcome - every non-selected candidate with its configured `rejectedBecause` code - and
+  is absent only when nothing was excluded or ranked behind (captain rulings
+  `p8-review-askuser-4` and `-5`). Its order is itself data: a `preference-order` selection
+  lists the ranked-behind survivors first IN PREFERENCE-RANK ORDER, each carrying
+  `ranked-behind-selection`, followed by the excluded candidates in canonical order.
+  Everywhere else - a `single-eligible` or `exactly-one` selection, and both the ambiguous
+  and empty outcomes - the trace is the excluded candidates in canonical order. An empty
+  outcome without its trace cannot explain why no candidate survived, and an ambiguous one
+  without it hides from the human answering the question that a candidate was filtered out
+  before the question was ever asked.
 - **Falsification test:** a real case requiring multi-candidate allocation with
   quantities (split 75,000 USD across two sources pro-rata) or pairwise-interacting
   selection (tax-lot selection). Single-winner selection is then wrong and the declared
