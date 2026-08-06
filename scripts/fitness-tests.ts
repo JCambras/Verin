@@ -32,6 +32,10 @@ const run = spawnSync(
     cwd: ROOT,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    // The whole suite's output flows through this pipe. Node's 1 MiB default
+    // kills vitest mid-run with ENOBUFS, which reaches the gate as a missing
+    // report rather than as the test failure (or the pass) that really happened.
+    maxBuffer: Infinity,
   },
 );
 
@@ -55,12 +59,19 @@ try {
 }
 
 const problems = [
+  ...(run.error === undefined
+    ? []
+    : [`fitness invocation failed to start: ${run.error.message}`]),
   ...(reportProblem === undefined ? [] : [reportProblem]),
   ...fitnessInventoryProblems(fitnessFiles, results, run.status, ROOT),
 ];
 if (problems.length > 0) {
-  if (run.stderr.trim() !== "") console.error(run.stderr.trim());
-  if (run.stdout.trim() !== "") console.error(run.stdout.trim());
+  // A spawn-level failure leaves both streams null; reporting the problems
+  // matters more than the (absent) child output.
+  const stderr = (run.stderr ?? "").trim();
+  const stdout = (run.stdout ?? "").trim();
+  if (stderr !== "") console.error(stderr);
+  if (stdout !== "") console.error(stdout);
   console.error(`fitness inventory failed:\n  - ${problems.join("\n  - ")}`);
   process.exitCode = 1;
 } else {

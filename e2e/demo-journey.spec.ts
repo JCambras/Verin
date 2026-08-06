@@ -10,6 +10,11 @@ import { DEMO_AXE_ROUTES } from "./axe-routes";
  * different outcome). Every surface passes axe (charter #9) and carries at least
  * one visible development-only provenance badge (design §11.2), and a screenshot of
  * every required screen is captured to demo-screens/ (prompt 3 deliverable).
+ *
+ * Each loaded surface is scanned exactly once, by the DEMO_AXE_ROUTES loop at the
+ * bottom of this file. An inline scan here means a state that loop cannot reach:
+ * a post-interaction state (safety after Verify source) or a distinct URL
+ * (policy-authoring after activation, and the recorded non-proceed branches).
  */
 
 const SHOTS = "demo-screens";
@@ -43,14 +48,12 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   // Launcher.
   await page.getByRole("link", { name: "Demo", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Money-movement demo" })).toBeVisible();
-  await assertNoAxeViolations(page, "launcher");
   await snapLauncher(page);
 
   // 1 - Household workspace (canonical journey: recent bank change under Firm A).
   await page.getByRole("link", { name: "Run the seven-minute journey" }).click();
   await expect(page.getByRole("heading", { name: "The Smith Household" })).toBeVisible();
   await expectDevBadge(page);
-  await assertNoAxeViolations(page, "workspace");
   await snap(page, 1, "workspace", "workspace");
 
   // 2 - Contextual intent panel: request + typed slots, LLM draft set apart.
@@ -58,7 +61,6 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("Drafted - not yet reviewed")).toBeVisible();
   await expect(page.getByText("$75,000.00").first()).toBeVisible();
   await expectDevBadge(page);
-  await assertNoAxeViolations(page, "intent");
   await snap(page, 2, "intent", "intent");
 
   // 3 - Evidence: sources, observed vs retrieved, an explicit gap row.
@@ -66,21 +68,18 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByTestId("evidence-missing")).toBeVisible();
   await expect(page.getByText("retrieved Jul 26, 09:14").first()).toBeVisible();
   await expectDevBadge(page);
-  await assertNoAxeViolations(page, "evidence");
   await snap(page, 3, "evidence", "evidence");
 
   // 4 - Recommendation: proceed, with the specialist-review authority summary.
   await page.getByRole("link", { name: "View the recommendation" }).click();
   await expect(page.getByTestId("disposition-proceed")).toBeVisible();
   await expect(page.getByText("specialist-review stage")).toBeVisible();
-  await assertNoAxeViolations(page, "decision");
   await snap(page, 4, "decision", "decision");
 
   // 5 - Policy trace: versions in mono, precedence rows.
   await page.getByRole("link", { name: "View the policy trace" }).click();
   await expect(page.getByText("FA-4.2").first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "Household destination restriction" })).toBeVisible();
-  await assertNoAxeViolations(page, "policy-trace");
   await snap(page, 5, "policy-trace", "policy-trace");
 
   // 6 - Authority: dual approval + specialist review; requester cannot approve.
@@ -89,7 +88,6 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("Bank-instruction specialist review").first()).toBeVisible();
   await expect(page.getByText("the requester cannot approve")).toBeVisible();
   await expect(page.getByText(/Approval binds to decision/)).toBeVisible();
-  await assertNoAxeViolations(page, "authority");
   await snap(page, 6, "authority", "authority");
 
   // 7 - Safety: revalidation, reservation + idempotency inspectable.
@@ -106,7 +104,6 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("settlement not yet confirmed")).toBeVisible();
   await expect(page.getByText("deferred pending sandbox access")).toBeVisible();
   await expectDevBadge(page);
-  await assertNoAxeViolations(page, "execution");
   await snap(page, 8, "execution", "execution");
 
   // 9 - Verification: proves vs not-yet, next poll.
@@ -114,14 +111,12 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await expect(page.getByText("What this status proves")).toBeVisible();
   await expect(page.getByText("What it does not prove yet")).toBeVisible();
   await expect(page.getByText("Next status poll")).toBeVisible();
-  await assertNoAxeViolations(page, "verification");
   await snap(page, 9, "verification", "verification");
 
   // 10 - Firm A / Firm B: policy versions head the columns; differing rows marked.
   await page.getByRole("link", { name: "Compare Firm A and Firm B" }).click();
   await expect(page.getByText("FB-2.1").first()).toBeVisible();
   expect(await page.getByTestId("comparison-differs").count()).toBeGreaterThan(0);
-  await assertNoAxeViolations(page, "comparison");
   await snap(page, 10, "comparison", "comparison");
 
   // 11 - Policy authoring: draft set apart; activation appears only after approval.
@@ -138,7 +133,6 @@ test("the seven-minute journey is clickable end-to-end on labeled fakes", async 
   await page.getByRole("link", { name: "View the printable decision record" }).click();
   await expect(page.getByTestId("record-watermark")).toContainText("Demonstration - not a compliance record");
   await expect(page.getByText("a3f9c2e41b7d5f08c6a92e13b48d70f5e21c9a6b3d84f07a5c1e92b64d38a7f0")).toBeVisible();
-  await assertNoAxeViolations(page, "record");
   await snap(page, 12, "record", "record");
 });
 

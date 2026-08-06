@@ -453,18 +453,44 @@ export const isMechanized = (r: GateRequirement): boolean => (MECHANIZED_KINDS a
 /** How a requirement is named in a report and in a failure message. */
 export const requirementLabel = (r: GateRequirement): string => (r.kind === "invariant" ? `#${r.id}` : (r.ref ?? "<no ref>"));
 
+/** How a nonzero mapped-fitness invocation reads in a failure message. */
+export function fitnessInvocationProblem(
+  runStatus: number | null,
+): string | undefined {
+  if (runStatus === 0) return undefined;
+  return runStatus === null
+    ? "mapped fitness invocation did not exit normally"
+    : `mapped fitness invocation exited ${runStatus}`;
+}
+
+/**
+ * A nonzero invocation NO mapped file result explains: every mapped fence
+ * reported green, so the failure came from outside them and no per-file result
+ * may be reported as proof of anything. A nonzero status that a failed or
+ * missing mapped file DOES explain keeps its per-file attribution, which is the
+ * report an operator needs (ADR-0039).
+ */
+export function unattributedFitnessInvocationProblem(
+  fitnessFiles: readonly string[],
+  fileResults: ReadonlyMap<string, boolean>,
+  runStatus: number | null,
+): string | undefined {
+  const invocation = fitnessInvocationProblem(runStatus);
+  if (invocation === undefined) return undefined;
+  return fitnessFiles.some((ref) => fileResults.get(ref) !== true)
+    ? undefined
+    : invocation;
+}
+
 export function mappedFitnessProblems(
   fitnessFiles: readonly string[],
   fileResults: ReadonlyMap<string, boolean>,
   runStatus: number | null,
 ): string[] {
   const problems: string[] = [];
-  if (runStatus !== 0) {
-    problems.push(
-      runStatus === null
-        ? "mapped fitness invocation did not exit normally"
-        : `mapped fitness invocation exited ${runStatus}`,
-    );
+  const invocation = fitnessInvocationProblem(runStatus);
+  if (invocation !== undefined) {
+    problems.push(invocation);
   }
   for (const ref of fitnessFiles) {
     const passed = fileResults.get(ref);

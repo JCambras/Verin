@@ -10,7 +10,14 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Node, Project, SyntaxKind } from "ts-morph";
+import {
+  Node,
+  Project,
+  SyntaxKind,
+  type IfStatement,
+  type SourceFile,
+  type Symbol,
+} from "ts-morph";
 import {
   ACTIVE_MECHANISM_RATCHET,
   ACTIVE_RATCHET,
@@ -18,6 +25,7 @@ import {
   ciJobRunProblem,
   gateConstitutionProblems,
   mappedFitnessProblems,
+  unattributedFitnessInvocationProblem,
   parseCiJobs,
   type CiJob,
   type Registry as GateRegistry,
@@ -156,24 +164,29 @@ export function runnerFailsClosedOnValidator(
     );
 }
 
-export function runnerGuardsMappedFitnessBeforeReporting(
-  source: string,
-): boolean {
-  const project = new Project({ useInMemoryFileSystem: true });
-  const file = project.createSourceFile(
-    "/scripts/v3-invariants.ts",
-    source,
-  );
+interface RunnerFatalGuard {
+  readonly guard: IfStatement;
+  readonly resultSymbol: Symbol;
+}
+
+/**
+ * The module-scope `const <resultName> = <importedName>(...)` declaration whose
+ * VERY NEXT statement is an `if` that calls the runner's `fail`. Symbol-keyed,
+ * so an aliased import, a shadowed helper, or a guard moved away from its
+ * declaration is not this shape.
+ */
+function runnerFatalGuard(
+  file: SourceFile,
+  importedName: string,
+  resultName: string,
+): RunnerFatalGuard | undefined {
   const imported = file
     .getImportDeclaration("./v3-gates.lib")
     ?.getNamedImports()
-    .find(
-      (specifier) =>
-        specifier.getName() === "mappedFitnessProblems",
-    )
+    .find((specifier) => specifier.getName() === importedName)
     ?.getNameNode()
     .getSymbol();
-  const result = file.getVariableDeclaration("fitnessFailures");
+  const result = file.getVariableDeclaration(resultName);
   const resultSymbol = result?.getSymbol();
   const fail = file.getFunction("fail")?.getSymbol();
   if (
@@ -182,7 +195,7 @@ export function runnerGuardsMappedFitnessBeforeReporting(
     resultSymbol === undefined ||
     fail === undefined
   ) {
-    return false;
+    return undefined;
   }
   const validation = result.getInitializer();
   if (
@@ -190,7 +203,7 @@ export function runnerGuardsMappedFitnessBeforeReporting(
     !Node.isIdentifier(validation.getExpression()) ||
     validation.getExpression().getSymbol() !== imported
   ) {
-    return false;
+    return undefined;
   }
   const declarationStatement =
     result.getFirstAncestorByKind(SyntaxKind.VariableStatement);
@@ -199,9 +212,102 @@ export function runnerGuardsMappedFitnessBeforeReporting(
     declarationStatement === undefined
       ? -1
       : statements.indexOf(declarationStatement);
-  const guard = statements[declarationIndex + 1];
-  if (!Node.isIfStatement(guard)) return false;
-  const condition = guard.getExpression();
+  const guard = declarationIndex === -1
+    ? undefined
+    : statements[declarationIndex + 1];
+  if (guard === undefined || !Node.isIfStatement(guard)) return undefined;
+  const callsFail = guard
+    .getThenStatement()
+    .getDescendantsOfKind(SyntaxKind.CallExpression)
+    .some(
+      (call) =>
+        Node.isIdentifier(call.getExpression()) &&
+        call.getExpression().getSymbol() === fail,
+    );
+  return callsFail ? { guard, resultSymbol } : undefined;
+}
+
+/** The per-invariant report itself: `for (const inv of registry.invariants)` calling `stateOf`. */
+function invariantReportLoop(file: SourceFile): Node | undefined {
+  const registry = file.getVariableDeclaration("registry")?.getSymbol();
+  const stateOf = file.getFunction("stateOf")?.getSymbol();
+  if (registry === undefined || stateOf === undefined) return undefined;
+  return file
+    .getDescendantsOfKind(SyntaxKind.ForOfStatement)
+    .find((loop) => {
+      const iterated = loop.getExpression();
+      return (
+        Node.isPropertyAccessExpression(iterated) &&
+        iterated.getName() === "invariants" &&
+        Node.isIdentifier(iterated.getExpression()) &&
+        iterated.getExpression().getSymbol() === registry &&
+        loop
+          .getDescendantsOfKind(SyntaxKind.CallExpression)
+          .some(
+            (call) =>
+              Node.isIdentifier(call.getExpression()) &&
+              call.getExpression().getSymbol() === stateOf,
+          )
+      );
+    });
+}
+
+function parsedRunner(source: string): SourceFile {
+  return new Project({ useInMemoryFileSystem: true }).createSourceFile(
+    "/scripts/v3-invariants.ts",
+    source,
+  );
+}
+
+/**
+ * An invocation failure that NO mapped file result explains is unattributable,
+ * so the runner must die before it prints an invariant state or a gate state -
+ * every one of them would be a claim that run cannot support.
+ */
+export function runnerGuardsUnattributedFitnessBeforeReporting(
+  source: string,
+): boolean {
+  const file = parsedRunner(source);
+  const fatal = runnerFatalGuard(
+    file,
+    "unattributedFitnessInvocationProblem",
+    "unattributedFitness",
+  );
+  const report = invariantReportLoop(file);
+  if (fatal === undefined || report === undefined) return false;
+  const condition = fatal.guard.getExpression();
+  if (
+    !Node.isBinaryExpression(condition) ||
+    condition.getOperatorToken().getKind() !==
+      SyntaxKind.ExclamationEqualsEqualsToken ||
+    !Node.isIdentifier(condition.getLeft()) ||
+    condition.getLeft().getSymbol() !== fatal.resultSymbol ||
+    condition.getRight().getText() !== "undefined"
+  ) {
+    return false;
+  }
+  return fatal.guard.getEnd() < report.getStart();
+}
+
+/**
+ * A failure a mapped file DOES explain is attributable, so the per-invariant
+ * report - the product this job exists to emit, including `active-fail` and the
+ * gate states - is printed FIRST and the run still exits nonzero afterwards.
+ * The check itself stays: a gate-only fence maps to no invariant, so nothing in
+ * the report above would fail on it.
+ */
+export function runnerFailsOnMappedFitnessAfterReporting(
+  source: string,
+): boolean {
+  const file = parsedRunner(source);
+  const fatal = runnerFatalGuard(
+    file,
+    "mappedFitnessProblems",
+    "fitnessFailures",
+  );
+  const report = invariantReportLoop(file);
+  if (fatal === undefined || report === undefined) return false;
+  const condition = fatal.guard.getExpression();
   const right = Node.isBinaryExpression(condition)
     ? condition.getRight()
     : undefined;
@@ -217,30 +323,11 @@ export function runnerGuardsMappedFitnessBeforeReporting(
     !Node.isPropertyAccessExpression(left) ||
     left.getName() !== "length" ||
     !Node.isIdentifier(left.getExpression()) ||
-    left.getExpression().getSymbol() !== resultSymbol
+    left.getExpression().getSymbol() !== fatal.resultSymbol
   ) {
     return false;
   }
-  const callsFail = guard
-    .getThenStatement()
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .some(
-      (call) =>
-        Node.isIdentifier(call.getExpression()) &&
-        call.getExpression().getSymbol() === fail,
-    );
-  const report = file
-    .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .find(
-      (call) =>
-        call.getExpression().getText() === "console.log" &&
-        call.getText().includes("V3 PHASE-GATED INVARIANTS"),
-    );
-  return (
-    callsFail &&
-    report !== undefined &&
-    guard.getEnd() < report.getStart()
-  );
+  return fatal.guard.getStart() > report.getEnd();
 }
 
 /** Pure core: validate the registry against an injectable fs/ci view; returns human-readable problems. */
@@ -298,6 +385,15 @@ export function validateRegistry(reg: Registry, deps: { exists: (path: string) =
 const registry = JSON.parse(readFileSync(root + "v3-invariants.json", "utf8")) as Registry;
 const ciJobs = parseCiJobs(existsSync(root + ".github/workflows/ci.yml") ? readFileSync(root + ".github/workflows/ci.yml", "utf8") : "");
 const runnerSource = readFileSync(root + "scripts/v3-invariants.ts", "utf8");
+const REPORT_SECTION_MARKER =
+  "// ---------- compute per-invariant state ----------";
+const UNATTRIBUTED_GUARD_START =
+  "const unattributedFitness = unattributedFitnessInvocationProblem(";
+/** The runner's real pre-report guard, relocated verbatim by the companions below. */
+const unattributedGuardSource = runnerSource.slice(
+  runnerSource.indexOf(UNATTRIBUTED_GUARD_START),
+  runnerSource.indexOf(REPORT_SECTION_MARKER),
+);
 
 describe("v3-invariant registry fence", () => {
   it("enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted", () => {
@@ -583,23 +679,81 @@ describe("v3-invariant registry fence", () => {
         ).problems,
       ).toEqual([`${ref} produced duplicate results`]);
     });
-    it("blocks a failed mapped-fitness invocation before any invariant or gate state output", () => {
+    it("blocks an unattributable fitness invocation before any invariant or gate state output", () => {
+      expect(runnerSource).toContain(UNATTRIBUTED_GUARD_START);
+      expect(runnerSource).toContain(REPORT_SECTION_MARKER);
       expect(
-        runnerGuardsMappedFitnessBeforeReporting(runnerSource),
+        unattributedFitnessInvocationProblem(
+          ["a.test.ts"],
+          new Map([["a.test.ts", true]]),
+          1,
+        ),
+      ).toBe("mapped fitness invocation exited 1");
+      expect(
+        unattributedFitnessInvocationProblem(
+          ["a.test.ts", "b.test.ts"],
+          new Map([
+            ["a.test.ts", true],
+            ["b.test.ts", false],
+          ]),
+          1,
+        ),
+      ).toBeUndefined();
+      expect(
+        unattributedFitnessInvocationProblem(
+          ["a.test.ts"],
+          new Map(),
+          null,
+        ),
+      ).toBeUndefined();
+      expect(
+        runnerGuardsUnattributedFitnessBeforeReporting(runnerSource),
       ).toBe(true);
+      // The same guard AFTER the report would let an unexplained invocation
+      // failure print `active-pass` states first.
       expect(
-        runnerGuardsMappedFitnessBeforeReporting(
+        runnerGuardsUnattributedFitnessBeforeReporting(
+          `${runnerSource.replace(unattributedGuardSource, "")}\n${unattributedGuardSource}`,
+        ),
+      ).toBe(false);
+      expect(
+        runnerGuardsUnattributedFitnessBeforeReporting(
           runnerSource.replace(
-            "const fitnessFailures = mappedFitnessProblems(",
-            'console.log("V3 PHASE-GATED INVARIANTS");\nconst fitnessFailures = mappedFitnessProblems(',
+            "if (unattributedFitness !== undefined)",
+            "if (false && unattributedFitness !== undefined)",
+          ),
+        ),
+      ).toBe(false);
+    });
+    it("reports every mapped fitness failure per invariant before it exits nonzero", () => {
+      expect(
+        runnerFailsOnMappedFitnessAfterReporting(runnerSource),
+      ).toBe(true);
+      // Hoisting the fatal guard above the report is the suppression this rule
+      // exists to reject: a failed fence would lose its per-invariant line.
+      expect(
+        runnerFailsOnMappedFitnessAfterReporting(
+          runnerSource.replace(
+            REPORT_SECTION_MARKER,
+            `const fitnessFailures = mappedFitnessProblems(fitnessFiles, fileResults, fitnessRunStatus);\nif (fitnessFailures.length > 0) fail("mapped fitness fences failing");\n${REPORT_SECTION_MARKER}`,
           ),
         ),
       ).toBe(false);
       expect(
-        runnerGuardsMappedFitnessBeforeReporting(
+        runnerFailsOnMappedFitnessAfterReporting(
           runnerSource.replace(
             "if (fitnessFailures.length > 0)",
             "if (false && fitnessFailures.length > 0)",
+          ),
+        ),
+      ).toBe(false);
+      // A report loop that no longer computes real per-invariant state is not a
+      // report, so nothing downstream of it can be credited as one.
+      expect(
+        runnerFailsOnMappedFitnessAfterReporting(
+          runnerSource.replace(
+            "const { state, details } = stateOf(inv);",
+            'const { state, details } = { state: "active-pass" as State, details: [] };',
           ),
         ),
       ).toBe(false);

@@ -34,6 +34,7 @@ import {
   gateConstitutionProblems,
   gateReadiness,
   mappedFitnessProblems,
+  unattributedFitnessInvocationProblem,
   parseCiJobs,
   type Gate,
   type Invariant as GateInvariant,
@@ -169,17 +170,25 @@ if (fitnessFiles.length > 0) {
       cwd: ROOT,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      // Node's 1 MiB default kills the child with ENOBUFS, which would reach the
+      // report as a missing result rather than as the fence outcome it really is.
+      maxBuffer: Infinity,
     },
   );
   fitnessRunStatus = run.status;
   try {
     interface VitestJson {
-      testResults: FitnessTestResult[];
+      testResults?: FitnessTestResult[];
     }
     const report = JSON.parse(readFileSync(outFile, "utf8")) as VitestJson;
-    reportedFitnessResults = report.testResults;
+    // A report without results leaves every mapped file unproven below, which is
+    // the honest state - never an iteration crash inside the reporting path.
+    if (Array.isArray(report.testResults)) {
+      reportedFitnessResults = report.testResults;
+    }
   } catch {
-    if (run.status !== 0) console.error(run.stderr || run.stdout);
+    const detail = run.error?.message ?? run.stderr ?? run.stdout;
+    if (run.status !== 0 && detail) console.error(detail);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
@@ -196,13 +205,18 @@ if (indexedFitnessResults.problems.length > 0) {
     `mapped fitness result problems:\n  - ${indexedFitnessResults.problems.join("\n  - ")}`,
   );
 }
-const fitnessFailures = mappedFitnessProblems(
+// An invocation failure NO mapped file result explains cannot be attributed to
+// any invariant, so every state below would be a claim this run cannot support:
+// fail before printing one. A failure a mapped file DOES explain is reported
+// per invariant first (that attribution is the job's whole product) and fails
+// after the report, gate-only fences included.
+const unattributedFitness = unattributedFitnessInvocationProblem(
   fitnessFiles,
   fileResults,
   fitnessRunStatus,
 );
-if (fitnessFailures.length > 0) {
-  fail(`mapped fitness fences failing:\n  - ${fitnessFailures.join("\n  - ")}`);
+if (unattributedFitness !== undefined) {
+  fail(`mapped fitness fences failing:\n  - ${unattributedFitness}`);
 }
 
 // ---------- compute per-invariant state ----------
@@ -300,4 +314,14 @@ for (const view of gateReadiness(registry, {
 
 console.log(bold(`\n  summary: ${green(`${counts["active-pass"]} active-pass`)} · ${counts["active-fail"] > 0 ? red(`${counts["active-fail"]} active-fail`) : `${counts["active-fail"]} active-fail`} · ${dim(`${counts["not-yet-active"]} not-yet-active`)} (${registry.invariants.length} total)\n`));
 
+const fitnessFailures = mappedFitnessProblems(
+  fitnessFiles,
+  fileResults,
+  fitnessRunStatus,
+);
+if (fitnessFailures.length > 0) {
+  fail(
+    `mapped fitness fences failing:\n  - ${fitnessFailures.join("\n  - ")}${failures.length > 0 ? `\nACTIVE invariants failing:\n  - ${failures.join("\n  - ")}` : ""}`,
+  );
+}
 if (failures.length > 0) fail(`ACTIVE invariants failing:\n  - ${failures.join("\n  - ")}`);

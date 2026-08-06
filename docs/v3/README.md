@@ -1,7 +1,7 @@
 # docs/v3 - the ratified Verin v3 architecture direction
 
 **Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
-**ADR-0023 through ADR-0030** (`docs/adr/`). The ratified documents in the table below are committed
+**ADR-0023 through ADR-0029 and ADR-0039** (`docs/adr/`). The ratified documents in the table below are committed
 **verbatim** from the ratified sources; the arch-version fence
 (`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
 [`v3-invariants.json`](../../v3-invariants.json) against their SHA-256 pins, so build work can never
