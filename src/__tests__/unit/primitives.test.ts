@@ -12,6 +12,7 @@ import {
   restrictionScreen,
   sufficiencyCheck,
 } from "@contracts/primitives/catalog";
+import { compareScopedReferences } from "@contracts/decision-core/ids";
 import {
   IsoDateSchema,
   KeySegmentSchema,
@@ -271,6 +272,23 @@ describe("horizon-projection", () => {
     expect(Object.keys(forward)).toEqual([...Object.keys(forward)].sort());
   });
 
+  it("refuses a horizon past the 1200-month bound at the parse boundary", () => {
+    expect(horizonProjection.inputSchema.safeParse(projectionInput(1201, [])).success).toBe(false);
+  });
+
+  it("stays total at the 1200-month bound", () => {
+    const published = evaluateParsed(
+      horizonProjection,
+      projectionInput(1200, [{ dueOn: "2126-07-25", amountMinor: usd(3) }]),
+    );
+    expect(published["projection.horizon"]).toEqual({
+      startsOn: "2026-07-26",
+      endsOnExclusive: "2126-07-26",
+      months: 1200,
+    });
+    expect(published["projection.total"]).toBe(usd(3));
+  });
+
   it("FALSIFICATION GUARD: backward projection and non-sum aggregation are unrepresentable", () => {
     expect(
       horizonProjection.parameterSchema.safeParse({
@@ -474,7 +492,7 @@ describe("candidate-selection", () => {
     );
     expect(published["selection.target-record.outcome"]).toBe("ambiguous");
     expect(published["selection.target-record.openQuestion"]).toEqual({
-      candidateRefs: [robertAna.ref, trust.ref].sort((a, b) => a.id.localeCompare(b.id)),
+      candidateRefs: [robertAna.ref, trust.ref].sort(compareScopedReferences),
       humanQuestionCode: "which-of-several",
     });
     expect("selection.target-record.selectedRef" in published).toBe(false);

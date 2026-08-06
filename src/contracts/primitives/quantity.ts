@@ -177,7 +177,12 @@ export const netAvailability = {
 const HorizonProjectionParameterSchema = z
   .strictObject({
     seriesEvidenceKind: SegmentEvidenceKindSchema,
-    horizonMonths: z.int().positive(),
+    /**
+     * Bounded at 100 years so the projected window end stays a four-digit ISO
+     * year: an unbounded horizon would overflow the date form inside evaluate,
+     * turning a bad binding into a thrown error instead of a parse refusal.
+     */
+    horizonMonths: z.int().positive().max(1200),
     direction: z.literal("forward"),
   })
   .readonly();
@@ -353,6 +358,30 @@ const SufficiencyInputSchema = z.union([
   CapLimitedInputSchema,
 ]);
 
+/**
+ * distance >= 0 is "satisfied" in BOTH modes: floor mode measures how far
+ * (available - draw) sits above the floor; cap mode how far draw sits below the
+ * cap. The DECLARED mode selects the arithmetic, never the resolved context's
+ * shape, and the switch is exhaustive - a third mode that also resolved an
+ * `available` key must state its own semantics here instead of silently
+ * inheriting floor netting. TypeScript cannot narrow a union through a nested
+ * discriminant, so the floor-mode context is named once the mode has been read.
+ */
+const sufficiencyDistance = (
+  input: z.infer<typeof SufficiencyInputSchema>,
+): number => {
+  switch (input.parameters.mode) {
+    case "floor-preserving": {
+      const context = input.context as z.infer<
+        typeof FloorPreservingInputSchema
+      >["context"];
+      return context.available - context.draw - context.bound;
+    }
+    case "cap-limited":
+      return input.context.bound - input.context.draw;
+  }
+};
+
 const sufficiencyFalsification: PrimitiveFalsification = {
   operatingCase:
     "A real rule needing ratio or percentage headroom (keep 110 percent of the floor) or joint sufficiency across multiple resources at once - either proves the two-mode integer shape too narrow.",
@@ -385,13 +414,8 @@ export const sufficiencyCheck = {
   evaluate: (
     input: z.infer<typeof SufficiencyInputSchema>,
   ): PublishedFactRecord => {
-    // distance >= 0 is "satisfied" in BOTH modes: floor mode measures how far
-    // (available - draw) sits above the floor; cap mode how far draw sits
-    // below the cap. Shortfall and headroom are the two signs of one number.
-    const distance =
-      "available" in input.context
-        ? input.context.available - input.context.draw - input.context.bound
-        : input.context.bound - input.context.draw;
+    // Shortfall and headroom are the two signs of one number.
+    const distance = sufficiencyDistance(input);
     return {
       "sufficiency.headroom": Math.max(0, distance),
       "sufficiency.satisfied": distance >= 0,
