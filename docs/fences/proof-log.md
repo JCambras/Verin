@@ -5439,3 +5439,60 @@ corepack pnpm golden:validate                                # all 16 signed cas
 corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
                                                              # 5 tests passed (contracts under the ADR-0040 ceiling)
 ```
+
+### PF-190 candidate-selection explains an empty outcome; one restriction list per source version
+
+Review of the prompt-8 vocabulary found two parse/evaluate gaps in the shipped
+primitives. `candidate-selection` computed the `rejected` array with each
+candidate's configured exclusion reason code and then discarded it on the empty
+outcome, publishing only `selection.<slot>.outcome`, so an all-excluded run
+could not be explained from its own trace and the reason codes a binding
+configured were unreachable by downstream policy or UI (captain ruling
+p8-review-askuser-4, option A: reuse the already-declared conditional
+`alternatives` key rather than mint a new one). Separately,
+`restriction-screen`'s `evidence.restrictions` was the one collection in the
+module carrying no uniqueness refinement: two lists agreeing on source type,
+source reference, version reference, kind, and slot but differing only in their
+entries tie under `compareRestrictionLists` and, when both violate, emit
+byte-identical entries in `restrictions.matches` - which the platform maps into
+two prohibitions from a single source version.
+
+**Adversarial proof (two injections, each reverted after failing):**
+
+1. Reverted the empty record in `selection.ts` back to
+   `{ [keyOf("outcome")]: "empty" }`. The unit case "explains an empty outcome
+   with the exclusion trace and its configured reason codes" failed at
+   `src/__tests__/unit/primitives.test.ts` with "expected undefined to deeply
+   equal [ { ref: {…}, …(1) }, …(1) ]", proving the assertion reads the
+   published trace and not merely the outcome code. The case covers BOTH empty
+   paths (single-eligible and preference-order) and asserts each configured
+   `reasonCode` reaches the published alternatives in canonical order.
+2. Removed the `hasUniqueByComparator(lists, compareRestrictionLists)`
+   refinement from `RestrictionScreenInputSchema`. The unit case "refuses two
+   lists from one source version differing only in their entries" failed
+   ("expected true to be false"), proving the refinement is what rejects the
+   duplicate at the parse boundary; its second assertion holds a different kind
+   from the same source parsing clean, so the refinement cannot pass by
+   refusing everything.
+
+The published-key subset invariant is re-proved for the new emission: the
+key-discipline case list now evaluates `candidate-selection` on an all-excluded
+input as well, so the empty outcome's keys are checked against the declared map
+(canonical order, valid descriptors, every produced key declared, every `always`
+key produced). The `alternatives` descriptor stays `conditional` - it is absent
+only on the ambiguous outcome.
+
+### PF-190 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/fitness/primitive-catalog.test.ts \
+  src/__tests__/unit/primitives.test.ts                      # 73 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 2 FAILING: contracts 5411 > the 5400 ceiling.
+                                                             # Expected and pre-authorized: these fixes were
+                                                             # landed lean but not truncated, and ADR-0040 is
+                                                             # amended with the re-measured figure in the
+                                                             # follow-up that also lands the rationale-doc updates.
+```

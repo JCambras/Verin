@@ -44,11 +44,7 @@ export function SafetySurface({
       description="After approval and before anything moves, Verin re-checks material evidence, holds a reservation, and refuses to execute on changed facts."
     >
       <p className="flex flex-wrap items-center gap-2 text-sm text-slate-700">
-        {/* Faded content must hold slate-800+ (demo design language; slate-700
-            at the 0.7 opacity floor lands below the 4.5:1 AA floor). */}
-        <FreshValue provenance={vm.revalidatedAt.provenance}>
-          <span className="text-slate-800">{vm.revalidatedAt.display}</span>
-        </FreshValue>
+        <FreshValue provenance={vm.revalidatedAt.provenance}>{vm.revalidatedAt.display}</FreshValue>
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
       </p>
 

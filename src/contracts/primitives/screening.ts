@@ -32,6 +32,7 @@ import {
   SubjectRefSchema,
   compareCanonicalStrings,
   compareScopedReferences,
+  hasUniqueByComparator,
   hasUniqueScopedReferences,
   normalizeCanonicalStrings,
   normalizeScopedReferences,
@@ -144,6 +145,13 @@ const RestrictionScreenInputSchema = z
       .strictObject({
         restrictions: z
           .array(RestrictionListSchema)
+          // One source version states one list per kind and slot: a second list
+          // on that identity would emit byte-identical matches, which the
+          // platform would read as two prohibitions from one source.
+          .refine(
+            (lists) => hasUniqueByComparator(lists, compareRestrictionLists),
+            "duplicate restriction list",
+          )
           .overwrite((lists) => [...lists].sort(compareRestrictionLists))
           .readonly(),
       })

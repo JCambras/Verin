@@ -146,16 +146,21 @@ const rankSurvivors = (
   survivors: readonly Candidate[],
   ranking: readonly SubjectRef[],
 ): Candidate[] => {
-  const positionOf = (candidate: Candidate): number => {
-    const index = ranking.findIndex(
-      (entry) => compareScopedReferences(entry, candidate.ref) === 0,
-    );
-    return index === -1 ? ranking.length : index;
-  };
+  // Reference identity is the (firmId, id) pair; the array encoding keeps that
+  // pair unambiguous for ids that may themselves contain a separator byte.
+  const keyOf = (reference: SubjectRef): string =>
+    JSON.stringify([reference.firmId, reference.id]);
+  const rankOf = new Map(ranking.map((entry, index) => [keyOf(entry), index]));
   // Stable sort over the already-canonical survivor order: candidates absent
   // from the ranking tie at the end and keep canonical order - the documented
   // deterministic tiebreak every strategy must have.
-  return [...survivors].sort((left, right) => positionOf(left) - positionOf(right));
+  return survivors
+    .map((candidate) => ({
+      candidate,
+      rank: rankOf.get(keyOf(candidate.ref)) ?? ranking.length,
+    }))
+    .sort((left, right) => left.rank - right.rank)
+    .map((entry) => entry.candidate);
 };
 
 const candidateSelectionFalsification: PrimitiveFalsification = {
@@ -179,7 +184,7 @@ export const candidateSelection = {
     const slot = parameters.subjectSlot;
     return {
       [`selection.${slot}.alternatives`]: publishedStructured(
-        "Non-selected candidates with their rejection reason codes.",
+        "Non-selected candidates with their rejection reason codes; on the empty outcome, every excluded candidate. Absent only on the ambiguous outcome.",
         "conditional",
       ),
       [`selection.${slot}.openQuestion`]: publishedStructured(
@@ -201,7 +206,8 @@ export const candidateSelection = {
   ): PublishedFactRecord => {
     const slot = input.parameters.subjectSlot;
     const keyOf = (segment: string): string => `selection.${slot}.${segment}`;
-    const rejected: { ref: SubjectRef; rejectedBecause: string }[] = [];
+    type Alternative = { ref: SubjectRef; rejectedBecause: string };
+    const rejected: Alternative[] = [];
     const survivors: Candidate[] = [];
     for (const candidate of input.evidence.candidates) {
       const exclusion = input.parameters.exclusions.find((entry) =>
@@ -220,18 +226,25 @@ export const candidateSelection = {
       },
       [keyOf("outcome")]: "ambiguous",
     });
-    const selected = (
-      winner: Candidate,
-      alternatives: readonly { ref: SubjectRef; rejectedBecause: string }[],
-    ): PublishedFactRecord => ({
-      [keyOf("alternatives")]: alternatives.map((alternative) => ({
+    const trace = (alternatives: readonly Alternative[]) =>
+      alternatives.map((alternative) => ({
         ref: { ...alternative.ref },
         rejectedBecause: alternative.rejectedBecause,
-      })),
+      }));
+    const selected = (
+      winner: Candidate,
+      alternatives: readonly Alternative[],
+    ): PublishedFactRecord => ({
+      [keyOf("alternatives")]: trace(alternatives),
       [keyOf("outcome")]: "selected",
       [keyOf("selectedRef")]: { ...winner.ref },
     });
-    const empty: PublishedFactRecord = { [keyOf("outcome")]: "empty" };
+    // An empty outcome still owes its trace: without the exclusion reason codes
+    // the binding configured, "no candidate survived" cannot be explained.
+    const empty: PublishedFactRecord = {
+      [keyOf("alternatives")]: trace(rejected),
+      [keyOf("outcome")]: "empty",
+    };
 
     if (input.context.strategy === "preference-order") {
       if (survivors.length === 0) return empty;

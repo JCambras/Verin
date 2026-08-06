@@ -3270,19 +3270,16 @@ from importing it); documenting falsification criteria as prose only.
 **Revert path:** ADR-0039's revert path (delete the module, registry, doc,
 fence, and unit suite; restore the ADR-0035 ceiling).
 
-## D-103 - FreshValue-faded content pinned to slate-800+ where usages passed lighter slate
+## D-103 - The faded color belongs to FreshValue, so the call-site spans came back out
 
 **Date:** 2026-08-05 · **Reversible** · Relates to: ADR-0012, D-036, D-100,
 docs/demo-design-language.md, charter #9
 
-**Superseded in part by D-100**, which landed on `main` independently while this
-branch was in flight and fixes the same date-driven axe failure one level down:
+**Superseded by D-100**, which landed on `main` independently while this branch
+was in flight and fixes the same date-driven axe failure one level down:
 `FreshValue` now owns `text-slate-800` whenever it fades, so the guarantee holds
 for every call site rather than the four named below. D-100 rejected call-site
-recoloring as its alternative for exactly that reason. The four spans recorded
-here are therefore redundant, not wrong - they pin the same color the component
-now applies - and are kept only so this entry matches the code that shipped with
-it. Removing them is a no-op against D-100 and needs no further decision.
+recoloring as its alternative for exactly that reason.
 
 The demo-journey axe gate failed on main in this environment: the workspace
 account card renders custodian text as slate-600 INSIDE a FreshValue fade, and
@@ -3292,19 +3289,29 @@ that was green in CI when the surface merged. The documented design-language
 rule already covers it: secondary text inside a faded block must be slate-800
 or darker.
 
-Fix: the four call sites whose FreshValue children inherited slate-600/700
-(workspace household line, workspace custodian line, workspace pending
-activity, safety revalidated-at) now wrap the faded content in a slate-800
-span. Full-opacity labels around them keep their secondary slate. slate-800 at
-the 0.7 opacity floor measures about 5.3:1 on the card surface.
+Original fix on this branch: the four call sites whose FreshValue children
+inherited slate-600/700 (workspace household line, workspace custodian line,
+workspace pending activity, safety revalidated-at) wrapped the faded content in
+a slate-800 span.
 
-Known residual: FreshValue's contract (children must be slate-800+) is prose
-plus this fix, not yet a fence; a usage-level check belongs to the demo lane's
-surface fences if the pattern recurs.
+Final state: those four spans are REMOVED, because the component now owns the
+faded color and applies it only while the value actually recedes. The spans
+applied slate-800 unconditionally, so a value under a day old rendered darker
+than its own label - the opposite of the receding-content contract documented in
+`fresh-value.tsx`. Against D-100 the removal restores that contract and costs no
+contrast: slate-800 at the 0.7 opacity floor still measures about 5.3:1 on the
+card surface, and the component supplies it.
 
-**Alternatives rejected:** forcing slate-900 inside FreshValue itself (silently
-recolors compliant call sites); raising the opacity floor (weakens the
-freshness-as-opacity design language); darkening the whole paragraphs
-(recolors full-opacity labels that already pass).
+Known residual: FreshValue's contract (children must be slate-800+ where the
+component cannot supply the color itself) is prose, not yet a fence; a
+usage-level check belongs to the demo lane's surface fences if the pattern
+recurs.
 
-**Revert path:** drop the four spans.
+**Alternatives rejected:** keeping the four spans as harmless redundancy (they
+are not redundant at full opacity - they recolor fresh values the component
+deliberately leaves inheriting); raising the opacity floor (weakens the
+freshness-as-opacity design language); darkening the whole paragraphs (recolors
+full-opacity labels that already pass).
+
+**Revert path:** none needed - the surfaces are byte-identical to their
+pre-branch state; D-100 carries the fix.

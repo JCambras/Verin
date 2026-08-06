@@ -528,6 +528,40 @@ describe("candidate-selection", () => {
     expect(none["selection.source-account.outcome"]).toBe("empty");
   });
 
+  it("explains an empty outcome with the exclusion trace and its configured reason codes", () => {
+    const alsoExcluded = {
+      ref: ref("subject-smiths-rollover"),
+      classifications: ["employer-plan-restricted"],
+    };
+    const none = evaluateParsed(
+      candidateSelection,
+      selectionInput([deferred, alsoExcluded], "single-eligible", {
+        parameters: {
+          exclusions: [
+            ...selectionParameters.exclusions,
+            { classification: "employer-plan-restricted", reasonCode: "plan-restricted-source" },
+          ],
+        },
+      }),
+    );
+    expect(none["selection.source-account.outcome"]).toBe("empty");
+    expect(none["selection.source-account.alternatives"]).toEqual(
+      [
+        { ref: deferred.ref, rejectedBecause: "taxable-event-source" },
+        { ref: alsoExcluded.ref, rejectedBecause: "plan-restricted-source" },
+      ].sort((left, right) => compareScopedReferences(left.ref, right.ref)),
+    );
+    expect("selection.source-account.selectedRef" in none).toBe(false);
+    // Every empty path publishes the same trace, preference-order included.
+    const ordered = evaluateParsed(
+      candidateSelection,
+      selectionInput([deferred], "preference-order"),
+    );
+    expect(ordered["selection.source-account.alternatives"]).toEqual([
+      { ref: deferred.ref, rejectedBecause: "taxable-event-source" },
+    ]);
+  });
+
   it("refuses exactly-one bindings that configure exclusions - a self-contradiction", () => {
     expect(
       candidateSelection.inputSchema.safeParse(selectionInput([taxable], "exactly-one")).success,
@@ -698,6 +732,22 @@ describe("restriction-screen", () => {
       "regulatory",
       "household_instruction",
     ]);
+  });
+
+  it("refuses two lists from one source version differing only in their entries", () => {
+    // Both would violate and emit byte-identical matches, which the platform
+    // would read as two prohibitions from a single source version.
+    expect(
+      restrictionScreen.inputSchema.safeParse(
+        screenInput([householdList(titled), householdList([ref("instr-household-brokerage")])]),
+      ).success,
+    ).toBe(false);
+    // A different kind from the same source is still a distinct list.
+    expect(
+      restrictionScreen.inputSchema.safeParse(
+        screenInput([householdList(titled), regulatoryHold(titled)]),
+      ).success,
+    ).toBe(true);
   });
 
   it("refuses an inherited slot name rather than screening against Object.prototype", () => {
@@ -889,6 +939,18 @@ describe("published-key discipline", () => {
         output: evaluateParsed(
           candidateSelection,
           selectionInput([{ ref: ref("subject-a"), classifications: [] }], "single-eligible"),
+        ),
+      },
+      {
+        keys: candidateSelection.publishedKeys(
+          candidateSelection.parameterSchema.parse(selectionParameters),
+        ),
+        output: evaluateParsed(
+          candidateSelection,
+          selectionInput(
+            [{ ref: ref("subject-a"), classifications: ["taxable-event-on-distribution"] }],
+            "single-eligible",
+          ),
         ),
       },
       {
