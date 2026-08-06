@@ -18,7 +18,7 @@ export const LOGIN_AXE_ROUTES = Object.freeze([
 export const AUTHENTICATED_AXE_ROUTES = Object.freeze([
   axeRoute("/app", "main h1"),
   axeRoute("/app/account-opening", 'input[name="householdName"]'),
-  axeRoute("/app/console", '[data-testid="household-list"]'),
+  axeRoute("/app/console", '[data-testid="household-count"]'),
   axeRoute("/app/audit", '[data-testid="audit-verdict"]'),
 ] satisfies readonly AxeRoute[]);
 

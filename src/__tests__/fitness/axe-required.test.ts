@@ -3259,7 +3259,7 @@ describe("axe-required fence", () => {
       },
       {
         path: "/app/console",
-        readySelector: '[data-testid="household-list"]',
+        readySelector: '[data-testid="household-count"]',
       },
       {
         path: "/app/audit",

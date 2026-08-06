@@ -11,6 +11,12 @@ export const VITEST_TEST_INCLUDE = `src/**/*.{${VITEST_TEST_KINDS.join(
 export interface FitnessTestResult {
   name: string;
   status: string;
+  message?: string;
+  assertionResults?: readonly {
+    fullName?: string;
+    status?: string;
+    failureMessages?: readonly string[];
+  }[];
 }
 
 export function completeTestRunArguments(outputFile: string): string[] {
@@ -43,6 +49,36 @@ function repositoryRelativePath(
     isAbsolute(fromRoot)
     ? undefined
     : fromRoot;
+}
+
+function indented(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => `      ${line}`)
+    .join("\n");
+}
+
+function failureDetail(result: FitnessTestResult | undefined): string {
+  if (result === undefined) return "";
+  const fileMessage = (result.message ?? "").trim();
+  const assertionMessages = (result.assertionResults ?? []).flatMap(
+    (assertion) =>
+      assertion.status === "passed"
+        ? []
+        : (assertion.failureMessages ?? [])
+            .map((message) => message.trim())
+            .filter((message) => message !== "")
+            .map((message) =>
+              assertion.fullName === undefined || assertion.fullName === ""
+                ? message
+                : `${assertion.fullName}\n${message}`,
+            ),
+  );
+  const detail = [
+    ...(fileMessage === "" ? [] : [fileMessage]),
+    ...assertionMessages,
+  ];
+  return detail.length === 0 ? "" : `\n${detail.map(indented).join("\n")}`;
 }
 
 export interface IndexedFitnessResults {
@@ -145,7 +181,7 @@ export function fitnessInventoryProblems(
           repositoryRelativePath(root, expected),
       );
       problems.push(
-        `${expected} ${result?.status.toUpperCase() ?? "FAILED"}`,
+        `${expected} ${result?.status.toUpperCase() ?? "FAILED"}${failureDetail(result)}`,
       );
     }
   }
