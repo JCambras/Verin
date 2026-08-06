@@ -214,10 +214,6 @@ export async function clearDerivedState(
     "DELETE FROM decision_reservation_index WHERE org_id = $1",
     [orgId],
   );
-  await tx.query(
-    "DELETE FROM decision_projection_checkpoint WHERE org_id = $1",
-    [orgId],
-  );
 }
 
 /**

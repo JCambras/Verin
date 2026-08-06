@@ -119,7 +119,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       lastSequence: projection.lastSequence,
       provenanceLabel: badgeLabel(provenance),
     })),
-    entries: rows.slice(-MAX_ENTRIES).reverse().map((row) => ({
+    entries: [...rows].reverse().map((row) => ({
       sequence: row.sequence,
       occurredAt: row.occurredAt,
       eventType: row.eventType,

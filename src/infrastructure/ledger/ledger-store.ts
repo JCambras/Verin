@@ -240,13 +240,6 @@ async function appendPrepared(
            updated_at = EXCLUDED.updated_at`,
     [orgId, last.sequence, appended.length, last.entryHash, recordedAt],
   );
-  await tx.query(
-    `INSERT INTO decision_projection_checkpoint (org_id,last_sequence,rebuilt_at)
-     VALUES ($1,$2,$3)
-     ON CONFLICT (org_id) DO UPDATE
-       SET last_sequence = EXCLUDED.last_sequence, rebuilt_at = EXCLUDED.rebuilt_at`,
-    [orgId, last.sequence, recordedAt],
-  );
   return appended;
 }
 

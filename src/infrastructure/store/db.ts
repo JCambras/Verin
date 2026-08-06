@@ -141,6 +141,7 @@ export async function createDb(opts?: { dataDir?: string | null }): Promise<SqlD
   // whole repository was traced ("Encountered unexpected file in NFT list") and package
   // it. Verified both ways - see D-106.
   const dataDir = configured && !isAbsolute(configured)
+    // The annotation below is NOT inert - it is the NFT-trace constraint above. D-106.
     ? resolve(/* turbopackIgnore: true */ process.cwd(), configured)
     : configured;
   const pg = dataDir ? new PGlite(dataDir, { parsers: STORE_PARSERS }) : new PGlite({ parsers: STORE_PARSERS });

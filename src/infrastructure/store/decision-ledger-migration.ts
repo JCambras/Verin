@@ -279,6 +279,18 @@ ALTER TABLE decision_reservation_index
   DROP COLUMN created_sequence;
 `;
 
+/**
+ * `decision_projection_checkpoint` recorded a rebuild cursor no reader ever consulted:
+ * no verification level, surface, or script ever selected from it, so a stale
+ * `last_sequence` was undetectable while every append paid to maintain it - the same
+ * shape `created_sequence` had. Dropped forward-only on that precedent: migration 4
+ * keeps its shipped DDL, and the ordering facts the cursor duplicated remain in the
+ * immutable ledger and its independently maintained anchor.
+ */
+export const DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL = `
+DROP TABLE decision_projection_checkpoint;
+`;
+
 export const DECISION_LEDGER_HISTORY_INDEXES_SQL = `
 CREATE INDEX decision_ledger_evidence_origins
   ON decision_ledger(org_id, evidence_snapshot_id, sequence)

@@ -41,7 +41,7 @@ const NON_TENANT_TABLES = [
   "audit_outbox", // internal delivery queue, keyed by row id claims
   "audit_anchor", // one integrity row per org, keyed by org_id PK upserts
   "decision_ledger_anchor", // one integrity row per org, keyed by org_id PK upserts
-  "decision_projection_checkpoint", // one rebuild cursor per org, keyed by org_id PK
+  "decision_projection_checkpoint", // dropped by migration 8; migration 4 keeps its shipped DDL
   "schema_migrations", // migration ledger (D-016), global infra table keyed by version - no tenant data
 ];
 // Columns that are themselves an unguessable capability (scope the row without org_id).

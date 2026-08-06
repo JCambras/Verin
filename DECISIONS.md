@@ -3868,7 +3868,7 @@ code cannot keep.
 **Revert path:** the seams, the version grammar, and the fences are additive; migration 7
 is forward-only and the deleted reads have verified successors.
 
-### D-117 · 2026-08-06 · reversible · The drill tenant, the plain-context rescan, and the removed bounded start
+### D-120 · 2026-08-06 · reversible · The drill tenant, the plain-context rescan, and the removed bounded start
 
 **The backup-restore drill seeds an opaque tenant id.** The nightly drill (charter #11)
 seeded the decision ledger under org id `"org"`. Once the immutable-source boundary
@@ -3906,3 +3906,57 @@ not a boundary, and dead plumbing for a rejected design is an invitation to rebu
 **Relates to:** ADR-0039, ADR-0044, D-106, D-116.
 **Revert path:** the drill tenant is one constant, the memo change is additive, and the
 bounded start returns only with the authenticated checkpoint design ADR-0044 defers.
+
+### D-121 · 2026-08-06 · reversible · Derived cursors, verification verdicts, and reachability say what they know
+
+**The projection checkpoint is dropped, not given a reader** (key `ledger-fresh5-checkpoint`).
+`decision_projection_checkpoint` was written by every append and by every rebuild and
+read by nothing: no verification level, surface, or script ever selected from it, so a
+stale `last_sequence` was undetectable while the sole write path paid to maintain it -
+exactly the shape migration 7 removed for `created_sequence`. Migration 8 drops the
+table forward-only (migration 4 keeps its shipped DDL) and the three writers go with it.
+The ordering facts it duplicated already live in the immutable ledger and its
+independently maintained anchor. The bounded checkpoint-reuse verification the cursor
+was plumbing for is NOT revived here: ADR-0044/ADR-0045 ratified GENESIS-rooted
+full-chain verification and named MEASURED request latency, not review, as the trigger
+for an authenticated-checkpoint design. That design stays deferred to that trigger, and
+request-path verification stays linear in retained entries by the ratified trade.
+
+**An integrity verdict carries its own reason.** `verifyDecisionLedgerIntegrity` caught
+every replay-source failure bare and reported one static string, so the precise
+`STORE_CONSTRAINT` reasons the replay loader is careful to produce ("evidence snapshot is
+missing during replay", "decision replay source binding differs during replay", an
+unsupported recorded version) were discarded - and a driver outage or the cross-tenant
+`AUTH_FAILED` throw was reported as a BROKEN chain, sending an operator after a tamper
+incident that never happened. The catch is narrowed to `STORE_CONSTRAINT` the way
+`readVerifiedDecisionRegister` already narrows its own, everything else re-throws, and
+the carried reason is printed by `pnpm audit:chain` and the backup-restore drill - the
+two operator surfaces where the field previously had no consumer at all.
+
+**Reachability is transitive from shipped entry points.** The `ledger-reachability` fence
+counted ANY shipped reference as a caller, and every ledger file is itself shipped, so an
+intra-subsystem call satisfied it: `preflightEvidenceSnapshots` passed unnamed while its
+only call site was inside `appendDecisionEvents`, the one export the fence itself records
+as deferred. Roots are now references from shipped files OUTSIDE the ledger directory
+(routes, surfaces, scripts) and reachability propagates only through the bodies of
+reached declarations, private helpers included. The scan also covers exported `const`
+arrows and classes, which a `getFunctions()`-only walk could not see.
+`preflightEvidenceSnapshots` is therefore a NAMED deferral whose first shipped caller
+arrives with `appendDecisionEvents` in **v3 prompt 8**, and each deferral now cites the
+decision entry that records it rather than resolving against the rest of the file.
+
+**The register applies its window once.** `/api/ledger` re-sliced rows to `MAX_ENTRIES`
+after `readVerifiedDecisionRegister` had already applied the same bound as its event
+window, so one limit lived in two places and could drift.
+
+**D-106 upheld a third time.** The Turbopack trace annotation was reported inert again.
+It stays - measured, not reasoned about - and the call site now carries a one-line
+pointer beside the annotation itself so the next reader sees the constraint without
+scrolling to the block comment above it.
+
+**Why:** a cursor no reader validates, a verdict that hides which failure it saw, and a
+reachability rule a subsystem can satisfy from inside are each a check that reports more
+confidence than it has.
+**Relates to:** ADR-0039, ADR-0044, ADR-0045, D-106, D-116, D-117.
+**Revert path:** migration 8 is forward-only and additive; the narrowed catch, the
+transitive fence, and the inline pointer are each independently revertible.

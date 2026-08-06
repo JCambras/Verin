@@ -36,7 +36,7 @@ async function main(): Promise<void> {
       db,
       systemTenant("audit-chain-verify", id),
     );
-    const decisionLine = `org ${id} decision ledger: ${decision.ok ? "OK" : "BROKEN"} (${decision.ledger.entriesChecked} entries, ${decision.replaySourcesChecked} replay sources)`;
+    const decisionLine = `org ${id} decision ledger: ${decision.ok ? "OK" : "BROKEN"} (${decision.ledger.entriesChecked} entries, ${decision.replaySourcesChecked} replay sources${decision.replaySourceReason ? `, ${decision.replaySourceReason}` : ""})`;
     process.stdout.write(`${decisionLine}\n`);
     if (!decision.ok) broken += 1;
     decisionEntriesTotal += decision.ledger.entriesChecked;

@@ -127,10 +127,6 @@ describe("deterministic decision-ledger projections", () => {
       "DELETE FROM decision_state_projection WHERE org_id = $1",
       [LEDGER_ORG],
     );
-    await db.query(
-      "DELETE FROM decision_projection_checkpoint WHERE org_id = $1",
-      [LEDGER_ORG],
-    );
     expect(await listDecisionProjections(db, LEDGER_TENANT)).toEqual([]);
     const rebuilt = await rebuildDecisionProjections(db, LEDGER_TENANT);
 

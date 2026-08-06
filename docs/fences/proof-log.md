@@ -6104,3 +6104,50 @@ test-only caller) remain as detection-is-not-verification proof.
 **Revert:** no planted allowlist entry, seam caller, export, or deferral remains.
 
 **Date:** 2026-08-05 (review corrections, D-123).
+## Ledger reachability made transitive (D-125)
+
+The one-hop rule counted ANY shipped reference as a caller, and every ledger file is
+itself shipped, so an intra-subsystem call satisfied the fence. Reachability now roots
+OUTSIDE the subsystem and propagates only through the bodies of reached declarations.
+
+**Injection 1** (an export whose only caller is itself a named deferral - the exact class
+the one-hop rule missed): added `export function preflightEvidenceOrigins(...)` to
+`ledger-sources.ts` and called it from `appendDecisionEvents` in `ledger-store.ts`.
+
+```text
+FAIL src/__tests__/fitness/ledger-reachability.test.ts > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+AssertionError: expected [ 'appendDecisionEvents', …(2) ] to deeply equal [ 'appendDecisionEvents', …(1) ]
++ "preflightEvidenceOrigins"
+```
+
+**Injection 2** (an exported arrow `const`, invisible to the previous `getFunctions()`-only
+scan): appended `export const unusedLedgerConst = (value: string): string => value;` to
+`ledger-canonical.ts`.
+
+```text
+FAIL … > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+AssertionError: expected [ 'appendDecisionEvents', …(2) ] to deeply equal [ 'appendDecisionEvents', …(1) ]
++ "unusedLedgerConst"
+```
+
+**Injection 3** (the other direction - a deferral that already has a shipped caller, and a
+deferral its own decision entry does not name): added
+`["recordDecision", { prompt: "v3 prompt 8", decision: "D-125" }]` to `DEFERRED_EXPORTS`.
+
+```text
+FAIL … > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+FAIL … > enforces: a named deferral that gained a shipped caller must be retired
+AssertionError: expected [ 'recordDecision' ] to deeply equal []
+FAIL … > enforces: each deferral names its prompt in its own DECISIONS.md entry
+AssertionError: D-125 does not name recordDecision
+```
+
+Each injection was reverted and the fence passes (11 tests). The in-memory companions add
+the transitive cases directly: an unreachable export cannot vouch for what it calls, a
+reached export carries reachability through a private helper, and an exported arrow const
+is scanned. The strengthened fence flagged `preflightEvidenceSnapshots` on first run - it
+is now a NAMED deferral (D-125, v3 prompt 8) rather than a silent pass.
+
+**Revert:** no planted export, const, or deferral remains.
+
+**Date:** 2026-08-06 (review corrections, D-125).

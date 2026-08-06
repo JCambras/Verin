@@ -89,7 +89,7 @@ async function main(): Promise<void> {
       `audit entries: ${beforeAudit} -> ${afterAudit}`,
       `audit chain after restore: ${afterChain.ok ? "VERIFIED" : "BROKEN — " + afterChain.reason}`,
       `decision entries: ${beforeDecision} -> ${afterDecision}`,
-      `decision chain after restore: ${afterDecisionChain.ok ? `L1-L4 + ${afterDecisionChain.replaySourcesChecked} SOURCES VERIFIED` : "BROKEN"}`,
+      `decision chain after restore: ${afterDecisionChain.ok ? `L1-L4 + ${afterDecisionChain.replaySourcesChecked} SOURCES VERIFIED` : `BROKEN - ${afterDecisionChain.replaySourceReason ?? "unknown"}`}`,
       `backup: ${backupMs.toFixed(0)}ms | restore: ${restoreMs.toFixed(0)}ms | total drill: ${(performance.now() - t0).toFixed(0)}ms`,
       `RESULT: ${ok ? "PASS" : "FAIL"}`,
     ].join("\n") + "\n",

@@ -520,7 +520,9 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
 
   it("the managed-object set is DERIVED from the shipped DDL, so a new table cannot escape it", async () => {
     // Not a hand-list: every table, index, trigger, and function the migrations
-    // create must be present in the live schema of a fully-migrated store.
+    // create must be present in the live schema of a fully-migrated store, unless a
+    // LATER migration dropped it forward-only - and each such drop must have actually
+    // taken effect, so a forward-only removal cannot be claimed without happening.
     const db = await createMemoryDb();
     const live = new Set((await schemaSnapshot(db)).map((row) => String((row as { name: string }).name)));
     const declared = [
@@ -529,8 +531,12 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
       ...MIGRATION_SQL.matchAll(/CREATE\s+TRIGGER\s+([a-z_][a-z0-9_]*)/gi),
       ...MIGRATION_SQL.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+([a-z_][a-z0-9_]*)/gi),
     ].map((m) => m[1]!.toLowerCase());
+    const dropped = [
+      ...MIGRATION_SQL.matchAll(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([a-z_][a-z0-9_]*)/gi),
+    ].map((m) => m[1]!.toLowerCase());
     expect(declared.length).toBeGreaterThan(20);
-    expect(declared.filter((name) => !live.has(name))).toEqual([]);
+    expect(declared.filter((name) => !live.has(name) && !dropped.includes(name))).toEqual([]);
+    expect(dropped.filter((name) => live.has(name))).toEqual([]);
   });
 });
 

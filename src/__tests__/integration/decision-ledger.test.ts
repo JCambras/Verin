@@ -1425,8 +1425,29 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const broken = await verifyDecisionLedgerIntegrity(db, LEDGER_TENANT);
     expect(broken.ok).toBe(false);
     expect(broken.replaySourceReason).toBe(
-      "immutable replay source verification failed",
+      "unsupported evidence encoding 9.0.0/1.0.0 during replay",
     );
+  });
+
+  it("re-throws an outage instead of reporting a broken decision chain", async () => {
+    await recordFixture(db);
+    const unavailable: SqlDb = {
+      ...db,
+      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        return db.transaction((tx) => fn({
+          ...tx,
+          async query<U>(sql: string, params?: unknown[]) {
+            if (sql.includes("decision_input_bundle_evidence")) {
+              throw new Error("connection terminated unexpectedly");
+            }
+            return tx.query<U>(sql, params);
+          },
+        }));
+      },
+    };
+    await expect(
+      verifyDecisionLedgerIntegrity(unavailable, LEDGER_TENANT),
+    ).rejects.toThrow("connection terminated unexpectedly");
   });
 
   it("refuses replay after immutable bundle membership is changed", async () => {
@@ -1608,7 +1629,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(verdict.entriesChecked).toBe(5);
   });
 
-  it("updates the ledger anchor and projection checkpoint once per committed batch", async () => {
+  it("updates the ledger anchor once per committed batch and writes no other cursor", async () => {
     const statements: string[] = [];
     const measured: SqlDb = {
       ...db,
@@ -1633,8 +1654,8 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ).toHaveLength(1);
     expect(
       statements.filter((sql) =>
-        sql.includes("INSERT INTO decision_projection_checkpoint")),
-    ).toHaveLength(1);
+        sql.includes("decision_projection_checkpoint")),
+    ).toEqual([]);
   });
 
   it("rejects a direct database handle where a transaction capability is required", async () => {

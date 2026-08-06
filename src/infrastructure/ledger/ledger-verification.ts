@@ -4,7 +4,7 @@
  * promoted columns, and L4 checks the independently maintained anchor.
  */
 import type { SqlDb, SqlQueryable, SqlTx } from "@infra/store/db";
-import { appError } from "@contracts/errors";
+import { appError, normalizeAppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import { parseRecordProvenance } from "@contracts/provenance";
 import {
@@ -251,14 +251,12 @@ async function verifyDecisionLedgerReplayTransaction(
 ): Promise<{
   verification: LedgerVerification;
   entries: RecordedReplayEvent[];
-  lastSequence: number | undefined;
 }> {
   assertTenantContext(tenant);
   const checked = await verifySnapshotTransaction(tx, tenant);
   return {
     verification: checked.verification,
     entries: checked.verification.ok ? parseReplayEvents(checked.rows) : [],
-    lastSequence: checked.rows.at(-1)?.sequence,
   };
 }
 
@@ -288,13 +286,6 @@ export async function rebuildDecisionProjections(
         item.sequence,
         source?.provenance ?? item.provenance,
         source?.record,
-      );
-    }
-    if (checked.lastSequence !== undefined) {
-      await tx.query(
-        `INSERT INTO decision_projection_checkpoint (org_id,last_sequence,rebuilt_at)
-         VALUES ($1,$2,$3)`,
-        [tenant.orgId, checked.lastSequence, new Date().toISOString()],
       );
     }
     return {
@@ -327,12 +318,14 @@ export async function verifyDecisionLedgerIntegrity(
         replaySourcesChecked: sources.sourcesChecked,
         replaySourceReason: null,
       };
-    } catch {
+    } catch (error: unknown) {
+      const normalized = normalizeAppError(error, "trusted-only");
+      if (normalized?.code !== "STORE_CONSTRAINT") throw error;
       return {
         ok: false,
         ledger: checked.verification,
         replaySourcesChecked: 0,
-        replaySourceReason: "immutable replay source verification failed",
+        replaySourceReason: normalized.message,
       };
     }
   });

@@ -24,7 +24,7 @@ audit entries: 5 -> 5
 audit chain after restore: VERIFIED
 decision entries: 5 -> 5
 decision chain after restore: L1-L4 + 10 SOURCES VERIFIED
-backup: 40ms | restore: 204ms | total drill: 1325ms
+backup: 27ms | restore: 120ms | total drill: 953ms
 RESULT: PASS
 ```
 
