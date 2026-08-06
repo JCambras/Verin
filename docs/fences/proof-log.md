@@ -12055,7 +12055,7 @@ parameter symbol on both branches, and index zero.
 
 ### PF-001 (continued) - reflective Vitest registration targets
 
-**Invariant (charter operating model / ADR-0039 / D-186):** every fitness registration remains visible
+**Invariant (charter operating model / ADR-0055 / D-186):** every fitness registration remains visible
 when its Vitest callable is invoked through `Reflect.apply` or obtained through a static `Reflect.get`.
 An unresolved reflected Vitest member fails closed.
 
@@ -12078,7 +12078,7 @@ keeping ordinary enabled registrations green.
 
 ### PF-001 (continued) - intrinsic aliases and higher-order Vitest registration
 
-**Invariant (charter operating model / ADR-0039 / D-098):** a disabled Vitest registration remains
+**Invariant (charter operating model / ADR-0055 / D-186):** a disabled Vitest registration remains
 visible when a local helper invokes a caller-supplied registration function, including one reached
 through a stable or computed global `Reflect` alias.
 
@@ -12102,7 +12102,7 @@ cache preserve the bounded audit: the real-tree red run completed its scan in 13
 
 ### PF-031 (continued) - intrinsic aliases and higher-order Playwright hooks
 
-**Invariant (charter #9 / ADR-0039 / D-098):** a required Axe module cannot register a Playwright hook
+**Invariant (charter #9 / ADR-0055 / D-186):** a required Axe module cannot register a Playwright hook
 through a local callable parameter, a stable global `Reflect` alias, or an `Object.assign` mutation
 reached through a stable global `Object` alias.
 
@@ -12126,7 +12126,7 @@ provenance for both hooks and neutralizers.
 
 ### PF-030 (continued) - complete GitHub field value schemas
 
-**Invariant (ADR-0039 / D-098):** a governed command is evidence only when every supported workflow,
+**Invariant (ADR-0055 / D-186):** a governed command is evidence only when every supported workflow,
 job, container, and step field has a GitHub-valid value shape across the complete workflow.
 
 **Injection:** added `timeout-minutes: []` to the real `v3-invariants` command step in
@@ -12148,7 +12148,7 @@ and inherited-environment diagnostics.
 
 ### PF-031 (continued) - reflective Playwright reads
 
-**Invariant (charter #9 / ADR-0039 / D-186):** a required Axe module cannot obtain a Playwright
+**Invariant (charter #9 / ADR-0055 / D-186):** a required Axe module cannot obtain a Playwright
 neutralizer or hook through `Reflect.get`; an unresolved reflected key rooted at the Playwright API is
 non-evidence.
 
@@ -12171,7 +12171,7 @@ literal keys, stable aliases, and unresolved keys for neutralizers and hooks thr
 
 ### PF-001 / PF-024 (continued) - exact fitness result ownership
 
-**Invariant (charter operating model / v3 §17 / ADR-0039 / D-186):** a required fitness file is proven
+**Invariant (charter operating model / v3 §17 / ADR-0055 / D-186):** a required fitness file is proven
 only by one Vitest result whose canonical repository-relative path exactly equals that file. A passing
 shadow path with the same suffix is not evidence.
 
@@ -12195,7 +12195,7 @@ shared index before it reports invariant or gate state.
 
 ### PF-001 (continued) - composite and multi-source Vitest callables
 
-**Invariant (charter operating model / ADR-0039 / D-098):** conditional, logical, and sequence
+**Invariant (charter operating model / ADR-0055 / D-186):** conditional, logical, and sequence
 callables cannot hide a disabled Vitest registration, and a harmless initializer cannot hide a later
 reflective source.
 
@@ -12219,7 +12219,7 @@ source fast path preserve the bounded charter audit.
 
 ### PF-031 (continued) - composite and multi-source Playwright callables
 
-**Invariant (charter #9 / ADR-0039 / D-098):** conditional callables and later reflective assignments
+**Invariant (charter #9 / ADR-0055 / D-186):** conditional callables and later reflective assignments
 cannot hide a Playwright hook or neutralizer from the required Axe evidence graph.
 
 **Injection:** added a conditional `test.beforeEach` call and reassigned a harmless
@@ -12241,7 +12241,7 @@ aliases for both hooks and neutralizers.
 
 ### PF-030 (continued) - executable GitHub job and step forms
 
-**Invariant (ADR-0039 / D-098):** a governed command is evidence only when GitHub accepts every job and
+**Invariant (ADR-0055 / D-186):** a governed command is evidence only when GitHub accepts every job and
 step form in the blocking workflow.
 
 **Injection:** added `uses: actions/checkout@v7` beside the real `run` field in the
@@ -12262,7 +12262,7 @@ local jobs, and workflows containing another malformed job while retaining valid
 
 ### PF-001 (continued) - cross-module and property-held callable provenance
 
-**Invariant (charter operating model / ADR-0039 / D-098):** a disabled Vitest registration remains
+**Invariant (charter operating model / ADR-0055 / D-186):** a disabled Vitest registration remains
 visible when a reachable imported or re-exported helper invokes a caller-supplied callable, and a global
 `Reflect` alias held in an object property cannot hide reflective registration.
 
@@ -12287,7 +12287,7 @@ suite passed.
 
 ### PF-031 (continued) - cross-module and property-held Playwright hooks
 
-**Invariant (charter #9 / ADR-0039 / D-098):** a required Axe runtime graph cannot hide a Playwright hook
+**Invariant (charter #9 / ADR-0055 / D-186):** a required Axe runtime graph cannot hide a Playwright hook
 inside an imported or re-exported higher-order helper or an `Object` intrinsic held in an object
 property.
 
@@ -12312,7 +12312,7 @@ properties for hook and neutralizer provenance.
 
 ### PF-030 (continued) - GitHub permission, job, and timeout grammar
 
-**Invariant (ADR-0039 / D-098):** a governed command is evidence only when the complete workflow uses
+**Invariant (ADR-0055 / D-186):** a governed command is evidence only when the complete workflow uses
 supported permission scopes, valid job identifiers, and positive-integer or explicit-expression timeout
 values.
 
@@ -12334,7 +12334,7 @@ text, and malformed timeout mappings while retaining positive integers and exact
 
 ### PF-032 (continued) - exact Gate 0 renderer bindings
 
-**Invariant (Gate 0 / ADR-0039 / D-098):** every dynamic demo route arm passes its station's exact
+**Invariant (Gate 0 / ADR-0055 / D-186):** every dynamic demo route arm passes its station's exact
 journey view model, spreads the resolved scenario and firm identifiers without overrides, and binds the
 query-derived approval value only where required.
 
@@ -12355,7 +12355,7 @@ replace the policy-authoring approval binding with a literal.
 
 ### PF-001 (continued) - constructor, empty, destructured, and descriptor Vitest provenance
 
-**Invariant (charter operating model / ADR-0039 / D-099):** disabled Vitest registration stays visible
+**Invariant (charter operating model / ADR-0055 / D-187):** disabled Vitest registration stays visible
 through constructor parameters, incomplete parameter flow with no recovered values, destructured stable
 intrinsic holders, and Object or Reflect property descriptors.
 
@@ -12380,7 +12380,7 @@ Focused companions cover `new Registrar(it.skip)`, an unresolved spread argument
 
 ### PF-031 (continued) - constructor and descriptor Playwright hooks
 
-**Invariant (charter #9 / ADR-0039 / D-099):** the required Axe evidence graph cannot hide a Playwright
+**Invariant (charter #9 / ADR-0055 / D-187):** the required Axe evidence graph cannot hide a Playwright
 hook through constructor parameters, a destructured intrinsic holder, or Object or Reflect property
 descriptors.
 
@@ -12402,7 +12402,7 @@ Reflect descriptors, and the plural Object descriptor map.
 
 ### PF-030 (continued) - complete GitHub trigger ownership
 
-**Invariant (ADR-0039 / D-099):** a governed command is evidence only when the complete workflow trigger
+**Invariant (ADR-0055 / D-187):** a governed command is evidence only when the complete workflow trigger
 declaration is valid and contains exactly the unfiltered normal `push` and `pull_request` events.
 
 **Injection:** replaced the real trigger mapping with `on: [push, pull_request, 1]`. Before the fix, all

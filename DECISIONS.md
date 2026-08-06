@@ -6526,7 +6526,7 @@ single-value semantics used by every resolver; and **(6)** Gate 0 and Axe eviden
 Playwright hook-provenance authority. PF-001, PF-030, PF-031, and PF-032 record the real red injections,
 focused companions, and restored green proofs.
 
-The captain-approved identity, reflection, and result-ownership review (2026-08-05) amended ADR-0039
+The captain-approved identity, reflection, and result-ownership review (2026-08-05) amended ADR-0055
 in place a thirty-first time: **(1)** the Gate A decision entry is D-186, leaving the existing prompt-6
 security decision as the sole D-061; only Gate A proof references moved; **(2)** Vitest registration
 analysis resolves the invoked target of `Reflect.apply`; **(3)** one shared callable-indirection helper
@@ -6536,7 +6536,7 @@ canonicalize result names to exact repository-relative paths and reject duplicat
 passing suffix-matching shadow file cannot satisfy an omitted fence. PF-001, PF-024, and PF-031 record
 the red reproductions, focused companions, and restored green proofs.
 
-The captain-approved composite-callable and executable-workflow review (2026-08-05) amended ADR-0039
+The captain-approved composite-callable and executable-workflow review (2026-08-05) amended ADR-0055
 in place a thirty-second time: **(1)** Vitest and Playwright provenance resolves conditional, logical,
 and sequence callable expressions; **(2)** shared `Reflect.apply` and `Reflect.get` resolution considers
 every initializer and preceding assignment source, and incomplete resolution is non-evidence; and
@@ -6548,7 +6548,7 @@ real red reproductions, focused companions, and restored green proofs. Gate A an
 ownership, proof points, and readiness semantics are unchanged.
 
 The captain-approved intrinsic-alias, higher-order, and workflow-schema review (2026-08-05) amended
-ADR-0039 in place a thirty-third time: **(1)** shared callable provenance resolves stable global
+ADR-0055 in place a thirty-third time: **(1)** shared callable provenance resolves stable global
 `Reflect` and `Object` aliases plus statically computed intrinsic and member names; **(2)** locally
 invoked callable parameters inherit every caller-supplied value, so a higher-order helper cannot hide a
 Vitest registration, Playwright neutralizer, or Playwright hook; **(3)** `Object.assign` mutation through
@@ -6559,7 +6559,7 @@ charter audit. PF-001, PF-030, and PF-031 record focused companions, real red in
 green proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics are
 unchanged.
 
-The captain-approved cross-module, CI-grammar, and route-binding review (2026-08-05) amended ADR-0039
+The captain-approved cross-module, CI-grammar, and route-binding review (2026-08-05) amended ADR-0055
 in place a thirty-fourth time: **(1)** higher-order callable provenance follows caller arguments through
 reachable imports and re-exports, so an imported helper cannot hide a Vitest registration, Playwright
 neutralizer, or Playwright hook; **(2)** stable object-property sources for global `Reflect` and `Object`
@@ -6571,7 +6571,7 @@ PF-001, PF-030, PF-031, and PF-032 record focused companions, real red injection
 proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics are unchanged.
 
 The captain-approved trigger, constructor, and descriptor-provenance review (2026-08-05) amended
-ADR-0039 in place a thirty-fifth time: **(1)** the blocking workflow accepts only the complete normal
+ADR-0055 in place a thirty-fifth time: **(1)** the blocking workflow accepts only the complete normal
 `push` and `pull_request` trigger set, rejecting extra, non-string, duplicate, filtered, or unsupported
 events before command evidence is considered; **(2)** constructor calls and parameters participate in
 the shared callable invocation index; **(3)** incomplete callable-parameter provenance is unsafe even
@@ -6590,7 +6590,7 @@ list - of any requirement kind, including deleting an `evidence` clause - its `w
 invariant's `gate`, is an amendment to ADR-0055, ADR-0023, and all five ratchets in
 `scripts/v3-gates.lib.ts`, never a registry edit alone.
 
-### D-099 · 2026-08-05 · reversible · CI triggers and callable provenance fail closed across construction and descriptors
+### D-187 · 2026-08-05 · reversible · CI triggers and callable provenance fail closed across construction and descriptors
 
 Five review findings were legitimate symptoms of two shared ownership gaps. The structured CI authority
 validated jobs and steps but accepted partially valid trigger declarations, while callable provenance
