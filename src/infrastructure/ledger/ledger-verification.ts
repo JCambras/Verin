@@ -170,7 +170,6 @@ export async function verifyAndListDecisionLedger(
     stored,
     headSequence,
     rows: verificationRows,
-    start: undefined,
   };
   const rows = window !== undefined && window > 0 && stored > window
     ? verificationRows.slice(-window)
@@ -210,7 +209,6 @@ async function verifySnapshotTransaction(
   const snapshot: LedgerSnapshot = {
     ...base,
     rows: verificationRows,
-    start: undefined,
   };
   return {
     verification: await verifyLedgerSnapshot(tx, tenant, snapshot),

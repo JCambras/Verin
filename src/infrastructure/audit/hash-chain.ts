@@ -60,15 +60,15 @@ export interface StoredByteChainRow {
 
 /**
  * L1 verification for chains whose authoritative preimage is already persisted.
- * `start` verifies a suffix of a chain against the stored entry_hash of the row
- * that precedes it; omitting it demands a complete GENESIS-rooted chain.
+ * Always demands a complete GENESIS-rooted chain: a suffix rooted at a stored
+ * predecessor hash proves continuity but not that the predecessor is authentic
+ * (ADR-0044), so there is no bounded-start form to pass here.
  */
 export function verifyStoredByteChain(
   rows: StoredByteChainRow[],
-  start?: { readonly sequence: number; readonly prevHash: string },
 ): ChainVerdict {
-  let prev = start?.prevHash ?? GENESIS_HASH;
-  let expectedSequence = start?.sequence ?? 0;
+  let prev = GENESIS_HASH;
+  let expectedSequence = 0;
   let checked = 0;
   for (const row of rows) {
     if (row.sequence !== expectedSequence) {

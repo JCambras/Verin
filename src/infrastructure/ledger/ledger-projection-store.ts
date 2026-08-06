@@ -121,9 +121,6 @@ async function prepareProjection(
   ) {
     throw appError("STORE_CONSTRAINT", "decision projection is missing");
   }
-  if (event.type === "ReservationReleased" && !loaded?.state) {
-    throw appError("STORE_CONSTRAINT", "reservation owner projection is missing");
-  }
   const next = foldDecisionProjection({
     ...(loaded?.state ? { current: loaded.state } : {}),
     event,

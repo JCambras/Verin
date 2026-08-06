@@ -15,7 +15,7 @@ in shape.
 4. **restores** to a FRESH instance (`createDbFromDump()`);
 5. asserts row counts and both chains' integrity **survive the restore**.
 
-### Latest local run (2026-07-28)
+### Latest local run (2026-08-06)
 
 ```
 === Verin backup-restore drill ===
@@ -23,8 +23,8 @@ households: 5 -> 5
 audit entries: 5 -> 5
 audit chain after restore: VERIFIED
 decision entries: 5 -> 5
-decision chain after restore: L1-L4 VERIFIED
-backup: 26ms | restore: 101ms | total drill: 856ms
+decision chain after restore: L1-L4 + 10 SOURCES VERIFIED
+backup: 40ms | restore: 204ms | total drill: 1325ms
 RESULT: PASS
 ```
 

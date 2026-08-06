@@ -3867,3 +3867,42 @@ code cannot keep.
 **Relates to:** ADR-0039, D-104, D-105, D-106, D-107, D-108.
 **Revert path:** the seams, the version grammar, and the fences are additive; migration 7
 is forward-only and the deleted reads have verified successors.
+
+### D-117 · 2026-08-06 · reversible · The drill tenant, the plain-context rescan, and the removed bounded start
+
+**The backup-restore drill seeds an opaque tenant id.** The nightly drill (charter #11)
+seeded the decision ledger under org id `"org"`. Once the immutable-source boundary
+became fail-closed, `firmId` - carried by every ledger event and replay source - had to
+be a UUID, a hash, or a reviewed shipped identifier, so `seedDecisionLedger` threw
+`PII_VIOLATION` and the drill aborted before it ever reached the backup step. Reproduced
+end-to-end with the scheduled job's own environment before the fix. The drill now uses a
+fixed UUID tenant, which satisfies the boundary structurally and keeps a drill-only
+string out of the production allowlist. The runbook records the fresh run.
+
+**The identifier-context memo no longer suppresses the plain-context scan.** The
+immutable-source traversal memoised visited containers on a single flag, so an object
+first reached through an identifier field was skipped when it was later reached through a
+plain one. The two contexts are not ordered: identifier strings are checked against the
+opaque-identifier grammar, plain strings against `looksLikeAmbiguousSensitiveText`, and a
+registered machine identifier passes the first while failing the second. The memo keys on
+(container, context), so each container is scanned once per context. Proved adversarially:
+the new unit test passes on the fix and fails on the old memo.
+
+**The bounded chain start is removed rather than revived.** `LedgerSnapshot.start` and
+`verifyStoredByteChain`'s `start` parameter were the last plumbing of the tail-verification
+design ADR-0044 replaced, constructed as `undefined` at both shipped call sites and covered
+by nothing. Reviving them would re-open exactly what ADR-0044 closed - a stored predecessor
+hash proves continuity, not that the predecessor or its promoted columns are authentic -
+and ADR-0044 names measured request latency, not review, as the trigger for an
+authenticated checkpoint design. The parameter is gone; verification stays GENESIS-rooted.
+
+**D-106 upheld again.** Review reported the Turbopack trace annotation as an inert
+argument comment for the third time. Re-measured on this branch: `next build` is clean
+with it and warns "Encountered unexpected file in NFT list" without it. The annotation
+stays.
+
+**Why:** a drill that cannot run is not evidence, a memo that depends on traversal order is
+not a boundary, and dead plumbing for a rejected design is an invitation to rebuild it.
+**Relates to:** ADR-0039, ADR-0044, D-106, D-116.
+**Revert path:** the drill tenant is one constant, the memo change is additive, and the
+bounded start returns only with the authenticated checkpoint design ADR-0044 defers.

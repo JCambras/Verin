@@ -203,7 +203,8 @@ function requireOpaqueIdentifiers(value: unknown): void {
   }> = [
     { value, identifier: false },
   ];
-  const seen = new WeakMap<object, boolean>();
+  const seenAsIdentifier = new WeakSet<object>();
+  const seenAsPlain = new WeakSet<object>();
   while (pending.length > 0) {
     const item = pending.pop()!;
     if (typeof item.value === "string") {
@@ -219,11 +220,9 @@ function requireOpaqueIdentifiers(value: unknown): void {
       hasSensitiveAccountReference(item.value)
     ) refuse();
     if (item.value === null || typeof item.value !== "object") continue;
-    const seenAsIdentifier = seen.get(item.value);
-    if (seenAsIdentifier === true || seenAsIdentifier === item.identifier) {
-      continue;
-    }
-    seen.set(item.value, item.identifier);
+    const seen = item.identifier ? seenAsIdentifier : seenAsPlain;
+    if (seen.has(item.value)) continue;
+    seen.add(item.value);
     if (Array.isArray(item.value)) {
       for (const nested of item.value) {
         pending.push({

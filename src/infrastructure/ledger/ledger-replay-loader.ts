@@ -365,7 +365,6 @@ async function loadReplaySources(
       source.record.id !== entry.event.decisionRef.id ||
       source.record.inputBundleRef.id !== source.bundle.id ||
       source.bundle.id !== row.input_bundle_id ||
-      row.input_bundle_id !== source.bundle.id ||
       row.decision_hash !== source.record.decisionHash ||
       row.decision_created_at !== source.record.createdAt ||
       row.engine_version !== source.bundle.engineVersion ||

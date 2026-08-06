@@ -10,6 +10,8 @@ import {
   canonicalJson,
   type JsonValue,
 } from "@contracts/decision-core/serialization";
+import type { DecisionInputBundle } from "@contracts/decision-core/evidence";
+import { assertReplaySourcePiiBoundary } from "@infra/ledger/ledger-pii";
 import { parseRecordedLedgerEvent } from "@infra/ledger/ledger-schema-registry";
 import { parseRecordedReplaySource } from "@infra/ledger/ledger-source-registry";
 import { createRecordedVersionRegistry } from "@infra/ledger/recorded-version-registry";
@@ -170,5 +172,26 @@ describe("decision ledger contract", () => {
       completedParts: ["same"],
       incompleteParts: ["same"],
     }).success).toBe(false);
+  });
+
+  it("scans a shared container in plain context after an identifier-context visit", () => {
+    // A registered machine identifier is accepted in identifier context and refused
+    // as plain retained text, so a container reachable both ways must be scanned in
+    // BOTH: identifier-context traversal never applies the ambiguous-text check.
+    const shared = { statusNote: "idem:GC-01:smiths-75000-2026-08-15" };
+    const versions = { engineVersion: "1.0.0", primitiveSetVersion: "1" };
+    expect(() =>
+      assertReplaySourcePiiBoundary(
+        "bundle",
+        { ...versions, subjectRef: shared } as unknown as DecisionInputBundle,
+      )
+    ).not.toThrow();
+    expect(() =>
+      assertReplaySourcePiiBoundary(
+        "bundle",
+        { ...versions, note: shared, subjectRef: shared } as unknown as
+          DecisionInputBundle,
+      )
+    ).toThrowError(expect.objectContaining({ code: "PII_VIOLATION" }));
   });
 });

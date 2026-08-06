@@ -63,7 +63,6 @@ export interface LedgerSnapshot extends PIIBearing {
   } | undefined;
   readonly stored: number;
   readonly headSequence: number | null;
-  readonly start: { sequence: number; prevHash: string } | undefined;
 }
 
 function level(
@@ -226,7 +225,7 @@ export async function verifyLedgerSnapshot(
       entryHash: row.entryHash,
     });
   }
-  const l1Raw = verifyStoredByteChain(chainRows, snapshot.start);
+  const l1Raw = verifyStoredByteChain(chainRows);
   const l1 = { ...l1Raw, level: "L1" as const };
   const fail = (levels: LedgerVerificationLevel[]): LedgerVerification => ({
     ok: false,
