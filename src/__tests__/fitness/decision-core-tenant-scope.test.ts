@@ -464,10 +464,8 @@ const ALLOWED_OPAQUE_SCHEMA_NODE_PATHS = [
   "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].check[0]",
   "decision.ts:BlockedDecisionSchema.blockers.[].resolvingEvidence.[].suppliableBy.check[1]",
   "decision.ts:DecisionRecordSchema.check[0]",
-  "decision.ts:DecisionRecordSchema.check[1]",
   "decision.ts:DecisionRecordSchema.check[2]",
-  "decision.ts:DecisionRecordSchema.check[4]",
-  "decision.ts:DecisionRecordSchema.check[5]",
+  "decision.ts:DecisionRecordSchema.check[3]",
   "decision.ts:ExplanationNodeSchema.evidenceSnapshotRefs.check[0]",
   "decision.ts:ExplanationNodeSchema.sourceRefs.[].check[0]",
   "decision.ts:ExplanationNodeSchema.sourceRefs.check[0]",
@@ -596,17 +594,11 @@ const ALLOWED_OPAQUE_SCHEMA_OCCURRENCES: Readonly<
   "decision.ts:DecisionRecordSchema.check[0]": [
     "decision.ts:DecisionRecordSchema.check[0]",
   ],
-  "decision.ts:DecisionRecordSchema.check[1]": [
-    "decision.ts:DecisionRecordSchema.check[1]",
-  ],
   "decision.ts:DecisionRecordSchema.check[2]": [
     "decision.ts:DecisionRecordSchema.check[2]",
   ],
-  "decision.ts:DecisionRecordSchema.check[4]": [
-    "decision.ts:DecisionRecordSchema.check[4]",
-  ],
-  "decision.ts:DecisionRecordSchema.check[5]": [
-    "decision.ts:DecisionRecordSchema.check[5]",
+  "decision.ts:DecisionRecordSchema.check[3]": [
+    "decision.ts:DecisionRecordSchema.check[3]",
   ],
   "decision.ts:ExplanationNodeSchema.evidenceSnapshotRefs.check[0]": [
     "decision.ts:DecisionRecordSchema.explanationTrace.[].evidenceSnapshotRefs.check[0]",

@@ -121,7 +121,7 @@ export type ExplanationNode = Readonly<{
   childNodes: readonly ExplanationNode[];
 }>;
 
-const RecursiveExplanationNodeSchema: z.ZodType<ExplanationNode> = z
+const IterativeExplanationNodeSchema: z.ZodType<ExplanationNode> = z
   .strictObject({
     ...explanationNodeFields,
     get childNodes(): z.ZodReadonly<
@@ -130,8 +130,7 @@ const RecursiveExplanationNodeSchema: z.ZodType<ExplanationNode> = z
       return z.array(ExplanationNodeSchema).readonly();
     },
   })
-  .superRefine(requireExplanationNodeTenant)
-  .readonly();
+  .superRefine(requireExplanationNodeTenant);
 
 type ExplanationPath = {
   readonly parent?: ExplanationPath;
@@ -149,11 +148,11 @@ const materializePath = (
 };
 
 const recursiveExplanationRun =
-  RecursiveExplanationNodeSchema._zod.run.bind(
-    RecursiveExplanationNodeSchema._zod,
+  IterativeExplanationNodeSchema._zod.run.bind(
+    IterativeExplanationNodeSchema._zod,
   );
 
-RecursiveExplanationNodeSchema._zod.run = ((payload, ctx) => {
+IterativeExplanationNodeSchema._zod.run = ((payload, ctx) => {
   if (ctx.direction === "backward") {
     return recursiveExplanationRun(payload, ctx);
   }
@@ -172,7 +171,6 @@ RecursiveExplanationNodeSchema._zod.run = ((payload, ctx) => {
       };
   const ancestors = new Set<object>();
   let output: unknown = payload.value;
-  let treeFirmId: string | undefined;
   const tasks: Task[] = [{
     kind: "visit",
     input: payload.value,
@@ -197,7 +195,7 @@ RecursiveExplanationNodeSchema._zod.run = ((payload, ctx) => {
         code: "custom",
         message: "circular explanation reference",
         input: task.input,
-        inst: RecursiveExplanationNodeSchema,
+        inst: IterativeExplanationNodeSchema,
         path: materializePath(task.path),
       });
       continue;
@@ -221,19 +219,6 @@ RecursiveExplanationNodeSchema._zod.run = ((payload, ctx) => {
     }
     const input = task.input as object;
     const parsedNode = parsed.value as Output;
-    const firmId = parsedNode.evidenceSnapshotRefs[0]?.firmId ??
-      parsedNode.sourceRefs[0]?.sourceRef.firmId;
-    if (treeFirmId === undefined) {
-      treeFirmId = firmId;
-    } else if (firmId !== undefined && firmId !== treeFirmId) {
-      payload.issues.push({
-        code: "custom",
-        message: "explanation tree references must belong to one tenant",
-        input: task.input,
-        inst: ExplanationNodeSchema,
-        path: materializePath(task.path),
-      });
-    }
     const rawChildren = parsedNode.childNodes;
     parsedNode.childNodes = new Array(rawChildren.length);
     task.assign(parsedNode);
@@ -258,7 +243,15 @@ RecursiveExplanationNodeSchema._zod.run = ((payload, ctx) => {
   }
   payload.value = output;
   return payload;
-}) as typeof RecursiveExplanationNodeSchema._zod.run;
+}) as typeof IterativeExplanationNodeSchema._zod.run;
 
+/**
+ * The closure wraps the READONLY carrier, not the iterative node itself: zod's
+ * check surface clones the schema it refines, so closing the patched instance
+ * directly would silently drop the iterative run - and closing INSIDE that run
+ * would place the guard where the patch never reaches its checks. Tree-wide
+ * tenant integrity therefore belongs to the closure alone; a per-node sample of
+ * the first evidence or source reference was strictly weaker than the walk.
+ */
 export const ExplanationNodeSchema: z.ZodType<ExplanationNode> =
-  withTenantClosure(RecursiveExplanationNodeSchema);
+  withTenantClosure(IterativeExplanationNodeSchema.readonly());

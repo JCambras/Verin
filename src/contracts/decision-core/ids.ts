@@ -103,59 +103,100 @@ const tenantScopedReference = <T>(id: z.ZodType<T>) =>
 
 const tenantClosedSchemas = new WeakSet<z.ZodType>();
 
-const belongsToOneTenant = (value: unknown): boolean => {
-  const pending = [value];
+type TenantWalkPath = {
+  readonly parent?: TenantWalkPath;
+  readonly segment: string | number;
+};
+
+const materializeTenantWalkPath = (
+  path: TenantWalkPath | undefined,
+): (string | number)[] => {
+  const segments: (string | number)[] = [];
+  for (let cursor = path; cursor !== undefined; cursor = cursor.parent) {
+    segments.push(cursor.segment);
+  }
+  return segments.reverse();
+};
+
+/**
+ * Tenant evidence is STRUCTURAL: a value is a tenant-scoped reference only when it
+ * carries a firm alongside its own opaque id - the exact shape tenantScopedReference
+ * mints. A bare property NAME is not evidence: `Recommendation.parameters` is an
+ * open, caller-chosen key space (decision.ts), so a scalar parameter spelled
+ * "firmId" would otherwise fail the whole decision on a key collision while a
+ * genuine cross-tenant SubjectRef in that same record stayed representable.
+ */
+const isScopedReferenceValue = (
+  value: object,
+): value is { readonly firmId: string; readonly id: string } =>
+  !Array.isArray(value) &&
+  Object.hasOwn(value, "firmId") &&
+  typeof (value as { firmId?: unknown }).firmId === "string" &&
+  Object.hasOwn(value, "id") &&
+  typeof (value as { id?: unknown }).id === "string";
+
+/**
+ * The path of the FIRST reference that leaves the tenant established by the first
+ * scoped reference in traversal order, or null when every reference agrees. The
+ * path is threaded through the walk rather than reconstructed, so a rejected
+ * payload names the crossing reference instead of only the enclosing contract.
+ */
+const crossingTenantReferencePath = (
+  root: unknown,
+): (string | number)[] | null => {
+  const pending: { readonly value: unknown; readonly path?: TenantWalkPath }[] =
+    [{ value: root }];
   const seen = new WeakSet<object>();
   let firmId: string | undefined;
   while (pending.length > 0) {
-    const current = pending.pop();
-    if (current === null || typeof current !== "object" || seen.has(current)) continue;
-    seen.add(current);
-    if (Object.hasOwn(current, "firmId")) {
-      const candidate = (current as { firmId?: unknown }).firmId;
-      if (typeof candidate === "string") {
-        firmId ??= candidate;
-        if (candidate !== firmId) {
-          return false;
-        }
+    const { value, path } = pending.pop()!;
+    if (value === null || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+    if (isScopedReferenceValue(value)) {
+      firmId ??= value.firmId;
+      if (value.firmId !== firmId) {
+        return [...materializeTenantWalkPath(path), "firmId"];
       }
     }
-    if (current instanceof Map) {
-      for (const [key, child] of current) pending.push(key, child);
-    } else if (current instanceof Set) {
-      pending.push(...current);
-    } else {
-      pending.push(...Object.values(current));
+    // Reverse order so the stack POPS children in declaration order: the first
+    // crossing reported must not depend on collection size.
+    const push = (segment: string | number, child: unknown): void => {
+      pending.push({ value: child, path: { parent: path, segment } });
+    };
+    const members = value instanceof Map
+      ? [...value].flatMap(([key, child], index) =>
+          [[index, key], [index, child]] as [number, unknown][])
+      : value instanceof Set || Array.isArray(value)
+        ? [...value].map((child, index) => [index, child] as [number, unknown])
+        : Object.entries(value);
+    for (let index = members.length - 1; index >= 0; index -= 1) {
+      push(members[index]![0], members[index]![1]);
     }
   }
-  return true;
+  return null;
 };
 
+/**
+ * The ONE tenant mechanism for a composite contract (D-115): every scoped
+ * reference anywhere inside the parsed value must name the same firm. Built on
+ * zod's PUBLIC check surface - a private `_zod.run` patch would have to re-decide
+ * when checks run, and its `skipChecks`/"only when no other issue" guards silently
+ * disabled the boundary exactly when a payload was already suspect.
+ */
 export const withTenantClosure = <T extends z.ZodType>(schema: T): T => {
   if (tenantClosedSchemas.has(schema)) return schema;
-  const run = schema._zod.run.bind(schema._zod);
-  schema._zod.run = ((payload, ctx) => {
-    const close = (parsed: typeof payload): typeof payload => {
-      if (
-        !ctx.skipChecks &&
-        parsed.issues.length === 0 &&
-        !belongsToOneTenant(parsed.value)
-      ) {
-        parsed.issues.push({
-          code: "custom",
-          message: "references must belong to one tenant",
-          input: parsed.value,
-          inst: schema,
-          continue: true,
-        });
-      }
-      return parsed;
-    };
-    const parsed = run(payload, ctx);
-    return parsed instanceof Promise ? parsed.then(close) : close(parsed);
-  }) as typeof schema._zod.run;
-  tenantClosedSchemas.add(schema);
-  return schema;
+  const closed = schema.superRefine((value, ctx) => {
+    const path = crossingTenantReferencePath(value);
+    if (path !== null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "references must belong to one tenant",
+        path,
+      });
+    }
+  }, { when: () => true }) as T;
+  tenantClosedSchemas.add(closed);
+  return closed;
 };
 
 export const hasTenantClosure = (schema: z.ZodType): boolean =>

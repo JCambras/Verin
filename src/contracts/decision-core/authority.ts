@@ -166,7 +166,6 @@ const requireStageRoleTenant = (
   stage: StageRoleRefs,
   firmId: string,
   ctx: z.core.$RefinementCtx,
-  path: (string | number)[] = [],
 ): void => {
   stage.requirements.forEach((requirement, requirementIndex) =>
     requirement.eligibleRoleIds.forEach((role, roleIndex) => {
@@ -174,7 +173,7 @@ const requireStageRoleTenant = (
         ctx.addIssue({
           code: "custom",
           message: "eligible role must belong to the authority tenant",
-          path: [...path, "requirements", requirementIndex, "eligibleRoleIds", roleIndex, "firmId"],
+          path: ["requirements", requirementIndex, "eligibleRoleIds", roleIndex, "firmId"],
         });
       }
     }),
@@ -185,7 +184,7 @@ const requireStageRoleTenant = (
         ctx.addIssue({
           code: "custom",
           message: "escalation role must belong to the authority tenant",
-          path: [...path, "escalationPath", escalationIndex, "roleIds", roleIndex, "firmId"],
+          path: ["escalationPath", escalationIndex, "roleIds", roleIndex, "firmId"],
         });
       }
     }),

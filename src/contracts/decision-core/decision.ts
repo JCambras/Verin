@@ -51,7 +51,6 @@ import {
   ExplanationNodeSchema,
   PrecedenceStepSchema,
   VersionedSourceRefSchema,
-  type VersionedSourceRef,
 } from "./explanation";
 export {
   ExplanationNodeSchema,
@@ -61,27 +60,6 @@ export {
   type PrecedenceStep,
   type VersionedSourceRef,
 } from "./explanation";
-
-type ExplanationPath = {
-  readonly parent?: ExplanationPath;
-  readonly segment: string | number;
-};
-
-const materializeExplanationPath = (
-  path: ExplanationPath | undefined,
-): (string | number)[] => {
-  const segments: (string | number)[] = [];
-  for (let cursor = path; cursor !== undefined; cursor = cursor.parent) {
-    segments.push(cursor.segment);
-  }
-  return segments.reverse();
-};
-
-type ExplanationTenantReferences = {
-  evidenceSnapshotRefs: readonly { firmId: string }[];
-  sourceRefs: readonly VersionedSourceRef[];
-  childNodes: readonly ExplanationTenantReferences[];
-};
 
 type NormalizableDecisionRecord = {
   readonly createdBy: Parameters<typeof normalizeActorRef>[0];
@@ -306,135 +284,29 @@ export const DecisionRecordSchema = withTenantClosure(
   createdBy: AnyActorRefSchema,
   createdAt: TimestampSchema,
 })
+  // Attribution is the ONE tenant edge the closure cannot see: AnyActorRef carries a
+  // firm beside an actorId or systemId, never beside an `id`, so it is not a scoped
+  // reference and nothing anchors it to the record. Every other reference below -
+  // intent, bundle, traces, revaluation subjects, and the whole result subtree - is a
+  // {firmId,id} scoped reference the closure already binds to this record's own pair.
   .refine((record) => record.createdBy.firmId === record.firmId, {
     message: "createdBy.firmId must match the record's tenant (cross-tenant attribution is unrepresentable)",
     path: ["createdBy"],
   })
-  .refine((record) => record.intentRef.firmId === record.firmId, {
-    message: "intentRef.firmId must match the record's tenant",
-    path: ["intentRef", "firmId"],
-  })
-  .refine((record) => record.inputBundleRef.firmId === record.firmId, {
-    message: "inputBundleRef.firmId must match the record's tenant",
-    path: ["inputBundleRef", "firmId"],
-  })
   .superRefine((record, ctx) => {
-    const requireSameFirm = (ref: { firmId: string }, path: (string | number)[]) => {
-      if (ref.firmId !== record.firmId) {
-        ctx.addIssue({ code: "custom", message: "referenced record must belong to the decision tenant", path });
-      }
-    };
-    const requireSource = (source: VersionedSourceRef, path: (string | number)[]) => {
-      requireSameFirm(source.sourceRef, [...path, "sourceRef", "firmId"]);
-      requireSameFirm(source.versionRef, [...path, "versionRef", "firmId"]);
-    };
-    const explanationTasks: Array<{
-      readonly node: ExplanationTenantReferences;
-      readonly path: ExplanationPath;
-    }> = [];
-    record.explanationTrace.forEach((node, index) =>
-      explanationTasks.push({
-        node: node as ExplanationTenantReferences,
-        path: {
-          parent: { segment: "explanationTrace" },
-          segment: index,
-        },
-      }),
-    );
-    while (explanationTasks.length > 0) {
-      const { node, path } = explanationTasks.pop()!;
-      node.evidenceSnapshotRefs.forEach((ref, index) =>
-        requireSameFirm(ref, [
-          ...materializeExplanationPath(path),
-          "evidenceSnapshotRefs",
-          index,
-          "firmId",
-        ]),
-      );
-      node.sourceRefs.forEach((source, index) =>
-        requireSource(source, [
-          ...materializeExplanationPath(path),
-          "sourceRefs",
-          index,
-        ]),
-      );
-      node.childNodes.forEach((child, index) =>
-        explanationTasks.push({
-          node: child,
-          path: {
-            parent: {
-              parent: path,
-              segment: "childNodes",
-            },
-            segment: index,
-          },
-        }),
-      );
-    }
-    record.precedenceTrace.forEach((step, index) => {
-      requireSource(step.left, ["precedenceTrace", index, "left"]);
-      requireSource(step.right, ["precedenceTrace", index, "right"]);
-    });
-    record.reevaluateWhen.forEach((condition, index) => {
-      if (condition.subjectRef) {
-        requireSameFirm(condition.subjectRef, ["reevaluateWhen", index, "subjectRef", "firmId"]);
-      }
-    });
-    if (record.result.kind === "blocked") {
-      record.result.blockers.forEach((blocker, blockerIndex) =>
-        blocker.resolvingEvidence.forEach((request, requestIndex) =>
-          requireSameFirm(request.subjectRef, [
-            "result",
-            "blockers",
-            blockerIndex,
-            "resolvingEvidence",
-            requestIndex,
-            "subjectRef",
-            "firmId",
-          ]),
-        ),
-      );
-    }
-    if (record.result.kind === "prohibited") {
-      requireSource(record.result.prohibition.source, ["result", "prohibition", "source"]);
-      requireSameFirm(record.result.prohibition.scopeRef, ["result", "prohibition", "scopeRef", "firmId"]);
-    }
-    if (record.result.kind === "proceed") {
-      for (const [key, parameter] of Object.entries(record.result.recommendation.parameters)) {
-        if (parameter !== null && typeof parameter === "object") {
-          requireSameFirm(parameter, ["result", "recommendation", "parameters", key, "firmId"]);
-        }
-      }
-      if (record.result.authority.mode !== "automatic") {
-        record.result.authority.stages.forEach((stage, stageIndex) => {
-          requireSameFirm(stage.templateRef, ["result", "authority", "stages", stageIndex, "templateRef", "firmId"]);
-          if (stage.expiresAt <= record.createdAt) {
-            ctx.addIssue({
-              code: "custom",
-              message: "approval-stage expiration must be later than decision creation",
-              path: ["result", "authority", "stages", stageIndex, "expiresAt"],
-            });
-          }
+    if (
+      record.result.kind !== "proceed" ||
+      record.result.authority.mode === "automatic"
+    ) return;
+    record.result.authority.stages.forEach((stage, stageIndex) => {
+      if (stage.expiresAt <= record.createdAt) {
+        ctx.addIssue({
+          code: "custom",
+          message: "approval-stage expiration must be later than decision creation",
+          path: ["result", "authority", "stages", stageIndex, "expiresAt"],
         });
       }
-      // execution.ts already binds every reference inside an action to that action's
-      // own targetRef, and every step's and compensation's targetRef to steps[0]'s -
-      // so ONE step-target edge per step carries the whole plan into this tenant.
-      // Re-walking those references here would be a second copy to keep in sync.
-      record.result.executionPlan.steps.forEach((step, stepIndex) =>
-        requireSameFirm(step.targetRef, [
-          "result",
-          "executionPlan",
-          "steps",
-          stepIndex,
-          "targetRef",
-          "firmId",
-        ]),
-      );
-    }
-    if (record.derivedFromDecisionRef) {
-      requireSameFirm(record.derivedFromDecisionRef, ["derivedFromDecisionRef", "firmId"]);
-    }
+    });
   })
   .refine((record) => record.result.kind !== "prohibited" || record.reevaluateWhen.length === 0, {
     message: "a prohibited decision cannot carry revaluation conditions (a prohibition has no resolving condition)",
