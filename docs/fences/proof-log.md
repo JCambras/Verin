@@ -5553,4 +5553,84 @@ corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
                                 # a 5,460 contracts ceiling - the measured total plus
                                 # bounded correction room. Any further increase stays a
                                 # measured ADR amendment, never a code change.
+                                # SUPERSEDED by PF-192's final measurement (5433).
+```
+
+### PF-192 the closing prompt-8 review round: honest tiebreaks, a frozen id list, year-zero totality, branded reason codes
+
+The last three review rounds changed shipped behavior in `src/contracts/primitives/`
+and this entry proves each change adversarially, closing the round. Four items:
+(1) `candidate-selection` now publishes a SECOND fixed reason code -
+`canonical-order-tiebreak` - so a `preference-order` loser that tied the winner's
+rank (both absent from the household preference list, so the canonical
+`(firmId, id)` order decided it) is no longer labeled `ranked-behind-selection`,
+which asserted a household preference had ranked it behind when nothing ranked it
+at all (captain ruling `p8-review-askuser-7`; the ratified total order itself is
+unchanged). (2) `PRIMITIVE_CATALOG_IDS` is `readonly PrimitiveId[]` over
+`Object.freeze`, so an in-place `sort`/`push` cannot mutate the module-level array
+both fences and every consumer read. (3) `addCalendarMonths` saturates only OUTSIDE
+the parseable range: year 0000 is inside `IsoDateSchema`'s four-digit range, so it is
+now computed exactly instead of jumping FORWARD eleven months to `0001-01-01` - a
+silent widening of the half-open horizon window. (4) `Alternative.rejectedBecause`
+is `ReasonCode`, not `string`, in the one place the module publishes reason codes.
+
+**Adversarial proof (four injections, each reverted after failing):**
+
+1. Collapsed the tiebreak selector back to `RANKED_BEHIND_REASON` for every losing
+   survivor. The unit case "breaks unranked ties by canonical reference order and
+   says so - never crediting a silent preference" failed at
+   `src/__tests__/unit/primitives.test.ts:490` ("expected [ { ref: {…}, …(1) } ] to
+   deeply equal [ { ref: {…}, …(1) } ]"), proving the assertion reads the published
+   reason code and not merely the alternatives' order. The sibling case "separates a
+   real preference rank from the canonical fallback in one trace" stayed GREEN under
+   the injection, so the pair cannot pass by labeling everything with one code: it
+   pins the partition, with genuinely-ranked-behind losers keeping the old code.
+2. Removed the `readonly` annotation and `Object.freeze` from
+   `PRIMITIVE_CATALOG_IDS` and added a `PRIMITIVE_CATALOG_IDS.sort()` before the
+   canonical-order assertion. WITH the freeze, `corepack pnpm typecheck` rejected the
+   mutation at `src/__tests__/unit/primitives.test.ts(61,27)`: "Property 'sort' does
+   not exist on type 'readonly (string & $brand<\"PrimitiveId\">)[]'". WITHOUT it,
+   typecheck was clean AND all 55 unit tests passed - proving the annotation is the
+   only thing standing between a consumer and a silent in-place reorder of the shared
+   array, and that no other gate would have caught it.
+3. Reverted the totality guard to `targetYear >= 1` with an `0001-01-01` floor. The
+   unit case "stays total at the last representable anchor, saturating the window
+   end" failed ("expected '0001-01-01' to be '0000-01-01'"), proving the low-end
+   assertion is real; its next line pins the finding's own case
+   (`addCalendarMonths("0000-01-01", 1) === "0000-02-01"`), and the 9999-12-31
+   saturation assertions stayed green, so the fix did not trade one edge for the other.
+4. Pushed an ad-hoc string literal into the published trace
+   (`rejectedBecause: "ad-hoc-literal"`). WITH the field narrowed to `ReasonCode`,
+   typecheck failed at `src/contracts/primitives/selection.ts(230,45)`: "Type
+   'string' is not assignable to type 'string & $brand<\"ReasonCode\">'". WITH the
+   field widened back to `string`, the same literal compiled clean - proving the
+   narrowing, not any fence or key-discipline case, is what keeps an unregistered
+   code out of `selection.<slot>.alternatives`.
+
+`docs/primitive-rationale.md` carries this round's doc obligations: the two-code
+partition and when each applies, and one sentence recording that the household
+preference ranking is OPTIONAL-BY-DESIGN evidence - advisory ordering whose absence
+is indistinguishable from a household holding no standing preference, honestly
+labeled by the canonical-tiebreak code rather than gated on, and deliberately NOT a
+D-104 obligation (captain ruling `p8-review-askuser-8`). `DECISIONS.md` D-104 carries
+the cross-wave obligations that are NOT fenceable today because their subjects do not
+exist yet (prompt-10 config-load cross-checks, prompt-14 claim de-duplication,
+prompt-15 reconciliation evidence sufficiency).
+
+### PF-192 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/unit/primitives.test.ts \
+  src/__tests__/fitness/primitive-catalog.test.ts               # 76 tests passed
+corepack pnpm typecheck                                         # clean
+corepack pnpm lint                                              # clean
+corepack pnpm test                                              # full suite green
+corepack pnpm knip                                              # clean
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                # 5 tests passed. FINAL measurement with the fence's
+                                # own algorithm: contracts 5433, domain 1298,
+                                # infrastructure 3484, presentation 928. The 5,460
+                                # ceiling is unchanged; ADR-0040's table and the fence
+                                # comment are synced to 5,433 / 27 headroom, which
+                                # supersedes PF-191's pre-review 5,418.
 ```

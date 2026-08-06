@@ -28,7 +28,7 @@ landed:
 
 | Layer | Measured | Ceiling | Headroom |
 |---|---:|---:|---:|
-| contracts | 5,432 | 5,460 | 28 |
+| contracts | 5,433 | 5,460 | 27 |
 | domain | 1,298 | 1,350 | 52 |
 | infrastructure | 3,484 | 3,550 | 66 |
 

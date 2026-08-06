@@ -177,7 +177,11 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   closed filter toggles), `ambiguityQuestionCode`.
 - **Applicable evidence:** candidate-class records (subject reference plus
   classification codes) and a household preference-class ranking (order is data, never
-  sorted; entries need not all be current candidates).
+  sorted; entries need not all be current candidates). The preference ranking is
+  OPTIONAL-BY-DESIGN evidence and deliberately NOT a D-104 obligation (captain ruling
+  `p8-review-askuser-8`): it only advises ordering, an empty list is indistinguishable from
+  a household holding no standing preference, and the resulting canonical fallback is
+  labeled honestly with the `canonical-order-tiebreak` reason code rather than gated on.
 - **Strategies (closed):** `preference-order` (rank survivors by household preference,
   unranked survivors tie to canonical order; never ambiguous), `single-eligible`
   (exactly one survivor after exclusions, else ambiguous/empty), `exactly-one` (the raw

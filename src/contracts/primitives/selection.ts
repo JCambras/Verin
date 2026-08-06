@@ -19,6 +19,7 @@ import {
   compareScopedReferences,
   hasUniqueScopedReferences,
   normalizeCanonicalStrings,
+  type ReasonCode,
   type SubjectRef,
 } from "../decision-core/ids";
 import {
@@ -218,7 +219,7 @@ export const candidateSelection = {
   ): PublishedFactRecord => {
     const slot = input.parameters.subjectSlot;
     const keyOf = (segment: string): string => `selection.${slot}.${segment}`;
-    type Alternative = { ref: SubjectRef; rejectedBecause: string };
+    type Alternative = { ref: SubjectRef; rejectedBecause: ReasonCode };
     const rejected: Alternative[] = [];
     const survivors: Candidate[] = [];
     for (const candidate of input.evidence.candidates) {
