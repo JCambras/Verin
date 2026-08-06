@@ -96,14 +96,14 @@ if (fitnessFiles.length > 0) {
   console.log(dim(`running ${fitnessFiles.length} mapped fitness fence file(s) via vitest…`));
   // Invoke vitest through the current Node binary (no package-manager shim needed:
   // `pnpm` reaches dev shells only via corepack, but node_modules is always here).
+  // Serial execution is NOT repeated here: it is held in vitest.config.ts, which
+  // this run resolves from `cwd: ROOT` like every other invocation path.
   const vitestEntry = join(ROOT, "node_modules/vitest/vitest.mjs");
   const run = spawnSync(
     process.execPath,
     [
       vitestEntry,
       "run",
-      "--maxWorkers=1",
-      "--fileParallelism=false",
       "--reporter=json",
       `--outputFile=${outFile}`,
       ...fitnessFiles,

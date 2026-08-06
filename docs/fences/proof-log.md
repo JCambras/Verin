@@ -8562,8 +8562,12 @@ proofOnlyDeadCorpusExport  scripts/corpus/_util.ts:31:14
 
 Before this change `knip.json` listed `scripts/**/*.ts` as an ENTRY pattern, so the whole tooling tree was
 exempt from the charter's dead-export gate and the same injection passed silently. The entry is now
-`scripts/*.ts` - the runners - with `scripts/**/*.ts` still in project scope, which is the ADR-0039 closure
-already applied to the two budget fences. Narrowing it immediately named three dead exports the review had
+`scripts/*.ts` - every TOP-LEVEL file, so the closure covers `scripts/corpus/**` and any future
+subdirectory, while two non-runner top-level libraries (`golden-cases.lib.ts`, `error-message.ts`) keep
+the exemption - with `scripts/**/*.ts` still in project scope, which is the ADR-0039 closure already
+applied to the two budget fences. `ignoreExportsUsedInFile: true` bounds it further: the gate reports only
+NEVER-referenced exports, which is exactly the property this injection proves - a file-local-only export
+would still pass. Narrowing it immediately named three dead exports the review had
 not found (`SYNTHETIC_DIR` re-exported from `validate.ts`, `CaseLabel` in `case-spec.ts` and its `world.ts`
 re-export), all removed.
 

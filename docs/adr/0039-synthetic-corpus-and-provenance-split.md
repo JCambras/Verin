@@ -337,6 +337,17 @@ headroom - the condition this budget exists to avoid, where a one-line correctio
 unrelated ceiling. The 254-line buffer is deliberate: a ceiling that cannot absorb a review round buys
 no discipline, it converts findings into documentation deletions. Every file stays under the unchanged
 500-line ceiling.
+D-142 KEEPS the ceiling at 8700 against a re-measured 8587 lines, after the serial-execution
+configuration moved out of the `package.json` strings and into `vitest.config.ts`. D-137's figure was
+true when written and went stale by the 141 lines the two review commits after it added - the same
+drift D-137 recorded one round earlier, which is why the measurement is re-taken at the END of a review
+round rather than at the change that motivated the ceiling. The 113-line buffer holds; the largest
+tooling file is 475 lines, under the unchanged 500-line ceiling.
+
+This amendment budgets `scripts/**` and stops there. `src/__tests__/**` remains outside both budget
+fences - 37,529 lines that no ceiling holds - and the unwalked-tree argument above applies to it
+verbatim. That gap is DEFERRED, not exempted: it is recorded in D-142 under follow-up key
+`fu-corpus-test-tree-budget`, with the next structural test-tree work as its un-defer trigger.
 
 ## What this PR explicitly does NOT claim
 

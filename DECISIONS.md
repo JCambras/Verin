@@ -5327,9 +5327,15 @@ authority the readers actually mean - git - and fail closed when it has no answe
 `knip.json` listed `scripts/**/*.ts` as an ENTRY pattern, so every export under `scripts/` was assumed
 reachable and the charter #5 dead-export gate could not see the tooling tree at all - the same escape
 hatch ADR-0039 closed for the two budget fences, left open for a tree that now carries the corpus
-generator. The entry is narrowed to `scripts/*.ts` (the runners `package.json` and CI actually invoke),
-with `scripts/**/*.ts` still in project scope. Narrowing it immediately named three dead exports no
-reviewer had found, all removed; the proof log records a planted export failing the gate at `file:line`.
+generator. The entry is narrowed to `scripts/*.ts` - every TOP-LEVEL file, which is the invoked runners
+plus two non-runner libraries that keep the exemption, `scripts/golden-cases.lib.ts` and
+`scripts/error-message.ts` - with `scripts/**/*.ts` still in project scope. So the closure is the
+`scripts/corpus/**` subtree and any future subdirectory, not the whole tooling tree; naming it as "the
+runners" overstated it. `ignoreExportsUsedInFile: true` narrows it again: the gate sees only NEVER-
+referenced exports, so the four symbols de-exported in this same change were beyond its reach either way
+and the planted probe proves the subtree property, not the file-local one. Narrowing it immediately named
+three dead exports no reviewer had found, all removed; the proof log records a planted export failing the
+gate at `file:line`.
 
 `deriveRealDerivedFreshness` now takes both instants through the corpus clock's `diffSeconds`, which
 asserts canonical UTC. Its own local subtraction returned `NaN` for an unparseable instant, and
@@ -5347,3 +5353,41 @@ bytes identical.
 **Why:** a gate that cannot see a tree does not govern it, and a comparison that reads "fresh" for an
 instant it could not parse is a fail-open in the one path built to fail closed.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
+
+### D-142 · 2026-08-06 · reversible · Serial execution moves into `vitest.config.ts`; the test tree is named as unbudgeted
+
+`vitest.config.ts` argues at length that these timeouts are honest only under `--maxWorkers=1
+--fileParallelism=false`, and records the twelve-worker measurement where five files fail. It did not
+HOLD that configuration: the flags lived in two `package.json` strings, so `pnpm test:watch` - a plain
+`vitest` over an `include` of `src/**/*.{test,spec}.{ts,tsx}` - ran every fitness fence at default
+parallelism, which is the measured failure case reachable by a documented command. `maxWorkers: 1` and
+`fileParallelism: false` move into the config, and the three redundant copies (`test`, `test:fitness`,
+the run `scripts/v3-invariants.ts` spawns) are dropped so one file both states the constraint and holds
+it. No invocation path is left that can run these timeouts in the configuration their own rationale
+calls dishonest.
+
+ADR-0039's tooling ceiling stays at 8700 against a re-measured 8587 lines - 113 of real headroom. The
+8446 recorded at D-137 was true when written and went stale by the 141 lines the two review commits
+after it added, which is the same drift D-137 itself called out one round earlier. The figure beside a
+ceiling is only worth what its last measurement is worth.
+
+**DEFERRED, recorded rather than silently exempt:** `src/__tests__/**` is in no budget bucket.
+`isShippedSourceFilePath` excludes it and `ceilingScopedFiles()` is shipped-source plus `scripts/**`, so
+37,529 lines across 62 files - including this PR's 8,454 and a single 5,573-line fence file - sit under
+no ceiling at all, while `scripts/**` now has to meet a 500-line per-file one. ADR-0039's own argument
+against an unwalked tree ("moving code to `scripts/` would have been evasion rather than discipline")
+applies to this tree verbatim; nothing about it being test code answers that argument. Extending the
+fences is structural work, not a wrap-up correction, so it is deferred under follow-up key
+`fu-corpus-test-tree-budget`. **Un-defer trigger:** the next structural test-tree work - a fence-file
+split, a shared-fixture extraction, or any change that moves fence code between trees - takes the
+bucket-and-ceiling decision with it. Until then the gap is stated in `line-budget.test.ts` beside the
+ceilings that do hold, so no reader mistakes silence for coverage.
+
+**Why:** a constraint documented in one file and enforced in another is a constraint one refactor from
+being lost, and an unmeasured tree that a fence's own rationale condemns should be named as a debt with
+a trigger, not left to look like a scope nobody noticed.
+**Alternatives:** budget `src/__tests__/**` now - rejected for this round, since a ceiling picked while
+wrapping up would either be set at today's number (failing the next fence a review adds) or set high
+enough to hold nothing.
+**Revert path:** delete the two config lines and restore the `package.json` flags; the deferral is a
+journal entry with no code to revert.
