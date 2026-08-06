@@ -3139,7 +3139,7 @@ The overbroad pin phrasing was corrected wherever it is stated as a live rule:
 `README.md`, `AGENTS.md`, `docs/v3/README.md`, the fence-inventory row in `FOUNDATION.md`
 (which the falsification session reads as the operational description of what
 `arch-version` does), and - as a captain-authorized scope exception to this docs-only
-change - the one-line docblock at the top of
+change - the leading docblock of
 `src/__tests__/fitness/arch-version.test.ts`. That last edit is comment text only: no
 assertion, test name, or behavior changed. Dated historical records keep their original
 wording, since they report what was written at the time and this entry supersedes them:
