@@ -3059,12 +3059,13 @@ product aim, and no continuous-learning or self-configuration subsystem exists t
 The PROPOSE/APPROVE shaping of configuration surfaces is recorded there as a
 directional design principle, explicitly NOT a normative rule, precisely so it is not
 a prose-only invariant. It is fenced in the PR that designs the self-configuration
-capability, beside the already-registered policy-lifecycle invariants 15-17 (Wave E).
+capability, beside the already-registered invariants 15-17 on policy mutability,
+executable configuration, and LLM-driven activation (gate E).
 Governed, attributed activation is recorded on the same directional terms and cited to
 the SHA-256-pinned `docs/v3/verin-architecture-v3.md` (§3 non-negotiables 1, 4 and 11;
 §17 invariants 14, 15, 17, 18, 19 and 21), not to the unpinned index (D-099): it is
-ratified v3 direction, but the invariants that would hold it (14, 15, 17 in Wave E;
-18, 19, 21 in Wave F) are all registered `not-yet-active`, so the
+ratified v3 direction, but the invariants that would hold it (14, 15, 17 behind gate E;
+18, 19, 21 behind gate F) are all registered `not-yet-active`, so the
 doc says no mechanism enforces it today rather than calling it settled. Ratified is not
 enforced; a claim with no live mechanism behind it is labeled directional (charter #5).
 

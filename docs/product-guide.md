@@ -21,9 +21,10 @@ escalated to the captain, never resolved by overriding them.
 
 **Build honesty (charter #5):** the thesis below is the product *aim*, not a description of what is
 built. No continuous-learning or self-configuration subsystem exists today, and none is scaffolded ahead
-of a real surface; the policy-lifecycle invariants that would govern one (v3 invariants 15, 16 and 17 in
-[`v3-invariants.json`](../v3-invariants.json)) are registered `not-yet-active`, gated to Wave E. Nothing
-here is a claim that unbuilt work exists.
+of a real surface; the invariants that would govern one - v3 invariants 15, 16 and 17 in
+[`v3-invariants.json`](../v3-invariants.json), covering policy mutability, executable configuration, and
+LLM-driven activation - are registered `not-yet-active` behind gate E. Nothing here is a claim that
+unbuilt work exists.
 
 ## The thesis
 
@@ -47,6 +48,6 @@ If you have the willpower to configure everything yourself, you can get to amazi
 
 ## How this shapes the build
 
-Configuration in Verin is not a one-time operator setup surface. The **directional design principle** - direction, deliberately not a normative rule, and not something a review can hold anyone to today - is that configuration surfaces should be shaped so the system can PROPOSE refinements from observed operation and a human APPROVES them. It becomes machine-enforced when the self-configuration capability is actually designed: the PR that introduces it states the invariant and fences it in the same PR (charter #1), alongside the already-registered policy-lifecycle invariants 15-17 that govern policy mutability, executable configuration, and LLM-driven activation.
+Configuration in Verin is not a one-time operator setup surface. The **directional design principle** - direction, deliberately not a normative rule, and not something a review can hold anyone to today - is that configuration surfaces should be shaped so the system can PROPOSE refinements from observed operation and a human APPROVES them. It becomes machine-enforced when the self-configuration capability is actually designed: the PR that introduces it states the invariant and fences it in the same PR (charter #1), alongside the already-registered invariants 15-17 that govern policy mutability, executable configuration, and LLM-driven activation.
 
-Where that path ends is fixed by the ratified v3 direction - [`docs/v3/verin-architecture-v3.md`](./v3/verin-architecture-v3.md) §3 non-negotiables 1, 4 and 11, and its §17 invariants 14, 15, 17, 18, 19 and 21 (the pinned document; indexed at [`docs/v3/README.md`](./v3/README.md)) - and it is directional on the same terms: activation of any configuration is to be a governed, attributed act - the system may learn and suggest, but what runs the business is something a human signed off on, with full provenance of who activated what and when. Ratified is not enforced. Every invariant that would hold this is registered `not-yet-active` in [`v3-invariants.json`](../v3-invariants.json) - 14, 15 and 17 (policy lifecycle, Wave E) and 18, 19 and 21 (approval and execution, Wave F) - so no mechanism enforces it in the build today. It stops being directional when those invariants activate with live mechanisms behind them, not when this doc asserts it.
+Where that path ends is fixed by the ratified v3 direction - [`docs/v3/verin-architecture-v3.md`](./v3/verin-architecture-v3.md) §3 non-negotiables 1, 4 and 11, and its §17 invariants 14, 15, 17, 18, 19 and 21 (the pinned document; indexed at [`docs/v3/README.md`](./v3/README.md)) - and it is directional on the same terms: activation of any configuration is to be a governed, attributed act - the system may learn and suggest, but what runs the business is something a human signed off on, with full provenance of who activated what and when. Ratified is not enforced. Every invariant that would hold this is registered `not-yet-active` in [`v3-invariants.json`](../v3-invariants.json) - 14, 15 and 17 (simulation before approval, active-policy immutability, and no direct LLM activation; gate E) and 18, 19 and 21 (approval-stage definition, approval invalidation on material input change, and pre-execution revalidation; gate F) - so no mechanism enforces it in the build today. It stops being directional when those invariants activate with live mechanisms behind them, not when this doc asserts it.
