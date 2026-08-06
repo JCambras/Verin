@@ -8406,3 +8406,66 @@ yields a named problem list with the per-file spread proven not to have run.
 empty, and captain signoff remains pending.
 
 **Date:** 2026-08-06 (v3 prompt 11, D-138 review hardening).
+
+## business-day arithmetic is DST-correct, and the corpus walk only drops what git refuses (ADR-0039)
+
+**Fences:** `src/__tests__/fitness/corpus-timestamps.test.ts`,
+`src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Injection 1 - the fixed 86 400-second business-day step restored.** Replaced
+`addLocalDay(current, transitions)` in `addBusinessDays` with `addDays(current, 1)`, the raw-seconds
+stepping the DST correction replaced.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected '2027-03-15T04:30:00.000Z' to be '2027-03-16T03:30:00.000Z'
+ ❯ src/__tests__/fitness/corpus-timestamps.test.ts:249:27
+```
+
+One business day from local Friday 2027-03-12 23:30 EST must be local Monday 2027-03-15 23:30 EDT. A
+fixed 24-hour step holds the UTC time of day still and drags the LOCAL wall clock an hour across the
+spring-forward transition, stepping from local Saturday straight to local Monday 00:30 without ever
+landing on Sunday - `settlementEarliest` a day out. The pre-existing assertion stepped entirely inside
+EDT, so it passed byte-identically under the bug: a correction indistinguishable from what it replaced
+is not verified.
+
+**Injection 2 - the untrackable-name skip removed, with a platform dropping present.** Deleted the
+`untrackableNames.has(entry.name)` skip in `readTree` and created `fixtures/corpus/.DS_Store`.
+
+**Observed failure (verbatim):**
+```
+✗ .DS_Store: committed corpus entry is outside every accounted-for bucket - nothing generates, digests, or governs it
+```
+```
+AssertionError: expected [ '.DS_Store', 'README.md', …(3) ] to deeply equal [ 'README.md', 'manifest.json', …(1) ]
+ ❯ src/__tests__/fitness/corpus-provenance-split.test.ts:5442:60
+```
+
+The inventory refuses COMMITTED entries but was fed a working-tree walk, so a file `.gitignore`
+explicitly refuses to track - one a file browser writes just by opening the directory - failed
+`pnpm corpus:validate`, `pnpm corpus:report`, and `pnpm test`. The walk now drops exactly the names git
+refuses, so the byte-compare, the exact root inventory, and the spec digest-coverage check all see the
+committed tree they each claim to be reading. Everything git WOULD track still fails closed.
+
+**Injection 3 - an exemption git does not grant.** Added `"Thumbs.db"` to `UNTRACKABLE_ENTRY_NAMES`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: "Thumbs.db" is dropped from the corpus walk but .gitignore would still track it: expected [ '# dependencies', …(27) ] to include 'Thumbs.db'
+ ❯ src/__tests__/fitness/corpus-provenance-split.test.ts:2007:9
+```
+
+An exemption list that can name anything is a hole with a comment on it; each name must be a rule the
+repository already states, so widening the drop set is a `.gitignore` change under review.
+
+**Standing companions:** a business-day step across each pinned transition asserts the exact instant and
+its local rendering; a dropping planted at the corpus root AND inside `synthetic/` reaches neither the
+inventory nor the byte-compare while a stray `notes.md` is still named; and every exempted name is held
+against `.gitignore`.
+
+**Revert:** every injection was reverted. Canonical regeneration produced `corpusDigest`
+`b3ba437c89802a5ee519dadfad97bd5d30278920de9c727805e17a4397a8bf77` (`tree.ts` is a bound executable
+authority, so the walk change moves the digest), the real-derived partition remains empty, and captain
+signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, D-139 review hardening).

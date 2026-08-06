@@ -55,6 +55,12 @@ names the mechanism that accounts for it - regenerate-and-byte-compare, the spec
 (§9), the fail-closed intake contract - so a file outside all of them would be governed by nothing at
 all, which is the one state this rule exists to forbid.
 
+The rule is about **committed** entries, so the tree walk drops exactly the entry names the repository's
+`.gitignore` already refuses to track (`.DS_Store` today). A platform dropping is neither committed nor
+committable, and failing a blocking gate on one would punish opening the directory in a file browser.
+That drop set is stated once at the walk and held against `.gitignore` by the corpus-provenance-split
+fence, so it can never grant an exemption git does not; anything git would track still fails by name.
+
 While the ADR-0039 deferral is active, any delivered entry under `real-derived/` fails validation. Once
 the deferral is explicitly lifted, every case must be a top-level canonical `RD-<16 hex>.json` file with
 a collection-unique case id and the active corpus version before it is inventoried in the generated

@@ -108,7 +108,7 @@ import {
   specCoverageProblems,
   validateCorpus,
 } from "../../../scripts/corpus/validate";
-import { readTree } from "../../../scripts/corpus/tree";
+import { readTree, UNTRACKABLE_ENTRY_NAMES } from "../../../scripts/corpus/tree";
 import {
   syntheticSemanticProblems,
   type EmittedCase,
@@ -1994,6 +1994,18 @@ describe("corpus-provenance-split fence", () => {
         )
         .map((entry) => entry.relPath),
     ).toEqual([...CORPUS_ROOT_DOCUMENTATION_FILES]);
+    // The inventory refuses COMMITTED entries, so the only names the walk may
+    // drop are the ones git itself refuses to track. Held against `.gitignore`:
+    // the exemption list cannot invent one of its own.
+    const ignoreRules = readFileSync(join(REPO_ROOT, ".gitignore"), "utf8")
+      .split("\n")
+      .map((line) => line.trim());
+    for (const name of UNTRACKABLE_ENTRY_NAMES) {
+      expect(
+        ignoreRules,
+        `"${name}" is dropped from the corpus walk but .gitignore would still track it`,
+      ).toContain(name);
+    }
   });
 
   it("(d) enforces: the signed digest covers both real-derived schema ids and bytes", () => {
@@ -5412,6 +5424,39 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
         { relPath: "specimen/x.json", kind: "file", bytes: "{}\n" },
       ]).join("\n"),
     ).toContain("specimen/x.json: committed corpus entry is outside every accounted-for bucket");
+  });
+
+  it("an untrackable platform dropping never reaches the inventory, but a stray file still does", () => {
+    const root = mkdtempSync(join(tmpdir(), "verin-corpus-untrackable-"));
+    try {
+      mkdirSync(join(root, "synthetic"), { recursive: true });
+      writeFileSync(join(root, "README.md"), "docs\n");
+      writeFileSync(join(root, "manifest.json"), "{}\n");
+      writeFileSync(join(root, "synthetic", "CS-a.json"), "{}\n");
+      for (const name of UNTRACKABLE_ENTRY_NAMES) {
+        writeFileSync(join(root, name), "dropping\n");
+        writeFileSync(join(root, "synthetic", name), "dropping\n");
+      }
+      // Neither the exact-inventory closure nor the byte-compare may see it: a
+      // file browser opening the corpus directory cannot red a blocking gate.
+      expect(readTree(root).map((entry) => entry.relPath)).toEqual([
+        "README.md",
+        "manifest.json",
+        "synthetic/CS-a.json",
+      ]);
+      expect(corpusRootInventoryProblems(readTree(root))).toEqual([]);
+      expect(readCommittedCorpus(root).map((file) => file.relPath)).toEqual([
+        "manifest.json",
+        "synthetic/CS-a.json",
+      ]);
+      // Everything git WOULD track still fails closed.
+      writeFileSync(join(root, "notes.md"), "stray\n");
+      expect(corpusRootInventoryProblems(readTree(root)).join("\n")).toContain(
+        "notes.md: committed corpus entry is outside every accounted-for bucket",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("an unregistered hand-owned spec file and a missing digested input are both named", () => {

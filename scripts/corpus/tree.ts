@@ -74,6 +74,17 @@ export function readRepositoryFile(path: string, repoRoot: string): string {
 export const isRepositoryContainedFile = (path: string, repoRoot: string): boolean =>
   !("refusal" in resolveRepositoryFile(path, repoRoot));
 
+/** Names the repository's own `.gitignore` refuses to track. Every reader of this
+ * walk asks what the COMMITTED tree holds - the corpus byte-compare, the exact
+ * root inventory, the spec digest coverage - and a platform dropping is neither
+ * committed nor committable, so surfacing one turns opening a directory in a file
+ * browser into a blocking-gate failure. Stated exactly here rather than guessed
+ * per reader, and held against `.gitignore` by the corpus-provenance-split fence
+ * so this list can never grant an exemption git does not. */
+export const UNTRACKABLE_ENTRY_NAMES = [".DS_Store"] as const;
+
+const untrackableNames: ReadonlySet<string> = new Set(UNTRACKABLE_ENTRY_NAMES);
+
 export function readTree(dir: string, prefix = ""): TreeEntry[] {
   if (!existsSync(dir)) return [];
   if (!lstatSync(dir).isDirectory()) {
@@ -83,6 +94,7 @@ export function readTree(dir: string, prefix = ""): TreeEntry[] {
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((left, right) =>
     left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
   )) {
+    if (untrackableNames.has(entry.name)) continue;
     const relPath = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {

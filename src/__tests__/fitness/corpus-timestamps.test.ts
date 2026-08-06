@@ -236,6 +236,30 @@ describe("detects (companion): unrealistic or mislabeled timestamps CANNOT pass"
     expect(isWithinRecentChangeWindow(clock.asOf, "2026-06-22T13:30:00.000Z", 7)).toBe(false);
   });
 
+  it("business-day arithmetic steps LOCAL calendar days, so a DST transition cannot move the hour", () => {
+    // A fixed 86 400-second step holds the UTC time of day fixed, which drags the
+    // LOCAL wall clock an hour across a transition - enough, near midnight, to
+    // skip or revisit a local calendar date and put `settlementEarliest` a day
+    // out. Both cases below straddle a pinned transition and both are wrong under
+    // that stepping; the local time of day is what must survive.
+    const springForward = addBusinessDays("2027-03-13T04:30:00.000Z", 1, clock.transitions);
+    // Local Fri 2027-03-12 23:30 EST -> Mon 2027-03-15 23:30 EDT. Raw seconds
+    // yield 2027-03-15T04:30Z (local Mon 00:30), having stepped straight from
+    // local Sat to local Mon without ever landing on Sunday.
+    expect(springForward).toBe("2027-03-16T03:30:00.000Z");
+    expect(renderLocal(springForward, clock.transitions)).toBe("2027-03-15T23:30:00.000-04:00");
+
+    const fallBack = addBusinessDays("2026-10-30T03:30:00.000Z", 2, clock.transitions);
+    // Local Thu 2026-10-29 23:30 EDT -> Mon 2026-11-02 23:30 EST. Raw seconds
+    // yield 2026-11-03T03:30Z, an hour earlier in local terms.
+    expect(fallBack).toBe("2026-11-03T04:30:00.000Z");
+    expect(renderLocal(fallBack, clock.transitions)).toBe("2026-11-02T23:30:00.000-05:00");
+
+    for (const landing of [springForward, fallBack]) {
+      expect(isLocalWeekend(landing, clock.transitions)).toBe(false);
+    }
+  });
+
   it("an instant outside the pinned transition table is REFUSED, never defaulted to standard time", () => {
     expect(() => localOffsetMinutes("1999-01-01T00:00:00.000Z", clock.transitions)).toThrow(
       /no pinned time-zone transition covers/,

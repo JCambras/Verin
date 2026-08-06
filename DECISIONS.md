@@ -5282,3 +5282,22 @@ project so the signature can no longer express a project paired with another pro
 **Why:** a bucket nobody named is a bucket nobody checks; a parser that gives up quietly is worse than
 one that refuses; and a detector over injected data that crashes reports nothing at all.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
+### D-139 · 2026-08-06 · reversible · The corpus tree walk drops only what git refuses, and the DST correction is proven
+
+`readTree` skips the entry names the repository's own `.gitignore` refuses to track
+(`UNTRACKABLE_ENTRY_NAMES`, `.DS_Store` today). Every reader of that walk - the regenerate-and-
+byte-compare gate, the exact root inventory (D-138), the spec digest-coverage rule - asks what the
+COMMITTED tree holds, so surfacing a platform dropping turned opening `fixtures/corpus/` in a file
+browser into a `pnpm corpus:validate` / `pnpm corpus:report` / `pnpm test` failure for a file that is
+neither committed nor committable. The drop set is stated once at the walk rather than guessed per
+reader, and the corpus-provenance-split fence holds every name in it against `.gitignore`, so the list
+can never grant an exemption git does not; everything git WOULD track still fails closed by name.
+
+`addBusinessDays`'s local-calendar-day stepping (D-138) now has a companion that crosses a pinned
+transition in each direction and asserts the exact instant and local rendering, both of which the fixed
+86 400-second stepping fails. The prior assertion stepped entirely inside EDT and passed byte-identically
+under the bug.
+
+**Why:** a check that says "committed" while reading the working tree fails on things no one can commit,
+and a correction indistinguishable from the bug it replaced is detection without verification (charter #4).
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
