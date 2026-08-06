@@ -1,4 +1,5 @@
 import type { JsonValue } from "../../src/contracts/decision-core/serialization";
+import { byKey, nfc, sortedBy } from "./_util";
 import { epochMs } from "./clock";
 import {
   authorityId,
@@ -13,14 +14,6 @@ import {
 } from "./entities";
 import { pendingActionLiquidityTreatment } from "./pending-actions";
 import { requireLegalHoldSubject, type CaseSpec, type WorldSpec } from "./world";
-
-const nfc = (value: string): string => value.normalize("NFC");
-
-const byKey = <T extends { key: string }>(rows: readonly T[]): Map<string, T> =>
-  new Map(rows.map((row) => [row.key, row]));
-
-const sortedBy = <T>(rows: readonly T[], key: (row: T) => string): T[] =>
-  [...rows].sort((left, right) => (key(left) < key(right) ? -1 : key(left) > key(right) ? 1 : 0));
 
 const evidenceKeys = (corpusCase: CaseSpec, kind: string): Set<string> =>
   new Set(

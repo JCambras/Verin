@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { z } from "zod";
 import {
   canonicalJson,
   type JsonValue,
 } from "../../src/contracts/decision-core/serialization";
+import { sha256 } from "./_util";
 import { REAL_DERIVED_EVIDENCE_KINDS } from "./real-derived-policy";
 import { parseStrictJson } from "./strict-json";
 import { readRepositoryFile } from "./tree";
@@ -53,6 +53,7 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES = [
  * dependency is a review decision rather than a silent omission.
  */
 export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
+  "scripts/corpus/_util.ts",
   "scripts/corpus/case-spec.ts",
   "scripts/corpus/clock.ts",
   "scripts/corpus/conflict-keys.ts",
@@ -260,9 +261,6 @@ export interface RealDerivedSemanticContractBinding {
     readonly digest: string;
   }[];
 }
-
-const sha256 = (bytes: string): string =>
-  createHash("sha256").update(bytes, "utf8").digest("hex");
 
 export function loadRealDerivedSemanticContract(
   bytes: string = readRepositoryFile(

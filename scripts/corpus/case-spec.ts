@@ -15,7 +15,6 @@ const LabelSchema = z.discriminatedUnion("kind", [
     controlRationale: z.string().min(1),
   }),
 ]);
-export type CaseLabel = z.infer<typeof LabelSchema>;
 
 const TreatmentOutcomeSchema = z.strictObject({
   defectClassId: Slug,

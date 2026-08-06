@@ -5322,3 +5322,28 @@ silently passing as an empty partition.
 **Why:** an exemption that a name alone can claim is an exemption anyone can plant; the walk must ask the
 authority the readers actually mean - git - and fail closed when it has no answer.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
+### D-141 · 2026-08-06 · reversible · The dead-export gate reaches `scripts/**`, and freshness refuses an unparseable instant
+
+`knip.json` listed `scripts/**/*.ts` as an ENTRY pattern, so every export under `scripts/` was assumed
+reachable and the charter #5 dead-export gate could not see the tooling tree at all - the same escape
+hatch ADR-0039 closed for the two budget fences, left open for a tree that now carries the corpus
+generator. The entry is narrowed to `scripts/*.ts` (the runners `package.json` and CI actually invoke),
+with `scripts/**/*.ts` still in project scope. Narrowing it immediately named three dead exports no
+reviewer had found, all removed; the proof log records a planted export failing the gate at `file:line`.
+
+`deriveRealDerivedFreshness` now takes both instants through the corpus clock's `diffSeconds`, which
+asserts canonical UTC. Its own local subtraction returned `NaN` for an unparseable instant, and
+`NaN > windowDays * 86_400` is false - evidence of unknown age read `"fresh"` inside the fail-closed
+intake path. The schema's `$defs/instant` pattern admits `garbage.123Z`, so nothing upstream was
+guaranteed to have refused it. This is the failure the module already refuses for a missing window,
+applied to the instant instead of the window.
+
+The primitives that decide corpus bytes - `nfc`, `sha256`, `byKey`, `sortedBy`, `duplicates` - collapse
+into `scripts/corpus/_util.ts`, a bound executable authority. `sortedBy` fixes emission order and
+therefore `corpusDigest`, so a second copy is a second place for the corpus to drift while every gate
+still reports green. Regeneration moved `corpusDigest` (bound authorities changed) and left every case's
+bytes identical.
+
+**Why:** a gate that cannot see a tree does not govern it, and a comparison that reads "fresh" for an
+instant it could not parse is a fail-open in the one path built to fail closed.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.

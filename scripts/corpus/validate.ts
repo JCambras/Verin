@@ -51,7 +51,7 @@ import {
   type EmittedCase,
 } from "./synthetic-semantics";
 import { readTree, type TreeEntry } from "./tree";
-import { CORPUS_DIR, SPEC_FILES, SYNTHETIC_DIR, loadSpec, type LoadedSpec } from "./world";
+import { CORPUS_DIR, SPEC_FILES, loadSpec, type LoadedSpec } from "./world";
 
 export interface CommittedFile {
   readonly relPath: string;
@@ -302,6 +302,16 @@ export function nfcProblems(files: readonly CommittedFile[]): string[] {
     .map((file) => `${file.relPath}: contains non-NFC bytes - two spellings of one name must not be two subjects`);
 }
 
+/** The spec subtree as the ONE corpus walk already read it. A second walk would
+ * re-read every hand-owned byte - the 1 100-line replay schema included - to
+ * learn names this walk already carries, and would answer from a tree that could
+ * have moved underneath it. Held equal to an independent `readTree(SPEC_DIR)` by
+ * the corpus-provenance-split fence. */
+export const specEntryNames = (entries: readonly TreeEntry[]): string[] =>
+  entries.flatMap((entry) =>
+    entry.relPath.startsWith("spec/") ? [entry.relPath.slice("spec/".length)] : [],
+  );
+
 /**
  * (5) EVERY HAND-OWNED SPEC INPUT IS BOUND BY A DIGEST.
  *
@@ -408,9 +418,7 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
     ...realDerived.problems,
     ...generatedSignatureProblems([...generated, manifest]),
     ...signoffProblems(signoff, spec.world.corpusVersion, digest),
-    ...specCoverageProblems(
-      readTree(join(root, "spec")).map((entry) => entry.relPath),
-    ),
+    ...specCoverageProblems(specEntryNames(corpusEntries)),
   ];
   return {
     spec,
@@ -433,5 +441,4 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
 export {
   realDerivedDeferralProblems,
   realDerivedProblems,
-  SYNTHETIC_DIR,
 };

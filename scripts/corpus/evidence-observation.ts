@@ -28,7 +28,7 @@ const AUTHORITIES: Readonly<
   execution: () => false,
 };
 
-export function evidenceAllowsMissing(
+function evidenceAllowsMissing(
   item: RealDerivedCase,
   plane: string,
 ): boolean {

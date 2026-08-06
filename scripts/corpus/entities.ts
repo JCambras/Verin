@@ -15,7 +15,7 @@
 import type { Confidence, RecordProvenance } from "../../src/contracts/provenance";
 
 /** Every corpus record is a fixture record: synthetic, never compliance-feeding. */
-export const CORPUS_RECORD_SOURCE = "fixture" as const;
+const CORPUS_RECORD_SOURCE = "fixture" as const;
 
 /** The one way a corpus record gets its provenance stamp. */
 export const corpusProvenance = (asOf: string, confidence: Confidence): RecordProvenance => ({

@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
 import { canonicalJson, type JsonValue } from "../../src/contracts/decision-core/serialization";
+import { sha256 } from "./_util";
+import { diffSeconds } from "./clock";
 
 export const REAL_DERIVED_FRESHNESS_POLICY_VERSION =
   "verin-real-derived-freshness/1.0.0";
-export const REAL_DERIVED_FRESHNESS_POLICY_DIGEST_VERSION =
+const REAL_DERIVED_FRESHNESS_POLICY_DIGEST_VERSION =
   "verin-real-derived-freshness-digest/1.0.0";
 
 export const REAL_DERIVED_EVIDENCE_KINDS = [
@@ -53,11 +54,6 @@ export const REAL_DERIVED_FRESHNESS_POLICY: RealDerivedFreshnessPolicy = {
   },
 };
 
-const sha256 = (text: string): string =>
-  createHash("sha256").update(text, "utf8").digest("hex");
-const diffSeconds = (later: string, earlier: string): number =>
-  (new Date(later).getTime() - new Date(earlier).getTime()) / 1000;
-
 export function freshnessPolicySemanticDigest(
   policy: RealDerivedFreshnessPolicy = REAL_DERIVED_FRESHNESS_POLICY,
 ): string {
@@ -82,7 +78,9 @@ export function freshnessPolicySemanticDigest(
  * arbitrarily stale evidence in a fail-closed intake path. The vocabulary is
  * held equal to the delivered schema's enum by
  * `evidenceKindVocabularyProblems`, so a delivered case cannot reach here with
- * an unknown kind. */
+ * an unknown kind. The INSTANTS are refused the same way and for the same
+ * reason: `diffSeconds` comes from the corpus clock, which asserts both operands
+ * are canonical UTC, so evidence of unknown age cannot read "fresh" either. */
 const freshnessWindowDays = (evidenceKind: RealDerivedEvidenceKind): number => {
   const windows: Readonly<Record<string, number | undefined>> =
     REAL_DERIVED_FRESHNESS_POLICY.freshnessWindowDays;

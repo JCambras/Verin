@@ -1,4 +1,4 @@
-export function selectedFundingAccounts<T>(
+function selectedFundingAccounts<T>(
   selectedRefs: readonly string[],
   accounts: readonly T[],
   accountRef: (account: T) => string,

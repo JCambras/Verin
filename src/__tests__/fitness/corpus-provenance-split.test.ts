@@ -107,6 +107,7 @@ import {
   realDerivedDeferralProblems,
   realDerivedProblems,
   specCoverageProblems,
+  specEntryNames,
   validateCorpus,
 } from "../../../scripts/corpus/validate";
 import { readTree, UNTRACKABLE_ENTRY_NAMES } from "../../../scripts/corpus/tree";
@@ -1978,6 +1979,20 @@ describe("corpus-provenance-split fence", () => {
     expect(entries.sort()).toEqual(
       [...SPEC_FILES, ...REAL_DERIVED_SCHEMA_FILES, SIGNOFF_FILE].sort(),
     );
+    // `validateCorpus` names the spec off the ONE tree walk it already took
+    // rather than re-reading the subtree. That projection is held equal to this
+    // independent walk, and it selects the spec subtree ALONE - a projection
+    // that quietly returned nothing would make an unbound spec file invisible.
+    expect(specEntryNames(readTree(CORPUS_DIR)).sort()).toEqual(entries.sort());
+    expect(
+      specEntryNames([
+        { relPath: "spec/world.json", kind: "file", bytes: "{}\n" },
+        { relPath: "spec/nested/extra.json", kind: "file", bytes: "{}\n" },
+        { relPath: "specious.json", kind: "file", bytes: "{}\n" },
+        { relPath: "manifest.json", kind: "file", bytes: "{}\n" },
+        { relPath: "synthetic/CS-a.json", kind: "file", bytes: "{}\n" },
+      ]),
+    ).toEqual(["world.json", "nested/extra.json"]);
   });
 
   it("(f) enforces: the committed corpus root is an EXACT inventory of accounted-for buckets", () => {
@@ -5388,6 +5403,36 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
         ),
       ).toThrow('unsupported freshness evidence kind "custodian-memo"');
     }
+  });
+
+  it("deriving freshness from a non-canonical instant REFUSES rather than reading fresh", () => {
+    const asOf = "2026-04-28T13:00:00.000Z";
+    // `garbage.123Z` satisfies the schema's instant PATTERN, so nothing upstream
+    // of this call is guaranteed to have rejected it. A subtraction over an
+    // unparseable instant is `NaN`, and `NaN > window` is false - evidence of
+    // unknown age would read "fresh" in a fail-closed intake path.
+    for (const [decided, observed] of [
+      ["garbage.123Z", asOf],
+      [asOf, "garbage.123Z"],
+      [asOf, "2026-04-28T13:00:00Z"],
+    ] as const) {
+      expect(() =>
+        deriveRealDerivedFreshness(
+          REAL_DERIVED_FRESHNESS_POLICY.version,
+          "balance",
+          decided,
+          observed,
+        ),
+      ).toThrow("is not canonical UTC");
+    }
+    expect(
+      deriveRealDerivedFreshness(
+        REAL_DERIVED_FRESHNESS_POLICY.version,
+        "balance",
+        asOf,
+        "2026-04-28T12:00:00.000Z",
+      ),
+    ).toBe("fresh");
   });
 
   it("a corpus-root file outside every accounted-for bucket is named, not silently ignored", () => {

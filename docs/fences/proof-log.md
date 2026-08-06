@@ -8531,3 +8531,50 @@ executable authority, so the walk change moves the digest), the real-derived par
 captain signoff remains pending.
 
 **Date:** 2026-08-06 (v3 prompt 11, D-140 review hardening).
+
+## corpus freshness refuses an unparseable instant, and dead tooling exports have a gate (ADR-0039)
+
+**Injection 1 - freshness computed without a canonical-instant assertion.** Replaced the `diffSeconds`
+imported from `scripts/corpus/clock.ts` with a local
+`(new Date(later).getTime() - new Date(earlier).getTime()) / 1000`, the shape this module shipped with.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/corpus-provenance-split.test.ts > deriving freshness from a non-canonical instant REFUSES rather than reading fresh
+AssertionError: expected [Function] to throw an error
+ ❯ src/__tests__/fitness/corpus-provenance-split.test.ts:5411:9
+```
+
+An unparseable instant makes the subtraction `NaN`, and `NaN > windowDays * 86_400` is false - so evidence
+of unknown age reads `"fresh"` inside a fail-closed intake path. The schema's `$defs/instant` pattern
+admits `garbage.123Z`, so nothing upstream is guaranteed to have refused it. This is the same failure
+shape the module already refuses for a missing window, applied to the instant.
+
+**Injection 2 - a dead export under `scripts/corpus/`.** Appended
+`export const proofOnlyDeadCorpusExport = "dead";` to `scripts/corpus/_util.ts` and ran `pnpm knip`.
+
+**Observed failure (verbatim):**
+```
+Unused exports (1)
+proofOnlyDeadCorpusExport  scripts/corpus/_util.ts:31:14
+ ELIFECYCLE  Command failed with exit code 1.
+```
+
+Before this change `knip.json` listed `scripts/**/*.ts` as an ENTRY pattern, so the whole tooling tree was
+exempt from the charter's dead-export gate and the same injection passed silently. The entry is now
+`scripts/*.ts` - the runners - with `scripts/**/*.ts` still in project scope, which is the ADR-0039 closure
+already applied to the two budget fences. Narrowing it immediately named three dead exports the review had
+not found (`SYNTHETIC_DIR` re-exported from `validate.ts`, `CaseLabel` in `case-spec.ts` and its `world.ts`
+re-export), all removed.
+
+**Standing companion:** `deriving freshness from a non-canonical instant REFUSES rather than reading fresh`
+holds both operands to the corpus clock and still proves a canonical in-window pair reads `"fresh"`, so the
+refusal cannot be satisfied by refusing everything.
+
+**Revert:** both injections were reverted and the probe export removed; `scripts/corpus/_util.ts` and
+`scripts/corpus/real-derived-policy.ts` hash back to the digests the manifest binds. Canonical regeneration
+produced `corpusDigest` `2a6a60d27dedf8029d2f4e3e6b33e986717942f7ff407a056f743a8c857e01a3` (the hoisted
+primitives and the clock import move bound executable authorities, and no case's bytes changed), the
+real-derived partition remains empty, and captain signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, review wrap-up).

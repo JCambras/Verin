@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { duplicates } from "./_util";
 import {
   CasesSpecSchema,
   type CasesSpec,
@@ -16,13 +17,11 @@ import { parseStrictJson } from "./strict-json";
 import { readRepositoryFile } from "./tree";
 import { specReferenceProblems } from "./world-topology";
 
-export type { CaseLabel, CaseSpec, CasesSpec } from "./case-spec";
+export type { CaseSpec, CasesSpec } from "./case-spec";
 export {
-  legalHoldSubject,
   requireLegalHoldSubject,
   specReferenceProblems,
 } from "./world-topology";
-export type { LegalHoldSubject } from "./world-topology";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..", "..");
 export const CORPUS_DIR = join(REPO_ROOT, "fixtures/corpus");
@@ -43,11 +42,6 @@ const Slug = z.string().regex(
   "lowercase hyphenated slug",
 );
 const Money = z.int().nonnegative();
-const duplicates = (values: readonly string[]): string[] => [
-  ...new Set(
-    values.filter((value, index) => values.indexOf(value) !== index),
-  ),
-];
 const ObservedAt = Instant;
 const TimingSchema = z.strictObject({
   minRetrievalLagSeconds: z.int().positive(),
@@ -260,7 +254,6 @@ export const WorldSpecSchema = z.strictObject({
   legalHolds: z.array(LegalHoldSchema).min(1),
 });
 export type WorldSpec = z.infer<typeof WorldSpecSchema>;
-export type LegalHoldSpec = WorldSpec["legalHolds"][number];
 
 export interface LoadedSpec {
   readonly world: WorldSpec;

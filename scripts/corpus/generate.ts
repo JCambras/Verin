@@ -13,6 +13,7 @@
  *  - bytes come from `canonicalJson` plus exactly one trailing newline.
  */
 import { canonicalJson, type JsonValue } from "../../src/contracts/decision-core/serialization";
+import { byKey, nfc, sortedBy } from "./_util";
 import {
   addBusinessDays,
   deriveFreshness,
@@ -52,19 +53,8 @@ export interface GeneratedFile {
   readonly bytes: string;
 }
 
-/** NFC everywhere: two spellings of one name must not be two subjects. */
-const nfc = (value: string): string => value.normalize("NFC");
 const canonicalIdentityValue = (rawUtf8Hex: string): string =>
-  Buffer.from(rawUtf8Hex, "hex")
-    .toString("utf8")
-    .normalize("NFC")
-    .toLowerCase();
-
-const byKey = <T extends { key: string }>(rows: readonly T[]): Map<string, T> =>
-  new Map(rows.map((row) => [row.key, row]));
-
-const sortedBy = <T>(rows: readonly T[], key: (row: T) => string): T[] =>
-  [...rows].sort((left, right) => (key(left) < key(right) ? -1 : key(left) > key(right) ? 1 : 0));
+  nfc(Buffer.from(rawUtf8Hex, "hex").toString("utf8")).toLowerCase();
 
 const evidenceRef = (ref: string): { kind: string; recordKey: string } => {
   const [kind = "", recordKey = ""] = ref.split("/");

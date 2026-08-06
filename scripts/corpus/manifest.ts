@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { canonicalJson, type JsonValue } from "../../src/contracts/decision-core/serialization";
+import { sha256 } from "./_util";
 import type { Taxonomy } from "./defects";
 import type { GeneratedFile } from "./generate";
 import {
@@ -21,7 +21,6 @@ export const CORPUS_DIGEST_PREIMAGE_VERSION = "verin-corpus/1.12.0";
 export const TAXONOMY_DIGEST_PREIMAGE_VERSION = "verin-defect-taxonomy/1.0.0";
 export const REAL_DERIVED_SCHEMA_DIGEST_PREIMAGE_VERSION = "verin-real-derived-schema-digest/1.0.0";
 export const REAL_DERIVED_SCHEMA_FILES = ["real-derived-case-schema.json", "real-derived-replay-schema.json"] as const;
-const sha256 = (text: string): string => createHash("sha256").update(text, "utf8").digest("hex");
 const canonicalBytes = (value: JsonValue, what: string): string => {
   const result = canonicalJson(value);
   if (!result.ok) throw new Error(`corpus manifest: ${what} is not canonically serializable: ${result.error.message}`);

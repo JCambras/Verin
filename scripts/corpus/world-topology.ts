@@ -1,12 +1,7 @@
+import { duplicates } from "./_util";
 import type { CasesSpec } from "./case-spec";
 import { restrictionReferenceProblems } from "./synthetic-instruction-topology";
 import type { WorldSpec } from "./world";
-
-const duplicates = (values: readonly string[]): string[] => [
-  ...new Set(
-    values.filter((value, index) => values.indexOf(value) !== index),
-  ),
-];
 
 export interface LegalHoldSubject {
   readonly accountKey: string;
