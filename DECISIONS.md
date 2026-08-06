@@ -3320,14 +3320,15 @@ full-opacity labels that already pass).
 **Revert path:** none needed - the surfaces are byte-identical to their
 pre-branch state; D-100 carries the fix.
 
-## D-104 - Prompt-8's three cross-wave obligations are carried by name to their owning prompts
+## D-104 - Prompt-8's four cross-wave obligations are carried by name to their owning prompts
 
 **Date:** 2026-08-06 · **Reversible** · Relates to: ADR-0039, D-102,
 p8-review-askuser-5/-6/-7, charter #2
 
-Three obligations the prompt-8 catalog states are real and binding, but none is
+Four obligations the prompt-8 catalog states are real and binding, but none is
 fenceable in this PR because none of their subjects exists yet: the config
-loader arrives in prompt 10, the evidence assembler in prompt 14. The charter's
+loader arrives in prompt 10, the evidence assembler in prompt 14, and the
+validation-stage evidence-sufficiency contract in prompt 15. The charter's
 "fence every invariant in the same PR that states it" cannot be honored against
 a subject that has no code, so the obligations are recorded here by owning
 prompt instead of left as doc prose that a later edit could quietly weaken.
@@ -3365,6 +3366,19 @@ v3 invariant set and these are implementation obligations under ADR-0039.
    answers. The failure is conservative in the meantime - a repeat double-counts
    the claim, understating `availability.net`, so it over-blocks and never
    over-permits.
+4. **Prompt 15 - reconciliation bindings owe declared evidence sufficiency.**
+   `evidence-reconciliation` is fail-open on absent evidence in the same shape as
+   obligation 1: it declares no `evidenceKindParameters`, and
+   `reconciliation.<factKind>.consistent` is vacuously true below two assertions
+   by ratified design (captain OQ-3 and `p8-review-askuser` ruling 1 - evidence
+   sufficiency belongs to the validation stage, not to the primitive), so a
+   bundle assembled with zero assertions publishes `consistent = true`. The
+   validation-stage evidence-sufficiency contract MUST therefore cover
+   reconciliation bindings, so an AST rule gating on
+   `reconciliation.<factKind>.consistent` cannot clear over evidence nobody
+   assembled; `sourcesToReconcile` (min 2) already names the sources the
+   requirement is derived from (docs/primitive-rationale.md,
+   `evidence-reconciliation`).
 
 **Alternatives rejected:** `not-yet-active` v3-invariants rows (that registry is
 the ratified 30-invariant v3 set, not a scratchpad for per-ADR implementation

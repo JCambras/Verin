@@ -291,7 +291,9 @@ describe("horizon-projection", () => {
 
   it("stays total at the last representable anchor, saturating the window end", () => {
     expect(addCalendarMonths(IsoDateSchema.parse("9999-12-31"), 1200)).toBe("9999-12-31");
-    expect(addCalendarMonths(IsoDateSchema.parse("0001-01-01"), -1200)).toBe("0001-01-01");
+    expect(addCalendarMonths(IsoDateSchema.parse("0001-01-01"), -1200)).toBe("0000-01-01");
+    // Year 0000 is INSIDE the parseable range, so it is computed, never saturated.
+    expect(addCalendarMonths(IsoDateSchema.parse("0000-01-01"), 1)).toBe("0000-02-01");
     const published = evaluateParsed(
       horizonProjection,
       projectionInput(1200, [{ dueOn: "9999-12-30", amountMinor: usd(7) }], "9999-12-01"),

@@ -28,14 +28,15 @@ landed:
 
 | Layer | Measured | Ceiling | Headroom |
 |---|---:|---:|---:|
-| contracts | 5,418 | 5,460 | 42 |
+| contracts | 5,432 | 5,460 | 28 |
 | domain | 1,298 | 1,350 | 52 |
 | infrastructure | 3,484 | 3,550 | 66 |
 
 The figure this ADR is amended to covers the catalog AS REVIEWED, not the first draft of it:
 review of the shipped primitives added the horizon bound with its saturation contract, the
 own-property slot lookup, the restriction-list uniqueness refinement, the precomputed ranking
-positions, and the exclusion trace `candidate-selection` now publishes on every outcome. Those
+positions, the exclusion trace `candidate-selection` now publishes on every outcome, and the
+second rejection reason code that tells a real preference rank from a canonical tiebreak. Those
 are the corrections the headroom exists to absorb, so they are inside the measured baseline
 rather than a reason to shrink documentation - the first amendment (5,400 on a 5,353 baseline)
 was measured before them and went red the moment they landed.

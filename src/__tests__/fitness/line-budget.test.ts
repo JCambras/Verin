@@ -31,7 +31,7 @@ import { relative } from "node:path";
 // These are the real figures, not a stale decision-table row. Any FURTHER increase is
 // still a measured ADR amendment, never a code change.
 const CEILINGS = {
-  contracts: 5460, // ADR-0040, on the measured 5,418 prompt-8 catalog baseline
+  contracts: 5460, // ADR-0040, on the measured 5,432 prompt-8 catalog baseline
   domain: 1350, // ADR-0038, on a re-measured 1,298 baseline
   infrastructure: 3550, // ADR-0038, on a re-measured 3,484 baseline
   presentation: 6000, // grown only by an ADR bump (ADR-0012)

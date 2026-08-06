@@ -270,6 +270,11 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   `reconciliation.<factKind>.contradictions` (both sources cited - prompt 15's required
   contradictory-evidence test verbatim). Serves validation-stage blockers,
   account-opening identity checks, and conflicting-change-request detection.
+- **Absent evidence is the validation stage's problem here too** (the same split as
+  `restriction-screen`): `consistent = true` below two assertions means "nothing supplied
+  disagreed", never "the evidence was verified present", so prompt 15's validation-stage
+  evidence-sufficiency contract MUST cover reconciliation bindings before an AST rule may
+  gate on `reconciliation.<factKind>.consistent` (D-104, obligation 4).
 - **Falsification test:** if every real contradiction check turns out to be schema
   validation or a fixed trust-hierarchy rule no firm ever configures (no tolerance, no
   source-pair choices), it is machinery, not a primitive - demote it into the validation

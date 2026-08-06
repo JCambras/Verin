@@ -46,8 +46,8 @@ export const addCalendarMonths = (date: IsoDate, months: number): IsoDate => {
   const day = Number(date.slice(8, 10));
   const zeroBased = year * 12 + (month - 1) + Math.trunc(months);
   const targetYear = Math.floor(zeroBased / 12);
-  if (!(targetYear >= 1 && targetYear <= 9999)) {
-    return IsoDateSchema.parse(targetYear < 1 ? "0001-01-01" : "9999-12-31");
+  if (!(targetYear >= 0 && targetYear <= 9999)) {
+    return IsoDateSchema.parse(targetYear < 0 ? "0000-01-01" : "9999-12-31");
   }
   const targetMonth = (zeroBased % 12) + 1;
   const clampedDay = Math.min(day, daysInMonth(targetYear, targetMonth));
