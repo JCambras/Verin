@@ -4,19 +4,24 @@
  * replay, never an edit. This is the operator surface for that: it discards derived
  * rows and folds every stored event again, in sequence order, per tenant.
  *
- * A replay that rebuilt nothing FAILS (charter #4): an empty result means the script
- * was pointed at the wrong store, not that the store is healthy.
+ * A replay that rebuilt nothing from entries that EXIST fails (charter #4): that result
+ * means the script was pointed at the wrong store, not that the store is healthy. An
+ * empty ledger is a different fact - the deferred append surface (D-116) - and
+ * `decisionLedgerVacuity` is what tells the two apart.
  */
 import { createDb } from "../src/infrastructure/store/db";
 import { rebuildDecisionProjections } from "../src/infrastructure/ledger/ledger-store";
 import { systemTenant } from "../src/contracts/tenant";
 import { logLevelFor } from "../src/contracts/errors";
+import { getConfig } from "../src/infrastructure/config";
 import { classifyErrorMetadata } from "../src/infrastructure/observability/safe-reason";
+import { decisionLedgerVacuity } from "./decision-ledger-vacuity";
 
 async function main(): Promise<void> {
   const db = await createDb();
   const orgs = await db.query<{ id: string }>("SELECT id FROM orgs ORDER BY id");
   let decisions = 0;
+  let replayed = 0;
   let broken = 0;
   for (const { id } of orgs.rows) {
     try {
@@ -25,6 +30,7 @@ async function main(): Promise<void> {
         systemTenant("ledger-rebuild", id),
       );
       decisions += rebuilt.projections.length;
+      replayed += rebuilt.entriesReplayed;
       process.stdout.write(
         `org ${id}: replayed ${rebuilt.entriesReplayed} entries into ${rebuilt.projections.length} decision projection(s)\n`,
       );
@@ -45,9 +51,15 @@ async function main(): Promise<void> {
     process.stderr.write(`ledger-rebuild: ${broken} org ledger(s) were not replayed - see the per-org refusal above\n`);
     process.exit(1);
   }
-  if (decisions === 0) {
-    process.stderr.write("ledger-rebuild: 0 decision projections rebuilt - a replay that rebuilt nothing is vacuous (did db:seed run against this store?)\n");
+  const vacuity = decisionLedgerVacuity(getConfig().appEnv, replayed, decisions);
+  if (vacuity === "vacuous") {
+    process.stderr.write(
+      `ledger-rebuild: ${replayed} entries replayed into ${decisions} decision projection(s) - a replay that rebuilt nothing is vacuous (did db:seed run against this store?)\n`,
+    );
     process.exit(1);
+  }
+  if (vacuity === "empty-by-design") {
+    process.stdout.write("ledger-rebuild: decision ledger empty - the post-decision append surface is deferred (D-116), so there is no history to replay yet\n");
   }
   process.stdout.write(`ledger-rebuild: ${decisions} decision projection(s) rebuilt across ${orgs.rows.length} org(s)\n`);
 }

@@ -4101,7 +4101,10 @@ four `undefined`. It is a structural property of the `LedgerEntry` union, so its
 the domain projector that cannot import infrastructure. The same key carries the ADR
 back-reference convention: ADR-0040, 0041, 0042, 0045, and 0046 carry no `Amended by` line
 though each is amended later, so the convention is either completed across the chain or
-dropped for `docs/adr/README.md` as the single index. Both are polish, not correctness, and
+dropped for `docs/adr/README.md` as the single index. The same key also carries
+`correlationId`, removed from the register view model by D-123: it is the natural spine of a
+future examiner surface that groups an entry with the request that caused it, and belongs in
+the contract again on the PR that renders it. All are polish, not correctness, and
 wrap-up mode is in force; the trigger is the next prompt that touches the ledger modules.
 
 **Why:** an unclassified failure at the ledger's only write chokepoint is undiagnosable
@@ -4110,3 +4113,43 @@ measurement trains the next agent to trust the record instead of re-measuring.
 **Relates to:** ADR-0018, ADR-0039, ADR-0045, ADR-0047, D-116, D-118, D-121.
 **Revert path:** the prologue restructure, the corrected figures, and the ADR back-reference
 are independently revertible; the deferral is a note.
+
+### D-126 · 2026-08-06 · reversible · Emptiness is honest only where it is the ratified design
+
+**The decision-ledger vacuity guards told a healthy deployment it was broken.** Prompt 7 ships
+the post-decision append surface unwired (D-116), so a real deployment holds ZERO
+`decision_ledger` rows by design until a later prompt lands a producer: `verifyDecisionLedgerIntegrity`
+returns `ok` with `entriesChecked === 0`, and `audit-chain-verify` then exited 1 with
+"typed-chain verification is vacuous". `ledger-rebuild` did the same on `0 decision projections
+rebuilt`. Both are what `docs/runbooks/backup-and-restore.md` steps 3 and 4 point an operator at
+to verify a production restore, where under RTO pressure that exit code reads as a corrupted
+chain. The pre-existing audit-entry guard has no such problem, because production writes real
+audited entries.
+
+**The verdict now distinguishes three states, not two.** `scripts/decision-ledger-vacuity.ts`
+is the single authority both scripts call. Rows that exist but were never covered stay a hard
+failure in EVERY environment - that is the failure the guard exists for. An empty ledger fails
+in `development`, where CI and the local gates run against a store seeded in the same job and
+emptiness means the seed never ran. An empty ledger in `staging`/`production` is reported
+explicitly - "the post-decision append surface is deferred (D-116)" - and passes. Emptiness is
+forgiven only where the charter's own design produced it, never as a blanket exit 0.
+
+**A field that reaches no surface leaves the contract (charter #5).** `LedgerEntryView.correlationId`
+and the top-level `verification.entriesChecked`/`entriesStored` crossed `/api/ledger` and were
+typed into the view model, but `/app/ledger` renders neither: the per-level `entriesChecked` is
+what the integrity panel shows and `total` is what the entry count reads. knip cannot see
+interface fields, so nothing else would have caught them. All three are removed from the view
+model and the route payload rather than grown into the page; `correlationId` is recorded as a
+candidate for a future examiner surface under `ledger-followup-decision-id-extractor`.
+
+**ADR-0043 does not amend ADR-0039.** Its own header declares it amends ADR-0018 and ADR-0042,
+and `docs/adr/README.md` agrees; it was a stale carry-over on the `Amended by` line D-122
+corrected, so it is dropped. A back-reference that names a decision which does not govern the
+file is the same defect as one that omits a decision which does.
+
+**Why:** a gate that cannot tell a ratified empty state from unseeded data either reads a
+healthy restore as a break at the worst possible moment or lets a broken CI gate pass green,
+and both failures come from the same missing distinction.
+**Relates to:** ADR-0039, ADR-0044, ADR-0045, D-116, D-118, D-122; charter #4, #5.
+**Revert path:** the shared verdict, the view-model removals, and the ADR back-reference are
+independently revertible; restoring the old guards is a one-line change in each script.

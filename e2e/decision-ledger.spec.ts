@@ -47,8 +47,6 @@ test("failed verification presents a dedicated entries-withheld state", async ({
       body: JSON.stringify({
         verification: {
           ok: false,
-          entriesChecked: 0,
-          entriesStored: 5,
           levels: [{
             level: "L1",
             ok: false,
@@ -80,8 +78,6 @@ test("bounded replay identifies decisions withheld outside its trust window", as
       body: JSON.stringify({
         verification: {
           ok: true,
-          entriesChecked: 12,
-          entriesStored: 12,
           levels: ["L1", "L2", "L3", "L4"].map((level) => ({
             level,
             ok: true,

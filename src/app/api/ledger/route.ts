@@ -85,8 +85,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const body = {
     verification: {
       ok: verification.ok,
-      entriesChecked: verification.entriesChecked,
-      entriesStored: verification.entriesStored,
       levels: verification.levels,
     },
     total: verification.entriesStored,
@@ -124,7 +122,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       occurredAt: row.occurredAt,
       eventType: row.eventType,
       actor: actorLabel(row.actorJson),
-      correlationId: row.correlationId,
       decisionId: row.decisionId,
       entryHash: row.entryHash.slice(0, 16),
       provenanceLabel: badgeLabel(rowProvenance(row)),

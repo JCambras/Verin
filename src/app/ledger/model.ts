@@ -12,7 +12,6 @@ export interface LedgerEntryView {
   readonly occurredAt: string;
   readonly eventType: string;
   readonly actor: string;
-  readonly correlationId: string;
   readonly decisionId: string | null;
   readonly entryHash: string;
   readonly provenanceLabel: string | null;
@@ -38,8 +37,6 @@ export interface DecisionStateView {
 export interface LedgerRegisterViewModel {
   readonly verification: {
     readonly ok: boolean;
-    readonly entriesChecked: number;
-    readonly entriesStored: number;
     readonly levels: readonly LedgerLevelView[];
   };
   readonly total: number;

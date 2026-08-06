@@ -5,7 +5,7 @@
 **Deciders:** Founding architect (executing v3 prompt 7 and its accepted design report)
 **Relates to:** Charter non-negotiables #1, #2, #7, #13; v3 invariants 2, 4, 5, 23, 30
 **Informed by:** `docs/v3/verin-architecture-v3.md` §§5, 12, 15, 16, 18; prompt 7; `verin-ledgerdesign-l7/report.md`
-**Amended by:** ADR-0040, ADR-0042, ADR-0043, ADR-0044, ADR-0045
+**Amended by:** ADR-0040, ADR-0042, ADR-0044, ADR-0045
 
 ## Context
 

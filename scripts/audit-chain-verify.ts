@@ -5,11 +5,17 @@
  * SEEDED in the same job, so today it proves the verifier EXECUTES correctly, not
  * the integrity of any long-lived store. Producing dated SOC 2 CC7.4 evidence for
  * a persistent store is a recorded deferral (D-017, trigger = managed Postgres).
+ *
+ * The typed decision chain is younger than the audit chain: its append surface is
+ * deferred (D-116), so `decisionLedgerVacuity` decides whether an empty ledger is the
+ * ratified design or a gate pointed at unseeded data.
  */
 import { createDb } from "../src/infrastructure/store/db";
 import { verifyOrgChain } from "../src/infrastructure/audit/audit-store";
 import { systemTenant } from "../src/contracts/tenant";
+import { getConfig } from "../src/infrastructure/config";
 import { errorMessage } from "./error-message";
+import { decisionLedgerVacuity } from "./decision-ledger-vacuity";
 import { verifyDecisionLedgerIntegrity } from "../src/infrastructure/ledger/ledger-verification";
 
 async function main(): Promise<void> {
@@ -26,6 +32,7 @@ async function main(): Promise<void> {
   let broken = 0;
   let entriesTotal = 0;
   let decisionEntriesTotal = 0;
+  let decisionEntriesStored = 0;
   for (const { id } of orgs.rows) {
     const v = await verifyOrgChain(db, systemTenant("audit-chain-verify", id));
     const line = `org ${id}: ${v.ok ? "OK" : "BROKEN"} (${v.entriesChecked} entries${v.reason ? `, ${v.reason}` : ""})`;
@@ -40,6 +47,7 @@ async function main(): Promise<void> {
     process.stdout.write(`${decisionLine}\n`);
     if (!decision.ok) broken += 1;
     decisionEntriesTotal += decision.ledger.entriesChecked;
+    decisionEntriesStored += decision.ledger.entriesStored;
   }
   await db.close();
   if (broken > 0) {
@@ -50,9 +58,19 @@ async function main(): Promise<void> {
     process.stderr.write("audit-chain-verify: 0 audit entries across all orgs — a chain verification that checked nothing is vacuous (the seed writes an audited entry)\n");
     process.exit(1);
   }
-  if (decisionEntriesTotal === 0) {
-    process.stderr.write("audit-chain-verify: 0 decision-ledger entries across all orgs - typed-chain verification is vacuous\n");
+  const decisionVacuity = decisionLedgerVacuity(
+    getConfig().appEnv,
+    decisionEntriesStored,
+    decisionEntriesTotal,
+  );
+  if (decisionVacuity === "vacuous") {
+    process.stderr.write(
+      `audit-chain-verify: ${decisionEntriesStored} decision-ledger entries stored and ${decisionEntriesTotal} verified across all orgs - typed-chain verification is vacuous (did db:seed run against this store?)\n`,
+    );
     process.exit(1);
+  }
+  if (decisionVacuity === "empty-by-design") {
+    process.stdout.write("audit-chain-verify: decision ledger empty - the post-decision append surface is deferred (D-116), so no producer writes to it yet; this is not a chain break\n");
   }
   process.stdout.write(`audit-chain-verify: all ${orgs.rows.length} org chain pair(s) verified (${entriesTotal} audit, ${decisionEntriesTotal} decision entries)\n`);
 }

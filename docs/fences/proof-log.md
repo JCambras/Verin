@@ -6311,3 +6311,52 @@ still measures 510 against its 560 pin.
 **Revert:** no planted prologue-outside-the-try shape remains in `ledger-store.ts`.
 
 **Date:** 2026-08-06 (review corrections, D-129).
+---
+
+## An empty ledger is honest only where the design made it empty (D-130)
+
+**Invariant:** the decision-ledger operator gates hard-fail whenever rows EXIST but none were
+covered, in every environment, and hard-fail an empty ledger in `development`, where they run
+against a store seeded in the same job. Only `staging`/`production` emptiness passes, because
+the post-decision append surface is deferred there by D-123 - and both scripts say so on stdout
+rather than exiting 1 at the operator running a production restore.
+
+**Injection A** (the fail-closed half): `decisionLedgerVacuity` rewritten to return
+`"empty-by-design"` for present-but-uncovered rows.
+
+```text
+FAIL  src/__tests__/unit/decision-ledger-vacuity.test.ts > decisionLedgerVacuity > fails stored-but-uncovered entries in EVERY environment
+  src/__tests__/unit/decision-ledger-vacuity.test.ts:21:51
+  AssertionError: expected 'empty-by-design' to be 'vacuous'
+```
+
+**Injection B** (the environment half): the `appEnv` discrimination collapsed to a bare
+`return "empty-by-design";`.
+
+```text
+FAIL  src/__tests__/unit/decision-ledger-vacuity.test.ts > decisionLedgerVacuity > fails an empty ledger in dev/CI, where the gate runs against a seeded store
+  src/__tests__/unit/decision-ledger-vacuity.test.ts:11:56
+  AssertionError: expected 'empty-by-design' to be 'vacuous'
+```
+
+Both injections were reverted. The verdict is therefore not a blanket exit 0: each half of it
+is load-bearing on its own.
+
+**End-to-end** against a PGlite store holding one org with a real verified audit chain and zero
+`decision_ledger` rows - the exact shape of a deployment before a producer ships:
+
+```text
+APP_ENV=staging      audit-chain-verify: decision ledger empty - the post-decision append surface
+                     is deferred (D-123) ... exit=0
+APP_ENV=development  audit-chain-verify: 0 decision-ledger entries stored and 0 verified ...
+                     typed-chain verification is vacuous ... exit=1
+APP_ENV=staging      ledger-rebuild: decision ledger empty ... exit=0
+APP_ENV=development  ledger-rebuild: 0 entries replayed into 0 decision projection(s) ... exit=1
+```
+
+The seeded dev store is unchanged: `db:seed && audit:chain` reports 1 audit and 5 decision
+entries at exit 0, and `ledger:rebuild` replays 5 entries into 1 projection at exit 0.
+
+**Revert:** no planted verdict remains in `scripts/decision-ledger-vacuity.ts`.
+
+**Date:** 2026-08-06 (review corrections, D-130).
