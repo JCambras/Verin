@@ -3251,8 +3251,12 @@ bundle.asOf to the anchor date happens once in the evaluation harness so the
 contracts layer never touches tz data; reconciliation below two assertions is
 vacuously consistent (sufficiency belongs to the validation stage) and
 contradictions cite snapshot references never values; exactly-one refuses
-exclusion parameters as self-contradictory; ranked-behind alternatives carry
-the fixed code ranked-behind-selection; published-key maps declare per-key
+exclusion parameters as self-contradictory; the losing survivors of a
+preference-order selection carry one of two fixed codes -
+ranked-behind-selection when the winner's preference rank is strictly better,
+canonical-order-tiebreak when both tie at the absent rank and only the canonical
+(firmId, id) order decided it (p8-review-askuser-7, so the trace never credits a
+household preference that never spoke); published-key maps declare per-key
 presence (always/conditional) and outputs are fenced to stay inside them.
 
 Falsification criteria are executable: each primitive's ratified kill case
@@ -3315,3 +3319,62 @@ full-opacity labels that already pass).
 
 **Revert path:** none needed - the surfaces are byte-identical to their
 pre-branch state; D-100 carries the fix.
+
+## D-104 - Prompt-8's three cross-wave obligations are carried by name to their owning prompts
+
+**Date:** 2026-08-06 · **Reversible** · Relates to: ADR-0039, D-102,
+p8-review-askuser-5/-6/-7, charter #2
+
+Three obligations the prompt-8 catalog states are real and binding, but none is
+fenceable in this PR because none of their subjects exists yet: the config
+loader arrives in prompt 10, the evidence assembler in prompt 14. The charter's
+"fence every invariant in the same PR that states it" cannot be honored against
+a subject that has no code, so the obligations are recorded here by owning
+prompt instead of left as doc prose that a later edit could quietly weaken.
+Each becomes a fence in the PR that builds its subject; none is a
+`not-yet-active` v3-invariants row, because that registry tracks the ratified
+v3 invariant set and these are implementation obligations under ADR-0039.
+
+1. **Prompt 10 - restriction evidence must be declared required.**
+   `restriction-screen` is fail-open on absent evidence by design:
+   `restrictions.matched.<kind> = false` means "screened against everything
+   supplied", never "the evidence was verified present", so a bundle assembled
+   without restriction lists screens clean by construction. The config load MUST
+   therefore cross-check, fail-closed, that every configuration binding
+   `restriction-screen` declares a restriction-source evidence kind as REQUIRED
+   evidence for each bound restriction kind, rejecting the configuration with an
+   error naming the primitive and the undeclared kinds. Until that check exists,
+   nothing stops a governed action clearing over regulatory holds nobody
+   assembled (docs/primitive-rationale.md, `restriction-screen`).
+2. **Prompt 10 - binding multiplicity is a fail-closed load check.** The four
+   unscoped-key primitives (`net-availability`, `horizon-projection`,
+   `sufficiency-check`, `restriction-screen`) are bound AT MOST ONCE per domain
+   configuration, and the two parameter-scoped ones (`candidate-selection` by
+   `subjectSlot`, `evidence-reconciliation` by `factKind`) may repeat only with
+   DISTINCT key scopes. Both halves are config-load errors naming the primitive
+   and both bindings; last-write-wins is not an option, because a second binding
+   silently overwrites published facts under `availability.*`, `projection.*`,
+   `sufficiency.*`, or `restrictions.*` and the AST then evaluates a
+   wrong-but-plausible fact rather than failing.
+3. **Prompt 14 - the evidence assembler owns claim de-duplication.**
+   `net-availability`'s `claims` carries no per-(claimKind, snapshotRef)
+   uniqueness refinement, because one snapshot legitimately yields several claim
+   rows. De-duplicating assembler-side repeats is therefore the assembler's
+   obligation, and whether the evidence-assembly contract should force
+   per-(claimKind, snapshotRef) aggregation is the open question that prompt
+   answers. The failure is conservative in the meantime - a repeat double-counts
+   the claim, understating `availability.net`, so it over-blocks and never
+   over-permits.
+
+**Alternatives rejected:** `not-yet-active` v3-invariants rows (that registry is
+the ratified 30-invariant v3 set, not a scratchpad for per-ADR implementation
+obligations, and its activation semantics would have to be stretched to carry
+them); a fence today against the prompt-10/14 subjects (there is nothing to
+assert, and a fence that passes vacuously is worse than none - charter #2);
+leaving the obligations as rationale-doc prose only (the primitive-catalog fence
+checks only that a per-primitive section and matrix row exist, so the paragraphs
+could be weakened or deleted and the build would stay green).
+
+**Revert path:** delete this entry and the PLAN.md forward-work pointer; the
+obligations then live only in docs/primitive-rationale.md, which is where they
+were before.

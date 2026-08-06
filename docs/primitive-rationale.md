@@ -193,8 +193,14 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   outcome - every non-selected candidate with its configured `rejectedBecause` code - and
   is absent only when nothing was excluded or ranked behind (captain rulings
   `p8-review-askuser-4` and `-5`). Its order is itself data: a `preference-order` selection
-  lists the ranked-behind survivors first IN PREFERENCE-RANK ORDER, each carrying
-  `ranked-behind-selection`, followed by the excluded candidates in canonical order.
+  lists the losing survivors first IN PREFERENCE-RANK ORDER, followed by the excluded
+  candidates in canonical order. Those survivors carry one of two fixed codes, because the
+  trace must not credit a preference that never spoke (captain ruling `p8-review-askuser-7`):
+  a survivor ranked strictly behind the winner's preference rank carries
+  `ranked-behind-selection`, and a survivor TIED at the winner's rank - both absent from the
+  household preference list, so the canonical (firmId, id) order decided it - carries
+  `canonical-order-tiebreak`. Ranking entries are unique, so only the absent-rank sentinel
+  ties, and the two codes partition the losing survivors exactly.
   Everywhere else - a `single-eligible` or `exactly-one` selection, and both the ambiguous
   and empty outcomes - the trace is the excluded candidates in canonical order. An empty
   outcome without its trace cannot explain why no candidate survived, and an ambiguous one

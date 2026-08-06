@@ -36,10 +36,19 @@ import {
 const SELECTION_STRATEGIES = ["exactly-one", "preference-order", "single-eligible"] as const;
 
 /**
- * Alternatives that survived filtering but ranked behind the winner carry this
- * code; excluded alternatives carry their exclusion's own configured code.
+ * Alternatives the household preference list actually ranked behind the winner
+ * carry this code; excluded alternatives carry their exclusion's own configured
+ * code.
  */
 const RANKED_BEHIND_REASON = ReasonCodeSchema.parse("ranked-behind-selection");
+
+/**
+ * Alternatives that tie the winner's rank - both absent from the preference
+ * list, so nothing ranked either - lose only to the canonical (firmId, id)
+ * order, and the trace says exactly that rather than crediting a household
+ * preference that never spoke.
+ */
+const CANONICAL_TIEBREAK_REASON = ReasonCodeSchema.parse("canonical-order-tiebreak");
 
 const CandidateSelectionParameterSchema = z
   .strictObject({
@@ -142,10 +151,12 @@ const CandidateSelectionInputSchema = z
 
 type Candidate = z.infer<typeof CandidateSchema>;
 
+type RankedCandidate = { candidate: Candidate; rank: number };
+
 const rankSurvivors = (
   survivors: readonly Candidate[],
   ranking: readonly SubjectRef[],
-): Candidate[] => {
+): RankedCandidate[] => {
   // Reference identity is the (firmId, id) pair; the array encoding keeps that
   // pair unambiguous for ids that may themselves contain a separator byte.
   const keyOf = (reference: SubjectRef): string =>
@@ -153,14 +164,15 @@ const rankSurvivors = (
   const rankOf = new Map(ranking.map((entry, index) => [keyOf(entry), index]));
   // Stable sort over the already-canonical survivor order: candidates absent
   // from the ranking tie at the end and keep canonical order - the documented
-  // deterministic tiebreak every strategy must have.
+  // deterministic tiebreak every strategy must have. The rank rides along so
+  // the trace can tell a real preference rank from that fallback; ranking
+  // entries are unique, so only the absent-rank sentinel can tie.
   return survivors
     .map((candidate) => ({
       candidate,
       rank: rankOf.get(keyOf(candidate.ref)) ?? ranking.length,
     }))
-    .sort((left, right) => left.rank - right.rank)
-    .map((entry) => entry.candidate);
+    .sort((left, right) => left.rank - right.rank);
 };
 
 const candidateSelectionFalsification: PrimitiveFalsification = {
@@ -255,12 +267,13 @@ export const candidateSelection = {
 
     if (input.context.strategy === "preference-order") {
       if (survivors.length === 0) return empty;
-      const ranked = rankSurvivors(survivors, input.evidence.preferenceRanking);
-      const [winner, ...behind] = ranked;
-      return selected(winner!, [
-        ...behind.map((candidate) => ({
-          ref: candidate.ref,
-          rejectedBecause: RANKED_BEHIND_REASON,
+      const [winner, ...behind] = rankSurvivors(survivors, input.evidence.preferenceRanking);
+      const winnerRank = winner!.rank;
+      return selected(winner!.candidate, [
+        ...behind.map((entry) => ({
+          ref: entry.candidate.ref,
+          rejectedBecause:
+            entry.rank > winnerRank ? RANKED_BEHIND_REASON : CANONICAL_TIEBREAK_REASON,
         })),
         ...rejected,
       ]);

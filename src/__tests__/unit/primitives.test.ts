@@ -485,7 +485,7 @@ describe("candidate-selection", () => {
     ]);
   });
 
-  it("breaks unranked ties by canonical reference order - every strategy has a documented total order", () => {
+  it("breaks unranked ties by canonical reference order and says so - never crediting a silent preference", () => {
     const later = { ref: ref("subject-z"), classifications: [] };
     const earlier = { ref: ref("subject-a"), classifications: [] };
     const published = evaluateParsed(
@@ -493,6 +493,29 @@ describe("candidate-selection", () => {
       selectionInput([later, earlier], "preference-order", { parameters: { exclusions: [] } }),
     );
     expect(published["selection.source-account.selectedRef"]).toEqual(earlier.ref);
+    expect(published["selection.source-account.alternatives"]).toEqual([
+      { ref: later.ref, rejectedBecause: "canonical-order-tiebreak" },
+    ]);
+  });
+
+  it("separates a real preference rank from the canonical fallback in one trace", () => {
+    const preferred = { ref: ref("subject-b"), classifications: [] };
+    const unranked = { ref: ref("subject-a"), classifications: [] };
+    const alsoUnranked = { ref: ref("subject-c"), classifications: [] };
+    const published = evaluateParsed(
+      candidateSelection,
+      selectionInput([preferred, unranked, alsoUnranked], "preference-order", {
+        parameters: { exclusions: [] },
+        preferenceRanking: [preferred.ref],
+      }),
+    );
+    expect(published["selection.source-account.selectedRef"]).toEqual(preferred.ref);
+    // Both losers sit behind an entry the household actually ranked, so neither
+    // is a canonical tiebreak - the fallback only names a tie AT the winner's rank.
+    expect(published["selection.source-account.alternatives"]).toEqual([
+      { ref: unranked.ref, rejectedBecause: "ranked-behind-selection" },
+      { ref: alsoUnranked.ref, rejectedBecause: "ranked-behind-selection" },
+    ]);
   });
 
   it("lands ambiguous with a typed human question on two raw candidates (GC-08)", () => {

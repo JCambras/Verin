@@ -27,7 +27,7 @@ import { relative } from "node:path";
 // documentation deletions.
 //
 // MEASURED after D-102 and its review hardening, with this file's own algorithm:
-// contracts 5418/5460 (42), domain 1298/1350 (52), infrastructure 3484/3550 (66).
+// contracts 5432/5460 (28), domain 1298/1350 (52), infrastructure 3484/3550 (66).
 // These are the real figures, not a stale decision-table row. Any FURTHER increase is
 // still a measured ADR amendment, never a code change.
 const CEILINGS = {

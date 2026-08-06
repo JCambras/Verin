@@ -28,6 +28,7 @@
  * is falsified). Adding ANY primitive requires reporting it before building it
  * (v3 standing rule) and a primitive-set version bump.
  */
+import type { PrimitiveId } from "../decision-core/ids";
 import { candidateSelection } from "./selection";
 import { evidenceReconciliation, restrictionScreen } from "./screening";
 import { horizonProjection, netAvailability, sufficiencyCheck } from "./quantity";
@@ -53,8 +54,8 @@ export const PRIMITIVE_CATALOG = [
   sufficiencyCheck,
 ] as const satisfies readonly CatalogPrimitive[];
 
-export const PRIMITIVE_CATALOG_IDS = PRIMITIVE_CATALOG.map(
-  (primitive) => primitive.id,
+export const PRIMITIVE_CATALOG_IDS: readonly PrimitiveId[] = Object.freeze(
+  PRIMITIVE_CATALOG.map((primitive) => primitive.id),
 );
 
 export {
