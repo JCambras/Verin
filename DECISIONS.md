@@ -3166,3 +3166,66 @@ fence docblock; remove the two v3-document items from
 `.github/pull_request_template.md`; and delete this entry. No fixture, fence assertion, or
 pinned document changes; `v3-invariants.json` and the arch-version fence BEHAVIOR are
 untouched, since this corrects the prose describing them, not what they do.
+
+## D-100 - Receded values carry their own color, so the freshness fade cannot cross the AA floor
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: D-034, ADR-0012, ADR-0022,
+charter #9, demo design language §12.1
+
+`FreshValue` claimed that flooring the freshness fade at `opacity: 0.7` kept receded
+text at 4.5:1. It did not: the faded span inherits the CALLER's color, and the claim
+was only ever true for `text-slate-900`. Every demo `asOf` is a fixed fixture date
+(`data.ts` `OBSERVED_RECENT` = 2026-07-24) aged against the REAL clock, so each
+surface walks down the opacity tiers over calendar time. On 2026-08-05 the
+workspace's `text-slate-600` custodian lines reached tier 0.8 and axe measured
+4.34:1 on `bg-surface` - a blocking e2e failure produced by the calendar, not by any
+code change. Past 21 days the floor tier lands `text-slate-600` at 3.47:1 and
+`text-slate-700` at 4.20:1, so the same gate would have failed permanently from
+2026-08-14 on.
+
+Receded content now owns the established receded color - design §12.1's slate-800,
+already used by `record.tsx`'s voided approval rows for exactly this reason - which
+clears 4.5:1 at the 0.7 floor on white, `bg-surface`, and `amber-50` alike. Fresh
+values (opacity 1) still inherit, so nothing changes until a value actually recedes.
+The AA outcome is now independent of when the suite runs, which is what removes the
+calendar flakiness. Proven both ways before landing: with the fix, axe passes on all
+twelve demo surfaces with every `FreshValue` pinned to 0.7; with the color removed
+and the pin kept, the same probe fails at 3.47-4.20:1.
+
+**Alternatives rejected:** raise the opacity floor to 0.9 (the only tier where
+inherited slate-600 passes - it deletes the freshness grammar and still says nothing
+about darker-background callers); recolor the twelve call sites (the guarantee
+belongs to the component that makes it, and the next caller reintroduces the bug);
+render demo freshness against the `DEMO_NOW` world clock the fixtures declare
+(correct on its own terms and worth doing, but it needs a `now` threaded through
+`FreshValue`, `Metric`, `EvidenceRow`, and `DispositionNotice`, and it would leave
+the false contrast guarantee standing for real-clock surfaces such as the console).
+
+**Revert path:** drop the conditional `text-slate-800` from `fresh-value.tsx`. No
+contract, fixture, fence, or scenario data changes.
+
+## D-101 - Dependency-audit remediation: undici, fast-uri, and a brace-expansion selector bump
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: D-033, charter #15
+
+Three new high advisories landed against dev-only transitives of
+`@cyclonedx/cdxgen` (the `pnpm sbom` toolchain), failing
+`pnpm audit --audit-level=high`. Remediated with the range-scoped, self-expiring
+`pnpm.overrides` selectors D-033 established: `undici@<7.29.0 → 7.29.0`
+(GHSA-4cwx-7wf7-3272, via cdxgen and its cheerio dependency),
+`fast-uri@<3.1.5 → 3.1.5` (GHSA-7p8r-x3mc-p8w7, via ajv), and the existing
+`brace-expansion` selector moved from `<5.0.8 → 5.0.8` to `<5.0.9 → 5.0.9`
+(GHSA-rgw5-rvv9-x895 widened the vulnerable range to include the version the old
+selector pinned). Each stays on its current major, so the `minimatch@3.1.5` patch
+D-033 added for brace-expansion 5.x's named export still applies unchanged. The
+audit is now fully clean, not merely clean at high: undici 7.29.0 also clears the
+four moderate undici advisories.
+
+**Alternatives rejected:** bump `@cyclonedx/cdxgen` and hope its transitives follow
+(the advisories are in packages it pins, so this is not in our control and would
+churn on every advisory); take the latest majors instead (undici 8, fast-uri 4)
+under consumers that declare compatibility with 7.x and 3.x; or lower the audit gate
+below high.
+
+**Revert path:** each selector deletes independently once its consumer bumps past
+the advisory range, at which point the range matches nothing.
