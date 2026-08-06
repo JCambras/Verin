@@ -18,9 +18,9 @@ import {
   evaluateSetupPolicy,
   type SetupPolicyEvidence,
 } from "./setup-policy";
-import {
-  SIGNED_SETUP_CASES,
-  type SignedSetupCase,
+import type {
+  SignedSetupCase,
+  SignedSetupCases,
 } from "./setup-signed-cases";
 import {
   DEFAULT_SETUP_SELECTIONS,
@@ -179,49 +179,51 @@ function ageDays(asOf: string, observedAt: string): number {
   );
 }
 
-export function buildSetupImpacts(): MoneyMovementSetupVM["impacts"] {
+export function buildSetupImpacts(
+  cases: SignedSetupCases,
+): MoneyMovementSetupVM["impacts"] {
   const recentCases = {
     "firm-a": signedImpactCase(
-      SIGNED_SETUP_CASES.recentA,
+      cases.recentA,
       "recent-bank-change-block",
     ),
     "firm-b": signedImpactCase(
-      SIGNED_SETUP_CASES.recentB,
+      cases.recentB,
       "recent-bank-change-block",
     ),
   };
   const safeCases = {
     "firm-a": signedImpactCase(
-      SIGNED_SETUP_CASES.happyA,
+      cases.happyA,
       "safe-proceed",
     ),
     "firm-b": signedImpactCase(
-      SIGNED_SETUP_CASES.happyB,
+      cases.happyB,
       "safe-proceed",
     ),
   };
   const lowHeadroomCases = {
     "firm-a": signedImpactCase(
-      SIGNED_SETUP_CASES.lowHeadroomB,
+      cases.lowHeadroomB,
       null,
       LOW_HEADROOM_LIQUIDITY,
     ),
     "firm-b": signedImpactCase(
-      SIGNED_SETUP_CASES.lowHeadroomB,
+      cases.lowHeadroomB,
       null,
       LOW_HEADROOM_LIQUIDITY,
     ),
   };
   const recentObservedAt = evidenceDate(
-    SIGNED_SETUP_CASES.recentA,
+    cases.recentA,
     "bank-instruction",
   );
   const staleObservedAt = evidenceDate(
-    SIGNED_SETUP_CASES.staleA,
+    cases.staleA,
     "planned-withdrawals",
   );
   const staleAvailableObservedAt = evidenceDate(
-    SIGNED_SETUP_CASES.staleA,
+    cases.staleA,
     "account-balance",
   );
   return [
@@ -230,7 +232,7 @@ export function buildSetupImpacts(): MoneyMovementSetupVM["impacts"] {
       id: "recent-bank",
       title: "Recent bank change",
       caseRef: "GC-03 / GC-04",
-      facts: `Same request · changed ${recentObservedAt} · ${ageDays(SIGNED_SETUP_CASES.recentA.trigger.asOf, recentObservedAt)} days ago · independent verification absent`,
+      facts: `Same request · changed ${recentObservedAt} · ${ageDays(cases.recentA.trigger.asOf, recentObservedAt)} days ago · independent verification absent`,
       groupId: "bank-change",
       selectionEffects: bankImpactSelectionEffects(recentCases),
       attribution: impactAttribution(
@@ -247,7 +249,7 @@ export function buildSetupImpacts(): MoneyMovementSetupVM["impacts"] {
       id: "stale-withdrawals",
       title: "Stale planned-withdrawal evidence",
       caseRef: "GC-09",
-      facts: `Planned-withdrawal evidence observed ${staleObservedAt} · ${ageDays(SIGNED_SETUP_CASES.staleA.trigger.asOf, staleObservedAt)} days old`,
+      facts: `Planned-withdrawal evidence observed ${staleObservedAt} · ${ageDays(cases.staleA.trigger.asOf, staleObservedAt)} days old`,
       universalEffect: `Available cash remains fresh as of ${staleAvailableObservedAt}. Refresh the planned-withdrawal snapshot before reevaluation.`,
     },
     {

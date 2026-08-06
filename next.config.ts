@@ -27,8 +27,12 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: ["@electric-sql/pglite"],
+  // The demo surfaces read the captain-signed golden cases at runtime (the same
+  // bytes `pnpm golden:validate` checks), so the fixtures must be traced into any
+  // standalone output. `/**` matches every route segment depth; a single-segment
+  // glob would silently miss the nested /app/demo/* pages that need them.
   outputFileTracingIncludes: {
-    "/*": ["./fixtures/golden/*.json"],
+    "/**": ["./fixtures/golden/*.json"],
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

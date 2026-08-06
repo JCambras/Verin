@@ -37,11 +37,18 @@ export default defineConfig({
     setupFiles: ["./src/__tests__/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
-    testTimeout: 20000,
+    // The AST fences build a TYPE-CHECKED ts-morph program over the whole repo, and
+    // vitest isolates module state per test file, so each such fence pays for its own
+    // program. That is minutes of legitimate work, not a hang: at 20s the fences that
+    // scan the most (governed-actions, tenant-context-required, tokenized-factory-only)
+    // died on the clock rather than on a finding, which reads as red for a reason
+    // nobody can act on. The budget is generous ON PURPOSE - a fence must fail because
+    // it found something, never because the tree grew.
+    testTimeout: 300000,
     // Matches testTimeout deliberately: the store integration suites build a fresh
     // PGlite (WASM Postgres) instance, migrate it, and seed it in beforeEach, so their
     // slow path is the HOOK, not the test body. Leaving hookTimeout at its 10s default
     // would cap the setup at half the budget its own test bodies get.
-    hookTimeout: 20000,
+    hookTimeout: 300000,
   },
 });

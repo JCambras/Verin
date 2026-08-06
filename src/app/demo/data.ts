@@ -11,6 +11,12 @@
  * data (the same value scenarios.yaml carries), never derived in a component.
  */
 import type { Role } from "@contracts/roles";
+import {
+  DEFAULT_APPROVAL_CLOCK,
+  FRESHNESS_DAYS,
+  closedChoiceValue,
+  type BankChangeHandling,
+} from "./closed-choices";
 import type {
   DispositionKind,
   RequesterParticipation,
@@ -173,12 +179,15 @@ export interface FirmData {
   readonly id: string;
   readonly name: string;
   readonly reserveMonths: number;
+  /** The firm's evidence-freshness choice, named by OPTION ID. The days behind it
+   * live once, in FRESHNESS_DAYS - a firm never carries a second copy of the number. */
+  readonly freshnessOptionId: string;
   readonly dualApprovalThresholdMinor: number;
   readonly approvalsRequired: number;
   readonly distinctActorsRequired: boolean;
   readonly standardApprovalRole: "operations" | null;
   readonly requesterParticipation: RequesterParticipation;
-  readonly bankChangeHandling: "specialist-review" | "block-until-independently-verified";
+  readonly bankChangeHandling: BankChangeHandling;
   readonly policyVersion: string;
 }
 export const FIRMS: Record<string, FirmData> = {
@@ -186,6 +195,7 @@ export const FIRMS: Record<string, FirmData> = {
     id: "firm-a",
     name: "Firm A",
     reserveMonths: 6,
+    freshnessOptionId: "30-days",
     dualApprovalThresholdMinor: 2_500_000, // $25,000
     approvalsRequired: 2,
     distinctActorsRequired: true,
@@ -201,6 +211,7 @@ export const FIRMS: Record<string, FirmData> = {
     id: "firm-b",
     name: "Firm B",
     reserveMonths: 12,
+    freshnessOptionId: "30-days",
     dualApprovalThresholdMinor: 10_000_000, // $100,000
     approvalsRequired: 2,
     distinctActorsRequired: true,
@@ -265,79 +276,6 @@ export interface DecisionIdentity {
   readonly inputHash: string;
   readonly decisionHash: string;
   readonly bundleHash: string;
-}
-
-/**
- * The closed catalog of normal-approval clocks. ONE source, because the clock id is
- * what the configuration hashes: a second copy of the strings would let a printed
- * clock disagree with the id the bundle hash says both configurations name.
- */
-export interface ApprovalClock {
-  readonly id: string;
-  readonly escalationAfter: string;
-  readonly expiresAfter: string;
-  readonly escalation: string;
-  readonly expiry: string;
-}
-
-function approvalDuration(value: string): {
-  days: number;
-  hours: number;
-} {
-  const match = value.match(/^P(?:(\d+)D)?(?:T(?:(\d+)H)?)?$/);
-  if (!match || (!match[1] && !match[2])) {
-    throw new Error(
-      `Unsupported demonstration approval duration: ${value}`,
-    );
-  }
-  return {
-    days: Number(match[1] ?? 0),
-    hours: Number(match[2] ?? 0),
-  };
-}
-
-function approvalDurationLabel(value: string): string {
-  const { days, hours } = approvalDuration(value);
-  return [
-    days > 0 ? `${days} day${days === 1 ? "" : "s"}` : null,
-    hours > 0
-      ? `${hours} hour${hours === 1 ? "" : "s"}`
-      : null,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(" ");
-}
-
-function approvalClock(
-  id: string,
-  escalationAfter: string,
-  expiresAfter: string,
-): ApprovalClock {
-  return {
-    id,
-    escalationAfter,
-    expiresAfter,
-    escalation: `Escalates after ${approvalDurationLabel(escalationAfter)}`,
-    expiry: `Expires after ${approvalDurationLabel(expiresAfter)}`,
-  };
-}
-
-export const APPROVAL_CLOCKS: Readonly<Record<string, ApprovalClock>> = {
-  "4h-2d": approvalClock("4h-2d", "PT4H", "P2D"),
-  "1d-3d": approvalClock("1d-3d", "P1D", "P3D"),
-  "2d-5d": approvalClock("2d-5d", "P2D", "P5D"),
-} as const;
-/** The clock the fixture journey runs under, and the id its configuration hashes. */
-export const DEFAULT_APPROVAL_CLOCK: ApprovalClock = APPROVAL_CLOCKS["1d-3d"]!;
-
-export function approvalExpiryAt(
-  createdAt: string,
-  expiresAfter: string,
-): string {
-  const { days, hours } = approvalDuration(expiresAfter);
-  const milliseconds =
-    days * 86_400_000 + hours * 3_600_000;
-  return new Date(Date.parse(createdAt) + milliseconds).toISOString();
 }
 
 export interface DecisionConfiguration {
@@ -456,6 +394,11 @@ export const SCENARIOS: readonly ScenarioData[] = [
 ];
 const DEFAULT_SCENARIO = "safe-proceed";
 
+/** The ONE branch the setup-first demonstration activates and hashes. Declared here,
+ * beside the branch it names, so the setup version digest and the evaluator can never
+ * bind two different scenarios inside the same computation. */
+export const SETUP_SCENARIO_ID = "recent-bank-change-block";
+
 export function scenarioById(id: string): ScenarioData {
   return SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0]!;
 }
@@ -482,7 +425,11 @@ export function decisionConfigurationFor(firm: FirmData): DecisionConfiguration 
   return {
     policyVersion: firm.policyVersion,
     reserveMonths: firm.reserveMonths,
-    freshnessDays: 30,
+    freshnessDays: closedChoiceValue(
+      FRESHNESS_DAYS,
+      firm.freshnessOptionId,
+      "freshness",
+    ),
     bankChangeHandling: firm.bankChangeHandling,
     dualApprovalThresholdMinor: firm.dualApprovalThresholdMinor,
     approvalsRequired: firm.approvalsRequired,

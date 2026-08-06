@@ -30,6 +30,7 @@ import {
   DEMO_REQUEST_REF,
   LOW_HEADROOM_LIQUIDITY,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+  SETUP_SCENARIO_ID,
   SMITHS_LIQUIDITY,
   scenarioById,
   type SignedLiquidityCase,
@@ -43,9 +44,10 @@ import {
   toJsonValue,
 } from "./decision-identity";
 import { setupVersionDigestFor } from "./setup-version";
+import { loadSignedSetupCases } from "./setup-signed-cases";
 
 const CANONICAL_SETUP_EVIDENCE = decisionEvidenceSnapshotFor(
-  scenarioById("recent-bank-change-block"),
+  scenarioById(SETUP_SCENARIO_ID),
 );
 
 function setupEvidenceKey(
@@ -282,9 +284,18 @@ function group(
   return { id, title, question, rationale, caseRef, firms };
 }
 
+/**
+ * The setup definition. Callers on a REQUEST path use `loadMoneyMovementSetup`,
+ * which turns an unreadable signed-case fixture into a typed failure; this entry
+ * point is for callers that have already established the cases are readable (and
+ * for tests), and throws the same named message otherwise.
+ */
 export function buildMoneyMovementSetup(
   evidence: DecisionEvidenceSnapshot = CANONICAL_SETUP_EVIDENCE,
 ): MoneyMovementSetupVM {
+  const loadedCases = loadSignedSetupCases();
+  if (!loadedCases.ok) throw new Error(loadedCases.error);
+  const cases = loadedCases.cases;
   const canonicalEvidence =
     setupEvidenceKey(evidence) === CANONICAL_SETUP_EVIDENCE_KEY;
   if (canonicalEvidence && canonicalSetup) return canonicalSetup;
@@ -350,7 +361,7 @@ export function buildMoneyMovementSetup(
       group("threshold", "Dual-approval threshold", "Above what amount must two distinct operations approvers act?", "The threshold may vary. Distinct-human quorum cannot.", "GC-01 / GC-02", [firmChoices("firm-a", "25000", thresholdA), firmChoices("firm-b", "100000", thresholdB)]),
       group("expiry", "Normal approval expiry and escalation", "When does waiting create escalation work, and when does authority expire?", "Clocks are closed pairs. Expiry never produces approval.", "GC-01 / GC-16", [firmChoices("firm-a", "1d-3d", expiryA), firmChoices("firm-b", "1d-3d", expiryB)]),
     ],
-    impacts: buildSetupImpacts(),
+    impacts: buildSetupImpacts(cases),
     activation: {
       lifecyclePreview: {
         proposer: "Taylor Morgan",
@@ -401,4 +412,22 @@ export function buildMoneyMovementSetup(
   if (!canonicalEvidence) return setup;
   canonicalSetup = deepFreeze(structuredClone(setup));
   return canonicalSetup;
+}
+
+export type MoneyMovementSetupLoad =
+  | { readonly ok: true; readonly vm: MoneyMovementSetupVM }
+  | { readonly ok: false; readonly error: string };
+
+/**
+ * The setup definition, or a TYPED failure when the captain-signed cases it
+ * projects from cannot be read. Every request-handling surface goes through this:
+ * the demonstration shows a named refusal rather than dying on an `fs` error or,
+ * worse, rendering impacts with no signed case behind them.
+ */
+export function loadMoneyMovementSetup(
+  evidence: DecisionEvidenceSnapshot = CANONICAL_SETUP_EVIDENCE,
+): MoneyMovementSetupLoad {
+  const cases = loadSignedSetupCases();
+  if (!cases.ok) return { ok: false, error: cases.error };
+  return { ok: true, vm: buildMoneyMovementSetup(evidence) };
 }

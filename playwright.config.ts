@@ -19,6 +19,11 @@ interface E2eConfigOptions {
   readonly testMatch?: RegExp;
 }
 
+/** The rotation suite runs on the shortest TTL the config accepts so a session
+ * crosses its renewal half-life inside one spec. The spec reads the SAME constant
+ * to derive when that window opens, rather than sleeping a hand-tuned number. */
+export const ROTATION_SESSION_TTL_MINUTES = 1;
+
 export function createE2eConfig(options: E2eConfigOptions) {
   const dataDir = fileURLToPath(new URL(options.dataDirectory, import.meta.url));
   const baseUrl = `http://127.0.0.1:${options.port}`;
@@ -52,8 +57,11 @@ export function createE2eConfig(options: E2eConfigOptions) {
     },
     projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
     webServer: {
-      // Clean store, build, seed the demo users, then run the real production server.
-      command: `rm -rf "${dataDir}" && corepack pnpm build && corepack pnpm db:seed && corepack pnpm exec next start -p ${options.port}`,
+      // Clean store, seed the demo users, then run the real production server.
+      // The `.next` build is produced ONCE by `pnpm test:e2e` and SHARED by both
+      // configs - each still gets its own VERIN_DATA_DIR, so the suites stay
+      // store-isolated without paying for a second full build.
+      command: `rm -rf "${dataDir}" && corepack pnpm db:seed && corepack pnpm exec next start -p ${options.port}`,
       url: baseUrl,
       reuseExistingServer: false,
       timeout: 180_000,

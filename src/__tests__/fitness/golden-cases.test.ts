@@ -14,10 +14,13 @@ import {
 import { unwrap } from "@contracts/result";
 import { REPO_ROOT } from "./_fence-utils";
 import {
+  AMENDMENT_AWAITING,
   GOLDEN_DOC,
   REQUIRED_SPEC_NAMES,
+  goldenContentHash,
   loadGoldenCases,
   loadScenarioRefs,
+  loadSignedScope,
   validateGoldenCases,
   type LoadedCase,
   type ScenarioRefs,
@@ -50,6 +53,7 @@ import {
  */
 const realCases = loadGoldenCases();
 const realRefs = loadScenarioRefs();
+const realScope = loadSignedScope();
 const realDoc = readFileSync(GOLDEN_DOC, "utf8");
 const goldenGc07 = JSON.parse(
   readFileSync(
@@ -352,7 +356,7 @@ function hashValidGc07Mutation(
 
 describe("golden-cases fence", () => {
   it("enforces: every golden case is complete, aligned, consistent, and signoff-gated", () => {
-    const problems = validateGoldenCases(realCases, realRefs, realDoc);
+    const problems = validateGoldenCases(realCases, realRefs, realDoc, realScope);
     expect(problems, `golden-case problems:\n${problems.join("\n")}`).toEqual([]);
   });
 
@@ -391,7 +395,8 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     if (!found) throw new Error(`fixture ${id} missing`);
     return found.data as Record<string, unknown>;
   };
-  const run = (cases: LoadedCase[], doc = realDoc) => validateGoldenCases(cases, realRefs, doc);
+  const run = (cases: LoadedCase[], doc = realDoc) =>
+    validateGoldenCases(cases, realRefs, doc, realScope);
 
   it("flags a missing required field (expectedDisposition removed)", () => {
     const cases = clone();
@@ -445,12 +450,12 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
     const widened: ScenarioRefs = { ...realRefs, executionStates: new Set([...realRefs.executionStates, "rejected"]) };
     const cases = clone();
     (caseById(cases, "GC-01-firm-a-happy-path").expectedVerificationState as Record<string, unknown>).observedStatus = "rejected";
-    const problems = validateGoldenCases(cases, widened, realDoc);
+    const problems = validateGoldenCases(cases, widened, realDoc, realScope);
     expect(problems.some((p) => p.includes("observedStatus must be one of submitted|in-flight|completed|nigo|unknown"))).toBe(true);
 
     // And the reverse: a pinned state the live matrix no longer defines fails too.
     const narrowed: ScenarioRefs = { ...realRefs, executionStates: new Set([...realRefs.executionStates].filter((s) => s !== "submitted")) };
-    const drifted = validateGoldenCases(clone(), narrowed, realDoc);
+    const drifted = validateGoldenCases(clone(), narrowed, realDoc, realScope);
     expect(drifted.some((p) => p.includes('observedStatus "submitted" is not a scenarios.yaml execution-class state'))).toBe(true);
   });
 
@@ -513,12 +518,79 @@ describe("detects (companion): an incomplete, drifted, or prematurely signed cas
 
   it("flags stale-vocabulary injection via the refs themselves (a gutted scenarios.yaml cannot pass vacuously)", () => {
     const gutted = loadScenarioRefs("contract:\n  id: verin-demo-contract\n");
-    const problems = validateGoldenCases(realCases, gutted, realDoc);
+    const problems = validateGoldenCases(realCases, gutted, realDoc, realScope);
     expect(problems.some((p) => p.includes("firm must be a scenarios.yaml firm id"))).toBe(true);
   });
 
   it("accepts the real, honest truth set (cannot pass by always-failing)", () => {
-    expect(validateGoldenCases(realCases, realRefs, realDoc)).toEqual([]);
+    expect(validateGoldenCases(realCases, realRefs, realDoc, realScope)).toEqual([]);
+  });
+
+  it("flags amended bytes with no amendment block, and an amendment whose hashes do not describe them", () => {
+    // The renamed subjectRef is real amended content: strip the amendment block and
+    // the signed-status claim now covers bytes the captain never saw.
+    const stripped = clone();
+    delete caseById(stripped, "GC-09-stale-evidence").amendment;
+    expect(
+      run(stripped).some(
+        (p) =>
+          p.includes("GC-09") &&
+          p.includes("differs from the captain-signed scope") &&
+          p.includes("no amendment block"),
+      ),
+    ).toBe(true);
+
+    // A stale amendment (describing bytes that no longer exist) cannot pass either.
+    const stale = clone();
+    const staleCase = caseById(stale, "GC-09-stale-evidence");
+    (staleCase.trigger as Record<string, unknown>).requestRef = "req:GC-09-changed";
+    expect(
+      run(stale).some((p) =>
+        p.includes("amendment.amendedContentHash must equal the CURRENT content hash"),
+      ),
+    ).toBe(true);
+
+    // A forged signed-scope hash is refused against the ledger.
+    const forged = clone();
+    (caseById(forged, "GC-09-stale-evidence").amendment as Record<string, unknown>).signedContentHash =
+      "0".repeat(64);
+    expect(
+      run(forged).some((p) => p.includes("amendment.signedContentHash must equal the ledger")),
+    ).toBe(true);
+
+    // An amendment that claims anything other than awaiting-countersignature fails.
+    const promoted = clone();
+    (caseById(promoted, "GC-09-stale-evidence").amendment as Record<string, unknown>).status =
+      "signed";
+    expect(run(promoted).some((p) => p.includes("amendment.status must be"))).toBe(true);
+
+    // And an incomplete amendment - no ruling, no stated change - fails.
+    const thin = clone();
+    const thinAmendment = caseById(thin, "GC-09-stale-evidence").amendment as Record<string, unknown>;
+    delete thinAmendment.ruling;
+    thinAmendment.changes = [];
+    const thinProblems = run(thin);
+    expect(thinProblems.some((p) => p.includes("amendment.ruling must name"))).toBe(true);
+    expect(thinProblems.some((p) => p.includes("amendment.changes must state"))).toBe(true);
+  });
+
+  it("flags an amendment block on unamended content, and a case missing from the signed-scope ledger", () => {
+    const unamended = clone();
+    const gc08 = caseById(unamended, "GC-08-ambiguous-household");
+    gc08.amendment = {
+      status: AMENDMENT_AWAITING,
+      amendedAt: "2026-08-05",
+      ruling: "none",
+      changes: ["nothing actually changed"],
+      signedContentHash: realScope["GC-08-ambiguous-household"],
+      amendedContentHash: goldenContentHash(gc08),
+    };
+    expect(
+      run(unamended).some((p) => p.includes("nothing was amended")),
+    ).toBe(true);
+
+    const noLedger = validateGoldenCases(clone(), realRefs, realDoc, {});
+    expect(noLedger.some((p) => p.includes("no signed-scope entry for"))).toBe(true);
   });
 
   it("accepts a properly attributed captain signature (the future signing PR stays green)", () => {

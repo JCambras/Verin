@@ -14,6 +14,18 @@
     "signedAt": "2026-07-26",
     "note": "Expected outcomes are product truth subject to captain signoff. Draft models the regulatory source as an active legal hold recorded against the source account; the captain confirms the example is the right regulatory archetype for the demo."
   },
+  "amendment": {
+    "status": "amended-awaiting-captain-countersignature",
+    "amendedAt": "2026-08-05",
+    "ruling": "decisions setup-opus-b6-fresh-review-12 (canonical-account ruling: the Smiths taxable source account is subject:smiths-family-taxable, distinct from Joint Taxable) and its review-13/review-14 siblings.",
+    "changes": [
+      "Renamed the source account subjectRef from subject:smiths-joint-taxable to subject:smiths-family-taxable (trigger.description, householdEvidence[0], householdEvidence[1], prohibition.scope), so the golden truth set and the demonstration name ONE canonical taxable source.",
+      "Added prohibition.precedenceTrace: the ordered regulatory-over-firm-policy and regulatory-over-household-instruction resolutions the canonical GC-07 decision record already carried, so the golden case states the precedence the record is mirrored against."
+    ],
+    "signedContentHash": "0661bb8ac16177336839f0204572acca57a661e21814b788cdd8aa9c10201ff0",
+    "amendedContentHash": "173f5d486ca2b198529a99277d88013a1fa9c1fa84e96e84decdc4bc57ae4000",
+    "note": "The signoff block above is byte-intact and attests ONLY to the pre-amendment content it was given on 2026-07-26. These bytes are NOT captain-signed until the captain countersigns them; the countersignature request is routed separately."
+  },
   "trigger": {
     "kind": "human_request",
     "description": "Advisor enters the $75,000 request; Smith Family Taxable carries an active legal hold recorded by operations.",

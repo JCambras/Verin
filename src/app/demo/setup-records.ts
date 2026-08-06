@@ -78,6 +78,7 @@ function materializeActivatedRecord(
           snapshot.activationAcknowledgment.statement,
       },
       reserveHorizon: ACTIVATED_RESERVE_HORIZON,
+      reserveProjection: policyEvaluation.projection,
       evidence: snapshot.evidence,
     },
   );

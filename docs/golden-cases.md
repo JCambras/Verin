@@ -1,7 +1,9 @@
 # Verin - Golden-Case Specification (v3 build-sequence prompt 2)
 
 **Status:** Signed truth set - **all 16 cases signed as drafted by the captain on 2026-07-26**
-(approval relayed via firstmate). Expected results are product truth subject to human signoff, not
+(approval relayed via firstmate). Fifteen of them were subsequently AMENDED under a recorded ruling
+and now carry an `amendment` block awaiting countersignature (§1.1); the 2026-07-26 signature covers
+only the pre-amendment content. Expected results are product truth subject to human signoff, not
 agent invention (build-sequence prompt 2; re-baseline note: the signoff authority for every case is
 the captain).
 **Machine mirror:** [`fixtures/golden/*.json`](../fixtures/golden/) - one file per case, validated
@@ -32,6 +34,29 @@ Every case carries a `signoff` block initialized to:
 - Where a draft had to FIX an answer the demo contract deliberately left open, the case's signoff
   note flags it explicitly (GC-02: Firm B sub-threshold authority; GC-15: post-invalidation
   re-approval rule; GC-13: partial-part taxonomy).
+
+### 1.1 Amending signed bytes
+
+A signature attests to the bytes the captain was given, and to nothing else. When a recorded ruling
+requires a change to an already-signed case, the original `signoff` block stays **byte-intact** with
+its 2026-07-26 scope and the case gains an `amendment` block stating the exact change, the ruling
+that mandated it, the amendment date, and the status
+`amended-awaiting-captain-countersignature`. Amended bytes are NOT captain-signed until the captain
+countersigns them; a countersignature is routed as its own decision, never inferred.
+
+The signed scope itself is recorded OUTSIDE the signed bytes, in
+[`fixtures/golden-signed-scope.json`](../fixtures/golden-signed-scope.json): caseId to the content
+hash the captain signed (the case with its `signoff` and `amendment` blocks removed, keys deep-sorted).
+`pnpm golden:validate` and the `golden-cases` fence check both directions - content that still matches
+its signed scope may not claim an amendment, and content that does NOT match must carry a complete,
+self-consistent one whose `signedContentHash` matches the ledger and whose `amendedContentHash`
+matches the current bytes. A signed-status claim over amended bytes with no amendment block fails
+the build.
+
+**Currently amended and awaiting countersignature (2026-08-05):** all cases except
+GC-08-ambiguous-household, for the review-12 canonical-account ruling
+(`subject:smiths-joint-taxable` to `subject:smiths-family-taxable`), plus GC-07's added
+`prohibition.precedenceTrace`.
 
 ## 2. Expected-outcomes summary (one row per case - the captain signs against this table)
 

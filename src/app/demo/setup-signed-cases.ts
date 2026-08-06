@@ -1,5 +1,17 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+/**
+ * The captain-signed golden cases the setup surface projects from.
+ *
+ * The fixtures are read at RUNTIME from `fixtures/golden` (the same bytes
+ * `pnpm golden:validate` checks - there is no second, bundled copy that could
+ * drift). Two rules govern that read: it never runs at module init, and it is
+ * never anchored on `process.cwd()`. The directory is found by walking up from
+ * this module, and every failure - missing directory, unreadable file, malformed
+ * JSON, a case that is not captain-signed - becomes a TYPED failure the surface
+ * renders fail-closed. A demo route may not die with a raw `fs` error.
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { SetupFirmId } from "./setup-model";
 import type { SetupPolicyEvidence } from "./setup-policy";
 
@@ -36,7 +48,10 @@ interface GoldenAuthorityStage {
   readonly eligibleRoleIds: readonly string[];
   readonly approvalsRequired: number;
   readonly distinctActorsRequired: boolean;
-  readonly requesterMayApprove: boolean;
+  /** Golden fixtures state a boolean. `"unbound"` is the demo's third state, so a
+   * case that leaves requester participation unbound can say so rather than being
+   * forced to claim an exclusion the captain never signed. */
+  readonly requesterMayApprove: boolean | "unbound";
   readonly expiresAfter: string;
   readonly escalationPath: readonly {
     readonly after: string;
@@ -87,68 +102,133 @@ export interface SignedSetupCase {
   };
 }
 
-function loadFixture(name: string): unknown {
-  return JSON.parse(
-    readFileSync(
-      join(process.cwd(), "fixtures/golden", name),
-      "utf8",
-    ),
+// ── The guarded fixture read ────────────────────────────────────────────────────────
+const GOLDEN_RELATIVE_DIR = join("fixtures", "golden");
+/** How far above this module the repository/app root may sit. Deep enough for a
+ * bundled server chunk, bounded so a missing directory ends the walk rather than
+ * climbing to the filesystem root. */
+const MAX_ROOT_SEARCH_DEPTH = 12;
+
+function resolveGoldenDir(): string | null {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let depth = 0; depth <= MAX_ROOT_SEARCH_DEPTH; depth += 1) {
+    const candidate = join(dir, GOLDEN_RELATIVE_DIR);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function invalidCase(expectedCaseId: string): Error {
+  return new Error(
+    `${expectedCaseId} is not a valid captain-signed setup case`,
   );
 }
 
-function signedCase(
+/**
+ * Prove the fields this module DEREFERENCES exist and carry the shape it reads,
+ * before any dereference. A malformed fixture must produce the named failure
+ * above, never an undefined-property throw from deep inside a builder. Exported so
+ * the fence can feed it broken fixtures and prove they cannot pass (charter #4).
+ */
+export function parseSignedSetupCase(
   value: unknown,
   expectedCaseId: string,
   expectedFirm: SetupFirmId,
 ): SignedSetupCase {
-  const candidate = value as SignedSetupCase;
+  if (!isRecord(value)) throw invalidCase(expectedCaseId);
+  const signoff = value.signoff;
+  const trigger = value.trigger;
+  const firmConfiguration = value.firmConfiguration;
+  const policyVersions = value.policyVersions;
+  const expectedAuthority = value.expectedAuthority;
   if (
-    candidate.caseId !== expectedCaseId ||
-    candidate.firm !== expectedFirm ||
-    candidate.signoff.status !== "signed" ||
-    candidate.signoff.authority !== "captain" ||
-    !Array.isArray(candidate.householdEvidence)
+    value.caseId !== expectedCaseId ||
+    value.firm !== expectedFirm ||
+    !isRecord(signoff) ||
+    signoff.status !== "signed" ||
+    signoff.authority !== "captain" ||
+    !isRecord(trigger) ||
+    typeof trigger.asOf !== "string" ||
+    typeof trigger.maskedRequestSummary !== "string" ||
+    !isRecord(firmConfiguration) ||
+    typeof firmConfiguration.cashReserveMonths !== "number" ||
+    typeof firmConfiguration.dualApprovalThresholdUsd !== "number" ||
+    typeof firmConfiguration.bankInstructionChangeHandling !== "string" ||
+    !isRecord(policyVersions) ||
+    !Array.isArray(policyVersions.householdInstructionVersionIds) ||
+    !isRecord(expectedAuthority) ||
+    typeof expectedAuthority.mode !== "string" ||
+    !Array.isArray(expectedAuthority.stages) ||
+    typeof value.expectedDisposition !== "string" ||
+    !Array.isArray(value.householdEvidence) ||
+    value.householdEvidence.some(
+      (datum) => !isRecord(datum) || typeof datum.summary !== "string",
+    )
   ) {
-    throw new Error(
-      `${expectedCaseId} is not a valid captain-signed setup case`,
-    );
+    throw invalidCase(expectedCaseId);
   }
-  return candidate;
+  return value as unknown as SignedSetupCase;
 }
 
-export const SIGNED_SETUP_CASES = {
-  happyA: signedCase(
-    loadFixture("GC-01-firm-a-happy-path.json"),
-    "GC-01-firm-a-happy-path",
-    "firm-a",
-  ),
-  happyB: signedCase(
-    loadFixture("GC-02-firm-b-happy-path.json"),
-    "GC-02-firm-b-happy-path",
-    "firm-b",
-  ),
-  recentA: signedCase(
-    loadFixture("GC-03-recent-bank-change-firm-a.json"),
-    "GC-03-recent-bank-change-firm-a",
-    "firm-a",
-  ),
-  recentB: signedCase(
-    loadFixture("GC-04-recent-bank-change-firm-b.json"),
-    "GC-04-recent-bank-change-firm-b",
-    "firm-b",
-  ),
-  lowHeadroomB: signedCase(
-    loadFixture("GC-05-insufficient-liquidity.json"),
-    "GC-05-insufficient-liquidity",
-    "firm-b",
-  ),
-  staleA: signedCase(
-    loadFixture("GC-09-stale-evidence.json"),
-    "GC-09-stale-evidence",
-    "firm-a",
-  ),
-} as const;
+const REQUIRED_CASES = {
+  happyA: ["GC-01-firm-a-happy-path", "firm-a"],
+  happyB: ["GC-02-firm-b-happy-path", "firm-b"],
+  recentA: ["GC-03-recent-bank-change-firm-a", "firm-a"],
+  recentB: ["GC-04-recent-bank-change-firm-b", "firm-b"],
+  lowHeadroomB: ["GC-05-insufficient-liquidity", "firm-b"],
+  staleA: ["GC-09-stale-evidence", "firm-a"],
+} as const satisfies Readonly<
+  Record<string, readonly [string, SetupFirmId]>
+>;
 
+export type SignedSetupCases = Readonly<
+  Record<keyof typeof REQUIRED_CASES, SignedSetupCase>
+>;
+
+export type SignedSetupCaseLoad =
+  | { readonly ok: true; readonly cases: SignedSetupCases }
+  | { readonly ok: false; readonly error: string };
+
+const UNAVAILABLE =
+  "The captain-signed golden cases this demonstration projects from could not be read. Nothing is shown rather than an unattributed projection.";
+
+function readSignedSetupCases(): SignedSetupCaseLoad {
+  const dir = resolveGoldenDir();
+  if (!dir) return { ok: false, error: UNAVAILABLE };
+  try {
+    const cases = Object.fromEntries(
+      Object.entries(REQUIRED_CASES).map(([key, [caseId, firmId]]) => [
+        key,
+        parseSignedSetupCase(
+          JSON.parse(readFileSync(join(dir, `${caseId}.json`), "utf8")),
+          caseId,
+          firmId,
+        ),
+      ]),
+    ) as SignedSetupCases;
+    return { ok: true, cases };
+  } catch {
+    return { ok: false, error: UNAVAILABLE };
+  }
+}
+
+let loaded: SignedSetupCaseLoad | undefined;
+
+/** Memoized on first CALL, never at module init: an unreadable fixture directory
+ * must fail the surface closed, not the route's import. */
+export function loadSignedSetupCases(): SignedSetupCaseLoad {
+  loaded ??= readSignedSetupCases();
+  return loaded;
+}
+
+// ── Reading the signed case ─────────────────────────────────────────────────────────
 function evidence(
   caseFile: SignedSetupCase,
   evidenceKind: string,
@@ -249,10 +329,7 @@ export function signedCaseMaterialEvidence(
         /Pending approved distribution of (\d+)\s+USD/i,
       )
     : null;
-  const requestMinor = amountFrom(
-    caseFile.trigger.maskedRequestSummary,
-    /distribute (\d+)\s+USD/i,
-  );
+  const requestMinor = signedCaseRequestMinor(caseFile);
   return {
     caseId: caseFile.caseId,
     canonicalEvidence: caseFile.householdEvidence,
@@ -283,52 +360,11 @@ export function signedCaseMaterialEvidence(
   };
 }
 
-export function signedCaseResolvedConfiguration(
+export function signedCaseRequestMinor(
   caseFile: SignedSetupCase,
-) {
-  const configuration = caseFile.firmConfiguration;
-  return {
-    policyVersions: caseFile.policyVersions,
-    reserveMonths: configuration.cashReserveMonths,
-    freshnessDays: null,
-    bankChangeHandling:
-      configuration.bankInstructionChangeHandling,
-    dualApprovalThresholdMinor:
-      configuration.dualApprovalThresholdUsd * 100,
-    approvalsRequired: configuration.approvalsRequired,
-    distinctActorsRequired:
-      configuration.distinctActorsRequired,
-    authorityMode:
-      caseFile.expectedAuthority.mode === "none"
-        ? "not-reached"
-        : caseFile.expectedAuthority.mode === "automatic"
-          ? "automatic"
-          : "staged",
-    standardApprovalRole: configuration.eligibleRole,
-    requesterParticipation:
-      configuration.requesterConstraint === null
-        ? { mode: "unbound" as const }
-        : {
-            mode: "excluded" as const,
-            constraint: configuration.requesterConstraint,
-          },
-    approvalClock: null,
-  };
-}
-
-export function signedCaseRequestMaterial(
-  caseFile: SignedSetupCase,
-) {
-  return {
-    trigger: caseFile.trigger,
-    evaluatorRequest: {
-      text: null,
-      amountMinor: amountFrom(
-        caseFile.trigger.maskedRequestSummary,
-        /distribute (\d+)\s+USD/i,
-      ),
-      purpose: null,
-      deadline: null,
-    },
-  };
+): number | null {
+  return amountFrom(
+    caseFile.trigger.maskedRequestSummary,
+    /distribute (\d+)\s+USD/i,
+  );
 }

@@ -14,6 +14,17 @@
     "signedAt": "2026-07-26",
     "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that expiration escalates (it does not auto-approve and does not silently cancel): the stage re-arms for the escalation roles with a fresh expiry, and every lapse is a recorded, attributed fact."
   },
+  "amendment": {
+    "status": "amended-awaiting-captain-countersignature",
+    "amendedAt": "2026-08-05",
+    "ruling": "decisions setup-opus-b6-fresh-review-12 (canonical-account ruling: the Smiths taxable source account is subject:smiths-family-taxable, distinct from Joint Taxable) and its review-13/review-14 siblings.",
+    "changes": [
+      "Renamed the source account subjectRef from subject:smiths-joint-taxable to subject:smiths-family-taxable, and rewrote the prose that named the old account, so the golden truth set and the demonstration name ONE canonical taxable source."
+    ],
+    "signedContentHash": "95019b48fe20a2160697bc8506464dbb59c3ec2156e25939b91378bb8300d091",
+    "amendedContentHash": "a3bfa52942ba4684cd70ccc2e70d3f92040709873855437b8f74b27dd4c96164",
+    "note": "The signoff block above is byte-intact and attests ONLY to the pre-amendment content it was given on 2026-07-26. These bytes are NOT captain-signed until the captain countersigns them; the countersignature request is routed separately."
+  },
   "trigger": {
     "kind": "human_request",
     "description": "Advisor enters the $75,000 request with a recently changed bank instruction (as in GC-03). The bank-change specialist takes no action for two days; the review stage expires and escalates to the operations manager.",

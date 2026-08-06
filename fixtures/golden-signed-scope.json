@@ -1,0 +1,23 @@
+{
+  "note": "The content hash each golden case carried when the captain signed it on 2026-07-26. It lives OUTSIDE fixtures/golden (so every *.json there is a case) and outside the signed bytes (so amending a case cannot quietly amend the record of what was signed). A fixture whose current content hash differs from its entry here must carry an amendment block (scripts/golden-cases.lib.ts).",
+  "signedOn": "2026-07-26",
+  "algorithm": "sha256 over JSON.stringify of the case with deep-sorted keys and the signoff and amendment blocks removed",
+  "cases": {
+    "GC-01-firm-a-happy-path": "baa1653bc97d350b2cfa2a7bc6c45e88663369ed427ac6473f71561c75f26f34",
+    "GC-02-firm-b-happy-path": "219dba4b213aed6effe446af3541c38a0ac60728b4c163177e24ef24a734d9f4",
+    "GC-03-recent-bank-change-firm-a": "4c1b213762f78dc50921b6cf7bb25372549096717f0680ac01791384d5ad0825",
+    "GC-04-recent-bank-change-firm-b": "7a541a47d6549ac3280d9ff5b26bb7d3f380209917eed7002765bdac598a9c38",
+    "GC-05-insufficient-liquidity": "60c35fe0d1199d676f688da1d72ea1d9796063d6e91cc721ed7f21a1284e84ea",
+    "GC-06-household-restriction": "03bddedd8c4c63a62476805cdfba1f842bf4cac3ce335d74e513cff7bab1116c",
+    "GC-07-regulatory-prohibition": "0661bb8ac16177336839f0204572acca57a661e21814b788cdd8aa9c10201ff0",
+    "GC-08-ambiguous-household": "787a9b2419d0514a86723cadb93a281b152aadfafd24e9a5e0b69ca0d73b836c",
+    "GC-09-stale-evidence": "74db0272c56b289510ae1007f643ece2123ec3a4e262339b3b414207d202b720",
+    "GC-10-simultaneous-distributions-first": "3bd41b6616ccfb0ec8b9b137bb65c19b3603d3d28752f5a09efeae5c5b30eed9",
+    "GC-11-simultaneous-distributions-second": "0e0cfd5afe0784f3ccea17ecebc8535b4eabc50a49e884ebe1a39af604029915",
+    "GC-12-duplicate-retry": "4dcfde1696473967c387b036898f070b5edd7679bc0f6039d8898af915f7fd6a",
+    "GC-13-partial-salesforce-success": "2b3bd1dd1567889395c5336f19fe516a599290d1f7f61287fb5701992858591b",
+    "GC-14-delayed-nigo": "d044289bd6b81910afff8b57bf70a68c695e710bebfd34e650d914937e3ec6d6",
+    "GC-15-approval-invalidation": "77ebed4824fb830ce2199a65df5828e1aea918cdbc72a33977b53d9397b23fd7",
+    "GC-16-specialist-review-expiration": "95019b48fe20a2160697bc8506464dbb59c3ec2156e25939b91378bb8300d091"
+  }
+}

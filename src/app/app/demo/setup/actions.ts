@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import type { Role } from "@contracts/roles";
 import { requirePrincipalWithRole } from "@app/_server/context";
 import {
   activateMoneyMovementSetup,
@@ -23,18 +24,23 @@ import type {
   SetupAttestationResult,
 } from "@app/demo/setup-activation-contract";
 
+/** The scope key BOTH sides of the activation store use. The role comes from the
+ * live session on the write side exactly as it does on the read side, so the two
+ * keys are symmetric by construction rather than by a literal that happens to
+ * agree with the role gate above it. */
 function activationScope(
   principal: {
     readonly orgId: string;
     readonly userId: string;
     readonly sessionLineageId: string;
+    readonly role: Role;
   },
 ): SetupActivationScope {
   return {
     orgId: principal.orgId,
     userId: principal.userId,
     sessionLineageId: principal.sessionLineageId,
-    role: "principal",
+    role: principal.role,
   };
 }
 

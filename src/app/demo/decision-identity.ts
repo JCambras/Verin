@@ -271,13 +271,26 @@ export function approvalReceiptHashFor(
   }));
 }
 
-export function decisionBundlePreimageFor(
+/**
+ * The input and bundle layers of ONE decision identity, built exactly once.
+ * Every hash below is a pure function of the same preimage, so recomputing a
+ * hash-identical payload buys nothing and costs a full canonical serialization -
+ * `decisionIdentityFor` used to rebuild the input preimage three times and the
+ * bundle preimage twice for a single record.
+ */
+interface DecisionPreimageLayers {
+  readonly inputHash: string;
+  readonly bundlePreimage: JsonValue;
+  readonly bundleHash: string;
+}
+
+function decisionPreimageLayers(
   scenario: ScenarioData,
   firm: FirmData,
   configuration: DecisionConfiguration,
   authority: DecisionAuthorityClaim,
-  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
-): JsonValue {
+  evidence: DecisionEvidenceSnapshot,
+): DecisionPreimageLayers {
   if (
     (authority.mode === "automatic" &&
       configuration.standardApprovalRole !== null) ||
@@ -303,7 +316,8 @@ export function decisionBundlePreimageFor(
     {},
     evidence,
   );
-  return toJsonValue({
+  const inputHash = hashCanonicalPreimage(inputPreimage);
+  const bundlePreimage = toJsonValue({
     hashKind: "money-movement-demo-bundle",
     preimageVersion: "money-movement-demo-bundle/7.0.0",
     payload: {
@@ -311,28 +325,24 @@ export function decisionBundlePreimageFor(
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
       engineVersion: DEMO_DECISION_ENGINE_VERSION,
       firmId: firm.id,
-      inputHash: hashCanonicalPreimage(inputPreimage),
+      inputHash,
       input: inputPreimage,
       configuration,
       authority,
     },
   });
+  return {
+    inputHash,
+    bundlePreimage,
+    bundleHash: hashCanonicalPreimage(bundlePreimage),
+  };
 }
 
-export function decisionRecordPreimageFor(
-  scenario: ScenarioData,
+function recordPreimageFromLayers(
   firm: FirmData,
-  configuration: DecisionConfiguration,
   claims: DecisionIdentityClaims,
-  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
+  layers: DecisionPreimageLayers,
 ): JsonValue {
-  const bundlePreimage = decisionBundlePreimageFor(
-    scenario,
-    firm,
-    configuration,
-    claims.authority,
-    evidence,
-  );
   return toJsonValue({
     hashKind: "money-movement-demo-record",
     preimageVersion: "money-movement-demo-record/7.0.0",
@@ -341,8 +351,8 @@ export function decisionRecordPreimageFor(
       canonicalSerializerVersion: CANONICAL_SERIALIZER_VERSION,
       engineVersion: DEMO_DECISION_ENGINE_VERSION,
       firmId: firm.id,
-      bundleHash: hashCanonicalPreimage(bundlePreimage),
-      bundle: bundlePreimage,
+      bundleHash: layers.bundleHash,
+      bundle: layers.bundlePreimage,
       disposition: claims.disposition,
       blockers: claims.disposition.blockers ?? [],
       precedence: claims.precedence,
@@ -352,16 +362,33 @@ export function decisionRecordPreimageFor(
   });
 }
 
-export function decisionIdentityFor(
+export function decisionBundlePreimageFor(
+  scenario: ScenarioData,
+  firm: FirmData,
+  configuration: DecisionConfiguration,
+  authority: DecisionAuthorityClaim,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
+): JsonValue {
+  return decisionPreimageLayers(
+    scenario,
+    firm,
+    configuration,
+    authority,
+    evidence,
+  ).bundlePreimage;
+}
+
+export function decisionRecordPreimageFor(
   scenario: ScenarioData,
   firm: FirmData,
   configuration: DecisionConfiguration,
   claims: DecisionIdentityClaims,
   evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
-): DecisionIdentity {
-  const inputHash = decisionInputHashFor(scenario, evidence);
-  const bundleHash = hashCanonicalPreimage(
-    decisionBundlePreimageFor(
+): JsonValue {
+  return recordPreimageFromLayers(
+    firm,
+    claims,
+    decisionPreimageLayers(
       scenario,
       firm,
       configuration,
@@ -369,19 +396,29 @@ export function decisionIdentityFor(
       evidence,
     ),
   );
+}
+
+export function decisionIdentityFor(
+  scenario: ScenarioData,
+  firm: FirmData,
+  configuration: DecisionConfiguration,
+  claims: DecisionIdentityClaims,
+  evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(scenario),
+): DecisionIdentity {
+  const layers = decisionPreimageLayers(
+    scenario,
+    firm,
+    configuration,
+    claims.authority,
+    evidence,
+  );
   const decisionHash = hashCanonicalPreimage(
-    decisionRecordPreimageFor(
-      scenario,
-      firm,
-      configuration,
-      claims,
-      evidence,
-    ),
+    recordPreimageFromLayers(firm, claims, layers),
   );
   return {
     decisionId: `dec-${firm.id}-${decisionHash.slice(0, 24)}`,
-    inputHash,
+    inputHash: layers.inputHash,
     decisionHash,
-    bundleHash,
+    bundleHash: layers.bundleHash,
   };
 }

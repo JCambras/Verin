@@ -1,12 +1,15 @@
 import { buildDisposition, buildPolicyTrace } from "./build-decision";
-import { buildMoneyMovementSetup } from "./build-setup";
+import { loadMoneyMovementSetup } from "./build-setup";
 import {
-  APPROVAL_CLOCKS,
   DEMO_NOW,
+  SETUP_SCENARIO_ID,
   scenarioById,
   type DecisionConfiguration,
   type FirmData,
 } from "./data";
+import {
+  APPROVAL_CLOCKS,
+} from "./closed-choices";
 import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
@@ -41,7 +44,6 @@ import {
 } from "./setup-model";
 import { evaluateAuthorityPlan } from "./setup-authority";
 import {
-  SETUP_SCENARIO_ID,
   optionFor,
   setupActivationPreimageFor,
   validateSetupActivationDraft,
@@ -99,14 +101,36 @@ function decisionConfiguration(
   };
 }
 
-function evaluateFirm(
+/**
+ * Everything about one firm's activated outcome that does NOT depend on the
+ * activation snapshot hash. The snapshot hash is itself computed FROM the authority
+ * plans, so this projection has to exist before it - building it once (rather than
+ * running the whole evaluation against a placeholder hash and again against the real
+ * one) is what keeps the two passes from disagreeing as well as what makes activation
+ * affordable on the request path.
+ */
+interface FirmProjection {
+  readonly firmId: SetupFirmId;
+  readonly profile: MoneyMovementSetupVM["profiles"][number];
+  readonly posture: ReturnType<typeof configurationPosture>;
+  readonly selectedOptions: SetupProofFirmVM["selectedOptions"];
+  readonly policyEvaluation: SetupPolicyEvaluation;
+  readonly requesterParticipation: SetupProofFirmVM["requesterParticipation"];
+  readonly activeProfile: boolean;
+  readonly configurationHash: string;
+  readonly policyVersion: string;
+  readonly firm: FirmData;
+  readonly disposition: SetupProofFirmVM["disposition"];
+  readonly authorityPlan: SetupProofFirmVM["authorityPlan"];
+  readonly authorityClaim: ReturnType<typeof decisionAuthorityClaimFor>;
+}
+
+function projectFirm(
   vm: MoneyMovementSetupVM,
   firmId: SetupFirmId,
   selections: SetupSelections,
-  snapshotHash: string,
-  authority: SetupActivationAuthorityBinding,
   evidence: DecisionEvidenceSnapshot,
-): Omit<SetupProofFirmVM, "exportHref"> {
+): FirmProjection {
   const profile = vm.profiles.find((candidate) => candidate.firmId === firmId)!;
   const posture = configurationPosture(selectedTruthLabels(vm, firmId, selections));
   const selectedOptions = SETUP_POLICY_GROUP_IDS.map((groupId) => {
@@ -123,31 +147,79 @@ function evaluateFirm(
     firmId,
     evidence,
   );
-  if (
-    policyEvaluation.requesterParticipation.mode !==
-    "unbound"
-  ) {
+  const requesterParticipation =
+    policyEvaluation.requesterParticipation;
+  if (requesterParticipation.mode !== "unbound") {
     throw new Error(
       "Setup evaluation must preserve unbound requester participation",
     );
   }
-  const profileIdentity = setupProfileIdentity(
+  const {
+    activeProfile,
+    configurationHash,
+    policyVersion,
+  } = setupProfileIdentity(
     vm,
     firmId,
     selections,
     policyEvaluation,
     evidence,
   );
-  const {
-    activeProfile,
-    configurationHash,
-    policyVersion,
-  } = profileIdentity;
   const firm = setupRuntimeFirm(
     firmId,
     policyEvaluation,
     policyVersion,
   );
+  const scenario = scenarioById(SETUP_SCENARIO_ID);
+  const disposition = buildDisposition(
+    scenario,
+    firm,
+    policyEvaluation.dispositionKind,
+    ACTIVATED_RESERVE_HORIZON,
+  );
+  const authorityPlan = evaluateAuthorityPlan(
+    firm,
+    policyEvaluation,
+    APPROVAL_CLOCKS[selections[firmId].expiry]!,
+    prov("user-entered-demo-input", DEMO_NOW),
+  );
+  return {
+    firmId,
+    profile,
+    posture,
+    selectedOptions,
+    policyEvaluation,
+    requesterParticipation,
+    activeProfile,
+    configurationHash,
+    policyVersion,
+    firm,
+    disposition,
+    authorityPlan,
+    authorityClaim: decisionAuthorityClaimFor(authorityPlan),
+  };
+}
+
+function evaluateFirm(
+  projection: FirmProjection,
+  snapshotHash: string,
+  authority: SetupActivationAuthorityBinding,
+  selections: SetupSelections,
+  evidence: DecisionEvidenceSnapshot,
+): Omit<SetupProofFirmVM, "exportHref"> {
+  const {
+    firmId,
+    profile,
+    posture,
+    selectedOptions,
+    policyEvaluation,
+    activeProfile,
+    configurationHash,
+    policyVersion,
+    firm,
+    disposition,
+    authorityPlan: evaluatedAuthority,
+  } = projection;
   const configuration = decisionConfiguration(
     firm,
     policyEvaluation,
@@ -155,18 +227,10 @@ function evaluateFirm(
     snapshotHash,
     authority,
   );
-  const projection = policyEvaluation.projection;
+  const reserveProjection = policyEvaluation.projection;
   const freshnessSatisfied = policyEvaluation.freshnessSatisfied;
-  const kind = policyEvaluation.dispositionKind;
   const scenario = scenarioById(SETUP_SCENARIO_ID);
-  const disposition = buildDisposition(scenario, firm, kind, ACTIVATED_RESERVE_HORIZON);
   const approvalClock = APPROVAL_CLOCKS[configuration.approvalClockId]!;
-  const evaluatedAuthority = evaluateAuthorityPlan(
-    firm,
-    policyEvaluation,
-    approvalClock,
-    prov("user-entered-demo-input", DEMO_NOW),
-  );
   const identity = decisionIdentityFor(
     scenario,
     firm,
@@ -177,8 +241,9 @@ function evaluateFirm(
         scenario,
         firm,
         disposition.kind,
+        reserveProjection,
       ).rows,
-      authority: decisionAuthorityClaimFor(evaluatedAuthority),
+      authority: projection.authorityClaim,
     },
     evidence,
   );
@@ -206,15 +271,14 @@ function evaluateFirm(
     authorityPlan: evaluatedAuthority,
     standardApprovalRole:
       policyEvaluation.authority.standardApprovalRole,
-    requesterParticipation:
-      policyEvaluation.requesterParticipation,
+    requesterParticipation: projection.requesterParticipation,
     reserveMetric: derivedMetric(
-      projection.requiredReserveMinor,
+      reserveProjection.requiredReserveMinor,
       "currency-minor",
       RESERVE_FLOOR_INPUTS,
       DEMO_NOW,
     ),
-    reserveSummary: projection.reserveSatisfied
+    reserveSummary: reserveProjection.reserveSatisfied
       ? "The projected balance remains above the activated reserve floor."
       : "The projected balance falls below the activated reserve floor.",
     reserveDetail: `${configuration.reserveMonths} months derived from the signed monthly withdrawal schedule.`,
@@ -240,32 +304,30 @@ function evaluateFirm(
   };
 }
 
+function authorityClaimsFrom(
+  projections: readonly FirmProjection[],
+) {
+  return projections.map((projection) => ({
+    firmId: projection.firmId,
+    authority: projection.authorityClaim,
+    standardApprovalRole:
+      projection.policyEvaluation.authority.standardApprovalRole,
+    requesterParticipation: projection.requesterParticipation,
+  }));
+}
+
 export function setupActivationAuthorityClaims(
   vm: MoneyMovementSetupVM,
   selections: SetupSelections,
-  authority: SetupActivationAuthorityBinding,
   evidence: DecisionEvidenceSnapshot = decisionEvidenceSnapshotFor(
     scenarioById(SETUP_SCENARIO_ID),
   ),
 ) {
-  return SETUP_FIRM_IDS.map((firmId) => {
-    const evaluated = evaluateFirm(
-      vm,
-      firmId,
-      selections,
-      "0".repeat(64),
-      authority,
-      evidence,
-    );
-    return {
-      firmId,
-      authority: decisionAuthorityClaimFor(
-        evaluated.authorityPlan,
-      ),
-      standardApprovalRole: evaluated.standardApprovalRole,
-      requesterParticipation: evaluated.requesterParticipation,
-    };
-  });
+  return authorityClaimsFrom(
+    SETUP_FIRM_IDS.map((firmId) =>
+      projectFirm(vm, firmId, selections, evidence),
+    ),
+  );
 }
 
 function deepFreeze<T>(value: T): T {
@@ -316,41 +378,36 @@ export function activateMoneyMovementSetup(
   }
   const scenario = scenarioById(SETUP_SCENARIO_ID);
   const evidence = decisionEvidenceSnapshotFor(scenario);
-  const vm = buildMoneyMovementSetup(evidence);
-  const authorityPlans = setupActivationAuthorityClaims(
-    vm,
-    draft.selections,
-    authority,
-    evidence,
+  const setup = loadMoneyMovementSetup(evidence);
+  if (!setup.ok) return setup;
+  const vm = setup.vm;
+  const projections = SETUP_FIRM_IDS.map((firmId) =>
+    projectFirm(vm, firmId, draft.selections, evidence),
   );
   const snapshotHash = hashCanonicalPreimage(
     setupActivationPreimageFor(
       vm,
       draft,
       authority,
-      authorityPlans,
+      authorityClaimsFrom(projections),
       evidence,
     ),
   );
   const snapshotVersion = `MM-DEMO-SNAPSHOT-${snapshotHash
     .slice(0, 12)
     .toUpperCase()}`;
-  const evaluatedA = evaluateFirm(
-    vm,
-    "firm-a",
-    draft.selections,
-    snapshotHash,
-    authority,
-    evidence,
-  );
-  const evaluatedB = evaluateFirm(
-    vm,
-    "firm-b",
-    draft.selections,
-    snapshotHash,
-    authority,
-    evidence,
-  );
+  const [evaluatedA, evaluatedB] = projections.map((projection) =>
+    evaluateFirm(
+      projection,
+      snapshotHash,
+      authority,
+      draft.selections,
+      evidence,
+    ),
+  ) as [
+    Omit<SetupProofFirmVM, "exportHref">,
+    Omit<SetupProofFirmVM, "exportHref">,
+  ];
   const activationAcknowledgment = {
     actor: authority.actor,
     statementVersion: authority.statementVersion,

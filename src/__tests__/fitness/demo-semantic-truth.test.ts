@@ -3,15 +3,18 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildMoneyMovementSetup } from "@app/demo/build-setup";
 import {
+  DEFAULT_SETUP_SELECTIONS,
+  impactAttribution,
+  signedImpactCase,
   signedImpactFixtureMaterialInput,
   signedImpactMaterialInputHash,
   type SignedImpactMaterialInput,
 } from "@app/demo/setup-impact-attribution";
 import {
-  APPROVAL_CLOCKS,
   ACCOUNTS,
   BANK_INSTRUCTION,
   CANONICAL_REQUEST,
+  SETUP_SCENARIO_ID,
   DEMO_ACTIVATION_EFFECTIVE_AT,
   DEMO_CAUSAL_SEQUENCE,
   DEMO_NOW,
@@ -22,8 +25,8 @@ import {
   GC15_PENDING_DISTRIBUTION,
   LOW_HEADROOM_LIQUIDITY,
   PLANNED_WITHDRAWAL_MONTHLY_MINOR,
+  DESTINATION_RESTRICTION,
   SMITHS_LIQUIDITY,
-  approvalExpiryAt,
   decisionConfigurationFor,
   demoTimelineViolations,
   firmById,
@@ -33,15 +36,24 @@ import {
   demoTimestampLabel,
   pendingDistributionDeltaSentence,
 } from "@app/demo/data";
+import {
+  APPROVAL_CLOCKS,
+  approvalExpiryAt,
+  BANK_CHANGE_RECENCY_DAYS,
+} from "@app/demo/closed-choices";
 import { SPECIALIST_REARMED_EXPIRES_AT } from "@app/demo/authority-stage-requirements";
 import {
-  SIGNED_SETUP_CASES,
+  loadSignedSetupCases,
+  parseSignedSetupCase,
   signedCaseEvaluationEvidence,
   signedCaseMaterialEvidence,
+  type SignedSetupCase,
 } from "@app/demo/setup-signed-cases";
+import { loadMoneyMovementSetup } from "@app/demo/build-setup";
+import { signedCaseSelections } from "@app/demo/signed-case-binding";
 import {
-  BANK_CHANGE_RECENCY_DAYS,
   evaluateSetupPolicy,
+  setupRuntimeFirm,
 } from "@app/demo/setup-policy";
 import {
   decisionEvidenceSnapshotFor,
@@ -56,10 +68,17 @@ import {
   decisionRecordPreimageFor,
   decisionInputHashFor,
   decisionInputPreimageFor,
+  decisionIdentityFor,
   refreshedDecisionInputPreimageFor,
   hashCanonicalPreimage,
 } from "@app/demo/decision-identity";
-import { headroomMinor } from "@app/demo/build-decision";
+import {
+  buildAuthorityPlan,
+  buildDisposition,
+  buildPolicyTrace,
+  buildRecordReserve,
+  headroomMinor,
+} from "@app/demo/build-decision";
 import { buildEvidence } from "@app/demo/build-context";
 import { buildSafety } from "@app/demo/build-outcome";
 import {
@@ -111,6 +130,14 @@ import type {
 } from "@app/demo/model";
 import { REPO_ROOT } from "./_fence-utils";
 import { setupActivationAuthority } from "../helpers/setup-activation";
+
+/** The captain-signed cases, unwrapped from the guarded loader: this suite asserts
+ * on the REAL fixtures, so a load failure is a test failure, not a skipped check. */
+const SIGNED_SETUP_CASES = (() => {
+  const loaded = loadSignedSetupCases();
+  if (!loaded.ok) throw new Error(loaded.error);
+  return loaded.cases;
+})();
 
 /**
  * DEMO SEMANTIC-TRUTH FENCE
@@ -1599,7 +1626,6 @@ describe("demo semantic-truth fence", () => {
       setupActivationAuthorityClaims(
         setupVm,
         draft.selections,
-        authority,
       ),
     );
     const unchanged = hashCanonicalPreimage(preimage);
@@ -3359,6 +3385,180 @@ describe("demo semantic-truth fence", () => {
     ).toBe(true);
   });
 
+  /**
+   * The precedence row and the record's reserve block state SATISFACTION, and both
+   * are hashed into decisionHash. So the claim has to come from the projection that
+   * produced the disposition - never from a constant sitting beside it. Proven in
+   * BOTH directions on real projections: a basis that holds prints "Satisfied", and
+   * a basis that breaches prints, and hashes, the refusal.
+   */
+  it("enforces: the printed and hashed reserve result is read from the projection", () => {
+    const evidence = decisionEvidenceSnapshotFor(
+      scenarioById(SETUP_SCENARIO_ID),
+    );
+    const selections = setupSelections();
+    selections["firm-b"].reserve = "12-months";
+    const holding = evaluateSetupPolicy(
+      selections,
+      "firm-b",
+      evidence,
+      SMITHS_LIQUIDITY,
+    );
+    const breaching = evaluateSetupPolicy(
+      selections,
+      "firm-b",
+      evidence,
+      LOW_HEADROOM_LIQUIDITY,
+    );
+    expect(holding.projection.reserveSatisfied).toBe(true);
+    expect(breaching.projection.reserveSatisfied).toBe(false);
+
+    const firm = setupRuntimeFirm(
+      "firm-b",
+      holding,
+      FIRMS["firm-b"]!.policyVersion,
+    );
+    const scenario = scenarioById(SETUP_SCENARIO_ID);
+    const reserveRow = (
+      projection: typeof holding.projection,
+    ) =>
+      buildPolicyTrace(
+        scenario,
+        firm,
+        "proceed",
+        projection,
+      ).rows.find((row: { rule: string }) =>
+        row.rule.startsWith("Cash-reserve floor"),
+      )!;
+
+    expect(reserveRow(holding.projection).result).toBe(
+      "Satisfied after this movement",
+    );
+    expect(reserveRow(breaching.projection).result).toContain(
+      "Not satisfied",
+    );
+
+    // The refusal is not cosmetic: it changes the hashed precedence, so a record
+    // can never be signed with a satisfaction the evaluator did not establish.
+    const identityFor = (
+      projection: typeof holding.projection,
+    ) =>
+      decisionIdentityFor(
+        scenario,
+        firm,
+        decisionConfigurationFor(firm),
+        {
+          disposition: buildDisposition(
+            scenario,
+            firm,
+            "proceed",
+          ),
+          precedence: buildPolicyTrace(
+            scenario,
+            firm,
+            "proceed",
+            projection,
+          ).rows,
+          authority: decisionAuthorityClaimFor(
+            buildAuthorityPlan(scenario, firm, "gate"),
+          ),
+        },
+        evidence,
+      ).decisionHash;
+    expect(identityFor(breaching.projection)).not.toBe(
+      identityFor(holding.projection),
+    );
+
+    // And the record's reserve block agrees with the row that hashed it.
+    const disposition = buildDisposition(scenario, firm, "proceed");
+    expect(
+      buildRecordReserve(
+        scenario,
+        firm,
+        disposition,
+        ACTIVATED_RESERVE_HORIZON,
+        breaching.projection,
+      ).kind,
+    ).toBe("evaluated");
+  });
+
+  /**
+   * The demo surfaces PROJECT from captain-signed cases read off disk at runtime.
+   * A malformed or unreadable fixture must therefore end in a named refusal the
+   * surface can render, never an undefined-property throw from inside a builder
+   * and never a projection with no signed case behind it.
+   */
+  it("enforces: an unusable signed case fails closed with its named refusal", () => {
+    const real = loadSignedSetupCases();
+    expect(real.ok).toBe(true);
+    expect(loadMoneyMovementSetup().ok).toBe(true);
+
+    const valid = SIGNED_SETUP_CASES.happyA as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(
+      parseSignedSetupCase(
+        valid,
+        "GC-01-firm-a-happy-path",
+        "firm-a",
+      ),
+    ).toBe(valid);
+
+    const named = /is not a valid captain-signed setup case/;
+    const broken: Array<[string, unknown]> = [
+      ["not an object", "GC-01"],
+      ["null", null],
+      ["missing signoff", { ...valid, signoff: undefined }],
+      ["signoff not an object", { ...valid, signoff: "signed" }],
+      [
+        "unsigned",
+        { ...valid, signoff: { status: "pending-captain", authority: "captain" } },
+      ],
+      [
+        "agent-signed",
+        { ...valid, signoff: { status: "signed", authority: "agent" } },
+      ],
+      ["missing trigger", { ...valid, trigger: undefined }],
+      [
+        "trigger missing asOf",
+        { ...valid, trigger: { ...valid.trigger as object, asOf: undefined } },
+      ],
+      ["missing firmConfiguration", { ...valid, firmConfiguration: undefined }],
+      [
+        "non-numeric reserve months",
+        {
+          ...valid,
+          firmConfiguration: {
+            ...(valid.firmConfiguration as object),
+            cashReserveMonths: "six",
+          },
+        },
+      ],
+      ["missing policyVersions", { ...valid, policyVersions: undefined }],
+      ["missing expectedAuthority", { ...valid, expectedAuthority: undefined }],
+      [
+        "authority stages not an array",
+        { ...valid, expectedAuthority: { mode: "approval", stages: {} } },
+      ],
+      ["evidence not an array", { ...valid, householdEvidence: {} }],
+      ["evidence datum without a summary", { ...valid, householdEvidence: [{}] }],
+      ["wrong case id", { ...valid, caseId: "GC-99-other" }],
+      ["wrong firm", { ...valid, firm: "firm-b" }],
+    ];
+    for (const [label, candidate] of broken) {
+      expect(
+        () =>
+          parseSignedSetupCase(
+            candidate,
+            "GC-01-firm-a-happy-path",
+            "firm-a",
+          ),
+        `${label} was accepted as a captain-signed case`,
+      ).toThrow(named);
+    }
+  });
+
   it("detects: non-evaluated and non-applicable reserve states cannot carry figures", () => {
     expect(
       reserveStateViolations({
@@ -3966,27 +4166,215 @@ describe("demo semantic-truth fence", () => {
       ).toBe(false);
     }
 
-    const exactHash = "a".repeat(64);
+  });
+
+  /**
+   * The affirmative branch, proven with a GENUINELY matching signed case rather
+   * than a hand-written attribution object: this fixture states every closed choice
+   * Firm A's default configuration makes, the policy versions the demonstration
+   * actually runs, and the authority the evaluator actually produces. The attribution
+   * is derived by the SAME production functions the surface uses. Deviate any one
+   * material input and the label must go out.
+   */
+  it("enforces: a signed case that binds the exact live configuration lights the captain-signed label", () => {
+    const matching: SignedSetupCase = {
+      caseId: "GC-XX-exact-match-firm-a",
+      scenarioRef: "recent-bank-change-block",
+      firm: "firm-a",
+      trigger: {
+        kind: "human_request",
+        description:
+          "Advisor enters the $75,000 request; the destination bank instruction was changed four days ago.",
+        requesterRole: "advisor",
+        requestRef: "req:GC-XX",
+        maskedRequestSummary:
+          "distribute 75000 USD for home-renovation to a recently changed destination (tokenized)",
+        asOf: "2026-07-26T09:30:00-04:00",
+      },
+      firmConfiguration: {
+        firmId: "firm-a",
+        cashReserveMonths: 6,
+        dualApprovalThresholdUsd: 25_000,
+        approvalsRequired: 2,
+        distinctActorsRequired: true,
+        eligibleRole: "operations",
+        requesterConstraint: null,
+        bankInstructionChangeHandling: "specialist-review",
+      },
+      householdEvidence: [
+        {
+          evidenceKind: "account-balance",
+          subjectRef: "subject:smiths-family-taxable",
+          observedAt: "2026-07-26T06:00:00-04:00",
+          retrievedAt: "2026-07-26T09:30:05-04:00",
+          freshness: "fresh",
+          source: "house-crm",
+          provenance: "synthetic-fixture",
+          summary:
+            "Smith Family Taxable available balance 420000 USD; liquidity is not the constraint here.",
+        },
+        {
+          evidenceKind: "planned-withdrawals",
+          subjectRef: "subject:smiths-household",
+          observedAt: "2026-07-26T06:00:00-04:00",
+          retrievedAt: "2026-07-26T09:30:05-04:00",
+          freshness: "fresh",
+          source: "house-crm",
+          provenance: "synthetic-fixture",
+          summary:
+            "Recurring planned withdrawals 8000 USD/month, inside the 30-day freshness window firm policy requires for reserve-material evidence.",
+        },
+        {
+          evidenceKind: "bank-instruction",
+          subjectRef: "bank-instruction:smiths-primary",
+          observedAt: "2026-07-22T10:00:00-04:00",
+          retrievedAt: "2026-07-26T09:30:05-04:00",
+          freshness: "fresh",
+          source: "house-crm",
+          provenance: "synthetic-fixture",
+          summary:
+            "Destination bank instruction changed on 2026-07-22 and not yet independently verified.",
+        },
+      ],
+      policyVersions: {
+        domainConfigVersionId: "money-movement@2026.07.0",
+        firmPolicyVersionId: FIRMS["firm-a"]!.policyVersion,
+        householdInstructionVersionIds: [DESTINATION_RESTRICTION.ref],
+        regulatoryVersionId: null,
+      },
+      expectedDisposition: "proceed",
+      expectedAuthority: {
+        mode: "specialist_review",
+        stages: [
+          {
+            stageId: "bank-change-specialist-review",
+            order: 1,
+            executionMode: "sequential",
+            eligibleRoleIds: ["bank-change-specialist"],
+            approvalsRequired: 1,
+            distinctActorsRequired: false,
+            requesterMayApprove: "unbound",
+            expiresAfter: "P2D",
+            escalationPath: [
+              {
+                after: "P1D",
+                roleIds: ["operations-manager"],
+                reasonCode: "specialist-review-idle",
+              },
+            ],
+          },
+          {
+            stageId: "ops-dual-approval",
+            order: 2,
+            executionMode: "parallel",
+            eligibleRoleIds: ["operations"],
+            approvalsRequired: 2,
+            distinctActorsRequired: true,
+            requesterMayApprove: "unbound",
+            expiresAfter: "P3D",
+            escalationPath: [
+              {
+                after: "P1D",
+                roleIds: ["operations-manager"],
+                reasonCode: "approval-stage-idle",
+              },
+            ],
+          },
+        ],
+        note: "Specialist review, then two distinct operations approvers.",
+      },
+      signoff: { status: "signed", authority: "captain" },
+    };
+    const descriptor = {
+      id: "recent-bank",
+      caseRef: "GC-XX",
+      scenarioId: "recent-bank-change-block",
+    };
+    const attributionFor = (fixture: SignedSetupCase) =>
+      impactAttribution(
+        descriptor,
+        {
+          "firm-a": signedImpactCase(
+            fixture,
+            "recent-bank-change-block",
+          ),
+          "firm-b": signedImpactCase(
+            SIGNED_SETUP_CASES.recentB,
+            "recent-bank-change-block",
+          ),
+        },
+        ["firm-a"],
+      );
+
+    expect(signedCaseSelections(matching)).toEqual(
+      DEFAULT_SETUP_SELECTIONS["firm-a"],
+    );
     expect(
       isCaptainSignedImpact(
-        {
-          "firm-a": {
-            previewMaterialInputHash: exactHash,
-            signedMaterialInputHash: exactHash,
-            signedSelectionKey: setupFirmSelectionKey(
-              defaults["firm-a"],
-            ),
-          },
-          "firm-b": {
-            previewMaterialInputHash: "b".repeat(64),
-            signedMaterialInputHash: null,
-            signedSelectionKey: null,
-          },
-        },
+        attributionFor(matching),
         "firm-a",
-        defaults,
+        DEFAULT_SETUP_SELECTIONS,
       ),
     ).toBe(true);
+    // Firm B's real signed case binds no freshness window and no approval clock,
+    // so it stays truthfully unsigned in the very same attribution.
+    expect(
+      isCaptainSignedImpact(
+        attributionFor(matching),
+        "firm-b",
+        DEFAULT_SETUP_SELECTIONS,
+      ),
+    ).toBe(false);
+
+    // Any material deviation drops the label - in the CONFIGURATION the case binds...
+    const deviations: Array<(candidate: SignedSetupCase) => void> = [
+      (candidate) => {
+        (candidate.firmConfiguration as { cashReserveMonths: number }).cashReserveMonths = 12;
+      },
+      (candidate) => {
+        (candidate.firmConfiguration as { dualApprovalThresholdUsd: number }).dualApprovalThresholdUsd = 100_000;
+      },
+      (candidate) => {
+        (candidate.firmConfiguration as { bankInstructionChangeHandling: string }).bankInstructionChangeHandling =
+          "block-until-independently-verified";
+      },
+      (candidate) => {
+        (candidate.householdEvidence[1] as { summary: string }).summary =
+          "Recurring planned withdrawals 8000 USD/month, inside the 14-day freshness window firm policy requires for reserve-material evidence.";
+      },
+      (candidate) => {
+        (candidate.expectedAuthority.stages[1] as { expiresAfter: string }).expiresAfter = "P5D";
+      },
+      // ...in the policy versions the demonstration would have to reproduce...
+      (candidate) => {
+        (candidate.policyVersions as { firmPolicyVersionId: string }).firmPolicyVersionId = "FA-9.9";
+      },
+      // ...in the requester rule...
+      (candidate) => {
+        (candidate.firmConfiguration as { requesterConstraint: string | null }).requesterConstraint =
+          "may-not-satisfy-both-approvals";
+      },
+      // ...in the evidence the decision rests on...
+      (candidate) => {
+        (candidate.householdEvidence[2] as { observedAt: string }).observedAt = "2026-06-01T10:00:00-04:00";
+      },
+      // ...and in the outcome itself.
+      (candidate) => {
+        (candidate as { expectedDisposition: string }).expectedDisposition = "blocked";
+      },
+    ];
+    for (const [index, deviate] of deviations.entries()) {
+      const candidate = structuredClone(matching) as SignedSetupCase;
+      deviate(candidate);
+      expect(
+        isCaptainSignedImpact(
+          attributionFor(candidate),
+          "firm-a",
+          DEFAULT_SETUP_SELECTIONS,
+        ),
+        `deviation ${index} retained the captain-signed label`,
+      ).toBe(false);
+    }
   });
 
   it("enforces: the signed baseline is projected directly from the fixture", () => {
@@ -4000,26 +4388,45 @@ describe("demo semantic-truth fence", () => {
       descriptor,
       fixture,
     );
-    expect(baseline.phase).toBeNull();
-    expect(baseline.authority).toEqual(
-      fixture.expectedAuthority,
-    );
+    // The signed side speaks the SAME normalized shape as the preview side (that is
+    // what makes an exact match detectable at all), and states only what the fixture
+    // actually binds. GC-04 binds no freshness window and no approval clock, so both
+    // are recorded as gaps and its selection key is null - it can never be "signed".
+    expect(baseline.phase).toBe("initial");
+    expect(baseline.authority).toEqual({
+      mode: "not-reached",
+      standardApprovalRole: null,
+      requesterParticipation: { mode: "unbound" },
+      stages: [],
+    });
     expect(
       (
         baseline.resolvedConfiguration as {
           policyVersions: unknown;
         }
       ).policyVersions,
-    ).toEqual(fixture.policyVersions);
-    expect(baseline.evidence).toEqual(
-      signedCaseMaterialEvidence(fixture),
-    );
+    ).toEqual({
+      firmPolicyVersionId:
+        fixture.policyVersions.firmPolicyVersionId,
+      householdInstructionVersionIds:
+        fixture.policyVersions.householdInstructionVersionIds,
+      regulatoryVersionId:
+        fixture.policyVersions.regulatoryVersionId,
+    });
+    expect(baseline.evidence).toEqual({
+      source: "captain-signed-fixture",
+      ...signedCaseMaterialEvidence(fixture),
+    });
+    expect(baseline.selectionKey).toBeNull();
+    expect(signedCaseSelections(fixture)).toBeNull();
     expect(baseline.missingMaterialInputs).toEqual(
       expect.arrayContaining([
-        "phase",
-        "firmConfiguration.freshnessDays",
-        "firmConfiguration.approvalClock",
-        "selectionKey",
+        "request.text",
+        "request.purpose",
+        "request.deadline",
+        "resolvedConfiguration.policyVersions.domainConfigVersionId",
+        "resolvedConfiguration.freshnessDays",
+        "resolvedConfiguration.approvalClockId",
         "evidence.plannedMonthlyMinor",
       ]),
     );
@@ -4043,10 +4450,10 @@ describe("demo semantic-truth fence", () => {
       (candidate: typeof fixture) => {
         (
           candidate.policyVersions as {
-            domainConfigVersionId: string;
+            firmPolicyVersionId: string;
           }
-        ).domainConfigVersionId =
-          "money-movement@2026.08.0";
+        ).firmPolicyVersionId =
+          "firm-b-policy@2026.08.0";
       },
       (candidate: typeof fixture) => {
         (
@@ -4059,9 +4466,17 @@ describe("demo semantic-truth fence", () => {
       (candidate: typeof fixture) => {
         (
           candidate.expectedAuthority as {
-            note: string;
+            mode: string;
           }
-        ).note = "A different authority outcome";
+        ).mode = "automatic";
+      },
+      (candidate: typeof fixture) => {
+        (
+          candidate.firmConfiguration as {
+            requesterConstraint: string | null;
+          }
+        ).requesterConstraint =
+          "may-not-satisfy-both-approvals";
       },
     ];
     const baselineHash =

@@ -20,6 +20,7 @@
  * so the fence's companion can feed it deliberately broken cases and prove
  * incomplete work cannot pass (charter #4: detection is not verification).
  */
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
@@ -28,6 +29,9 @@ export const REPO_ROOT = resolve(import.meta.dirname, "..");
 export const GOLDEN_DIR = join(REPO_ROOT, "fixtures/golden");
 export const GOLDEN_DOC = join(REPO_ROOT, "docs/golden-cases.md");
 export const SCENARIOS_YAML = join(REPO_ROOT, "config/demo/scenarios.yaml");
+/** The signed-scope ledger lives OUTSIDE fixtures/golden so every *.json in that
+ * directory remains, unambiguously, a golden case. */
+export const SIGNED_SCOPE = join(REPO_ROOT, "fixtures/golden-signed-scope.json");
 
 /** The 14 LedgerEntry.type values (docs/v3/verin-core-contracts.ts). */
 export const LEDGER_EVENT_TYPES = [
@@ -67,6 +71,45 @@ export const FRESHNESS = ["fresh", "stale", "unknown"] as const;
 
 export const SIGNOFF_PENDING = "pending-captain";
 export const SIGNOFF_SIGNED = "signed";
+/** The ONLY status amended-but-not-yet-countersigned bytes may claim. */
+export const AMENDMENT_AWAITING = "amended-awaiting-captain-countersignature";
+
+/**
+ * The hash of the CONTENT a golden case asserts - the bytes the captain's signature
+ * is about. The `signoff` and `amendment` blocks are excluded: they are the record
+ * OF the signature, not content it attests to, and folding them in would make the
+ * amendment hash self-referential and would make a countersignature look like a
+ * content change. Key order is normalized so reformatting is not a content change.
+ */
+export function goldenContentHash(value: unknown): string {
+  const sortDeep = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(sortDeep);
+    if (v !== null && typeof v === "object") {
+      const entries = Object.entries(v as Record<string, unknown>);
+      return Object.fromEntries(
+        entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, nested]) => [k, sortDeep(nested)]),
+      );
+    }
+    return v;
+  };
+  const rest = { ...(value as Record<string, unknown>) };
+  delete rest.amendment;
+  delete rest.signoff;
+  return createHash("sha256").update(JSON.stringify(sortDeep(rest))).digest("hex");
+}
+
+/** caseId -> the content hash the captain signed. Lives OUTSIDE the signed bytes so
+ * amending a case cannot quietly amend the record of what was signed. */
+export type SignedScope = Readonly<Record<string, string>>;
+
+export function loadSignedScope(text = existsSync(SIGNED_SCOPE) ? readFileSync(SIGNED_SCOPE, "utf8") : ""): SignedScope {
+  if (text.trim() === "") return {};
+  const parsed = JSON.parse(text) as { cases?: unknown };
+  const cases = parsed.cases;
+  return typeof cases === "object" && cases !== null && !Array.isArray(cases)
+    ? (cases as SignedScope)
+    : {};
+}
 
 /**
  * The minimum truth set the spec (prompt 2) enumerates by name. Every one of
@@ -137,7 +180,8 @@ export interface LoadedCase {
 export function loadGoldenCases(dir = GOLDEN_DIR): LoadedCase[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((f) => f.endsWith(".json"))
+    // signed-scope.json is the LEDGER of what was signed, not a case.
+    .filter((f) => f.endsWith(".json") && f !== "signed-scope.json")
     .sort()
     .map((f) => ({ rel: `fixtures/golden/${f}`, data: JSON.parse(readFileSync(join(dir, f), "utf8")) as unknown }));
 }
@@ -154,7 +198,12 @@ const isNonEmptyArray = (v: unknown): v is unknown[] => Array.isArray(v) && v.le
  * flat list of human-readable problems (empty = every case is complete, well-typed,
  * vocabulary-aligned, internally consistent, and mirrored in the doc).
  */
-export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, docText: string): string[] {
+export function validateGoldenCases(
+  cases: LoadedCase[],
+  refs: ScenarioRefs,
+  docText: string,
+  signedScope: SignedScope = loadSignedScope(),
+): string[] {
   const problems: string[] = [];
   const seenIds = new Set<string>();
   const seenSpecNames = new Set<string>();
@@ -226,6 +275,46 @@ export function validateGoldenCases(cases: LoadedCase[], refs: ScenarioRefs, doc
         if (!isNonEmptyString(s.signedAt)) P("signoff.signedAt must be populated when status is signed");
       } else {
         P(`signoff.status must be "${SIGNOFF_PENDING}" or "${SIGNOFF_SIGNED}", got ${JSON.stringify(s.status)}`);
+      }
+    }
+
+    // AMENDED BYTES. The signoff block above attests only to the content the
+    // captain was given; the ledger (fixtures/golden/signed-scope.json) records
+    // that content's hash and lives outside the signed bytes. So: content that
+    // still matches the signed scope may not claim an amendment, and content that
+    // does NOT match MUST carry a complete, self-consistent one. A signed-status
+    // claim over amended bytes with no amendment block is exactly the silent
+    // extension of the captain's signature this rejects.
+    if (isNonEmptyString(caseId)) {
+      const signedHash = signedScope[caseId];
+      const currentHash = goldenContentHash(c);
+      const a = c.amendment;
+      if (!isNonEmptyString(signedHash)) {
+        P(`no signed-scope entry for "${caseId}" (fixtures/golden-signed-scope.json records what the captain signed; add the case there in the PR that adds the case)`);
+      } else if (currentHash === signedHash) {
+        if (a !== undefined) {
+          P("amendment block present but the content still matches the signed scope (nothing was amended)");
+        }
+      } else if (!isObj(a)) {
+        P(`content differs from the captain-signed scope (${signedHash.slice(0, 12)} -> ${currentHash.slice(0, 12)}) with no amendment block; amended bytes may not carry a signed status`);
+      } else {
+        if (a.status !== AMENDMENT_AWAITING) {
+          P(`amendment.status must be "${AMENDMENT_AWAITING}", got ${JSON.stringify(a.status)}`);
+        }
+        if (!isNonEmptyString(a.amendedAt)) P("amendment.amendedAt missing or empty");
+        if (!isNonEmptyString(a.ruling)) P("amendment.ruling must name the recorded ruling that mandated the change");
+        if (!isNonEmptyArray(a.changes) || !a.changes.every(isNonEmptyString)) {
+          P("amendment.changes must state the exact change(s) as populated strings");
+        }
+        if (a.signedContentHash !== signedHash) {
+          P(`amendment.signedContentHash must equal the ledger's signed hash for "${caseId}"`);
+        }
+        if (a.amendedContentHash !== currentHash) {
+          P("amendment.amendedContentHash must equal the CURRENT content hash (a stale amendment describes bytes that no longer exist)");
+        }
+        if (isObj(s) && s.status === SIGNOFF_SIGNED && !isNonEmptyString(s.signedAt)) {
+          P("an amended case must retain its original signoff attribution");
+        }
       }
     }
 

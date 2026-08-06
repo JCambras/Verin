@@ -4,11 +4,19 @@ import {
 } from "@contracts/decision-core/serialization";
 import { IANA_TIME_ZONE_DATA_VERSION } from "@contracts/time-zone";
 import {
-  APPROVAL_CLOCKS,
   DEMO_REQUEST_REF,
   DEMO_TIME_ZONE,
   DEMO_TIMELINE,
+  SETUP_SCENARIO_ID,
 } from "./data";
+import {
+  APPROVAL_CLOCKS,
+  BANK_CHANGE_RECENCY_DAYS,
+  BANK_HANDLING,
+  FRESHNESS_DAYS,
+  RESERVE_MONTHS,
+  THRESHOLD_MINOR,
+} from "./closed-choices";
 import type { DecisionEvidenceSnapshot } from "./decision-evidence";
 import {
   DEMO_DECISION_ENGINE_VERSION,
@@ -20,16 +28,7 @@ import {
   SETUP_FIRM_IDS,
   type MoneyMovementSetupDefinitionVM,
 } from "./setup-model";
-import {
-  BANK_CHANGE_RECENCY_DAYS,
-  BANK_HANDLING,
-  FRESHNESS_DAYS,
-  RESERVE_MONTHS,
-  THRESHOLD_MINOR,
-  setupDefinitionFirmFor,
-} from "./setup-policy";
-
-export const SETUP_SCENARIO_ID = "recent-bank-change-block";
+import { setupDefinitionFirmFor } from "./setup-policy";
 
 export function setupVersionPreimageFor(
   definition: MoneyMovementSetupDefinitionVM,

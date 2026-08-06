@@ -6489,3 +6489,34 @@ now reports all three non-call references at the reviewed source and the invocat
 line assertions fail. The real-project direct-call enforcement and reviewed-callsite liveness tests
 pass in 3.44 seconds, and the complete 79-test fence passes in 17.60 seconds under the unchanged
 timeout.
+
+## PF-setup-46 · reserve results, signed-case attribution, and amended golden bytes are derived, not asserted
+
+**Date:** 2026-08-05.
+
+**Invariant:** three things that were previously asserted beside their evidence are now READ from
+it. (1) The cash-reserve precedence row and the record's reserve block state satisfaction from the
+projection that produced the disposition, never from a constant. (2) A signed-impact card's
+"Captain-signed case" label is derived from the fixture's own configuration and from material inputs
+both sides normalize the same way, so an exact match is genuinely detectable and a partial one is
+genuinely refused. (3) A golden case whose content no longer matches its captain-signed scope must
+carry an amendment block; the signed scope itself lives outside the signed bytes
+(`fixtures/golden-signed-scope.json`).
+
+**Fence:** `src/__tests__/fitness/demo-semantic-truth.test.ts` evaluates a holding and a breaching
+liquidity basis through `evaluateSetupPolicy`, requires the precedence row to print each projection's
+own result, and requires the two decision hashes to differ; it derives a signed impact's attribution
+through the production `impactAttribution` path from a fixture that binds the exact live
+configuration, requires the label to light, and requires nine independent material deviations to put
+it out; and it feeds seventeen malformed fixtures to `parseSignedSetupCase`, requiring the named
+refusal. `src/__tests__/fitness/golden-cases.test.ts` strips, staleness-breaks, forges, promotes, and
+guts amendment blocks against the real ledger.
+
+**Adversarial proof:** restoring the hardcoded `"Satisfied after this movement"` failed the reserve
+fence with `expected 'Satisfied after this movement' to contain 'Not satisfied'`. Restoring the
+unguarded `value as SignedSetupCase` cast failed the loader fence with
+`Cannot read properties of null (reading 'caseId')` instead of the named refusal. Deleting GC-09's
+amendment block failed golden validation with `content differs from the captain-signed scope
+(3d818c854d59 -> e70aa3a2d833) with no amendment block`; mutating an amended case's content without
+updating its amendment failed with `amendment.amendedContentHash must equal the CURRENT content
+hash`. All were reverted and the suites pass.

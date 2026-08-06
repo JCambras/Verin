@@ -45,7 +45,9 @@ export { buildAuthorityPlan };
  * watermarked demonstrations. The projection is fed the WHOLE signed basis -
  * available, pending, and the request being decided - so the journey and the setup
  * cannot model one request two ways. */
-function reserveProjectionFor(firm: FirmData) {
+export type ReserveProjection = ReturnType<typeof projectReserve>;
+
+export function reserveProjectionFor(firm: FirmData): ReserveProjection {
   return projectReserve({
     availableMinor: SMITHS_LIQUIDITY.availableMinor,
     pendingMinor: SMITHS_LIQUIDITY.pendingMinor,
@@ -90,9 +92,19 @@ type ReserveEvaluationState =
       readonly reason: string;
     };
 
+/**
+ * The three states a reserve check can honestly be in, and NOTHING else: evaluated
+ * (the projection ran - its own `reserveSatisfied` is the result), not evaluated (an
+ * input was missing, so no floor or headroom exists), or not applicable (precedence
+ * stopped first). The satisfaction sentence is READ from the projection that produced
+ * the disposition, never asserted beside it: this string feeds precedence row 2 and
+ * the record's reserve block, and both are hashed into `decisionHash`, so a hardcoded
+ * claim would sign a result the evaluator never established.
+ */
 function reserveEvaluationState(
   scenario: ScenarioData,
   kind: DispositionKind,
+  projection: ReserveProjection,
 ): ReserveEvaluationState {
   if (kind === "prohibited") {
     return {
@@ -123,7 +135,9 @@ function reserveEvaluationState(
   }
   return {
     kind: "evaluated",
-    result: "Satisfied after this movement",
+    result: projection.reserveSatisfied
+      ? "Satisfied after this movement"
+      : "Not satisfied - this movement would leave the household below the cash-reserve floor",
   };
 }
 
@@ -132,8 +146,13 @@ export function buildRecordReserve(
   firm: FirmData,
   disposition: DispositionVM,
   reserveHorizon: RecordProvenance,
+  projection: ReserveProjection = reserveProjectionFor(firm),
 ): RecordReserveVM {
-  const evaluation = reserveEvaluationState(scenario, disposition.kind);
+  const evaluation = reserveEvaluationState(
+    scenario,
+    disposition.kind,
+    projection,
+  );
   if (evaluation.kind !== "evaluated") {
     return {
       kind: evaluation.kind,
@@ -291,9 +310,14 @@ export function buildPolicyTrace(
   scenario: ScenarioData,
   firm: FirmData,
   kind: DispositionKind = dispositionFor(scenario, firm.id),
+  projection: ReserveProjection = reserveProjectionFor(firm),
 ): PolicyTraceVM {
   const spec = scenario.spec;
-  const reserveEvaluation = reserveEvaluationState(scenario, kind);
+  const reserveEvaluation = reserveEvaluationState(
+    scenario,
+    kind,
+    projection,
+  );
   const reserveCite = firm.id === "firm-a" ? `${firm.policyVersion} §2` : `${firm.policyVersion} §3`;
   const rows = [
     {

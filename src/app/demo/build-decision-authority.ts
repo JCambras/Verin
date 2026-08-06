@@ -6,7 +6,6 @@ import { prov } from "./provenance";
 import {
   CANONICAL_REQUEST,
   CAST,
-  DEFAULT_APPROVAL_CLOCK,
   DEMO_TIMELINE,
   OBSERVED_RECENT,
   demoTimestampLabel,
@@ -14,6 +13,9 @@ import {
   type FirmData,
   type ScenarioData,
 } from "./data";
+import {
+  DEFAULT_APPROVAL_CLOCK,
+} from "./closed-choices";
 import {
   automaticAuthorityPlan,
   unreachedAuthorityPlan,
@@ -186,6 +188,7 @@ export function buildAuthorityPlan(
   if (stages.length === 0) {
     return automaticAuthorityPlan(
       firm,
+      CANONICAL_REQUEST.amountMinor,
       prov("synthetic-fixture", OBSERVED_RECENT),
     );
   }

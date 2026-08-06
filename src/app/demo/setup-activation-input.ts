@@ -3,14 +3,21 @@ import {
   type JsonValue,
 } from "@contracts/decision-core/serialization";
 import { IANA_TIME_ZONE_DATA_VERSION } from "@contracts/time-zone";
-import { buildMoneyMovementSetup } from "./build-setup";
+import { loadMoneyMovementSetup } from "./build-setup";
 import {
-  APPROVAL_CLOCKS,
   DEMO_REQUEST_REF,
   DEMO_TIME_ZONE,
   DEMO_TIMELINE,
+  SETUP_SCENARIO_ID,
   scenarioById,
 } from "./data";
+import {
+  APPROVAL_CLOCKS,
+  BANK_HANDLING,
+  FRESHNESS_DAYS,
+  RESERVE_MONTHS,
+  THRESHOLD_MINOR,
+} from "./closed-choices";
 import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
@@ -33,15 +40,7 @@ import {
   type SetupPolicyGroupId,
   type SetupSelections,
 } from "./setup-model";
-import {
-  BANK_HANDLING,
-  FRESHNESS_DAYS,
-  RESERVE_MONTHS,
-  THRESHOLD_MINOR,
-} from "./setup-policy";
 import { setupVersionPreimageFor } from "./setup-version";
-
-export const SETUP_SCENARIO_ID = "recent-bank-change-block";
 
 export interface SetupActivationAuthorityBinding {
   readonly actor: {
@@ -208,7 +207,9 @@ export function validateSetupActivationDraft(
       error: `Unsupported setup combination: ${combinationName(value)}. Both firms and all five closed choice groups are required.`,
     };
   }
-  const vm = buildMoneyMovementSetup();
+  const setup = loadMoneyMovementSetup();
+  if (!setup.ok) return setup;
+  const vm = setup.vm;
   if (
     typeof setupVersionDigest !== "string" ||
     setupVersionDigest !== vm.setupVersionDigest

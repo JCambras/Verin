@@ -3730,3 +3730,60 @@ and factory-result laundering analysis. The split enforcement tests keep the com
 scan below the fixed timeout without narrowing its security scope.
 **Revert path:** replace whole-program scanning only with a transitive value-provenance analysis that
 proves forwarded, widened, returned, and callback-passed factory functions remain visible.
+
+### D-110 · 2026-08-05 · reversible · Reserve results and signed-case attribution are derived, never asserted
+
+The cash-reserve precedence row and the record's reserve block read `reserveSatisfied` from the
+projection that produced the disposition, threaded from `evaluateSetupPolicy` on the activated path.
+The three-state model (evaluated / not evaluated / not applicable) is unchanged; only the evaluated
+state's satisfaction sentence moved from a constant to the evidence. Signed-impact attribution is
+derived the same way: `signedSelectionKey` comes from the fixture's own stated configuration
+(reserve months, threshold, bank handling, the freshness window it names, and the clock its
+operations stage binds), and both sides of the material-input comparison are built by one set of
+normalizers, so an exact match is detectable and a partial one is refused. A group the case does not
+bind yields a null key, which is why every current real case truthfully stays non-signed.
+
+**Why:** the precedence rows are hashed into `decisionHash`. A hardcoded satisfaction claim and a
+hardcoded `signedSelectionKey: null` both signed an answer the evaluator never established - one
+optimistically, one pessimistically.
+**Revert path:** none while the reserve claim and the signed label appear on an exported record.
+
+### D-111 · 2026-08-05 · reversible · Signed golden bytes carry amendments; the signed scope lives outside them
+
+Fifteen golden cases were amended under the review-12 canonical-account ruling. Each keeps its
+2026-07-26 `signoff` block byte-intact and gains an `amendment` block stating the change, the ruling,
+the date, and the status `amended-awaiting-captain-countersignature`. The hash of what the captain
+actually signed is recorded in `fixtures/golden-signed-scope.json` - outside `fixtures/golden/` (so
+every file there is still a case) and outside the signed bytes (so amending a case cannot amend the
+record of what was signed). `golden:validate` enforces both directions.
+
+**Why:** a signature attests to bytes, not to a file name. Extending it to content the captain has
+not seen is the failure the amendment protocol exists to prevent.
+**Revert path:** the captain countersigns, at which point each amendment is folded into a fresh
+signoff and the ledger entry is re-baselined in the same PR.
+
+### D-112 · 2026-08-05 · reversible · Signed cases load through a guarded, non-cwd loader
+
+`loadSignedSetupCases()` finds `fixtures/golden` by walking up from its own module, reads on first
+CALL rather than at module init, validates every field it dereferences, and returns a typed failure.
+`loadMoneyMovementSetup()` turns that failure into the named refusal the setup page and both setup
+Server Actions render fail-closed.
+
+**Why:** the fixtures were read at module load, anchored on `process.cwd()`, and cast without a
+guard - so an unreadable or malformed fixture took the whole route down with a raw `fs` or
+undefined-property error instead of a governed refusal.
+**Revert path:** none; a build-time import was considered and rejected so `golden:validate` and the
+runtime keep reading the same bytes.
+
+### D-113 · 2026-08-05 · reversible · One E2E build, probed session readiness, and a fence-sized test budget
+
+`pnpm test:e2e` builds once and both Playwright configs share the artifact while keeping their own
+`VERIN_DATA_DIR`. `e2e/session-rotation.spec.ts` replaces its fixed 31-second sleeps with a probe
+that derives the renewal window from the session cookie the server issued. `vitest` test and hook
+timeouts move to 300s.
+
+**Why:** the suite built the app twice and slept through 62 seconds of wall clock. Separately, the
+whole-repo type-checked AST fences now take 40-90 seconds each, so at 20s they died on the clock
+rather than on a finding - red for a reason nobody can act on.
+**Revert path:** lower the timeout again once the fences share one type-checked program across test
+files instead of each building its own.

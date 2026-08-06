@@ -1,13 +1,14 @@
 import { metric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
 import {
-  CANONICAL_REQUEST,
   CAST,
   DEMO_TIMELINE,
   demoTimestampLabel,
-  type ApprovalClock,
   type FirmData,
 } from "./data";
+import {
+  type ApprovalClock,
+} from "./closed-choices";
 import type {
   ApprovalStageVM,
   AuthorityPlanVM,
@@ -30,8 +31,12 @@ export function unreachedAuthorityPlan(
   };
 }
 
+/** `requestMinor` is the amount the disposition was EVALUATED against, passed in by
+ * the caller that ran the evaluation. Reading a module constant here would let the
+ * printed rule name a different request than the one that produced the outcome. */
 export function automaticAuthorityPlan(
   firm: FirmData,
+  requestMinor: number,
   thresholdProvenance: RecordProvenance,
 ): AutomaticAuthorityVM {
   if (firm.standardApprovalRole !== null) {
@@ -39,16 +44,17 @@ export function automaticAuthorityPlan(
       "Automatic authority cannot carry a standard approval role",
     );
   }
-  const amount = `$${(
-    CANONICAL_REQUEST.amountMinor / 100
-  ).toLocaleString("en-US")}`;
+  if (requestMinor > firm.dualApprovalThresholdMinor) {
+    throw new Error(
+      "Automatic authority cannot resolve a request above the dual-approval threshold",
+    );
+  }
+  const amount = `$${(requestMinor / 100).toLocaleString("en-US")}`;
   const threshold = `$${(
     firm.dualApprovalThresholdMinor / 100
   ).toLocaleString("en-US")}`;
   const relation =
-    CANONICAL_REQUEST.amountMinor < firm.dualApprovalThresholdMinor
-      ? "below"
-      : "at";
+    requestMinor < firm.dualApprovalThresholdMinor ? "below" : "at";
   return {
     mode: "automatic",
     summary: "Automatic authority",
@@ -88,7 +94,11 @@ export function evaluateAuthorityPlan(
     );
   }
   if (evaluation.authority.mode === "automatic") {
-    return automaticAuthorityPlan(firm, thresholdProvenance);
+    return automaticAuthorityPlan(
+      firm,
+      evaluation.requestMinor,
+      thresholdProvenance,
+    );
   }
   if (firm.standardApprovalRole !== "operations") {
     throw new Error(

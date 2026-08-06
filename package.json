@@ -18,7 +18,7 @@
     "test:integration": "vitest run src/__tests__/integration",
     "test:fitness": "vitest run src/__tests__/fitness",
     "test:watch": "vitest",
-    "test:e2e": "playwright test && playwright test --config playwright.rotation.config.ts",
+    "test:e2e": "corepack pnpm build && playwright test && playwright test --config playwright.rotation.config.ts",
     "knip": "knip",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:seed": "tsx scripts/db-seed.ts",

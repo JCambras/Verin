@@ -1,49 +1,30 @@
 import { projectReserve } from "@domain/money-movement/reserve-projection";
 import {
-  APPROVAL_CLOCKS,
   DEMO_TIMELINE,
   FIRMS,
   SMITHS_LIQUIDITY,
-  type ApprovalClock,
   type FirmData,
   type SignedLiquidityCase,
 } from "./data";
+import {
+  APPROVAL_CLOCKS,
+  BANK_CHANGE_RECENCY_DAYS,
+  BANK_HANDLING,
+  FRESHNESS_DAYS,
+  RESERVE_MONTHS,
+  THRESHOLD_MINOR,
+  closedChoiceValue,
+  type ApprovalClock,
+} from "./closed-choices";
 import type { RequesterParticipation } from "./model";
 import type {
   SetupFirmId,
   SetupSelections,
 } from "./setup-model";
 
-export const RESERVE_MONTHS: Readonly<Record<string, number>> = {
-  "6-months": 6,
-  "9-months": 9,
-  "12-months": 12,
-};
-
-export const FRESHNESS_DAYS: Readonly<Record<string, number>> = {
-  "7-days": 7,
-  "14-days": 14,
-  "30-days": 30,
-};
-
-export const BANK_CHANGE_RECENCY_DAYS = 7;
-
 export const SETUP_REQUESTER_PARTICIPATION = Object.freeze({
   mode: "unbound",
 } as const);
-
-export const BANK_HANDLING: Readonly<
-  Record<string, FirmData["bankChangeHandling"]>
-> = {
-  specialist: "specialist-review",
-  block: "block-until-independently-verified",
-};
-
-export const THRESHOLD_MINOR: Readonly<Record<string, number>> = {
-  "25000": 2_500_000,
-  "50000": 5_000_000,
-  "100000": 10_000_000,
-};
 
 export type SetupAuthorityResolution =
   | {
@@ -60,6 +41,10 @@ export type SetupAuthorityResolution =
     };
 
 export interface SetupPolicyEvaluation {
+  /** The request this evaluation was actually run against. Every sentence a caller
+   * prints about the amount reads THIS, never a module constant: a rule printed from
+   * a different request than the one evaluated is a rule the evaluator never applied. */
+  readonly requestMinor: number;
   readonly reserveMonths: number;
   readonly freshnessDays: number;
   readonly bankChangeHandling: FirmData["bankChangeHandling"];
@@ -152,18 +137,6 @@ export function setupResolvedConfiguration(
   };
 }
 
-function setting(
-  table: Readonly<Record<string, number>>,
-  id: string,
-  label: string,
-): number {
-  const value = table[id];
-  if (value === undefined) {
-    throw new Error(`Unsupported ${label} selection: ${id}`);
-  }
-  return value;
-}
-
 function evidenceAgeDays(
   evaluatedAt: string,
   observedAt: string,
@@ -184,24 +157,22 @@ export function evaluateSetupPolicy(
   evaluatedAt: string = DEMO_TIMELINE.decisionCreatedAt,
 ): SetupPolicyEvaluation {
   const firmSelections = selections[firmId];
-  const reserveMonths = setting(
+  const reserveMonths = closedChoiceValue(
     RESERVE_MONTHS,
     firmSelections.reserve,
     "reserve",
   );
-  const freshnessDays = setting(
+  const freshnessDays = closedChoiceValue(
     FRESHNESS_DAYS,
     firmSelections.freshness,
     "freshness",
   );
-  const bankChangeHandling =
-    BANK_HANDLING[firmSelections["bank-change"]];
-  if (!bankChangeHandling) {
-    throw new Error(
-      `Unsupported bank-change selection: ${firmSelections["bank-change"]}`,
-    );
-  }
-  const dualApprovalThresholdMinor = setting(
+  const bankChangeHandling = closedChoiceValue(
+    BANK_HANDLING,
+    firmSelections["bank-change"],
+    "bank-change",
+  );
+  const dualApprovalThresholdMinor = closedChoiceValue(
     THRESHOLD_MINOR,
     firmSelections.threshold,
     "threshold",
@@ -251,6 +222,7 @@ export function evaluateSetupPolicy(
         ? { mode: "automatic", standardApprovalRole: null }
         : { mode: "staged", standardApprovalRole: "operations" };
   return {
+    requestMinor: liquidity.requestMinor,
     reserveMonths,
     freshnessDays,
     bankChangeHandling,

@@ -1,10 +1,21 @@
+/**
+ * Signed-impact attribution: whether what an impact card SHOWS for one firm is the
+ * captain-signed case itself, or a projection from it.
+ *
+ * Both sides of that question are built by the SAME normalizers below - one request
+ * shape, one evidence shape, one resolved-configuration shape, one authority shape -
+ * so an exact match is detectable rather than structurally impossible. The signed
+ * side states only what the fixture binds; whatever it cannot bind is recorded in
+ * `missingMaterialInputs` and omitted from BOTH sides, so neither hash quietly
+ * carries a value the captain never saw. `signedSelectionKey` comes from the
+ * fixture's own configuration (setup-signed-cases), so a case that binds an
+ * incomplete configuration truthfully never matches anything.
+ */
 import {
   hashCanonicalPreimage,
   toJsonValue,
 } from "./decision-identity";
 import {
-  APPROVAL_CLOCKS,
-  CANONICAL_REQUEST,
   DEMO_NOW,
   DESTINATION_RESTRICTION,
   FIRMS,
@@ -13,10 +24,12 @@ import {
   type SignedLiquidityCase,
 } from "./data";
 import {
+  APPROVAL_CLOCKS,
+} from "./closed-choices";
+import {
   decisionEvidenceSnapshotFor,
   type DecisionEvidenceSnapshot,
 } from "./decision-evidence";
-import { decisionAuthorityClaimFor } from "./decision-authority-claim";
 import { prov } from "./provenance";
 import {
   SETUP_FIRM_IDS,
@@ -35,10 +48,18 @@ import {
 import {
   signedCaseEvaluationEvidence,
   signedCaseMaterialEvidence,
-  signedCaseRequestMaterial,
-  signedCaseResolvedConfiguration,
   type SignedSetupCase,
 } from "./setup-signed-cases";
+import {
+  authorityPlanMaterial,
+  signedCaseAuthorityMaterial,
+  signedCaseMaterialGaps,
+  signedCaseRequestMaterial,
+  signedCaseResolvedConfiguration,
+  signedCaseSelections,
+  type NormalizedAuthorityMaterial,
+  type NormalizedResolvedConfiguration,
+} from "./signed-case-binding";
 
 export const DEFAULT_SETUP_SELECTIONS: SetupSelections = {
   "firm-a": {
@@ -92,7 +113,7 @@ export function signedImpactMaterialInputHash(
     toJsonValue({
       hashKind: "money-movement-signed-impact-input",
       preimageVersion:
-        "money-movement-signed-impact-input/4.0.0",
+        "money-movement-signed-impact-input/5.0.0",
       phase: value.phase,
       impactId: value.impactId,
       caseRef: value.caseRef,
@@ -109,44 +130,55 @@ export function signedImpactMaterialInputHash(
   );
 }
 
-function missingFixtureInputs(
-  caseFile: SignedSetupCase,
-): readonly string[] {
-  const evidenceMaterial =
-    signedCaseMaterialEvidence(caseFile);
-  const inputs = evidenceMaterial.evaluatorInputs;
-  return [
-    "phase",
-    "request.text",
-    "request.purpose",
-    "request.deadline",
-    "firmConfiguration.freshnessDays",
-    "firmConfiguration.approvalClock",
-    "selectionKey",
-    ...Object.entries(inputs)
-      .filter(([, value]) => value === null)
-      .map(([key]) => `evidence.${key}`),
-  ];
+/** A signed case is a first (initial) evaluation, never a revalidation. Both sides
+ * of the comparison therefore speak the same phase. */
+const MATERIAL_PHASE = "initial";
+
+/** Null out the fields the signed case does not bind, so the projected side cannot
+ * bind a value the signed side never stated (and then claim they match). */
+function withGaps(
+  configuration: NormalizedResolvedConfiguration,
+  gaps: readonly string[],
+): NormalizedResolvedConfiguration {
+  return {
+    ...configuration,
+    freshnessDays: gaps.includes(
+      "resolvedConfiguration.freshnessDays",
+    )
+      ? null
+      : configuration.freshnessDays,
+    approvalClockId: gaps.includes(
+      "resolvedConfiguration.approvalClockId",
+    )
+      ? null
+      : configuration.approvalClockId,
+  };
 }
 
 export function signedImpactFixtureMaterialInput(
   impact: SignedImpactDescriptor,
   caseFile: SignedSetupCase,
 ): SignedImpactMaterialInput {
+  const gaps = signedCaseMaterialGaps(caseFile);
+  const selections = signedCaseSelections(caseFile);
   return {
-    phase: null,
+    phase: MATERIAL_PHASE,
     impactId: impact.id,
     caseRef: impact.caseRef,
     scenarioId: caseFile.scenarioRef,
     firmId: caseFile.firm,
     request: signedCaseRequestMaterial(caseFile),
-    evidence: signedCaseMaterialEvidence(caseFile),
-    resolvedConfiguration:
+    evidence: signedCaseEvidenceMaterial(caseFile),
+    resolvedConfiguration: withGaps(
       signedCaseResolvedConfiguration(caseFile),
-    authority: caseFile.expectedAuthority,
+      gaps,
+    ),
+    authority: signedCaseAuthorityMaterial(caseFile),
     dispositionKind: caseFile.expectedDisposition,
-    selectionKey: null,
-    missingMaterialInputs: missingFixtureInputs(caseFile),
+    selectionKey: selections
+      ? setupFirmSelectionKey(selections)
+      : null,
+    missingMaterialInputs: gaps,
   };
 }
 
@@ -155,6 +187,7 @@ function previewMaterialInput(
   signedCase: SignedImpactCase,
   firmId: SetupFirmId,
 ): SignedImpactMaterialInput {
+  const gaps = signedCaseMaterialGaps(signedCase.fixture);
   const evaluation = evaluateSetupPolicy(
     DEFAULT_SETUP_SELECTIONS,
     firmId,
@@ -167,62 +200,60 @@ function previewMaterialInput(
     evaluation,
     FIRMS[firmId]!.policyVersion,
   );
-  const authorityClaim = decisionAuthorityClaimFor(
-    evaluateAuthorityPlan(
-      firm,
-      evaluation,
-      APPROVAL_CLOCKS[
-        DEFAULT_SETUP_SELECTIONS[firmId].expiry
-      ]!,
-      prov("deterministic-engine-output", DEMO_NOW),
-    ),
+  const authorityPlan = evaluateAuthorityPlan(
+    firm,
+    evaluation,
+    APPROVAL_CLOCKS[
+      DEFAULT_SETUP_SELECTIONS[firmId].expiry
+    ]!,
+    prov("deterministic-engine-output", DEMO_NOW),
   );
+  const resolved = setupResolvedConfiguration(
+    DEFAULT_SETUP_SELECTIONS,
+    firmId,
+    evaluation,
+  );
+  const configuration: NormalizedResolvedConfiguration = {
+    policyVersions: {
+      firmPolicyVersionId: firm.policyVersion,
+      householdInstructionVersionIds: [
+        DESTINATION_RESTRICTION.ref,
+      ],
+      regulatoryVersionId: null,
+    },
+    reserveMonths: resolved.reserveMonths,
+    freshnessDays: resolved.freshnessDays,
+    bankChangeHandling: resolved.bankChangeHandling,
+    dualApprovalThresholdMinor:
+      resolved.dualApprovalThresholdMinor,
+    approvalsRequired: resolved.approvalsRequired,
+    distinctActorsRequired: resolved.distinctActorsRequired,
+    requesterParticipation: resolved.requesterParticipation,
+    approvalClockId: resolved.approvalClock.id,
+  };
+  const authority: NormalizedAuthorityMaterial =
+    authorityPlanMaterial(
+      authorityPlan,
+      evaluation.requesterParticipation,
+    );
   return {
-    phase: "initial",
+    phase: MATERIAL_PHASE,
     impactId: impact.id,
     caseRef: impact.caseRef,
     scenarioId: impact.scenarioId,
     firmId,
     request: {
       trigger: signedCase.fixture.trigger,
-      evaluatorRequest: {
-        ...CANONICAL_REQUEST,
-        amountMinor: signedCase.liquidity.requestMinor,
-      },
+      amountMinor: signedCase.liquidity.requestMinor,
     },
     evidence: signedCase.evidenceMaterial,
-    resolvedConfiguration: {
-      policyVersions: {
-        domainConfigVersionId: null,
-        firmPolicyVersionId: firm.policyVersion,
-        householdInstructionVersionIds: [
-          DESTINATION_RESTRICTION.ref,
-        ],
-        regulatoryVersionId: null,
-      },
-      ...setupResolvedConfiguration(
-        DEFAULT_SETUP_SELECTIONS,
-        firmId,
-        evaluation,
-      ),
-    },
-    authority: {
-      claim: authorityClaim,
-      requesterMayApprove:
-        authorityClaim.mode === "staged"
-          ? authorityClaim.requesterParticipation.mode ===
-            "excluded"
-            ? false
-            : null
-          : null,
-    },
+    resolvedConfiguration: withGaps(configuration, gaps),
+    authority,
     dispositionKind: evaluation.dispositionKind,
     selectionKey: setupFirmSelectionKey(
       DEFAULT_SETUP_SELECTIONS[firmId],
     ),
-    missingMaterialInputs: [
-      "resolvedConfiguration.policyVersions.domainConfigVersionId",
-    ],
+    missingMaterialInputs: gaps,
   };
 }
 
@@ -232,45 +263,51 @@ export function impactAttribution(
   signedFirms: readonly SetupFirmId[] = SETUP_FIRM_IDS,
 ): SignedImpactAttributionVM {
   return Object.fromEntries(
-    SETUP_FIRM_IDS.map((firmId) => [
-      firmId,
-      {
-        previewMaterialInputHash:
-          signedImpactMaterialInputHash(
-            previewMaterialInput(
-              impact,
-              cases[firmId],
-              firmId,
-            ),
-          ),
-        signedMaterialInputHash: signedFirms.includes(
-          firmId,
-        )
-          ? signedImpactMaterialInputHash(
-              signedImpactFixtureMaterialInput(
+    SETUP_FIRM_IDS.map((firmId) => {
+      const fixture = cases[firmId].fixture;
+      const signed = signedFirms.includes(firmId);
+      const selections = signed
+        ? signedCaseSelections(fixture)
+        : null;
+      return [
+        firmId,
+        {
+          previewMaterialInputHash:
+            signedImpactMaterialInputHash(
+              previewMaterialInput(
                 impact,
-                cases[firmId].fixture,
+                cases[firmId],
+                firmId,
               ),
-            )
-          : null,
-        signedSelectionKey: null,
-      },
-    ]),
+            ),
+          signedMaterialInputHash: signed
+            ? signedImpactMaterialInputHash(
+                signedImpactFixtureMaterialInput(
+                  impact,
+                  fixture,
+                ),
+              )
+            : null,
+          signedSelectionKey: selections
+            ? setupFirmSelectionKey(selections)
+            : null,
+        },
+      ];
+    }),
   ) as SignedImpactAttributionVM;
 }
 
 function projectedEvidenceMaterial(
+  caseFile: SignedSetupCase,
   snapshot: DecisionEvidenceSnapshot,
   liquidity: SignedLiquidityCase,
-  evaluatedAt: string,
 ) {
   return {
     source: "demo-projection",
-    phase: snapshot.phase,
-    ref: snapshot.ref,
-    retrievedAt: snapshot.retrievedAt,
+    caseId: caseFile.caseId,
+    canonicalEvidence: null,
     evaluatorInputs: {
-      evaluatedAt,
+      evaluatedAt: caseFile.trigger.asOf,
       availableMinor: liquidity.availableMinor,
       pendingMinor: liquidity.pendingMinor,
       requestMinor: liquidity.requestMinor,
@@ -278,57 +315,21 @@ function projectedEvidenceMaterial(
         snapshot.plannedMonthlyWithdrawal.value,
       plannedObservedAt:
         snapshot.plannedMonthlyWithdrawal.provenance.asOf,
+      plannedRetrievedAt: snapshot.retrievedAt,
       bankInstructionObservedAt:
         snapshot.bankInstruction.provenance.asOf,
+      bankInstructionRetrievedAt: snapshot.retrievedAt,
       bankInstructionIndependentlyVerified:
         snapshot.bankInstruction.value
           .independentlyVerified,
     },
-    plannedMonthlyWithdrawal:
-      snapshot.plannedMonthlyWithdrawal,
-    bankInstruction: snapshot.bankInstruction,
   };
 }
 
-function canonicalEvidenceMaterial(
-  evidence: NonNullable<
-    ReturnType<typeof signedCaseEvaluationEvidence>
-  >,
-  fixture: SignedSetupCase,
-  liquidity: SignedLiquidityCase,
-) {
+function signedCaseEvidenceMaterial(caseFile: SignedSetupCase) {
   return {
     source: "captain-signed-fixture",
-    evaluatorInputs: {
-      evaluatedAt: fixture.trigger.asOf,
-      availableMinor: liquidity.availableMinor,
-      pendingMinor: liquidity.pendingMinor,
-      requestMinor: liquidity.requestMinor,
-      plannedMonthlyMinor:
-        evidence.plannedMonthlyWithdrawal.value,
-      plannedObservedAt:
-        evidence.plannedMonthlyWithdrawal.canonical
-          .observedAt,
-      plannedRetrievedAt:
-        evidence.plannedMonthlyWithdrawal.canonical
-          .retrievedAt,
-      bankInstructionObservedAt:
-        evidence.bankInstruction.canonical.observedAt,
-      bankInstructionRetrievedAt:
-        evidence.bankInstruction.canonical.retrievedAt,
-      bankInstructionIndependentlyVerified:
-        evidence.bankInstruction.value
-          .independentlyVerified,
-    },
-    plannedMonthlyWithdrawal: {
-      value: evidence.plannedMonthlyWithdrawal.value,
-      canonical:
-        evidence.plannedMonthlyWithdrawal.canonical,
-    },
-    bankInstruction: {
-      value: evidence.bankInstruction.value,
-      canonical: evidence.bankInstruction.canonical,
-    },
+    ...signedCaseMaterialEvidence(caseFile),
   };
 }
 
@@ -343,12 +344,7 @@ export function signedImpactCase(
     return {
       fixture,
       evaluationEvidence: canonicalEvidence,
-      evidenceMaterial:
-        canonicalEvidenceMaterial(
-          canonicalEvidence,
-          fixture,
-          liquidity,
-        ),
+      evidenceMaterial: signedCaseEvidenceMaterial(fixture),
       liquidity,
     };
   }
@@ -358,12 +354,11 @@ export function signedImpactCase(
   return {
     fixture,
     evaluationEvidence: projectedEvidence,
-    evidenceMaterial:
-      projectedEvidenceMaterial(
-        projectedEvidence,
-        liquidity,
-        fixture.trigger.asOf,
-      ),
+    evidenceMaterial: projectedEvidenceMaterial(
+      fixture,
+      projectedEvidence,
+      liquidity,
+    ),
     liquidity,
   };
 }

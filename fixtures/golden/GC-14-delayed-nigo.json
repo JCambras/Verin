@@ -14,6 +14,17 @@
     "signedAt": "2026-07-26",
     "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a delayed NIGO reopens NOTHING retroactively: the original decision stays as recorded, the NIGO is a new observed fact, and remediation is a derived exception decision."
   },
+  "amendment": {
+    "status": "amended-awaiting-captain-countersignature",
+    "amendedAt": "2026-08-05",
+    "ruling": "decisions setup-opus-b6-fresh-review-12 (canonical-account ruling: the Smiths taxable source account is subject:smiths-family-taxable, distinct from Joint Taxable) and its review-13/review-14 siblings.",
+    "changes": [
+      "Renamed the source account subjectRef from subject:smiths-joint-taxable to subject:smiths-family-taxable, and rewrote the prose that named the old account, so the golden truth set and the demonstration name ONE canonical taxable source."
+    ],
+    "signedContentHash": "d044289bd6b81910afff8b57bf70a68c695e710bebfd34e650d914937e3ec6d6",
+    "amendedContentHash": "91b5e6bfede1cebc4dcc60d5d75b1fcb2f68cb9e5acd87122094f4affb7fd55d",
+    "note": "The signoff block above is byte-intact and attests ONLY to the pre-amendment content it was given on 2026-07-26. These bytes are NOT captain-signed until the captain countersigns them; the countersignature request is routed separately."
+  },
   "trigger": {
     "kind": "human_request",
     "description": "Advisor enters the $75,000 request under Firm B; execution submits cleanly. Two business days later the custodian returns the instruction NIGO: the signature date on the disbursement form predates the form version.",

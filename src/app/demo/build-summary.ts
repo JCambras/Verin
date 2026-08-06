@@ -17,6 +17,8 @@ import {
   buildDisposition,
   buildPolicyTrace,
   buildRecordReserve,
+  reserveProjectionFor,
+  type ReserveProjection,
 } from "./build-decision";
 import { buildDecisionAuthorityPlan } from "./decision-authority";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
@@ -48,6 +50,10 @@ export interface RecordBuildOptions {
    * administrator's activated choice after setup. It changes the ADR-0022 leaf
    * classes behind the printed floor and headroom, never the arithmetic. */
   readonly reserveHorizon?: RecordProvenance;
+  /** The projection that PRODUCED this record's disposition. The activated path
+   * passes the evaluator's own projection so the precedence row and the printed
+   * reserve state cannot claim a satisfaction the evaluator did not establish. */
+  readonly reserveProjection?: ReserveProjection;
   readonly evidence?: DecisionEvidenceSnapshot;
 }
 
@@ -70,12 +76,15 @@ export function buildRecord(
     DEMO_NOW,
   );
   const reserveHorizon = options.reserveHorizon ?? FIXTURE_RESERVE_HORIZON;
+  const reserveProjection =
+    options.reserveProjection ?? reserveProjectionFor(firm);
   const disposition =
     options.disposition ?? buildDisposition(scenario, firm, undefined, reserveHorizon);
   const precedence = buildPolicyTrace(
     scenario,
     firm,
     disposition.kind,
+    reserveProjection,
   ).rows;
   const authority =
     options.authority ??
@@ -131,6 +140,7 @@ export function buildRecord(
       firm,
       disposition,
       reserveHorizon,
+      reserveProjection,
     ),
     authority: recordAuthority,
     safety: reached.safety ? buildSafety(scenario) : null,

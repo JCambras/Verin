@@ -17,6 +17,7 @@ import type { FactVM, FakeClass } from "./model";
 import {
   DEMO_NOW,
   OBSERVED_RECENT,
+  SETUP_SCENARIO_ID,
   scenarioById,
 } from "./data";
 import { decisionEvidenceSnapshotFor } from "./decision-evidence";
@@ -60,7 +61,7 @@ export function derivedMetric(value: number, format: MetricFormat, inputs: reado
  * one: an omitted leaf is exactly how a derived figure claims a narrower lineage than
  * the inputs it was computed from (ADR-0022's flattening rule). */
 const SIGNED_EVIDENCE = decisionEvidenceSnapshotFor(
-  scenarioById("recent-bank-change-block"),
+  scenarioById(SETUP_SCENARIO_ID),
 );
 const SIGNED_BALANCE = SIGNED_EVIDENCE.availableCash.provenance;
 const SIGNED_PENDING =

@@ -1,10 +1,46 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { ROTATION_SESSION_TTL_MINUTES } from "../playwright.config";
 import { login, PRINCIPAL } from "./helpers";
+
+const TTL_MS = ROTATION_SESSION_TTL_MINUTES * 60_000;
+/** `resolveAndRenewSession` slides a session once it passes the halfway mark of its
+ * TTL (RENEW_WHEN_REMAINING_FRACTION). */
+const RENEW_WHEN_REMAINING_FRACTION = 0.5;
+
+async function sessionCookie(page: Page) {
+  const cookie = (await page.context().cookies()).find(
+    (candidate) => candidate.name === "verin_session",
+  );
+  if (!cookie) throw new Error("no verin_session cookie is set");
+  return cookie;
+}
+
+/**
+ * Wait until the CURRENT session has actually crossed its renewal half-life, read
+ * from the cookie the server just issued rather than from a hand-tuned sleep. The
+ * probe returns the moment the window opens, and a session that never opens one
+ * fails loudly instead of passing on a sleep that happened to be long enough.
+ */
+async function waitForRenewalWindow(page: Page): Promise<void> {
+  const cookie = await sessionCookie(page);
+  expect(
+    cookie.expires,
+    "the session cookie must carry a server-issued expiry",
+  ).toBeGreaterThan(0);
+  const renewsAtMs =
+    cookie.expires * 1000 - TTL_MS * RENEW_WHEN_REMAINING_FRACTION;
+  await expect
+    .poll(() => Date.now() >= renewsAtMs, {
+      timeout: TTL_MS,
+      intervals: [250],
+    })
+    .toBe(true);
+}
 
 test("session rotation preserves setup state only within the same login lineage", async ({
   page,
 }) => {
-  test.setTimeout(130_000);
+  test.setTimeout(TTL_MS * 2 + 60_000);
   await login(page, PRINCIPAL);
   await page.goto("/app/demo/setup");
   for (const label of [
@@ -18,11 +54,9 @@ test("session rotation preserves setup state only within the same login lineage"
   }
   await page.getByRole("checkbox").check();
   await page.getByTestId("setup-attestation").waitFor();
-  const cookieBeforeAttestationRotation = (
-    await page.context().cookies()
-  ).find((cookie) => cookie.name === "verin_session")!.value;
+  const cookieBeforeAttestationRotation = (await sessionCookie(page)).value;
 
-  await page.waitForTimeout(31_000);
+  await waitForRenewalWindow(page);
   await page
     .getByRole("button", {
       name: "Acknowledge and activate demonstration",
@@ -37,19 +71,15 @@ test("session rotation preserves setup state only within the same login lineage"
     await page.getByTestId("request-snapshot-hash").textContent()
   )?.trim();
   expect(activation).toMatch(/^[a-f0-9]{64}$/);
-  const cookieAfterAttestationRotation = (
-    await page.context().cookies()
-  ).find((cookie) => cookie.name === "verin_session")!.value;
+  const cookieAfterAttestationRotation = (await sessionCookie(page)).value;
   expect(cookieAfterAttestationRotation).not.toBe(
     cookieBeforeAttestationRotation,
   );
 
-  await page.waitForTimeout(31_000);
+  await waitForRenewalWindow(page);
   const renewed = await page.goto("/api/me");
   expect(renewed?.status()).toBe(200);
-  const cookieAfterSnapshotRotation = (
-    await page.context().cookies()
-  ).find((cookie) => cookie.name === "verin_session")!.value;
+  const cookieAfterSnapshotRotation = (await sessionCookie(page)).value;
   expect(cookieAfterSnapshotRotation).not.toBe(
     cookieAfterAttestationRotation,
   );

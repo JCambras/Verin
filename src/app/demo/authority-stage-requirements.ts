@@ -1,14 +1,21 @@
 import {
   DEMO_TIMELINE,
-  approvalExpiryAt,
-  type ApprovalClock,
   type FirmData,
 } from "./data";
+import {
+  approvalExpiryAt,
+  type ApprovalClock,
+} from "./closed-choices";
 import type {
   AuthorityStageRequirementVM,
   RearmedAuthorityStageVM,
   RequesterApprovalEligibility,
 } from "./model";
+
+/** The stage ids the demo mints and the golden cases sign, named once so the
+ * signed-case reader and the builder cannot drift apart on a string. */
+export const SPECIALIST_STAGE_ID = "bank-change-specialist-review";
+export const OPERATIONS_STAGE_ID = "ops-dual-approval";
 
 const SPECIALIST_REVIEW_ESCALATES_AFTER = "P1D";
 const SPECIALIST_REVIEW_EXPIRES_AFTER = "P2D";
@@ -31,7 +38,7 @@ export function specialistStageRequirementFor(
   order: number,
 ): AuthorityStageRequirementVM {
   return {
-    stageId: "bank-change-specialist-review",
+    stageId: SPECIALIST_STAGE_ID,
     order,
     executionMode: "sequential",
     eligibleRoleIds: ["bank-change-specialist"],
@@ -82,7 +89,7 @@ export function operationsStageRequirementFor(
     );
   }
   return {
-    stageId: "ops-dual-approval",
+    stageId: OPERATIONS_STAGE_ID,
     order,
     executionMode: "parallel",
     eligibleRoleIds: [firm.standardApprovalRole],

@@ -45,7 +45,9 @@ for (const { rel, data } of cases) {
   const mine = problems.filter((p) => p.startsWith(`${rel} ::`));
   const flag = mine.length === 0 ? green("✓") : red("✗");
   const signoffLabel = signoff === SIGNOFF_PENDING ? dim(String(signoff)) : bold(String(signoff));
-  console.log(`  ${flag} ${id}  ${dim(`disposition=${disposition}`)}  signoff=${signoffLabel}`);
+  const amendment = (c.amendment as Record<string, unknown> | undefined)?.status;
+  const amendmentLabel = amendment === undefined ? "" : `  ${bold(`amendment=${String(amendment)}`)}`;
+  console.log(`  ${flag} ${id}  ${dim(`disposition=${disposition}`)}  signoff=${signoffLabel}${amendmentLabel}`);
   for (const p of mine) console.log(red(`      └ ${p.slice(rel.length + 4)}`));
 }
 
