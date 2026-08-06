@@ -31,6 +31,8 @@ import {
   type LedgerEntry,
 } from "@contracts/decision-core/ledger";
 import {
+  CANONICAL_SERIALIZER_VERSION,
+  DECISION_CORE_SCHEMA_VERSION,
   bundleHashPreimage,
   canonicalJson,
   decisionHashPreimage,
@@ -58,6 +60,8 @@ import {
 } from "../helpers/ledger-fixtures";
 
 const TS = "2026-07-26T13:30:00.000Z";
+/** Well-formed, machine-shaped, and absent from the immutable plan. */
+const UNPLANNED_ID = "52345678-1234-4123-8123-123456789012";
 
 /**
  * The shipped reads are the verified ones: a grant-authorized listing comes with its
@@ -266,6 +270,20 @@ describe("decision ledger storage and L1-L4 verification", () => {
       primitive_set_version: "0",
       time_zone_data_version: "iana-tzdb/2026b",
     });
+    // The decision row's own codec key: replay dispatches the DECISION decoder from
+    // these two columns, so they state the decision's encoding, not the bundle's.
+    const decisionEncoding = await db.query<{
+      schema_version: string;
+      serializer_version: string;
+    }>(
+      `SELECT schema_version, serializer_version
+         FROM decision_records WHERE org_id = $1 AND id = $2`,
+      [LEDGER_ORG, "dec:GC-01:0001"],
+    );
+    expect(decisionEncoding.rows[0]).toEqual({
+      schema_version: DECISION_CORE_SCHEMA_VERSION,
+      serializer_version: CANONICAL_SERIALIZER_VERSION,
+    });
     const verification = await verifyDecisionLedger(db, LEDGER_TENANT);
     expect(verification.ok).toBe(true);
     expect(verification.entriesChecked).toBe(5);
@@ -470,6 +488,85 @@ describe("decision ledger storage and L1-L4 verification", () => {
       LEDGER_PII_GRANT,
     ))).toHaveLength(5);
   });
+
+  it("refuses payload fields the immutable execution plan does not authorize", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const samples = allLedgerEventSamples();
+    const started = samples.find((event) => event.type === "ExecutionStarted")!;
+    const created = samples.find((event) => event.type === "ReservationCreated")!;
+    const closed = samples.find((event) => event.type === "VerificationClosed")!;
+    const refusals = [
+      [
+        { ...started, idempotencyKey: UNPLANNED_ID },
+        "ledger idempotency key is absent from the immutable execution step",
+      ],
+      [
+        { ...created, reservationRef: { firmId: LEDGER_ORG, id: UNPLANNED_ID } },
+        "ledger reservation is absent from the immutable execution plan",
+      ],
+      [
+        { ...created, conflictKeys: [UNPLANNED_ID] },
+        "ledger conflict keys differ from the immutable execution plan",
+      ],
+      [
+        {
+          ...closed,
+          verificationRuleRef: { firmId: LEDGER_ORG, id: UNPLANNED_ID },
+        },
+        "ledger verification rule is absent from the immutable execution plan",
+      ],
+    ] as const;
+    for (const [candidate, message] of refusals) {
+      await expect(append(db, [LedgerEntrySchema.parse(candidate)]))
+        .rejects.toMatchObject({ code: "STORE_CONSTRAINT", message });
+    }
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(5);
+    // The plan-authorized values, unchanged, are the ones history accepts.
+    await expect(append(db, [started, created, closed])).resolves.toHaveLength(3);
+    expect((await verifyDecisionLedger(db, LEDGER_TENANT)).ok).toBe(true);
+  });
+
+  it.each([
+    [
+      "ExecutionStarted",
+      { idempotencyKey: UNPLANNED_ID },
+      "ledger idempotency key is absent from the immutable execution step",
+    ],
+    [
+      "ReservationCreated",
+      { conflictKeys: [UNPLANNED_ID] },
+      "ledger conflict keys differ from the immutable execution plan",
+    ],
+    [
+      "VerificationClosed",
+      { verificationRuleRef: { firmId: LEDGER_ORG, id: UNPLANNED_ID } },
+      "ledger verification rule is absent from the immutable execution plan",
+    ],
+  ] as const)(
+    "L2 re-proves the plan binding of a correctly rechained %s",
+    async (type, patch, reason) => {
+      const input = decisionRecordingInput();
+      expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+      const sample = allLedgerEventSamples().find(
+        (event) => event.type === type,
+      )!;
+      await expect(append(db, [sample])).resolves.toHaveLength(1);
+      expect((await verifyDecisionLedger(db, LEDGER_TENANT)).ok).toBe(true);
+
+      await rewriteLastLedgerEvent(db, (event) => LedgerEntrySchema.parse({
+        ...event,
+        ...patch,
+      }));
+      const result = await verifyDecisionLedger(db, LEDGER_TENANT);
+      expect(result.ok).toBe(false);
+      expect(result.levels.at(-1)).toMatchObject({ level: "L2", reason });
+    },
+  );
 
   it("L2 rejects a correctly rechained event with an unknown approval stage", async () => {
     const input = decisionRecordingInput();
@@ -1524,6 +1621,40 @@ describe("decision ledger storage and L1-L4 verification", () => {
     expect(failed.ok).toBe(false);
     // A bug or an outage must never be reported as a client-resolvable conflict.
     expect(failed.ok ? null : failed.error.code).toBe("INTERNAL");
+  });
+
+  it("keeps the classified refusal when savepoint recovery itself fails", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const event = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (sample) => sample.type === "ApprovalStageExpired",
+      )!,
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    const abort = new Error("test abort");
+    await expect(db.transaction(async (tx) => {
+      const exec = tx.exec.bind(tx);
+      tx.exec = (sql: string) =>
+        sql.startsWith("ROLLBACK TO SAVEPOINT")
+          ? Promise.reject(new TypeError("connection lost mid-recovery"))
+          : exec(sql);
+      await appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE);
+      // The same entry twice: the substrate refuses, and recovery cannot run. The
+      // caller still owes its transaction a verdict it can act on.
+      await expect(
+        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE),
+      ).rejects.toMatchObject({
+        code: "STORE_CONSTRAINT",
+        message: "decision ledger append violated a store constraint",
+      });
+      throw abort;
+    })).rejects.toBe(abort);
+    expect((await listDecisionLedger(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+    ))).toHaveLength(5);
   });
 
   it("persists evidence gathered after the decision and refuses an uncited snapshot", async () => {

@@ -7,6 +7,7 @@ import {
 import type { LedgerEntry } from "@contracts/decision-core/ledger";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import { assertLedgerEventPiiBoundary } from "./ledger-pii";
+import { decisionStructureReason } from "./ledger-decision-binding";
 import { parseRecordedReplaySource } from "./ledger-source-registry";
 
 interface DecisionSourceRow {
@@ -75,65 +76,6 @@ function parseDecisionBinding(row: DecisionSourceRow): DecisionBinding {
     bundleHash: row.bundle_hash,
     record: parsed.ok ? parsed.value : null,
   };
-}
-
-function referencedStageId(event: LedgerEntry): string | undefined {
-  switch (event.type) {
-    case "ApprovalRecorded":
-    case "ApprovalStageExpired":
-    case "ApprovalStageEscalated":
-      return event.stageId;
-    default:
-      return undefined;
-  }
-}
-
-function referencedStepId(event: LedgerEntry): string | undefined {
-  switch (event.type) {
-    case "ExecutionStarted":
-    case "ExecutionSucceeded":
-    case "ExecutionPartiallySucceeded":
-    case "ExecutionFailed":
-      return event.stepId;
-    default:
-      return undefined;
-  }
-}
-
-function decisionStructureReason(
-  event: LedgerEntry,
-  record: DecisionRecord,
-): string | null {
-  const stageId = referencedStageId(event);
-  if (stageId !== undefined) {
-    const authority = record.result.kind === "proceed"
-      ? record.result.authority
-      : undefined;
-    const stage = authority && authority.mode !== "automatic"
-      ? authority.stages.find((candidate) => candidate.stageId === stageId)
-      : undefined;
-    if (!stage) return "ledger approval stage is absent from the immutable decision";
-    if (event.type === "ApprovalStageEscalated") {
-      const escalation = stage.escalationPath[event.escalationStepIndex];
-      if (!escalation) {
-        return "ledger approval escalation is absent from the immutable stage";
-      }
-      const recordedRoles = escalation.roleIds.map((role) => role.id);
-      if (
-        event.reasonCode !== escalation.reasonCode ||
-        event.roleIds.length !== recordedRoles.length ||
-        event.roleIds.some((role, index) => role.id !== recordedRoles[index])
-      ) return "ledger approval escalation differs from the immutable stage";
-    }
-  }
-  const stepId = referencedStepId(event);
-  if (stepId !== undefined) {
-    const step = record.result.kind === "proceed"
-      ? record.result.executionPlan.steps.find((candidate) => candidate.id === stepId)
-      : undefined;
-    if (!step) return "ledger execution step is absent from the immutable decision";
-  }
-  return null;
 }
 
 function sourceBindingReason(
@@ -342,7 +284,8 @@ export async function assertLedgerHistoryOrdering(
 /**
  * Bind event hash claims to immutable source rows. This is storage consistency,
  * not decision evaluation: the event may describe any allowed outcome, but it
- * cannot name bytes other than the decision and bundle it references.
+ * cannot name bytes other than the decision and bundle it references, nor a
+ * structure or plan-owned field that decision never declared.
  */
 export async function assertLedgerSourceBindings(
   tx: SqlQueryable,

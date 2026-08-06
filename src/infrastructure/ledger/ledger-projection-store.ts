@@ -21,7 +21,6 @@ import {
   foldDecisionProjection,
   type DecisionProjection,
 } from "@domain/ledger/projections";
-import { assertLedgerHistoryOrdering } from "./ledger-bindings";
 
 /**
  * A projection with the provenance of the fold that produced it. A projection is a
@@ -112,7 +111,6 @@ async function prepareProjection(
   if (event.firmId !== tenant.orgId) {
     throw appError("AUTH_FAILED", "projection event tenant does not match write authority");
   }
-  await assertLedgerHistoryOrdering(tx, tenant, event, sequence);
   const loaded = await loadProjection(tx, event.firmId, event);
   if (
     event.type !== "DecisionRecorded" &&

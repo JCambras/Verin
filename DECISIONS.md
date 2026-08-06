@@ -3960,3 +3960,47 @@ confidence than it has.
 **Relates to:** ADR-0039, ADR-0044, ADR-0045, D-106, D-116, D-117.
 **Revert path:** migration 8 is forward-only and additive; the narrowed catch, the
 transitive fence, and the inline pointer are each independently revertible.
+
+### D-122 · 2026-08-06 · reversible · Ledger payload fields are bound to the immutable plan
+
+**The plan owns its keys, not just its step ids** (key `ledger-fresh-fix-review-f37-f38`).
+Append and L2 bound approval stages, escalation steps, and execution-step EXISTENCE to
+the immutable decision, but never the payload fields the plan itself declares: an
+`ExecutionStarted` naming a real step could carry any idempotency key, a
+`ReservationCreated` could name a reservation or conflict-key set the plan never
+declared, and a `VerificationClosed` could close against a rule no step owns - each
+accepted into history and then reported by replay as an authorized fact. The shared
+binding now resolves the OWNING plan action for those three events (a step and the
+compensating action it carries, which owns its own key, reservations, conflict keys, and
+rule) and refuses a mismatch with its own reason, at the append boundary and again when
+L2 re-proves stored history. A mismatch is REJECTED, never recorded as a labeled anomaly.
+What the immutable decision authorizes now lives in its own module
+(`ledger-decision-binding.ts`), leaving `ledger-bindings.ts` the storage-acceptance half:
+the combined file crossed the ADR-0018 per-file ceiling, and the seam is the real one.
+
+**A decision row states the decision's encoding.** `decision_records.schema_version` and
+`serializer_version` - the exact columns `parseRecordedReplaySource("decision", …)`
+dispatches on - were written from the cited BUNDLE's fields. They agree today only
+because the bundle schema pins the same literal; the first decision-core bump that let a
+record cite an older bundle would have named the wrong decoder for every stored decision.
+They are written from the decision-core constants, as evidence snapshots already were.
+
+**One ordering authority per path.** `rebuildDecisionProjections` proved ledger ordering
+set-wide in its L2 pass and then re-proved it per entry through `prepareProjection` - up
+to three extra round trips per event while holding the exclusive tenant lock, so an
+incident repair on a retained tenant blocked appends for work already done. The per-event
+proof moves to `appendPrepared`, where admission belongs: it runs before the row is
+inserted on the online path, and the rebuild keeps the batch pass as its only authority.
+
+**A failed recovery does not destroy the verdict.** `appendDecisionEvents` awaited
+`ROLLBACK TO SAVEPOINT` and `RELEASE SAVEPOINT` before classifying its error, so a
+connection lost mid-recovery replaced the typed `STORE_CONSTRAINT` with raw driver prose
+in the one place D-116 added the classification for. The error is classified first,
+recovery is attempted defensively, and the classified value reaches the caller either way.
+
+**Why:** a replay is only as trustworthy as the facts it refuses to accept, and a stored
+row that names the wrong decoder or a verdict that loses its reason are both failures
+that surface as a mystery months later.
+**Relates to:** ADR-0039, ADR-0044, ADR-0045, D-115, D-116, D-118.
+**Revert path:** the plan binding, the decision-row codec key, the moved ordering proof,
+and the defensive recovery are each independently revertible; no migration changed.

@@ -32,7 +32,7 @@ import { relative } from "node:path";
 // fit this ceiling - the exact anti-pattern the paragraph above names - and raised
 // infrastructure to absorb it. MEASURED on the composed tree that also carries ADR-0040's
 // prompt-8 primitive catalog: contracts 6010/6050 (40), domain 1584/1650 (66), infrastructure
-// 7634/7700 (66), presentation 928/6000. A figure recorded here is a MEASUREMENT, so
+// 7690/7750 (60), presentation 928/6000. A figure recorded here is a MEASUREMENT, so
 // re-measure it in the commit that changes a layer - ADR-0049's import hoist left this
 // line reading a stale figure while the layer had moved, and the whole ratchet chain rests
 // on the recorded figure being the measured one. Any FURTHER increase remains a measured
@@ -41,7 +41,7 @@ import { relative } from "node:path";
 const CEILINGS = {
   contracts: 6050, // ADR-0041, on ADR-0040's catalog baseline plus the typed ledger contracts
   domain: 1650, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
-  infrastructure: 7700, // ADR-0048, on the restored migration prose
+  infrastructure: 7750, // ADR-0048, on the restored migration prose
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 

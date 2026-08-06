@@ -46,9 +46,8 @@ import {
  */
 [
   "test:blob:status", "test:causal:forward", "test:causal:later",
-  "test:conflict:household-liquidity", "test:corr:ledger-test",
-  "test:crm-record", "test:custodian-submit", "test:decision:b",
-  "test:evidence:atomic-refusal", "test:firm-b:event",
+  "test:corr:ledger-test", "test:crm-record", "test:custodian-submit",
+  "test:decision:b", "test:evidence:atomic-refusal", "test:firm-b:event",
   "test:later-evidence:test:evidence:atomic-refusal", "test:ledger-test",
   "test:ledger:evidence:collision", "test:missing-cause", "test:ordered:first",
   "test:ordered:second", "test:projection:conflict-swallowed",
@@ -56,24 +55,24 @@ import {
   "test:projection:escalation", "test:projection:escalation-second",
   "test:projection:expiry", "test:projection:expiry-first",
   "test:projection:missing-generation", "test:projection:reservation-conflict",
-  "test:projection:reservation-reused", "test:projection:wrong-generation-release",
-  "test:reservation:b", "test:sample:approval", "test:sample:approval-escalated",
+  "test:projection:reservation-reused",
+  "test:projection:wrong-generation-release", "test:reservation:b",
+  "test:sample:approval", "test:sample:approval-escalated",
   "test:sample:approval-expired", "test:sample:approval-invalidated",
-  "test:sample:decision", "test:sample:evidence", "test:sample:exception-requested",
-  "test:sample:execution-failed", "test:sample:execution-partial",
-  "test:sample:execution-started", "test:sample:execution-succeeded",
-  "test:sample:reservation-created", "test:sample:reservation-released",
-  "test:sample:status-observed", "test:sample:verification-closed",
-  "test:sample:verification-stuck", "test:source", "test:subject:status",
-  "test:trigger:forward",
+  "test:sample:decision", "test:sample:evidence",
+  "test:sample:exception-requested", "test:sample:execution-failed",
+  "test:sample:execution-partial", "test:sample:execution-started",
+  "test:sample:execution-succeeded", "test:sample:reservation-created",
+  "test:sample:reservation-released", "test:sample:status-observed",
+  "test:sample:verification-closed", "test:sample:verification-stuck",
+  "test:source", "test:subject:status", "test:trigger:forward",
 ].forEach(registerTestLedgerIdentifier);
 [
   "test:actor:ops", "test:blob", "test:evidence", "test:evidence:status",
-  "test:handle", "test:idem:ledger",
-  "test:later-evidence:test:evidence:status", "test:ledger:decision",
-  "test:ledger:decision:dec:GC-01", "test:ledger:evidence",
-  "test:projection:bounded", "test:register:repeated-evidence",
-  "test:reservation", "test:subject", "test:verify",
+  "test:handle", "test:later-evidence:test:evidence:status",
+  "test:ledger:decision", "test:ledger:decision:dec:GC-01",
+  "test:ledger:evidence", "test:projection:bounded",
+  "test:register:repeated-evidence", "test:subject",
 ].forEach(registerTestLedgerIdentifierPrefix);
 
 export const LEDGER_ORG = "firm-a";
@@ -118,6 +117,31 @@ const fixture = (name: string): unknown =>
     join(ROOT, "fixtures", "decision-core", `${name}.json`),
     "utf8",
   ));
+
+/**
+ * The plan-owned payload fields of the golden proceed decision, read from the plan
+ * itself: an execution, reservation, or verification the immutable plan does not
+ * authorize is refused at both the append and the verification boundary, so a sample
+ * that hard-coded its own values would only ever exercise the refusal.
+ */
+const PLAN_STEP_FIXTURE = (fixture("decision-record-proceed") as {
+  result: {
+    executionPlan: {
+      steps: readonly {
+        id: string;
+        idempotencyKey: string;
+        conflictKeys: readonly string[];
+        reservationRefs: readonly { id: string }[];
+        verificationRuleRef: { id: string };
+      }[];
+    };
+  };
+}).result.executionPlan.steps[0]!;
+export const PLAN_STEP = PLAN_STEP_FIXTURE.id;
+export const PLAN_IDEMPOTENCY_KEY = PLAN_STEP_FIXTURE.idempotencyKey;
+export const PLAN_CONFLICT_KEY = PLAN_STEP_FIXTURE.conflictKeys[0]!;
+export const PLAN_RESERVATION = PLAN_STEP_FIXTURE.reservationRefs[0]!.id;
+export const PLAN_VERIFICATION_RULE = PLAN_STEP_FIXTURE.verificationRuleRef.id;
 
 function retainedTextProjection(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(retainedTextProjection);
@@ -356,15 +380,15 @@ export function allLedgerEventSamples(): LedgerEntry[] {
     {
       ...base("test:sample:reservation-created"),
       type: "ReservationCreated",
-      reservationRef: { firmId: LEDGER_ORG, id: "test:reservation:1" },
+      reservationRef: { firmId: LEDGER_ORG, id: PLAN_RESERVATION },
       decisionRef,
-      conflictKeys: ["test:conflict:household-liquidity"],
+      conflictKeys: [PLAN_CONFLICT_KEY],
       expiresAt: LEDGER_LATER,
     },
     {
       ...base("test:sample:reservation-released"),
       type: "ReservationReleased",
-      reservationRef: { firmId: LEDGER_ORG, id: "test:reservation:1" },
+      reservationRef: { firmId: LEDGER_ORG, id: PLAN_RESERVATION },
       decisionRef,
       reservationCreationRef: {
         firmId: LEDGER_ORG,
@@ -376,14 +400,14 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       ...base("test:sample:execution-started"),
       type: "ExecutionStarted",
       decisionRef,
-      stepId: "step:GC-01:0001",
-      idempotencyKey: "test:idem:ledger:1",
+      stepId: PLAN_STEP,
+      idempotencyKey: PLAN_IDEMPOTENCY_KEY,
     },
     {
       ...base("test:sample:execution-succeeded"),
       type: "ExecutionSucceeded",
       decisionRef,
-      stepId: "step:GC-01:0001",
+      stepId: PLAN_STEP,
       executionHandleRef: { firmId: LEDGER_ORG, id: "test:handle:1" },
       sourceStatus: "submitted",
     },
@@ -391,7 +415,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       ...base("test:sample:execution-partial"),
       type: "ExecutionPartiallySucceeded",
       decisionRef,
-      stepId: "step:GC-01:0001",
+      stepId: PLAN_STEP,
       executionHandleRef: { firmId: LEDGER_ORG, id: "test:handle:1" },
       completedParts: ["test:crm-record"],
       incompleteParts: ["test:custodian-submit"],
@@ -401,7 +425,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       ...base("test:sample:execution-failed"),
       type: "ExecutionFailed",
       decisionRef,
-      stepId: "step:GC-01:0001",
+      stepId: PLAN_STEP,
       failureCode: "custodian-timeout",
       retryable: true,
       sourceStatus: "timeout",
@@ -419,7 +443,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       ...base("test:sample:verification-closed"),
       type: "VerificationClosed",
       decisionRef,
-      verificationRuleRef: { firmId: LEDGER_ORG, id: "test:verify:1" },
+      verificationRuleRef: { firmId: LEDGER_ORG, id: PLAN_VERIFICATION_RULE },
       provenState: "Completed",
     },
     {

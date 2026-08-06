@@ -6151,3 +6151,57 @@ is now a NAMED deferral (D-125, v3 prompt 8) rather than a silent pass.
 **Revert:** no planted export, const, or deferral remains.
 
 **Date:** 2026-08-06 (review corrections, D-125).
+---
+
+## Payload fields bound to the immutable plan (D-126)
+
+**Invariants:** an `ExecutionStarted` idempotency key, a `ReservationCreated` reservation
+and its conflict keys, and a `VerificationClosed` verification rule are the ones the
+immutable execution plan authorizes - at the shared append boundary and again when L2
+re-proves stored history; a rebuild proves ledger ordering exactly once; and a savepoint
+recovery that fails does not destroy the classified refusal.
+
+**Injection 1** (the binding itself): replaced `planFieldReason(event, record)` with
+`null` in `decisionStructureReason`, leaving the stage/step existence checks intact.
+
+```text
+FAIL … > refuses payload fields the immutable execution plan does not authorize
+  src/__tests__/integration/decision-ledger.test.ts:505
+  expected promise to reject, but it resolved
+FAIL … > L2 re-proves the plan binding of a correctly rechained ExecutionStarted
+FAIL … > L2 re-proves the plan binding of a correctly rechained ReservationCreated
+FAIL … > L2 re-proves the plan binding of a correctly rechained VerificationClosed
+  src/__tests__/integration/decision-ledger.test.ts:550
+  expected true to be false
+```
+
+**Injection 2** (the removed per-event ordering re-proof): restored
+`assertLedgerHistoryOrdering` inside `prepareProjection`, so a rebuild proves ordering
+per entry on top of the set-wide L2 pass.
+
+```text
+FAIL … > rebuilds an empty projection store byte-identically using the online fold
+  src/__tests__/integration/ledger-projections.test.ts:148
+  expected 4 ordering queries to equal 1
+```
+
+**Injection 3** (savepoint recovery): restored the awaited
+`ROLLBACK TO SAVEPOINT` / `RELEASE SAVEPOINT` pair ahead of the classification.
+
+```text
+FAIL … > keeps the classified refusal when savepoint recovery itself fails
+  expected { code: "STORE_CONSTRAINT", … }
+  actual   TypeError { message: "connection lost mid-recovery" }
+```
+
+Each injection was reverted and the ledger, projection, contract, and budget suites pass.
+The four refusals carry their own reason ("ledger idempotency key is absent from the
+immutable execution step", "ledger reservation is absent from the immutable execution
+plan", "ledger conflict keys differ from the immutable execution plan", "ledger
+verification rule is absent from the immutable execution plan"), and each is asserted by
+message, not only by code. The line-budget companion measures contracts at 4,598 lines
+and infrastructure at 7,689 under the ADR-0045 ceilings.
+
+**Revert:** no planted binding bypass, ordering re-proof, or savepoint form remains.
+
+**Date:** 2026-08-06 (review corrections F38, D-126).

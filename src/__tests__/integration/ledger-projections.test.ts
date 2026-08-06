@@ -29,6 +29,7 @@ import {
   LEDGER_PROVENANCE,
   LEDGER_TENANT,
   LEDGER_TIME,
+  PLAN_RESERVATION,
   allLedgerEventSamples,
   decisionRecordingInput,
   reusedBundleRecordingInput,
@@ -128,7 +129,23 @@ describe("deterministic decision-ledger projections", () => {
       [LEDGER_ORG],
     );
     expect(await listDecisionProjections(db, LEDGER_TENANT)).toEqual([]);
-    const rebuilt = await rebuildDecisionProjections(db, LEDGER_TENANT);
+    const statements: string[] = [];
+    const measured: SqlDb = {
+      ...db,
+      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        return db.transaction((tx) => fn({
+          ...tx,
+          async query<U>(sql: string, params?: unknown[]) {
+            statements.push(sql);
+            return tx.query<U>(sql, params);
+          },
+        }));
+      },
+    };
+    const rebuilt = await rebuildDecisionProjections(measured, LEDGER_TENANT);
+    // The batch L2 pass is the ONE ordering authority a rebuild pays for: proving it
+    // again per entry costs three queries an event while holding the tenant lock.
+    expect(statements.filter((sql) => sql.includes("requires_prior"))).toHaveLength(1);
 
     expect(rebuilt.entriesReplayed).toBe(7);
     expect(rebuilt.projections).toEqual(online);
@@ -198,7 +215,7 @@ describe("deterministic decision-ledger projections", () => {
     const owner = await db.query<{ decision_id: string; status: string }>(
       `SELECT decision_id, status FROM decision_reservation_index
         WHERE org_id = $1 AND reservation_id = $2`,
-      [LEDGER_ORG, "test:reservation:1"],
+      [LEDGER_ORG, PLAN_RESERVATION],
     );
     expect(owner.rows[0]).toEqual({
       decision_id: "dec:GC-01:0001",
@@ -227,7 +244,7 @@ describe("deterministic decision-ledger projections", () => {
     const state = (await listDecisionProjections(db, LEDGER_TENANT))[0]!.projection;
     expect(state.reservations).toEqual([
       {
-        reservationId: "test:reservation:1",
+        reservationId: PLAN_RESERVATION,
         creationEntryId: created.id,
         status: "released",
       },
@@ -339,7 +356,7 @@ describe("deterministic decision-ledger projections", () => {
       projection.decisionId === second.decisionRecord.id
     )!.projection;
     expect(newOwner.reservations).toContainEqual({
-      reservationId: "test:reservation:1",
+      reservationId: PLAN_RESERVATION,
       creationEntryId: reused.id,
       status: "active",
     });

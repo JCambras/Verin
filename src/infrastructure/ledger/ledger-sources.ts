@@ -160,7 +160,7 @@ export async function insertDecisionSources(
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
     [
       record.firmId, record.id, record.inputBundleRef.id, recordBytes.value,
-      bundle.schemaVersion, bundle.canonicalSerializerVersion,
+      DECISION_CORE_SCHEMA_VERSION, CANONICAL_SERIALIZER_VERSION,
       record.decisionHash, record.createdAt,
     ],
   );

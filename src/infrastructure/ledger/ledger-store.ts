@@ -19,7 +19,10 @@ import {
   bundleHashPreimage,
   decisionHashPreimage,
 } from "@contracts/decision-core/serialization";
-import { assertLedgerSourceBindings } from "./ledger-bindings";
+import {
+  assertLedgerHistoryOrdering,
+  assertLedgerSourceBindings,
+} from "./ledger-bindings";
 import {
   insertDecisionSources,
   insertEvidenceSnapshots,
@@ -182,6 +185,7 @@ async function appendPrepared(
       }
     }
     await assertLedgerSourceBindings(tx, tenant, event);
+    await assertLedgerHistoryOrdering(tx, tenant, event, sequence);
     const projectionProvenance =
       event.type === "DecisionRecorded" && decisionProvenance
         ? decisionProvenance
@@ -483,10 +487,13 @@ export async function appendDecisionEvents(
     await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
     return appended;
   } catch (error: unknown) {
-    await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append");
-    await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
     // The substrate is the authority on generation, ordering, and tenant edges, so a
     // refusal can arrive as a driver error - and leaves here typed, like recordDecision's.
-    throw storeFailure(tenant, error);
+    // Classification happens BEFORE savepoint recovery: a connection lost mid-rollback
+    // would otherwise replace the typed refusal with raw driver prose.
+    const failure = storeFailure(tenant, error);
+    await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append").catch(() => undefined);
+    await tx.exec("RELEASE SAVEPOINT decision_ledger_append").catch(() => undefined);
+    throw failure;
   }
 }
