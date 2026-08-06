@@ -1,5 +1,5 @@
 /**
- * CORPUS GENERATOR RUNNER (v3 prompt 11, ADR-0034) - `pnpm corpus:generate`.
+ * CORPUS GENERATOR RUNNER (v3 prompt 11, ADR-0039) - `pnpm corpus:generate`.
  *
  * Writes `fixtures/corpus/manifest.json` and `fixtures/corpus/synthetic/**` from
  * the hand-owned spec. Everything it writes is generator-owned: `pnpm

@@ -114,5 +114,11 @@ export const isSigned = (signoff: CorpusSignoff, digest: string): boolean =>
   signoff.signedAt !== null &&
   isCanonicalSignedAt(signoff.signedAt) &&
   signoff.signedDigest === digest;
-export const loadSignoff = (dir: string = SPEC_DIR): CorpusSignoff =>
-  parseSignoff(readRepositoryFile(join(dir, SIGNOFF_FILE), REPO_ROOT));
+/** `repoRoot` is a parameter for the same reason `loadTaxonomy`'s is: the
+ * containment rule is a property of the ROOT a read is made against, so a proof
+ * of it does not need to plant files inside this repository to run. */
+export const loadSignoff = (
+  dir: string = SPEC_DIR,
+  repoRoot: string = REPO_ROOT,
+): CorpusSignoff =>
+  parseSignoff(readRepositoryFile(join(dir, SIGNOFF_FILE), repoRoot));

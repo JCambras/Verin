@@ -2,6 +2,7 @@ import type { Taxonomy } from "./defects";
 import type { GeneratedFile } from "./generate";
 import { REAL_DERIVED_DEFERRAL } from "./manifest";
 import {
+  caseSchemaVocabularyProblems,
   loadRealDerivedDelivery,
   RealDerivedCaseSchema,
   realDerivedCaseProblems,
@@ -65,6 +66,7 @@ export function inspectRealDerivedPartition(
   const delivery = loadRealDerivedDelivery(dir);
   const classes = new Set(taxonomy.defectClasses.map((entry) => entry.id));
   const problems = [
+    ...caseSchemaVocabularyProblems(),
     ...delivery.problems,
     ...realDerivedDeferralProblems(delivery.deliveredPaths),
     ...realDerivedSemanticContractProblems(classes),

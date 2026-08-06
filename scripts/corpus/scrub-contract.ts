@@ -7,6 +7,7 @@ import {
 import type { GeneratedFile } from "./generate";
 import {
   deriveRealDerivedFreshness,
+  evidenceKindVocabularyProblems,
 } from "./real-derived-policy";
 import {
   pendingActionProblems,
@@ -43,8 +44,14 @@ type JsonSchemaNode = {
   readonly uniqueItems?: unknown;
 };
 
-const caseJsonSchema = schemaFromSpec("real-derived-case-schema.json");
+const CASE_SCHEMA_FILE = "real-derived-case-schema.json";
+const caseJsonSchema = schemaFromSpec(CASE_SCHEMA_FILE);
 const replayJsonSchema = schemaFromSpec(REPLAY_SCHEMA_FILE);
+
+/** The intake vocabulary the delivered schema admits, checked against the
+ * executable freshness authority rather than assumed equal to it. */
+export const caseSchemaVocabularyProblems = (): string[] =>
+  evidenceKindVocabularyProblems(caseJsonSchema, CASE_SCHEMA_FILE);
 
 function resolveSchema(
   schema: JsonSchemaNode,

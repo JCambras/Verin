@@ -1,5 +1,5 @@
 /**
- * CORPUS-PLANE IDENTITY AND PROVENANCE (v3 prompt 11, ADR-0034).
+ * CORPUS-PLANE IDENTITY AND PROVENANCE (v3 prompt 11, ADR-0039).
  *
  * The record SHAPES live in `scripts/corpus/world.ts`, where Zod both declares
  * and validates them - one declaration, not two. What lives here is the part the

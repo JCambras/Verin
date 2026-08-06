@@ -56,13 +56,13 @@ const CEILINGS = {
   domain: 1650, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
-  // BUILD-TIME TOOLING under scripts/** (ADR-0034 amendment to ADR-0018). Until
+  // BUILD-TIME TOOLING under scripts/** (ADR-0039 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
   // corpus generator out of src/ would have been evasion rather than
   // discipline. Measured 3636 at introduction; 3818 after the PR-11a review
   // round (D-078/D-080 split observation from business instants and replaced
   // substring resolution with structured parses), then 4254 after D-081 closed
-  // the graph, intake, signoff, and measurement review findings. ADR-0034 raises
+  // the graph, intake, signoff, and measurement review findings. ADR-0039 raises
   // the ceiling from 4000 to 4300 with 46 lines of explicit headroom. D-082
   // raises it to 4900; D-084 records 4900 measured lines after the final
   // replay-intake review. D-085 raises it to 5900 against 5747 measured lines.
@@ -72,15 +72,20 @@ const CEILINGS = {
   // 7941 measured lines for exact pending-action balance accounting. D-124
   // keeps it at 8000 against 7989 lines after settled-outgoing reconciliation.
   // D-125 raises it to 8100 against 8018 lines for transitive determinism
-  // provenance and restriction lifecycle recomputation. D-128 (ADR-0034) raises
-  // it to 8300 for the conflict-safe corpus substrate; the PR-11a review round
-  // then removed dead seed exports and the duplicate authority-binding rebuild
-  // and named every repository-read refusal, leaving 8276 measured lines against
-  // that unchanged ceiling. Every raise above is a MEASURED ADR amendment
-  // recorded in ADR-0034, never a code change - a ceiling raised without a
-  // measurement beside it is a ceiling nobody is holding. Tooling is REPORTED
-  // SEPARATELY, never averaged into a platform layer.
-  tooling: 8300,
+  // provenance and restriction lifecycle recomputation. D-128 (ADR-0039) raises
+  // it to 8300 for the conflict-safe corpus substrate. The recorded figure then
+  // went a round stale (8276 against an actual 8292), leaving EIGHT lines of
+  // real headroom - the exact condition the header above argues against, where
+  // the next one-line correction fails `pnpm test` on an unrelated ceiling and
+  // the only remedy is an ADR amendment. D-137 (ADR-0039) re-measures 8446
+  // lines AFTER the fail-closed evidence vocabulary, the spec-coverage check,
+  // the narrowed executable-authority binding, and the parameterized signoff
+  // root, and raises the ceiling to 8700 so a review round has room to correct
+  // itself. Every raise above is a MEASURED ADR amendment recorded in
+  // ADR-0039, never a code change - a ceiling raised without a measurement
+  // beside it is a ceiling nobody is holding. Tooling is REPORTED SEPARATELY,
+  // never averaged into a platform layer.
+  tooling: 8700,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";
@@ -145,7 +150,7 @@ describe("line-budget fence (per-layer)", () => {
       expect(bucket(`${REPO_ROOT}src/app/presentation/x.tsx`)).toBe("presentation");
       expect(bucket(`${REPO_ROOT}src/domain/x.ts`)).toBe("domain");
     });
-    it("build-time tooling is charged to `tooling`, never to a platform layer (ADR-0034)", () => {
+    it("build-time tooling is charged to `tooling`, never to a platform layer (ADR-0039)", () => {
       expect(bucket(`${REPO_ROOT}scripts/corpus/generate.ts`)).toBe("tooling");
       expect(bucket(`${REPO_ROOT}scripts/db-seed.ts`)).toBe("tooling");
       expect(bucket(`${REPO_ROOT}src/contracts/x.ts`)).toBe("contracts");

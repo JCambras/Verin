@@ -36,7 +36,7 @@ plus `fixtures/golden/` (D-035): captain-signoff-gated (agents never sign; the c
 on 2026-07-26, making their expected outcomes binding product truth), validated by `pnpm golden:validate`
 (CI job `golden-cases`) and the `golden-cases` fence.
 
-The replay corpus (v3 prompt 11, ADR-0034) is a SEPARATE artifact from the signed 16 and disjoint from
+The replay corpus (v3 prompt 11, ADR-0039) is a SEPARATE artifact from the signed 16 and disjoint from
 them by construction: [`docs/corpus.md`](./docs/corpus.md) is normative, hand-owned input lives in
 `fixtures/corpus/spec/`, and `fixtures/corpus/{manifest.json,synthetic/}` are GENERATED - never hand-edit
 them, `pnpm corpus:validate` regenerates and byte-compares (CI job `corpus`). Derivation is path-keyed
@@ -255,7 +255,7 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   shipped `REGISTERED_*` entry may live in the reserved namespace). A ledger export that no shipped
   surface or script can reach fails `ledger-reachability` unless it is a NAMED deferral (D-116)
   saying which prompt lands its caller - knip cannot see this, since every export has a test.
-- **`scripts/**` is budgeted now (ADR-0034).** Both budget fences used to walk `src/` only, so moving code
+- **`scripts/**` is budgeted now (ADR-0039).** Both budget fences used to walk `src/` only, so moving code
   to `scripts/` was an escape hatch. `line-budget` has a `tooling` bucket and `max-file-size` walks
   `scripts/**` under the same 500-line per-file ceiling. Build-time tooling is a legitimate home for
   generators — it is not an unmeasured one.

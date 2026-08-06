@@ -35,6 +35,7 @@ import {
   currentAuthorityBindings,
   currentFreshnessPolicyBinding,
   generatedSignatureProblems,
+  generatorDigest,
   REAL_DERIVED_SCHEMA_FILES,
   realDerivedSchemaBindings,
   taxonomySemanticDigest,
@@ -48,12 +49,17 @@ import {
   pendingAvailabilitySelector,
 } from "../../../scripts/corpus/pending-actions";
 import {
+  deriveRealDerivedFreshness,
+  evidenceKindVocabularyProblems,
   freshnessPolicySemanticDigest,
+  REAL_DERIVED_EVIDENCE_KINDS,
   REAL_DERIVED_FRESHNESS_POLICY,
+  type RealDerivedEvidenceKind,
 } from "../../../scripts/corpus/real-derived-policy";
 import {
   REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
   REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
+  REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES,
   loadRealDerivedSemanticContract,
   realDerivedSemanticContractBinding,
   semanticTreatment,
@@ -77,6 +83,7 @@ import {
 } from "../../../scripts/corpus/report";
 import * as corpusReportRuntime from "../../../scripts/corpus/report";
 import {
+  caseSchemaVocabularyProblems,
   loadRealDerivedDelivery,
   realDerivedCaseProblems,
   realDerivedSemanticContractProblems,
@@ -84,26 +91,34 @@ import {
 import {
   CAPTAIN_SIGNING_AUTHORITY,
   parseSignoff,
+  SIGNOFF_FILE,
   signoffProblems,
   type CorpusSignoff,
 } from "../../../scripts/corpus/signoff";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import {
   cleanControlProblems,
+  committedBytesProblems,
   labelProblems,
   readCommittedCorpus,
   realDerivedDeferralProblems,
   realDerivedProblems,
+  specCoverageProblems,
   validateCorpus,
 } from "../../../scripts/corpus/validate";
+import { readTree } from "../../../scripts/corpus/tree";
 import {
   syntheticSemanticProblems,
   type EmittedCase,
 } from "../../../scripts/corpus/synthetic-semantics";
-import { specReferenceProblems } from "../../../scripts/corpus/world";
+import {
+  SPEC_DIR,
+  SPEC_FILES,
+  specReferenceProblems,
+} from "../../../scripts/corpus/world";
 
 /**
- * CORPUS-PROVENANCE-SPLIT FENCE (v3 prompt 11, ADR-0034; charter #3/#4;
+ * CORPUS-PROVENANCE-SPLIT FENCE (v3 prompt 11, ADR-0039; charter #3/#4;
  * architecture v3 §2.4; demo contract §7).
  *
  * Architecture §2.4 requires the corpus metric to be split by provenance and
@@ -1509,7 +1524,10 @@ const reportInput = (
   const corpusVersion = overrides.corpusVersion ?? "x";
   const seed = overrides.seed ?? "test-seed";
   const taxonomyDigest = overrides.taxonomyDigest ?? "test-taxonomy-digest";
-  const authority = overrides.authority ?? currentAuthorityBindings();
+  // The already-resolved binding, not a rebuild: `currentAuthorityBindings()`
+  // re-reads and re-hashes ~40 files, and every report test called it again for
+  // a value it only ever feeds to a digest as an opaque input.
+  const authority = overrides.authority ?? real.authority;
   const inventory =
     overrides.inventory ??
     inventoryOf(syntheticOutcomes, realDerivedOutcomes);
@@ -1935,6 +1953,27 @@ describe("corpus-provenance-split fence", () => {
         { ...real.authority, freshnessPolicy: changed },
       ),
     ).not.toBe(real.corpusDigest);
+  });
+
+  it("(f) enforces: the intake schema, the freshness windows, and the executable vocabulary are ONE list", () => {
+    expect(caseSchemaVocabularyProblems()).toEqual([]);
+    expect(Object.keys(REAL_DERIVED_FRESHNESS_POLICY.freshnessWindowDays).sort())
+      .toEqual([...REAL_DERIVED_EVIDENCE_KINDS].sort());
+    const schemaEnum = (
+      parseStrictJson(
+        readFileSync(join(SPEC_DIR, "real-derived-case-schema.json"), "utf8"),
+        "real-derived-case-schema.json",
+      ) as { $defs: { evidenceKind: { enum: string[] } } }
+    ).$defs.evidenceKind.enum;
+    expect([...schemaEnum].sort()).toEqual([...REAL_DERIVED_EVIDENCE_KINDS].sort());
+  });
+
+  it("(f) enforces: every hand-owned spec file is bound by a digest", () => {
+    const entries = readTree(SPEC_DIR).map((entry) => entry.relPath);
+    expect(specCoverageProblems(entries)).toEqual([]);
+    expect(entries.sort()).toEqual(
+      [...SPEC_FILES, ...REAL_DERIVED_SCHEMA_FILES, SIGNOFF_FILE].sort(),
+    );
   });
 
   it("(d) enforces: the signed digest covers both real-derived schema ids and bytes", () => {
@@ -2940,7 +2979,52 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     );
   });
 
-  it("the executable authority inventory equals its complete runtime dependency closure", () => {
+  it("the bound authority is EXACTLY the declared list, and the exclusions are general-purpose only", () => {
+    const bound: readonly string[] = REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES;
+    const excluded: readonly string[] = REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES;
+    // What the manifest publishes, what the digest is taken over, and what is
+    // declared here are one list - not three that happen to agree today. The
+    // resolved binding is also proven equal to a fresh one, so reusing it
+    // instead of re-hashing ~40 files per report test substitutes nothing.
+    expect(real.authority).toEqual(currentAuthorityBindings());
+    expect(
+      real.authority.semanticContract.executableAuthorities.map(
+        (entry) => entry.file,
+      ),
+    ).toEqual(bound);
+    expect(new Set(bound).size).toBe(bound.length);
+    expect(new Set(excluded).size).toBe(excluded.length);
+    expect(bound.filter((file) => excluded.includes(file))).toEqual([]);
+    // Every corpus-owned module that carries BEHAVIOUR is bound; the only one
+    // left out declares types alone and emits nothing at runtime. The shipped
+    // surfaces that join them are named one by one, never swept in by prefix.
+    expect(
+      toolingSourceFiles(join(REPO_ROOT, "scripts/corpus"))
+        .map((file) => relative(REPO_ROOT, file).replace(/\\/g, "/"))
+        .filter((file) => !bound.includes(file)),
+    ).toEqual(["scripts/corpus/real-derived-types.ts"]);
+    expect(bound.filter((file) => !file.startsWith("scripts/corpus/"))).toEqual([
+      "scripts/golden-cases.lib.ts",
+      "src/contracts/decision-core/normalization.ts",
+      "src/contracts/decision-core/serialization.ts",
+      "src/contracts/iana-time-zone-links-2026b.json",
+      "src/contracts/iana-time-zones-2026b.json",
+      "src/contracts/time-zone.ts",
+    ]);
+    expect(excluded).toEqual([
+      "src/contracts/decision-core/actor.ts",
+      "src/contracts/decision-core/authority.ts",
+      "src/contracts/decision-core/decision.ts",
+      "src/contracts/decision-core/execution.ts",
+      "src/contracts/decision-core/explanation.ts",
+      "src/contracts/decision-core/ids.ts",
+      "src/contracts/decision-core/trigger.ts",
+      "src/contracts/errors.ts",
+      "src/contracts/result.ts",
+    ]);
+  });
+
+  it("the executable authority inventory plus its declared exclusions equal the complete runtime closure", () => {
     expect(
       requiredGatewayRootProblems(
         REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
@@ -2951,21 +3035,33 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         "missing executable authority gateway root scripts/corpus/real-derived.ts",
         "missing executable authority gateway root scripts/corpus/validate.ts",
       ]);
+    const declared = [
+      ...REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+      ...REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES,
+    ];
     expect(
       authorityClosureProblems(
         REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
-        REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES,
+        declared,
       ),
     ).toEqual([]);
+    // A new runtime dependency is a REVIEW DECISION, not a silent omission: it
+    // fails here until it is classified into one of the two lists.
     expect(
       authorityClosureProblems(
         REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
-        REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES.filter(
-          (file) => file !== "scripts/corpus/clock.ts",
-        ),
+        declared.filter((file) => file !== "scripts/corpus/clock.ts"),
       ),
     ).toContain(
       "missing executable authority dependency scripts/corpus/clock.ts",
+    );
+    expect(
+      authorityClosureProblems(
+        REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES,
+        declared.filter((file) => file !== "src/contracts/result.ts"),
+      ),
+    ).toContain(
+      "missing executable authority dependency src/contracts/result.ts",
     );
     expect(REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES).toContain(
       "scripts/corpus/subgraph.ts",
@@ -3045,6 +3141,65 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         { ...real.authority, semanticContract: changedAuthority },
       ),
     ).not.toBe(real.corpusDigest);
+    // BOTH bound shipped surfaces, not just the first corpus module: the digest
+    // moves for the canonical-bytes authority and for the recorded time-zone
+    // registry the same way it moves for corpus-owned semantics.
+    for (const file of [
+      "src/contracts/decision-core/serialization.ts",
+      "src/contracts/decision-core/normalization.ts",
+      "src/contracts/time-zone.ts",
+      "src/contracts/iana-time-zones-2026b.json",
+      "scripts/golden-cases.lib.ts",
+    ]) {
+      expect(
+        realDerivedSemanticContractBinding(dataBytes, {
+          ...authorityBytes,
+          [file]: `${authorityBytes[file]}\n`,
+        }).digest,
+      ).not.toBe(original.digest);
+    }
+  });
+
+  it("a change outside the bound set leaves the signature still, and an output-affecting one still fails the byte gate", () => {
+    const dataBytes = readFileSync(
+      join(REPO_ROOT, "fixtures/corpus/spec/real-derived-semantic-contract.json"),
+      "utf8",
+    );
+    const authorityBytes = Object.fromEntries(
+      REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES.map((file) => [
+        file,
+        readFileSync(join(REPO_ROOT, file), "utf8"),
+      ]),
+    );
+    // The excluded contracts are not in the preimage at all, so editing one
+    // cannot invalidate a signature over corpus bytes that did not change.
+    const bound: readonly string[] = REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES;
+    const unchanged = realDerivedSemanticContractBinding(
+      dataBytes,
+      authorityBytes,
+    ).digest;
+    for (const file of REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES) {
+      expect(bound).not.toContain(file);
+      expect(
+        realDerivedSemanticContractBinding(dataBytes, {
+          ...authorityBytes,
+          [file]: "// an unrelated edit\n",
+        }).digest,
+      ).toBe(unchanged);
+    }
+    // That is safe only because the blocking gate is byte equality over the
+    // REGENERATED tree: whatever moved the output - bound, excluded, or neither
+    // - the committed corpus stops matching and the `corpus` job fails.
+    const committed = readCommittedCorpus();
+    const drifted = real.generated.map((file, index) =>
+      index === 0 ? { ...file, bytes: `${file.bytes} ` } : file,
+    );
+    expect(
+      committedBytesProblems([...drifted, real.manifest], committed).join("\n"),
+    ).toContain("committed bytes differ from regeneration");
+    expect(
+      committedBytesProblems([...real.generated, real.manifest], committed),
+    ).toEqual([]);
   });
 
   it("a material replay plane requires evidence with matching kind, subject, and source", () => {
@@ -5057,5 +5212,102 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
         signoffProblems(parseSignoff(text), "x", "digest").join("\n"),
       ).toContain(expected);
     }
+  });
+});
+
+describe("detects (companion): an unbound vocabulary, an unbound spec input, or an unbound digest preimage CANNOT pass", () => {
+  const caseSchema = () =>
+    parseStrictJson(
+      readFileSync(join(SPEC_DIR, "real-derived-case-schema.json"), "utf8"),
+      "real-derived-case-schema.json",
+    ) as Record<string, any>;
+
+  it("an evidence kind the schema admits but no window covers is named, not defaulted", () => {
+    const schema = caseSchema();
+    schema.$defs.evidenceKind.enum = [
+      ...schema.$defs.evidenceKind.enum,
+      "custodian-memo",
+    ];
+    expect(
+      evidenceKindVocabularyProblems(schema, "case-schema").join("\n"),
+    ).toContain('evidence kind "custodian-memo" has no executable freshness authority');
+  });
+
+  it("an executable kind the schema no longer admits is named", () => {
+    const schema = caseSchema();
+    schema.$defs.evidenceKind.enum = schema.$defs.evidenceKind.enum.filter(
+      (kind: string) => kind !== "balance",
+    );
+    expect(
+      evidenceKindVocabularyProblems(schema, "case-schema").join("\n"),
+    ).toContain('executable evidence kind "balance" is not admitted by the schema');
+  });
+
+  it("a repeated kind and a missing enum are both named instead of passing vacuously", () => {
+    const repeated = caseSchema();
+    repeated.$defs.evidenceKind.enum = [
+      ...repeated.$defs.evidenceKind.enum,
+      "balance",
+    ];
+    expect(
+      evidenceKindVocabularyProblems(repeated, "case-schema").join("\n"),
+    ).toContain("$defs/evidenceKind repeats a kind");
+    for (const shape of [{}, { $defs: {} }, { $defs: { evidenceKind: {} } }]) {
+      expect(
+        evidenceKindVocabularyProblems(shape, "case-schema"),
+      ).toEqual([
+        "case-schema: $defs/evidenceKind declares no enum to bind evidence freshness to",
+      ]);
+    }
+  });
+
+  it("deriving freshness for a kind outside the committed windows REFUSES rather than reading fresh", () => {
+    const stale = "2020-01-01T00:00:00.000Z";
+    const asOf = "2026-04-28T13:00:00.000Z";
+    expect(
+      deriveRealDerivedFreshness(
+        REAL_DERIVED_FRESHNESS_POLICY.version,
+        "balance",
+        asOf,
+        stale,
+      ),
+    ).toBe("stale");
+    for (const observedAt of [stale, null]) {
+      expect(() =>
+        deriveRealDerivedFreshness(
+          REAL_DERIVED_FRESHNESS_POLICY.version,
+          "custodian-memo" as RealDerivedEvidenceKind,
+          asOf,
+          observedAt,
+        ),
+      ).toThrow('unsupported freshness evidence kind "custodian-memo"');
+    }
+  });
+
+  it("an unregistered hand-owned spec file and a missing digested input are both named", () => {
+    const registered = [...SPEC_FILES, ...REAL_DERIVED_SCHEMA_FILES, SIGNOFF_FILE];
+    expect(
+      specCoverageProblems([...registered, "extra-policy.json"]).join("\n"),
+    ).toContain("spec/extra-policy.json: hand-owned corpus input is bound by no digest");
+    expect(
+      specCoverageProblems(registered.filter((name) => name !== "world.json")).join("\n"),
+    ).toContain("spec/world.json: digested corpus input is missing from the committed spec");
+    expect(specCoverageProblems(registered)).toEqual([]);
+  });
+
+  it("a spec file missing from the generator preimage REFUSES instead of hashing empty bytes", () => {
+    const bytes = Object.fromEntries(
+      SPEC_FILES.map((name) => [name, `{"file":"${name}"}`]),
+    );
+    expect(generatorDigest(CORPUS_SEED, bytes)).toMatch(/^[0-9a-f]{64}$/);
+    const missing = Object.fromEntries(
+      Object.entries(bytes).filter(([name]) => name !== "world.json"),
+    );
+    expect(() => generatorDigest(CORPUS_SEED, missing)).toThrow(
+      "missing corpus spec bytes for world.json",
+    );
+    expect(generatorDigest(CORPUS_SEED, { ...bytes, "world.json": "{}" })).not.toBe(
+      generatorDigest(CORPUS_SEED, bytes),
+    );
   });
 });

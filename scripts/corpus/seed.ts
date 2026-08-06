@@ -1,5 +1,5 @@
 /**
- * CORPUS SEED - path-keyed deterministic derivation (v3 prompt 11, ADR-0034).
+ * CORPUS SEED - path-keyed deterministic derivation (v3 prompt 11, ADR-0039).
  *
  * Every generated value is a pure function of its own ADDRESS (`path` + `field`)
  * under one root seed. This is deliberately NOT a stateful stream PRNG: a stream

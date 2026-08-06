@@ -37,19 +37,28 @@ export default defineConfig({
     setupFiles: ["./src/__tests__/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
-    // The budget tracks the slowest HONEST check, not the fastest machine. The heaviest
-    // fitness fences resolve TYPES across the whole repo (dependency-rule,
-    // tokenized-factory-only, no-secret-fallback, tenant-context-required) and take ~9-10s
-    // on a fast dev machine; a GitHub runner is roughly twice that, so a 20s budget sat
-    // right at the edge and CI timed all three out in one run while every one passed
-    // locally. A timeout is a clock verdict, never a correctness one - 60s still
-    // catches a hang, and shrinking a fence to fit a stopwatch is how fences get weakened.
-    testTimeout: 60000,
-    // Integration `beforeEach` hooks create a PGlite instance, run every migration, and
-    // seed - strictly MORE work than the test bodies, so the hook budget matches the test
-    // budget rather than trailing it. The default 10s made that setup the suite's flakiest
-    // step under parallel load, failing a different file each run while every one passed
-    // in isolation.
-    hookTimeout: 60000,
+    // 20s is an ORDINARY-TEST budget, and it is left ordinary on purpose: no
+    // fence gets a bespoke extension to survive a scheduler.
+    //
+    // Both `pnpm test` and `pnpm test:fitness` therefore run SERIALLY
+    // (`--maxWorkers=1 --fileParallelism=false`). That is not a way of hiding
+    // contention - it is the configuration in which these timeouts are honest.
+    // Seven fitness fences each construct an INDEPENDENT full-repository
+    // TypeScript program (`realSemanticProject`), and vitest isolates modules
+    // per file, so concurrency multiplies the program, not just the work.
+    // Measured on a 12-core machine: serially the whole fitness suite takes
+    // ~134s and its slowest single fence ~5s; at two workers that same fence
+    // takes ~16s, at four it crosses 20s and fails, and at twelve five files
+    // fail on timeouts while total CPU doubles. Anything above one worker buys
+    // wall-clock with flakiness. Serial is the honest setting, and the suite is
+    // kept parallel-SAFE regardless (no fixture is planted inside the
+    // repository tree, where it would race the fences that walk it).
+    testTimeout: 20000,
+    // Hooks get the SAME budget as test bodies. Spinning up a PGlite instance is
+    // identical work whether it happens in a `beforeEach` or inline, and the 10s
+    // hook default made the store-backed integration suites time out under
+    // parallel load while the same work passed in isolation - flakiness produced
+    // by the config, not by the code under test.
+    hookTimeout: 20000,
   },
 });

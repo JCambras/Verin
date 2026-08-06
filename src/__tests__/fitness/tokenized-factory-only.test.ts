@@ -1332,7 +1332,7 @@ describe("tokenized-factory-only fence (sealed security types)", () => {
 
   it("enforces: identity and system minting factories are called only at reviewed boundaries", () => {
     expect(detectUntrustedFactoryCalls(realSemanticProject())).toEqual([]);
-  }, 40_000);
+  });
 
   it("enforces: every trusted factory callsite remains live", () => {
     const project = realSemanticProject();

@@ -1,4 +1,4 @@
-# `fixtures/corpus/` - the replay corpus (v3 prompt 11, ADR-0034)
+# `fixtures/corpus/` - the replay corpus (v3 prompt 11, ADR-0039)
 
 Two ownership planes live here and must never be confused.
 
@@ -45,9 +45,12 @@ right (D-078). A control that carries any defect signature fails validation.
 
 Real-derived freshness uses the closed `verin-real-derived-freshness/1.0.0` per-kind policy. Its version
 and semantic digest are part of the captain-signed corpus preimage. The same preimage binds the strict
-schemas, `verin-real-derived-semantics/1.13.0` data, and the complete repository-local runtime dependency
-closure of the executable authorities that enforce replay topology, evidence support, selected funding,
-and defect signatures.
+schemas, `verin-real-derived-semantics/1.13.0` data, and the executable authorities that enforce replay
+topology, evidence support, selected funding, and defect signatures: the corpus-owned semantic modules
+plus the shipped surfaces the replay result depends on (the canonical serializer and its record
+predicate, the recorded time-zone registry and its reader, the golden-case loader). General-purpose
+shipped plumbing reached only through those modules is a DECLARED exclusion, not an omission - the bound
+list and the exclusion list together are fenced equal to the complete runtime closure.
 
 ## Honesty
 

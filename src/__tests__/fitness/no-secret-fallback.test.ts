@@ -555,7 +555,7 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
       realSecretAccesses(),
     );
     expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
-  }, 60_000);
+  });
   it("enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)", () => {
     const calls = realSecretAccesses();
     for (const entry of REVEAL_ALLOWLIST) {

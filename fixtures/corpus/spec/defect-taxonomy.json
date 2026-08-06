@@ -1,6 +1,6 @@
 {
   "specVersion": "1.0.0",
-  "note": "CLOSED vocabulary. A corpus case may carry exactly one label: a defect class from this list, or the clean control. Nothing here describes a real observed defect - every class is derived from a requirement or a signed case that already exists IN THIS REPOSITORY, and each carries the citation to it. `sourceCitation.file` is validated to exist on disk, so a class can never cite a document that was renamed or never written. Populating a class with anonymized REAL defect history is the deferred work recorded in docs/adr/0034-synthetic-corpus-and-provenance-split.md; until then no class here is evidence that the defect has ever occurred in production.",
+  "note": "CLOSED vocabulary. A corpus case may carry exactly one label: a defect class from this list, or the clean control. Nothing here describes a real observed defect - every class is derived from a requirement or a signed case that already exists IN THIS REPOSITORY, and each carries the citation to it. `sourceCitation.file` is validated to exist on disk, so a class can never cite a document that was renamed or never written. Populating a class with anonymized REAL defect history is the deferred work recorded in docs/adr/0039-synthetic-corpus-and-provenance-split.md; until then no class here is evidence that the defect has ever occurred in production.",
   "cleanControlLabel": {
     "id": "clean-control",
     "title": "Labeled clean control",

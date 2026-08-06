@@ -4604,14 +4604,14 @@ digest of the defect taxonomy. Signed records accept only `signedBy: "captain"` 
 cross-partition inputs. The no-blending fence scans both `src/` and `scripts/` and follows local and
 imported aliases through arithmetic, calls, reducers, arrays, and concatenation.
 
-ADR-0034's tooling ceiling rises from 4000 to 4300 against a measured 4254 lines. The explicit
+ADR-0039's tooling ceiling rises from 4000 to 4300 against a measured 4254 lines. The explicit
 46-line buffer preserves the existing design documentation and keeps every new script under the
 separate 500-line file ceiling.
 
 **Why:** labels, their meaning, and every referenced evidence entity are the signed measurement
 substrate. A favorable evaluated subset, a hidden real-derived case, or an id-shaped PII leak would make
 the resulting claim indefensible.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-114 · 2026-07-28 · captain-decision · Corpus measurement, topology, intake, and freshness authorities are structural
 
@@ -4637,12 +4637,12 @@ Real-derived evidence records `evaluation.asOf` and the closed
 The `verin-corpus/1.2.0` signed preimage binds the policy version and semantic digest beside the taxonomy
 digest and both partition inventories.
 
-ADR-0034's tooling ceiling rises from 4300 to 4900 against 4818 measured lines, leaving 82 lines of
+ADR-0039's tooling ceiling rises from 4300 to 4900 against 4818 measured lines, leaving 82 lines of
 headroom for this completed boundary set. The post-prompt-19 ratchet-down point remains unchanged.
 
 **Why:** a signed digest must bind the exact denominator and the policies that interpret it; replay
 topology and freshness cannot depend on caller convention or source-syntax heuristics.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-115 · 2026-07-28 · captain-decision · Replay intake and measurement carry closed semantic identity
 
@@ -4670,7 +4670,7 @@ lines of headroom without deleting existing design documentation.
 
 **Why:** a signed measurement cannot depend on a lossy JSON parse, a case-level boolean, caller-supplied
 labels, foreign household data, input ordering, or diagnostics that disclose the value being rejected.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-116 · 2026-07-28 · captain-decision · Replay truth, signoff, and schema semantics fail closed
 
@@ -4692,7 +4692,7 @@ unmeasured headroom is introduced; the post-prompt-19 ratchet-down point remains
 
 **Why:** signed corpus truth cannot depend on a caller's label, a stale schema version string, permissive
 YAML recovery, a one-sided denominator, a sensitive filename, or a nondeterministic API spelling.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-117 · 2026-07-29 · captain-decision · Replay semantics, evidence, and funding are signed authorities
 
@@ -4716,7 +4716,7 @@ pending.
 
 **Why:** signed cases cannot change meaning under an unchanged digest, and disconnected evidence or
 implicit funding cannot substantiate either a defect label or a clean control.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-118 · 2026-07-29 · captain-decision · Replay defects require typed outcome mismatches
 
@@ -4739,7 +4739,7 @@ signoff stays pending.
 
 **Why:** awkward data is legitimate evidence context, not a product failure, and disconnected conflict
 references or laundered nondeterminism cannot define signed replay truth.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-119 · 2026-07-29 · captain-decision · Outcome semantics govern both corpus partitions
 
@@ -4764,7 +4764,7 @@ and captain signoff stays pending.
 
 **Why:** context alone cannot define signed defect truth, and disconnected pending actions or unsigned
 policy comparison cannot alter replay funding or threshold treatment.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-120 · 2026-07-29 · captain-decision · Corpus labels, attribution, and synthetic funding are exact
 
@@ -4787,7 +4787,7 @@ deferred, and captain signoff stays pending.
 
 **Why:** one signed label cannot hide multiple replay defects, one detector result cannot smuggle extra
 classes into coverage, and pending liquidity semantics cannot infer funding from unrelated accounts.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-121 · 2026-07-29 · captain-decision · Replay tenant, observation, funding, and ownership semantics are structural
 
@@ -4815,7 +4815,7 @@ captain signoff remain unchanged.
 
 **Why:** signed replay truth cannot accept unsupported concrete values, tenant-ambiguous reservations,
 funding semantics from unselected accounts, or contradictory ownership edges.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-122 · 2026-07-29 · captain-decision · Identity, tenant, and funding truth is reproducible and exact
 
@@ -4838,7 +4838,7 @@ pending captain signoff, and the 500-line file ceiling remain unchanged.
 
 **Why:** signed defect context must be replayable from emitted inputs, tenant scope cannot enter a generic
 subject collection, and one-cent funding differences must survive aggregation.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-123 · 2026-07-29 · captain-decision · Instruction truth and signed authorities are closed
 
@@ -4863,7 +4863,7 @@ captain signoff remain unchanged.
 
 **Why:** signed replay meaning cannot change through an unbound runtime dependency, untyped conflict
 claim, parser recovery, host-dependent citation, or unmeasured executable file.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-124 · 2026-07-29 · captain-decision · Temporal, blast-radius, owner, and authority-closure semantics derive from signed facts
 
@@ -4888,7 +4888,7 @@ partition, the unchanged 500-line file ceiling, and pending unsigned captain sig
 
 **Why:** signed defect context must come from emitted facts, joint ownership must not invalidate
 unrelated terms, and a local loader spelling cannot change signed semantics outside the digest.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-125 · 2026-08-05 · captain-decision · Corpus privacy, validation, determinism, and settled credits fail closed
 
@@ -4912,7 +4912,7 @@ signoff remains pending.
 **Why:** foreign ownership cannot expand private roster data, acceptance gateways cannot sit outside
 signed semantics, ambient-global spellings cannot bypass determinism, and settled funds cannot disappear
 behind a generic nonreducing treatment.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-126 · 2026-08-05 · reversible · Ambient access and pending-action balance accounting are explicit
 
@@ -4938,7 +4938,7 @@ the same test passed alone in 9.4 seconds. Assertions and timeouts remain unchan
 **Why:** replay bytes must say whether an action is already reflected in reported availability, or the
 same payload permits both adding and preserving the amount. A sensitive ambient origin must be recorded
 independently of whether source syntax uses dots or brackets.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-127 · 2026-08-05 · reversible · Executable provenance and availability reconciliation share complete authorities
 
@@ -4961,7 +4961,7 @@ The real-derived partition remains empty and deferred, and captain signoff remai
 
 **Why:** executable coverage cannot depend on a filename suffix or module boundary, and source-reported
 availability must be reconciled with the signed action treatment before sufficiency can be evaluated.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-128 · 2026-08-05 · reversible · Alternate origins, parameter binding, ambient APIs, and settled debits fail closed
 
@@ -4983,7 +4983,7 @@ captain signoff remains pending.
 
 **Why:** one safe branch cannot hide a reachable nondeterministic origin, parameter destructuring cannot
 erase provenance, and settled debits cannot be added back or omitted during funding reconciliation.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-129 · 2026-08-05 · reversible · Determinism provenance and restriction lifecycle derive from complete facts
 
@@ -5009,7 +5009,7 @@ captain signoff remains pending.
 **Why:** imported executable helpers can alter corpus bytes, host state is an open category rather than a
 stable API list, and a signed lifecycle defect cannot be replayed from a trusted enum without its
 effectivity facts.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-130 · 2026-08-05 · reversible · Determinism and synthetic schedules fail closed
 
@@ -5036,7 +5036,7 @@ captain signoff remains pending.
 **Why:** default evaluation, module syntax, and computed access cannot erase a host-state origin; a
 measurement cannot evade provenance separation by changing its spelling; and signed synthetic evidence
 cannot rely on an impossible interval or an order-sensitive schedule with no valid ordering.
-**Revert path:** none while corpus version `2026.07.0` and ADR-0034 remain supported.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
 
 ### D-131 · 2026-08-05 · reversible · Mutable keys and assignment provenance fail closed
 
@@ -5083,7 +5083,7 @@ from those facts, and semantic attribution consumes the derived state. The repla
 `verin-real-derived-semantics/1.12.0`. Synthetic world transitions must be strictly chronological, and
 beneficiary emission uses every output field as a total sort key.
 
-ADR-0034 raises the tooling ceiling from 8100 to 8300 against 8112 measured lines, leaving 188 lines of
+ADR-0039 raises the tooling ceiling from 8100 to 8300 against 8112 measured lines, leaving 188 lines of
 explicit headroom. Canonical regeneration produces `corpusDigest`
 `3cd3c36730bd27adfad0c6b4b94ea065e49b5bf8b06166a4a6b7cd512174e94b`. The real-derived partition
 remains empty and deferred, generated-file ownership remains intact, and captain signoff remains pending.
@@ -5201,3 +5201,52 @@ remains pending.
 result cannot disagree with it, and a byte-exact signature needs byte-exact checkouts.
 **Revert path:** none while the corpus reads repository-contained inputs and binds signoff to a digest
 over committed bytes.
+
+### D-137 · 2026-08-06 · reversible · The corpus ADR is renumbered, its authority binding narrowed, and its tooling ceiling re-measured
+
+The prompt-11 corpus ADR shipped as `ADR-0034`, colliding with the already-shipped
+`0034-line-budget-infrastructure-headroom.md`. It is renumbered to **ADR-0039**, every reference is
+updated, and it is registered in the ADR index it was never added to. The shipped ADR-0034 and the
+ADR-0035/0036 amendment references that point at it are untouched.
+
+`REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES` no longer binds the whole runtime closure. It binds the
+corpus-owned semantic modules plus exactly the shipped surfaces the replay result depends on:
+`canonicalJson` and the record predicate it admits values through, the recorded IANA time-zone registry
+and its reader, and the golden-case loader. `result.ts`, `errors.ts`, and the decision-record vocabulary
+reached only through serializer projections the corpus never builds move to a declared
+`REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES` list. The fence holds the two lists TOGETHER equal to the
+complete closure, so a new shipped dependency must be classified before it can build, and proves both
+directions: a byte appended to any bound module moves the digest, every excluded module leaves it still,
+and a drifted generated file still fails the byte comparison.
+
+An evidence kind with no committed freshness window is now refused by name instead of computing
+`x > NaN` and reading `"fresh"` for arbitrarily stale evidence, and the delivered schema's `evidenceKind`
+enum is held equal to the executable vocabulary and the policy's windows rather than coupled to them by a
+cast. A missing spec file in the generator preimage throws instead of hashing empty bytes, matching its
+two sibling binders. The tautological `generatorDigest(...).length === 64` check is replaced by one that
+can fail: every hand-owned file under `spec/` must be bound by a digest, so a new hand-owned input cannot
+sit outside `SPEC_FILES`, the schema bindings, and the signoff while a signature survives edits to it.
+
+The cross-time-zone determinism fence builds its in-process expectation from BOTH partitions, as the
+runner does, so it reports genuine time-zone nondeterminism rather than an inventory mismatch the day the
+real-derived partition is populated.
+
+The fitness suite is now parallel-SAFE: three proofs planted fixture directories inside `REPO_ROOT`,
+where they raced every fence that walks the repository, and `loadSignoff` takes a `repoRoot` like
+`loadTaxonomy` already did, so containment is proven against a temp-tree root. It still runs SERIALLY,
+and the reason is recorded in `vitest.config.ts` rather than left as bare flags: seven fences each build
+an independent full-repository TypeScript program, and vitest isolates modules per file, so concurrency
+multiplies the program. Measured on twelve cores - serial 134s with a 5s slowest fence, two workers 85s
+with a 16s slowest, four workers crossing the 20s budget, twelve workers failing five files. The 40s and
+60s timeout extensions the previous round added are therefore REMOVED: under the configuration CI
+actually runs, no fence needs them, and a bespoke extension that only exists to survive a scheduler hides
+the very slowdown a budget is for.
+
+ADR-0039's tooling ceiling rises from 8300 to 8700 against 8446 measured lines, taken after every change
+above. The previous recorded figure was a round stale (8276 against 8292), leaving eight lines of real
+headroom - the condition ADR-0033 wrote the honest-headroom rule to prevent.
+
+**Why:** two ADRs cannot share a number; a signature invalidated by unrelated plumbing is one people
+re-sign without reading; a silent default and a tautological check are both worse than no check; and a
+suite forced serial without a measured reason hides whichever of the two it is.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.

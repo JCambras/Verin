@@ -1,5 +1,5 @@
 /**
- * CORPUS MEASUREMENT REPORT (v3 prompt 11, ADR-0034) - `pnpm corpus:report`.
+ * CORPUS MEASUREMENT REPORT (v3 prompt 11, ADR-0039) - `pnpm corpus:report`.
  *
  * Prints the case inventory and the provenance split. It REFUSES to blend: the
  * synthetic partition's figure is `syntheticDefectCoverage`, only the

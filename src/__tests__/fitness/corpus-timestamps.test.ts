@@ -11,7 +11,7 @@ import { timestampProblems, validateCorpus } from "../../../scripts/corpus/valid
 import { WorldSpecSchema } from "../../../scripts/corpus/world";
 
 /**
- * CORPUS-TIMESTAMPS FENCE (v3 prompt 11, ADR-0034; charter #1/#4).
+ * CORPUS-TIMESTAMPS FENCE (v3 prompt 11, ADR-0039; charter #1/#4).
  *
  * "Realistic observed and retrieved timestamps" is decorative unless it has a
  * machine meaning. Six checkable rules, applied to every corpus case:

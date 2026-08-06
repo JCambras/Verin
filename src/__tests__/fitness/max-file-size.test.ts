@@ -15,7 +15,7 @@ import { relative, join } from "node:path";
  * known-larger files that ONLY SHRINKS — lower a ceiling when you split a file;
  * never raise one or add an entry without an architecture-review note.
  *
- * EXTENDED to `scripts/**` by ADR-0034 (v3 prompt 11): build-time tooling was
+ * EXTENDED to `scripts/**` by ADR-0039 (v3 prompt 11): build-time tooling was
  * invisible to this fence, so a 2,000-line generator could have landed there
  * unnoticed. Tooling is held to the same per-file ceiling as shipped source.
  */
@@ -55,7 +55,7 @@ export function detectOversizedFiles(files: string[]): string[] {
   return out;
 }
 
-/** Shipped source PLUS build-time tooling (ADR-0034). */
+/** Shipped source PLUS build-time tooling (ADR-0039). */
 export function ceilingScopedFiles(): string[] {
   return [...shippedSourceFiles(), ...toolingSourceFiles()];
 }

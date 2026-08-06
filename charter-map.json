@@ -496,13 +496,13 @@
     },
     {
       "id": "replay-corpus-substrate",
-      "title": "Replay corpus is deterministic, provenance-split, honestly empty where it has no real data, and signed per version against its corpusDigest (v3 prompt 11, ADR-0034)",
+      "title": "Replay corpus is deterministic, provenance-split, honestly empty where it has no real data, and signed per version against its corpusDigest (v3 prompt 11, ADR-0039)",
       "status": "enforced",
       "phase": "v3-p11",
       "mechanisms": [
         {
           "type": "adr",
-          "ref": "docs/adr/0034-synthetic-corpus-and-provenance-split.md"
+          "ref": "docs/adr/0039-synthetic-corpus-and-provenance-split.md"
         },
         {
           "type": "file",

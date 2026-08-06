@@ -1,5 +1,5 @@
 /**
- * CORPUS WORLD CLOCK (v3 prompt 11, ADR-0034).
+ * CORPUS WORLD CLOCK (v3 prompt 11, ADR-0039).
  *
  * Deterministic instant arithmetic in ONE canonical byte form: the
  * `Date.prototype.toISOString()` shape `TimestampSchema` accepts

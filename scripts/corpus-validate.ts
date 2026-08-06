@@ -1,5 +1,5 @@
 /**
- * CORPUS VALIDATION RUNNER (v3 prompt 11, ADR-0034; blocking CI job `corpus`) -
+ * CORPUS VALIDATION RUNNER (v3 prompt 11, ADR-0039; blocking CI job `corpus`) -
  * `pnpm corpus:validate`.
  *
  * Regenerates the corpus from the hand-owned spec, byte-compares it against the
@@ -35,7 +35,7 @@ console.log(`  synthetic       ${defects} defect case(s) + ${controls} labeled c
 console.log(
   `  real-derived    ${result.realDerivedCases.length} case(s) ${
     result.realDerivedCases.length === 0
-      ? dim("- deferred pending an authorized scrubbed source (ADR-0034)")
+      ? dim("- deferred pending an authorized scrubbed source (ADR-0039)")
       : ""
   }\n`,
 );

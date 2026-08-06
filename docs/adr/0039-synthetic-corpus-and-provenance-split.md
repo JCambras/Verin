@@ -1,4 +1,4 @@
-# ADR-0034: The replay corpus is a deterministic synthetic substrate with a fenced provenance split, an honestly empty real-derived partition, and digest-bound per-version signoff
+# ADR-0039: The replay corpus is a deterministic synthetic substrate with a fenced provenance split, an honestly empty real-derived partition, and digest-bound per-version signoff
 
 **Status:** Accepted
 **Date:** 2026-07-28
@@ -232,6 +232,22 @@ and canonical semantic projections. Relabeling inventory, redefining a class, ch
 window, changing either schema's bytes or meaning, or changing a replay predicate or cross-field
 authority invalidates prior signoff even if no case bytes change.
 
+**The executable authorities are bound narrowly and by name.** They are the corpus-owned semantic modules
+that carry behaviour, plus exactly the shipped surfaces the replay result depends on: `canonicalJson` and
+the record predicate it admits values through (which decide the digest preimage bytes), the recorded IANA
+time-zone registry and its reader (which decide real-derived temporal treatment), and the golden-case
+loader (which decides disjointness). The rest of the runtime closure - the general-purpose `Result` and
+`AppError` plumbing, and the decision-record vocabulary reached only through serializer projections the
+corpus never builds - is declared as an excluded dependency list rather than digested. Binding it would
+invalidate a captain signature over corpus bytes that did not change, and a signature invalidated by
+noise is one people re-sign without reading. This narrowing weakens nothing, because two properties are
+fenced instead: the bound list and the excluded list **together** are held equal to the complete runtime
+closure, so a corpus module that begins depending on new shipped behaviour fails the build until it is
+classified into one of the two by an explicit edit; and any change - bound, excluded, or elsewhere - that
+actually moves corpus output still fails the blocking regenerate-and-byte-compare gate. Both directions
+are proven adversarially: a byte appended to any bound module moves the digest, and every excluded module
+is shown to leave it still while a drifted generated file is shown to fail the byte comparison.
+
 A signed record accepts only the closed authority `signedBy: "captain"` and a canonical millisecond UTC
 `signedAt` instant. Its hand-owned YAML is parsed fail-closed before those fields are read: parser errors,
 warnings, tags, duplicate or unexpected keys, aliases, non-mapping shapes, missing keys, multiple blocks,
@@ -313,6 +329,14 @@ fence, semantic, and topology owners under the unchanged 500-line file ceiling.
 D-130 keeps the ceiling at 8300 against 8250 measured lines after sealing repository file reads and
 making synthetic authority and bank-verification evidence unambiguous. The 50-line buffer preserves the
 separate input, semantic, schema, and fence owners under the unchanged 500-line file ceiling.
+D-137 raises the ceiling to 8700 against 8446 measured lines for the fail-closed evidence-kind
+vocabulary, the hand-owned spec-coverage check that replaced a tautological digest test, the narrowed
+executable-authority binding with its declared exclusions, and the parameterized signoff root. The
+recorded figure had itself gone a round stale (8276 against an actual 8292), leaving eight lines of real
+headroom - the condition this budget exists to avoid, where a one-line correction fails the build on an
+unrelated ceiling. The 254-line buffer is deliberate: a ceiling that cannot absorb a review round buys
+no discipline, it converts findings into documentation deletions. Every file stays under the unchanged
+500-line ceiling.
 
 ## What this PR explicitly does NOT claim
 

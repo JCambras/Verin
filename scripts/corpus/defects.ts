@@ -1,5 +1,5 @@
 /**
- * DEFECT TAXONOMY (v3 prompt 11, ADR-0034).
+ * DEFECT TAXONOMY (v3 prompt 11, ADR-0039).
  *
  * A CLOSED vocabulary: a corpus case carries exactly one label - a defect class
  * from this taxonomy, or the labeled clean control. Two honesty rules are

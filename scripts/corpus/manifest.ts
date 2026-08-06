@@ -136,7 +136,11 @@ export function generatorDigest(seed: string, rawBytes: Readonly<Record<string, 
     preimageVersion: CORPUS_DIGEST_PREIMAGE_VERSION,
     payload: {
       seed,
-      specFiles: SPEC_FILES.map((name) => [name, sha256(rawBytes[name] ?? "")] as unknown as JsonValue),
+      specFiles: SPEC_FILES.map((name) => {
+        const bytes = rawBytes[name];
+        if (bytes === undefined) throw new Error(`missing corpus spec bytes for ${name}`);
+        return [name, sha256(bytes)] as unknown as JsonValue;
+      }),
     },
   };
   return sha256(canonicalBytes(preimage, "generatorDigest preimage"));
@@ -201,7 +205,7 @@ export const REAL_DERIVED_DEFERRAL: {
   unDeferTrigger:
     "The captain authorizes a scrubbed source of real NIGO returns, custodian rejections, or operational exceptions, names an accountable owner for extraction and de-identification, and agrees a delivery date and review path.",
   decidedBy: "captain ruling, 2026-07-28",
-  adr: "docs/adr/0034-synthetic-corpus-and-provenance-split.md",
+  adr: "docs/adr/0039-synthetic-corpus-and-provenance-split.md",
   procedure: "docs/corpus-scrub-procedure.md",
 } as const;
 export function buildManifest(

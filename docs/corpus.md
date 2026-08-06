@@ -1,6 +1,6 @@
 # Verin - Replay-Corpus Specification (v3 build-sequence prompt 11)
 
-**Normative.** This document and [`ADR-0034`](./adr/0034-synthetic-corpus-and-provenance-split.md) govern
+**Normative.** This document and [`ADR-0039`](./adr/0039-synthetic-corpus-and-provenance-split.md) govern
 the replay corpus. Where this document and a generated artifact disagree, the artifact is wrong: run
 `pnpm corpus:validate`.
 
@@ -47,7 +47,7 @@ not by a comment. `.gitattributes` marks the generated trees `linguist-generated
 each directory's README names its owning command. Inventory is recursive and exact: hidden, nested,
 non-JSON, and unsupported filesystem entries cannot sit outside the comparison.
 
-While the ADR-0034 deferral is active, any delivered entry under `real-derived/` fails validation. Once
+While the ADR-0039 deferral is active, any delivered entry under `real-derived/` fails validation. Once
 the deferral is explicitly lifted, every case must be a top-level canonical `RD-<16 hex>.json` file with
 a collection-unique case id and the active corpus version before it is inventoried in the generated
 manifest, included in `corpusDigest`, and supplied to the provenance-specific reporter.
@@ -327,8 +327,14 @@ defect-taxonomy definitions, the real-derived per-kind freshness policy, and bot
 JSON Schemas. It also binds `verin-real-derived-semantics/1.13.0`: the strict declarative context,
 selector-driven expected-treatment, defective-treatment, topology, and outcome registry for both
 partitions,
-its exact bytes, and exact digests for the complete repository-local runtime dependency closure rooted at
-the real-derived inspection and corpus-validation gateways. Each schema binding covers its identifier,
+its exact bytes, and exact digests for the executable authorities rooted at the real-derived inspection
+and corpus-validation gateways - the corpus-owned semantic modules plus the shipped surfaces the replay
+result depends on (the canonical serializer and its record predicate, the recorded time-zone registry and
+its reader, the golden-case loader). The general-purpose shipped contracts reached only through those
+modules are a DECLARED exclusion rather than a silent omission: the bound list and the exclusion list are
+fenced equal to the complete runtime closure, so a corpus module that starts depending on new shipped
+behaviour must be classified before it can build, and any change that actually moves corpus output still
+fails the regenerate-and-byte-compare gate. Each schema binding covers its identifier,
 exact bytes, and canonical
 semantic projection. Relabeling an inventory entry, changing
 what a defect class means, changing a freshness window, changing either schema, or changing a replay

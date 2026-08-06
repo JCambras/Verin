@@ -3,7 +3,7 @@
 **Normative.** Governs how anonymized real defect history enters
 [`fixtures/corpus/real-derived/`](../fixtures/corpus/real-derived/). Enforced by
 `scripts/corpus/scrub-contract.ts` and the `corpus-provenance-split` fence; run in CI by the blocking
-`corpus` job. Adopted by [`ADR-0034`](./adr/0034-synthetic-corpus-and-provenance-split.md) under captain
+`corpus` job. Adopted by [`ADR-0039`](./adr/0039-synthetic-corpus-and-provenance-split.md) under captain
 ruling `corpus-real-derived-provenance` (2026-07-28).
 
 **The partition is empty today and this procedure has never been executed.** It ships now so that the
@@ -211,7 +211,7 @@ incomplete, cannot enter inventory, cannot be signed, and cannot be measured.
    version: the digest changes, which invalidates the prior signature by design
    (see [`docs/corpus.md`](./corpus.md) §9).
 6. Update `fixtures/corpus/real-derived/README.md`, the `corpus_deferral` record in
-   `config/demo/scenarios.yaml`, and ADR-0034's status to record that the deferral has been lifted.
+   `config/demo/scenarios.yaml`, and ADR-0039's status to record that the deferral has been lifted.
 
 Only after step 5 does `pnpm corpus:report` emit a `detectionRate`, and even then it is reported beside
 its false-positive rate and **never blended** with the synthetic figure.

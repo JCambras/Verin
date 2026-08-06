@@ -1,5 +1,5 @@
 /**
- * CONFLICT-KEY FAMILIES (v3 prompt 11, ADR-0034).
+ * CONFLICT-KEY FAMILIES (v3 prompt 11, ADR-0039).
  *
  * The derivation is read OUT of signed truth, never imposed on it: the signed
  * fixtures already spell `conflict:smiths-liquidity`, `res:GC-01:liquidity` and

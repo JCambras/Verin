@@ -34,6 +34,24 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_ROOT_FILES = [
   "scripts/corpus/real-derived-policy.ts",
 ] as const;
 
+/**
+ * THE EXECUTABLE SEMANTICS A CORPUS SIGNATURE IS TAKEN OVER.
+ *
+ * Corpus-owned modules, plus the shipped surfaces the replay RESULT actually
+ * depends on: `canonicalJson` and the record predicate it accepts values
+ * through decide the digest preimage bytes, and the recorded time-zone registry
+ * decides real-derived temporal treatment.
+ *
+ * It is deliberately NOT the whole runtime closure. The general-purpose
+ * contracts in `REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES` are reached only as
+ * those modules' own plumbing; binding them would invalidate a captain
+ * signature over corpus bytes that did not change, and a signature invalidated
+ * by noise is one people re-sign without reading. Nothing escapes by being
+ * excluded: a change out there that DOES move corpus output still fails the
+ * blocking regenerate-and-byte-compare gate, and the closure fence proves the
+ * two lists together remain the complete closure, so a NEW cross-field
+ * dependency is a review decision rather than a silent omission.
+ */
 export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/case-spec.ts",
   "scripts/corpus/clock.ts",
@@ -69,20 +87,34 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/world-topology.ts",
   "scripts/corpus/world.ts",
   "scripts/golden-cases.lib.ts",
+  "src/contracts/decision-core/normalization.ts",
+  "src/contracts/decision-core/serialization.ts",
+  "src/contracts/iana-time-zone-links-2026b.json",
+  "src/contracts/iana-time-zones-2026b.json",
+  "src/contracts/time-zone.ts",
+] as const;
+
+/**
+ * The rest of the runtime closure: general-purpose shipped contracts the corpus
+ * merely consumes. `result.ts`/`errors.ts` are the Result/AppError plumbing a
+ * refusal travels through, and the decision-core record vocabulary below is
+ * reached only by `serialization.ts`'s bundle and decision projections, which
+ * the corpus never builds - it calls `canonicalJson` alone.
+ *
+ * DECLARED, not discovered: the closure fence holds this list plus the bound
+ * list equal to the complete closure, so a corpus module that starts depending
+ * on new shipped behaviour lands in one of the two by an explicit edit.
+ */
+export const REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES = [
   "src/contracts/decision-core/actor.ts",
   "src/contracts/decision-core/authority.ts",
   "src/contracts/decision-core/decision.ts",
   "src/contracts/decision-core/execution.ts",
   "src/contracts/decision-core/explanation.ts",
   "src/contracts/decision-core/ids.ts",
-  "src/contracts/decision-core/normalization.ts",
-  "src/contracts/decision-core/serialization.ts",
   "src/contracts/decision-core/trigger.ts",
-  "src/contracts/iana-time-zone-links-2026b.json",
-  "src/contracts/iana-time-zones-2026b.json",
   "src/contracts/errors.ts",
   "src/contracts/result.ts",
-  "src/contracts/time-zone.ts",
 ] as const;
 
 export const TREATMENT_SELECTOR_VALUES = {

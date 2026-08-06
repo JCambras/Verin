@@ -22,6 +22,7 @@ import { inMemoryProject } from "./_fence-utils";
 import { loadTaxonomy } from "../../../scripts/corpus/defects";
 import { generateSyntheticCases } from "../../../scripts/corpus/generate";
 import { buildInventory, corpusDigest, taxonomySemanticDigest } from "../../../scripts/corpus/manifest";
+import { inspectRealDerivedPartition } from "../../../scripts/corpus/real-derived";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import { loadSignoff } from "../../../scripts/corpus/signoff";
 import { readRepositoryFile } from "../../../scripts/corpus/tree";
@@ -29,7 +30,7 @@ import { loadSpec, type LoadedSpec } from "../../../scripts/corpus/world";
 import { committedBytesProblems, readCommittedCorpus } from "../../../scripts/corpus/validate";
 
 /**
- * CORPUS-DETERMINISM FENCE (v3 prompt 11, ADR-0034; charter #1/#4).
+ * CORPUS-DETERMINISM FENCE (v3 prompt 11, ADR-0039; charter #1/#4).
  *
  * The corpus is only usable as replay input if the same spec and seed produce
  * the same bytes forever. Five properties, each of which a plausible generator
@@ -1643,11 +1644,23 @@ describe("corpus-determinism fence", () => {
         if (run.status !== 0) throw new Error(`generation under TZ=${TZ} failed: ${run.stderr}`);
         return run.stdout.trim();
       };
+      // The expectation must be over the SAME inventory the runner builds -
+      // both partitions. Building it from the synthetic partition alone agrees
+      // only while real-derived is empty, and the day it is populated this
+      // fence would report a time-zone failure for an inventory mismatch.
+      const realDerived = inspectRealDerivedPartition(
+        realTaxonomy,
+        realSpec.world.corpusVersion,
+      );
+      expect(realDerived.problems).toEqual([]);
       const inProcess = corpusDigest(
         realSpec.world.corpusVersion,
         CORPUS_SEED,
         taxonomySemanticDigest(realTaxonomy),
-        buildInventory(generateSyntheticCases(realSpec, CORPUS_SEED)),
+        [
+          ...buildInventory(generateSyntheticCases(realSpec, CORPUS_SEED)),
+          ...buildInventory(realDerived.inventoryFiles, "real-derived"),
+        ],
       );
       expect(digestUnder("UTC")).toBe(inProcess);
       expect(digestUnder("Asia/Kolkata")).toBe(inProcess);
@@ -1832,18 +1845,31 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
   const PENDING_SIGNOFF_BYTES =
     "```yaml\ncorpusVersion: 2026.07.0\nstatus: pending-captain\nsignedBy: null\nsignedAt: null\nsignedDigest: null\n```\n";
 
-  it("repository readers reject symlinked files whose target leaves REPO_ROOT", () => {
+  // The proof roots live in the OS temp tree, never inside this repository.
+  // Containment is a property of the root a read is made against, so planting
+  // the fixtures here would buy nothing - and a transient directory under
+  // REPO_ROOT races every fence that walks the repository (`no-secret-fallback`
+  // reads every committed text file), which is a flake this suite would then
+  // have to hide behind serial execution.
+  const proofRepository = (): { root: string; spec: string } => {
+    const root = mkdtempSync(join(tmpdir(), "verin-corpus-input-proof-"));
+    const spec = join(root, "spec");
+    mkdirSync(spec);
+    return { root, spec };
+  };
+
+  it("repository readers reject symlinked files whose target leaves the repository root", () => {
     const externalDir = mkdtempSync(join(tmpdir(), "verin-corpus-external-"));
-    const localDir = mkdtempSync(join(REPO_ROOT, ".corpus-input-proof-"));
+    const { root, spec } = proofRepository();
     try {
       const externalSignoff = join(externalDir, "SIGNOFF.md");
       writeFileSync(externalSignoff, PENDING_SIGNOFF_BYTES);
-      symlinkSync(externalSignoff, join(localDir, "SIGNOFF.md"));
-      expect(() => loadSignoff(localDir)).toThrow(
+      symlinkSync(externalSignoff, join(spec, "SIGNOFF.md"));
+      expect(() => loadSignoff(spec, root)).toThrow(
         /"[^"]*SIGNOFF\.md" resolves outside this repository/,
       );
     } finally {
-      rmSync(localDir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
       rmSync(externalDir, { recursive: true, force: true });
     }
   });
@@ -1852,22 +1878,22 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
   // blocking `corpus` job, and "reject every symlink" is not the containment
   // rule - the canonical target is what is checked and what is read.
   it("repository readers name the missing input and accept an in-repository symlink", () => {
-    const localDir = mkdtempSync(join(REPO_ROOT, ".corpus-input-proof-"));
+    const { root, spec } = proofRepository();
     try {
-      expect(() => loadSignoff(localDir)).toThrow(
+      expect(() => loadSignoff(spec, root)).toThrow(
         /"[^"]*SIGNOFF\.md" does not exist/,
       );
-      const target = join(localDir, "signoff-source.md");
+      const target = join(spec, "signoff-source.md");
       writeFileSync(target, PENDING_SIGNOFF_BYTES);
-      symlinkSync(target, join(localDir, "SIGNOFF.md"));
-      expect(loadSignoff(localDir).status).toBe("pending-captain");
-      rmSync(join(localDir, "SIGNOFF.md"));
-      mkdirSync(join(localDir, "SIGNOFF.md"));
-      expect(() => loadSignoff(localDir)).toThrow(
+      symlinkSync(target, join(spec, "SIGNOFF.md"));
+      expect(loadSignoff(spec, root).status).toBe("pending-captain");
+      rmSync(join(spec, "SIGNOFF.md"));
+      mkdirSync(join(spec, "SIGNOFF.md"));
+      expect(() => loadSignoff(spec, root)).toThrow(
         /"[^"]*SIGNOFF\.md" is not a regular file/,
       );
     } finally {
-      rmSync(localDir, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
     }
   });
 
@@ -1876,7 +1902,7 @@ describe("detects (companion): a non-deterministic generator or a drifted corpus
   // named every file by absolute path - the exact case naming exists to fix.
   it("repository readers name an unresolvable root and stay repo-relative under a symlinked one", () => {
     const externalDir = mkdtempSync(join(tmpdir(), "verin-corpus-root-proof-"));
-    const localDir = mkdtempSync(join(REPO_ROOT, ".corpus-input-proof-"));
+    const localDir = proofRepository().root;
     try {
       expect(() => loadTaxonomy(localDir, join(externalDir, "absent-root"))).toThrow(
         /repository root "[^"]*absent-root" does not exist/,

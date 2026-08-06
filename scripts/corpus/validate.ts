@@ -1,5 +1,5 @@
 /**
- * CORPUS VALIDATOR CORE (v3 prompt 11, ADR-0034).
+ * CORPUS VALIDATOR CORE (v3 prompt 11, ADR-0039).
  *
  * The single authority for "what a corpus must satisfy", imported by BOTH the
  * runner (`scripts/corpus-validate.ts`, the blocking `corpus` CI job) and the
@@ -29,7 +29,7 @@ import {
   buildManifest,
   currentAuthorityBindings,
   generatedSignatureProblems,
-  generatorDigest,
+  REAL_DERIVED_SCHEMA_FILES,
   taxonomySemanticDigest,
   type CaseInventoryEntry,
   type CorpusAuthorityBindings,
@@ -40,13 +40,18 @@ import {
   realDerivedProblems,
 } from "./real-derived";
 import { CORPUS_SEED } from "./seed";
-import { loadSignoff, signoffProblems, type CorpusSignoff } from "./signoff";
+import {
+  loadSignoff,
+  SIGNOFF_FILE,
+  signoffProblems,
+  type CorpusSignoff,
+} from "./signoff";
 import {
   syntheticSemanticProblems,
   type EmittedCase,
 } from "./synthetic-semantics";
 import { readTree } from "./tree";
-import { CORPUS_DIR, SYNTHETIC_DIR, loadSpec, type LoadedSpec } from "./world";
+import { CORPUS_DIR, SPEC_FILES, SYNTHETIC_DIR, loadSpec, type LoadedSpec } from "./world";
 
 export interface CommittedFile {
   readonly relPath: string;
@@ -251,6 +256,39 @@ export function nfcProblems(files: readonly CommittedFile[]): string[] {
     .map((file) => `${file.relPath}: contains non-NFC bytes - two spellings of one name must not be two subjects`);
 }
 
+/**
+ * (5) EVERY HAND-OWNED SPEC INPUT IS BOUND BY A DIGEST.
+ *
+ * `generatorDigest` covers `SPEC_FILES`, the schema bindings cover
+ * `REAL_DERIVED_SCHEMA_FILES`, and the signoff file is the signature itself. A
+ * spec file outside all three is a hand-owned input no digest moves for: the
+ * generator may read it, the corpus may change because of it, and the captain's
+ * signature would survive the edit - which is the ONE thing `corpusDigest`
+ * exists to prevent. Nothing else checks this, because the regenerate-and-
+ * byte-compare gate covers GENERATED files and `spec/**` is hand-owned.
+ */
+export function specCoverageProblems(
+  specEntries: readonly string[],
+  digested: readonly string[] = [
+    ...SPEC_FILES,
+    ...REAL_DERIVED_SCHEMA_FILES,
+    SIGNOFF_FILE,
+  ],
+): string[] {
+  const bound = new Set(digested);
+  return [
+    ...specEntries
+      .filter((name) => !bound.has(name))
+      .map(
+        (name) =>
+          `spec/${name}: hand-owned corpus input is bound by no digest - register it in SPEC_FILES or a schema binding, or delete it`,
+      ),
+    ...digested
+      .filter((name) => !specEntries.includes(name))
+      .map((name) => `spec/${name}: digested corpus input is missing from the committed spec`),
+  ];
+}
+
 export interface CorpusValidation {
   readonly spec: LoadedSpec;
   readonly taxonomy: Taxonomy;
@@ -322,7 +360,9 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
     ...realDerived.problems,
     ...generatedSignatureProblems([...generated, manifest]),
     ...signoffProblems(signoff, spec.world.corpusVersion, digest),
-    ...(generatorDigest(seed, spec.rawBytes).length === 64 ? [] : ["generatorDigest is malformed"]),
+    ...specCoverageProblems(
+      readTree(join(root, "spec")).map((entry) => entry.relPath),
+    ),
   ];
   return {
     spec,
