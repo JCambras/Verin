@@ -445,12 +445,21 @@ function sanctionedHmacReveal(access: SecretAccess): boolean {
     importedNodeCreateHmac(parent);
 }
 
-export function detectUnsanctionedReveal(
-  project: Project,
-  accesses: readonly SecretAccess[] = secretAccesses(project),
-): string[] {
+/** Memoized PER PROJECT, so the detector and the stale-allowlist check share one
+ * scan of the real project without a caller ever being able to hand one project
+ * an access list scanned from a different one. */
+const secretAccessCache = new WeakMap<Project, readonly SecretAccess[]>();
+function cachedSecretAccesses(project: Project): readonly SecretAccess[] {
+  const cached = secretAccessCache.get(project);
+  if (cached !== undefined) return cached;
+  const accesses: readonly SecretAccess[] = secretAccesses(project);
+  secretAccessCache.set(project, accesses);
+  return accesses;
+}
+
+export function detectUnsanctionedReveal(project: Project): string[] {
   const out: string[] = [];
-  for (const access of accesses) {
+  for (const access of cachedSecretAccesses(project)) {
     if (!sanctionedHmacReveal(access)) {
       out.push(`${access.file}:${access.line}`);
     }
@@ -459,11 +468,8 @@ export function detectUnsanctionedReveal(
   return [...new Set(out)];
 }
 
-let realSecretAccessCache: readonly SecretAccess[] | null = null;
-const realSecretAccesses = (): readonly SecretAccess[] => {
-  realSecretAccessCache ??= secretAccesses(realSemanticProject());
-  return realSecretAccessCache;
-};
+const realSecretAccesses = (): readonly SecretAccess[] =>
+  cachedSecretAccesses(realSemanticProject());
 
 /** The committed template's lines, or null when the file is missing entirely. */
 export function readEnvExampleLines(): string[] | null {
@@ -550,10 +556,7 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     expect(o, `non-placeholder .env.example values:\n${o.join("\n")}`).toEqual([]);
   });
   it("enforces: raw secret access appears only in reviewed secret-consumer modules (v3 §15.4)", () => {
-    const o = detectUnsanctionedReveal(
-      realSemanticProject(),
-      realSecretAccesses(),
-    );
+    const o = detectUnsanctionedReveal(realSemanticProject());
     expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
   });
   it("enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)", () => {

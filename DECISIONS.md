@@ -5250,3 +5250,35 @@ headroom - the condition ADR-0033 wrote the honest-headroom rule to prevent.
 re-sign without reading; a silent default and a tautological check are both worse than no check; and a
 suite forced serial without a measured reason hides whichever of the two it is.
 **Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
+
+### D-138 · 2026-08-06 · reversible · The corpus root is a closed inventory, strict JSON fails closed, and a contract gap reports
+
+`fixtures/corpus/` is now an EXACT inventory. Every committed entry must be `manifest.json`, live under
+`spec/`, `synthetic/`, or `real-derived/`, or be the allowlisted `README.md`; anything else fails
+`pnpm corpus:validate` by name, and a missing or non-regular `README.md` fails it too. Each bucket names
+the mechanism that accounts for it - regenerate-and-byte-compare, the spec digest coverage rule, the
+fail-closed intake contract - so a file governed by nothing cannot sit in the tree unremarked. The
+allowlist is stated in `docs/corpus.md` §2 and `fixtures/corpus/README.md`, not implied by which reader
+happens to select what.
+
+`parseStrictJson` refuses any input the YAML strict pass cannot finish instead of falling through to
+`JSON.parse`. That pass is the only thing that sees a repeated key at all - `JSON.parse` resolves one
+last-wins - so a diagnostic that ABANDONS the scan was a duplicate-key bypass for the four hand-owned
+spec files, which get no canonical-byte re-serialization check to catch it downstream.
+
+`inspectRealDerivedPartition` resolves semantic-contract problems BEFORE the per-file spread and skips
+that spread when any are present. The per-case detectors execute the very authorities a contract gap
+names, so a mis-declared contract plus one delivered intake file aborted the blocking `corpus` job with
+an unhandled stack trace instead of the problem list `realDerivedSemanticContractProblems` exists to
+produce. The underlying strictness is unchanged - the throws still guard a caller that reaches those
+authorities without resolving the contract first.
+
+`addBusinessDays` steps in LOCAL calendar days rather than fixed 86 400-second hops, so a DST transition
+cannot drift the local wall clock and move `settlementEarliest` by a day; `isWithinRecentChangeWindow`'s
+parameter is named `recordChangedAt` after the instant both call sites pass, the conflation D-078/D-080
+removed; and `detectUnsanctionedReveal` takes only a `Project`, memoizing its secret-access scan per
+project so the signature can no longer express a project paired with another project's access list.
+
+**Why:** a bucket nobody named is a bucket nobody checks; a parser that gives up quietly is worse than
+one that refuses; and a detector over injected data that crashes reports nothing at all.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.

@@ -78,6 +78,21 @@ export const isLocalWeekend = (
   transitions: readonly TimeZoneTransition[],
 ): boolean => [0, 6].includes(localDayOfWeek(instant, transitions));
 
+/** One LOCAL calendar day later, not 86 400 seconds later. Across a DST
+ * transition a fixed 24-hour step drifts the local wall clock by an hour, so a
+ * day counter stepping in raw seconds can revisit or skip a local calendar date
+ * near midnight - and `settlementEarliest` would be a day out. The offset
+ * correction holds the local time of day fixed. */
+const addLocalDay = (
+  instant: string,
+  transitions: readonly TimeZoneTransition[],
+): string => {
+  const shifted = addDays(instant, 1);
+  const before = localOffsetMinutes(instant, transitions);
+  const after = localOffsetMinutes(shifted, transitions);
+  return before === after ? shifted : addSeconds(shifted, (before - after) * 60);
+};
+
 /** Advance by whole BUSINESS days in the given zone: Saturdays and Sundays in
  * LOCAL time are skipped, so "two business days later" can never land on a
  * Sunday (design §4.6.6). Weekend-only; holiday calendars are a firm-policy
@@ -92,7 +107,7 @@ export function addBusinessDays(
   }
   let current = instant;
   for (let moved = 0; moved < days; ) {
-    current = addDays(current, 1);
+    current = addLocalDay(current, transitions);
     if (!isLocalWeekend(current, transitions)) moved += 1;
   }
   return current;
@@ -152,12 +167,15 @@ export function deriveFreshness(
   return diffSeconds(asOf, observedAt) > timing.freshnessWindowDays * 86_400 ? "stale" : "fresh";
 }
 
-/** True iff `observedAt` sits inside the firm's recent-change window before `asOf`. */
+/** True iff `recordChangedAt` sits inside the firm's recent-change window before
+ * `asOf`. Recent-change membership is a fact about when the RECORD changed, never
+ * about when a source last observed it: passing `observedAt` here is the
+ * `evidence-staleness-unnoticed` conflation this window exists to measure. */
 export const isWithinRecentChangeWindow = (
   asOf: string,
-  observedAt: string,
+  recordChangedAt: string,
   windowDays: number,
 ): boolean => {
-  const age = diffSeconds(asOf, observedAt);
+  const age = diffSeconds(asOf, recordChangedAt);
   return age >= 0 && age <= windowDays * 86_400;
 };

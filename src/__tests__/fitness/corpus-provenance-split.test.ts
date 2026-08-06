@@ -99,6 +99,8 @@ import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import {
   cleanControlProblems,
   committedBytesProblems,
+  CORPUS_ROOT_DOCUMENTATION_FILES,
+  corpusRootInventoryProblems,
   labelProblems,
   readCommittedCorpus,
   realDerivedDeferralProblems,
@@ -112,6 +114,7 @@ import {
   type EmittedCase,
 } from "../../../scripts/corpus/synthetic-semantics";
 import {
+  CORPUS_DIR,
   SPEC_DIR,
   SPEC_FILES,
   specReferenceProblems,
@@ -1974,6 +1977,23 @@ describe("corpus-provenance-split fence", () => {
     expect(entries.sort()).toEqual(
       [...SPEC_FILES, ...REAL_DERIVED_SCHEMA_FILES, SIGNOFF_FILE].sort(),
     );
+  });
+
+  it("(f) enforces: the committed corpus root is an EXACT inventory of accounted-for buckets", () => {
+    const entries = readTree(CORPUS_DIR);
+    expect(
+      corpusRootInventoryProblems(entries),
+      "committed corpus entries nothing accounts for",
+    ).toEqual([]);
+    expect(
+      entries
+        .filter(
+          (entry) =>
+            entry.relPath !== "manifest.json" &&
+            !/^(real-derived|spec|synthetic)\//.test(entry.relPath),
+        )
+        .map((entry) => entry.relPath),
+    ).toEqual([...CORPUS_ROOT_DOCUMENTATION_FILES]);
   });
 
   it("(d) enforces: the signed digest covers both real-derived schema ids and bytes", () => {
@@ -4933,6 +4953,78 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
     }
   });
 
+  it("a semantic-contract gap beside a delivered file is REPORTED, never thrown past the problem list", () => {
+    const root = mkdtempSync(join(tmpdir(), "verin-corpus-contract-gap-"));
+    try {
+      const intake = join(root, "real-derived");
+      mkdirSync(intake, { recursive: true });
+      writeFileSync(join(intake, "README.md"), "intake\n");
+      writeFileSync(
+        join(intake, "RD-00112233445566aa.json"),
+        canonicalFixtureBytes(realDerivedCase({ occurredAt: "not-an-instant" })),
+      );
+      // Baseline: with the contract inventory intact, the delivered file is
+      // inspected and its OWN problems are what come back.
+      expect(
+        realDerivedProblems(
+          real.taxonomy,
+          real.spec.world.corpusVersion,
+          intake,
+        ).join("\n"),
+      ).toContain("schema validation failed");
+      // A contract that does not account for the closed taxonomy is a gap in the
+      // very authority the per-case detectors EXECUTE. The gap is named and the
+      // per-file spread never runs - a detector over injected data reports, and
+      // only the generator may abort.
+      const gapped = structuredClone(real.taxonomy);
+      gapped.defectClasses = [
+        ...gapped.defectClasses,
+        {
+          ...gapped.defectClasses[0]!,
+          id: "unaccounted-defect-class",
+        },
+      ];
+      const problems = realDerivedProblems(
+        gapped,
+        real.spec.world.corpusVersion,
+        intake,
+      );
+      expect(problems.join("\n")).toContain(
+        'real-derived replay semantics missing defect class "unaccounted-defect-class"',
+      );
+      expect(problems.join("\n")).not.toContain("schema validation failed");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("bytes the strict pass cannot finish are REFUSED, never handed to a duplicate-blind JSON.parse", () => {
+    // The YAML pass is the only thing that sees a repeated key at all
+    // (`JSON.parse` resolves it last-wins), so a diagnostic that ABANDONS the
+    // scan is a duplicate-key bypass, not a curiosity: below, the composer gives
+    // up before it ever compares the two "a" keys while `JSON.parse` accepts the
+    // same bytes, and the old fall-through returned {"a":2} reporting nothing.
+    // The nesting is SEARCHED rather than pinned because where the composer
+    // gives up is a property of the host stack, not of the corpus.
+    const abandoned = [2_000, 8_000, 32_000, 128_000]
+      .map((depth) => `${"[".repeat(depth)}{"a":1,"a":2}${"]".repeat(depth)}\n`)
+      .find(
+        (bytes) =>
+          !parseDocument(bytes, { strict: true, uniqueKeys: true }).errors.some(
+            (error) => error.code === "DUPLICATE_KEY",
+          ),
+      );
+    expect(abandoned, "no probe made the strict pass abandon its scan").toBeDefined();
+    expect(() => JSON.parse(abandoned!)).not.toThrow();
+    expect(() => parseStrictJson(abandoned!, "probe.json")).toThrow(
+      "probe.json: invalid JSON",
+    );
+    expect(() => parseStrictJson('{"a":1,"a":2}\n', "probe.json")).toThrow(
+      "probe.json: duplicate object key",
+    );
+    expect(parseStrictJson('{"a":1}\n', "probe.json")).toEqual({ a: 1 });
+  });
+
   it("unsafe delivery filenames never enter intake diagnostics", () => {
     const dir = mkdtempSync(join(tmpdir(), "verin-corpus-unsafe-path-"));
     try {
@@ -5282,6 +5374,44 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
         ),
       ).toThrow('unsupported freshness evidence kind "custodian-memo"');
     }
+  });
+
+  it("a corpus-root file outside every accounted-for bucket is named, not silently ignored", () => {
+    const accounted = [
+      { relPath: "README.md", kind: "file", bytes: "docs\n" },
+      { relPath: "manifest.json", kind: "file", bytes: "{}\n" },
+      { relPath: "spec/world.json", kind: "file", bytes: "{}\n" },
+      { relPath: "synthetic/CS-a.json", kind: "file", bytes: "{}\n" },
+      { relPath: "real-derived/README.md", kind: "file", bytes: "intake\n" },
+    ] as const;
+    expect(corpusRootInventoryProblems(accounted)).toEqual([]);
+    for (const stray of ["extra/x.json", "notes.md", "manifest.json.bak", "."]) {
+      expect(
+        corpusRootInventoryProblems([
+          ...accounted,
+          { relPath: stray, kind: "file", bytes: "{}\n" },
+        ]).join("\n"),
+        `${stray} was accounted for by nothing and passed anyway`,
+      ).toContain(`${stray}: committed corpus entry is outside every accounted-for bucket`);
+    }
+    expect(
+      corpusRootInventoryProblems(
+        accounted.filter((entry) => entry.relPath !== "README.md"),
+      ).join("\n"),
+    ).toContain("README.md: allowlisted corpus documentation is missing");
+    expect(
+      corpusRootInventoryProblems([
+        ...accounted.filter((entry) => entry.relPath !== "README.md"),
+        { relPath: "README.md", kind: "unsupported", bytes: null },
+      ]).join("\n"),
+    ).toContain("README.md: allowlisted corpus documentation must be a regular file");
+    // A near-miss prefix must not buy accounting: only the real subtrees count.
+    expect(
+      corpusRootInventoryProblems([
+        ...accounted,
+        { relPath: "specimen/x.json", kind: "file", bytes: "{}\n" },
+      ]).join("\n"),
+    ).toContain("specimen/x.json: committed corpus entry is outside every accounted-for bucket");
   });
 
   it("an unregistered hand-owned spec file and a missing digested input are both named", () => {

@@ -50,7 +50,7 @@ import {
   syntheticSemanticProblems,
   type EmittedCase,
 } from "./synthetic-semantics";
-import { readTree } from "./tree";
+import { readTree, type TreeEntry } from "./tree";
 import { CORPUS_DIR, SPEC_FILES, SYNTHETIC_DIR, loadSpec, type LoadedSpec } from "./world";
 
 export interface CommittedFile {
@@ -58,10 +58,8 @@ export interface CommittedFile {
   readonly bytes: string;
 }
 
-export const readCommittedCorpus = (
-  root: string = CORPUS_DIR,
-): CommittedFile[] =>
-  readTree(root)
+const committedCorpusFiles = (entries: readonly TreeEntry[]): CommittedFile[] =>
+  entries
     .filter(
       (entry) =>
         entry.relPath === "manifest.json" ||
@@ -71,6 +69,54 @@ export const readCommittedCorpus = (
       relPath: entry.relPath,
       bytes: entry.bytes ?? `<${entry.kind}>`,
     }));
+
+export const readCommittedCorpus = (
+  root: string = CORPUS_DIR,
+): CommittedFile[] => committedCorpusFiles(readTree(root));
+
+/** The ONLY corpus-root entries no generator emits, no digest binds, and no
+ * intake contract governs. Documentation, stated exactly and held both ways: an
+ * unlisted entry fails, and a listed one that stops existing fails too. */
+export const CORPUS_ROOT_DOCUMENTATION_FILES = ["README.md"] as const;
+
+/** Every other committed byte belongs to one of these accountable buckets:
+ * `manifest.json` and `synthetic/**` are regenerated and byte-compared,
+ * `spec/**` is digest-bound (`specCoverageProblems`), and `real-derived/**` is
+ * governed by the fail-closed intake contract. */
+const ACCOUNTED_CORPUS_SUBTREES = ["real-derived/", "spec/", "synthetic/"] as const;
+
+/**
+ * (1b) THE COMMITTED CORPUS TREE IS AN EXACT INVENTORY.
+ *
+ * A file committed outside every accounted-for bucket is checked by nothing: it
+ * is not regenerated, not digest-bound, not intake-governed, and not even
+ * NFC-scanned - so it could carry corpus-shaped content that no signature moves
+ * for. The buckets are named here rather than implied by what each reader
+ * happens to select, because "nothing looked at it" is the failure mode this
+ * closure exists to make impossible.
+ */
+export function corpusRootInventoryProblems(entries: readonly TreeEntry[]): string[] {
+  const documentation: ReadonlySet<string> = new Set(CORPUS_ROOT_DOCUMENTATION_FILES);
+  const present = new Set(entries.map((entry) => entry.relPath));
+  return [
+    ...entries.flatMap((entry) => {
+      if (documentation.has(entry.relPath)) {
+        return entry.kind === "file"
+          ? []
+          : [`${entry.relPath}: allowlisted corpus documentation must be a regular file`];
+      }
+      return entry.relPath === "manifest.json" ||
+          ACCOUNTED_CORPUS_SUBTREES.some((subtree) => entry.relPath.startsWith(subtree))
+        ? []
+        : [
+          `${entry.relPath}: committed corpus entry is outside every accounted-for bucket - nothing generates, digests, or governs it`,
+        ];
+    }),
+    ...CORPUS_ROOT_DOCUMENTATION_FILES.filter((name) => !present.has(name)).map(
+      (name) => `${name}: allowlisted corpus documentation is missing from the committed tree`,
+    ),
+  ];
+}
 
 /** (1) Regenerate-and-compare: any hand edit to a generated file fails here.
  * This is the real enforcement of generated-file ownership; the `.gitattributes`
@@ -331,7 +377,8 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
   // and the ~50-file authority set is read and hashed once per validation.
   const authority = currentAuthorityBindings();
   const manifest = buildManifest(spec, taxonomy, inventory, seed, authority);
-  const committed = readCommittedCorpus(root);
+  const corpusEntries = readTree(root);
+  const committed = committedCorpusFiles(corpusEntries);
   const cases = generated.map((file) => file.value as unknown as EmittedCase);
   const realDerivedCases = realDerivedFiles.map(
     (file) => file.value as unknown as Record<string, unknown>,
@@ -351,6 +398,7 @@ export function validateCorpus(root: string = CORPUS_DIR, seed: string = CORPUS_
   const signoff = loadSignoff(join(root, "spec"));
   const problems = [
     ...committedBytesProblems([...generated, manifest], committed),
+    ...corpusRootInventoryProblems(corpusEntries),
     ...labelProblems(cases, taxonomy, refs.provenanceLabels, goldenCaseIds),
     ...taxonomyExerciseProblems(taxonomy, spec.cases),
     ...timestampProblems(cases, spec),

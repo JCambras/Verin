@@ -10,6 +10,12 @@ Two ownership planes live here and must never be confused.
 | `spec/SIGNOFF.md` | **hand-owned, captain-only** | Agents never write a signature. |
 | `manifest.json`, `synthetic/*.json` | **generated** | `pnpm corpus:generate`. Never hand-edit: CI regenerates and byte-compares. |
 | `real-derived/` | **captain-gated intake** | Ships empty. See its README. |
+| `README.md` (this file) | **hand-owned documentation** | The ONLY corpus-root entry outside those buckets. |
+
+That table is the complete inventory, and it is enforced: `pnpm corpus:validate` fails on any committed
+entry under `fixtures/corpus/` that is neither `manifest.json`, nor under `spec/`, `synthetic/`, or
+`real-derived/`, nor the allowlisted `README.md` - and equally if that README stops existing. A file
+nothing generates, digests, or governs is checked by nothing, so it may not sit here quietly.
 
 ## Commands
 

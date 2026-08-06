@@ -65,14 +65,24 @@ export function inspectRealDerivedPartition(
 ): RealDerivedInspection {
   const delivery = loadRealDerivedDelivery(dir);
   const classes = new Set(taxonomy.defectClasses.map((entry) => entry.id));
+  // The contract gaps are RESOLVED FIRST because the per-case detectors execute
+  // the very authorities those problems name: a context rule, treatment selector,
+  // or evidence plane the contract declares without an executable authority is a
+  // reported problem here and a thrown error one line down. A detector over
+  // injected data reports; only the generator may abort - so a mis-declared
+  // contract and a delivered intake file together must still produce the problem
+  // list, not a stack trace.
+  const contractProblems = realDerivedSemanticContractProblems(classes);
   const problems = [
     ...caseSchemaVocabularyProblems(),
     ...delivery.problems,
     ...realDerivedDeferralProblems(delivery.deliveredPaths),
-    ...realDerivedSemanticContractProblems(classes),
-    ...delivery.files.flatMap((file) =>
-      realDerivedCaseProblems(file.value, classes, file.relPath),
-    ),
+    ...contractProblems,
+    ...(contractProblems.length === 0
+      ? delivery.files.flatMap((file) =>
+        realDerivedCaseProblems(file.value, classes, file.relPath),
+      )
+      : []),
     ...realDerivedCollectionProblems(delivery.files, corpusVersion),
   ];
   return { delivery, inventoryFiles: problems.length === 0 ? delivery.files : [], problems };

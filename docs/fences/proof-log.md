@@ -8332,3 +8332,77 @@ the complete runtime closure; and a byte appended to any bound module must move 
 empty, and captain signoff remains pending.
 
 **Date:** 2026-08-06 (v3 prompt 11, D-137 review hardening).
+
+## the corpus root is a closed inventory, and no gap reaches a crash (ADR-0039)
+
+**Injection 1 - a committed corpus file nothing accounts for.** Added `fixtures/corpus/extra/x.json`.
+
+**Observed failure (verbatim):**
+```
+✗ extra/x.json: committed corpus entry is outside every accounted-for bucket - nothing generates,
+  digests, or governs it
+```
+
+Before this round `readCommittedCorpus` surfaced only `manifest.json` and `synthetic/**`, so a file
+outside `spec/` and `real-derived/` was byte-compared by nothing, NFC-scanned by nothing, and bound by no
+digest. The allowlist is now stated (`fixtures/corpus/README.md`, `docs/corpus.md` §2) and held both
+ways.
+
+**Injection 2 - the allowlisted documentation removed.** Moved `fixtures/corpus/README.md` aside.
+
+**Observed failure (verbatim):**
+```
+✗ README.md: allowlisted corpus documentation is missing from the committed tree
+```
+
+An allowlist that only ever grants is an allowlist nobody is holding; the entry must exist to keep its
+exemption.
+
+**Injection 3 - the strict-JSON fail-open restored.** Deleted the `document.errors.length > 0` refusal
+so any diagnostic other than `DUPLICATE_KEY` fell through to `JSON.parse` again.
+
+**Observed failure:**
+```
+✗ bytes the strict pass cannot finish are REFUSED, never handed to a duplicate-blind JSON.parse
+  expected [Function] to throw an error
+```
+
+The YAML pass is the ONLY thing that sees a repeated key at all - `JSON.parse` resolves one last-wins -
+so a diagnostic that ABANDONS the scan is a duplicate-key bypass. The companion searches for a nesting
+the composer gives up on (the depth where it does is a property of the host stack, not of the corpus),
+confirms `JSON.parse` accepts the same bytes, and requires refusal.
+
+**Injection 4 - the report-never-abort guard removed, with a mis-declared contract.** Deleted the
+`contractProblems.length === 0` gate in `inspectRealDerivedPartition` and renamed one `contextRule` in
+`fixtures/corpus/spec/real-derived-semantic-contract.json` to `identity-ambiguous-x`, with one delivered
+intake file present.
+
+**Observed failure (verbatim):**
+```
+Error: semantic context rule "identity-ambiguous-x" has no executable authority
+ ❯ scripts/corpus/real-derived-semantics.ts:284:13
+ ❯ realDerivedSemanticDefects scripts/corpus/real-derived-semantics.ts:281:31
+ ❯ realDerivedCaseProblems scripts/corpus/scrub-contract.ts:386:27
+ ❯ inspectRealDerivedPartition scripts/corpus/real-derived.ts:81:23
+```
+
+With the gate restored, the same input reports instead of crashing:
+```
+real-derived semantic context rule "identity-ambiguous-x" has no executable authority
+```
+The per-case detectors EXECUTE the very authorities a contract gap names, so the gap has to be resolved
+first - `validate.ts`'s own rule is that a detector over injected data reports and only the generator may
+abort. The underlying strictness is unchanged: the throw still guards a caller that reaches those
+authorities without resolving the contract.
+
+**Standing companions:** a stray root file, a missing allowlisted README, a non-regular allowlisted
+README, and a near-miss path prefix (`specimen/`) are each named; bytes the strict pass abandons are
+refused while a plain duplicate key still reports as one; and a contract gap beside a delivered file
+yields a named problem list with the per-file spread proven not to have run.
+
+**Revert:** every injection was reverted and each survives as a companion in
+`corpus-provenance-split.test.ts`. Canonical regeneration produced `corpusDigest`
+`680f86ce6110471c71339b91ad5bbe11eb50827f59f2752c8e3408f76d8cb275`, the real-derived partition remains
+empty, and captain signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, D-138 review hardening).

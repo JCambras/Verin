@@ -40,12 +40,20 @@ fixtures/corpus/
   manifest.json              GENERATED   version, seed, digests, per-partition counts
   synthetic/CS-*.json        GENERATED   provenance: synthetic-fixture
   real-derived/              hand-delivered, manifest-inventoried intake - SHIPS EMPTY
+  README.md                  hand-owned  documentation; the ONLY allowlisted root entry
 ```
 
 Generated-file ownership is enforced by **regenerate-and-byte-compare** in the blocking `corpus` CI job,
 not by a comment. `.gitattributes` marks the generated trees `linguist-generated` and pins them to LF;
 each directory's README names its owning command. Inventory is recursive and exact: hidden, nested,
 non-JSON, and unsupported filesystem entries cannot sit outside the comparison.
+
+The layout above is also a **closed root inventory**. Every committed entry under `fixtures/corpus/`
+must be `manifest.json`, live under `spec/`, `synthetic/`, or `real-derived/`, or be the allowlisted
+`README.md`; anything else fails validation by name, and a missing `README.md` fails it too. Each bucket
+names the mechanism that accounts for it - regenerate-and-byte-compare, the spec digest coverage rule
+(§9), the fail-closed intake contract - so a file outside all of them would be governed by nothing at
+all, which is the one state this rule exists to forbid.
 
 While the ADR-0039 deferral is active, any delivered entry under `real-derived/` fails validation. Once
 the deferral is explicitly lifted, every case must be a top-level canonical `RD-<16 hex>.json` file with

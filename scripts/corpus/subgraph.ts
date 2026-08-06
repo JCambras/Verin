@@ -59,6 +59,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
   const householdAccountKeys = new Set(householdAccounts.map((account) => account.key));
   const instructionKeys = evidenceKeys(corpusCase, "bank-instruction");
   instructionKeys.add(corpusCase.request.destinationRef);
+  const recentChangeKeys = evidenceKeys(corpusCase, "recent-change");
   const selectedBankInstructions = sortedBy(
     world.bankInstructions.filter(
       (row) => row.householdRef === householdKey || instructionKeys.has(row.key),
@@ -300,7 +301,7 @@ export function caseSubgraph(world: WorldSpec, corpusCase: CaseSpec): JsonValue 
       releasedAt: row.releasedAt,
     })),
     recentChanges: sortedBy(
-      world.recentChanges.filter((row) => evidenceKeys(corpusCase, "recent-change").has(row.key)),
+      world.recentChanges.filter((row) => recentChangeKeys.has(row.key)),
       (row) => row.key,
     ).map((row) => ({
       id: recentChangeId(row.key),
