@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   lstatSync,
@@ -76,34 +77,67 @@ export const isRepositoryContainedFile = (path: string, repoRoot: string): boole
 
 /** Names the repository's own `.gitignore` refuses to track. Every reader of this
  * walk asks what the COMMITTED tree holds - the corpus byte-compare, the exact
- * root inventory, the spec digest coverage - and a platform dropping is neither
- * committed nor committable, so surfacing one turns opening a directory in a file
- * browser into a blocking-gate failure. Stated exactly here rather than guessed
- * per reader, and held against `.gitignore` by the corpus-provenance-split fence
- * so this list can never grant an exemption git does not. */
+ * root inventory, the spec digest coverage - so a platform dropping nobody can
+ * commit must not turn opening a directory in a file browser into a blocking-gate
+ * failure. The NAME never buys that exemption on its own: git has to confirm the
+ * entry is untracked, because a force-added dropping is a committed byte and every
+ * closure above owes it an account. Stated exactly here rather than guessed per
+ * reader, and held against `.gitignore` by the corpus-provenance-split fence so
+ * this list can never name something git tracks by default. */
 export const UNTRACKABLE_ENTRY_NAMES = [".DS_Store"] as const;
 
 const untrackableNames: ReadonlySet<string> = new Set(UNTRACKABLE_ENTRY_NAMES);
 
-export function readTree(dir: string, prefix = ""): TreeEntry[] {
-  if (!existsSync(dir)) return [];
-  if (!lstatSync(dir).isDirectory()) {
-    return [{ relPath: prefix === "" ? "." : prefix, kind: "unsupported", bytes: null }];
-  }
+/** git's own answer to what the committed tree holds, in this walk's path
+ * namespace. `null` when git cannot answer at all - no repository, no binary -
+ * and the walk then drops nothing: an entry no one can prove untracked is
+ * accounted for rather than assumed away. */
+const trackedRelPaths = (dir: string, prefix: string): ReadonlySet<string> | null => {
+  const listed = spawnSync("git", ["-C", dir, "ls-files", "-z", "--cached"], {
+    encoding: "utf8",
+  });
+  if (listed.error !== undefined || listed.status !== 0) return null;
+  return new Set(
+    listed.stdout
+      .split("\0")
+      .filter((path) => path.length > 0)
+      .map((path) => (prefix === "" ? path : `${prefix}/${path}`)),
+  );
+};
+
+function walkTree(
+  dir: string,
+  prefix: string,
+  isUntracked: (relPath: string) => boolean,
+): TreeEntry[] {
   const entries: TreeEntry[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((left, right) =>
     left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
   )) {
-    if (untrackableNames.has(entry.name)) continue;
     const relPath = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      entries.push(...readTree(fullPath, relPath));
+      entries.push(...walkTree(fullPath, relPath, isUntracked));
     } else if (entry.isFile()) {
+      if (untrackableNames.has(entry.name) && isUntracked(relPath)) continue;
       entries.push({ relPath, kind: "file", bytes: readFileSync(fullPath, "utf8") });
     } else {
       entries.push({ relPath, kind: "unsupported", bytes: null });
     }
   }
   return entries;
+}
+
+export function readTree(dir: string, prefix = ""): TreeEntry[] {
+  if (!existsSync(dir)) return [];
+  if (!lstatSync(dir).isDirectory()) {
+    return [{ relPath: prefix === "" ? "." : prefix, kind: "unsupported", bytes: null }];
+  }
+  // Asked lazily and at most once per walk: a tree holding no dropping never
+  // shells out at all, and the answer is one snapshot for the whole walk.
+  let tracked: ReadonlySet<string> | null | undefined;
+  return walkTree(dir, prefix, (relPath) => {
+    if (tracked === undefined) tracked = trackedRelPaths(dir, prefix);
+    return tracked !== null && !tracked.has(relPath);
+  });
 }

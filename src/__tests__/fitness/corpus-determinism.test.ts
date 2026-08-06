@@ -67,7 +67,14 @@ const REPOSITORY_INPUT_BOUNDARIES = [
   { file: "/scripts/golden-cases.lib.ts", owner: "loadGoldenCases", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.readdirSync": ["dir"] } },
   { file: "/scripts/corpus/scrub-contract.ts", owner: "schemaFromSpec", inputs: {} },
   { file: "/scripts/corpus/world.ts", owner: "readSpecFile", rootParameters: [1], inputs: {} },
-  { file: "/scripts/corpus/tree.ts", owner: "readTree", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.lstatSync": ["dir"], "fs.readdirSync": ["dir"], "fs.readFileSync": ["fullPath"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "readTree", rootParameters: [0], inputs: { "fs.existsSync": ["dir"], "fs.lstatSync": ["dir"] } },
+  { file: "/scripts/corpus/tree.ts", owner: "walkTree", rootParameters: [0], inputs: { "fs.readdirSync": ["dir"], "fs.readFileSync": ["fullPath"] } },
+  // The ONE subprocess the corpus tooling may run, and only this argument: git
+  // deciding which working-tree entries the committed tree actually holds. It
+  // selects nothing that is generated, digested or inventoried - the drop set is
+  // a subset of `UNTRACKABLE_ENTRY_NAMES`, which no corpus path can be named -
+  // so no emitted byte can vary with the answer.
+  { file: "/scripts/corpus/tree.ts", owner: "trackedRelPaths", rootParameters: [0], inputs: { "child_process.spawnSync": ["\"git\""] } },
   { file: "/scripts/corpus/tree.ts", owner: "resolveRepositoryFile", rootParameters: [1], inputs: { "fs.statSync": ["canonicalTarget"], "fs.realpathSync": ["repoRoot", "path"] } },
   { file: "/scripts/corpus/tree.ts", owner: "readRepositoryFile", rootParameters: [1], inputs: { "fs.readFileSync": ["resolved.target"] } },
   { file: "/scripts/corpus/tree.ts", owner: "isRepositoryContainedFile", rootParameters: [1], inputs: {} },

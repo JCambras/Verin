@@ -5301,3 +5301,24 @@ under the bug.
 **Why:** a check that says "committed" while reading the working tree fails on things no one can commit,
 and a correction indistinguishable from the bug it replaced is detection without verification (charter #4).
 **Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.
+### D-140 · 2026-08-06 · reversible · The corpus walk drops on TRACKEDNESS, not on a name
+
+`readTree` drops an entry only when git confirms it untracked, and only under a name in
+`UNTRACKABLE_ENTRY_NAMES` (D-139). Keying the drop on the NAME alone made a force-added `.DS_Store` -
+`git add -f`, or a commit predating the ignore rule - a genuinely committed byte under `fixtures/corpus/`
+that no closure could see: not regenerated, not digest-bound, not intake-governed, not NFC-scanned, and
+invisible to the exact root inventory D-138 added to forbid exactly that state. Trackedness is asked
+lazily and once per walk (`git ls-files -z --cached`), so a tree holding no dropping never shells out,
+and when git cannot answer at all - no repository, no binary - the walk drops nothing: an entry no one
+can prove untracked is accounted for rather than assumed away.
+
+The subprocess is the ONE the corpus tooling may run, registered in the corpus-determinism fence's input
+boundaries with its exact argument. It cannot move a corpus byte: the drop set is a subset of
+`UNTRACKABLE_ENTRY_NAMES`, and no generated path, intake path, or spec path can bear one of those names,
+so no generated, inventoried, or digested value varies with git's answer. Untracked entries under any
+OTHER name stay surfaced, so a delivered-but-uncommitted intake file is still validated rather than
+silently passing as an empty partition.
+
+**Why:** an exemption that a name alone can claim is an exemption anyone can plant; the walk must ask the
+authority the readers actually mean - git - and fail closed when it has no answer.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0039 remain supported.

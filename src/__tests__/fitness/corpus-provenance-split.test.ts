@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -1994,9 +1995,10 @@ describe("corpus-provenance-split fence", () => {
         )
         .map((entry) => entry.relPath),
     ).toEqual([...CORPUS_ROOT_DOCUMENTATION_FILES]);
-    // The inventory refuses COMMITTED entries, so the only names the walk may
-    // drop are the ones git itself refuses to track. Held against `.gitignore`:
-    // the exemption list cannot invent one of its own.
+    // The inventory refuses COMMITTED entries, so the walk may drop an entry
+    // only once git confirms it untracked, and only under a name git refuses to
+    // track by default. Held against `.gitignore`: the name list cannot invent
+    // an exemption of its own, and trackedness decides the rest.
     const ignoreRules = readFileSync(join(REPO_ROOT, ".gitignore"), "utf8")
       .split("\n")
       .map((line) => line.trim());
@@ -5426,19 +5428,40 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
     ).toContain("specimen/x.json: committed corpus entry is outside every accounted-for bucket");
   });
 
-  it("an untrackable platform dropping never reaches the inventory, but a stray file still does", () => {
-    const root = mkdtempSync(join(tmpdir(), "verin-corpus-untrackable-"));
+  it("an UNTRACKED platform dropping never reaches the inventory, but a force-added one does", () => {
+    const repo = mkdtempSync(join(tmpdir(), "verin-corpus-untrackable-"));
+    const root = join(repo, "corpus");
+    const git = (...args: readonly string[]): void => {
+      const run = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8" });
+      expect(run.status, `git ${args.join(" ")} failed: ${run.stderr}`).toBe(0);
+    };
     try {
       mkdirSync(join(root, "synthetic"), { recursive: true });
       writeFileSync(join(root, "README.md"), "docs\n");
       writeFileSync(join(root, "manifest.json"), "{}\n");
       writeFileSync(join(root, "synthetic", "CS-a.json"), "{}\n");
+      // No repository yet, so git cannot answer: an entry nobody can prove
+      // untracked is accounted for rather than assumed away.
+      expect(
+        spawnSync("git", ["-C", root, "rev-parse", "--git-dir"], { encoding: "utf8" }).status,
+        "this case needs a temp directory outside any repository",
+      ).not.toBe(0);
+      for (const name of UNTRACKABLE_ENTRY_NAMES) {
+        writeFileSync(join(root, name), "dropping\n");
+        expect(corpusRootInventoryProblems(readTree(root)).join("\n")).toContain(
+          `${name}: committed corpus entry is outside every accounted-for bucket`,
+        );
+        rmSync(join(root, name));
+      }
+      git("init", "--quiet");
+      git("add", "corpus/README.md", "corpus/manifest.json", "corpus/synthetic/CS-a.json");
       for (const name of UNTRACKABLE_ENTRY_NAMES) {
         writeFileSync(join(root, name), "dropping\n");
         writeFileSync(join(root, "synthetic", name), "dropping\n");
       }
-      // Neither the exact-inventory closure nor the byte-compare may see it: a
-      // file browser opening the corpus directory cannot red a blocking gate.
+      // Untracked: neither the exact-inventory closure nor the byte-compare may
+      // see it - a file browser opening the corpus directory cannot red a
+      // blocking gate.
       expect(readTree(root).map((entry) => entry.relPath)).toEqual([
         "README.md",
         "manifest.json",
@@ -5449,13 +5472,29 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
         "manifest.json",
         "synthetic/CS-a.json",
       ]);
-      // Everything git WOULD track still fails closed.
+      // Force-added: the NAME buys nothing. A tracked dropping is a committed
+      // byte no generator emits and no digest binds, so the walk surfaces it and
+      // every closure over it fails closed.
+      for (const name of UNTRACKABLE_ENTRY_NAMES) {
+        git("add", "-f", `corpus/${name}`, `corpus/synthetic/${name}`);
+      }
+      const surfaced = readTree(root).map((entry) => entry.relPath);
+      const inventory = corpusRootInventoryProblems(readTree(root)).join("\n");
+      const committed = readCommittedCorpus(root).map((file) => file.relPath);
+      for (const name of UNTRACKABLE_ENTRY_NAMES) {
+        expect(surfaced, `a tracked "${name}" was dropped from the walk`).toContain(name);
+        expect(surfaced).toContain(`synthetic/${name}`);
+        expect(inventory, `a tracked "${name}" was accounted for by nothing and passed anyway`)
+          .toContain(`${name}: committed corpus entry is outside every accounted-for bucket`);
+        expect(committed).toContain(`synthetic/${name}`);
+      }
+      // Everything git WOULD track still fails closed, tracked or not.
       writeFileSync(join(root, "notes.md"), "stray\n");
       expect(corpusRootInventoryProblems(readTree(root)).join("\n")).toContain(
         "notes.md: committed corpus entry is outside every accounted-for bucket",
       );
     } finally {
-      rmSync(root, { recursive: true, force: true });
+      rmSync(repo, { recursive: true, force: true });
     }
   });
 
