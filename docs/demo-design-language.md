@@ -36,7 +36,7 @@ and never define a color, font, radius, or keyframe anywhere else.
 | [`src/app/globals.css`](../src/app/globals.css) | All tokens (OKLCH slate palette, `--surface`, `--border`, `--ring`, `--destructive`, `--success`, radii), Geist via `--font-sans` / `--font-mono`, the four keyframes (`fade-in`, `slide-down`, `check-pop`, `story-fade-in`), the darkened `slate-400/500` AA overrides, the focus-visible ring, and the reduced-motion kill-switch. Light-only by design; dark mode is deliberately not a goal. |
 | [`src/app/presentation/brand.tsx`](../src/app/presentation/brand.tsx) | The `Verin.` wordmark (the trailing period is brand). |
 | [`src/app/presentation/ui.tsx`](../src/app/presentation/ui.tsx) | `Field`, `TextInput`, `SelectField`, `Button` (primary / secondary / danger), `StatusBadge` (+ its `STATUS_STYLES` map), `EmptyState`. Accessible by construction; status is always text + color, never color alone. |
-| [`src/app/presentation/fresh-value.tsx`](../src/app/presentation/fresh-value.tsx) | `FreshValue`: the `source · as of` label and freshness-as-opacity (floored at 0.7 for the WCAG 1.4.3 contrast floor). |
+| [`src/app/presentation/fresh-value.tsx`](../src/app/presentation/fresh-value.tsx) | `FreshValue`: the `source · as of` label and freshness-as-opacity (floored at 0.7, and receded content takes `text-slate-800` rather than inheriting, so the fade clears the WCAG 1.4.3 floor whatever color the caller sets). |
 | [`src/app/presentation/metric.tsx`](../src/app/presentation/metric.tsx) | `Metric`: the only sanctioned metric-class surface; number typography (`font-semibold tabular-nums`) and the demonstration watermark chip. |
 | [`src/app/presentation/progress-steps.tsx`](../src/app/presentation/progress-steps.tsx) | `ProgressSteps`: done / active / pending step states, the accessible ordered-list recipe. The Decision Spine's parent (§4). |
 | [`src/app/presentation/step-info-card.tsx`](../src/app/presentation/step-info-card.tsx) | `StepInfoCard`: the "Step N of M" kicker idiom and contextual-teaching card recipe. |
@@ -602,6 +602,12 @@ standard is most on display.
   putting slate text on non-white backgrounds (`amber-50`, `slate-50`, `bg-surface`) must verify
   4.5:1; the pairings used in this doc (`amber-900` on `amber-50`, `slate-700` on `slate-50`,
   white on `slate-900`) are the established passing ones.
+- **An opacity floor only holds AA if the faded element owns its color** (D-100): a fade
+  inherits the caller's color, so the same 0.7 floor that keeps slate-900 legible puts
+  slate-600 at 3.5:1 and slate-700 at 4.2:1 on `bg-surface`. Anything that recedes -
+  `FreshValue`'s aged values, the voided approval rows in `approval-stage-panel.tsx` /
+  `safety.tsx` / `record.tsx` - sets slate-800 or darker itself rather than inheriting.
+  Never fade a `StatusBadge` (a blended amber badge lands ~4.1:1).
 - **Focus**: the global `:focus-visible` ring (`globals.css`) covers every interactive element;
   scrollable regions get `tabIndex={0}` + `aria-label` (audit-page precedent).
 - **Structure**: one `h1` per page; tables with `caption` + `scope`; the DecisionSpine's `<ol>`

@@ -3028,3 +3028,204 @@ hardcoded load credential finding; or disable the blocking njsscan rules.
 
 **Revert path:** restore parallel v3 fence execution, the literal load
 credential, and the prior AST handle names.
+
+## D-098 - The captain's differentiating thesis ships as a standing repo document
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: D-034, ADR-0023 (open item C7),
+charter #1/#5
+
+The product thesis the captain stated on 2026-08-05 - traditional software makes you
+configure the software and then the software runs your business; Verin inverts that,
+you run your business and Verin learns how it operates and increasingly configures
+itself around you - is now a committed document, `docs/product-guide.md`, pointed to
+from `README.md`, `AGENTS.md`, `PRODUCT-DIRECTION.md`, and `docs/v3/README.md`.
+
+It carries an explicit authority chain so the repo keeps ONE north-star chain rather
+than two rival ones: subordinate to `CHARTER.md`, the ratified v3 direction, and the
+two normative demo documents (`docs/demo-contract.md`, `docs/demo-design-language.md`),
+and stating the thesis that `PRODUCT-DIRECTION.md` serves rather than competing with
+it. Every one of those - `PRODUCT-DIRECTION.md` included - wins on conflict, so a session
+told to test demo choices against the thesis has stated precedence instead of an apparent
+override. The `README.md`, `AGENTS.md`, and `PRODUCT-DIRECTION.md` pointers name that same
+set, so the precedence reads identically at every entry point that states it - including
+`PRODUCT-DIRECTION.md` itself, the document the guide is most likely to collide with,
+whose pointer would otherwise read as ranking the guide above it. The `docs/v3/README.md`
+pointer stays deliberately shorter (the guide binds nothing and is subordinate to the
+ratified documents there), since that index originates nothing normative (D-099).
+It does not satisfy ADR-0023's open C7 item (a `PRODUCT-DIRECTION.md` v2 under the v3
+framing), which stays open. The thesis carries a build-honesty label: it is the
+product aim, and no continuous-learning or self-configuration subsystem exists today.
+
+The PROPOSE/APPROVE shaping of configuration surfaces is recorded there as a
+directional design principle, explicitly NOT a normative rule, precisely so it is not
+a prose-only invariant. It is fenced in the PR that designs the self-configuration
+capability, beside the already-registered invariants 15-17 on policy mutability,
+executable configuration, and LLM-driven activation (gate E).
+Governed, attributed activation is recorded on the same directional terms and cited to
+the SHA-256-pinned `docs/v3/verin-architecture-v3.md` (§3 non-negotiables 1, 4 and 11;
+§17 invariants 14, 15, 17, 18, 19 and 21), not to the unpinned index (D-099): it is
+ratified v3 direction, but the invariants that would hold it (14, 15, 17 behind gate E;
+18, 19, 21 behind gate F) are all registered `not-yet-active`, so the
+doc says no mechanism enforces it today rather than calling it settled. Ratified is not
+enforced; a claim with no live mechanism behind it is labeled directional (charter #5).
+
+**Alternatives rejected:** leave the thesis in session history only (it would be
+re-derived or lost); state it as a second north star competing with
+`PRODUCT-DIRECTION.md`; state the configuration-surface requirement as a normative
+"must" with no fence behind it (DO-NOT-PORT #8, charter #1); or hold the doc until the
+self-configuration capability is designed, leaving the directive unrecorded.
+
+**Revert path:** delete `docs/product-guide.md` and remove the four pointers with their
+precedence clauses (`README.md`, `AGENTS.md`, `PRODUCT-DIRECTION.md` header,
+`docs/v3/README.md`).
+No code, fixture, fence, or pinned document depends on it. D-099 stands independently of
+this revert.
+
+## D-099 - The v3 pin covers the registered documents; the index originates nothing normative
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: D-098, ADR-0023, ADR-0018,
+charter #1/#5, DO-NOT-PORT #8
+
+`README.md`, `AGENTS.md`, and `docs/v3/README.md` each stated the SHA-256 pin as a
+universal rule over `docs/v3/`. It never was one: the arch-version fence
+(`src/__tests__/fitness/arch-version.test.ts`) iterates `registry.documents` from
+`v3-invariants.json` and nothing else - it never reads the directory - so the pin covers
+the REGISTERED set (today `verin-architecture-v3.md`, `verin-prompt-sequence-v3.md`,
+`verin-demo-contract-v1.md`, `verin-core-contracts.ts`, `marriage-map.md`), and a file
+under `docs/v3/` that is absent from the registry is simply invisible to it.
+`docs/v3/README.md` is the unregistered file today, and that was written down nowhere, so
+a session adding content to the index would believe it byte-protected when it is not.
+
+The three documents therefore claim only what the fence verifies: the registry-listed set
+is pinned, the fence covers that registry and not the directory, and a new ratified
+document must be registered in the PR that adds it. Naming a fixed count ("the five
+ratified documents") or an exclusivity property ("the one file here that is NOT pinned")
+was itself unverified prose: a sixth ratified document added without a pin would silently
+falsify all three statements while the build stayed green. Fixed counts are gone; the
+statements now track the registry.
+
+That exception carries a rule: `docs/v3/README.md` is navigation, not ratified content,
+so it ORIGINATES nothing normative - every rule it states restates a registered document,
+an ADR, the charter, or a `DECISIONS.md` entry, and a new normative statement originates
+in one of those instead. The originates-nothing formulation is the accurate one: the index
+visibly carries normative statements today (the registration and pin rules, the
+charter-supremacy conflict rule, "What a build session must do", the product-thesis
+subordination), so a flat "nothing normative lives here" would make the document
+non-compliant on entry and leave a reviewer no consistent way to attest it. The permitted
+origins name `DECISIONS.md` because two of those restatements resolve there rather than to
+a ratified document: the register-a-new-document-in-the-adding-PR rule originates in this
+entry (ADR-0023 decision 2 pins the five documents and does not state it), and the
+product-thesis subordination originates in D-098. A three-origin list would have left the
+index failing its own rule on entry - the same unattestable checkbox the
+originates-nothing wording exists to close. This is deliberately recorded
+as prose with a stated owner rather than as an invariant, because no mechanism can detect
+normativity in a file the fence does not cover; a fenced-sounding claim with no fence
+behind it is the DO-NOT-PORT #8 failure. The rule was applied on entry: the D-098 pointer
+added to the index is a pure pointer, and the product guide's own authority-chain and
+governed-activation citations resolve to the pinned `docs/v3/verin-architecture-v3.md`
+with the index as a secondary hop.
+
+Its enforcement hook is a pair of conditional items in
+`.github/pull_request_template.md` (the shape the charter-amendment item already uses),
+each on its own trigger, because the two obligations are independent. The
+navigation-only attestation fires when `docs/v3/README.md` changes; the
+register-with-its-pin obligation fires when any file is ADDED under `docs/v3/`. Bundling
+them under the index trigger would have prompted only in the case where the author already
+remembered the index - the unregistered-document failure this entry names would still land
+silently - and would have made a pure nav-link PR attest something about a document that
+does not exist.
+
+The overbroad pin phrasing was corrected wherever it is stated as a live rule:
+`README.md`, `AGENTS.md`, `docs/v3/README.md`, the fence-inventory row in `FOUNDATION.md`
+(which the falsification session reads as the operational description of what
+`arch-version` does), and - as a captain-authorized scope exception to this docs-only
+change - the leading docblock of
+`src/__tests__/fitness/arch-version.test.ts`. That last edit is comment text only: no
+assertion, test name, or behavior changed. Dated historical records keep their original
+wording, since they report what was written at the time and this entry supersedes them:
+the append-only `DECISIONS.md` entries above, and the PF-023 entry in
+`docs/fences/proof-log.md`, whose invariant statement and captured failure output are the
+verbatim record of a proof run.
+
+**Optional future hardening (not taken here - this PR is docs-only):** the registration
+half IS mechanizable even though normativity is not. The arch-version fence could read
+`docs/v3/`, assert every entry except `README.md` appears in `registry.documents`, and
+ship the companion proving an unregistered file fails. That would make "the index is the
+only unregistered file" a self-maintaining fact rather than prose, and it would catch a
+ratified document landing byte-unprotected. It belongs in a PR that can prove the new
+fence adversarially (charter #1), not in this documentation change.
+
+**Alternatives rejected:** pin `docs/v3/README.md` too (a navigation index would then
+demand a pin bump for every link edit, and the pin would assert ratified status it does
+not have); leave the overbroad phrasing and rely on the fence to be discovered by
+reading; or state the index rule as a normative invariant with no enforcing mechanism.
+
+**Revert path:** restore the "every doc under `docs/v3/` is pinned" phrasing in
+`README.md`, `AGENTS.md`, `docs/v3/README.md`, `FOUNDATION.md`, and the arch-version
+fence docblock; remove the two v3-document items from
+`.github/pull_request_template.md`; and delete this entry. No fixture, fence assertion, or
+pinned document changes; `v3-invariants.json` and the arch-version fence BEHAVIOR are
+untouched, since this corrects the prose describing them, not what they do.
+
+## D-100 - Receded values carry their own color, so the freshness fade cannot cross the AA floor
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: D-034, ADR-0012, ADR-0022,
+charter #9, demo design language §12.1
+
+`FreshValue` claimed that flooring the freshness fade at `opacity: 0.7` kept receded
+text at 4.5:1. It did not: the faded span inherits the CALLER's color, and the claim
+was only ever true for `text-slate-900`. Every demo `asOf` is a fixed fixture date
+(`data.ts` `OBSERVED_RECENT` = 2026-07-24) aged against the REAL clock, so each
+surface walks down the opacity tiers over calendar time. On 2026-08-05 the
+workspace's `text-slate-600` custodian lines reached tier 0.8 and axe measured
+4.34:1 on `bg-surface` - a blocking e2e failure produced by the calendar, not by any
+code change. Past 21 days the floor tier lands `text-slate-600` at 3.47:1 and
+`text-slate-700` at 4.20:1, so the same gate would have failed permanently from
+2026-08-14 on.
+
+Receded content now owns the established receded color - design §12.1's slate-800,
+already used by `record.tsx`'s voided approval rows for exactly this reason - which
+clears 4.5:1 at the 0.7 floor on white, `bg-surface`, and `amber-50` alike. Fresh
+values (opacity 1) still inherit, so nothing changes until a value actually recedes.
+The AA outcome is now independent of when the suite runs, which is what removes the
+calendar flakiness. Proven both ways before landing: with the fix, axe passes on all
+twelve demo surfaces with every `FreshValue` pinned to 0.7; with the color removed
+and the pin kept, the same probe fails at 3.47-4.20:1.
+
+**Alternatives rejected:** raise the opacity floor to 0.9 (the only tier where
+inherited slate-600 passes - it deletes the freshness grammar and still says nothing
+about darker-background callers); recolor the twelve call sites (the guarantee
+belongs to the component that makes it, and the next caller reintroduces the bug);
+render demo freshness against the `DEMO_NOW` world clock the fixtures declare
+(correct on its own terms and worth doing, but it needs a `now` threaded through
+`FreshValue`, `Metric`, `EvidenceRow`, and `DispositionNotice`, and it would leave
+the false contrast guarantee standing for real-clock surfaces such as the console).
+
+**Revert path:** drop the conditional `text-slate-800` from `fresh-value.tsx`. No
+contract, fixture, fence, or scenario data changes.
+
+## D-101 - Dependency-audit remediation: undici, fast-uri, and a brace-expansion selector bump
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: D-033, charter #15
+
+Three new high advisories landed against dev-only transitives of
+`@cyclonedx/cdxgen` (the `pnpm sbom` toolchain), failing
+`pnpm audit --audit-level=high`. Remediated with the range-scoped, self-expiring
+`pnpm.overrides` selectors D-033 established: `undici@<7.29.0 → 7.29.0`
+(GHSA-4cwx-7wf7-3272, via cdxgen and its cheerio dependency),
+`fast-uri@<3.1.5 → 3.1.5` (GHSA-7p8r-x3mc-p8w7, via ajv), and the existing
+`brace-expansion` selector moved from `<5.0.8 → 5.0.8` to `<5.0.9 → 5.0.9`
+(GHSA-rgw5-rvv9-x895 widened the vulnerable range to include the version the old
+selector pinned). Each stays on its current major, so the `minimatch@3.1.5` patch
+D-033 added for brace-expansion 5.x's named export still applies unchanged. The
+audit is now fully clean, not merely clean at high: undici 7.29.0 also clears the
+four moderate undici advisories.
+
+**Alternatives rejected:** bump `@cyclonedx/cdxgen` and hope its transitives follow
+(the advisories are in packages it pins, so this is not in our control and would
+churn on every advisory); take the latest majors instead (undici 8, fast-uri 4)
+under consumers that declare compatibility with 7.x and 3.x; or lower the audit gate
+below high.
+
+**Revert path:** each selector deletes independently once its consumer bumps past
+the advisory range, at which point the range matches nothing.

@@ -8,17 +8,25 @@ Practice intelligence for registered investment advisers. The third and final bu
    by an ADR, and its enforcement is self-checked by the charter-drift fence.
 2. **[`AGENTS.md`](./AGENTS.md)** — how to work in this repo (every session).
 3. **[`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 architecture direction (ADRs
-   0023-0028; every doc under `docs/v3/` is SHA-256-pinned by the arch-version fence).
+   0023-0028; the ratified documents registered in [`v3-invariants.json`](./v3-invariants.json) are
+   SHA-256-pinned by the arch-version fence, which covers that registry rather than the whole directory -
+   the index page is not registered, and originates nothing normative, only restating registered
+   documents, ADRs, the charter, and `DECISIONS.md` entries, D-099).
 4. **[`PLAN.md`](./PLAN.md)** — the foundation plan and pre-mortem.
 5. **[`DECISIONS.md`](./DECISIONS.md)** — the decision journal.
 6. **`FOUNDATION.md`** — the Part-1 acceptance artifact (lands at the end of the foundation build).
 7. **[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md)** - the product north star for the demo build,
    subordinate to the charter and grounded in the foundation.
-8. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
+8. **[`docs/product-guide.md`](./docs/product-guide.md)** - the captain-directed differentiating thesis
+   (D-098) that the product direction serves; test every design, prompt, and demo choice against it. It
+   binds nothing on its own and is subordinate to the charter, v3, `PRODUCT-DIRECTION.md`, the demo
+   contract, and [`docs/demo-design-language.md`](./docs/demo-design-language.md) - on conflict, they
+   win.
+9. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
    contract (D-034), with its scenario matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
    and acceptance checklist [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md).
-9. **[`docs/golden-cases.md`](./docs/golden-cases.md)** - the captain-signed golden-case truth set
-   (D-035), machine-mirrored in `fixtures/golden/` and gated by `pnpm golden:validate`.
+10. **[`docs/golden-cases.md`](./docs/golden-cases.md)** - the captain-signed golden-case truth set
+    (D-035), machine-mirrored in `fixtures/golden/` and gated by `pnpm golden:validate`.
 
 ## Stack
 

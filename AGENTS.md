@@ -9,13 +9,22 @@ each non-negotiable to the fence/gate/procedure that enforces it, and the charte
 **Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
 governed decision and execution layer; ADRs 0023-0028). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
-stores activation only - pass/fail is computed, never fake green). Every ratified doc under `docs/v3/` is
-SHA-256-pinned (arch-version fence): editing one requires updating its pin in the same PR. Salesforce
-work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system, not v3
-§18's visuals (ADR-0028); UI prompts read `docs/demo-design-language.md` first (now authored -
+stores activation only - pass/fail is computed, never fake green). The ratified documents registered in
+`v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
+whole directory: editing a registered document requires updating its pin in the same PR, and a new
+ratified document must be registered in the PR that adds it. `docs/v3/README.md` is not registered: it is
+the navigation index, and it originates nothing normative, only restating registered documents, ADRs, the
+charter, and `DECISIONS.md` entries, so a new normative statement originates in one of those instead (D-099).
+Salesforce work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system,
+not v3 §18's visuals (ADR-0028); UI prompts read `docs/demo-design-language.md` first (now authored -
 the ADR-0028 gate is satisfied).
 
 Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what was decided and why.
+
+The standing product thesis lives in [`docs/product-guide.md`](./docs/product-guide.md) (D-098) - test
+every design, prompt, and demo choice against it; it states the thesis
+[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md) serves, and is subordinate to the charter, v3,
+`PRODUCT-DIRECTION.md` itself, and the demo contract/design language - each of those wins on conflict.
 
 Demo work is governed by [`docs/demo-contract.md`](./docs/demo-contract.md) (the normative Phase 1
 investor-demo contract, D-034) with its machine-usable matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)

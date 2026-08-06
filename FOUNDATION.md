@@ -107,7 +107,7 @@ proof — the prompt-6 entries were renumbered on rebase, see the numbering note
 | `observability-coverage` | flow steps + external calls emit spans (#14) | PF-015 |
 | `no-pii-in-audit-store` | PII scrubbed from the audit trail (#3,#13) | PF-016 |
 | `bounded-request-body` | no unbounded body reader — json/text/formData/arrayBuffer/blob (DoS) (#11/#14) | PF-017 + companions |
-| `arch-version` (SHA-256 pins on every ratified `docs/v3/` doc) | build work never targets a stale or edited architecture copy (ADR-0023) | PF-023 + companions |
+| `arch-version` (SHA-256 pins on the ratified documents registered in `v3-invariants.json`; the fence iterates that registry, never the `docs/v3/` directory - D-099) | build work never targets a stale or edited architecture copy (ADR-0023) | PF-023 + companions |
 | `v3-invariants` (registry integrity + activation ratchet) | the 30 v3 invariants stay activation-only, mapped to live fences, never fake green (ADR-0023) | PF-024 + companions |
 | `demo-scenarios-contract` | the scenario matrix stays inert data (no executable YAML), id-stable (append-only), and internally consistent (D-034) | PF-025 + companions |
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
