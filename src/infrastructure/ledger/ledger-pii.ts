@@ -39,10 +39,14 @@ const REGISTERED_RETAINED_CODES = new Set([
   "verification-stuck",
 ]);
 const RETAINED_TEXT_REFERENCE = /^retained-text:v1:[a-f0-9]{64}$/;
-const BUNDLE_VERSION_CODES = new Set(["0", "0.0.0"]);
+/**
+ * Every entry below is a REVIEWED production, seed, demo, or golden identifier with a
+ * shipped producer. Test fixtures widen this boundary through the injection seam at the
+ * bottom of this module, never here - a shipped allowlist that carries a fixture's
+ * vocabulary accepts strings whose only justification is a test, and grows without
+ * bound as the suite does.
+ */
 const REGISTERED_RETAINED_IDENTIFIERS = new Set([
-  "crm-record",
-  "custodian-submit",
   "firm-a-cash-reserve",
   "firm-a-source-selection",
   "firm-a-distribution-policy",
@@ -50,8 +54,6 @@ const REGISTERED_RETAINED_IDENTIFIERS = new Set([
   "firm-b",
   "firm_policy",
   "household_instruction",
-  "ledger-test",
-  "missing-cause",
   "operations",
   "operations-manager",
   "ops-dual-approval",
@@ -63,44 +65,35 @@ const REGISTERED_RETAINED_IDENTIFIERS = new Set([
   "verin-decision-engine",
 ]);
 const REGISTERED_MACHINE_IDENTIFIERS = new Set([
-  "blob:GC-01:distribution", "blob:test:status", "causal:forward", "causal:later",
-  "conflict:household-liquidity", "conflict:smiths-liquidity", "corr:ledger-test",
-  "evidence:atomic-refusal", "evs:GC-01:balance", "evs:GC-01:bank-instruction",
-  "evs:GC-01:household-instruction", "evs:GC-01:planned-withdrawals",
-  "evs:GC-05:balance", "evs:GC-05:pending-actions", "evs:GC-07:account-restriction",
-  "firm-b:event", "idem:GC-01:smiths-75000-2026-08-15",
-  "ledger:evidence:collision", "ordered:first", "ordered:second",
-  "ledger:later-evidence:evidence:atomic-refusal",
-  "projection:conflict-swallowed", "projection:cross-owner-release",
-  "projection:delayed-release", "projection:escalation", "projection:escalation-second",
-  "projection:expiry", "projection:expiry-first", "projection:missing-generation",
-  "projection:reservation-conflict", "projection:reservation-reused",
-  "projection:wrong-generation-release", "res:GC-01:liquidity", "reservation:b",
-  "decision:b", "sample:approval", "sample:approval-escalated",
-  "sample:approval-expired", "sample:approval-invalidated", "sample:decision",
-  "sample:evidence", "sample:exception-requested", "sample:execution-failed",
-  "sample:execution-partial", "sample:execution-started", "sample:execution-succeeded",
-  "sample:reservation-created", "sample:reservation-released", "sample:status-observed",
-  "sample:verification-closed", "sample:verification-stuck", "source:synthetic-seed",
-  "scope:account:smiths-joint-taxable", "seed:ledger:decision",
-  "seed:synthetic-decision-ledger", "source:test", "subject:smiths-household",
-  "subject:smiths-joint-taxable",
-  "subject:test:status", "target:house-crm", "tpl:firm-a:dual-approval",
-  "trigger:forward", "vr:distribution-submitted",
+  "blob:GC-01:distribution", "conflict:smiths-liquidity", "evs:GC-01:balance",
+  "evs:GC-01:bank-instruction", "evs:GC-01:household-instruction",
+  "evs:GC-01:planned-withdrawals", "evs:GC-05:balance", "evs:GC-05:pending-actions",
+  "evs:GC-07:account-restriction", "idem:GC-01:smiths-75000-2026-08-15",
+  "res:GC-01:liquidity", "scope:account:smiths-joint-taxable",
+  "seed:ledger:decision", "seed:synthetic-decision-ledger", "source:synthetic-seed",
+  "subject:smiths-household", "subject:smiths-joint-taxable", "target:house-crm",
+  "tpl:firm-a:dual-approval", "vr:distribution-submitted",
 ]);
 const REGISTERED_INDEXED_IDENTIFIER_PREFIXES = new Set([
-  "actor:ops", "blob:synthetic", "blob:test", "bundle:GC-01", "bundle:GC-05",
-  "bundle:GC-07", "dec:GC-01", "dec:GC-05", "dec:GC-07", "evidence",
-  "evidence:status", "handle", "idem:ledger", "intent:GC-01", "intent:GC-05",
-  "intent:GC-07", "ledger:decision", "ledger:decision:dec:GC-01",
-  "ledger:evidence", "ledger:later-evidence:evidence:status", "plan:GC-01",
-  "projection:bounded", "register:repeated-evidence", "reservation",
-  "seed:ledger:evidence", "step:GC-01", "subject:synthetic", "subject:test", "verify",
+  "blob:synthetic", "bundle:GC-01", "bundle:GC-05", "bundle:GC-07", "dec:GC-01",
+  "dec:GC-05", "dec:GC-07", "intent:GC-01", "intent:GC-05", "intent:GC-07",
+  "plan:GC-01", "seed:ledger:evidence", "step:GC-01", "subject:synthetic",
 ]);
 const REGISTERED_VERSIONED_IDENTIFIER_PREFIXES = new Set([
   "firm-a-policy", "firm-b-policy", "money-movement", "reg-distribution-holds",
   "smiths-destination-restriction", "smiths-liquidity-preference",
 ]);
+/**
+ * Bundle version fields are opaque machine tokens, not retained text. A literal set of
+ * the versions that happen to exist today pins the whole write path to this engine
+ * build: the first real version bump would refuse every append as a PII violation - an
+ * error class that sends an operator hunting for personal data that was never there.
+ * The SHAPE is bounded and restricted instead, the residual account-reference refusal
+ * still runs over the value, and an unsupported shape reports itself as exactly that.
+ */
+const BUNDLE_VERSION_TOKEN =
+  /^[0-9]+(?:\.[0-9]+){0,3}(?:-[a-z0-9]+(?:\.[a-z0-9]+)*)?$/;
+const BUNDLE_VERSION_MAX_LENGTH = 32;
 const IDENTIFIER_FIELD =
   /(?:^id$|Id$|Ids$|Ref$|Refs$|Key$|Keys$|Hash$|Hashes$|Parts$|^attribution$)/;
 const CANONICAL_UUID =
@@ -114,6 +107,40 @@ function refuse(): never {
     "PII_VIOLATION",
     "immutable decision source contains unclassified retained text",
   );
+}
+
+/**
+ * Test-only ledger vocabulary, mirroring registerTestSpanName / registerTestSystemActor.
+ * The reserved `test` namespace is enforced here, and the ledger-pii-vocabulary fence
+ * proves no shipped module can reach these seams (keyed on symbol resolution, so an
+ * aliased import cannot evade it) and that no shipped allowlist entry lives in the
+ * reserved namespace. A registration is still a machine token: an unbounded or
+ * PII-shaped value is refused exactly as a shipped one would be.
+ */
+const TEST_NAMESPACE = /^test(?::[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*)+$/;
+const TEST_IDENTIFIERS = new Set<string>();
+const TEST_INDEXED_IDENTIFIER_PREFIXES = new Set<string>();
+
+function requireTestNamespace(value: string): void {
+  if (value.length > 256 || !TEST_NAMESPACE.test(value)) {
+    throw appError(
+      "VALIDATION",
+      "A test ledger identifier must live in the reserved 'test' namespace.",
+    );
+  }
+  if (looksLikePIIValue(value) || hasSensitiveAccountReference(value)) refuse();
+}
+
+export function registerTestLedgerIdentifier(value: string): string {
+  requireTestNamespace(value);
+  TEST_IDENTIFIERS.add(value);
+  return value;
+}
+
+export function registerTestLedgerIdentifierPrefix(value: string): string {
+  requireTestNamespace(value);
+  TEST_INDEXED_IDENTIFIER_PREFIXES.add(value);
+  return value;
 }
 
 export function retainedTextReference(opaqueId: string): string {
@@ -136,13 +163,15 @@ function requireRetainedToken(value: string): void {
 }
 
 function isRegisteredMachineIdentifier(value: string): boolean {
-  if (REGISTERED_MACHINE_IDENTIFIERS.has(value)) return true;
+  if (REGISTERED_MACHINE_IDENTIFIERS.has(value) || TEST_IDENTIFIERS.has(value)) {
+    return true;
+  }
   const colonSeparator = value.lastIndexOf(":");
+  const prefix = value.slice(0, colonSeparator);
   if (
     colonSeparator > 0 &&
-    REGISTERED_INDEXED_IDENTIFIER_PREFIXES.has(
-      value.slice(0, colonSeparator),
-    ) &&
+    (REGISTERED_INDEXED_IDENTIFIER_PREFIXES.has(prefix) ||
+      TEST_INDEXED_IDENTIFIER_PREFIXES.has(prefix)) &&
     INDEXED_IDENTIFIER_SEGMENT.test(value.slice(colonSeparator + 1))
   ) return true;
   const versionSeparator = value.lastIndexOf("@");
@@ -231,6 +260,19 @@ function requireExplanationCodes(
   }
 }
 
+function requireBundleVersion(value: string, field: string): void {
+  if (hasSensitiveAccountReference(value) || looksLikePIIValue(value)) refuse();
+  if (
+    value.length > BUNDLE_VERSION_MAX_LENGTH ||
+    !BUNDLE_VERSION_TOKEN.test(value)
+  ) {
+    throw appError(
+      "VALIDATION",
+      `decision input bundle declares an unsupported ${field} version`,
+    );
+  }
+}
+
 function requireDecisionTextProjection(record: DecisionRecord): void {
   requireExplanationCodes(record.explanationTrace);
   record.precedenceTrace.forEach((step) =>
@@ -273,12 +315,8 @@ export function assertReplaySourcePiiBoundary(
     if (!RETAINED_TEXT_REFERENCE.test(snapshot.attribution)) refuse();
   } else if (kind === "bundle") {
     const bundle = value as DecisionInputBundle;
-    if (
-      !BUNDLE_VERSION_CODES.has(bundle.engineVersion) ||
-      !BUNDLE_VERSION_CODES.has(bundle.primitiveSetVersion)
-    ) {
-      refuse();
-    }
+    requireBundleVersion(bundle.engineVersion, "engine");
+    requireBundleVersion(bundle.primitiveSetVersion, "primitive set");
   } else if (kind === "decision") {
     requireDecisionTextProjection(value as DecisionRecord);
   }

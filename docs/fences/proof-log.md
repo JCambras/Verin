@@ -5663,6 +5663,7 @@ anchor. Each attack is rejected or detected at its claimed layer.
 **Date:** 2026-07-28 (v3 prompt 7, ADR-0041, D-105).
 
 ### PF-194 decision-ledger anti-fork fence widened to every immutable source table
+## Decision-ledger anti-fork fence widened to every immutable source table (D-110)
 
 **Invariant:** the anti-fork rule covers ALL immutable source tables, not only the
 chain, so splitting the repository into a chain writer and a source writer cannot
@@ -5704,8 +5705,9 @@ reproduces the online fold byte-identically.
 **Date:** 2026-07-28 (review follow-up to v3 prompt 7, ADR-0041, D-106).
 
 ### PF-196 a swallowed mid-batch refusal leaves a verifiable anchor
+## A swallowed mid-batch refusal leaves a verifiable anchor (D-111)
 
-**Superseded by D-103:** later appends are now savepoint-atomic, so a caught refusal
+**Superseded by D-107:** later appends are now savepoint-atomic, so a caught refusal
 commits no prefix. Per-entry anchors remain as defense in depth.
 
 **Invariant:** the ledger anchor covers exactly the entries that committed, even when a
@@ -5743,6 +5745,7 @@ AssertionError: expected false to be true
 **Date:** 2026-07-28 (review follow-up to D-106, ADR-0041, D-107).
 
 ### PF-198 decision-ledger residual review corrections
+## Decision-ledger residual review corrections (D-114)
 
 **Invariants:** later appends require a real transaction and commit no partial
 source/event prefix; rebuild refuses any L1-L4 or replay-source corruption before
@@ -5780,6 +5783,7 @@ integration, and projection suites pass.
 **Date:** 2026-07-28 (review corrections F1-F9, ADR-0041, D-110).
 
 ## Decision-ledger binding and verified register corrections (D-111)
+## Decision-ledger binding and verified register corrections (D-115)
 
 **Invariants:** the recorded decision binds the exact input bundle hash; causal
 references point only backward; retained text is a registered code or opaque
@@ -5819,6 +5823,7 @@ src/infrastructure/ledger/ledger-store.ts:56
 
 **Date:** 2026-07-28 (review corrections F1-F7, ADR-0041, D-111).
 ## Decision-ledger authority, retention, and disclosure corrections (D-112)
+## Decision-ledger authority, retention, and disclosure corrections (D-116)
 
 **Invariants:** every ledger SQL boundary receives sealed tenant authority and compares
 it before SQL; structural immutable identifiers refuse human-shaped text without
@@ -5857,6 +5862,7 @@ ADR-0042 line ceiling also pass.
 
 **Date:** 2026-08-04 (review corrections F1-F9, ADR-0041/0042, D-112).
 ### PF-199 decision-ledger retention and constructed-SQL anti-fork coverage
+### PF-204 decision-ledger retention and constructed-SQL anti-fork coverage
 
 **Invariants:** derived producer provenance cannot lose its demonstration trace before
 immutable persistence; retained event codes and references are closed machine
@@ -5895,6 +5901,7 @@ test suites as the detection-is-not-verification proof.
 
 **Date:** 2026-08-05 (review corrections F1-F4, D-113).
 ### PF-200 fail-closed ledger SQL, retained values, and bounded evidence replay
+### PF-205 fail-closed ledger SQL, retained values, and bounded evidence replay
 
 **Invariants:** unresolved SQL cannot evade immutable-table insert ownership;
 sensitive-length numeric values and unregistered namespaced or versioned references
@@ -5931,6 +5938,7 @@ payloads stay as detection-is-not-verification companions.
 
 **Date:** 2026-08-05 (review corrections F10-F14, ADR-0041, D-114).
 ### PF-201 ledger acceptance, source trust, and batched register replay
+### PF-206 ledger acceptance, source trust, and batched register replay
 
 **Invariants:** L1-L4 never verifies event bytes the append boundary would refuse;
 immutable source reuse cannot upgrade fixture provenance; bounded register I/O scales
@@ -5961,6 +5969,7 @@ query-count harness remain as detection-is-not-verification companions.
 
 **Date:** 2026-08-05 (review corrections F15-F18, ADR-0042, D-115).
 ### PF-202 immutable ledger ordering, transaction authenticity, and bounded origin trust
+### PF-207 immutable ledger ordering, transaction authenticity, and bounded origin trust
 
 **Invariants:** L2 and append use immutable decision and reservation order; a genuine SQL
 transaction remains valid across independently evaluated modules; raw ledger disclosure
@@ -5998,6 +6007,7 @@ companions.
 
 **Date:** 2026-08-05 (review corrections F19-F23, ADR-0043, D-116).
 ### PF-203 immutable write forms and ledger compatibility bindings
+### PF-208 immutable write forms and ledger compatibility bindings
 
 **Invariants:** every PostgreSQL path that can add an immutable ledger row has one
 reviewed owner; recorded approval and execution identifiers belong to their immutable
@@ -6039,3 +6049,58 @@ forms, privileged rechain, query harness, and frozen-schema pins remain as
 detection-is-not-verification companions.
 
 **Date:** 2026-08-05 (review corrections F30-F35, ADR-0045, D-118).
+---
+
+### PF-209 ledger-pii-vocabulary + ledger-reachability · `src/__tests__/fitness/ledger-pii-vocabulary.test.ts`, `src/__tests__/fitness/ledger-reachability.test.ts`
+
+**Invariants:** the shipped immutable-source PII allowlists carry reviewed production,
+seed, demo, and golden identifiers only; the test-only registration seams have no shipped
+caller; and every ledger export is reachable from a shipped surface or is a NAMED
+deferral that says which prompt lands its caller.
+
+**Injection 1** (test-shaped entry ships): added `"test:projection:bounded"` to
+`REGISTERED_INDEXED_IDENTIFIER_PREFIXES` in `src/infrastructure/ledger/ledger-pii.ts`.
+
+```text
+FAIL src/__tests__/fitness/ledger-pii-vocabulary.test.ts > enforces: no shipped allowlist entry lives in the reserved test namespace
+AssertionError: expected [ Array(1) ] to deeply equal []
++ "src/infrastructure/ledger/ledger-pii.ts: REGISTERED_INDEXED_IDENTIFIER_PREFIXES ships reserved-namespace entry \"test:projection:bounded\""
+```
+
+**Injection 2** (shipped module widens the boundary through an ALIASED import): added
+`import { registerTestLedgerIdentifier as widen } … ; widen("test:seed:sneaky");` to
+`scripts/seed-decision-ledger.ts`.
+
+```text
+FAIL src/__tests__/fitness/ledger-pii-vocabulary.test.ts > enforces: no shipped module can widen the ledger identifier boundary
+AssertionError: expected [ Array(1) ] to deeply equal []
++ "scripts/seed-decision-ledger.ts:22 references widen"
+```
+
+**Injection 3** (a new ledger export nothing ships can reach): added
+`export function unusedLedgerHelper(value: string): string { return value; }` to
+`src/infrastructure/ledger/ledger-canonical.ts`.
+
+```text
+FAIL src/__tests__/fitness/ledger-reachability.test.ts > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+AssertionError: expected [ 'appendDecisionEvents', …(1) ] to deeply equal [ 'appendDecisionEvents' ]
++ "unusedLedgerHelper"
+```
+
+**Injection 4** (the other direction - a deferral that already has a shipped caller):
+added `["recordDecision", "v3 prompt 8"]` to `DEFERRED_EXPORTS`.
+
+```text
+FAIL … > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+AssertionError: expected [ 'appendDecisionEvents' ] to deeply equal [ 'appendDecisionEvents', …(1) ]
+FAIL … > enforces: a named deferral that gained a shipped caller must be retired
+AssertionError: expected [ 'recordDecision' ] to deeply equal []
+```
+
+Each injection was reverted and both fences pass. The in-memory companions (shipped
+caller, aliased shipped caller, smuggled test entry, un-exported seam, bare re-export,
+test-only caller) remain as detection-is-not-verification proof.
+
+**Revert:** no planted allowlist entry, seam caller, export, or deferral remains.
+
+**Date:** 2026-08-05 (review corrections, D-123).

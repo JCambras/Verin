@@ -135,7 +135,11 @@ export async function createDb(opts?: { dataDir?: string | null }): Promise<SqlD
   }
   const configured = opts && "dataDir" in opts ? opts.dataDir : cfg.store.dataDir;
   // Resolve relative dirs to an absolute path so every process (seed, server)
-  // opens the SAME store regardless of its working directory.
+  // opens the SAME store regardless of its working directory. The annotation is
+  // LOAD-BEARING, not decoration: Turbopack's file tracer follows this exact
+  // `resolve(process.cwd(), …)` form, and removing it makes `next build` warn that the
+  // whole repository was traced ("Encountered unexpected file in NFT list") and package
+  // it. Verified both ways - see D-106.
   const dataDir = configured && !isAbsolute(configured)
     ? resolve(/* turbopackIgnore: true */ process.cwd(), configured)
     : configured;

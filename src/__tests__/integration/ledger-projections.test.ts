@@ -10,11 +10,8 @@ import {
   rebuildDecisionProjections,
   recordDecision,
 } from "@infra/ledger/ledger-store";
-import {
-  countDecisionProjections,
-  listDecisionProjections,
-} from "@infra/ledger/ledger-projection-store";
-import { verifyDecisionLedger } from "@infra/ledger/ledger-verification";
+import { listDecisionProjections } from "@infra/ledger/ledger-projection-store";
+import { verifyDecisionLedgerIntegrity } from "@infra/ledger/ledger-verification";
 import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
 import { LedgerEntrySchema } from "@contracts/decision-core/ledger";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
@@ -39,6 +36,11 @@ import {
 
 const TS = "2026-07-26T13:30:00.000Z";
 
+const verifyDecisionLedger = async (
+  store: SqlDb,
+  tenant: typeof LEDGER_TENANT,
+) => (await verifyDecisionLedgerIntegrity(store, tenant)).ledger;
+
 function blockedRecordingInput() {
   const input = decisionRecordingInput();
   const candidate = DecisionRecordSchema.parse({
@@ -50,7 +52,7 @@ function blockedRecordingInput() {
         explanation: "additional-evidence-required",
         resolvingEvidence: [{
           evidenceKind: "account-balance",
-          subjectRef: { firmId: LEDGER_ORG, id: "subject:test:0" },
+          subjectRef: { firmId: LEDGER_ORG, id: "test:subject:0" },
           suppliableBy: ["external"],
         }],
       }],
@@ -110,12 +112,12 @@ describe("deterministic decision-ledger projections", () => {
     const samples = allLedgerEventSamples();
     const escalation = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageEscalated")!,
-      id: "projection:escalation",
+      id: "test:projection:escalation",
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     const expiry = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageExpired")!,
-      id: "projection:expiry",
+      id: "test:projection:expiry",
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     await expect(append(db, [escalation, expiry])).resolves.toHaveLength(2);
@@ -200,7 +202,7 @@ describe("deterministic decision-ledger projections", () => {
     const owner = await db.query<{ decision_id: string; status: string }>(
       `SELECT decision_id, status FROM decision_reservation_index
         WHERE org_id = $1 AND reservation_id = $2`,
-      [LEDGER_ORG, "reservation:1"],
+      [LEDGER_ORG, "test:reservation:1"],
     );
     expect(owner.rows[0]).toEqual({
       decision_id: "dec:GC-01:0001",
@@ -218,7 +220,7 @@ describe("deterministic decision-ledger projections", () => {
 
     const competing = LedgerEntrySchema.parse({
       ...created,
-      id: "projection:reservation-conflict",
+      id: "test:projection:reservation-conflict",
       decisionRef: { firmId: LEDGER_ORG, id: "dec:GC-01:0002" },
     });
     await expect(append(db, [competing])).rejects.toMatchObject({
@@ -229,7 +231,7 @@ describe("deterministic decision-ledger projections", () => {
     const state = (await listDecisionProjections(db, LEDGER_TENANT))[0]!.projection;
     expect(state.reservations).toEqual([
       {
-        reservationId: "reservation:1",
+        reservationId: "test:reservation:1",
         creationEntryId: created.id,
         status: "released",
       },
@@ -250,7 +252,7 @@ describe("deterministic decision-ledger projections", () => {
     await expect(append(db, [created])).resolves.toHaveLength(1);
     const competing = LedgerEntrySchema.parse({
       ...created,
-      id: "projection:conflict-swallowed",
+      id: "test:projection:conflict-swallowed",
       decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
     });
     await db.transaction(async (tx) => {
@@ -288,7 +290,7 @@ describe("deterministic decision-ledger projections", () => {
     );
     const competing = LedgerEntrySchema.parse({
       ...created,
-      id: "projection:reservation-conflict",
+      id: "test:projection:reservation-conflict",
       decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
     });
     await expect(append(db, [competing])).rejects.toMatchObject({
@@ -307,13 +309,13 @@ describe("deterministic decision-ledger projections", () => {
     await expect(append(db, [created, released])).resolves.toHaveLength(2);
     const reused = LedgerEntrySchema.parse({
       ...created,
-      id: "projection:reservation-reused",
+      id: "test:projection:reservation-reused",
       decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
     });
     await expect(append(db, [reused])).resolves.toHaveLength(1);
     const crossOwner = LedgerEntrySchema.parse({
       ...released,
-      id: "projection:cross-owner-release",
+      id: "test:projection:cross-owner-release",
       reservationCreationRef: { firmId: LEDGER_ORG, id: reused.id },
     });
     await expect(append(db, [crossOwner])).rejects.toMatchObject({
@@ -321,11 +323,11 @@ describe("deterministic decision-ledger projections", () => {
     });
     const wrongGeneration = LedgerEntrySchema.parse({
       ...released,
-      id: "projection:wrong-generation-release",
+      id: "test:projection:wrong-generation-release",
       decisionRef: { firmId: LEDGER_ORG, id: second.decisionRecord.id },
       reservationCreationRef: {
         firmId: LEDGER_ORG,
-        id: "projection:missing-generation",
+        id: "test:projection:missing-generation",
       },
     });
     await expect(append(db, [wrongGeneration])).rejects.toMatchObject({
@@ -333,7 +335,7 @@ describe("deterministic decision-ledger projections", () => {
     });
     const delayedRelease = LedgerEntrySchema.parse({
       ...released,
-      id: "projection:delayed-release",
+      id: "test:projection:delayed-release",
     });
     await expect(append(db, [delayedRelease])).resolves.toHaveLength(1);
     const projections = await listDecisionProjections(db, LEDGER_TENANT);
@@ -341,7 +343,7 @@ describe("deterministic decision-ledger projections", () => {
       projection.decisionId === second.decisionRecord.id
     )!.projection;
     expect(newOwner.reservations).toContainEqual({
-      reservationId: "reservation:1",
+      reservationId: "test:reservation:1",
       creationEntryId: reused.id,
       status: "active",
     });
@@ -373,7 +375,7 @@ describe("deterministic decision-ledger projections", () => {
       stepId: succeeded.type === "ExecutionSucceeded" ? succeeded.stepId : "",
       status: "succeeded",
       sourceStatus: "submitted",
-      executionHandleId: "handle:1",
+      executionHandleId: "test:handle:1",
     }]);
   });
 
@@ -456,15 +458,20 @@ describe("deterministic decision-ledger projections", () => {
     expect((await recordDecision(db, LEDGER_TENANT, decisionRecordingInput())).ok).toBe(true);
     const second = reusedBundleRecordingInput("dec:GC-01:0002");
     expect((await recordDecision(db, LEDGER_TENANT, second)).ok).toBe(true);
-    expect(await countDecisionProjections(db, LEDGER_TENANT)).toBe(2);
-    const windowed = await listDecisionProjections(db, LEDGER_TENANT, 1);
-    expect(windowed.map(({ projection }) => projection.decisionId)).toEqual([
-      "dec:GC-01:0002",
-    ]);
+    const register = await readVerifiedDecisionRegister(
+      db,
+      LEDGER_EXPORT_GRANT,
+      LEDGER_PII_GRANT,
+      200,
+      1,
+    );
+    expect(register.decisions.map(({ projection }) => projection.decisionId))
+      .toEqual(["dec:GC-01:0002"]);
+    expect(register.decisionsTotal).toBe(2);
     expect(await listDecisionProjections(db, LEDGER_TENANT)).toHaveLength(2);
   });
 
-  it("bounds projection provenance reads by selected decisions, not their event count", async () => {
+  it("keeps derived decision state one row per decision, not per event", async () => {
     const input = decisionRecordingInput();
     expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
     const sample = allLedgerEventSamples().find(
@@ -473,7 +480,7 @@ describe("deterministic decision-ledger projections", () => {
     const events = Array.from({ length: 80 }, (_, index) =>
       LedgerEntrySchema.parse({
         ...sample,
-        id: `projection:bounded:${index}`,
+        id: `test:projection:bounded:${index}`,
         priorDecisionHash: input.decisionRecord.decisionHash,
       }));
     await expect(append(db, events)).resolves.toHaveLength(events.length);
@@ -489,7 +496,7 @@ describe("deterministic decision-ledger projections", () => {
         return result;
       },
     };
-    expect(await listDecisionProjections(measured, LEDGER_TENANT, 1)).toHaveLength(1);
+    expect(await listDecisionProjections(measured, LEDGER_TENANT)).toHaveLength(1);
     expect(largestResult).toBe(1);
   });
 
@@ -611,7 +618,7 @@ describe("deterministic decision-ledger projections", () => {
     const repeatedEvidenceEvents = first.events.slice(0, -1).map((event, index) =>
       LedgerEntrySchema.parse({
         ...event,
-        id: `register:repeated-evidence:${index}`,
+        id: `test:register:repeated-evidence:${index}`,
       }));
     await expect(db.transaction((tx) =>
       appendDecisionEvents(
@@ -735,7 +742,7 @@ describe("deterministic decision-ledger projections", () => {
     const samples = allLedgerEventSamples();
     const expiry = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageExpired")!,
-      id: "projection:expiry-first",
+      id: "test:projection:expiry-first",
       occurredAt: "2026-07-29T13:30:00.000Z",
       recordedAt: "2026-07-29T13:30:00.000Z",
       effectiveAt: "2026-07-29T13:30:00.000Z",
@@ -743,7 +750,7 @@ describe("deterministic decision-ledger projections", () => {
     });
     const escalation = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageEscalated")!,
-      id: "projection:escalation-second",
+      id: "test:projection:escalation-second",
       occurredAt: "2026-07-27T13:30:00.000Z",
       recordedAt: "2026-07-27T13:30:00.000Z",
       priorDecisionHash: input.decisionRecord.decisionHash,

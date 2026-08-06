@@ -47,14 +47,6 @@ function decisionIdOf(event: LedgerEntry): string | undefined {
   return undefined;
 }
 
-async function resolveDecisionId(
-  _tx: SqlTx,
-  _orgId: string,
-  event: LedgerEntry,
-): Promise<string | undefined> {
-  return decisionIdOf(event);
-}
-
 async function loadProjection(
   tx: SqlTx,
   orgId: string,
@@ -64,7 +56,7 @@ async function loadProjection(
   readonly state?: DecisionProjection;
   readonly provenance?: DerivedProvenance;
 } | undefined> {
-  const id = await resolveDecisionId(tx, orgId, event);
+  const id = decisionIdOf(event);
   if (!id) return undefined;
   const row = await tx.query<{ state_json: string; provenance_json: string }>(
     `SELECT state_json, provenance_json
@@ -84,16 +76,14 @@ async function loadProjection(
 async function writeReservationIndex(
   tx: SqlTx,
   projection: PreparedProjection,
-  sequence: number,
 ): Promise<void> {
   const { event, decisionId } = projection;
   if (event.type === "ReservationCreated") {
     await tx.query(
       `INSERT INTO decision_reservation_index
-        (org_id, reservation_id, decision_id, creation_entry_id,
-         created_sequence, status)
-       VALUES ($1,$2,$3,$4,$5,'active')`,
-      [event.firmId, event.reservationRef.id, decisionId, event.id, sequence],
+        (org_id, reservation_id, decision_id, creation_entry_id, status)
+       VALUES ($1,$2,$3,$4,'active')`,
+      [event.firmId, event.reservationRef.id, decisionId, event.id],
     );
   } else if (event.type === "ReservationReleased") {
     await tx.query(
@@ -171,7 +161,7 @@ async function persistProjection(
   if (projection.event.firmId !== tenant.orgId) {
     throw appError("AUTH_FAILED", "projection tenant does not match write authority");
   }
-  await writeReservationIndex(tx, projection, sequence);
+  await writeReservationIndex(tx, projection);
   await tx.query(
     `INSERT INTO decision_state_projection
       (org_id, decision_id, state_json, provenance_json, last_sequence, updated_at)
@@ -212,18 +202,6 @@ export async function applyProjection(
   await persistProjection(tx, tenant, projection, sequence);
 }
 
-export async function validateProjection(
-  tx: SqlTx,
-  tenant: TenantContext,
-  event: LedgerEntry,
-  sequence: number,
-  provenance: RecordProvenance,
-  record?: DecisionRecord,
-): Promise<void> {
-  assertTenantContext(tenant);
-  await prepareProjection(tx, tenant, event, sequence, provenance, record);
-}
-
 /** Discard derived state so a replay can rebuild it from immutable rows alone. */
 export async function clearDerivedState(
   tx: SqlTx,
@@ -245,29 +223,17 @@ export async function clearDerivedState(
   );
 }
 
-/** How many decisions this tenant has derived state for, so a window can say so. */
-export async function countDecisionProjections(
-  db: SqlQueryable,
-  tenant: TenantContext,
-): Promise<number> {
-  assertTenantContext(tenant);
-  const rows = await db.query<{ n: number | string }>(
-    "SELECT count(*) AS n FROM decision_state_projection WHERE org_id = $1",
-    [tenant.orgId],
-  );
-  return Number(rows.rows[0]?.n ?? 0);
-}
-
 /**
  * Derived decision state, most recently active first, each row labeled with the
- * provenance of every event folded into it. `limit` bounds a request-path read; the
- * unbounded form is the replay/repair path. Ordering is total, so the online fold and
- * a later rebuild return the same list in the same order.
+ * provenance of every event folded into it. This is the replay/repair path: the
+ * request path reads no projection at all, it replays the verified event window
+ * (`replayRegisterWindow`), so there is no bounded variant here to keep honest.
+ * Ordering is total, so the online fold and a later rebuild return the same list in
+ * the same order.
  */
 export async function listDecisionProjections(
   db: SqlQueryable,
   tenant: TenantContext,
-  limit?: number,
 ): Promise<ProjectedDecision[]> {
   assertTenantContext(tenant);
   const rows = await db.query<{
@@ -277,9 +243,8 @@ export async function listDecisionProjections(
     `SELECT state_json, provenance_json
        FROM decision_state_projection
       WHERE org_id = $1
-      ORDER BY last_sequence DESC, decision_id ASC
-      LIMIT $2::bigint`,
-    [tenant.orgId, limit ?? null],
+      ORDER BY last_sequence DESC, decision_id ASC`,
+    [tenant.orgId],
   );
   return rows.rows.map((row) => ({
     projection: JSON.parse(row.state_json) as DecisionProjection,

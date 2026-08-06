@@ -21,8 +21,6 @@ import {
 import {
   verifyAndListDecisionLedger,
   verifyDecisionLedgerIntegrity,
-  verifyDecisionLedger,
-  listDecisionLedger,
 } from "@infra/ledger/ledger-verification";
 import { computeChainHash, GENESIS_HASH } from "@infra/audit/hash-chain";
 import { auditedWrite } from "@infra/audit/audited-write";
@@ -60,6 +58,22 @@ import {
 } from "../helpers/ledger-fixtures";
 
 const TS = "2026-07-26T13:30:00.000Z";
+
+/**
+ * The shipped reads are the verified ones: a grant-authorized listing comes with its
+ * integrity verdict, and a chain verdict comes with retained-source verification.
+ * These projections keep the assertions below aimed at one of those two facts.
+ */
+const listDecisionLedger = async (
+  store: SqlDb,
+  exportGrant: typeof LEDGER_EXPORT_GRANT,
+  piiGrant: typeof LEDGER_PII_GRANT,
+) => (await verifyAndListDecisionLedger(store, exportGrant, piiGrant)).rows;
+
+const verifyDecisionLedger = async (
+  store: SqlDb,
+  tenant: typeof LEDGER_TENANT,
+) => (await verifyDecisionLedgerIntegrity(store, tenant)).ledger;
 
 function hashPreimage(value: unknown): string {
   const canonical = canonicalJson(value as JsonValue);
@@ -275,7 +289,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const last = input.events.at(-1)!;
     const invalid = LedgerEntrySchema.parse({
       ...last,
-      causationRef: { firmId: LEDGER_ORG, id: "missing-cause" },
+      causationRef: { firmId: LEDGER_ORG, id: "test:missing-cause" },
     });
     const result = await recordDecision(db, LEDGER_TENANT, {
       ...input,
@@ -759,11 +773,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const event = LedgerEntrySchema.parse({
       ...raw,
       firmId: LEDGER_OTHER_ORG,
-      id: "firm-b:event",
-      actor: { firmId: LEDGER_OTHER_ORG, systemId: "ledger-test" },
-      reservationRef: { firmId: LEDGER_OTHER_ORG, id: "reservation:b" },
-      decisionRef: { firmId: LEDGER_OTHER_ORG, id: "decision:b" },
-      causationRef: { firmId: LEDGER_OTHER_ORG, id: "ledger:decision:0" },
+      id: "test:firm-b:event",
+      actor: { firmId: LEDGER_OTHER_ORG, systemId: "test:ledger-test" },
+      reservationRef: { firmId: LEDGER_OTHER_ORG, id: "test:reservation:b" },
+      decisionRef: { firmId: LEDGER_OTHER_ORG, id: "test:decision:b" },
+      causationRef: { firmId: LEDGER_OTHER_ORG, id: "test:ledger:decision:0" },
     });
     const payload = canonicalJson(event as unknown as JsonValue);
     const actor = canonicalJson(event.actor as unknown as JsonValue);
@@ -815,20 +829,20 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const samples = allLedgerEventSamples();
     const laterFirst = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageEscalated")!,
-      id: "ordered:first",
+      id: "test:ordered:first",
       recordedAt: LEDGER_LATER,
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     const earlierSecond = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageExpired")!,
-      id: "ordered:second",
+      id: "test:ordered:second",
       recordedAt: TS,
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     const result = await append(db, [laterFirst, earlierSecond]);
     expect(result.map((entry) => [entry.id, entry.sequence])).toEqual([
-      ["ordered:first", 5],
-      ["ordered:second", 6],
+      ["test:ordered:first", 5],
+      ["test:ordered:second", 6],
     ]);
     expect((await verifyDecisionLedger(db, LEDGER_TENANT)).ok).toBe(true);
   });
@@ -839,12 +853,12 @@ describe("decision ledger storage and L1-L4 verification", () => {
     const samples = allLedgerEventSamples();
     const later = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageExpired")!,
-      id: "causal:later",
+      id: "test:causal:later",
       priorDecisionHash: input.decisionRecord.decisionHash,
     });
     const forwardCause = LedgerEntrySchema.parse({
       ...samples.find((event) => event.type === "ApprovalStageEscalated")!,
-      id: "causal:forward",
+      id: "test:causal:forward",
       priorDecisionHash: input.decisionRecord.decisionHash,
       causationRef: { firmId: LEDGER_ORG, id: later.id },
     });
@@ -856,7 +870,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       ...samples.find(
         (event) => event.type === "ExceptionDecisionRequested",
       )!,
-      id: "trigger:forward",
+      id: "test:trigger:forward",
       triggeringEntryRef: { firmId: LEDGER_ORG, id: later.id },
     });
     await expect(append(db, [exception, later])).rejects.toMatchObject({
@@ -932,6 +946,57 @@ describe("decision ledger storage and L1-L4 verification", () => {
       ))).toHaveLength(5);
     },
   );
+
+  it("accepts a future bundle version and names an unsupported one precisely", async () => {
+    const withVersions = (engineVersion: string, primitiveSetVersion: string) => {
+      const input = decisionRecordingInput();
+      const candidate = DecisionInputBundleSchema.parse({
+        ...input.inputBundle,
+        engineVersion,
+        primitiveSetVersion,
+        bundleHash: "0".repeat(64),
+      });
+      const inputBundle = DecisionInputBundleSchema.parse({
+        ...candidate,
+        bundleHash: hashPreimage(bundleHashPreimage(candidate)),
+      });
+      return {
+        ...input,
+        inputBundle,
+        events: [
+          ...input.events.slice(0, -1),
+          LedgerEntrySchema.parse({
+            ...input.events.at(-1)!,
+            bundleHash: inputBundle.bundleHash,
+          }),
+        ],
+      };
+    };
+    const unsupported = await recordDecision(
+      db,
+      LEDGER_TENANT,
+      withVersions("engine build 7", "0"),
+    );
+    expect(unsupported.ok).toBe(false);
+    expect(unsupported.ok ? null : unsupported.error).toMatchObject({
+      code: "VALIDATION",
+      message: "decision input bundle declares an unsupported engine version",
+    });
+    // A grammar alone would let an account number through as a "version".
+    const accountShaped = await recordDecision(
+      db,
+      LEDGER_TENANT,
+      withVersions("0.0.0", "123456789012"),
+    );
+    expect(accountShaped.ok).toBe(false);
+    expect(accountShaped.ok ? null : accountShaped.error.code).toBe("PII_VIOLATION");
+    const forward = await recordDecision(
+      db,
+      LEDGER_TENANT,
+      withVersions("1.4.2-rc.1", "3"),
+    );
+    expect(forward.ok, forward.ok ? "" : forward.error.message).toBe(true);
+  });
 
   it("refuses PII in every immutable replay source", async () => {
     const snapshotInput = decisionRecordingInput();
@@ -1449,7 +1514,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       code: "STORE_CONSTRAINT",
     });
 
-    const later = laterEvidenceRecording("evidence:status:1");
+    const later = laterEvidenceRecording("test:evidence:status:1");
     const cited = LedgerEntrySchema.parse({
       ...observed,
       evidenceSnapshotRef: { firmId: LEDGER_ORG, id: later.snapshot.id },
@@ -1471,14 +1536,14 @@ describe("decision ledger storage and L1-L4 verification", () => {
     await expect(db.transaction((tx) => appendDecisionEvents(
       tx,
       LEDGER_TENANT,
-      [laterEvidenceRecording("evidence:status:2").event],
+      [laterEvidenceRecording("test:evidence:status:2").event],
       LEDGER_PROVENANCE,
     ))).rejects.toMatchObject({ code: "VALIDATION" });
   });
 
   it("preflights every later evidence source before inserting any of them", async () => {
     await recordFixture(db);
-    const later = laterEvidenceRecording("evidence:atomic-refusal");
+    const later = laterEvidenceRecording("test:evidence:atomic-refusal");
     const input = decisionRecordingInput();
     const collision = {
       ...input.evidenceSnapshots[0]!,
@@ -1486,7 +1551,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     };
     const collisionEvent = LedgerEntrySchema.parse({
       ...input.events[0]!,
-      id: "ledger:evidence:collision",
+      id: "test:ledger:evidence:collision",
       snapshotHash: hashPreimage(collision),
     });
     await db.transaction(async (tx) => {

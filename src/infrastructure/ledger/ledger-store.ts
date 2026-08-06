@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import { isSqlTransaction, type SqlDb, type SqlTx } from "@infra/store/db";
 import { GENESIS_HASH, computeChainHash } from "@infra/audit/hash-chain";
-import { appError, logLevelFor, type AppError } from "@contracts/errors";
+import { appError, logLevelFor, normalizeAppError, type AppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import { classifyErrorMetadata, log } from "@infra/observability/logger";
@@ -26,10 +26,7 @@ import {
   preflightEvidenceSnapshots,
 } from "./ledger-sources";
 import { canonical, canonicalDigest } from "./ledger-canonical";
-import {
-  applyProjection,
-  validateProjection,
-} from "./ledger-projection-store";
+import { applyProjection } from "./ledger-projection-store";
 import { decisionLedgerChainPreimage } from "./ledger-schema-registry";
 import { lockDecisionLedgerTenant } from "./ledger-lock";
 import { deriveRecordedDecisionProvenance } from "./ledger-source-provenance";
@@ -111,6 +108,18 @@ function reservationCreationId(event: LedgerEntry): string | null {
 }
 
 /**
+ * Prohibited retained text and an unsupported source shape are two different repairs,
+ * so a precise refusal passes through: reporting a version this build cannot read as
+ * PII_VIOLATION points an operator at personal data that is not there.
+ */
+function replaySourceRefusal(error: unknown): AppError {
+  const known = normalizeAppError(error, "trusted-only");
+  return known && known.code !== "PII_VIOLATION"
+    ? known
+    : appError("PII_VIOLATION", "decision replay source contains prohibited PII");
+}
+
+/**
  * The real driver error is logged before mapping: this is the sole ledger write
  * chokepoint, so collapsing an outage, a bug, and a genuine constraint violation into
  * one opaque code would leave a failed append undiagnosable.
@@ -177,14 +186,6 @@ async function appendPrepared(
       event.type === "DecisionRecorded" && decisionProvenance
         ? decisionProvenance
         : provenance;
-    await validateProjection(
-      tx,
-      tenant,
-      event,
-      sequence,
-      projectionProvenance,
-      event.type === "DecisionRecorded" ? decisionRecord : undefined,
-    );
     const chainPreimage = decisionLedgerChainPreimage(
       event.schemaVersion,
       event.serializerVersion,
@@ -332,8 +333,8 @@ function validateDecisionInput(
       assertReplaySourcePiiBoundary("evidence", snapshot));
     assertReplaySourcePiiBoundary("bundle", bundle.data);
     assertReplaySourcePiiBoundary("decision", record.data);
-  } catch {
-    return err(appError("PII_VIOLATION", "decision replay source contains prohibited PII"));
+  } catch (error: unknown) {
+    return err(replaySourceRefusal(error));
   }
   if (
     bundle.data.firmId !== record.data.firmId ||
@@ -464,8 +465,8 @@ export async function appendDecisionEvents(
   try {
     snapshots.forEach((snapshot) =>
       assertReplaySourcePiiBoundary("evidence", snapshot));
-  } catch {
-    throw appError("PII_VIOLATION", "decision replay source contains prohibited PII");
+  } catch (error: unknown) {
+    throw replaySourceRefusal(error);
   }
   if (!evidenceCorresponds(snapshots, prepared.value, orgId)) {
     throw appError("VALIDATION", "decision source rows and recording events do not correspond");
@@ -488,9 +489,11 @@ export async function appendDecisionEvents(
     );
     await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
     return appended;
-  } catch (error) {
+  } catch (error: unknown) {
     await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append");
     await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
-    throw error;
+    // The substrate is the authority on generation, ordering, and tenant edges, so a
+    // refusal can arrive as a driver error - and leaves here typed, like recordDecision's.
+    throw storeFailure(tenant, error);
   }
 }

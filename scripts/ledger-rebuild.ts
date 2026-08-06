@@ -10,6 +10,8 @@
 import { createDb } from "../src/infrastructure/store/db";
 import { rebuildDecisionProjections } from "../src/infrastructure/ledger/ledger-store";
 import { systemTenant } from "../src/contracts/tenant";
+import { logLevelFor } from "../src/contracts/errors";
+import { classifyErrorMetadata } from "../src/infrastructure/observability/safe-reason";
 
 async function main(): Promise<void> {
   const db = await createDb();
@@ -26,16 +28,21 @@ async function main(): Promise<void> {
       process.stdout.write(
         `org ${id}: replayed ${rebuilt.entriesReplayed} entries into ${rebuilt.projections.length} decision projection(s)\n`,
       );
-    } catch {
+    } catch (error: unknown) {
       broken += 1;
+      // An outage, a bug, and a genuine integrity break are different repairs, so the
+      // refusal names which one it was. Only closed codes and the fixed-shape reason
+      // are printed - never driver prose.
+      const metadata = classifyErrorMetadata(error);
+      const known = metadata.appError;
       process.stderr.write(
-        `ledger-rebuild: org ${id} SKIPPED - ledger or retained replay sources do not verify\n`,
+        `ledger-rebuild: org ${id} SKIPPED - ${known?.code ?? "UNKNOWN"} (${metadata.reason}, ${known ? logLevelFor(known.code) : "error"})\n`,
       );
     }
   }
   await db.close();
   if (broken > 0) {
-    process.stderr.write(`ledger-rebuild: ${broken} org ledger(s) failed verification and were not replayed\n`);
+    process.stderr.write(`ledger-rebuild: ${broken} org ledger(s) were not replayed - see the per-org refusal above\n`);
     process.exit(1);
   }
   if (decisions === 0) {

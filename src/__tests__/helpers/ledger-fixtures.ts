@@ -32,7 +32,49 @@ import {
   systemTenant,
 } from "@contracts/tenant";
 import type { RecordDecisionInput } from "@infra/ledger/ledger-store";
-import { retainedTextReference } from "@infra/ledger/ledger-pii";
+import {
+  registerTestLedgerIdentifier,
+  registerTestLedgerIdentifierPrefix,
+  retainedTextReference,
+} from "@infra/ledger/ledger-pii";
+
+/**
+ * THE ledger test vocabulary. Fixture identifiers reach the immutable-source PII
+ * boundary through this seam and the reserved `test` namespace, never through the
+ * shipped allowlists in ledger-pii.ts - a production boundary that accepts a string
+ * only a test needs is a boundary that grows with the suite.
+ */
+[
+  "test:blob:status", "test:causal:forward", "test:causal:later",
+  "test:conflict:household-liquidity", "test:corr:ledger-test",
+  "test:crm-record", "test:custodian-submit", "test:decision:b",
+  "test:evidence:atomic-refusal", "test:firm-b:event",
+  "test:later-evidence:test:evidence:atomic-refusal", "test:ledger-test",
+  "test:ledger:evidence:collision", "test:missing-cause", "test:ordered:first",
+  "test:ordered:second", "test:projection:conflict-swallowed",
+  "test:projection:cross-owner-release", "test:projection:delayed-release",
+  "test:projection:escalation", "test:projection:escalation-second",
+  "test:projection:expiry", "test:projection:expiry-first",
+  "test:projection:missing-generation", "test:projection:reservation-conflict",
+  "test:projection:reservation-reused", "test:projection:wrong-generation-release",
+  "test:reservation:b", "test:sample:approval", "test:sample:approval-escalated",
+  "test:sample:approval-expired", "test:sample:approval-invalidated",
+  "test:sample:decision", "test:sample:evidence", "test:sample:exception-requested",
+  "test:sample:execution-failed", "test:sample:execution-partial",
+  "test:sample:execution-started", "test:sample:execution-succeeded",
+  "test:sample:reservation-created", "test:sample:reservation-released",
+  "test:sample:status-observed", "test:sample:verification-closed",
+  "test:sample:verification-stuck", "test:source", "test:subject:status",
+  "test:trigger:forward",
+].forEach(registerTestLedgerIdentifier);
+[
+  "test:actor:ops", "test:blob", "test:evidence", "test:evidence:status",
+  "test:handle", "test:idem:ledger",
+  "test:later-evidence:test:evidence:status", "test:ledger:decision",
+  "test:ledger:decision:dec:GC-01", "test:ledger:evidence",
+  "test:projection:bounded", "test:register:repeated-evidence",
+  "test:reservation", "test:subject", "test:verify",
+].forEach(registerTestLedgerIdentifierPrefix);
 
 export const LEDGER_ORG = "firm-a";
 export const LEDGER_OTHER_ORG = "firm-b";
@@ -101,7 +143,7 @@ function retainedTextProjection(value: unknown): unknown {
   return projected;
 }
 
-const actor = { firmId: LEDGER_ORG, systemId: "ledger-test" };
+const actor = { firmId: LEDGER_ORG, systemId: "test:ledger-test" };
 const decisionRef = { firmId: LEDGER_ORG, id: "dec:GC-01:0001" };
 const base = (id: string, occurredAt = LEDGER_TIME) => ({
   firmId: LEDGER_ORG,
@@ -111,7 +153,7 @@ const base = (id: string, occurredAt = LEDGER_TIME) => ({
   occurredAt,
   recordedAt: occurredAt,
   actor,
-  correlationId: "corr:ledger-test",
+  correlationId: "test:corr:ledger-test",
 });
 
 const canonicalHash = (value: unknown): string =>
@@ -143,27 +185,27 @@ export function decisionRecordingInput(): RecordDecisionInput {
       firmId: ref.firmId,
       id: ref.id,
       kind: index === 0 ? "account-balance" : "household-instruction",
-      sourceRef: { firmId: ref.firmId, id: "source:test" },
-      subjectRef: { firmId: ref.firmId, id: `subject:test:${index}` },
+      sourceRef: { firmId: ref.firmId, id: "test:source" },
+      subjectRef: { firmId: ref.firmId, id: `test:subject:${index}` },
       observedAt: LEDGER_TIME,
       retrievedAt: LEDGER_TIME,
       attribution: retainedTextReference("1".repeat(64)),
       schemaVersion: "evidence/1.0.0",
-      encryptedStorageRef: { firmId: ref.firmId, id: `blob:test:${index}` },
+      encryptedStorageRef: { firmId: ref.firmId, id: `test:blob:${index}` },
       contentHash: String(index + 1).repeat(64),
       freshness: "fresh",
     }));
   const events = [
     ...evidenceSnapshots.map((snapshot, index) =>
       LedgerEntrySchema.parse({
-        ...base(`ledger:evidence:${index}`),
+        ...base(`test:ledger:evidence:${index}`),
         type: "EvidenceSnapshotRecorded",
         evidenceSnapshotRef: { firmId: snapshot.firmId, id: snapshot.id },
         contentHash: snapshot.contentHash,
         snapshotHash: canonicalHash(snapshot),
       })),
     LedgerEntrySchema.parse({
-      ...base("ledger:decision:0"),
+      ...base("test:ledger:decision:0"),
       type: "DecisionRecorded",
       decisionRef,
       decisionHash: decisionRecord.decisionHash,
@@ -204,7 +246,7 @@ export function reusedBundleRecordingInput(decisionId: string): RecordDecisionIn
     inputBundle: first.inputBundle,
     decisionRecord,
     events: [LedgerEntrySchema.parse({
-      ...base(`ledger:decision:${decisionId}`),
+      ...base(`test:ledger:decision:${decisionId}`),
       type: "DecisionRecorded",
       decisionRef: { firmId: LEDGER_ORG, id: decisionId },
       decisionHash: decisionRecord.decisionHash,
@@ -226,20 +268,20 @@ export function laterEvidenceRecording(id: string): {
     firmId: LEDGER_ORG,
     id,
     kind: "external-status",
-    sourceRef: { firmId: LEDGER_ORG, id: "source:test" },
-    subjectRef: { firmId: LEDGER_ORG, id: "subject:test:status" },
+    sourceRef: { firmId: LEDGER_ORG, id: "test:source" },
+    subjectRef: { firmId: LEDGER_ORG, id: "test:subject:status" },
     observedAt: LEDGER_LATER,
     retrievedAt: LEDGER_LATER,
     attribution: retainedTextReference("1".repeat(64)),
     schemaVersion: "evidence/1.0.0",
-    encryptedStorageRef: { firmId: LEDGER_ORG, id: "blob:test:status" },
+    encryptedStorageRef: { firmId: LEDGER_ORG, id: "test:blob:status" },
     contentHash: "9".repeat(64),
     freshness: "fresh",
   });
   return {
     snapshot,
     event: LedgerEntrySchema.parse({
-      ...base(`ledger:later-evidence:${id}`, LEDGER_LATER),
+      ...base(`test:later-evidence:${id}`, LEDGER_LATER),
       type: "EvidenceSnapshotRecorded",
       evidenceSnapshotRef: { firmId: snapshot.firmId, id: snapshot.id },
       contentHash: snapshot.contentHash,
@@ -251,26 +293,26 @@ export function laterEvidenceRecording(id: string): {
 export function allLedgerEventSamples(): LedgerEntry[] {
   const approver = {
     firmId: LEDGER_ORG,
-    actorId: "actor:ops:1",
+    actorId: "test:actor:ops:1",
     roleIds: [{ firmId: LEDGER_ORG, id: "operations" }],
   };
   return [
     {
-      ...base("sample:decision"),
+      ...base("test:sample:decision"),
       type: "DecisionRecorded",
       decisionRef,
       decisionHash: LEDGER_HASH,
       bundleHash: LEDGER_HASH,
     },
     {
-      ...base("sample:evidence"),
+      ...base("test:sample:evidence"),
       type: "EvidenceSnapshotRecorded",
-      evidenceSnapshotRef: { firmId: LEDGER_ORG, id: "evidence:1" },
+      evidenceSnapshotRef: { firmId: LEDGER_ORG, id: "test:evidence:1" },
       contentHash: LEDGER_HASH,
       snapshotHash: LEDGER_HASH,
     },
     {
-      ...base("sample:approval"),
+      ...base("test:sample:approval"),
       type: "ApprovalRecorded",
       decisionRef,
       decisionHash: LEDGER_HASH,
@@ -282,7 +324,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       structuredReason: "approved-after-review",
     },
     {
-      ...base("sample:approval-invalidated"),
+      ...base("test:sample:approval-invalidated"),
       type: "ApprovalInvalidated",
       decisionRef,
       priorDecisionHash: LEDGER_HASH,
@@ -290,7 +332,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       newInputBundleHash: "b".repeat(64),
     },
     {
-      ...base("sample:approval-expired", LEDGER_LATER),
+      ...base("test:sample:approval-expired", LEDGER_LATER),
       type: "ApprovalStageExpired",
       decisionRef,
       priorDecisionHash: LEDGER_HASH,
@@ -299,7 +341,7 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       reasonCode: "approval-stage-expired",
     },
     {
-      ...base("sample:approval-escalated", LEDGER_LATER),
+      ...base("test:sample:approval-escalated", LEDGER_LATER),
       type: "ApprovalStageEscalated",
       decisionRef,
       priorDecisionHash: LEDGER_HASH,
@@ -312,51 +354,51 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       reasonCode: "approval-stage-idle",
     },
     {
-      ...base("sample:reservation-created"),
+      ...base("test:sample:reservation-created"),
       type: "ReservationCreated",
-      reservationRef: { firmId: LEDGER_ORG, id: "reservation:1" },
+      reservationRef: { firmId: LEDGER_ORG, id: "test:reservation:1" },
       decisionRef,
-      conflictKeys: ["conflict:household-liquidity"],
+      conflictKeys: ["test:conflict:household-liquidity"],
       expiresAt: LEDGER_LATER,
     },
     {
-      ...base("sample:reservation-released"),
+      ...base("test:sample:reservation-released"),
       type: "ReservationReleased",
-      reservationRef: { firmId: LEDGER_ORG, id: "reservation:1" },
+      reservationRef: { firmId: LEDGER_ORG, id: "test:reservation:1" },
       decisionRef,
       reservationCreationRef: {
         firmId: LEDGER_ORG,
-        id: "sample:reservation-created",
+        id: "test:sample:reservation-created",
       },
       reasonCode: "decision-closed",
     },
     {
-      ...base("sample:execution-started"),
+      ...base("test:sample:execution-started"),
       type: "ExecutionStarted",
       decisionRef,
       stepId: "step:GC-01:0001",
-      idempotencyKey: "idem:ledger:1",
+      idempotencyKey: "test:idem:ledger:1",
     },
     {
-      ...base("sample:execution-succeeded"),
+      ...base("test:sample:execution-succeeded"),
       type: "ExecutionSucceeded",
       decisionRef,
       stepId: "step:GC-01:0001",
-      executionHandleRef: { firmId: LEDGER_ORG, id: "handle:1" },
+      executionHandleRef: { firmId: LEDGER_ORG, id: "test:handle:1" },
       sourceStatus: "submitted",
     },
     {
-      ...base("sample:execution-partial"),
+      ...base("test:sample:execution-partial"),
       type: "ExecutionPartiallySucceeded",
       decisionRef,
       stepId: "step:GC-01:0001",
-      executionHandleRef: { firmId: LEDGER_ORG, id: "handle:1" },
-      completedParts: ["crm-record"],
-      incompleteParts: ["custodian-submit"],
+      executionHandleRef: { firmId: LEDGER_ORG, id: "test:handle:1" },
+      completedParts: ["test:crm-record"],
+      incompleteParts: ["test:custodian-submit"],
       sourceStatus: "partial",
     },
     {
-      ...base("sample:execution-failed"),
+      ...base("test:sample:execution-failed"),
       type: "ExecutionFailed",
       decisionRef,
       stepId: "step:GC-01:0001",
@@ -365,36 +407,36 @@ export function allLedgerEventSamples(): LedgerEntry[] {
       sourceStatus: "timeout",
     },
     {
-      ...base("sample:status-observed"),
+      ...base("test:sample:status-observed"),
       type: "StatusObserved",
       decisionRef,
-      executionHandleRef: { firmId: LEDGER_ORG, id: "handle:1" },
+      executionHandleRef: { firmId: LEDGER_ORG, id: "test:handle:1" },
       status: "InFlight",
       sourceStatus: "pending-review",
-      evidenceSnapshotRef: { firmId: LEDGER_ORG, id: "evidence:status:1" },
+      evidenceSnapshotRef: { firmId: LEDGER_ORG, id: "test:evidence:status:1" },
     },
     {
-      ...base("sample:verification-closed"),
+      ...base("test:sample:verification-closed"),
       type: "VerificationClosed",
       decisionRef,
-      verificationRuleRef: { firmId: LEDGER_ORG, id: "verify:1" },
+      verificationRuleRef: { firmId: LEDGER_ORG, id: "test:verify:1" },
       provenState: "Completed",
     },
     {
-      ...base("sample:verification-stuck"),
+      ...base("test:sample:verification-stuck"),
       type: "VerificationStuck",
       decisionRef,
-      executionHandleRef: { firmId: LEDGER_ORG, id: "handle:1" },
+      executionHandleRef: { firmId: LEDGER_ORG, id: "test:handle:1" },
       lastObservedStatus: "Unknown",
       reasonCode: "status-source-unavailable",
     },
     {
-      ...base("sample:exception-requested"),
+      ...base("test:sample:exception-requested"),
       type: "ExceptionDecisionRequested",
       priorDecisionRef: decisionRef,
       triggeringEntryRef: {
         firmId: LEDGER_ORG,
-        id: "sample:verification-stuck",
+        id: "test:sample:verification-stuck",
       },
       reasonCode: "verification-stuck",
     },

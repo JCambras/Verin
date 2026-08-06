@@ -3464,7 +3464,7 @@ optional and defaults to the full chain.
 
 **Date:** 2026-07-28 · **Reversible** · Relates to: D-105, D-106, ADR-0041, charter #4/#5
 
-Review of D-099 surfaced four gaps in the ledger's failure and labeling behavior. All are
+Review of D-103 surfaced four gaps in the ledger's failure and labeling behavior. All are
 fixed in place; none needs a new migration.
 
 **A failed append is diagnosable.** `recordDecision` used to map every non-`AppError`
@@ -3496,9 +3496,13 @@ A `ReservationReleased` names no decision in a promoted column, so it is attribu
 the reservation index for the fold but not yet for the label - the narrow remainder, closed
 when Wave D/F producers land and reservations become promoted facts.
 
-**The projection window is bounded like the entry window.** `listDecisionProjections` takes
-a limit; the register reads the 50 most recently active decisions, reports how many exist,
-and says so on screen, instead of a full-table read and an unbounded grid per page load.
+**The projection window is bounded like the entry window.** ~~`listDecisionProjections`
+takes a limit; the register reads the 50 most recently active decisions, reports how many
+exist, and says so on screen, instead of a full-table read and an unbounded grid per page
+load.~~ **Superseded by D-108/D-116:** the register reads no projection at all. It replays
+the verified event window (`replayRegisterWindow`), bounds the decisions it renders, and
+reports its totals and withheld counts from that replay, so the projection store is the
+replay/repair path only and carries no bounded read to keep honest.
 
 `rebuildDecisionProjections` is reachable as `pnpm ledger:rebuild`, the operator repair
 surface for corrupted derived state: it refuses to replay a chain that does not verify, and
@@ -3515,7 +3519,7 @@ limit are all additive; the per-entry anchor upsert changes write frequency, not
 
 ### D-108 · 2026-07-28 · reversible · Ledger replay trust and projection ownership are structural
 
-**Reservation-ownership portion superseded by D-103.**
+**Reservation-ownership portion superseded by D-107.**
 
 Projection preconditions are evaluated before immutable insertion, and reservation identifiers
 remain permanently owned by their first decision because release events carry no owner reference.
@@ -3541,6 +3545,12 @@ identifiers, or replay inputs that are only schema-shaped rather than hash-verif
 The runtime-only relative PGlite data-directory resolution carries Turbopack's trace-boundary
 annotation. This preserves relative paths in development and CI while preventing the production
 build from tracing the whole repository through `process.cwd()`.
+
+**Re-verified 2026-08-05 (D-116).** Review read the annotation as inert on a non-`import()`
+call site. It is not: `next build` emits zero NFT warnings with it and "Encountered unexpected
+file in NFT list" without it, on this exact `resolve(process.cwd(), …)` form - which is the
+form Turbopack's own warning text prescribes. The call site now says so, so the next reader
+does not delete it.
 
 **Why:** the build otherwise succeeds with an NFT warning and packages unrelated project files.
 **Revert path:** remove the annotation if the store path becomes statically rooted or Turbopack
@@ -3788,3 +3798,72 @@ verification work.
 **Relates to:** ADR-0039, ADR-0044, ADR-0045.
 **Revert path:** none while retained ledger versions require replay and full-chain
 request verification remains the disclosure authority.
+
+### D-119 · 2026-08-05 · reversible · Ledger vocabulary, versions, and reachability are shipped facts
+
+**Test vocabulary leaves the production boundary.** The immutable-source PII boundary
+recognised ~60 identifiers whose only justification was a fixture, so renaming a test
+constant meant editing production authority and the allowlist grew with the suite.
+Fixture vocabulary now enters through `registerTestLedgerIdentifier` /
+`registerTestLedgerIdentifierPrefix` in the reserved `test` namespace - the shape
+`registerTestSpanName` and `registerTestSystemActor` already use - and the shipped
+allowlists carry reviewed production, seed, demo, and golden identifiers only. The
+`ledger-pii-vocabulary` fence derives both halves from the module: the seams stay
+exported, no shipped module (src outside the test tree, or scripts) can reference
+either one (keyed on resolved symbol, so an alias is caught), and no entry in any
+`REGISTERED_*` set lives in the reserved namespace.
+
+**Bundle versions are validated by shape, not by today's build.** `engineVersion` and
+`primitiveSetVersion` were pinned to the literal set `{"0", "0.0.0"}`, so the first
+real engine version bump would have refused every `recordDecision` as `PII_VIOLATION` -
+an operator sent hunting for personal data that was never there. They are checked
+against a bounded machine-token grammar instead, the residual account-reference refusal
+still runs over the values, and an unsupported version reports itself as a `VALIDATION`
+refusal that the append and replay paths pass through unflattened.
+
+**One projection authority per event.** Every append folded the projection twice with
+identical arguments - once to validate before the insert, once to persist after it - so
+the sole write path paid double the round trips for the same verdict. The pre-insert
+pass is gone; the transaction and the append savepoint already guarantee that a refused
+projection commits nothing. Because the substrate is now the first authority to refuse a
+cross-generation release, `appendDecisionEvents` maps adapter-boundary failures through
+the same classifier `recordDecision` uses, so a caller aborting its transaction still
+sees a typed `STORE_CONSTRAINT` rather than driver prose.
+
+**Derived state carries no column no reader can validate.** Migration 7 drops
+`decision_reservation_index.created_sequence` forward-only (migration 5 keeps its shipped
+DDL). The generation identity - reservation ref, owning decision, immutable creation
+entry - and the `decision_reservation_one_active` partial unique index are untouched.
+
+**Unreachable reads are removed; the one real deferral is named.** `listDecisionLedger`
+(an unverified grant-authorized listing) is superseded by `verifyAndListDecisionLedger`,
+and `verifyDecisionLedger` by `verifyDecisionLedgerIntegrity`; `countDecisionProjections`
+and the bounded `listDecisionProjections` limit path were orphaned when the register
+started replaying its verified event window, which reports its own totals. All are
+deleted. `appendDecisionEvents` stays: it is the shared later-append boundary this prompt
+exists to land, and its first shipped producer arrives with money-movement execution in
+**v3 prompt 8**. The `ledger-reachability` fence derives shipped callers for every ledger
+export and requires each unreachable one to be that named deferral or a fenced test seam -
+and fails just as loudly when a named deferral gains a caller, so the list cannot become a
+standing amnesty.
+
+**A refused replay says which repair it needs.** `pnpm ledger:rebuild` reported every
+per-org failure as "ledger or retained replay sources do not verify", so an outage, a bug,
+and a genuine integrity break were one message. It now prints the closed error code, the
+fixed-shape reason, and the level beside the org id, and never driver text.
+
+**D-104 correction.** The projection window paragraph in D-104 described a register that
+read the 50 most recently active decisions through `listDecisionProjections`. That register
+was replaced by `replayRegisterWindow` (D-108): the request path reads no projection at
+all, it replays the verified event window and reports totals and withheld counts from it.
+**D-106 upheld.** Review reported the Turbopack trace annotation as a no-op outside a
+dynamic `import()`. Measured both ways instead of reasoned about: `next build` is clean
+with the annotation and warns "Encountered unexpected file in NFT list" without it. The
+annotation stays, and the call site now records the measurement.
+
+**Why:** a production allowlist that carries fixtures, a version gate pinned to one build,
+a duplicated fold, an unvalidatable column, and an unreachable read are each a claim the
+code cannot keep.
+**Relates to:** ADR-0039, D-104, D-105, D-106, D-107, D-108.
+**Revert path:** the seams, the version grammar, and the fences are additive; migration 7
+is forward-only and the deleted reads have verified successors.

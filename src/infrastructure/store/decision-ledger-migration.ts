@@ -267,6 +267,18 @@ CREATE UNIQUE INDEX decision_reservation_one_active
   WHERE status = 'active';
 `;
 
+/**
+ * `created_sequence` duplicated an ordering fact the immutable ledger already states
+ * and no reader ever consulted, so a NOT NULL column existed that nothing could
+ * validate. Dropped forward-only: migration 5 keeps its shipped DDL, and the
+ * generation identity (reservation ref + owning decision + creation entry) plus the
+ * one-active partial unique index are untouched.
+ */
+export const DECISION_LEDGER_RESERVATION_SEQUENCE_DROP_SQL = `
+ALTER TABLE decision_reservation_index
+  DROP COLUMN created_sequence;
+`;
+
 export const DECISION_LEDGER_HISTORY_INDEXES_SQL = `
 CREATE INDEX decision_ledger_evidence_origins
   ON decision_ledger(org_id, evidence_snapshot_id, sequence)

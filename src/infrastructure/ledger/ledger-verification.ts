@@ -120,34 +120,13 @@ function toRow(row: DbLedgerRow): DecisionLedgerRow {
 async function listDecisionLedgerForTenant(
   db: SqlQueryable,
   tenant: TenantContext,
-  tail?: number,
 ): Promise<DecisionLedgerRow[]> {
   assertTenantContext(tenant);
-  const orgId = tenant.orgId;
-  if (tail === undefined) {
-    const result = await db.query<DbLedgerRow>(
-      "SELECT * FROM decision_ledger WHERE org_id = $1 ORDER BY sequence ASC",
-      [orgId],
-    );
-    return result.rows.map(toRow);
-  }
   const result = await db.query<DbLedgerRow>(
-    "SELECT * FROM decision_ledger WHERE org_id = $1 ORDER BY sequence DESC LIMIT $2",
-    [orgId, tail],
+    "SELECT * FROM decision_ledger WHERE org_id = $1 ORDER BY sequence ASC",
+    [tenant.orgId],
   );
-  return result.rows.map(toRow).reverse();
-}
-
-export async function listDecisionLedger(
-  db: SqlQueryable,
-  exportGrant: ActionGrant<"audit.export">,
-  piiGrant: ActionGrant<"pii.view">,
-  tail?: number,
-): Promise<DecisionLedgerRow[]> {
-  assertActionGrant(exportGrant, "audit.export");
-  assertActionGrant(piiGrant, "pii.view");
-  assertSameTenant(exportGrant.tenant, piiGrant.tenant);
-  return listDecisionLedgerForTenant(db, exportGrant.tenant, tail);
+  return result.rows.map(toRow);
 }
 
 export async function verifyAndListDecisionLedger(
@@ -205,7 +184,6 @@ export async function verifyAndListDecisionLedger(
 async function verifySnapshotTransaction(
   tx: SqlTx,
   tenant: TenantContext,
-  window?: number,
 ): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
   assertTenantContext(tenant);
   const orgId = tenant.orgId;
@@ -234,12 +212,9 @@ async function verifySnapshotTransaction(
     rows: verificationRows,
     start: undefined,
   };
-  const rows = window !== undefined && window > 0 && stored > window
-    ? verificationRows.slice(-window)
-    : verificationRows;
   return {
     verification: await verifyLedgerSnapshot(tx, tenant, snapshot),
-    rows,
+    rows: verificationRows,
   };
 }
 
@@ -329,26 +304,6 @@ export async function rebuildDecisionProjections(
       projections: await listDecisionProjections(tx, tenant),
     };
   });
-}
-
-export async function verifyDecisionLedgerTransaction(
-  tx: SqlTx,
-  tenant: TenantContext,
-  window?: number,
-): Promise<LedgerVerification> {
-  assertTenantContext(tenant);
-  return (
-    await verifySnapshotTransaction(tx, tenant, window)
-  ).verification;
-}
-
-export async function verifyDecisionLedger(
-  db: SqlDb,
-  tenant: TenantContext,
-): Promise<LedgerVerification> {
-  assertTenantContext(tenant);
-  return db.transaction((tx) =>
-    verifyDecisionLedgerTransaction(tx, tenant));
 }
 
 export async function verifyDecisionLedgerIntegrity(

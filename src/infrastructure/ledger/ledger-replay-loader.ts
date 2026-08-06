@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SqlQueryable } from "@infra/store/db";
-import { appError } from "@contracts/errors";
+import { appError, normalizeAppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import type {
@@ -129,8 +129,12 @@ function requireCanonicalSource<K extends "evidence" | "bundle" | "decision">(
   }
   try {
     assertReplaySourcePiiBoundary(kind, parsed.value);
-  } catch {
-    return replaySourceError(`${label} contains unclassified text during replay`);
+  } catch (error: unknown) {
+    return replaySourceError(
+      normalizeAppError(error, "trusted-only")?.code === "VALIDATION"
+        ? `${label} declares an unsupported version during replay`
+        : `${label} contains unclassified text during replay`,
+    );
   }
   return {
     value: parsed.value as ReplaySourceValue<K>,
