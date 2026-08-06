@@ -43,6 +43,17 @@ projection growth under an unchanged hash-preimage version. Every named tenant-o
 `{ firmId, id }` reference, compensating actions carry the same retry-safety contract as execution
 steps, and replay time zones are pinned to a persisted versioned registry instead of host ICU data.
 
+**v3 decision-primitive vocabulary (`src/contracts/primitives`, ADR-0039, D-102):** primitive set
+`1.0.0`, **versioned and provisional** - six pure primitives (`candidate-selection`,
+`evidence-reconciliation`, `horizon-projection`, `net-availability`, `restriction-screen`,
+`sufficiency-check`), each with a strict Zod parameter schema, a refined input schema, declared
+published context keys, and a total pure `evaluate`. The root registry `primitive-set-version.json`
+mirrors the catalog and names the three declared future primitives, and
+[`docs/primitive-rationale.md`](./docs/primitive-rationale.md) carries the composability razor, the
+per-primitive falsification criterion, and the cross-domain matrix over the sixteen signed golden
+cases. Each kill criterion is asserted **unrepresentable** in the unit suite, so absorbing a
+falsifying case by quiet schema growth fails the build instead of passing silently.
+
 **Canonical schema + provenance (`src/domain/schema`):** 9 entities modeled only to declared need, each
 field typed/nullable/united with provenance; golden-record survivorship; Salesforce object-graph mapping
 (documentation only — no SF adapter code).
@@ -66,7 +77,7 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey)
   plus axe, green on a non-UTC clock; `pnpm test:e2e` reports the live count.
 
-**Governance:** 38 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 40 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
@@ -81,7 +92,7 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-187; every PF id names exactly one
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-192; every PF id names exactly one
 proof — the prompt-6 entries were renumbered on rebase, see the numbering note in the log).
 
 | Fence | Enforces (charter) | Proof |
@@ -120,12 +131,14 @@ proof — the prompt-6 entries were renumbered on rebase, see the numbering note
 | `llm-pii-boundary` (import-reachability: no `PIIBearing`-marked type reachable from `src/infrastructure/llm/`) | no PII-bearing type reaches a model surface (#3, #13, v3 invariant 1, ADR-0031) | PF-032 + companions |
 | `governed-actions` (AST: per-action `ActionGrant` bound at each governed request surface) | governed human actions authorized per-action, never by a bare role check (#12, v3 §15.3) | PF-033 + companions |
 | `observability-vocabulary` (AST: span/log/action/attribute values drawn from a sealed vocabulary) | un-listed telemetry values degrade to `[REDACTED]`, never leak PII (#14) | PF-035 + companions |
+| `primitive-catalog` (registry/catalog agreement both ways, rationale-doc coverage without phantoms, domain-neutral naming, purity, evidence-kind declarations resolving to real parameters) | the primitive vocabulary stays versioned, provisional, domain-neutral, and pure - a new or stretched primitive is a version bump, never a quiet edit (#1/#4, v3 prompt 8, ADR-0039, D-102) | PF-188, PF-189 + companions |
 
-**Current prompt-6 line-budget PR evidence:** contracts 4,021/4,050 (29
+**Current prompt-8 line-budget PR evidence:** contracts 5,433/5,460 (27
 headroom), domain 1,298/1,350 (52), infrastructure 3,484/3,550 (66), and
-presentation 918/6,000 (5,082). ADR-0038 is the latest ceiling amendment.
-Later digest-provenance corrections changed only fitness and decision evidence,
-so these remain the final fence measurements. No useful implementation or
+presentation 928/6,000 (5,072). ADR-0040 is the latest ceiling amendment,
+measured with the fence's own algorithm after the primitive catalog AND its
+review hardening landed (PF-192), so the headroom is bounded correction room
+rather than a stale pre-review figure. No useful implementation or
 documentation was removed or compressed.
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails

@@ -43,6 +43,7 @@ on its own and is subordinate to the ratified documents below.
 | [0027](../adr/0027-demo-first-wave0-labeled-fakes.md) | Wave 0 walking skeleton on internally-labeled fakes is charter-legal (charter #5 extension; no mock theater) |
 | [0028](../adr/0028-demo-design-language.md) | Demo UI uses the ESTABLISHED Verin design system; v3 visual prescriptions rejected; v3 UX semantics re-expressed via `docs/demo-design-language.md` |
 | [0029](../adr/0029-decision-core-contracts.md) | Prompt 5 landed: the §5 decision-core contracts as Zod strict schemas in `src/contracts/decision-core/`; contracts ceiling re-baselined 600→3500 (amends ADR-0018); invariants 7-9 active |
+| [0039](../adr/0039-primitive-vocabulary.md) | Prompt 8 landed: the decision-primitive vocabulary as a versioned, provisional, falsification-tested six-primitive catalog in `src/contracts/primitives/` (v3's `src/primitives/catalog.ts` re-baselined per marriage-map C6), mirrored by the root registry `primitive-set-version.json`; contracts ceiling re-baselined 4,050→5,460 by [ADR-0040](../adr/0040-line-budget-primitive-vocabulary.md) (amends ADR-0035) |
 
 ## The 30 invariants, phase-gated
 
