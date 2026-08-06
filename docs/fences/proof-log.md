@@ -6262,9 +6262,52 @@ The injection was reverted and the file measures 510 again. The fence's own comp
 still flags a synthetic file one line over the default and passes a small one, so the
 default is unaffected by the pin; `migrations.ts` remains the ONLY pinned entry, so no
 other file sits near its ceiling under the same squeeze. The line-budget companion
-measures contracts 4,598, domain 1,584, infrastructure 7,701, and presentation 928 -
-unchanged, since ADR-0047 touches no layer ceiling.
+measures contracts 4,598, domain 1,584, and presentation 928 under unmoved ceilings,
+since ADR-0047 amends no layer ceiling. **Corrected under D-122:** infrastructure
+measured 7,702, not the 7,701 first recorded here - the same commit hoisted the
+`appError` import in `recorded-version-registry.ts`, one added infrastructure line.
 
 **Revert:** no planted padding remains in `migrations.ts`.
 
 **Date:** 2026-08-06 (review corrections, D-128).
+---
+
+## A prologue failure leaves the append classified (D-129)
+
+**Invariant:** every adapter-boundary failure in `appendDecisionEvents` reaches the caller
+as a typed `AppError` with its `"decision ledger append failed"` log line - including the
+tenant lock, the evidence preflight, and the `SAVEPOINT` statement, which ran outside the
+classification and so could return raw driver prose from the designed contention point for
+concurrent appends. Savepoint recovery still runs only against a savepoint that was opened.
+
+**Injection:** restored the pre-fix shape - `lockDecisionLedgerTenant`,
+`preflightEvidenceSnapshots`, and the `SAVEPOINT` exec lifted back out of the `try`.
+
+```text
+FAIL  src/__tests__/integration/decision-ledger.test.ts > classifies a prologue failure and leaves an unopened savepoint alone
+  src/__tests__/integration/decision-ledger.test.ts:1726
+  "actual": TypeError { "message": "lock wait timeout on the tenant row" }
+  "expected": { "code": "INTERNAL", "message": "decision ledger append failed" }
+```
+
+**Second injection** (the recovery guard): weakened `if (savepointOpen)` to
+`if (savepointOpen || true)`.
+
+```text
+AssertionError: expected [ …(4) ] to deeply equal []
+  "actual": [ "ROLLBACK TO SAVEPOINT decision_ledger_append", "RELEASE SAVEPOINT …", … ]
+```
+
+Both injections were reverted. The guard assertion is therefore not vacuous: without it the
+prologue failure issues a rollback to a savepoint that was never established, which in
+Postgres aborts the caller's transaction. The same test also proves a typed `NOT_FOUND` from
+the tenant lock still reaches the caller unchanged rather than collapsing into `INTERNAL`.
+
+The line-budget companion measures contracts 4,598, domain 1,584, infrastructure 7,701,
+and presentation 928: the classification restructure folded one call onto a single line,
+returning the layer to the figure ADR-0046 recorded. No ceiling moved and `migrations.ts`
+still measures 510 against its 560 pin.
+
+**Revert:** no planted prologue-outside-the-try shape remains in `ledger-store.ts`.
+
+**Date:** 2026-08-06 (review corrections, D-129).

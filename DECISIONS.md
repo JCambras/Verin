@@ -4068,3 +4068,45 @@ readers at - fixing that at one ratchet while leaving it at the other closes not
 **Relates to:** ADR-0018, ADR-0046, ADR-0047, D-120.
 **Revert path:** ADR-0047 and the pin figure revert together; the import move is independently
 revertible.
+
+### D-125 · 2026-08-06 · reversible · The whole append is classified, and a recorded figure is a measurement
+
+**`appendDecisionEvents` classifies its prologue too.** The tenant lock, the evidence
+preflight, and the `SAVEPOINT` statement ran BEFORE the `try` that maps adapter-boundary
+failures, so a deadlock, a lock timeout, a serialization failure, or a lost connection on the
+tenant row - the designed contention point for concurrent appends - reached the caller as raw
+driver prose with no `"decision ledger append failed"` log line at all, in the one function
+D-116 added the classification for and whose sibling `recordDecision` wraps its entire
+transaction body. All three now run inside that `try`. Recovery is guarded by whether the
+savepoint was actually opened, so a prologue failure never poisons the caller's transaction
+with a rollback to a savepoint that never existed, and `storeFailure` still returns a known
+`AppError` unchanged - the typed `NOT_FOUND` from the tenant lock reaches the caller as
+`NOT_FOUND`, now with the log line it always owed.
+
+**A figure recorded in the ratchet is a measurement, not a memory.** ADR-0047's commit hoisted
+one import into `recorded-version-registry.ts` and left `line-budget.test.ts` and the D-121
+proof-log entry both reading infrastructure 7,701 against a measured 7,702, the proof log
+asserting "unchanged" about the commit that changed it. Both records are corrected, and this
+round's classification restructure returns the layer to 7,701 measured. The ADR-0039
+`Amended by` line stopped at ADR-0044 while ADR-0040 and ADR-0045 both declare they amend it,
+so a reader following the ledger chain never reached the frozen-codec and non-locking
+verification decisions that govern the shipped code; both are appended.
+
+**Deferred, keyed `ledger-followup-decision-id-extractor`.** The three-line decision-id
+extractor (`decisionRef.id`, else `priorDecisionRef.id`) is written six times -
+`ledger-store.ts`, `ledger-bindings.ts`, `ledger-projection-store.ts`, `ledger-register.ts`,
+`ledger-schema-registry.ts`, and `domain/ledger/projections.ts` - two returning `null` and
+four `undefined`. It is a structural property of the `LedgerEntry` union, so its home is
+`contracts/decision-core/ledger.ts`, which every one of those modules may import, including
+the domain projector that cannot import infrastructure. The same key carries the ADR
+back-reference convention: ADR-0040, 0041, 0042, 0045, and 0046 carry no `Amended by` line
+though each is amended later, so the convention is either completed across the chain or
+dropped for `docs/adr/README.md` as the single index. Both are polish, not correctness, and
+wrap-up mode is in force; the trigger is the next prompt that touches the ledger modules.
+
+**Why:** an unclassified failure at the ledger's only write chokepoint is undiagnosable
+exactly when an operator needs it most, and a ratchet whose recorded figure drifts from its
+measurement trains the next agent to trust the record instead of re-measuring.
+**Relates to:** ADR-0018, ADR-0039, ADR-0045, ADR-0047, D-116, D-118, D-121.
+**Revert path:** the prologue restructure, the corrected figures, and the ADR back-reference
+are independently revertible; the deferral is a note.

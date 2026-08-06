@@ -468,16 +468,13 @@ export async function appendDecisionEvents(
   if (!evidenceCorresponds(snapshots, prepared.value, orgId)) {
     throw appError("VALIDATION", "decision source rows and recording events do not correspond");
   }
-  await lockDecisionLedgerTenant(tx, tenant);
-  await preflightEvidenceSnapshots(tx, tenant, snapshots);
-  await tx.exec("SAVEPOINT decision_ledger_append");
+  let savepointOpen = false;
   try {
-    await insertEvidenceSnapshots(
-      tx,
-      tenant,
-      snapshots,
-      prepared.value.at(-1)!.event.recordedAt,
-    );
+    await lockDecisionLedgerTenant(tx, tenant);
+    await preflightEvidenceSnapshots(tx, tenant, snapshots);
+    await tx.exec("SAVEPOINT decision_ledger_append");
+    savepointOpen = true;
+    await insertEvidenceSnapshots(tx, tenant, snapshots, prepared.value.at(-1)!.event.recordedAt);
     const appended = await appendPrepared(
       tx,
       tenant,
@@ -492,8 +489,10 @@ export async function appendDecisionEvents(
     // Classification happens BEFORE savepoint recovery: a connection lost mid-rollback
     // would otherwise replace the typed refusal with raw driver prose.
     const failure = storeFailure(tenant, error);
-    await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append").catch(() => undefined);
-    await tx.exec("RELEASE SAVEPOINT decision_ledger_append").catch(() => undefined);
+    if (savepointOpen) {
+      await tx.exec("ROLLBACK TO SAVEPOINT decision_ledger_append").catch(() => undefined);
+      await tx.exec("RELEASE SAVEPOINT decision_ledger_append").catch(() => undefined);
+    }
     throw failure;
   }
 }

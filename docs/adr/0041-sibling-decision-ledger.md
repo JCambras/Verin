@@ -5,7 +5,7 @@
 **Deciders:** Founding architect (executing v3 prompt 7 and its accepted design report)
 **Relates to:** Charter non-negotiables #1, #2, #7, #13; v3 invariants 2, 4, 5, 23, 30
 **Informed by:** `docs/v3/verin-architecture-v3.md` §§5, 12, 15, 16, 18; prompt 7; `verin-ledgerdesign-l7/report.md`
-**Amended by:** ADR-0042, ADR-0043, ADR-0044
+**Amended by:** ADR-0040, ADR-0042, ADR-0043, ADR-0044, ADR-0045
 
 ## Context
 
@@ -101,7 +101,7 @@ settle now.
 - Amend the ADR-0018 ceilings, re-measured on the composed tree that already
   carries ADR-0040's prompt-8 primitive catalog: contracts 5,460 to 6,050,
   domain 1,350 to 1,650, and infrastructure 3,550 to 7,750. Measured state is
-  contracts 6,010 (40 headroom), domain 1,584 (66), and infrastructure 7,702 (48) -
+  contracts 6,010 (40 headroom), domain 1,584 (66), and infrastructure 7,701 (49) -
   bounded correction room, per the ADR-0033 rule that a zero-headroom ceiling just
   converts review findings into documentation deletions. The presentation envelope and
   the per-file 500-line limit are unchanged: the repository is split into the chain

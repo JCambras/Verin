@@ -1679,6 +1679,55 @@ describe("decision ledger storage and L1-L4 verification", () => {
     ))).toHaveLength(5);
   });
 
+  it("classifies a prologue failure and leaves an unopened savepoint alone", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const event = LedgerEntrySchema.parse({
+      ...allLedgerEventSamples().find(
+        (sample) => sample.type === "ApprovalStageExpired",
+      )!,
+      priorDecisionHash: input.decisionRecord.decisionHash,
+    });
+    const abort = new Error("test abort");
+    await expect(db.transaction(async (tx) => {
+      const query = tx.query.bind(tx);
+      const statements: string[] = [];
+      const exec = tx.exec.bind(tx);
+      tx.exec = (sql: string) => {
+        statements.push(sql);
+        return exec(sql);
+      };
+      // The tenant row is the designed contention point for concurrent appends: a
+      // deadlock or lock timeout there is a store failure, not raw driver prose.
+      tx.query = ((sql: string, params?: unknown[]) =>
+        sql.includes("FROM orgs")
+          ? Promise.reject(new TypeError("lock wait timeout on the tenant row"))
+          : query(sql, params)) as typeof tx.query;
+      await expect(
+        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE),
+      ).rejects.toMatchObject({
+        code: "INTERNAL",
+        message: "decision ledger append failed",
+      });
+      // A typed refusal from the same prologue still reaches the caller unchanged.
+      tx.query = ((sql: string, params?: unknown[]) =>
+        sql.includes("FROM orgs")
+          ? Promise.resolve({ rows: [] })
+          : query(sql, params)) as typeof tx.query;
+      await expect(
+        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "decision ledger tenant does not exist",
+      });
+      // Recovery never ran against a savepoint the prologue never opened.
+      expect(statements).toEqual([]);
+      throw abort;
+    })).rejects.toBe(abort);
+    expect(await listDecisionLedger(db, LEDGER_EXPORT_GRANT, LEDGER_PII_GRANT))
+      .toHaveLength(5);
+  });
+
   it("persists evidence gathered after the decision and refuses an uncited snapshot", async () => {
     await recordFixture(db);
     const observed = allLedgerEventSamples().find(
