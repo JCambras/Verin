@@ -118,6 +118,7 @@ const bindOrigins = (
     const changed = resolver.setOrigins(name.getText(), value);
     for (const origin of value) {
       const api = sensitiveOriginApi(origin);
+      // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack -- `api` is a banned-API NAME (e.g. "Math.random"), not a credential; this is an optional-presence check, not a secret comparison.
       if (api !== undefined) recorder.record(source, api, sf);
     }
     return changed;
@@ -315,6 +316,7 @@ const scanExpressions = (
         continue;
       }
       const api = sensitiveOriginApi(origin);
+      // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack -- `api` is a banned-API NAME (e.g. "Math.random"), not a credential; this is an optional-presence check, not a secret comparison.
       if (api !== undefined) recorder.record(call, api, sf);
     }
   }
@@ -334,6 +336,7 @@ const scanExpressions = (
         recorder.record(call, "Date() (callable)", sf);
       } else {
         const api = sensitiveOriginApi(origin);
+        // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack -- `api` is a banned-API NAME (e.g. "Math.random"), not a credential; this is an optional-presence check, not a secret comparison.
         if (api !== undefined) recorder.record(call, api, sf);
       }
     }
@@ -355,6 +358,7 @@ const scanExpressions = (
         : "";
     for (const origin of resolver.originOf(access) ?? []) {
       const api = sensitiveOriginApi(origin);
+      // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack -- `api` is a banned-API NAME (e.g. "Math.random"), not a credential; this is an optional-presence check, not a secret comparison.
       if (api !== undefined) recorder.record(access, api, sf);
       if (origin === "Intl" || origin.startsWith("Intl.")) {
         recorder.record(access, "Intl", sf);
