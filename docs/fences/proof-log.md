@@ -8794,3 +8794,90 @@ moved into `scripts/corpus/intake-filename.ts`, a newly bound executable authori
 changed). The real-derived partition remains empty and captain signoff remains `pending-captain`.
 
 **Date:** 2026-08-06 (v3 prompt 11, review round 20).
+
+## the sharing seam is proven without paying for it, and the intake rule is read structurally (ADR-0039)
+
+**Fences:** `src/__tests__/fitness/corpus-world-sharing.test.ts`,
+`src/__tests__/fitness/corpus-vocabulary-binding.test.ts`
+
+**Claims:** (1) global setup builds the shared corpus world EXACTLY ONCE, rebuilds it on this project's
+watch rerun and not on another project's, and the shipped default builds a real corpus - all on the one
+validation the run already pays; (2) a case-id pattern that is not whole-string is refused by name, where
+whole-string is read STRUCTURALLY (escapes, character classes, group depth, flags) rather than as the first
+and last character.
+
+**Injection 1 - the rerun hook stops rebuilding.** Replaced the hook body with `void specifications;`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: a fitness rerun kept the world computed at process start: expected [ { built: 1 } ] to have a length of 2 but got 1
+```
+
+**Injection 2 - the rebuild loses its project scope.** Replaced the specification predicate with
+`specifications.length >= 0`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: an unrelated project's rerun rebuilt a world it never reads: expected [ { built: 1 }, { built: 2 } ] to have a length of 1 but got 2
+```
+
+Both are counted against a DOUBLE, so the fence proves the seam without spending a second and third real
+`validateCorpus()` on watching itself - which is what made D-145's "one validation per run" false. The
+standing companion in the same file reads the injected world (`real.taxonomy`, `real.manifest`) and so
+still proves the SHIPPED default builds a real corpus; a stubbed default would fail it, and would also fail
+the eighteen fences that read that world.
+
+**Injection 3 - the flags check removed** (`void flags;`), leaving `/^RD-…$/m` (anchors redefined to line
+boundaries) and `/^RD-…$/g` (a stateful `.test()`) accepted as whole-string rules.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+```
+
+**Injection 4 - escape handling removed** (`if (ch === "\\") { continue; }`), so an escaped trailing dollar
+reads as an anchor and `caseIdShape` would print `real-derived/RD-\.json`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected /^RD-\$/ to be null
+
+- Expected:
+null
+
++ Received:
+/^RD-\$/
+```
+
+**Injection 5 - the top-level alternation check removed**, restoring the exact hole the
+first-and-last-character test had: a branch anchored at neither end, which `.test()` matches as a
+substring.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected /^RD-[0-9a-f]{16}|junk$/ to be null
+
+- Expected:
+null
+
++ Received:
+/^RD-[0-9a-f]{16}|junk$/
+```
+
+**Standing companion:** the same case proves the ACCEPTING direction - the committed schema binds a
+pattern, the canonical path round-trips, and a bounded alternation INSIDE the anchors
+(`/^(RD|RX)-[0-9a-f]{16}$/`) both renders and matches - so the refusal cannot be satisfied by refusing
+every regex.
+
+**Revert:** all five injections were reverted. `pnpm corpus:validate` regenerates byte-identical with
+`corpusDigest` `2de7c9fe090ffaf29e51063eed5261e0f949f883d55337d094a088a224ab3e25` (the structural read
+changed `scripts/corpus/intake-filename.ts`, a bound executable authority; no case's bytes or labels
+changed). The real-derived partition remains empty and captain signoff remains `pending-captain`.
+
+**Date:** 2026-08-06 (v3 prompt 11, review round 21).

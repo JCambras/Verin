@@ -67,6 +67,23 @@ export default defineConfig({
     // schedule the rerun; `_corpus-world-setup.ts` rebuilds the world before it
     // collects. Vitest's two defaults are restated (root-anchored) because a
     // declared value REPLACES them - only `setupFiles` is appended by vitest.
+    //
+    // THIS IS THE BLUNT MECHANISM, AND IT IS THE CORRECT ONE - at a cost worth
+    // stating rather than discovering. A match schedules every file BOTH
+    // projects have already run, so editing a corpus fixture mid-`pnpm
+    // test:watch` costs a full-suite cycle: MEASURED 177s and 185s on two runs,
+    // against 48s for the 18 corpus fences that actually read the world - a ~4x
+    // tax on corpus iteration, most of it the serial tree below. Vitest 4's
+    // targeted `watchTriggerPatterns` was weighed and refused: it runs BEFORE
+    // `handleFileChanged` and SUPPRESSES it on a match, so a scoped trigger must
+    // itself enumerate every test that depends on the changed input by ANY
+    // route, module graph included - and these inputs are read with
+    // `readFileSync`, so no compiler edge backs that list. It would already be
+    // wrong today: `config/demo/scenarios.yaml` is read by
+    // `src/__tests__/unit/decision-core.test.ts` in the OTHER project, which a
+    // fitness-scoped list would silently stop rerunning. A hand-kept dependency
+    // map whose staleness mode is a green suite is a worse trade than wall
+    // clock (D-146).
     forceRerunTriggers: [
       `${ROOT}/**/package.json`,
       `${ROOT}/{vitest,vite}.config.*`,

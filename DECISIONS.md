@@ -5556,3 +5556,52 @@ files and the ceiling was telling the truth about the file.
 **Revert path:** each part is one file's change - drop the `onTestsRerun` hook and the `forceRerunTriggers`
 list, restore the permissive zone check, re-inline the two `validateCorpus()` calls, or fold
 `intake-filename.ts` back into `scrub-contract.ts` and regenerate.
+
+### D-146 · 2026-08-06 · reversible · The sharing fence proves the seam against a counted double, the intake anchoring rule is read structurally, and the watch trigger's cost is recorded
+
+Review round 21 (wrap-up), under the recorded review-15 (one validation per run, without weakening) and
+review-17 (real measurements) obligations.
+
+**The fence that measures the seam no longer moves it.** `corpus-world-sharing` called the REAL global
+setup and then the REAL rerun hook, so a full fitness run paid THREE `validateCorpus()` executions - the
+one D-145 claimed was the only one, plus two the fence spent watching itself. The builder is now a
+parameter of `setup()` defaulted to the real one, and the fence drives it with a counted double whose every
+result is distinct. That proves MORE than before, not less: the exact object provided at each point is
+pinned, so a rebuild can no longer be confused with a re-provide of a cached world, and the build COUNT is
+asserted (one at setup, none on another project's rerun, one on this project's). What a double cannot see -
+that the shipped default builds a real corpus - is proven by a new case reading the injected world and by
+the eighteen fences that already read it, all on the single validation the run had already paid for.
+
+**Anchoring is a structural property, not the first and last character.** `isWholeStringRule` tested
+`startsWith("^") && endsWith("$")`, which admits three shapes that then produce exactly the corruption the
+assertion exists to prevent: a top-level alternation (`/^RD-[0-9a-f]{16}|junk$/`) leaves a branch anchored
+at neither end, so `.test()` matches a substring and widens what intake accepts; an escaped trailing dollar
+(`/^RD-\$/`) is a literal, and slicing it for display prints a filename intake rejects; and the `m` flag
+redefines both anchors while `g`/`y` make `.test()` answer differently on the same input each call. The
+rule is now read structurally - class- and group-aware, escape-aware, flags checked - and each shape is
+refused by its own name. A bounded alternation INSIDE the anchors still passes, so the check refuses
+corruption without refusing regexes. `scripts/corpus/intake-filename.ts` is a bound executable authority,
+so this changes `corpusDigest` to
+`2de7c9fe090ffaf29e51063eed5261e0f949f883d55337d094a088a224ab3e25`; no case's bytes or labels changed and
+captain signoff remains `pending-captain`.
+
+**The blunt watch trigger is kept, with its cost stated.** `forceRerunTriggers` schedules every file BOTH
+projects have already run, so a corpus edit mid-`pnpm test:watch` costs a full-suite cycle (MEASURED 177s
+and 185s on two runs) against 48s for the 18 corpus fences that actually read the world - a ~4x tax on
+corpus iteration in watch mode, most of it the serial fitness tree. Vitest 4's targeted
+`watchTriggerPatterns` was weighed and refused on correctness, not taste: `getTestFilesFromWatcherTrigger`
+runs BEFORE `handleFileChanged` and suppresses it on a match, so a scoped trigger must itself enumerate
+every test depending on the changed input by ANY route including the module graph - and these inputs are
+read with `readFileSync`, so no compiler edge backs that list. It would already be wrong:
+`config/demo/scenarios.yaml` is read by `src/__tests__/unit/decision-core.test.ts` in the OTHER project,
+which a fitness-scoped list would silently stop rerunning.
+
+**Why:** a fence whose own cost falsifies the claim it proves is the measurement problem this repo refuses,
+and an invariant only the default path enforces is an invariant the next caller breaks. A hand-kept
+dependency map whose staleness mode is a green suite is a worse trade than wall clock.
+**Alternatives:** reword the "one validation per run" claim to admit the fence's two - rejected, the seam
+is provable without paying them; probe whole-string-ness behaviourally by appending a prefix and suffix to
+a known match - rejected, no caller supplies a known-matching id, so the probe would only work on the
+default path that already holds; adopt `watchTriggerPatterns` - rejected above.
+**Revert path:** drop the builder parameter and let the fence call the real setup twice; restore the
+two-character anchoring check and regenerate the manifest; the trigger list is unchanged.

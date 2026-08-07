@@ -132,12 +132,23 @@ export const pinConfiguredClock = (zone: unknown): void => {
   }
 };
 
-export default function setup(project: TestProject): void {
+/**
+ * The builder is a PARAMETER so the sharing fence can prove this wiring -
+ * provided once, rebuilt on this project's rerun, never on another's - against a
+ * counted double instead of paying two more real validations to observe it.
+ * Vitest calls global setup with the project alone, so the shipped run always
+ * takes the default, and that the default builds a REAL world is proven by the
+ * fences that read the injected one rather than asserted here.
+ */
+export default function setup(
+  project: TestProject,
+  buildWorld: () => CorpusWorld | UnavailableCorpusWorld = buildCorpusWorld,
+): void {
   pinConfiguredClock(project.config.env?.TZ);
-  project.provide("corpusWorld", buildCorpusWorld());
+  project.provide("corpusWorld", buildWorld());
   project.onTestsRerun((specifications: TestSpecification[]) => {
     if (specifications.some((spec) => spec.project.name === project.name)) {
-      project.provide("corpusWorld", buildCorpusWorld());
+      project.provide("corpusWorld", buildWorld());
     }
   });
 }

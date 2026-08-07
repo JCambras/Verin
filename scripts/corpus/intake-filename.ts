@@ -29,19 +29,43 @@ const INTAKE_PREFIX = "real-derived/";
 /** ANCHORING IS THE RULE, NOT A HABIT OF THE DEFAULT PATTERN. Only
  * `intakeCaseIdPattern` mints a bound pattern, and it refuses anything that is
  * not whole-string - but the consumers below take a `RegExp` from any caller,
- * and an unanchored one corrupts BOTH: `.test()` would match a substring
+ * and one that is not corrupts BOTH: `.test()` would match a substring
  * (widening what intake accepts) and stripping the anchors for display would
  * chop real pattern characters off each end, printing a name intake rejects. So
- * the invariant is asserted where it is relied on, and an unanchored pattern is
- * refused by name rather than silently reinterpreted. */
-const isWholeStringRule = (source: string): boolean =>
-  source.startsWith("^") && source.endsWith("$");
+ * the invariant is asserted where it is relied on, and it is read STRUCTURALLY,
+ * because whole-string-ness is not a property of the first and last CHARACTERS:
+ * a trailing `$` can be escaped, a top-level `|` leaves a branch anchored at
+ * neither end, and `m` redefines both anchors while `g`/`y` make `.test()`
+ * answer differently on the same input each call. Each of those passes a
+ * character check and then produces exactly the corruption above, so each is
+ * refused by its own name rather than silently reinterpreted. */
+const notWholeStringRule = (source: string, flags: string): string | null => {
+  if (/[gmy]/.test(flags)) return `flags "${flags}" redefine the anchors or make .test() stateful`;
+  if (!source.startsWith("^")) return "it does not start with ^";
+  let depth = 0;
+  let inClass = false;
+  let endsAnchored = false;
+  for (let i = 1; i < source.length; i += 1) {
+    const ch = source[i];
+    endsAnchored = false;
+    if (ch === "\\") { i += 1; continue; }
+    if (inClass) { inClass = ch !== "]"; continue; }
+    if (ch === "[") inClass = true;
+    else if (ch === "(") depth += 1;
+    else if (ch === ")") depth -= 1;
+    else if (ch === "|" && depth === 0) return "it alternates at the top level, leaving an unanchored branch";
+    else if (ch === "$") endsAnchored = i === source.length - 1;
+  }
+  return endsAnchored ? null : "it does not end with an unescaped, top-level $";
+};
 
 const assertWholeStringRule = (pattern: RegExp): void => {
-  if (!isWholeStringRule(pattern.source)) {
+  const why = notWholeStringRule(pattern.source, pattern.flags);
+  if (why !== null) {
     throw new Error(
-      `unanchored intake case-id pattern /${pattern.source}/: the canonical intake rule is ` +
-        `whole-string (^...$) and is read from ${CASE_SCHEMA_FILE} properties/caseId`,
+      `not a whole-string intake case-id pattern /${pattern.source}/${pattern.flags}: ${why}. ` +
+        `The canonical intake rule is whole-string (^...$) and is read from ` +
+        `${CASE_SCHEMA_FILE} properties/caseId`,
     );
   }
 };
@@ -58,7 +82,7 @@ const caseIdShape = (pattern: RegExp): string => {
 export const intakeCaseIdPattern = (schema: unknown): RegExp | null => {
   const declared = (schema as { properties?: Record<string, { pattern?: unknown }> } | null)
     ?.properties?.caseId?.pattern;
-  if (typeof declared !== "string" || !isWholeStringRule(declared)) return null;
+  if (typeof declared !== "string" || notWholeStringRule(declared, "") !== null) return null;
   try { return new RegExp(declared); } catch { return null; }
 };
 const CASE_ID_PATTERN = intakeCaseIdPattern(caseJsonSchema);

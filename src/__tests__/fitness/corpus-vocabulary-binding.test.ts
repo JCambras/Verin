@@ -63,7 +63,15 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
     expect(isCanonicalIntakePath("real-derived/RD-00112233445566AA.json")).toBe(false);
     // A pattern that is absent, mistyped, unanchored or unparseable binds NO
     // filename rule - it must not degrade into "everything is canonical".
-    for (const pattern of [undefined, 42, "RD-[0-9a-f]{16}", "^RD-[0-9a-f]{16}", "^RD-[0-9a-f{16}$"]) {
+    for (const pattern of [
+      undefined,
+      42,
+      "RD-[0-9a-f]{16}",
+      "^RD-[0-9a-f]{16}",
+      "^RD-[0-9a-f{16}$",
+      "^RD-[0-9a-f]{16}|junk$",
+      "^RD-\\$",
+    ]) {
       expect(intakeCaseIdPattern({ properties: { caseId: { pattern } } })).toBeNull();
     }
     expect(intakeCaseIdPattern({})).toBeNull();
@@ -80,18 +88,43 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
       "filename must be real-derived/RX-[0-9a-f]{8}.json",
     );
     expect(canonicalIntakeFilenameRule(null)).toContain("real-derived-case-schema.json");
-    // An UNANCHORED pattern is refused by name, never reinterpreted: sliced for
-    // display it would print `RD-[0-9a-f]{16` (real characters chopped off both
-    // ends), and tested it would match a substring, making every nested or
-    // suffixed filename canonical.
-    for (const unanchored of [/RD-[0-9a-f]{16}/, /^RD-[0-9a-f]{16}/, /RD-[0-9a-f]{16}$/]) {
-      expect(() => canonicalIntakeFilenameRule(unanchored)).toThrow(
-        /unanchored intake case-id pattern/,
+    // A pattern that is not WHOLE-STRING is refused by name, never
+    // reinterpreted: sliced for display it would print `RD-[0-9a-f]{16` (real
+    // characters chopped off both ends), and tested it would match a substring,
+    // making every nested or suffixed filename canonical. Anchoring is read
+    // structurally, so the shapes that pass a first-and-last-CHARACTER check are
+    // refused too: a top-level alternation leaves a branch anchored at neither
+    // end, an escaped trailing `$` is a literal dollar rather than an anchor,
+    // `m` turns both anchors into line boundaries, and `g`/`y` make `.test()`
+    // answer differently on the same input each call.
+    for (const partial of [
+      /RD-[0-9a-f]{16}/,
+      /^RD-[0-9a-f]{16}/,
+      /RD-[0-9a-f]{16}$/,
+      /^RD-[0-9a-f]{16}|junk$/,
+      /^RD-\$/,
+      /^RD-[0-9a-f]{16}$/m,
+      /^RD-[0-9a-f]{16}$/g,
+      /^RD-[0-9a-f]{16}$/y,
+    ]) {
+      expect(() => canonicalIntakeFilenameRule(partial)).toThrow(
+        /not a whole-string intake case-id pattern/,
       );
       expect(() =>
-        isCanonicalIntakePath("real-derived/nested/RD-00112233445566aa.json", unanchored),
-      ).toThrow(/unanchored intake case-id pattern/);
+        isCanonicalIntakePath("real-derived/nested/RD-00112233445566aa.json", partial),
+      ).toThrow(/not a whole-string intake case-id pattern/);
     }
+    // ...and a bounded alternation INSIDE the anchors is still a whole-string
+    // rule, so the structural read refuses corruption without refusing regexes.
+    expect(canonicalIntakeFilenameRule(/^(RD|RX)-[0-9a-f]{16}$/)).toBe(
+      "filename must be real-derived/(RD|RX)-[0-9a-f]{16}.json",
+    );
+    expect(
+      isCanonicalIntakePath(
+        "real-derived/RX-00112233445566aa.json",
+        /^(RD|RX)-[0-9a-f]{16}$/,
+      ),
+    ).toBe(true);
     expect(caseSchemaVocabularyProblems()).toEqual([]);
   });
 
