@@ -2,9 +2,11 @@
 
 **Normative.** Governs how anonymized real defect history enters
 [`fixtures/corpus/real-derived/`](../fixtures/corpus/real-derived/). Enforced by
-`scripts/corpus/scrub-contract.ts` and the `corpus-provenance-split` fence; run in CI by the blocking
-`corpus` job. Adopted by [`ADR-0039`](./adr/0039-synthetic-corpus-and-provenance-split.md) under captain
-ruling `corpus-real-derived-provenance` (2026-07-28).
+`scripts/corpus/scrub-contract.ts` (the case-shape contract) with
+`scripts/corpus/intake-filename.ts` (the single source of the canonical filename rule, read from the
+case schema's `caseId` pattern - D-145) and the `corpus-provenance-split` fence; run in CI by the
+blocking `corpus` job. Adopted by [`ADR-0039`](./adr/0039-synthetic-corpus-and-provenance-split.md)
+under captain ruling `corpus-real-derived-provenance` (2026-07-28).
 
 **The partition is empty today and this procedure has never been executed.** It ships now so that the
 capability is real and adversarially exercised (charter #5) rather than promised. Nothing in this

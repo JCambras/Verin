@@ -41,8 +41,10 @@ The captain supplies:
 ## What a case here must satisfy
 
 The intake pipeline is already shipped and already runs over this (empty) directory in the `corpus` CI job -
-see `docs/corpus-scrub-procedure.md` for the procedure and `scripts/corpus/scrub-contract.ts` for the
-enforced contract. In short, every case must carry:
+see `docs/corpus-scrub-procedure.md` for the procedure, `scripts/corpus/scrub-contract.ts` for the
+enforced case contract, and `scripts/corpus/intake-filename.ts` for the canonical filename rule (derived
+from the case schema's `caseId` pattern, so the name and the id can never disagree). In short, every case
+must carry:
 
 - a complete **`scrubAttestation`** (source-system class, opaque extractor/scrubber/reviewer identities
   and their chronological instants, records before and after, scrubbing method), with review by someone

@@ -6591,6 +6591,22 @@ existing PF-204 injections already prove the reachability and stale-deferral arm
 mappings are **PF-090..PF-093 -> PF-188..PF-191** and
 **PF-094..PF-108 -> PF-192..PF-206**. Earlier corpus references use these mappings. Recorded as D-102.
 
+**Decomposition note.** The two corpus fence files named in the PF-188..PF-218 headings below were later
+split move-only under the 500-line `max-file-size` ceiling (D-143). Every proof still re-runs from this
+repo alone with `pnpm test:fitness`, but a proof's case may now live in a sibling file. The cases stayed
+byte-equivalent; only their file changed:
+
+- `corpus-determinism.test.ts` -> also `corpus-determinism-origins.test.ts`,
+  `corpus-determinism-repository-inputs.test.ts`
+- `corpus-provenance-split.test.ts` -> also `corpus-executable-authority.test.ts`,
+  `corpus-intake-attestation.test.ts`, `corpus-liquidity-treatments.test.ts`,
+  `corpus-measurement-boundary.test.ts`, `corpus-provenance-inventory.test.ts`,
+  `corpus-replay-{ownership,payload,topology}.test.ts`,
+  `corpus-synthetic-{case-semantics,context,instructions}.test.ts`,
+  `corpus-vocabulary-binding.test.ts`
+
+The headings are left at the file that held the case when it was proven; this note is the redirect.
+
 ---
 
 ## PF-188 · corpus-determinism · `src/__tests__/fitness/corpus-determinism.test.ts`

@@ -343,9 +343,19 @@ true when written and went stale by the 141 lines the two review commits after i
 drift D-137 recorded one round earlier, which is why the measurement is re-taken at the END of a review
 round rather than at the change that motivated the ceiling. The 113-line buffer holds; the largest
 tooling file is 475 lines, under the unchanged 500-line ceiling.
+D-143 KEEPS the ceiling at 8700 against a re-measured 8607 lines, after the real-derived intake filename
+rule was single-sourced from the case schema. 93 lines of real headroom.
+D-145 KEEPS the ceiling at 8700 against a re-measured 8657 lines, after the intake naming authority moved
+into its own module - a move the 500-line per-file ceiling forced, costing one module header. 43 lines of
+real headroom.
+D-146 KEEPS the ceiling at 8700 against a re-measured 8681 lines, after the intake anchoring rule became a
+STRUCTURAL read of the pattern rather than a first-and-last-character test. 19 lines of real headroom -
+the narrowest this ceiling has run, named here so the next change reads it as the ADR amendment it now is.
 
 This amendment budgets `scripts/**` and stops there. `src/__tests__/**` remains outside both budget
-fences - 37,529 lines that no ceiling holds - and the unwalked-tree argument above applies to it
+fences - 38,728 lines that no ceiling holds (37,529 before D-143 split the two oversized corpus fence
+files into per-topic modules, then the non-determinism scanner decomposition, the D-145 watch-rerun
+rebuild, and the D-146 counted double) - and the unwalked-tree argument above applies to it
 verbatim. That gap is DEFERRED, not exempted: it is recorded in D-142 under follow-up key
 `fu-corpus-test-tree-budget`, with the next structural test-tree work as its un-defer trigger.
 

@@ -184,7 +184,8 @@ amendment, measured with the fence's own algorithm after the primitive catalog
 AND its review hardening landed (PF-192), so the headroom is bounded correction
 room rather than a stale pre-review figure; ADR-0039 adds the `tooling` envelope
 over `scripts/**` (ceiling 8,700) and tracks its re-measurements in that ADR's
-amendment section, most recently D-142. No useful implementation or
+amendment section, most recently D-146 (8,681 measured - 19 lines of headroom,
+the narrowest it has run). No useful implementation or
 documentation was removed or compressed.
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails

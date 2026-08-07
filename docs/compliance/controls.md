@@ -55,7 +55,7 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 |-----|-------------|------|------|-----|---------------|
 | C1.x | Confidential data protected | PII boundary, sealed tenant scoping, tenant-qualified foreign keys | PII + `org-id-required` + `tenant-context-required`; tenant-isolation and migration-preflight integration tests | ADR-0004, ADR-0006 | CI |
 | P1-P8 | Privacy (notice, retention, disposal) | retention hold, DSAR contract | retention design | ADR-0019 | retention schedule (design contract) |
-| P3/P4 | De-identification before real defect history enters fixtures | closed-vocabulary intake schemas + required `scrubAttestation` (reviewer ≠ scrubber) | `corpus-intake-attestation`, `corpus-provenance-split`; `corpus` CI gate | ADR-0039, `docs/corpus-scrub-procedure.md` | partition deferred and EMPTY; the contract runs over it every CI run |
+| P1-P8 | De-identification before real defect history enters fixtures | closed-vocabulary intake schemas + required `scrubAttestation` (reviewer ≠ scrubber) | `corpus-intake-attestation`, `corpus-provenance-split`; `corpus` CI gate | ADR-0039, `docs/corpus-scrub-procedure.md` | partition deferred and EMPTY; the contract runs over it every CI run |
 
 ## Explicit gaps (owner + date)
 
@@ -71,5 +71,6 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | Per-tenant rate limiting | A1.1 | red-team persona | scale-ladder trigger (ADR-0015) |
 | Alerting rules as code | CC7.2 | founder | deploy-target selection (ADR-0003/0013) |
 | Security-headers test (declared in `next.config.ts`, asserted nowhere) | CC6.6 | founder | pre-audit |
+| Corpus de-identification row carries the aggregate `P1-P8` criterion, not the specific privacy criteria it satisfies (follow-up `fu-soc2-corpus-criterion`) | P1-P8 | compliance persona | compliance-owner review; refine when the real-derived partition first accepts a case |
 
 Gaps are tracked here, not hidden. Each closes into a Code/Test/Doc/Op row when implemented.
