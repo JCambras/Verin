@@ -5501,3 +5501,58 @@ a complement list silently re-leaks the next time a test directory is added.
 **Revert path:** each part is one file's change - concatenate the five scanner modules back into
 `bannedNondeterminismUses`, inline the refusal literal, restore the module-scope `validateCorpus()` and
 drop the `globalSetup` line, or put `include` back at the root of `vitest.config.ts`.
+
+### D-145 · 2026-08-06 · reversible · The shared corpus world rebuilds on a watch rerun, refuses an unpinned clock, and the intake naming rule moves into its own module
+
+Review round 20 (wrap-up), under the recorded review-15 runtime obligation that governs the shared-world
+design. The ruled shape is kept; the recorded `globalsetup-widens-corpus-failure-blast-radius` cost is
+narrowed in passing (a corpus that does not validate now fails the fences that READ it, not all 53).
+
+**A watch session cannot assert against a snapshot.** D-144 moved `validateCorpus()` into a fitness
+`globalSetup`, and vitest runs global setup ONCE PER PROCESS - it never re-invokes it - so every rerun in
+a `pnpm test:watch` session read the world computed at startup. The fences had also stopped importing the
+generator, so a `fixtures/corpus/**` or `scripts/corpus/**` edit had no module-graph edge either: the
+fences would not rerun at all, or rerun green against bytes that no longer exist. Two mechanisms close it:
+`forceRerunTriggers` declares the world's real inputs (corpus fixtures, corpus generator, golden fixtures
+and their loader, the scenario matrix, the golden doc), and the global setup registers an `onTestsRerun`
+hook that REBUILDS and re-provides the world before the rerun collects - only for its own project, so an
+`app` rerun does not pay for a world it never reads. The triggers are ROOT-ANCHORED absolute globs: a bare
+`**/…` refuses to traverse a dot-directory, so under a checkout like `~/.worktrees/x` (or an agent
+worktree) they - and vitest's own two defaults - silently match nothing. Proven end to end in a scripted
+watch session: editing `fixtures/corpus/spec/world.json` reruns `corpus-timestamps` RED and reverting it
+returns GREEN, while the same edit with the rebuild hook removed reruns green against the stale world.
+
+**The clock guard fails closed.** `pinConfiguredClock` skipped the pin when `project.config.env.TZ` did
+not resolve and only refused UTC, so a config-binding break left the corpus built on the machine's own
+clock - a Europe/Paris laptop passes both offset checks while the workers assert under America/New_York.
+It now refuses an absent, empty or non-string zone, an unresolvable zone, and a process clock whose winter
+and summer offsets disagree with the named zone, each by name, keeping the UTC refusal (charter #8).
+
+**One validation per run is now true.** `conflict-key-families` and `corpus-timestamps` still called
+`validateCorpus()` at module scope, making a full fitness run three validations rather than one; both read
+the injected world. A corpus that does not validate is reported through that world as the recorded reason
+and raised in the fences that READ it, rather than aborting global setup and taking all 53 fitness files
+down with a setup error - fail-closed either way, since no fence can read a world that was never built.
+
+**The intake naming rule is its own module.** `canonicalIntakeFilenameRule` rendered its message with
+`pattern.source.slice(1, -1)`, which is only correct because `intakeCaseIdPattern` refuses unanchored
+input - but both exported consumers take a `RegExp` from any caller, and an unanchored one corrupts both
+(a substring match widens what intake accepts; a blind slice chops real pattern characters off each end
+and prints a name intake rejects). The anchoring invariant is now asserted where it is relied on and
+refused by name. `scripts/corpus/scrub-contract.ts` was two lines under the 500-line ceiling, so the rule -
+the schema read, the pattern binding, the path, the refusal and the predicate - moved to
+`scripts/corpus/intake-filename.ts` and joined the executable authority inventory (`corpusDigest` is
+`86f870e6a5a35849fd7187e08136ce2da22d7771593fd5db0241c688d3080d20`; no case's bytes changed and captain
+signoff remains `pending-captain`).
+
+**Why:** a rerun that reads a snapshot is a green suite proving nothing, which is the exact class the
+charter targets; a guard that silently keeps the machine's clock is the failure it exists to prevent, one
+zone over; and an invariant only the default path enforces is an invariant the next caller breaks.
+**Alternatives:** record the watch-mode limitation beside D-144 instead of fixing it - rejected, a
+documented command that reports stale green is worse than no sharing; recompute the world on EVERY rerun -
+rejected, an `app`-only rerun would pay for a world it never reads; keep the naming rule in
+`scrub-contract.ts` and shrink prose to fit the ceiling - rejected, the rule has two consumers in two
+files and the ceiling was telling the truth about the file.
+**Revert path:** each part is one file's change - drop the `onTestsRerun` hook and the `forceRerunTriggers`
+list, restore the permissive zone check, re-inline the two `validateCorpus()` calls, or fold
+`intake-filename.ts` back into `scrub-contract.ts` and regenerate.

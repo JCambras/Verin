@@ -7,8 +7,9 @@ import {
   localOffsetMinutes,
   renderLocal,
 } from "../../../scripts/corpus/clock";
-import { timestampProblems, validateCorpus } from "../../../scripts/corpus/validate";
+import { timestampProblems } from "../../../scripts/corpus/validate";
 import { WorldSpecSchema } from "../../../scripts/corpus/world";
+import { real } from "./_corpus-world";
 
 /**
  * CORPUS-TIMESTAMPS FENCE (v3 prompt 11, ADR-0039; charter #1/#4).
@@ -39,7 +40,6 @@ import { WorldSpecSchema } from "../../../scripts/corpus/world";
  * oracle. The generator may not touch `Intl` (the determinism fence bans it), so
  * this fence is where a wrong committed transition or a hardcoded `-04:00` dies.
  */
-const real = validateCorpus();
 const clock = real.spec.world.clock;
 
 /** The oracle: ICU's offset for an instant, in minutes to add to UTC. */

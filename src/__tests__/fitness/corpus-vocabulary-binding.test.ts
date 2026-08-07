@@ -14,18 +14,18 @@ import {
   REAL_DERIVED_SCHEMA_FILES,
 } from "../../../scripts/corpus/manifest";
 import {
-  deriveRealDerivedFreshness,
-  evidenceKindVocabularyProblems,
-  REAL_DERIVED_FRESHNESS_POLICY,
-  type RealDerivedEvidenceKind,
-} from "../../../scripts/corpus/real-derived-policy";
-import {
   canonicalIntakeFilenameRule,
   canonicalIntakePath,
   caseSchemaVocabularyProblems,
   intakeCaseIdPattern,
   isCanonicalIntakePath,
-} from "../../../scripts/corpus/scrub-contract";
+} from "../../../scripts/corpus/intake-filename";
+import {
+  deriveRealDerivedFreshness,
+  evidenceKindVocabularyProblems,
+  REAL_DERIVED_FRESHNESS_POLICY,
+  type RealDerivedEvidenceKind,
+} from "../../../scripts/corpus/real-derived-policy";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import { SIGNOFF_FILE } from "../../../scripts/corpus/signoff";
 import { parseStrictJson } from "../../../scripts/corpus/strict-json";
@@ -80,6 +80,18 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
       "filename must be real-derived/RX-[0-9a-f]{8}.json",
     );
     expect(canonicalIntakeFilenameRule(null)).toContain("real-derived-case-schema.json");
+    // An UNANCHORED pattern is refused by name, never reinterpreted: sliced for
+    // display it would print `RD-[0-9a-f]{16` (real characters chopped off both
+    // ends), and tested it would match a substring, making every nested or
+    // suffixed filename canonical.
+    for (const unanchored of [/RD-[0-9a-f]{16}/, /^RD-[0-9a-f]{16}/, /RD-[0-9a-f]{16}$/]) {
+      expect(() => canonicalIntakeFilenameRule(unanchored)).toThrow(
+        /unanchored intake case-id pattern/,
+      );
+      expect(() =>
+        isCanonicalIntakePath("real-derived/nested/RD-00112233445566aa.json", unanchored),
+      ).toThrow(/unanchored intake case-id pattern/);
+    }
     expect(caseSchemaVocabularyProblems()).toEqual([]);
   });
 

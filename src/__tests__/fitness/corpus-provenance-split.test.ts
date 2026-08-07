@@ -17,7 +17,7 @@ import {
 import { realDerivedCollectionProblems } from "../../../scripts/corpus/real-derived";
 import * as corpusReportRuntime from "../../../scripts/corpus/report";
 import { renderCorpusReport } from "../../../scripts/corpus/report";
-import { canonicalIntakeFilenameRule } from "../../../scripts/corpus/scrub-contract";
+import { canonicalIntakeFilenameRule } from "../../../scripts/corpus/intake-filename";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import {
   labelProblems,

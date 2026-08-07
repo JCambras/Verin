@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { z } from "zod";
 import {
   canonicalJson,
@@ -6,9 +5,12 @@ import {
 } from "../../src/contracts/decision-core/serialization";
 import type { GeneratedFile } from "./generate";
 import {
-  deriveRealDerivedFreshness,
-  evidenceKindVocabularyProblems,
-} from "./real-derived-policy";
+  canonicalIntakeFilenameRule,
+  caseJsonSchema,
+  isCanonicalIntakePath,
+  schemaFromSpec,
+} from "./intake-filename";
+import { deriveRealDerivedFreshness } from "./real-derived-policy";
 import {
   pendingActionProblems,
   realDerivedOutcomeProblems,
@@ -21,16 +23,10 @@ import type {
   ReplayPayload,
 } from "./real-derived-types";
 import { parseStrictJson } from "./strict-json";
-import { readRepositoryFile, readTree } from "./tree";
-import { REAL_DERIVED_DIR, REPO_ROOT, SPEC_DIR } from "./world";
+import { readTree } from "./tree";
+import { REAL_DERIVED_DIR } from "./world";
 
 const REPLAY_SCHEMA_FILE = "real-derived-replay-schema.json";
-
-const schemaFromSpec = (name: string): Record<string, unknown> =>
-  parseStrictJson(
-    readRepositoryFile(join(SPEC_DIR, name), REPO_ROOT),
-    name,
-  ) as Record<string, unknown>;
 
 type JsonSchemaNode = {
   readonly $ref?: unknown;
@@ -44,42 +40,7 @@ type JsonSchemaNode = {
   readonly uniqueItems?: unknown;
 };
 
-const CASE_SCHEMA_FILE = "real-derived-case-schema.json";
-const caseJsonSchema = schemaFromSpec(CASE_SCHEMA_FILE);
 const replayJsonSchema = schemaFromSpec(REPLAY_SCHEMA_FILE);
-
-const INTAKE_PREFIX = "real-derived/";
-
-/** THE CANONICAL INTAKE FILENAME RULE IS THE CASE-ID RULE. A delivered case
- * lives at its own case id, so the filename AND the refusal that names it are
- * READ FROM the delivered schema's `caseId` pattern, never restated beside it,
- * where loader, collection checker and message could disagree while all report
- * green. A missing, unanchored or unparseable pattern mints NO rule: no path is
- * canonical and the gap is named below, never widening what intake accepts. */
-export const intakeCaseIdPattern = (schema: unknown): RegExp | null => {
-  const declared = (schema as { properties?: Record<string, { pattern?: unknown }> } | null)
-    ?.properties?.caseId?.pattern;
-  if (typeof declared !== "string" || !declared.startsWith("^") || !declared.endsWith("$")) return null;
-  try { return new RegExp(declared); } catch { return null; }
-};
-const CASE_ID_PATTERN = intakeCaseIdPattern(caseJsonSchema);
-
-export const canonicalIntakePath = (caseId: string): string => `${INTAKE_PREFIX}${caseId}.json`;
-export const canonicalIntakeFilenameRule = (pattern = CASE_ID_PATTERN): string =>
-  `filename must be ${canonicalIntakePath(pattern === null ? `<${CASE_SCHEMA_FILE} properties/caseId>` : pattern.source.slice(1, -1))}`;
-
-export const isCanonicalIntakePath = (relPath: string, pattern = CASE_ID_PATTERN): boolean =>
-  pattern !== null && relPath.startsWith(INTAKE_PREFIX) && relPath.endsWith(".json") &&
-  pattern.test(relPath.slice(INTAKE_PREFIX.length, -".json".length));
-
-/** The intake vocabulary the delivered schema admits, checked against the
- * executable freshness authority rather than assumed equal to it. */
-export const caseSchemaVocabularyProblems = (): string[] => [
-  ...evidenceKindVocabularyProblems(caseJsonSchema, CASE_SCHEMA_FILE),
-  ...(CASE_ID_PATTERN === null
-    ? [`${CASE_SCHEMA_FILE}: properties/caseId declares no anchored pattern to bind the canonical intake filename to`]
-    : []),
-];
 
 function resolveSchema(
   schema: JsonSchemaNode,

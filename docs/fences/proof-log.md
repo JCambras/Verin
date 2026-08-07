@@ -8707,3 +8707,90 @@ moves a bound executable authority; no case's bytes changed). The real-derived p
 captain signoff remains `pending-captain`.
 
 **Date:** 2026-08-06 (v3 prompt 11, review round 19).
+
+## the shared corpus world rebuilds on a watch rerun and refuses an unpinned clock (ADR-0039)
+
+**Fences:** `src/__tests__/fitness/corpus-world-sharing.test.ts`,
+`src/__tests__/fitness/corpus-vocabulary-binding.test.ts`
+
+**Claims:** (1) a watch rerun of the fitness project REBUILDS the shared corpus world, so a corpus edit
+mid-session is measured against the bytes on disk and not against the snapshot global setup took at
+startup; (2) the shared world refuses an absent, unresolvable or UTC clock by name instead of keeping the
+machine's; (3) an unanchored intake case-id pattern is refused rather than sliced for display or tested as
+a substring.
+
+**Injection 1 - the rerun rebuild removed (end-to-end watch session).** A scripted `startVitest(…, {watch:
+true})` session over `corpus-timestamps.test.ts`: run clean, then edit
+`fixtures/corpus/spec/world.json` (`"timeZone": "America/New_York"` -> `"America/Chicago"`), then revert.
+
+**Observed, with the rebuild hook in place (verbatim):**
+```
+PROOF first run (clean corpus): src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+ RERUN  fixtures/corpus/spec/world.json x1
+PROOF after corpus edit: src/__tests__/fitness/corpus-timestamps.test.ts -> fail
+ RERUN  fixtures/corpus/spec/world.json x2
+PROOF after revert: src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+```
+
+**Observed with the hook removed (the pre-fix behaviour, verbatim):**
+```
+PROOF first run (clean corpus): src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+ RERUN  fixtures/corpus/spec/world.json x1
+PROOF after corpus edit: src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+ RERUN  fixtures/corpus/spec/world.json x2
+PROOF after revert: src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+```
+
+Both halves are load-bearing and both are proven: `forceRerunTriggers` schedules the rerun (without it the
+edit produced no rerun at all, since the fences no longer import the generator), and the rebuild hook is
+what makes that rerun measure the new bytes. The triggers are ROOT-ANCHORED: a bare `**/fixtures/corpus/**`
+does not traverse a dot-directory, so in this worktree (`~/.no-mistakes/…`) it - and vitest's own
+`**/package.json/**` default - matched nothing, which is exactly how a watch session would have kept
+reporting stale green on a developer machine that checks out under one.
+
+**Injection 2 - the clock guard failing open.** Restored the permissive `if (typeof zone === "string")
+process.env.TZ = zone;` and returned early for a missing zone.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/__tests__/fitness/corpus-world-sharing.test.ts:65:51
+     65|       expect(() => pinConfiguredClock(undefined)).toThrow(/no configur…
+```
+
+**Injection 3 - the anchoring assertion disabled.** Made `assertWholeStringRule` a no-op, leaving the
+display slice and the substring `.test()` reachable.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:88:61
+     88|       expect(() => canonicalIntakeFilenameRule(unanchored)).toThrow(
+```
+
+**Standing companion:** the same case still proves the ACCEPTING direction (the committed schema binds a
+pattern, the canonical path round-trips, a nested or upper-case name is refused, and an unbound pattern
+names the schema), so the refusal cannot be satisfied by refusing everything. The sharing-seam fence's
+first case proves the rebuild is scoped: an `app`-project rerun must NOT rebuild the world.
+
+**Revert:** all three injections were reverted and the scripted watch session's file writes restored
+`fixtures/corpus/spec/world.json` byte-for-byte. `pnpm corpus:validate` regenerates byte-identical with
+`corpusDigest` `86f870e6a5a35849fd7187e08136ce2da22d7771593fd5db0241c688d3080d20` (the intake naming rule
+moved into `scripts/corpus/intake-filename.ts`, a newly bound executable authority; no case's bytes
+changed). The real-derived partition remains empty and captain signoff remains `pending-captain`.
+
+**Date:** 2026-08-06 (v3 prompt 11, review round 20).

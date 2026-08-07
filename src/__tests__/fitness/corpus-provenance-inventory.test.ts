@@ -30,7 +30,7 @@ import {
   REAL_DERIVED_EVIDENCE_KINDS,
   REAL_DERIVED_FRESHNESS_POLICY,
 } from "../../../scripts/corpus/real-derived-policy";
-import { caseSchemaVocabularyProblems } from "../../../scripts/corpus/scrub-contract";
+import { caseSchemaVocabularyProblems } from "../../../scripts/corpus/intake-filename";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import { SIGNOFF_FILE } from "../../../scripts/corpus/signoff";
 import { parseStrictJson } from "../../../scripts/corpus/strict-json";

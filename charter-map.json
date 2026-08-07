@@ -633,6 +633,10 @@
           "ref": "src/__tests__/fitness/conflict-key-families.test.ts"
         },
         {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-world-sharing.test.ts"
+        },
+        {
           "type": "ci-gate",
           "ref": "corpus"
         }

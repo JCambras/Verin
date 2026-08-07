@@ -4,6 +4,13 @@ import { fileURLToPath } from "node:url";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
+/** Watcher globs are matched against ABSOLUTE paths, and a bare `**` refuses to
+ * traverse a dot-directory - so a checkout under one (an agent worktree, a
+ * `.worktrees/` sibling) silently matches nothing. Anchoring every trigger to
+ * this file's own directory makes the rule hold wherever the repo lives, and
+ * scopes it to THIS repository instead of any tree with the same folder names. */
+const ROOT = r(".").replace(/\\/g, "/").replace(/\/$/, "");
+
 /**
  * Test env is pinned to a NON-UTC timezone (charter #8; retro don't-again #39:
  * a suite that is only green in UTC trains everyone to ignore red). CI sets the
@@ -52,6 +59,24 @@ export default defineConfig({
     // parallel load while the same work passed in isolation - flakiness produced
     // by the config, not by the code under test.
     hookTimeout: 20000,
+    // THE CORPUS WORLD'S INPUTS ARE WATCHED, or watch mode would assert against
+    // a snapshot. The fitness fences read one shared `validateCorpus()` result
+    // computed in global setup, which vitest runs ONCE PER PROCESS, and they no
+    // longer import the generator, so neither the module graph nor a rerun would
+    // notice a corpus fixture, spec, schema or generator edit. These triggers
+    // schedule the rerun; `_corpus-world-setup.ts` rebuilds the world before it
+    // collects. Vitest's two defaults are restated (root-anchored) because a
+    // declared value REPLACES them - only `setupFiles` is appended by vitest.
+    forceRerunTriggers: [
+      `${ROOT}/**/package.json`,
+      `${ROOT}/{vitest,vite}.config.*`,
+      `${ROOT}/fixtures/corpus/**`,
+      `${ROOT}/fixtures/golden/**`,
+      `${ROOT}/scripts/corpus/**`,
+      `${ROOT}/scripts/golden-cases.lib.ts`,
+      `${ROOT}/config/demo/scenarios.yaml`,
+      `${ROOT}/docs/golden-cases.md`,
+    ],
     // SERIAL EXECUTION IS SCOPED TO THE TREE THAT NEEDS IT, and it is held here
     // rather than in a shell string. `fitness` is the only suite whose files
     // contend: several fences each construct an INDEPENDENT full-repository
@@ -81,7 +106,8 @@ export default defineConfig({
           // The committed corpus is validated ONCE per run and injected, rather
           // than re-validated by every fence file that reads it - see
           // `_corpus-world-setup.ts` for why isolation makes that the only
-          // sharing seam, and for the clock it pins before computing.
+          // sharing seam, for the clock it pins before computing, and for how a
+          // watch rerun rebuilds it against the triggers declared above.
           globalSetup: ["./src/__tests__/fitness/_corpus-world-setup.ts"],
           maxWorkers: 1,
           fileParallelism: false,

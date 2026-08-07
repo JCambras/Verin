@@ -11,7 +11,7 @@ import {
   sameConflict,
   scopedConflictKey,
 } from "../../../scripts/corpus/conflict-keys";
-import { validateCorpus } from "../../../scripts/corpus/validate";
+import { real } from "./_corpus-world";
 
 /**
  * CONFLICT-KEY-FAMILIES FENCE (v3 prompt 11, ADR-0039; charter #1/#4/#16).
@@ -49,8 +49,6 @@ const matches = (pattern: RegExp): string[] => [...new Set(goldenText.match(patt
 const signedConflictKeys = matches(/conflict:[a-z0-9-]+/g);
 const signedReservationIds = matches(/res:GC-\d{2}:[a-z-]+/g);
 const signedIdempotencyKeys = matches(/idem:GC-\d{2}:[a-z0-9-]+/g);
-
-const real = validateCorpus();
 
 describe("conflict-key-families fence", () => {
   it("enforces: the derivation reproduces every signed conflict-key literal exactly", () => {

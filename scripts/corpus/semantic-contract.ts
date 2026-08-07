@@ -63,6 +63,7 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
   "scripts/corpus/generate.ts",
   "scripts/corpus/graph.ts",
   "scripts/corpus/instruction-conflicts.ts",
+  "scripts/corpus/intake-filename.ts",
   "scripts/corpus/manifest.ts",
   "scripts/corpus/pending-actions.ts",
   "scripts/corpus/real-derived-policy.ts",
