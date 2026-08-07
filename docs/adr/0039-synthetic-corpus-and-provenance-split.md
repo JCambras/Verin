@@ -382,6 +382,9 @@ verbatim. That gap is DEFERRED, not exempted: it is recorded in D-142 under foll
 
 ## Revert path
 
-Delete `fixtures/corpus/`, `scripts/corpus*`, the four fences, the `corpus` CI job, the three package
-scripts, the `corpus_deferral` matrix section with its `PINNED_IDS` entry, and the `tooling` budget
-bucket. Nothing in `src/` depends on any of it.
+Delete `fixtures/corpus/`, `scripts/corpus*`, the corpus fences
+(`src/__tests__/fitness/{corpus-*,conflict-key-families}.test.ts` with their shared `_corpus-*` helper
+modules, the fitness project's corpus `globalSetup` and `forceRerunTriggers` in `vitest.config.ts`, and
+the `replay-corpus-substrate` entry in `charter-map.json` that registers them), the `corpus` CI job, the
+three package scripts, the `corpus_deferral` matrix section with its `PINNED_IDS` entry, and the
+`tooling` budget bucket. Nothing in `src/` depends on any of it.

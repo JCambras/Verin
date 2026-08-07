@@ -160,7 +160,15 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   from a server component (it would throw on the cookie write). Renewal drives off the already-selected
   `expires_at`, so the pinned org-id-required SELECT escape is unchanged.
 - Tests must run on a non-UTC TZ (`vitest.config.ts` pins `America/New_York`); `src/__tests__/setup.ts`
-  fails loudly if the clock is UTC.
+  fails loudly if the clock is UTC. That config also HOLDS the execution policy, so no invocation path
+  (`pnpm test`, `test:watch`, the run `scripts/v3-invariants.ts` spawns) can lose it: two projects -
+  `fitness` (serial; several fences each build their own full-repository ts-morph program) and `app`
+  (parallel) - each declaring its OWN `include`, because `extends: true` CONCATENATES arrays and a root
+  `include` would be added to both (D-142/D-143/D-144). The fitness project computes one shared
+  `validateCorpus()` world in `globalSetup` (`_corpus-world-setup.ts`, which re-pins the clock because
+  global setup does not inherit `test.env`) and rebuilds it on a watch rerun via `forceRerunTriggers`;
+  read the corpus world through `_corpus-world.ts`, never by calling `validateCorpus()` at module scope
+  (D-145/D-146).
 - ESLint pinned to 9.x (typescript-eslint 8 is incompatible with ESLint 10's scope-manager API);
   TypeScript pinned to 6.x (not the Go-based TS 7) for tooling compatibility.
 - Fences prefer AST (`ts-morph`) over regex; a weak/tautological fence is worse than none — the self-audit
@@ -255,10 +263,13 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   shipped `REGISTERED_*` entry may live in the reserved namespace). A ledger export that no shipped
   surface or script can reach fails `ledger-reachability` unless it is a NAMED deferral (D-116)
   saying which prompt lands its caller - knip cannot see this, since every export has a test.
-- **`scripts/**` is budgeted now (ADR-0039).** Both budget fences used to walk `src/` only, so moving code
-  to `scripts/` was an escape hatch. `line-budget` has a `tooling` bucket and `max-file-size` walks
-  `scripts/**` under the same 500-line per-file ceiling. Build-time tooling is a legitimate home for
-  generators — it is not an unmeasured one.
+- **`scripts/**` is budgeted AND dead-export-gated now (ADR-0039, D-141).** Both budget fences used to
+  walk `src/` only, so moving code to `scripts/` was an escape hatch. `line-budget` has a `tooling` bucket
+  and `max-file-size` walks `scripts/**` under the same 500-line per-file ceiling. `knip.json` entries are
+  `scripts/*.ts` (top-level runners plus two library files), NOT `scripts/**/*.ts`, so a never-referenced
+  export under `scripts/corpus/` or any future subdirectory now fails the dead-export gate. Build-time
+  tooling is a legitimate home for generators — it is not an unmeasured one. `src/__tests__/**` is still
+  in no bucket: that gap is DEFERRED, not exempt (D-142, follow-up `fu-corpus-test-tree-budget`).
 
 ## Maintaining this file
 

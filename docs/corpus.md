@@ -381,5 +381,20 @@ pnpm corpus:validate   # regenerate, byte-compare, re-check every rule (CI job `
 pnpm corpus:report     # provenance-split measurement; refuses to blend
 ```
 
-Fences: `corpus-determinism`, `corpus-provenance-split`, `corpus-timestamps`, `conflict-key-families`
-(adversarial proofs PF-090 through PF-098 in [`docs/fences/proof-log.md`](./fences/proof-log.md)).
+Fences (`src/__tests__/fitness/`, all registered in `charter-map.json` under `replay-corpus-substrate`):
+
+- **determinism** - `corpus-determinism`, `corpus-determinism-origins`,
+  `corpus-determinism-repository-inputs`;
+- **provenance split and measurement** - `corpus-provenance-split`, `corpus-provenance-inventory`,
+  `corpus-measurement-boundary`, `corpus-executable-authority`, `corpus-vocabulary-binding`;
+- **intake and replay semantics** - `corpus-intake-attestation`, `corpus-replay-topology`,
+  `corpus-replay-ownership`, `corpus-replay-payload`, `corpus-liquidity-treatments`;
+- **synthetic semantics** - `corpus-synthetic-case-semantics`, `corpus-synthetic-context`,
+  `corpus-synthetic-instructions`;
+- **time and keys** - `corpus-timestamps`, `conflict-key-families`;
+- **the shared world seam** - `corpus-world-sharing` (one `validateCorpus()` per run, rebuilt before a
+  watch rerun collects, refusing an unpinned or UTC clock).
+
+Adversarial proofs are PF-188 onward, plus the titled ADR-0039 rounds that follow them, in
+[`docs/fences/proof-log.md`](./fences/proof-log.md) (the log's numbering note records the
+PF-090..PF-108 → PF-188..PF-206 rebase mapping, D-102).

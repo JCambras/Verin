@@ -11,7 +11,9 @@ repo alone** — if a proof cannot be reproduced without asking me, that is my d
 > `pnpm exec playwright install chromium && pnpm test:e2e` (the Playwright + axe browser specs) ·
 > `pnpm exec tsx scripts/backup-restore-drill.ts` · `pnpm load:smoke` ·
 > `pnpm db:seed && pnpm audit:chain` · `pnpm v3:invariants` (three-state v3 invariant report) ·
-> `pnpm golden:validate` (the 16-case golden truth set, D-035). Every
+> `pnpm golden:validate` (the 16-case golden truth set, D-035) ·
+> `pnpm corpus:validate` + `pnpm corpus:report` (the replay corpus: regenerate + byte-compare, then the
+> provenance-split measurement that refuses to blend, ADR-0039). Every
 > one except the backup-restore drill is also a blocking CI job (`.github/workflows/ci.yml`); the
 > drill runs nightly in `scheduled.yml`.
 
@@ -93,12 +95,14 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
 - **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey,
   decision ledger) plus axe, green on a non-UTC clock; `pnpm test:e2e` reports the live count.
 
-**Governance:** 51 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 52 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
 normative Phase 1 demo contract (`docs/demo-contract.md` + `config/demo/scenarios.yaml`, D-034), and the
-captain-signed golden-case truth set (`docs/golden-cases.md` + `fixtures/golden/`, D-035).
+captain-signed golden-case truth set (`docs/golden-cases.md` + `fixtures/golden/`, D-035), and the
+provenance-split replay corpus (`docs/corpus.md` + `fixtures/corpus/`, ADR-0039 - synthetic substrate
+generated and byte-compared, real-derived partition deferred and empty, signoff `pending-captain`).
 
 ---
 
@@ -111,6 +115,9 @@ any fence lacks one. Adversarial real-tree injection proofs are in
 [`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-204; every PF id names exactly one
 proof — the prompt-6 entries were renumbered on rebase, see the numbering note in the log; the prompt-7
 entries carry a separate `(D-1xx)` citation drift the log records at its own tail).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-218, then the titled ADR-0039 corpus
+rounds that follow them; every PF id names exactly one proof — the prompt-6 and prompt-11 entries were
+renumbered on rebase, see the numbering notes in the log).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -120,7 +127,7 @@ entries carry a separate `(D-1xx)` citation drift the log records at its own tai
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
 | `no-secret-fallback` / no-live-org-domain / placeholder-.env / `SecretValue` containment | config hygiene + secret containment (#7, v3 §15.4) | PF-006, PF-034 |
-| `line-budget` (platform ratchet + separate presentation) / `max-file-size` | budgets (#1,#10) | companions |
+| `line-budget` (platform ratchet + separate presentation + the `tooling` envelope over `scripts/**`, ADR-0039) / `max-file-size` (walks `scripts/**` under the same per-file ceiling) | budgets (#1,#10) | companions |
 | `detection-not-verification` (meta) | every fence has a companion (#4) | PF-META |
 | `provenance-required` | every field has provenance (#2) | PF-007 |
 | `no-unlabeled-synthetic` | synthetic can't feed compliance (#3) | PF-008 |
@@ -164,6 +171,21 @@ sole write chokepoint `ledger-store.ts` (502/550, ADR-0050).
 No useful implementation or documentation was removed or compressed - the
 rule that a ceiling is never paid for by deleting prose (ADR-0048) or by
 folding readable code onto fewer lines (ADR-0050) is itself an ADR now.
+| `corpus-determinism` (+ `-origins`, `-repository-inputs`) | the same spec and seed produce the same corpus bytes forever; no clock, randomness, locale, env or host state in the executable closure under `scripts/corpus/`, and repository input is read only by named owners inside the repo (#1/#4, v3 prompt 11, ADR-0039) | PF-188 + companions |
+| `corpus-provenance-split` (+ `-inventory`, `corpus-measurement-boundary`, `corpus-executable-authority`, `corpus-intake-attestation`, `corpus-vocabulary-binding`, `corpus-replay-{topology,ownership,payload}`, `corpus-synthetic-{case-semantics,context,instructions}`, `corpus-liquidity-treatments`) | synthetic and real-derived figures never blend (`syntheticDefectCoverage` vs `detectionRate`), the empty partition reports `null` with a reason code, generated files stay generator-owned, intake fails closed, and signoff is bound to `corpusDigest` (#3/#4/#5, ADR-0039) | PF-189 + companions |
+| `corpus-timestamps` | `recordChangedAt` / `observedAt` / `retrievedAt` stay three instants with three meanings; freshness and recent-change membership are recomputed, and local renderings come from pinned tz transitions (#1/#4, ADR-0039, D-078) | PF-190 + companions |
+| `conflict-key-families` | simultaneous requests share a conflict key by derivation, reservation identity is `(firmRef, conflictKey)`, and idempotency stays a separate decision-keyed derivation (#16, ADR-0039) | PF-191 + companions |
+| `corpus-world-sharing` | the one shared `validateCorpus()` world is rebuilt before a watch rerun collects and refuses an unpinned or UTC clock, so no fence asserts against a stale snapshot (#4/#8, D-145/D-146) | proof-log section + companions |
+
+**Current prompt-8 line-budget PR evidence:** contracts 5,433/5,460 (27
+headroom), domain 1,298/1,350 (52), infrastructure 3,484/3,550 (66), and
+presentation 928/6,000 (5,072). ADR-0040 is the latest PLATFORM ceiling
+amendment, measured with the fence's own algorithm after the primitive catalog
+AND its review hardening landed (PF-192), so the headroom is bounded correction
+room rather than a stale pre-review figure; ADR-0039 adds the `tooling` envelope
+over `scripts/**` (ceiling 8,700) and tracks its re-measurements in that ADR's
+amendment section, most recently D-142. No useful implementation or
+documentation was removed or compressed.
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is
@@ -242,6 +264,7 @@ date/trigger), never omitted:
 | Alerting rules as code | CC7.2 | founder | deploy-target selection |
 | Managed-Postgres (`node-postgres`) store adapter | — | founder | production deploy (D-006; PGlite is dev/CI) |
 | Mutation-testing harness for fence efficacy (Vale V9) | CC5 | founder | add a check that a gutted fence fails |
+| `src/__tests__/**` sits in no line-budget bucket while `scripts/**` now does (ADR-0039 amendment; D-142/D-143, follow-up `fu-corpus-test-tree-budget`) | CC5 | founder | the next structural test-tree work (a fence-file split, a shared-fixture extraction, any move of fence code between trees) |
 | Dead-export exemption for `domain/schema` vocabulary (Vale V11 / D-013) | CC5 | founder | remove when entities gain runtime consumers / a 2nd source lands |
 | Displayed-metric→source provenance trace (Vale V12) — **CLOSED** (Wave-1 prereq: ADR-0022, `metric-provenance` + `derived-provenance` fences in the `provenance-trace` gate; D-025/D-026) | #3 | — | done |
 | Scheduled outbox drainer (Vale V14; dead-letter parking landed, D-024) | CC7.1 | founder | deploy-target selection |
