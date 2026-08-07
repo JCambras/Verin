@@ -11,10 +11,14 @@ import {
 } from "@contracts/tenant";
 import {
   deriveArtifactProvenance,
+  foldStoredProvenance,
   parseRecordProvenance,
   type DerivedProvenance,
 } from "@contracts/provenance";
-import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import {
+  referencedDecisionId,
+  type LedgerEntry,
+} from "@contracts/decision-core/ledger";
 import {
   foldDecisionProjection,
   type DecisionProjection,
@@ -38,8 +42,10 @@ export interface VerifiedRegisterDecision {
 export interface VerifiedRegisterSnapshot extends PIIBearing {
   readonly verification: LedgerVerification;
   readonly rows: readonly DecisionLedgerRow[];
+  readonly storedProvenance: DerivedProvenance | null;
   readonly decisions: readonly VerifiedRegisterDecision[];
   readonly decisionsTotal: number;
+  readonly decisionsTotalProvenance: DerivedProvenance | null;
   readonly decisionsWithheld: number;
   readonly decisionsWithheldProvenance: DerivedProvenance | null;
 }
@@ -61,12 +67,6 @@ function parseEvent(row: DecisionLedgerRow): LedgerEntry {
   return parsed.event;
 }
 
-function eventDecisionId(event: LedgerEntry): string | undefined {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return undefined;
-}
-
 async function replayRegisterWindow(
   tx: SqlQueryable,
   tenant: TenantContext,
@@ -75,6 +75,7 @@ async function replayRegisterWindow(
 ): Promise<{
   readonly decisions: readonly VerifiedRegisterDecision[];
   readonly decisionsTotal: number;
+  readonly decisionsTotalProvenance: DerivedProvenance | null;
   readonly decisionsWithheld: number;
   readonly decisionsWithheldProvenance: DerivedProvenance | null;
 }> {
@@ -101,7 +102,7 @@ async function replayRegisterWindow(
       decisionRecord = source.record;
       eventProvenance = source.provenance;
     }
-    const id = eventDecisionId(event);
+    const id = referencedDecisionId(event);
     if (!id) continue;
     const current = decisions.get(id);
     const projection = foldDecisionProjection({
@@ -126,7 +127,7 @@ async function replayRegisterWindow(
     right.projection.lastSequence - left.projection.lastSequence ||
     left.projection.decisionId.localeCompare(right.projection.decisionId));
   const decisionIds = new Set(entries.flatMap(({ event }) => {
-    const id = eventDecisionId(event);
+    const id = referencedDecisionId(event);
     return id ? [id] : [];
   }));
   const withheldIds = new Set([
@@ -134,25 +135,19 @@ async function replayRegisterWindow(
     ...[...decisionIds].filter((id) => !decisions.has(id)),
   ]);
   const withheldInputs = entries.filter(({ event }) => {
-    const id = eventDecisionId(event);
+    const id = referencedDecisionId(event);
     return id !== undefined && withheldIds.has(id);
   });
-  const withheldAsOf = withheldInputs.reduce(
-    (latest, entry) => entry.provenance.asOf > latest
-      ? entry.provenance.asOf
-      : latest,
-    "",
-  );
   return {
     decisions: ordered.slice(0, decisionLimit),
     decisionsTotal: ordered.length,
+    decisionsTotalProvenance: foldStoredProvenance(
+      ordered.map((entry) => entry.provenance),
+    ),
     decisionsWithheld: withheldIds.size,
-    decisionsWithheldProvenance: withheldInputs.length > 0
-      ? deriveArtifactProvenance(
-          withheldInputs.map((entry) => entry.provenance),
-          withheldAsOf,
-        )
-      : null,
+    decisionsWithheldProvenance: foldStoredProvenance(
+      withheldInputs.map((entry) => entry.provenance),
+    ),
   };
 }
 
@@ -196,8 +191,10 @@ export async function readVerifiedDecisionRegister(
     return {
       verification: checked.verification,
       rows,
+      storedProvenance: checked.storedProvenance,
       decisions: [],
       decisionsTotal: 0,
+      decisionsTotalProvenance: null,
       decisionsWithheld: 0,
       decisionsWithheldProvenance: null,
     };
@@ -211,8 +208,10 @@ export async function readVerifiedDecisionRegister(
     return {
       verification: replaySourceFailure(checked.verification),
       rows: [],
+      storedProvenance: checked.storedProvenance,
       decisions: [],
       decisionsTotal: 0,
+      decisionsTotalProvenance: null,
       decisionsWithheld: 0,
       decisionsWithheldProvenance: null,
     };
@@ -220,6 +219,7 @@ export async function readVerifiedDecisionRegister(
   return {
     verification: checked.verification,
     rows,
+    storedProvenance: checked.storedProvenance,
     ...replayed,
   };
 }

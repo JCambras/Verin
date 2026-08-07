@@ -30,18 +30,21 @@ import { relative } from "node:path";
 //
 // ADR-0048 restored the migration prose an earlier correction had compressed away to
 // fit this ceiling - the exact anti-pattern the paragraph above names - and raised
-// infrastructure to absorb it. MEASURED on the composed tree that also carries ADR-0040's
-// prompt-8 primitive catalog: contracts 6010/6050 (40), domain 1584/1650 (66), infrastructure
-// 7706/7750 (44), presentation 928/6000. A figure recorded here is a MEASUREMENT, so
+// infrastructure to absorb it. ADR-0051 then raised contracts and infrastructure together
+// for the scoped rebuild preview, the whole-chain counted provenance, and the shared
+// decision-id extractor the dedup moved INTO contracts. MEASURED on the composed tree that
+// also carries ADR-0040's prompt-8 primitive catalog: contracts 6064/6110 (46), domain
+// 1581/1650 (69), infrastructure 7788/7840 (52), presentation 928/6000. A figure recorded
+// here is a MEASUREMENT, so
 // re-measure it in the commit that changes a layer - ADR-0049's import hoist left this
 // line reading a stale figure while the layer had moved, and the whole ratchet chain rests
 // on the recorded figure being the measured one. Any FURTHER increase remains a measured
 // ADR amendment rather than a silent fence edit, and no correction is ever paid for by
 // deleting documentation - nor, per ADR-0050, by folding readable code onto fewer lines.
 const CEILINGS = {
-  contracts: 6050, // ADR-0041, on ADR-0040's catalog baseline plus the typed ledger contracts
+  contracts: 6110, // ADR-0051, on the shared decision-id extractor and provenance fold
   domain: 1650, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
-  infrastructure: 7750, // ADR-0048, on the restored migration prose
+  infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 

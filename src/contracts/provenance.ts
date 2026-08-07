@@ -134,6 +134,22 @@ export function deriveArtifactProvenance(inputs: readonly RecordProvenance[], as
   };
 }
 
+/**
+ * `deriveArtifactProvenance` over a list of stored facts, stamped with the LATEST
+ * input `asOf` so a folded figure never looks fresher than the newest fact behind it.
+ * Null for an EMPTY fold: a figure with no inputs has no origin, so it is withheld
+ * rather than labeled. Every displayed count folded from stored rows uses this, so
+ * the as-of rule cannot drift between one surface's fold and another's.
+ */
+export function foldStoredProvenance(
+  inputs: readonly RecordProvenance[],
+): DerivedProvenance | null {
+  return inputs.length === 0 ? null : deriveArtifactProvenance(
+    inputs,
+    inputs.reduce((latest, p) => (p.asOf > latest ? p.asOf : latest), ""),
+  );
+}
+
 /** True iff `p` is a demonstration-derived artifact (charter #3 / ADR-0022). */
 export function isDemonstration(p: RecordProvenance | DerivedProvenance): boolean {
   return "demonstration" in p && p.demonstration === true;
@@ -162,6 +178,29 @@ export const DEV_BADGE_TEXT: Record<FakeClass, string> = {
   "deterministic-engine-output": "engine output · fake",
   "llm-proposed-draft": "llm draft",
 };
+
+/** The badge text per SYNTHETIC source - same lowercase plain register (design §11.2). */
+const SYNTHETIC_BADGE_TEXT: Record<"estimate" | "default" | "fixture", string> = {
+  estimate: "estimate",
+  default: "default",
+  fixture: DEV_BADGE_TEXT["synthetic-fixture"],
+};
+
+/**
+ * The badge a value owes, READ from the provenance its producer stored: null when the
+ * value may feed a compliance decision, its own synthetic class when it has one, and
+ * the flattened synthetic leaves of a derivation (ADR-0022) when a fold made it a
+ * demonstration. Pinning one class here labels every synthetic producer as the single
+ * class the code happened to be written against - a fake class it does not belong to.
+ */
+export function syntheticBadgeLabel(p: RecordProvenance | DerivedProvenance): string | null {
+  if (canFeedComplianceDecision(p)) return null;
+  const leaves = new Set<SourceSystem>(isDerived(p) ? p.derivedFrom : [p.source]);
+  const classes = Object.entries(SYNTHETIC_BADGE_TEXT)
+    .filter(([source]) => leaves.has(source as SourceSystem))
+    .map(([, text]) => text);
+  return classes.length > 0 ? classes.join(" · ") : "demonstration";
+}
 
 /** A short, human-visible source/asOf label for the UI (charter #3). */
 export function provenanceLabel(p: RecordProvenance): string {

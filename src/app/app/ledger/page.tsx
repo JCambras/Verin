@@ -101,9 +101,14 @@ export default function DecisionLedgerPage() {
               <p className="mt-1 text-xs text-slate-600">
                 Folded from the recorded events below, in ledger order. Nothing
                 here is evaluated or inferred.
-                {model.decisionsTotal > model.decisions.length
-                  ? ` Showing ${model.decisions.length} of ${model.decisionsTotal} replayable decisions in this displayed event window.`
-                  : null}
+                {model.decisionsTotal &&
+                model.decisionsTotal.value > model.decisions.length ? (
+                  <>
+                    {" "}Showing {model.decisions.length} of the decisions
+                    replayable in this displayed event window:{" "}
+                    <Metric metric={model.decisionsTotal} />.
+                  </>
+                ) : null}
               </p>
               <ul className="mt-3 grid gap-3 sm:grid-cols-2">
                 {model.decisions.map((decision) => (
@@ -170,7 +175,7 @@ export default function DecisionLedgerPage() {
               failed. Restore and verify the ledger before inspecting its
               recorded data.
             </p>
-          ) : model.total === 0 ? (
+          ) : model.entries.length === 0 && !model.total ? (
             <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600">
               No decision events have been recorded for this firm.
             </p>
@@ -231,10 +236,12 @@ export default function DecisionLedgerPage() {
               </table>
             </div>
           )}
-          {model.verification.ok && model.total > model.entries.length ? (
+          {model.verification.ok && model.total &&
+          model.total.value > model.entries.length ? (
             <p className="text-sm text-slate-600">
-              Showing the latest {model.entries.length} of {model.total} events.
-              {" "}Verification covers the full chain.
+              Showing the latest {model.entries.length} events. Events stored:{" "}
+              <Metric metric={model.total} />. Verification covers the full
+              chain.
             </p>
           ) : null}
         </>

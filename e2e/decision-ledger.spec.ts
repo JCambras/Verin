@@ -3,6 +3,16 @@ import AxeBuilder from "@axe-core/playwright";
 import { ADVISOR, PRINCIPAL, login } from "./helpers";
 import { DEV_BADGE_TEXT } from "../src/contracts/provenance";
 
+/** Displayed counts carry the fold of the rows counted (charter #3), so the stubs do too. */
+const REAL_FOLD = {
+  source: "computed",
+  asOf: "2026-08-05T12:00:00.000Z",
+  confidence: "high",
+  demonstration: false,
+  derivedFrom: ["verin-crm"],
+};
+const FIXTURE_FOLD = { ...REAL_FOLD, demonstration: true, derivedFrom: ["fixture"] };
+
 test("principal can inspect the seeded decision ledger and its L1-L4 verdict", async ({ page }) => {
   await login(page, PRINCIPAL);
   await page.goto("/app/ledger");
@@ -54,8 +64,8 @@ test("failed verification presents a dedicated entries-withheld state", async ({
             reason: "entry hash differs",
           }],
         },
-        total: 5,
-        decisionsTotal: 0,
+        total: { value: 5, format: "count", provenance: FIXTURE_FOLD },
+        decisionsTotal: null,
         decisionsWithheld: null,
         decisions: [],
         entries: [],
@@ -85,19 +95,9 @@ test("bounded replay identifies decisions withheld outside its trust window", as
             reason: null,
           })),
         },
-        total: 12,
-        decisionsTotal: 0,
-        decisionsWithheld: {
-          value: 1,
-          format: "count",
-          provenance: {
-            source: "computed",
-            asOf: "2026-08-05T12:00:00.000Z",
-            confidence: "high",
-            demonstration: false,
-            derivedFrom: ["verin-crm"],
-          },
-        },
+        total: { value: 12, format: "count", provenance: REAL_FOLD },
+        decisionsTotal: null,
+        decisionsWithheld: { value: 1, format: "count", provenance: REAL_FOLD },
         decisions: [],
         entries: [],
       }),

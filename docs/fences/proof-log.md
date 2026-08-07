@@ -6448,3 +6448,71 @@ detects that the bytes moved, never that they moved somewhere the live contract 
 unchanged; the suite passes 9/9.
 
 **Date:** 2026-08-06 (review corrections, D-132).
+---
+
+## The repair cannot run unscoped, and the badge cannot report one fixed class (DECISIONS.md D-129)
+
+> Citation note: from "Ledger reachability made transitive" onward, the `(D-1xx)` parentheticals in
+> the entries above run four ahead of the `DECISIONS.md` headers they name (that entry proves
+> D-121's work, not D-125's). The drift is pre-existing and left uncorrected here rather than
+> bulk-renumbered late in the window; this entry names its decision by file and number to stay
+> unambiguous. Recorded under `ledger-followup-recorded-schema-authoring`.
+
+**Invariant A:** `pnpm ledger:rebuild` refuses to run unscoped or to write without `--apply`.
+A repair that discards and re-folds derived decision state must not be reachable by accident.
+
+**Injection:** `parseRebuildInvocation` collapsed to
+`return { orgId: positional[0] ?? "", apply: true };` - the fleet-wide, write-by-default form the
+contract replaced.
+
+```text
+× refuses an unscoped run: no argument means no action
+  AssertionError: expected { orgId: '', apply: true } to be null
+× refuses a fleet-wide run: exactly one tenant, never several
+  AssertionError: expected { orgId: 'org-a', apply: true } to be null
+× refuses an unrecognized flag rather than silently ignoring it
+  AssertionError: expected { orgId: 'org-a', apply: true } to be null
+× previews by default and writes only when --apply is explicit
+  AssertionError: expected { orgId: 'org-a', apply: true } to deeply equal { orgId: 'org-a', apply: false }
+```
+
+All four halves are load-bearing on their own: no single one of them passes under the collapse.
+
+**Invariant B:** a synthetic value badges with the class its producer STORED, never one fixed class.
+
+**Injection:** `syntheticBadgeLabel`'s derived branch replaced by
+`return DEV_BADGE_TEXT["synthetic-fixture"];` - exactly the constant the finding reported.
+
+```text
+× badges a synthetic value with its OWN class, never one fixed class
+  AssertionError: expected 'synthetic fixture' to be 'estimate'
+× badges a derivation from the synthetic leaves that made it a demonstration
+  AssertionError: expected 'synthetic fixture' to be 'estimate'
+```
+
+The `fixture` case still passed under the injection, which is why the seeded ledger looked correct
+before this round: the only synthetic producer that ships today is the one the constant named.
+
+**End-to-end** against a seeded PGlite store (one org, five ledger entries, one decision), with
+derived state deliberately wiped first:
+
+```text
+after wipe             projections=0 [] reservations=0
+ledger:rebuild <org>   would rebuild 1 decision projection(s) from 5 replayed entr(ies)
+                       PREVIEW only - nothing was written; re-run with --apply to commit
+after preview          projections=0 [] reservations=0
+ledger:rebuild --apply rebuilt 1 decision projection(s) from 5 replayed entr(ies)
+after apply            projections=1 [dec:GC-01:0001] reservations=0
+(no argument)          usage: pnpm ledger:rebuild <org-id> [--apply]      exit=1
+<org> --force          usage: pnpm ledger:rebuild <org-id> [--apply]      exit=1
+ledger:rebuild org-nope  org org-nope REFUSED - NOT_FOUND (app-error:NOT_FOUND, info)  exit=1
+```
+
+The preview left the derived tables byte-identical to the wiped state, and the classified per-org
+refusal survived the rewrite.
+
+**Revert:** both injected files were restored from pre-injection copies; `git diff` reports
+`scripts/ledger-rebuild-args.ts` unchanged and `src/contracts/provenance.ts` carrying only this
+round's additions. Suites pass 11/11, and `pnpm test` passes 1,436/1,436.
+
+**Date:** 2026-08-06 (review corrections, DECISIONS.md D-129).

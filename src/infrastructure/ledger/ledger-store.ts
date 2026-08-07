@@ -14,7 +14,11 @@ import {
   type EvidenceSnapshotRef, type DecisionInputBundle,
 } from "@contracts/decision-core/evidence";
 import { DecisionRecordSchema, type DecisionRecord } from "@contracts/decision-core/decision";
-import { LedgerEntrySchema, type LedgerEntry } from "@contracts/decision-core/ledger";
+import {
+  LedgerEntrySchema,
+  referencedDecisionId,
+  type LedgerEntry,
+} from "@contracts/decision-core/ledger";
 import {
   bundleHashPreimage,
   decisionHashPreimage,
@@ -80,12 +84,6 @@ function prepareEvent(input: LedgerEntry): Result<PreparedEvent, AppError> {
   return actorJson.ok
     ? ok({ event: parsed.data, payloadJson: payloadJson.value, actorJson: actorJson.value })
     : actorJson;
-}
-
-function decisionId(event: LedgerEntry): string | null {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return null;
 }
 
 function evidenceId(event: LedgerEntry): string | null {
@@ -212,10 +210,11 @@ async function appendPrepared(
       [
         orgId, event.id, sequence, event.type, event.schemaVersion,
         event.serializerVersion, event.occurredAt, event.recordedAt, actorJson,
-        event.correlationId, event.causationRef?.id ?? null, decisionId(event),
-        evidenceId(event), triggeringEntryId(event), payloadJson,
-        reservationCreationId(event), prevHash, entryHash, provenance.source,
-        provenance.asOf, provenance.confidence,
+        event.correlationId, event.causationRef?.id ?? null,
+        referencedDecisionId(event) ?? null, evidenceId(event),
+        triggeringEntryId(event), payloadJson, reservationCreationId(event),
+        prevHash, entryHash, provenance.source, provenance.asOf,
+        provenance.confidence,
       ],
     );
     await applyProjection(

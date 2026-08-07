@@ -6,10 +6,8 @@ import {
 } from "@app/_server/context";
 import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
 import {
-  canFeedComplianceDecision,
-  DEV_BADGE_TEXT,
   parseRecordProvenance,
-  type DerivedProvenance,
+  syntheticBadgeLabel,
   type RecordProvenance,
 } from "@contracts/provenance";
 import { metric } from "@contracts/metric";
@@ -36,15 +34,9 @@ function actorLabel(actorJson: string): string {
 /**
  * Provenance is read from the row the producer wrote, never inferred from an actor
  * name, so a renamed seed or a new synthetic producer cannot render as real history.
- * Derived state carries the trust of its least trustworthy input (ADR-0022), so the
- * same test labels a single row and a whole fold.
+ * `syntheticBadgeLabel` then reports THAT row's own class - an estimate as an
+ * estimate - rather than the one synthetic class the register happened to ship with.
  */
-function badgeLabel(provenance: RecordProvenance | DerivedProvenance): string | null {
-  return canFeedComplianceDecision(provenance)
-    ? null
-    : DEV_BADGE_TEXT["synthetic-fixture"];
-}
-
 function rowProvenance(row: {
   provSource: string;
   provAsOf: string;
@@ -71,8 +63,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const {
     verification,
     rows,
+    storedProvenance,
     decisions,
     decisionsTotal,
+    decisionsTotalProvenance,
     decisionsWithheld,
     decisionsWithheldProvenance,
   } = await readVerifiedDecisionRegister(
@@ -92,8 +86,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         reason: entry.reason,
       })),
     },
-    total: verification.entriesStored,
-    decisionsTotal,
+    total: storedProvenance
+      ? metric(verification.entriesStored, "count", storedProvenance)
+      : null,
+    decisionsTotal: decisionsTotalProvenance
+      ? metric(decisionsTotal, "count", decisionsTotalProvenance)
+      : null,
     decisionsWithheld: decisionsWithheldProvenance
       ? metric(decisionsWithheld, "count", decisionsWithheldProvenance)
       : null,
@@ -120,7 +118,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       exceptionRequested: projection.exceptionRequested,
       lastEventType: projection.lastEventType,
       lastSequence: projection.lastSequence,
-      provenanceLabel: badgeLabel(provenance),
+      provenanceLabel: syntheticBadgeLabel(provenance),
     })),
     entries: [...rows].reverse().map((row) => ({
       sequence: row.sequence,
@@ -129,7 +127,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       actor: actorLabel(row.actorJson),
       decisionId: row.decisionId,
       entryHash: row.entryHash.slice(0, 16),
-      provenanceLabel: badgeLabel(rowProvenance(row)),
+      provenanceLabel: syntheticBadgeLabel(rowProvenance(row)),
     })),
   } satisfies LedgerRegisterViewModel;
   return NextResponse.json(body);

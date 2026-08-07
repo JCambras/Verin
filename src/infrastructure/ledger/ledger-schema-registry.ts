@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   LedgerEntrySchema,
   LEDGER_SCHEMA_VERSION,
+  referencedDecisionId,
   type LedgerEntry,
 } from "@contracts/decision-core/ledger";
 import {
@@ -79,12 +80,6 @@ const SERIALIZER_VERSION_1 = "1.0.0";
 const CHAIN_PREIMAGE_VERSION_1 = "1.0.0";
 const ledgerSchemaV1_1 = z.fromJSONSchema(recordedLedgerV1_1 as never);
 
-function decisionId(event: LedgerEntry): string | null {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return null;
-}
-
 function promoteV1_1(
   value: unknown,
   event: LedgerEntry,
@@ -115,7 +110,7 @@ function promoteV1_1(
     actorJson: actor.value,
     correlationId: event.correlationId,
     causationId: event.causationRef?.id ?? null,
-    decisionId: decisionId(event),
+    decisionId: referencedDecisionId(event) ?? null,
     evidenceSnapshotId,
     triggeringEntryId: event.type === "ExceptionDecisionRequested"
       ? event.triggeringEntryRef.id

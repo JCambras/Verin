@@ -4,7 +4,10 @@ import {
   assertTenantContext,
   type TenantContext,
 } from "@contracts/tenant";
-import type { LedgerEntry } from "@contracts/decision-core/ledger";
+import {
+  referencedDecisionId,
+  type LedgerEntry,
+} from "@contracts/decision-core/ledger";
 import type { DecisionRecord } from "@contracts/decision-core/decision";
 import { assertLedgerEventPiiBoundary } from "./ledger-pii";
 import { decisionStructureReason } from "./ledger-decision-binding";
@@ -46,12 +49,6 @@ interface SequenceRow {
 
 interface DecisionSequenceRow extends SequenceRow {
   requires_prior: boolean;
-}
-
-function referencedDecisionId(event: LedgerEntry): string | undefined {
-  if ("decisionRef" in event) return event.decisionRef.id;
-  if ("priorDecisionRef" in event) return event.priorDecisionRef.id;
-  return undefined;
 }
 
 function parseDecisionBinding(row: DecisionSourceRow): DecisionBinding {

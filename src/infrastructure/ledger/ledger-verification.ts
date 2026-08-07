@@ -6,7 +6,11 @@
 import type { SqlDb, SqlQueryable, SqlTx } from "@infra/store/db";
 import { appError, normalizeAppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
-import { parseRecordProvenance } from "@contracts/provenance";
+import {
+  foldStoredProvenance,
+  parseRecordProvenance,
+  type DerivedProvenance,
+} from "@contracts/provenance";
 import {
   assertSameTenant,
   assertTenantContext,
@@ -16,6 +20,7 @@ import {
   assertActionGrant,
   type ActionGrant,
 } from "@contracts/authz";
+import { referencedDecisionId } from "@contracts/decision-core/ledger";
 import { parseRecordedLedgerEvent } from "./ledger-schema-registry";
 import { lockDecisionLedgerTenant } from "./ledger-lock";
 import {
@@ -50,6 +55,21 @@ export interface DecisionLedgerIntegrityVerification {
 export interface RebuiltDecisionProjections {
   readonly entriesReplayed: number;
   readonly projections: readonly ProjectedDecision[];
+  /** False when the replay was previewed and rolled back rather than committed. */
+  readonly applied: boolean;
+}
+
+const PREVIEW_ROLLBACK = Symbol("decision-projection-preview");
+interface PreviewRollback {
+  readonly [PREVIEW_ROLLBACK]: RebuiltDecisionProjections;
+}
+
+function previewRollback(rebuilt: RebuiltDecisionProjections): PreviewRollback {
+  return { [PREVIEW_ROLLBACK]: rebuilt };
+}
+
+function isPreviewRollback(error: unknown): error is PreviewRollback {
+  return typeof error === "object" && error !== null && PREVIEW_ROLLBACK in error;
 }
 
 interface DbLedgerRow extends PIIBearing {
@@ -117,6 +137,27 @@ function toRow(row: DbLedgerRow): DecisionLedgerRow {
   };
 }
 
+/**
+ * The provenance a COUNT of stored entries carries (charter #3). Folded over every
+ * row counted, never the displayed window: a synthetic row outside the window would
+ * otherwise leave a whole-chain figure wearing the window's label. Null when any
+ * row's stored provenance does not parse - a count whose origin cannot be
+ * established is withheld, not labeled.
+ */
+function countedEntryProvenance(
+  rows: readonly DecisionLedgerRow[],
+): DerivedProvenance | null {
+  const inputs = rows.flatMap((row) => {
+    const parsed = parseRecordProvenance({
+      source: row.provSource,
+      asOf: row.provAsOf,
+      confidence: row.provConfidence,
+    });
+    return parsed ? [parsed] : [];
+  });
+  return inputs.length === rows.length ? foldStoredProvenance(inputs) : null;
+}
+
 async function listDecisionLedgerForTenant(
   db: SqlQueryable,
   tenant: TenantContext,
@@ -134,7 +175,11 @@ export async function verifyAndListDecisionLedger(
   exportGrant: ActionGrant<"audit.export">,
   piiGrant: ActionGrant<"pii.view">,
   window?: number,
-): Promise<{ verification: LedgerVerification; rows: DecisionLedgerRow[] }> {
+): Promise<{
+  verification: LedgerVerification;
+  rows: DecisionLedgerRow[];
+  storedProvenance: DerivedProvenance | null;
+}> {
   assertActionGrant(exportGrant, "audit.export");
   assertActionGrant(piiGrant, "pii.view");
   assertSameTenant(exportGrant.tenant, piiGrant.tenant);
@@ -177,6 +222,7 @@ export async function verifyAndListDecisionLedger(
   return {
     verification: await verifyLedgerSnapshot(db, tenant, snapshot),
     rows,
+    storedProvenance: countedEntryProvenance(verificationRows),
   };
 }
 
@@ -260,39 +306,87 @@ async function verifyDecisionLedgerReplayTransaction(
   };
 }
 
+/**
+ * The post-condition a replay owes, checked before the transaction commits: every
+ * decision a replayed event references has a derived row, and no derived row cites a
+ * sequence the replay did not cover. A fold that silently dropped a decision, or a
+ * stale row that outlived `clearDerivedState`, rolls the repair back instead of
+ * committing it. The chain and its replay sources are verified BEFORE the fold and
+ * the whole repair is one transaction, so this is what verifying after can still add
+ * without paying the batch ordering pass a second time.
+ */
+function replayCoverageReason(
+  entries: readonly RecordedReplayEvent[],
+  projections: readonly ProjectedDecision[],
+): string | null {
+  const sequences = new Set(entries.map((entry) => entry.sequence));
+  const projected = new Set(
+    projections.map(({ projection }) => projection.decisionId),
+  );
+  const dropped = entries.some(({ event }) => {
+    const id = referencedDecisionId(event);
+    return id !== undefined && !projected.has(id);
+  });
+  if (dropped) return "replayed decision has no derived row after the rebuild";
+  return projections.some(({ projection }) =>
+    !sequences.has(projection.lastSequence))
+    ? "derived row cites a sequence the replay did not cover"
+    : null;
+}
+
+/**
+ * Replay the immutable ledger into derived decision state, in ONE transaction that
+ * verifies the chain and its replay sources FIRST, discards derived rows, folds every
+ * stored event again, and then proves the rebuilt rows cover exactly what was replayed.
+ * `apply: false` runs that identical body and rolls it back at the end, so the preview
+ * an operator inspects IS the rebuild, discarded - it cannot drift from what applying
+ * would write. The operator command defaults to the preview; callers here state theirs.
+ */
 export async function rebuildDecisionProjections(
   db: SqlDb,
   tenant: TenantContext,
+  options: { readonly apply?: boolean } = {},
 ): Promise<RebuiltDecisionProjections> {
   assertTenantContext(tenant);
-  return db.transaction(async (tx) => {
-    const checked = await verifyDecisionLedgerReplayTransaction(tx, tenant);
-    if (!checked.verification.ok) {
-      throw appError(
-        "STORE_CONSTRAINT",
-        `decision ledger integrity failed at ${checked.verification.levels.at(-1)?.level ?? "unknown"}`,
-      );
-    }
-    const sources = await verifyReplaySources(tx, tenant, checked.entries);
-    await clearDerivedState(tx, tenant);
-    for (const item of checked.entries) {
-      const source = item.event.type === "DecisionRecorded"
-        ? sources.decisions.get(item.event.decisionRef.id)
-        : undefined;
-      await applyProjection(
-        tx,
-        tenant,
-        item.event,
-        item.sequence,
-        source?.provenance ?? item.provenance,
-        source?.record,
-      );
-    }
-    return {
-      entriesReplayed: checked.entries.length,
-      projections: await listDecisionProjections(tx, tenant),
-    };
-  });
+  const apply = options.apply ?? true;
+  try {
+    return await db.transaction(async (tx) => {
+      const checked = await verifyDecisionLedgerReplayTransaction(tx, tenant);
+      if (!checked.verification.ok) {
+        throw appError(
+          "STORE_CONSTRAINT",
+          `decision ledger integrity failed at ${checked.verification.levels.at(-1)?.level ?? "unknown"}`,
+        );
+      }
+      const sources = await verifyReplaySources(tx, tenant, checked.entries);
+      await clearDerivedState(tx, tenant);
+      for (const item of checked.entries) {
+        const source = item.event.type === "DecisionRecorded"
+          ? sources.decisions.get(item.event.decisionRef.id)
+          : undefined;
+        await applyProjection(
+          tx,
+          tenant,
+          item.event,
+          item.sequence,
+          source?.provenance ?? item.provenance,
+          source?.record,
+        );
+      }
+      const rebuilt = {
+        entriesReplayed: checked.entries.length,
+        projections: await listDecisionProjections(tx, tenant),
+        applied: apply,
+      };
+      const uncovered = replayCoverageReason(checked.entries, rebuilt.projections);
+      if (uncovered) throw appError("STORE_CONSTRAINT", uncovered);
+      if (!apply) throw previewRollback(rebuilt);
+      return rebuilt;
+    });
+  } catch (error: unknown) {
+    if (!isPreviewRollback(error)) throw error;
+    return error[PREVIEW_ROLLBACK];
+  }
 }
 
 export async function verifyDecisionLedgerIntegrity(

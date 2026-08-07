@@ -4249,3 +4249,86 @@ a diagnostic that prints `[object Object]` is the one line the operator most nee
 **Relates to:** ADR-0039, ADR-0044, ADR-0045, D-006, D-116, D-118, D-123, D-124; charter #4, #5.
 **Revert path:** each is independent - the test loop, one import plus one line in
 `ledger-rebuild.ts`, and one explicit map in the ledger route.
+
+### D-129 · 2026-08-06 · reversible · The repair is scoped, the label is read, and the count is labeled
+
+**The operator repair takes a tenant and previews by default.** `pnpm ledger:rebuild` read no
+argv: it selected every org and re-folded derived decision state fleet-wide, immediately. The
+restore runbook points an operator here under RTO pressure, where the intent is "repair THIS
+tenant" and where a run that writes before it is inspected is the wrong default. The invocation
+contract now lives in `scripts/ledger-rebuild-args.ts` (testable without importing a module whose
+top level runs the repair): exactly one org id, no fleet-wide form, an unrecognized flag refused
+rather than ignored, and no argument at all meaning no action. Writing takes `--apply`. Without it,
+`rebuildDecisionProjections` runs the IDENTICAL one-transaction replay - verify the chain and its
+replay sources, discard derived rows, fold every stored event, prove the rebuilt rows cover what
+was replayed - and then rolls it back, so the preview an operator inspects is the rebuild itself,
+discarded, and cannot drift from what applying would write. Immutable rows are never touched, and
+the per-org `classifyErrorMetadata` refusal (D-125) is preserved verbatim.
+
+**A badge reports the class the producer stored, not the class the code was written against.**
+`/api/ledger` returned `DEV_BADGE_TEXT["synthetic-fixture"]` for EVERY provenance that failed
+`canFeedComplianceDecision`, so a row appended by an `estimate` producer - or a fold whose least
+trustworthy input was one - would have rendered as a fake class it does not belong to. The
+adjacent comment claimed provenance was read from the row and never inferred; the label alone was
+a constant. `syntheticBadgeLabel` (beside `DEV_BADGE_TEXT`, so no surface forks the vocabulary)
+derives it: an estimate labels as `estimate`, a default as `default`, a fixture as the canonical
+`synthetic fixture`, and a derivation from the flattened synthetic leaves that made it a
+demonstration. The refusal itself is unchanged - only the label became truthful.
+
+**No bare synthetic-derived number renders (charter #3).** `total` and `decisionsTotal` were plain
+numbers in a view model whose three sibling counts already carried provenance, and `/app/ledger`
+rendered both as user-facing text over a ledger that is entirely synthetic seed data. Both are now
+`DisplayMetric`s. `total` folds the provenance of EVERY stored row, not the displayed window - a
+synthetic row outside the window would otherwise leave a whole-chain figure wearing the window's
+label - and a count whose origin cannot be established is withheld rather than labeled. The
+`metric-provenance` fence does not reach either field, because the fence derives its registry from
+the data dictionary's `display: "metric"` flag and these are view-model fields with no dictionary
+entry; closing that gap for view-model counts is recorded under
+`ledger-followup-recorded-schema-authoring` below, not implemented here.
+
+**Closed: `ledger-followup-decision-id-extractor`.** The three-line decision-id extractor written
+six times is now `referencedDecisionId` in `contracts/decision-core/ledger.ts`, the module that
+defines the `LedgerEntry` union it reads, consumed by all six sites with no behavior change. The
+promoted `decision_id` column, L3's drift check, projection keying, and the register fold share one
+definition, so a variant that named its decision differently can no longer make them silently
+disagree. The two `null`-returning copies became `?? null` at the two column sites. The ADR
+back-reference convention and `correlationId`'s future examiner surface stay deferred under the
+same key.
+
+**Deferred, keyed `ledger-followup-recorded-schema-authoring`.** The four frozen recorded JSON
+Schemas in `src/infrastructure/ledger/recorded-schemas.ts` are ~90KB packed into four single-line
+string literals (9,305 / 28,081 / 2,250 / 49,859 characters). Three consequences: the file reports
+as 9 lines to `line-budget` and `max-file-size`, so the largest artifact in the ledger subsystem is
+invisible to the very ceilings ADR-0048/0049/0050 were amended to keep honest; the content is
+undiffable, since any change shows as one rewritten line; and there is no generator or documented
+procedure, so authoring v1.2 / v1.8 means hand-editing a 50KB literal. The digest pin plus the
+all-variant byte-equality proof (D-128) covers drift, so this is maintainability, not correctness,
+and reformatting frozen bytes late in the window risks digest-pin churn for no verification gain.
+The trigger is the next recorded schema version: it lands `.json` fixtures or a checked-in
+generator over the live Zod schemas, pinned by the same digests. The same key carries the
+`metric-provenance` fence gap above - the fence sees dictionary fields, not view-model counts, so
+`total` and `decisionsTotal` were caught by review rather than by a gate.
+
+**A stale deferral key points at an entry that never recorded it.** `ledger-reachability`'s
+`DEFERRED_EXPORTS` named D-116 for `appendDecisionEvents` and D-118 for
+`preflightEvidenceSnapshots`; neither entry has ever contained those names, so the fence's
+"each deferral names its prompt in its own DECISIONS.md entry" assertion had been failing since it
+landed. The deferrals are recorded in D-119 and D-121, which name both the export and **v3 prompt
+8**; the map now points there. A fence that asserts against the wrong record is not a weaker fence,
+it is a red build nobody can act on.
+
+**The ceilings absorbed it, per ADR-0051.** Three of these corrections add capability, and the one
+that only subtracts moved lines OUT of infrastructure and domain INTO contracts. Both affected
+layers ran out of headroom, leaving the two remedies ADR-0048 and ADR-0050 exist to remove: delete
+prose, or fold readable code. ADR-0051 amends ADR-0018 instead - contracts 6,050 to 6,110 against a
+measured 6,064, infrastructure 7,750 to 7,840 against a measured 7,788 - and every figure recorded
+in `line-budget.test.ts` was re-measured, not carried forward. No per-file pin was added; the
+largest touched files are `ledger-store.ts` at 502/550 and `ledger-verification.ts` at 426/500.
+
+**Why:** an unscoped repair, a hardcoded fake class, and an unlabeled count all make the same
+mistake in three places - the surface says something the stored facts do not, and the operator or
+examiner has no way to tell from the screen.
+**Relates to:** ADR-0018, ADR-0022, ADR-0041, ADR-0048, ADR-0050, ADR-0051, D-116, D-119, D-121,
+D-123, D-125, D-128; charter #3, #4, #5.
+**Revert path:** each is independent - the invocation module plus the `apply` option, the badge
+derivation, the two provenance folds, the extractor move, and the fence's deferral keys.

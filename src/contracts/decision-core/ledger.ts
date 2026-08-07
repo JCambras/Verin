@@ -442,3 +442,18 @@ export type StatusObserved = Extract<LedgerEntry, { type: "StatusObserved" }>;
 export type VerificationClosed = Extract<LedgerEntry, { type: "VerificationClosed" }>;
 export type VerificationStuck = Extract<LedgerEntry, { type: "VerificationStuck" }>;
 export type ExceptionDecisionRequested = Extract<LedgerEntry, { type: "ExceptionDecisionRequested" }>;
+
+/**
+ * The decision an entry references: `decisionRef` for every variant that acts on a
+ * decision, `priorDecisionRef` for the exception request that asks to revisit one,
+ * and none for an evidence snapshot. This rule drives the promoted `decision_id`
+ * column, L3's drift check, projection keying, and the register fold, so it lives
+ * with the union that defines it - a variant naming its decision differently would
+ * otherwise have to be remembered at each of those sites before the column, the
+ * fold, and the verifier could silently disagree.
+ */
+export function referencedDecisionId(entry: LedgerEntry): string | undefined {
+  if ("decisionRef" in entry) return entry.decisionRef.id;
+  if ("priorDecisionRef" in entry) return entry.priorDecisionRef.id;
+  return undefined;
+}

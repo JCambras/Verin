@@ -35,7 +35,7 @@ fail this drill (SEC 17a-4 / SOC 2 CC7.4).
 
 **Steps 3 and 4 are gated on the managed-Postgres adapter, which is deferred (D-006/ADR-0004).**
 `getConfig()` requires `store.driver=postgres` under `APP_ENV=production` and `createDb` refuses that
-driver with `STORE_UNAVAILABLE`, so `pnpm audit:chain` and `pnpm ledger:rebuild` cannot open a
+driver with `STORE_UNAVAILABLE`, so `pnpm audit:chain` and `pnpm ledger:rebuild <org-id>` cannot open a
 production store today - they exercise this procedure against PGlite in dev/CI and staging. Both are
 written to work unchanged once the adapter lands; until then, treat the verification steps below as
 the procedure the adapter must satisfy, not as commands to run against a production instance.
@@ -45,9 +45,12 @@ the procedure the adapter must satisfy, not as commands to run against a product
 3. **Verify:** run `pnpm audit:chain` against the restored store; confirm both per-org chains verify and row
    counts match expectations. Confirm `/ready` returns ready.
 4. **Repair derived state (only if needed):** if the restore predates a decision-projection write, run
-   `pnpm ledger:rebuild` to discard derived decision state and replay the immutable ledger into it. It
-   refuses any org whose chain does not verify, so it can never launder a corrupted source into
-   derived state; immutable rows are never touched.
+   `pnpm ledger:rebuild <org-id>` to preview the replay for the affected tenant, then
+   `pnpm ledger:rebuild <org-id> --apply` to commit it. The repair is per-tenant and opt-in: there is no
+   fleet-wide form, and without `--apply` the identical one-transaction replay runs and is rolled back,
+   so the preview is exactly what applying would write. It refuses any org whose chain does not verify -
+   before the replay and again after it - so it can never launder a corrupted source into derived state;
+   immutable rows are never touched.
 5. **Cut over:** point the stateless app tier at the restored store (a deployment config change — the app
    tier holds no state).
 

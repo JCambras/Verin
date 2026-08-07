@@ -39,9 +39,10 @@ export interface LedgerRegisterViewModel {
     readonly ok: boolean;
     readonly levels: readonly LedgerLevelView[];
   };
-  readonly total: number;
+  /** Stored events across the whole chain; null when no count can be labeled (charter #3). */
+  readonly total: DisplayMetric | null;
   /** Replayable decisions in the displayed event window; larger than `decisions` when limited. */
-  readonly decisionsTotal: number;
+  readonly decisionsTotal: DisplayMetric | null;
   readonly decisionsWithheld: DisplayMetric | null;
   readonly decisions: readonly DecisionStateView[];
   readonly entries: readonly LedgerEntryView[];
