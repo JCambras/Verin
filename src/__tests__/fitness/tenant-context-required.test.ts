@@ -96,6 +96,8 @@ const PORT_ESCAPES = new Set([
   "src/domain/policy/registries.ts :: instructionKindDescriptor.<call>",
   "src/domain/policy/temporal.ts :: durationToMillis.<call>",
   "src/domain/policy/temporal.ts :: epochMillisOf.<call>",
+  "src/domain/policy/temporal.ts :: isCanonicalDate.<call>",
+  "src/domain/policy/temporal.ts :: isCanonicalTimestamp.<call>",
   "src/domain/policy/trace.ts :: compareCanonical.<call>",
   "src/domain/policy/trace.ts :: compareProhibitions.<call>",
   "src/domain/policy/trace.ts :: sortUniqueStrings.<call>",

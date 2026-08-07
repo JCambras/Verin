@@ -170,6 +170,19 @@ describe("evaluatePolicy - determinism and canonical ordering", () => {
 });
 
 describe("evaluatePolicy - fail-closed totality", () => {
+  it("an impossible instant refuses rather than parsing, landing the rule unevaluable", () => {
+    // 2026 is not a leap year and February never has 31 days: the Timestamp
+    // brand rejects these bytes, so the freshness read must too rather than
+    // rolling over into some other instant's epoch value.
+    const trace = evaluate(firmA, worldFacts({ withdrawalsObservedAt: "2026-02-31T09:00:00.000Z" }));
+    expect(trace.disposition).toEqual({
+      kind: "blocked",
+      blockerCodes: ["rule-unevaluable:rule-reserve-evidence-freshness"],
+    });
+    const rule = trace.ruleOutcomes.find((o) => o.ruleId === "rule-reserve-evidence-freshness")!;
+    expect(rule.outcome).toBe("unevaluable");
+  });
+
   it("a rule reading missing evidence in a value position synthesizes a blocker", () => {
     const policy = load({
       schemaVersion: "1.0.0",
@@ -313,6 +326,103 @@ describe("evaluatePolicy - fail-closed totality", () => {
     // Everything fired stays in the trace - the lattice picks, it never erases.
     expect(trace.prohibitions.map((p) => p.code)).toEqual(["a-prohibition", "b-prohibition"]);
     expect(trace.blockers.map((b) => b.code)).toEqual(["some-blocker"]);
+  });
+});
+
+describe("evaluatePolicy - a rejected policy-resolved parameter unwinds its rule ATOMICALLY", () => {
+  // horizon-projection declares horizonMonths as 1..1200, so a rule that writes
+  // an account balance into it is refused by the primitive's own schema in
+  // Phase 1 - AFTER Phase 0 already applied every one of that rule's effects.
+  const outOfRangeHorizon = {
+    kind: "set_parameter",
+    primitiveId: "horizon-projection",
+    parameter: "horizonMonths",
+    value: { kind: "evidence", evidenceKind: "account-balance", path: "amountMinor" },
+  };
+
+  const rejectedRule = (effects: readonly unknown[]) => ({
+    id: "rule-out-of-range-horizon",
+    when: { op: "all", nodes: [] },
+    effects: [outOfRangeHorizon, ...effects],
+  });
+
+  it("contributes NOTHING to the trace except its own rule-unevaluable blocker", () => {
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        rejectedRule([
+          { kind: "select_candidate", primitiveId: "candidate-selection", strategy: "preference-order" },
+          { kind: "require_approval", templateId: "tmpl-ops-dual" },
+          { kind: "prohibit", prohibitionCode: "unwound-prohibition" },
+          { kind: "block", blockerCode: "unwound-blocker", resolvingEvidenceKinds: ["account-balance"] },
+          { kind: "require_evidence", evidenceKind: "funding-candidates", absence: "block" },
+        ]),
+      ],
+    });
+    const trace = evaluate(policy);
+    expect(trace.ruleOutcomes).toEqual([
+      {
+        ruleId: "rule-out-of-range-horizon",
+        phase: "configuration",
+        outcome: "unevaluable",
+        missing: ["set_parameter rejected by horizon-projection"],
+      },
+    ]);
+    // Every Phase-0 contribution is gone: the primitive never ran with that
+    // value, and no surviving accumulator names an unevaluable rule.
+    expect(trace.parameterResolutions).toEqual([]);
+    expect(trace.strategyResolutions).toEqual([]);
+    expect(trace.approvalRequirements).toEqual([]);
+    expect(trace.prohibitions).toEqual([]);
+    expect(trace.evidenceRequirements).toEqual([]);
+    expect(trace.blockers).toEqual([
+      {
+        code: "rule-unevaluable:rule-out-of-range-horizon",
+        resolvingEvidenceKinds: [],
+        ruleIds: ["rule-out-of-range-horizon"],
+      },
+    ]);
+    // Fail-closed throughout: the synthesized blocker carries the disposition,
+    // so dropping the unwound prohibition never relaxes the outcome.
+    expect(trace.disposition).toEqual({
+      kind: "blocked",
+      blockerCodes: ["rule-unevaluable:rule-out-of-range-horizon"],
+    });
+    const horizon = trace.primitiveExecutions.find((e) => e.primitiveId === "horizon-projection")!;
+    expect(horizon.outcome).toBe("unevaluable");
+  });
+
+  it("leaves a co-contributor's blocker intact, carrying only the survivor's resolving kinds", () => {
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        rejectedRule([
+          { kind: "block", blockerCode: "shared-blocker", resolvingEvidenceKinds: ["account-balance"] },
+        ]),
+        {
+          id: "rule-surviving",
+          when: { op: "all", nodes: [] },
+          effects: [
+            { kind: "block", blockerCode: "shared-blocker", resolvingEvidenceKinds: ["reservation"] },
+          ],
+        },
+      ],
+    });
+    const trace = evaluate(policy);
+    expect(trace.blockers).toEqual([
+      {
+        code: "rule-unevaluable:rule-out-of-range-horizon",
+        resolvingEvidenceKinds: [],
+        ruleIds: ["rule-out-of-range-horizon"],
+      },
+      {
+        code: "shared-blocker",
+        resolvingEvidenceKinds: ["reservation"],
+        ruleIds: ["rule-surviving"],
+      },
+    ]);
   });
 });
 

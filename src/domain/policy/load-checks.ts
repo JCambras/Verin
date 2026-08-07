@@ -20,7 +20,7 @@ import {
   type PolicyRegistries,
   type PolicyValueType,
 } from "./registries";
-import { durationToMillis } from "./temporal";
+import { durationToMillis, isCanonicalDate, isCanonicalTimestamp } from "./temporal";
 
 export type PolicyLoadIssueCode =
   | "grammar-parse"
@@ -69,8 +69,8 @@ const walkPredicate = (node: PredicateNode, visit: (node: PredicateNode) => void
 /** Constant scalars type as the loader sees them; null pairs only with eq/neq. */
 type ResolvedType = PolicyValueType | "null";
 
-const CANONICAL_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const CANONICAL_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+/** A resolved operand plus the one fact the agreement rule turns on: is it a constant? */
+type ResolvedOperand = { readonly type: ResolvedType; readonly isConstant: boolean };
 
 /**
  * Resolves a value node's declared type against the registries, recording
@@ -156,12 +156,20 @@ const resolveValueType = (
   }
 };
 
-/** A string constant agrees with a date/timestamp-typed reference only in canonical form. */
-const typesAgree = (a: ResolvedType, b: ResolvedType): boolean => {
-  if (a === b) return true;
-  if (a === "string" && (b === "iso-date" || b === "iso-timestamp")) return true;
-  if (b === "string" && (a === "iso-date" || a === "iso-timestamp")) return true;
-  return false;
+/**
+ * A string CONSTANT agrees with a date/timestamp-typed reference (its canonical
+ * byte form is checked immediately after, by `constantMatchesTemporalForm`). A
+ * non-constant `string` reference never widens into a temporal type: nothing
+ * proves its bytes are canonical, so a lexicographic ordering over it would not
+ * be chronological - and the canonical-form guard has no constant to inspect.
+ */
+const typesAgree = (a: ResolvedOperand, b: ResolvedOperand): boolean => {
+  if (a.type === b.type) return true;
+  const widensToTemporal = (from: ResolvedOperand, to: ResolvedOperand): boolean =>
+    from.isConstant &&
+    from.type === "string" &&
+    (to.type === "iso-date" || to.type === "iso-timestamp");
+  return widensToTemporal(a, b) || widensToTemporal(b, a);
 };
 
 const checkComparisonOperand = (
@@ -180,8 +188,8 @@ const checkComparisonOperand = (
 
 const constantMatchesTemporalForm = (node: ValueNode, expected: ResolvedType): boolean => {
   if (node.kind !== "constant" || typeof node.value !== "string") return true;
-  if (expected === "iso-date") return CANONICAL_DATE.test(node.value);
-  if (expected === "iso-timestamp") return CANONICAL_TIMESTAMP.test(node.value);
+  if (expected === "iso-date") return isCanonicalDate(node.value);
+  if (expected === "iso-timestamp") return isCanonicalTimestamp(node.value);
   return true;
 };
 
@@ -224,7 +232,9 @@ export const checkPredicate = (
         if (left === "reference" || left === "structured" || right === "reference" || right === "structured") return;
         const ordering = node.comparator !== "eq" && node.comparator !== "neq";
         if (!ordering && (left === "null" || right === "null")) return;
-        if (!typesAgree(left, right)) {
+        const leftOperand: ResolvedOperand = { type: left, isConstant: node.left.kind === "constant" };
+        const rightOperand: ResolvedOperand = { type: right, isConstant: node.right.kind === "constant" };
+        if (!typesAgree(leftOperand, rightOperand)) {
           report({
             code: "type-mismatch",
             ruleId: rule.id,
@@ -282,10 +292,17 @@ export const checkPredicate = (
           return;
         }
         if (valueType === null || valueType === "reference" || valueType === "structured") return;
+        const valueOperand: ResolvedOperand = {
+          type: valueType,
+          isConstant: node.value.kind === "constant",
+        };
         for (const member of node.set) {
           const memberType = resolveValueType(member, registries, rule.id, report);
           if (memberType === null) continue;
-          if (!typesAgree(valueType, memberType) || !constantMatchesTemporalForm(member, valueType)) {
+          if (
+            !typesAgree(valueOperand, { type: memberType, isConstant: true }) ||
+            !constantMatchesTemporalForm(member, valueType)
+          ) {
             report({
               code: "type-mismatch",
               ruleId: rule.id,

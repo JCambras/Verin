@@ -5702,3 +5702,65 @@ interim elapsed semantics, a TenantContext on the pure evaluator, loader-only
 scope).
 
 **Revert path:** ADR-0053's revert path; ADR-0054 restores the ceilings.
+
+## D-179 - Prompt-9 review round: an unevaluable rule contributes nothing, and the grammar pin reads the real schemas
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-178, ADR-0053, ADR-0054,
+firm ruling `p9-param-rejection-trace`, v3 §6.1, invariant 12/16, charter #1/#4
+
+Five corrections to the prompt-9 landing, all forward fixes:
+
+**Atomic unwind (the firm ruling).** When Phase 1 rejects a policy-resolved
+parameter, the writing rule is marked unevaluable - but Phase 0 had already
+applied ALL of its effects. The trace therefore reported a parameter resolution
+the primitive never ran with, and named an `unevaluable` rule inside
+`approvalRequirements` / `prohibitions` / `blockers` / `evidenceRequirements` /
+`strategyResolutions`. Invariant 12 makes the trace the output, so the ruling is
+FULL ATOMICITY: every Phase-0 contribution of the rejected rule is unwound
+first, an accumulator whose only contributor was that rule disappears with it,
+and the synthesized `rule-unevaluable:<id>` blocker carries the reason. The
+blocker accumulator now keys resolving evidence kinds PER CONTRIBUTING RULE, so
+a co-contributor's blocker survives with only its own resolving kinds. The
+disposition was already fail-closed and stays so.
+
+**The grammar-closure pin now reads the shipped schemas.** It compared a
+hard-coded ratified list against a second hard-coded list of vocabulary
+constants that fed no schema, so the only widening it could catch was a widening
+of the list. It now introspects `policyAstSchemaFor` - the factory `loadPolicy`
+itself parses with - down to the predicate arms, comparator enum, value-node
+discriminators, and effect discriminators, and holds BOTH the ratified pin and
+the contracts constants to that. `findReservedOps` reads
+`RESERVED_PREDICATE_OPS` instead of restating `elapsed` as a case arm, so the
+declaration is load-bearing.
+
+**Canonical temporal bytes match the brand.** `temporal.ts` validated digit
+COUNTS, so `2026-13-45T99:88:77.000Z` parsed into an epoch value instead of
+refusing, while `TimestampSchema` rejects it - and `asOf` / `observedAt` are
+plain strings, so the brand is not on that path. The byte forms now carry the
+brand's field ranges plus integer-only calendar-day validity, and `load-checks`
+consumes the same predicates rather than duplicating looser regexes.
+
+**String constants widen, string references do not.** `typesAgree` let ANY
+`string`-typed operand agree with `iso-date`/`iso-timestamp`, though its own
+rule is about string CONSTANTS; the canonical-form guard then passed
+non-constants vacuously, so an ordering comparison over an arbitrary string
+reference loaded. Agreement now takes the operands, not just their types.
+
+**One walk per rule.** `primitiveKeyReads` ran twice per rule (stratification
+check, then phase classification); it is computed once and shared, which is also
+what makes the two consumers provably one definition.
+
+ADR-0054's figures were taken before this round and went stale by 20 lines in
+contracts and 13 in domain, with domain passing its own ceiling. Re-measured on
+the tree as it lands: contracts 6,555/6,600 and domain 4,063, so ADR-0054 is
+amended to a 4,150 domain ceiling. The pinned migration-fixture digests are
+unchanged - the fixture does not exercise the rejection path.
+
+**Alternatives rejected:** recording the rejected parameter resolution with a
+"rejected" marker instead of dropping it (the ruling is atomicity, and a
+half-present rule is what the finding names); keeping the vocabulary constants
+as a second declaration list checked only against the pin (that is exactly the
+tautology).
+
+**Revert path:** D-178's revert path; each correction is independent of the
+others.

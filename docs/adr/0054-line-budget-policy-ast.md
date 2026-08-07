@@ -1,4 +1,4 @@
-# ADR-0054: Contracts ceiling 6,600 and domain ceiling 4,050 for the policy AST and interpreter
+# ADR-0054: Contracts ceiling 6,600 and domain ceiling 4,150 for the policy AST and interpreter
 
 **Status:** Accepted
 **Date:** 2026-08-07
@@ -19,23 +19,29 @@ never a code change.
 
 ## Decision
 
-Raise the contracts ceiling from 6,110 to 6,600 and the domain ceiling from 1,650 to 4,050.
+Raise the contracts ceiling from 6,110 to 6,600 and the domain ceiling from 1,650 to 4,150.
 Infrastructure stays 7,840 and presentation stays 6,000.
 
-Measured with the fence's own algorithm after the prompt-9 module landed, split under the
-500-line per-file ceiling, and hardened through its own test round:
+Measured with the fence's own algorithm on the tree AS IT LANDS - that is, after the prompt-9
+module was split under the 500-line per-file ceiling AND after the review round that followed it
+(the atomic Phase-0 unwind of a rejected parameter write, the brand-tight canonical temporal byte
+forms, the constant-scoped string/temporal widening rule, and the single-walk primitive-key
+reads). The first figures recorded here were taken before that round and went stale by 20 lines
+in contracts and 13 in domain, which is exactly what the line-budget fence header calls a ceiling
+with a number nobody re-took; the domain figure had also passed its own ceiling, so that ceiling
+moves rather than being paid for by deleting documentation:
 
 | Layer | Measured | Ceiling | Headroom |
 |---|---:|---:|---:|
-| contracts | 6,526 | 6,600 | 74 |
-| domain | 3,936 | 4,050 | 114 |
+| contracts | 6,555 | 6,600 | 45 |
+| domain | 4,063 | 4,150 | 87 |
 | infrastructure | 7,786 | 7,840 | 54 |
 
-What the raises pay for: `src/contracts/decision-core/policy.ts` (391 lines - the ratified
+What the raises pay for: `src/contracts/decision-core/policy.ts` (421 lines - the ratified
 grammar as strict versioned Zod schemas) plus the `parameterSchemaKeys` /
 `parameterConstantAdmissible` helpers in `src/contracts/primitives/values.ts`; and the nine-file
-`src/domain/policy/` module (2,346 lines: load 212, load-checks 476, conflict 383, facts 255,
-evaluate 366, evaluate-primitives 284, registries 134, temporal 89, trace 147). The per-file
+`src/domain/policy/` module (2,482 lines: load 219, load-checks 494, conflict 384, facts 256,
+evaluate 428, evaluate-primitives 286, registries 146, temporal 121, trace 148). The per-file
 ceiling forced the load/load-checks and evaluate/evaluate-primitives splits, which cost two
 module headers - the same trade D-175 recorded for the corpus intake module.
 

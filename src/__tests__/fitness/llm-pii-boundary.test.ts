@@ -126,6 +126,7 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/domain/policy/registries.ts :: PolicyRegistries.primitives.evidenceKindParameters", why: "CatalogPrimitive.evidenceKindParameters (already escaped at its declaration) reached through the pinned primitive registry" },
   { ref: "src/domain/policy/trace.ts :: TraceBlocker.resolvingEvidenceKinds", why: "branded EvidenceKind list naming what would resolve a trace blocker" },
   { ref: "src/domain/policy/trace.ts :: EvidenceRequirementOutcome.evidenceKind", why: "which KIND a require_evidence effect demanded - satisfied/absent outcome, no contents" },
+  { ref: "src/domain/policy/evaluate.ts :: EvidenceRequirementAccumulator.evidenceKind", why: "the SAME discriminator one step earlier: the evaluator's in-flight accumulator before it is emitted as an EvidenceRequirementOutcome" },
   { ref: "src/domain/policy/trace.ts :: PolicyEvaluationTrace.evidenceRequirements", why: "the trace's list of requirement OUTCOMES (kind + absence + outcome + rule ids) - requests and results, never evidence values" },
   { ref: "src/domain/policy/trace.ts :: PolicyEvaluationTrace.blockers.resolvingEvidenceKinds", why: "branded EvidenceKind list reached through the trace's blocker list" },
   { ref: "src/domain/policy/trace.ts :: PolicyEvaluationTrace.evidenceRequirements.evidenceKind", why: "the requirement discriminator reached through the trace" },

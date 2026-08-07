@@ -378,6 +378,38 @@ describe("loadPolicy - grammar and closure", () => {
       ]),
       "type-mismatch",
     );
+    // A plain `string` REFERENCE never widens into a temporal type: nothing
+    // proves its bytes are canonical, so the lexicographic order the comparator
+    // would run is not chronological. Only a string CONSTANT widens.
+    expectIssues(
+      policyWith([
+        {
+          id: "r",
+          when: {
+            op: "compare",
+            comparator: "gt",
+            left: { kind: "context", key: "intent.destinationType" },
+            right: { kind: "evidence", evidenceKind: "bank-instruction-change", path: "changedAt" },
+          },
+          effects: [{ kind: "prohibit", prohibitionCode: "never" }],
+        },
+      ]),
+      "type-mismatch",
+    );
+    expectIssues(
+      policyWith([
+        {
+          id: "r",
+          when: {
+            op: "in",
+            value: { kind: "evidence", evidenceKind: "bank-instruction-change", path: "changedAt" },
+            set: [constant("2026-13-45T99:88:77.000Z")],
+          },
+          effects: [{ kind: "prohibit", prohibitionCode: "never" }],
+        },
+      ]),
+      "type-mismatch",
+    );
     // A structured published value may be existence-checked but never compared.
     expectIssues(
       policyWith([
@@ -394,6 +426,30 @@ describe("loadPolicy - grammar and closure", () => {
       ]),
       "non-comparable-value",
     );
+  });
+
+  it("still ACCEPTS a canonical string constant against a temporal reference", () => {
+    const changedAt = {
+      kind: "evidence",
+      evidenceKind: "bank-instruction-change",
+      path: "changedAt",
+    };
+    const loaded = loadPolicy(
+      policyWith([
+        {
+          id: "compares",
+          when: { op: "compare", comparator: "gt", left: changedAt, right: constant("2026-07-01T00:00:00.000Z") },
+          effects: [{ kind: "prohibit", prohibitionCode: "never" }],
+        },
+        {
+          id: "member-of",
+          when: { op: "in", value: changedAt, set: [constant("2026-02-28T23:59:59.999Z")] },
+          effects: [{ kind: "prohibit", prohibitionCode: "never" }],
+        },
+      ]),
+      registries,
+    );
+    expect(loaded.ok, loaded.ok ? "" : JSON.stringify(loaded.error)).toBe(true);
   });
 
   it("rejects a primitive-set version mismatch and inadmissible parameter constants", () => {

@@ -8968,3 +8968,59 @@ purity scan admits the arithmetic the interpreter actually uses.
 and `pnpm typecheck` are green on the reverted tree.
 
 **Date:** 2026-08-07 (v3 prompt 9).
+
+---
+
+## `policy-ast` (re-proof after the prompt-9 review round) - D-179
+
+The original Injection 1 above widened `EVALUABLE_PREDICATE_OPS`, a declaration list that fed no
+schema, so it proved only that the fence noticed an edit to the list. The closure check now reads
+the vocabulary back off `policyAstSchemaFor` - the schema factory `loadPolicy` parses with - so
+the injection was re-run against the SCHEMA.
+
+**Injection 1' - the shipped SCHEMA widened, the declaration list untouched**: added a
+`z.strictObject({ op: z.literal("regex_match"), value: ValueNodeSchema }).readonly()` arm to the
+predicate union in `predicateSchemaFor`, leaving `EVALUABLE_PREDICATE_OPS` alone.
+
+**Observed failure (verbatim, first line):**
+```
+AssertionError: predicateOps: shipped [all,any,compare,exists,in,is_fresh,not,regex_match] != ratified [all,any,compare,exists,in,is_fresh,not]: expected [ Array(1) ] to deeply equal []
+```
+(three tests failed together: the ratified-pin check, the new declaration-versus-schema check, and
+the standing widened-vocabulary companion. On the pre-review fence this injection PASSED.)
+
+**Standing companions added:** a synthetic AST schema carrying an extra predicate arm, an extra
+comparator, and an extra effect kind proves the extraction reads real arms rather than returning a
+constant; a schema whose grammar is out of reach THROWS rather than extracting an empty vocabulary
+into a vacuous pass.
+
+## Prompt-9 review-round semantics - D-179
+
+Three injections against the corrections themselves, each run on the fixed tree with the fix backed
+out and reverted immediately after.
+
+**Injection A - the atomic unwind skipped**: replaced
+`for (const ruleId of rejectedRuleIds) unwindRule(ruleId);` with a no-op in `evaluate.ts`.
+
+**Observed failure:** both `evaluatePolicy - a rejected policy-resolved parameter unwinds its rule
+ATOMICALLY` cases failed (the unwound rule's parameter resolution, strategy resolution, approval,
+prohibition, blocker, and evidence requirement all reappeared in the trace beside its
+`unevaluable` outcome).
+
+**Injection B - the canonical timestamp loosened back to digit counts**: restored
+`/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})Z$/` and dropped the calendar-day check.
+
+**Observed failure:** `an impossible instant refuses rather than parsing, landing the rule
+unevaluable` failed (`2026-02-31T09:00:00.000Z` rolled over into a real epoch value), and the
+load-time `in`-set case accepted `2026-13-45T99:88:77.000Z` as canonical.
+
+**Injection C - the string/temporal widening unscoped from constants**: dropped `from.isConstant`
+from `typesAgree`.
+
+**Observed failure:** `type-checks comparisons` failed - an ordering comparison between a plain
+`string` context key and an `iso-timestamp` evidence path loaded without a `type-mismatch`.
+
+**Revert:** all four injections were reverted; `pnpm typecheck`, `pnpm lint`, `pnpm knip`, and the
+full test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round).

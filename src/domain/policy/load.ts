@@ -126,13 +126,19 @@ export const loadPolicy = (
     });
   }
 
+  // ONE walk per rule for the ONE definition of "reads a primitive-published
+  // key": check 6 below and the phase classification at the bottom are the two
+  // consumers, and they must never disagree about what a Phase-0 rule may read.
+  const keyReads = new Map<string, readonly string[]>();
+
   for (const rule of rules) {
     checkPredicate(rule, registries, report);
     checkEffects(rule, registries, report);
+    keyReads.set(rule.id, primitiveKeyReads(rule, registries));
 
     // Check 6 - stratification (OQ-6 strict form).
     if (rule.effects.some(isConfigEffect)) {
-      const reads = [...new Set(primitiveKeyReads(rule, registries))].sort();
+      const reads = [...new Set(keyReads.get(rule.id)!)].sort();
       if (reads.length > 0) {
         report({
           code: "configuration-rule-reads-primitive-key",
@@ -206,7 +212,7 @@ export const loadPolicy = (
       id: rule.id,
       when: rule.when,
       effects: rule.effects,
-      phase: primitiveKeyReads(rule, registries).length === 0 ? "configuration" : "evaluation",
+      phase: keyReads.get(rule.id)!.length === 0 ? "configuration" : "evaluation",
     })),
   });
 };

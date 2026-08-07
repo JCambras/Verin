@@ -55,7 +55,13 @@ export type PolicyEvaluationInput = PIIBearing & {
   readonly invocations: readonly PolicyPrimitiveInvocation[];
 };
 
-type BlockerAccumulator = Map<string, { resolving: Set<string>; ruleIds: Set<string> }>;
+/**
+ * Blocker code -> contributing rule id -> the resolving evidence kinds THAT
+ * rule offered. Per-rule, not pooled: unwinding one rule's contribution has to
+ * take its resolving kinds with it, and a pooled set could not say which were
+ * whose.
+ */
+type BlockerAccumulator = Map<string, Map<string, Set<string>>>;
 
 const addBlocker = (
   accumulator: BlockerAccumulator,
@@ -63,10 +69,20 @@ const addBlocker = (
   resolving: readonly string[],
   ruleId: string,
 ): void => {
-  const entry = accumulator.get(code) ?? { resolving: new Set(), ruleIds: new Set() };
-  for (const kind of resolving) entry.resolving.add(kind);
-  entry.ruleIds.add(ruleId);
-  accumulator.set(code, entry);
+  const contributions = accumulator.get(code) ?? new Map<string, Set<string>>();
+  const kinds = contributions.get(ruleId) ?? new Set<string>();
+  for (const kind of resolving) kinds.add(kind);
+  contributions.set(ruleId, kinds);
+  accumulator.set(code, contributions);
+};
+
+/** What the evidence-requirement map actually holds: the outcome's rule ids are a SET until emission. */
+type EvidenceRequirementAccumulator = {
+  readonly evidenceKind: string;
+  readonly absence: EvidenceRequirementOutcome["absence"];
+  readonly outcome: EvidenceRequirementOutcome["outcome"];
+  readonly reviewTemplateId?: string;
+  readonly ruleIds: Set<string>;
 };
 
 export const evaluatePolicy = (
@@ -79,10 +95,7 @@ export const evaluatePolicy = (
   const parameterResolutions = new Map<string, ParameterResolution>();
   const strategyResolutions = new Map<string, StrategyResolution>();
   const blockers: BlockerAccumulator = new Map();
-  const evidenceRequirements = new Map<
-    string,
-    EvidenceRequirementOutcome & { readonly ids: Set<string> }
-  >();
+  const evidenceRequirements = new Map<string, EvidenceRequirementAccumulator>();
   const approvals = new Map<string, { kind: "approval" | "specialist_review"; ruleIds: Set<string> }>();
   const prohibitions = new Map<string, { ruleIds: Set<string> }>();
 
@@ -105,6 +118,37 @@ export const evaluatePolicy = (
       missing: sortUniqueStrings(missing),
     });
     addBlocker(blockers, `rule-unevaluable:${rule.id}`, sortUniqueStrings(evidenceKinds), rule.id);
+  };
+
+  /**
+   * ATOMIC UNWIND (firm ruling p9-param-rejection-trace). A rule that turns out
+   * to be unevaluable contributes NOTHING to the trace except its own
+   * rule-unevaluable blocker, so every Phase-0 effect it already applied is
+   * rolled back first: a parameter resolution the primitive never ran with, and
+   * a rule id sitting in an approval/prohibition/blocker/evidence entry while
+   * that same rule reads `unevaluable`, are both traces that describe a run that
+   * did not happen. An accumulator whose only contributor was the unwound rule
+   * disappears with it; the synthesized blocker carries the reason.
+   */
+  const unwindRule = (ruleId: string): void => {
+    for (const [key, resolution] of parameterResolutions) {
+      if (resolution.ruleId === ruleId) parameterResolutions.delete(key);
+    }
+    for (const [key, resolution] of strategyResolutions) {
+      if (resolution.ruleId === ruleId) strategyResolutions.delete(key);
+    }
+    for (const [code, contributions] of blockers) {
+      if (contributions.delete(ruleId) && contributions.size === 0) blockers.delete(code);
+    }
+    for (const [key, entry] of evidenceRequirements) {
+      if (entry.ruleIds.delete(ruleId) && entry.ruleIds.size === 0) evidenceRequirements.delete(key);
+    }
+    for (const [templateId, entry] of approvals) {
+      if (entry.ruleIds.delete(ruleId) && entry.ruleIds.size === 0) approvals.delete(templateId);
+    }
+    for (const [code, entry] of prohibitions) {
+      if (entry.ruleIds.delete(ruleId) && entry.ruleIds.size === 0) prohibitions.delete(code);
+    }
   };
 
   const applyRule = (
@@ -192,16 +236,14 @@ export const evaluatePolicy = (
         case "require_evidence": {
           const present = facts.evidence.has(effect.evidenceKind);
           const key = `${effect.evidenceKind}:${effect.absence}:${effect.reviewTemplateId ?? ""}`;
-          const existing = evidenceRequirements.get(key);
-          const ids = existing?.ids ?? new Set<string>();
-          ids.add(rule.id);
+          const ruleIds = evidenceRequirements.get(key)?.ruleIds ?? new Set<string>();
+          ruleIds.add(rule.id);
           evidenceRequirements.set(key, {
             evidenceKind: effect.evidenceKind,
             absence: effect.absence,
             outcome: present ? "satisfied" : "absent",
             ...(effect.reviewTemplateId === undefined ? {} : { reviewTemplateId: effect.reviewTemplateId }),
-            ruleIds: [],
-            ids,
+            ruleIds,
           });
           if (!present && effect.absence === "block") {
             addBlocker(blockers, `evidence-required:${effect.evidenceKind}`, [effect.evidenceKind], rule.id);
@@ -266,11 +308,28 @@ export const evaluatePolicy = (
   );
   if (!phase.ok) return phase;
   const { publishedFacts, executions, parameterRejections } = phase.value;
+  const rejectingPrimitives = new Map<string, Set<string>>();
   for (const rejection of parameterRejections) {
     for (const ruleId of rejection.ruleIds) {
-      const rule = configurationRules.find((candidate) => candidate.id === ruleId)!;
-      markUnevaluable(rule, [`set_parameter rejected by ${rejection.primitiveId}`], []);
+      const named = rejectingPrimitives.get(ruleId) ?? new Set<string>();
+      named.add(rejection.primitiveId);
+      rejectingPrimitives.set(ruleId, named);
     }
+  }
+  const rejectedRuleIds = sortUniqueStrings(rejectingPrimitives.keys());
+  // Unwind EVERY rejected rule before marking any of them: a rule can be
+  // rejected by two primitives at once, and an unwind that ran between two
+  // marks would delete the blocker the first mark just synthesized.
+  for (const ruleId of rejectedRuleIds) unwindRule(ruleId);
+  const configurationRuleById = new Map<string, LoadedPolicyRule>(
+    configurationRules.map((rule) => [rule.id, rule]),
+  );
+  for (const ruleId of rejectedRuleIds) {
+    markUnevaluable(
+      configurationRuleById.get(ruleId)!,
+      [...rejectingPrimitives.get(ruleId)!].map((id) => `set_parameter rejected by ${id}`),
+      [],
+    );
   }
 
   // ── Phase 2 ───────────────────────────────────────────────────────────────────
@@ -288,10 +347,12 @@ export const evaluatePolicy = (
     }))
     .sort(compareProhibitions);
   const traceBlockers: TraceBlocker[] = [...blockers.entries()]
-    .map(([code, entry]) => ({
+    .map(([code, contributions]) => ({
       code,
-      resolvingEvidenceKinds: sortUniqueStrings(entry.resolving),
-      ruleIds: sortUniqueStrings(entry.ruleIds),
+      resolvingEvidenceKinds: sortUniqueStrings(
+        [...contributions.values()].flatMap((kinds) => [...kinds]),
+      ),
+      ruleIds: sortUniqueStrings(contributions.keys()),
     }))
     .sort((a, b) => compareCanonical(a.code, b.code));
   const approvalOutcomes: ApprovalRequirementOutcome[] = [...approvals.entries()]
@@ -353,7 +414,7 @@ export const evaluatePolicy = (
         absence: entry.absence,
         outcome: entry.outcome,
         ...(entry.reviewTemplateId === undefined ? {} : { reviewTemplateId: entry.reviewTemplateId }),
-        ruleIds: sortUniqueStrings(entry.ids),
+        ruleIds: sortUniqueStrings(entry.ruleIds),
       }))
       .sort(
         (a, b) =>

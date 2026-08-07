@@ -53,7 +53,11 @@ export const POLICY_GRAMMAR_VERSION = "1.0.0";
 export const POLICY_GRAMMAR_VERSIONS = ["1.0.0", "1.1.0"] as const;
 export type PolicyGrammarVersion = (typeof POLICY_GRAMMAR_VERSIONS)[number];
 
-// ── The ratified closed vocabularies (single source for schemas AND the fence) ──
+// ── The ratified closed vocabularies ────────────────────────────────────────────
+// These are the DECLARATION of what the schemas below admit. The `policy-ast`
+// fence reads the real vocabulary back off the built schemas and holds BOTH
+// these lists and the ratified pin to it, so a widened schema arm cannot hide
+// behind an unchanged list (nor a widened list behind an unchanged schema).
 
 export const VALUE_NODE_KINDS = [
   "constant",
@@ -390,6 +394,13 @@ export const policyAstSchemaFor = (
     })
     .readonly() as unknown as z.ZodType<GrammarPolicyAst>;
 
+/**
+ * The reserved-op declaration, READ at runtime rather than restated as a case
+ * arm: adding an op to `RESERVED_PREDICATE_OPS` is what makes the loader refuse
+ * it, so the list and the refusal can never disagree.
+ */
+const RESERVED_OPS: ReadonlySet<string> = new Set(RESERVED_PREDICATE_OPS);
+
 /** True iff the node tree contains a reserved (grammar-only, not-yet-evaluable) op. */
 export const findReservedOps = (
   node: GrammarPredicateNode,
@@ -403,9 +414,7 @@ export const findReservedOps = (
       );
     case "not":
       return findReservedOps(node.node, [...path, "node"]);
-    case "elapsed":
-      return [{ op: node.op, path }];
     default:
-      return [];
+      return RESERVED_OPS.has(node.op) ? [{ op: node.op, path }] : [];
   }
 };

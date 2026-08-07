@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { Node, Project } from "ts-morph";
+import { z } from "zod";
 import { REPO_ROOT, SRC_ROOT, inMemoryProject, walk } from "./_fence-utils";
 import { scanDomainVocabulary, scanImpurity } from "./_module-scan";
 import {
@@ -25,10 +26,15 @@ import { canonicalDigest, worldRegistries } from "../helpers/policy-world";
  * mechanism behind v3 invariant 16). Five invariants, each with companions
  * proving the incomplete form CANNOT pass:
  *  (a) GRAMMAR CLOSURE - the shipped grammar admits EXACTLY the ratified
- *      vocabulary; this fence carries its own hard-coded copy as the pin, so
- *      quietly widening a union in contracts fails the build here. The single
- *      reserved op (`elapsed`, OQ-7) parses only at 1.1.0 and is refused by
- *      the loader - grammar-only, proven both directions.
+ *      vocabulary. This fence carries its own hard-coded copy as the pin and
+ *      compares it against the vocabulary READ BACK OFF THE BUILT SCHEMAS
+ *      (`policyAstSchemaFor`, the very factory `loadPolicy` parses with), not
+ *      against a second declaration list - a hand-written list compared to a
+ *      hand-written list would only ever catch an edit to the list. The
+ *      contracts vocabulary constants are then held to that same introspection,
+ *      so declaration and schema cannot drift apart either. The single reserved
+ *      op (`elapsed`, OQ-7) parses only at 1.1.0 and is refused by the loader -
+ *      grammar-only, proven both directions.
  *  (b) DOMAIN NEUTRALITY - no domain vocabulary in the policy module's
  *      identifiers or string literals: "no evaluator branch on domain ID"
  *      made structural (v3 orchestrator rule 7; domain words live in config,
@@ -131,7 +137,122 @@ export function grammarClosureViolations(vocabulary: ModuleVocabulary): string[]
   return out;
 }
 
+// ── Reading the vocabulary back off the BUILT schemas ───────────────────────────
+
+/**
+ * Zod introspection, in the house style of `parameterSchemaKeys`: every step
+ * THROWS on an unexpected node instead of returning nothing, so a schema
+ * refactor that moves the grammar out of reach fails loudly rather than
+ * emptying the extracted vocabulary into a vacuous pass.
+ */
+const unwrapSchema = (schema: z.ZodType): z.ZodType => {
+  let current = schema;
+  while (current instanceof z.ZodReadonly || current instanceof z.ZodLazy) {
+    current = (current as unknown as { unwrap: () => z.ZodType }).unwrap();
+  }
+  return current;
+};
+
+const expectNode = <T>(schema: z.ZodType, guard: (value: z.ZodType) => boolean, what: string): T => {
+  const unwrapped = unwrapSchema(schema);
+  if (!guard(unwrapped)) {
+    throw new Error(`${what}: unexpected schema node ${unwrapped.constructor.name}`);
+  }
+  return unwrapped as unknown as T;
+};
+
+const shapeOf = (schema: z.ZodType, what: string): Record<string, z.ZodType> =>
+  expectNode<z.ZodObject>(schema, (value) => value instanceof z.ZodObject, what).shape as Record<
+    string,
+    z.ZodType
+  >;
+
+const optionsOf = (schema: z.ZodType, what: string): readonly z.ZodType[] =>
+  expectNode<{ options: readonly z.ZodType[] }>(
+    schema,
+    (value) => value instanceof z.ZodUnion || value instanceof z.ZodDiscriminatedUnion,
+    what,
+  ).options;
+
+const elementOf = (schema: z.ZodType, what: string): z.ZodType =>
+  expectNode<{ element: z.ZodType }>(schema, (value) => value instanceof z.ZodArray, what).element;
+
+const literalOf = (schema: z.ZodType, what: string): string => {
+  const values = [
+    ...expectNode<{ values: Set<unknown> }>(
+      schema,
+      (value) => value instanceof z.ZodLiteral,
+      what,
+    ).values,
+  ];
+  if (values.length !== 1 || typeof values[0] !== "string") {
+    throw new Error(`${what}: expected exactly one string literal, got ${JSON.stringify(values)}`);
+  }
+  return values[0];
+};
+
+const enumOf = (schema: z.ZodType, what: string): readonly string[] =>
+  expectNode<{ options: readonly string[] }>(schema, (value) => value instanceof z.ZodEnum, what)
+    .options;
+
+type SchemaVocabulary = {
+  readonly versionLiteral: string;
+  readonly predicateOps: readonly string[];
+  readonly valueKinds: readonly string[];
+  readonly comparators: readonly string[];
+  readonly effectKinds: readonly string[];
+};
+
+/** The vocabulary one built policy-AST schema ACTUALLY admits, arm by arm. */
+export function schemaVocabularyOf(astSchema: z.ZodType): SchemaVocabulary {
+  const ast = shapeOf(astSchema, "policy AST");
+  const rule = shapeOf(elementOf(ast["rules"]!, "ast.rules"), "policy rule");
+  const predicateOps: string[] = [];
+  let valueKinds: readonly string[] = [];
+  let comparators: readonly string[] = [];
+  for (const arm of optionsOf(rule["when"]!, "rule.when")) {
+    const shape = shapeOf(arm, "predicate arm");
+    const op = literalOf(shape["op"]!, "predicate arm op");
+    predicateOps.push(op);
+    if (op !== "compare") continue;
+    comparators = enumOf(shape["comparator"]!, "compare.comparator");
+    valueKinds = optionsOf(shape["left"]!, "compare.left").map((option) =>
+      literalOf(shapeOf(option, "value node")["kind"]!, "value node kind"),
+    );
+  }
+  return {
+    versionLiteral: literalOf(ast["schemaVersion"]!, "ast.schemaVersion"),
+    predicateOps,
+    valueKinds,
+    comparators,
+    effectKinds: optionsOf(elementOf(rule["effects"]!, "rule.effects"), "effect").map((option) =>
+      literalOf(shapeOf(option, "effect")["kind"]!, "effect kind"),
+    ),
+  };
+}
+
+const activeGrammar = schemaVocabularyOf(policyAstSchemaFor(POLICY_GRAMMAR_VERSION));
+const wideGrammar = schemaVocabularyOf(policyAstSchemaFor("1.1.0"));
+
+/**
+ * What the SHIPPED schemas admit. `reservedOps` is the difference the additive
+ * minor version actually introduces, so an op quietly added to BOTH versions
+ * would show up as an evaluable op instead of hiding in the reserved list.
+ */
 const shippedVocabulary: ModuleVocabulary = {
+  valueKinds: activeGrammar.valueKinds,
+  predicateOps: activeGrammar.predicateOps,
+  reservedOps: wideGrammar.predicateOps.filter((op) => !activeGrammar.predicateOps.includes(op)),
+  effectKinds: activeGrammar.effectKinds,
+  comparators: activeGrammar.comparators,
+  grammarVersions: POLICY_GRAMMAR_VERSIONS.map(
+    (version) => schemaVocabularyOf(policyAstSchemaFor(version)).versionLiteral,
+  ),
+  activeVersion: activeGrammar.versionLiteral,
+};
+
+/** The contracts DECLARATION lists, held to the same introspection. */
+const declaredVocabulary: ModuleVocabulary = {
   valueKinds: VALUE_NODE_KINDS,
   predicateOps: EVALUABLE_PREDICATE_OPS,
   reservedOps: RESERVED_PREDICATE_OPS,
@@ -323,9 +444,20 @@ const formatViolations = (violations: readonly { file: string; line: number; tok
 describe("policy-ast fence", () => {
   const project = policyProject();
 
-  it("enforces: the shipped grammar vocabulary equals the ratified pin exactly", () => {
+  it("enforces: the vocabulary the BUILT schemas admit equals the ratified pin exactly", () => {
     const violations = grammarClosureViolations(shippedVocabulary);
     expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("enforces: the contracts vocabulary constants declare exactly what the schemas admit", () => {
+    const violations = grammarClosureViolations(declaredVocabulary);
+    expect(violations, violations.join("\n")).toEqual([]);
+    for (const dimension of ["valueKinds", "predicateOps", "reservedOps", "effectKinds", "comparators", "grammarVersions"] as const) {
+      expect([...declaredVocabulary[dimension]].sort(), dimension).toEqual(
+        [...shippedVocabulary[dimension]].sort(),
+      );
+    }
+    expect(declaredVocabulary.activeVersion).toBe(shippedVocabulary.activeVersion);
   });
 
   it("enforces: parse probes - every ratified variant parses, nothing else does", () => {
@@ -463,6 +595,65 @@ describe("policy-ast fence", () => {
         ),
       ).toBe(true);
       expect(grammarClosureViolations(shippedVocabulary)).toEqual([]);
+    });
+
+    it("the extraction reads REAL schema arms, so a widened schema cannot pass behind an unchanged list", () => {
+      // A schema shaped like the real one but carrying one extra predicate arm
+      // and one extra effect kind - exactly the widening a second hand-written
+      // list would miss, and what the pin must reject.
+      const valueNode = z.discriminatedUnion("kind", [
+        z.strictObject({ kind: z.literal("constant"), value: z.string() }),
+      ]);
+      const widened = z.strictObject({
+        schemaVersion: z.literal("1.0.0"),
+        rules: z
+          .array(
+            z.strictObject({
+              when: z.lazy(() =>
+                z.union([
+                  z
+                    .strictObject({
+                      op: z.literal("compare"),
+                      comparator: z.enum(["eq", "like"]),
+                      left: valueNode,
+                      right: valueNode,
+                    })
+                    .readonly(),
+                  z.strictObject({ op: z.literal("regex_match"), pattern: z.string() }).readonly(),
+                ]),
+              ),
+              effects: z
+                .array(
+                  z.discriminatedUnion("kind", [
+                    z.strictObject({ kind: z.literal("prohibit") }),
+                    z.strictObject({ kind: z.literal("execute_webhook") }),
+                  ]),
+                )
+                .readonly(),
+            }),
+          )
+          .readonly(),
+      });
+      const extracted = schemaVocabularyOf(widened);
+      expect(extracted.predicateOps).toContain("regex_match");
+      expect(extracted.effectKinds).toContain("execute_webhook");
+      expect(extracted.comparators).toContain("like");
+      expect(extracted.valueKinds).toEqual(["constant"]);
+      const violations = grammarClosureViolations({
+        ...extracted,
+        reservedOps: RESERVED_PREDICATE_OPS,
+        grammarVersions: POLICY_GRAMMAR_VERSIONS,
+        activeVersion: extracted.versionLiteral,
+      });
+      expect(violations.join("\n")).toContain("regex_match");
+      expect(violations.join("\n")).toContain("execute_webhook");
+      expect(violations.join("\n")).toContain("like");
+    });
+
+    it("a schema whose grammar moved out of reach THROWS rather than extracting nothing", () => {
+      expect(() => schemaVocabularyOf(z.strictObject({ rules: z.string() }))).toThrow(
+        /unexpected schema node/,
+      );
     });
 
     it("a domain-named identifier or literal in the policy module is caught with file:line", () => {

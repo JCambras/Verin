@@ -52,14 +52,21 @@ import { join, relative } from "node:path";
 // ADR amendment rather than a silent fence edit, and no correction is ever paid for by
 // deleting documentation - nor, per ADR-0050, by folding readable code onto fewer lines.
 // ADR-0054 raised contracts and domain for the prompt-9 policy AST and
-// interpreter: MEASURED contracts 6,526 (the grammar module policy.ts plus the
-// schema-introspection helpers in primitives/values.ts) and domain 3,936 (the
-// nine-file policy module: loader, checks, conflict prover, facts plane,
-// four-phase evaluator, temporal math, trace). Re-measure in any commit that
-// changes a layer; a raise is always a measured ADR amendment.
+// interpreter (the grammar module policy.ts plus the schema-introspection
+// helpers in primitives/values.ts; the nine-file policy module: loader, checks,
+// conflict prover, facts plane, four-phase evaluator, temporal math, trace).
+// Its first figures were taken before the tree it describes had finished
+// landing and went stale by 20/13 lines - the exact condition the paragraph
+// above calls "a ceiling with a number nobody re-took". ADR-0054 is amended
+// with figures RE-MEASURED on the tree as it lands after the prompt-9 review
+// round (atomic Phase-0 unwind, brand-tight temporal bytes, constant-scoped
+// temporal widening, single-walk key reads): contracts 6,555 against an
+// unchanged 6,600 ceiling, and domain 4,063 - which passed the 4,050 ceiling,
+// so the ceiling moves to 4,150. Re-measure in any commit that changes a
+// layer; a raise is always a measured ADR amendment.
 const CEILINGS = {
-  contracts: 6600, // ADR-0054, on the prompt-9 policy grammar (6,526 measured)
-  domain: 4050, // ADR-0054, on the prompt-9 policy interpreter module (3,936 measured)
+  contracts: 6600, // ADR-0054, on the prompt-9 policy grammar (6,555 measured)
+  domain: 4150, // ADR-0054, on the prompt-9 policy interpreter module (4,063 measured)
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
