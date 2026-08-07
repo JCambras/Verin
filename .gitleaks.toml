@@ -31,4 +31,17 @@ regexes = [
   # Same reason as above, an inline `gitleaks:allow` cannot cover it: the value landed
   # in an earlier commit of the PR range.
   '''mm-smiths-renovation-aug15-4c7f''',
+  # Replay-corpus `generationToken` of the CS-segmented-withdrawal-schedule case
+  # (fixtures/corpus/synthetic/, v3 prompt 11, ADR-0034). It holds NO secret entropy:
+  # it is the first 8 bytes of sha256 over CORPUS_SEED, the case path, the field name
+  # and "token" joined by the ASCII unit separator (scripts/corpus/seed.ts
+  # deriveToken), and every input is a committed public constant, so anyone with the
+  # clone recomputes it exactly. generic-api-key fires only because the field name ends
+  # in "Token" and a digest clears the entropy bar.
+  # Allowlisted by the exact literal (not the corpus path) so a genuine secret added to
+  # a fixture is still caught, and so a regenerated corpus re-proves its own tokens
+  # here rather than inheriting a blanket path escape. This value reaches the scan from
+  # a sibling branch, not from HEAD: the CI job checks out with fetch-depth 0 and scans
+  # every ref, so an inline `gitleaks:allow` in the fixture cannot cover it.
+  '''79ac0f487563da1a''',
 ]
