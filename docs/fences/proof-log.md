@@ -6146,7 +6146,10 @@ Each injection was reverted and the fence passes (11 tests). The in-memory compa
 the transitive cases directly: an unreachable export cannot vouch for what it calls, a
 reached export carries reachability through a private helper, and an exported arrow const
 is scanned. The strengthened fence flagged `preflightEvidenceSnapshots` on first run - it
-is now a NAMED deferral (D-125, v3 prompt 8) rather than a silent pass.
+is now a NAMED deferral rather than a silent pass. Its record has since been corrected
+twice, so read `DEFERRED_EXPORTS` for the live values rather than this line: the decision
+key to D-121 (D-129), and the prompt to v3 prompt 18, the first prompt that lands a
+post-decision producer.
 
 **Revert:** no planted export, const, or deferral remains.
 
@@ -6556,3 +6559,28 @@ copy after each run; `git diff` reports it unchanged by this round. `ledger-proj
 passes 22/22.
 
 **Date:** 2026-08-06 (review corrections, DECISIONS.md D-130).
+
+## The named deferral prompt is bound to its own record, not to prose (documentation sync)
+
+The two ledger deferrals cited "v3 prompt 8" - the primitive-vocabulary prompt, already landed and
+shipping no ledger producer. Corrected to **v3 prompt 18** (authority, multistage approval, and
+override) in `DEFERRED_EXPORTS`, D-119, D-121, D-129, and `PLAN.md` Appendix 4: it is the first
+prompt in `docs/v3/verin-prompt-sequence-v3.md` whose deliverables are post-decision facts, which
+is the only class `appendDecisionEvents` accepts.
+
+**Injection** (the correction is coupled, not two independent edits): `DEFERRED_EXPORTS` restored
+to `{ prompt: "v3 prompt 8", decision: "D-119" }` while DECISIONS.md kept the corrected prose.
+
+```text
+× enforces: each deferral names its prompt in its own DECISIONS.md entry
+  AssertionError: D-119 does not name v3 prompt 8: expected '### D-119 · 2026-08-05 · reversible ·…'
+  to contain 'v3 prompt 8'
+```
+
+So the fence's registry cannot drift from the entry that records it in either direction - the
+existing PF-204 injections already prove the reachability and stale-deferral arms.
+
+**Revert:** the injection was reverted; `DEFERRED_EXPORTS` carries prompt 18 and the fence passes
+11/11. No export, deferral, or seam was added or removed.
+
+**Date:** 2026-08-06 (documentation sync).

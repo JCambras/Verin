@@ -47,8 +47,8 @@ interface NamedDeferral {
 }
 /** Named deferrals: export -> where its first shipped caller is promised. */
 const DEFERRED_EXPORTS = new Map<string, NamedDeferral>([
-  ["appendDecisionEvents", { prompt: "v3 prompt 8", decision: "D-119" }],
-  ["preflightEvidenceSnapshots", { prompt: "v3 prompt 8", decision: "D-121" }],
+  ["appendDecisionEvents", { prompt: "v3 prompt 18", decision: "D-119" }],
+  ["preflightEvidenceSnapshots", { prompt: "v3 prompt 18", decision: "D-121" }],
 ]);
 
 function isShipped(file: string): boolean {

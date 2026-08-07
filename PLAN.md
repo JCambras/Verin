@@ -417,8 +417,10 @@ are recorded in `DECISIONS.md` by owning prompt and become fences in the PR that
   `consistent` fact is vacuously true below two assertions.
 - **D-116 / D-119 / D-121** - the prompt-7 ledger deferrals. Prompt 7 deliberately ships the
   post-decision append boundary (`appendDecisionEvents`) and `preflightEvidenceSnapshots` with no shipped
-  caller: the storage and verification foundation lands now, the producers arrive with the later
-  intake/judgment/execution prompts. Unlike the D-104 obligations these are ALREADY fenced -
+  caller: the storage and verification foundation lands now, the first producer arrives with prompt 18
+  (authority, multistage approval, and override), the earliest prompt whose deliverables are
+  post-decision facts, and the reservation, execution, and verification producers follow in prompts
+  23-26. Unlike the D-104 obligations these are ALREADY fenced -
   `ledger-reachability` requires every unreachable ledger export to be a NAMED deferral carrying the
   prompt that lands its caller and the `DECISIONS.md` entry that records it, and fails just as loudly
   when a named deferral gains a caller, so the list cannot become a standing amnesty. The authoritative

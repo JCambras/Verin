@@ -3845,11 +3845,16 @@ and `verifyDecisionLedger` by `verifyDecisionLedgerIntegrity`; `countDecisionPro
 and the bounded `listDecisionProjections` limit path were orphaned when the register
 started replaying its verified event window, which reports its own totals. All are
 deleted. `appendDecisionEvents` stays: it is the shared later-append boundary this prompt
-exists to land, and its first shipped producer arrives with money-movement execution in
-**v3 prompt 8**. The `ledger-reachability` fence derives shipped callers for every ledger
-export and requires each unreachable one to be that named deferral or a fenced test seam -
-and fails just as loudly when a named deferral gains a caller, so the list cannot become a
-standing amnesty.
+exists to land, and its first shipped producer arrives with multistage approval in
+**v3 prompt 18** - the earliest prompt in the sequence that emits a post-decision fact
+(`ApprovalRecorded`, `ApprovalInvalidated`, and the stage expiry/escalation events), since
+`appendDecisionEvents` refuses `DecisionRecorded` and everything before it either has no
+event variant or travels in the bundle through `recordDecision`. The reservation,
+execution, and verification producers follow in prompts 23-26 - which is what D-104's
+"Wave D/F" already said. The `ledger-reachability` fence derives shipped callers for every
+ledger export and requires each unreachable one to be that named deferral or a fenced test
+seam - and fails just as loudly when a named deferral gains a caller, so the list cannot
+become a standing amnesty.
 
 **A refused replay says which repair it needs.** `pnpm ledger:rebuild` reported every
 per-org failure as "ledger or retained replay sources do not verify", so an outage, a bug,
@@ -3946,8 +3951,10 @@ as deferred. Roots are now references from shipped files OUTSIDE the ledger dire
 reached declarations, private helpers included. The scan also covers exported `const`
 arrows and classes, which a `getFunctions()`-only walk could not see.
 `preflightEvidenceSnapshots` is therefore a NAMED deferral whose first shipped caller
-arrives with `appendDecisionEvents` in **v3 prompt 8**, and each deferral now cites the
-decision entry that records it rather than resolving against the rest of the file.
+arrives with `appendDecisionEvents` in **v3 prompt 18** - it is reached through that
+boundary's body, so it becomes reachable in the same prompt whatever the first producer's
+events happen to carry - and each deferral now cites the decision entry that records it
+rather than resolving against the rest of the file.
 
 **The register applies its window once.** `/api/ledger` re-sliced rows to `MAX_ENTRIES`
 after `readVerifiedDecisionRegister` had already applied the same bound as its event
@@ -4314,8 +4321,17 @@ generator over the live Zod schemas, pinned by the same digests. The same key ca
 `preflightEvidenceSnapshots`; neither entry has ever contained those names, so the fence's
 "each deferral names its prompt in its own DECISIONS.md entry" assertion had been failing since it
 landed. The deferrals are recorded in D-119 and D-121, which name both the export and **v3 prompt
-8**; the map now points there. A fence that asserts against the wrong record is not a weaker fence,
+18**; the map now points there. A fence that asserts against the wrong record is not a weaker fence,
 it is a red build nobody can act on.
+
+**The named prompt was wrong, and a deferral that names the wrong prompt names nothing.** Both
+records cited "v3 prompt 8", which is the primitive-vocabulary prompt (ADR-0039, D-102) - already
+landed at this branch's base, and shipping no ledger producer at all. The corrected citation is
+**v3 prompt 18** (authority, multistage approval, and override), the first prompt in
+`docs/v3/verin-prompt-sequence-v3.md` whose deliverables are post-decision ledger facts. The
+correction is factual only: the fence, the deferral set, and the exports are unchanged, and the
+"a named deferral that gained a caller must be retired" check now points at a prompt that can
+actually retire it.
 
 **The ceilings absorbed it, per ADR-0051.** Three of these corrections add capability, and the one
 that only subtracts moved lines OUT of infrastructure and domain INTO contracts. Both affected
