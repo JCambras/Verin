@@ -51,9 +51,15 @@ import { join, relative } from "node:path";
 // on the recorded figure being the measured one. Any FURTHER increase remains a measured
 // ADR amendment rather than a silent fence edit, and no correction is ever paid for by
 // deleting documentation - nor, per ADR-0050, by folding readable code onto fewer lines.
+// ADR-0054 raised contracts and domain for the prompt-9 policy AST and
+// interpreter: MEASURED contracts 6,526 (the grammar module policy.ts plus the
+// schema-introspection helpers in primitives/values.ts) and domain 3,936 (the
+// nine-file policy module: loader, checks, conflict prover, facts plane,
+// four-phase evaluator, temporal math, trace). Re-measure in any commit that
+// changes a layer; a raise is always a measured ADR amendment.
 const CEILINGS = {
-  contracts: 6110, // ADR-0051, on the shared decision-id extractor and provenance fold
-  domain: 1650, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
+  contracts: 6600, // ADR-0054, on the prompt-9 policy grammar (6,526 measured)
+  domain: 4050, // ADR-0054, on the prompt-9 policy interpreter module (3,936 measured)
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until

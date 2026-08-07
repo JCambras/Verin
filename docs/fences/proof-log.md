@@ -8898,3 +8898,73 @@ changed `scripts/corpus/intake-filename.ts`, a bound executable authority; no ca
 changed). The real-derived partition remains empty and captain signoff remains `pending-captain`.
 
 **Date:** 2026-08-06 (v3 prompt 11, review round 21).
+
+## the policy grammar is closed, pure, domain-neutral, digest-pinned, and reachable-by-name (ADR-0053)
+
+**Fence:** `src/__tests__/fitness/policy-ast.test.ts`
+
+**Claims:** (1) the shipped grammar vocabulary equals the fence's own ratified pin exactly, so a
+quietly widened union fails the build before it fails review; (2) the policy module (contracts
+grammar + domain interpreter) never references a clock, randomness, tz/locale, or scheduling
+global; (3) no domain vocabulary in the module's identifiers or literals - "no evaluator branch
+on domain ID" made structural; (4) the grammar migration fixture matches its pinned digests under
+BOTH grammar versions, so the additive-minor discipline is bytes, not intent; (5) every module
+value export is imported as a value or carried as a NAMED deferral stating the prompt that lands
+its caller.
+
+**Injection 1 - the vocabulary widened**: added `"regex_match"` to `EVALUABLE_PREDICATE_OPS`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: predicateOps: shipped [all,any,compare,exists,in,is_fresh,not,regex_match] != ratified [all,any,compare,exists,in,is_fresh,not]: expected [ Array(1) ] to deeply equal []
+```
+(The companion asserting the closure check rejects widened vocabularies failed alongside it.)
+
+**Injection 2 - a clock read in the interpreter**: planted `const evaluationStartedAt = Date.now();`
+at module scope in `evaluate.ts`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: /Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/evaluate.ts:72: Date: expected [ { …(3) } ] to deeply equal []
+```
+
+**Injection 3 - domain vocabulary in the module**: planted
+`const wireCashReserveHint = "withdrawal";` in `trace.ts`.
+
+**Observed failure (verbatim, first lines):**
+```
+AssertionError: /Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/trace.ts:20: wire
+/Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/trace.ts:20: cash
+/Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/trace.ts:20: reserve
+/Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/trace.ts:20: withdrawal
+```
+(both the identifier and the string literal are tokenized - seven hits from one planted line)
+
+**Injection 4 - the migration fixture tampered on disk**: flipped the pinned policy's horizon
+constant `6 -> 7`.
+
+**Observed failure (verbatim, first line):**
+```
+AssertionError: 1.0.0: loaded canonical digest daed195b58d40c8f8bc4b01587a120b3fc21a5f0bfbe729f0e5f7b6eb116dba9 != pinned 2700b8e0ed44569ba808a18df57121ea7568e16ae50e17e1542116f53b553379
+```
+(all four digests - loaded and trace, under both grammar versions - failed; the in-memory
+tamper companion failed alongside, proving the pin binds bytes, not intent)
+
+**Injection 5 - an orphan export without a deferral**: appended `export const orphanProbe = 1;`
+to `temporal.ts`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: temporal.ts:orphanProbe has no value importer and no named deferral - dead vocabulary or a missing deferral entry: expected [ { kind: 'orphan', …(1) } ] to deeply equal []
+```
+(the no-broken-baseline companion failed alongside)
+
+**Standing companions:** the parse probes prove the accepting direction (every ratified effect,
+comparator, and op parses; `elapsed` parses ONLY at 1.1.0 and never loads), so no refusal above
+can be satisfied by refusing everything; the pure-Math and codepoint-ordering cases prove the
+purity scan admits the arithmetic the interpreter actually uses.
+
+**Revert:** all five injections were reverted; the fence, the full fitness project (59 files),
+and `pnpm typecheck` are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9).

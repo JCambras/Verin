@@ -85,6 +85,7 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.2.12",
     "eslint-plugin-react-hooks": "7.1.1",
+    "fast-check": "^4.9.0",
     "jsdom": "29.1.1",
     "knip": "6.29.0",
     "pino-pretty": "13.1.3",

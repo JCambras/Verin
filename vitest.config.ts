@@ -97,6 +97,7 @@ export default defineConfig({
       `${ROOT}/{vitest,vite}.config.*`,
       `${ROOT}/fixtures/corpus/**`,
       `${ROOT}/fixtures/golden/**`,
+      `${ROOT}/fixtures/policy/**`,
       `${ROOT}/scripts/corpus/**`,
       `${ROOT}/scripts/golden-cases.lib.ts`,
       `${ROOT}/config/demo/scenarios.yaml`,

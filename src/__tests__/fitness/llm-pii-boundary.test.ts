@@ -98,6 +98,37 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/contracts/decision-core/trigger.ts :: NormalizableResolvableBlocker.resolvingEvidence", why: "EvidenceRequest descriptors (kind + scope) naming what would unblock a decision - a request FOR evidence, never evidence itself" },
   { ref: "src/contracts/decision-core/trigger.ts :: ResolutionState.gaps.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
   { ref: "src/contracts/primitives/values.ts :: CatalogPrimitive.evidenceKindParameters", why: "the NAMES of a primitive's parameters that carry branded EvidenceKind values (v3 prompt 8, ADR-0039) - machine identifiers declaring what a binding consumes, never evidence contents" },
+  // Policy AST + interpreter (prompt 9, ADR-0053): the grammar and its trace
+  // speak ABOUT evidence exclusively through branded EvidenceKind
+  // discriminators (which KIND a predicate reads, which kinds would resolve a
+  // blocker) and registry descriptors (which paths a kind declares, at which
+  // types). None of these carries subject data. The types that DO carry
+  // evidence contents (PolicyEvaluationFacts, PolicyPrimitiveInvocation,
+  // PolicyEvaluationInput) are PIIBearing-marked, not escaped.
+  { ref: "src/contracts/decision-core/policy.ts :: ValueNode.evidenceKind", why: "a branded EvidenceKind discriminator naming which kind a value node reads - never the value" },
+  { ref: "src/contracts/decision-core/policy.ts :: PredicateNode.evidenceKind", why: "a branded EvidenceKind discriminator on exists/is_fresh/value arms - never evidence contents" },
+  { ref: "src/contracts/decision-core/policy.ts :: PredicateNode.nodes.evidenceKind", why: "the same discriminator reached through all/any children" },
+  { ref: "src/contracts/decision-core/policy.ts :: PredicateNode.node.evidenceKind", why: "the same discriminator reached through a not() child" },
+  { ref: "src/contracts/decision-core/policy.ts :: GrammarPredicateNode.evidenceKind", why: "a branded EvidenceKind discriminator on the grammar-plane predicate union" },
+  { ref: "src/contracts/decision-core/policy.ts :: GrammarPredicateNode.nodes.evidenceKind", why: "the same discriminator reached through all/any children" },
+  { ref: "src/contracts/decision-core/policy.ts :: GrammarPredicateNode.node.evidenceKind", why: "the same discriminator reached through a not() child" },
+  { ref: "src/contracts/decision-core/policy.ts :: PolicyEffect.evidenceKind", why: "which KIND require_evidence demands - a request FOR evidence, never evidence itself" },
+  { ref: "src/contracts/decision-core/policy.ts :: PolicyEffect.resolvingEvidenceKinds", why: "branded EvidenceKind list naming what would resolve a block effect" },
+  { ref: "src/contracts/decision-core/policy.ts :: GrammarPolicyRule.when.evidenceKind", why: "the predicate discriminator reached through a rule's when clause" },
+  { ref: "src/contracts/decision-core/policy.ts :: PolicyRule.when.evidenceKind", why: "the predicate discriminator reached through a rule's when clause" },
+  { ref: "src/contracts/decision-core/policy.ts :: GrammarPolicyAst.rules.when.evidenceKind", why: "the predicate discriminator reached through the document's rule list" },
+  { ref: "src/domain/policy/facts.ts :: MissingValue.evidenceKind", why: "which KIND failed to resolve - enriches a synthesized blocker's resolving set, carries no data" },
+  { ref: "src/domain/policy/facts.ts :: ValueResolution.missing.evidenceKind", why: "the same discriminator reached through a resolution miss" },
+  { ref: "src/domain/policy/facts.ts :: PredicateOutcome.missing.evidenceKind", why: "the same discriminator reached through an unevaluable outcome" },
+  { ref: "src/domain/policy/load.ts :: LoadedPolicyRule.when.evidenceKind", why: "the predicate discriminator on the loader's narrowed rule form" },
+  { ref: "src/domain/policy/load.ts :: LoadedPolicy.rules.when.evidenceKind", why: "the predicate discriminator reached through the loaded rule list" },
+  { ref: "src/domain/policy/registries.ts :: PolicyRegistries.evidence", why: "the pinned evidence-kind registry: kind ids mapped to declared path NAMES and value TYPES - schema metadata the load-time closure checks against, never snapshot contents" },
+  { ref: "src/domain/policy/registries.ts :: PolicyRegistries.primitives.evidenceKindParameters", why: "CatalogPrimitive.evidenceKindParameters (already escaped at its declaration) reached through the pinned primitive registry" },
+  { ref: "src/domain/policy/trace.ts :: TraceBlocker.resolvingEvidenceKinds", why: "branded EvidenceKind list naming what would resolve a trace blocker" },
+  { ref: "src/domain/policy/trace.ts :: EvidenceRequirementOutcome.evidenceKind", why: "which KIND a require_evidence effect demanded - satisfied/absent outcome, no contents" },
+  { ref: "src/domain/policy/trace.ts :: PolicyEvaluationTrace.evidenceRequirements", why: "the trace's list of requirement OUTCOMES (kind + absence + outcome + rule ids) - requests and results, never evidence values" },
+  { ref: "src/domain/policy/trace.ts :: PolicyEvaluationTrace.blockers.resolvingEvidenceKinds", why: "branded EvidenceKind list reached through the trace's blocker list" },
+  { ref: "src/domain/policy/trace.ts :: PolicyEvaluationTrace.evidenceRequirements.evidenceKind", why: "the requirement discriminator reached through the trace" },
 ];
 const ESCAPE_SET = new Set(NON_PII_ESCAPES.map((e) => e.ref));
 const OPAQUE_LLM_INGRESS_ESCAPES = [

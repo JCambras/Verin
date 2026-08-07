@@ -181,6 +181,55 @@ export type CatalogPrimitive = {
   readonly evaluate: (input: never) => PublishedFactRecord;
 };
 
+/**
+ * Every parameter name a parameter schema can accept, across union arms and
+ * through the `.readonly()` wrapper. The prompt-9 loader resolves
+ * `set_parameter` names through this walk, so a renamed parameter is an
+ * unknown-name load error rather than a dangling bind.
+ */
+export const parameterSchemaKeys = (
+  schema: z.ZodType,
+  out: Set<string> = new Set(),
+): Set<string> => {
+  if (schema instanceof z.ZodReadonly) {
+    return parameterSchemaKeys(schema.unwrap() as z.ZodType, out);
+  }
+  if (schema instanceof z.ZodObject) {
+    for (const key of Object.keys(schema.shape)) out.add(key);
+  } else if (schema instanceof z.ZodUnion || schema instanceof z.ZodDiscriminatedUnion) {
+    for (const option of schema.options as readonly z.ZodType[]) {
+      parameterSchemaKeys(option, out);
+    }
+  }
+  return out;
+};
+
+/**
+ * Whether a constant is admissible for one named parameter: it must parse
+ * under that parameter's declared subschema in at least one arm. Best-effort by
+ * design - the loader validates what is statically knowable, and the evaluator
+ * re-validates the fully resolved parameter object against the whole schema.
+ */
+export const parameterConstantAdmissible = (
+  schema: z.ZodType,
+  parameter: string,
+  value: unknown,
+): boolean => {
+  if (schema instanceof z.ZodReadonly) {
+    return parameterConstantAdmissible(schema.unwrap() as z.ZodType, parameter, value);
+  }
+  if (schema instanceof z.ZodObject) {
+    const subschema = (schema.shape as Record<string, z.ZodType | undefined>)[parameter];
+    return subschema === undefined ? false : subschema.safeParse(value).success;
+  }
+  if (schema instanceof z.ZodUnion || schema instanceof z.ZodDiscriminatedUnion) {
+    return (schema.options as readonly z.ZodType[]).some((option) =>
+      parameterConstantAdmissible(option, parameter, value),
+    );
+  }
+  return false;
+};
+
 /** All tenant-scoped references inside one primitive input must agree on the firm. */
 export const collectFirmIds = (
   refs: readonly { readonly firmId: string }[],

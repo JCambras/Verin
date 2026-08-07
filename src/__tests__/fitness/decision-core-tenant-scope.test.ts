@@ -11,6 +11,7 @@ import * as explanationSchemas from "@contracts/decision-core/explanation";
 import * as idSchemas from "@contracts/decision-core/ids";
 import * as ledgerSchemas from "@contracts/decision-core/ledger";
 import * as normalizationSchemas from "@contracts/decision-core/normalization";
+import * as policySchemas from "@contracts/decision-core/policy";
 import * as replayProvenanceSchemas from "@contracts/decision-core/replay-provenance";
 import * as serializationSchemas from "@contracts/decision-core/serialization";
 import * as triggerSchemas from "@contracts/decision-core/trigger";
@@ -47,6 +48,11 @@ const DECISION_CORE_SCHEMA_MODULES: readonly SchemaModule[] = [
   ["ids.ts", idSchemas],
   ["ledger.ts", ledgerSchemas],
   ["normalization.ts", normalizationSchemas],
+  // The policy grammar (prompt 9, ADR-0053) exports schemas over branded ids
+  // and closed vocabularies only - no scoped-reference collections - so it
+  // registers here for inventory completeness and the walker proves that
+  // claim rather than trusting it.
+  ["policy.ts", policySchemas],
   ["replay-provenance.ts", replayProvenanceSchemas],
   ["serialization.ts", serializationSchemas],
   ["trigger.ts", triggerSchemas],

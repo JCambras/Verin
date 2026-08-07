@@ -681,6 +681,26 @@
           "ref": "docs/adr/0039-primitive-vocabulary.md"
         }
       ]
+    },
+    {
+      "id": "policy-ast-closed",
+      "title": "Firm policy is a CLOSED, typed AST: the grammar admits exactly the ratified vocabulary (the reserved elapsed op stays grammar-only), the loader rejects unknown references and unprovable effect conflicts at load time, the interpreter is pure, domain-neutral, and fail-closed, and the grammar migration fixture stays digest-pinned (v3 prompt 9, v3 §6.1, invariant 16, ADR-0053)",
+      "status": "enforced",
+      "phase": "v3-p9",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/policy-ast.test.ts"
+        },
+        {
+          "type": "config",
+          "ref": "fixtures/policy/migration-1.0.0.json"
+        },
+        {
+          "type": "adr",
+          "ref": "docs/adr/0053-policy-ast-and-interpreter.md"
+        }
+      ]
     }
   ]
 }

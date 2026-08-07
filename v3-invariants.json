@@ -245,9 +245,27 @@
       "group": "policy",
       "gate": "E",
       "name": "Firm policy configuration contains no arbitrary executable code",
-      "status": "not-yet-active",
-      "activatesWhen": "the constrained policy AST + load-time validator land (Wave B prompt 9: closed vocabularies; eval/dynamic-import/SQL/shell/user-functions rejected at load time)",
-      "mechanisms": []
+      "status": "active",
+      "activatesWhen": "",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/policy-ast.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/unit/policy-load.test.ts"
+        },
+        {
+          "type": "file",
+          "ref": "src/contracts/decision-core/policy.ts"
+        },
+        {
+          "type": "file",
+          "ref": "src/domain/policy/load.ts"
+        }
+      ],
+      "notes": "Activated by prompt 9 (ADR-0053). Policy is a CLOSED, typed AST: strict Zod schemas admit exactly the ratified ValueNode/PredicateNode/PolicyEffect variants (grammar 1.0.0; 1.1.0 adds only the reserved 'elapsed' op, refused by the loader as grammar-only). loadPolicy performs the seven ratified checks against Map-backed pinned registries - unknown operators, paths, context keys, primitives, parameters, strategies, and templates are load errors; prototype-chain paths are simply unknown; constants are inert data, never interpreted; effect conflicts are rejected by the conservative disjointness prover, never resolved by rule order. The policy-ast fence pins the grammar closure, domain neutrality, purity (no clock/random/tz/locale), the migration fixture digests, and named-deferral reachability. The interpreter itself (src/domain/policy/evaluate.ts) is a pure four-phase function; determinism, totality, monotonicity, and fail-closed behavior are property-tested (fast-check families A-F in src/__tests__/unit/policy-properties.test.ts)."
     },
     {
       "id": 17,

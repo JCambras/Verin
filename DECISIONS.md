@@ -5662,3 +5662,43 @@ removed, and the shared budget stays the one measured against the machine CI act
 holding anything; a closure the fence cannot classify is the review decision it was built to force.
 **Revert path:** none - the trunk's ids are load-bearing and this branch's are the ones that moved. The
 tooling ceiling reverts to 8700 only by removing the trunk's ledger scripts from `scripts/**`.
+
+## D-178 - Prompt-9 policy AST and interpreter land as ratified, with the grammar in contracts and the interpreter in domain
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: ADR-0053, ADR-0054,
+waveb-design-ratification, ADR-0039/D-102, marriage-map C6, v3 §6.1/§6.2,
+invariant 16, charter #1/#4/#5
+
+The captain's Wave B ratification settled the design; this entry records the
+landing shape and the implementation choices it left open (all detailed in
+ADR-0053): the ratified grammar as strict versioned Zod schemas in
+`src/contracts/decision-core/policy.ts` with exactly three ratified deltas
+(constants-only `in` sets, the OQ-2 `reviewTemplateId` contract, the OQ-7
+reserved `elapsed` op at grammar 1.1.0, load-refused as grammar-only); the
+seven-check loader with 25 precise issue codes and the conservative
+disjointness prover (DNF cap 64, reject-when-unprovable, per the captain's
+explicit ruling); the pure four-phase evaluator with Kleene fail-closed
+semantics, commutative accumulation, and the fixed disposition lattice;
+day-or-finer integer freshness windows (calendar-granular and fractional
+windows refuse at load - richer temporal semantics are the `elapsed`
+activation's to ratify); stratification extended to `set_parameter` VALUE
+nodes (forced by the phase structure - a Phase-0 value cannot read a key no
+primitive has published); Phase 1 running the REAL catalog primitives over
+harness-assembled invocations, with content failures landing as unevaluable
+executions and only structural impossibilities refusing; and the migration
+fixture pinning version-stamp-free digests under both grammar versions.
+
+Invariant 16 activates (policy-ast fence + loader suite; the report shows 7
+active-pass, 0 active-fail). The evaluation input plane is PIIBearing-marked;
+the grammar's evidence-kind discriminators join the llm-pii-boundary reviewed
+escapes as identifiers-never-contents; the module's pure functions join the
+tenant-context port escapes with the foldDecisionProjection rationale. The
+vocabulary/purity scanners shared with the primitive-catalog fence moved
+verbatim into `_fence-utils`-style module `_module-scan.ts` so the two fences
+cannot drift. fast-check enters as a devDependency for property families A-F.
+
+**Alternatives rejected:** recorded in ADR-0053 (order-resolved conflicts,
+interim elapsed semantics, a TenantContext on the pure evaluator, loader-only
+scope).
+
+**Revert path:** ADR-0053's revert path; ADR-0054 restores the ceilings.

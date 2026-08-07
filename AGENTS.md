@@ -68,6 +68,17 @@ The decision-primitive vocabulary (v3 prompt 8, ADR-0039) lives at `src/contract
 stretching a primitive is a version bump through the declared-future list, never a quiet edit;
 prompts 9-10 consume the catalog (published keys -> AST context vocabulary; bindings -> config).
 
+The policy AST + interpreter (v3 prompt 9, ADR-0053) are the grammar in
+`src/contracts/decision-core/policy.ts` (CLOSED: exactly the ratified variants; grammar 1.0.0
+active, 1.1.0 adds only the reserved `elapsed` op, which the loader refuses as grammar-only) and
+the pure module `src/domain/policy/` (seven-check loader, conservative effect-conflict prover
+that REJECTS when disjointness is unprovable, four-phase fail-closed evaluator; no Date/Intl/IO -
+temporal math is integer-only in `temporal.ts`). Extending the grammar or the interpreter is a
+version bump re-proving the migration fixture (`fixtures/policy/migration-1.0.0.json`), never a
+quiet widening - the `policy-ast` fence pins the vocabulary, purity, domain neutrality, fixture
+digests, and named-deferral reachability (callers land at prompts 10/16/20). Invariant 16 is
+active on this module.
+
 ## Non-negotiable working rules (from the charter)
 
 - **Fence every invariant in the same PR that states it**, and prove it adversarially (inject a

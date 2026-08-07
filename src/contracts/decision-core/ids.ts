@@ -4,10 +4,10 @@
  * boundary without parsing through its schema, so a DecisionId can never be handed
  * where an IntentId is required - the tenant-scoping and replay guarantees start here.
  *
- * Scope discipline (charter #2): only the IDs the prompt-5 contract surface needs.
- * Deferred with their owning prompts: PolicyRuleId (9), LedgerEntryId +
- * ExecutionHandleId (7), InstructionKind / AllowedContextKey /
- * AllowedSelectionStrategy (9–10).
+ * Scope discipline (charter #2): only the IDs the shipped contract surfaces need.
+ * Prompt 9 landed PolicyRuleId, InstructionKind, AllowedContextKey, and
+ * AllowedSelectionStrategy (the policy-AST vocabulary; ADR-0053). Still deferred
+ * with their owning prompts: LedgerEntryId + ExecutionHandleId (7).
  */
 import { z } from "zod";
 
@@ -339,6 +339,27 @@ export type ConflictKey = z.infer<typeof ConflictKeySchema>;
 /** Kebab-case reason vocabulary (golden truth set: "cash-reserve-breach", "approval-stage-idle"). */
 export const ReasonCodeSchema = brandedString<"ReasonCode">();
 export type ReasonCode = z.infer<typeof ReasonCodeSchema>;
+
+// ── Policy-AST vocabulary (v3 §6.1; prompt 9, ADR-0053) ─────────────────────────
+
+export const PolicyRuleIdSchema = brandedString<"PolicyRuleId">();
+export type PolicyRuleId = z.infer<typeof PolicyRuleIdSchema>;
+
+/** Household-instruction taxonomy id (prompt 21 owns the full lifecycle vocabulary). */
+export const InstructionKindSchema = brandedString<"InstructionKind">();
+export type InstructionKind = z.infer<typeof InstructionKindSchema>;
+
+/**
+ * A context key admitted by the load-time closure: intent slots plus the keys
+ * published by the primitives a domain configuration binds (v3 §6.1 closed
+ * vocabularies; the registry that closes it lives in domain/policy).
+ */
+export const AllowedContextKeySchema = brandedString<"AllowedContextKey">();
+export type AllowedContextKey = z.infer<typeof AllowedContextKeySchema>;
+
+/** A selection strategy admitted per primitive by its own closed strategy list. */
+export const AllowedSelectionStrategySchema = brandedString<"AllowedSelectionStrategy">();
+export type AllowedSelectionStrategy = z.infer<typeof AllowedSelectionStrategySchema>;
 
 /** Evidence taxonomy id (golden truth set: "account-balance", "planned-withdrawals"). */
 export const EvidenceKindSchema = brandedString<"EvidenceKind">();
