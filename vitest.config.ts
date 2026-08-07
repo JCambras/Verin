@@ -37,28 +37,6 @@ export default defineConfig({
     setupFiles: ["./src/__tests__/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
-    // SERIAL EXECUTION IS HELD HERE, not in a shell string. Every invocation
-    // path - `pnpm test`, `pnpm test:fitness`, `pnpm test:watch`, a bare
-    // `vitest`, the run `scripts/v3-invariants.ts` spawns - inherits it, so
-    // none of them can run the timeouts below in a configuration this rationale
-    // calls dishonest. When the flags lived only in two `package.json` strings,
-    // `test:watch` picked up every fitness fence at default parallelism: the
-    // measured twelve-worker failure case, reachable by a documented command.
-    //
-    // That is not a way of hiding contention - it is the configuration in which
-    // these timeouts are honest. Seven fitness fences each construct an
-    // INDEPENDENT full-repository TypeScript program (`realSemanticProject`),
-    // and vitest isolates modules per file, so concurrency multiplies the
-    // program, not just the work. Measured on a 12-core machine: serially the
-    // whole fitness suite takes ~134s and its slowest single fence ~5s; at two
-    // workers that same fence takes ~16s, at four it crosses 20s and fails, and
-    // at twelve five files fail on timeouts while total CPU doubles. Anything
-    // above one worker buys wall-clock with flakiness. Serial is the honest
-    // setting, and the suite is kept parallel-SAFE regardless (no fixture is
-    // planted inside the repository tree, where it would race the fences that
-    // walk it).
-    maxWorkers: 1,
-    fileParallelism: false,
     // 20s is an ORDINARY-TEST budget, and it is left ordinary on purpose: no
     // fence gets a bespoke extension to survive a scheduler.
     testTimeout: 20000,
@@ -68,5 +46,48 @@ export default defineConfig({
     // parallel load while the same work passed in isolation - flakiness produced
     // by the config, not by the code under test.
     hookTimeout: 20000,
+    // SERIAL EXECUTION IS SCOPED TO THE TREE THAT NEEDS IT, and it is held here
+    // rather than in a shell string. `fitness` is the only suite whose files
+    // contend: several fences each construct an INDEPENDENT full-repository
+    // TypeScript program (`realSemanticProject`, `measuredCodeProject`,
+    // `generatorProject`), and vitest isolates modules per file, so concurrency
+    // multiplies the program, not just the work. Measured on a 12-core machine:
+    // serially the whole fitness suite takes ~134s and its slowest single fence
+    // ~5s; at two workers that same fence takes ~16s, at four it crosses 20s and
+    // fails, and at twelve five files fail on timeouts while total CPU doubles.
+    // Above one worker, fitness buys wall-clock with flakiness - so the honest
+    // setting for THAT tree is serial, and the timeouts above are honest under
+    // it. The unit and integration suites cause none of that contention and stay
+    // parallel; serializing them would be a wall-clock tax for a problem they do
+    // not have (D-142). Holding it in the config, not in two `package.json`
+    // strings, is what keeps `pnpm test:watch` and the run
+    // `scripts/v3-invariants.ts` spawns from picking fitness up at default
+    // parallelism - the measured twelve-worker failure case, reachable by a
+    // documented command. The fitness suite is kept parallel-SAFE regardless (no
+    // fixture is planted inside the repository tree, where it would race the
+    // fences that walk it).
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "fitness",
+          include: ["src/__tests__/fitness/**/*.{test,spec}.{ts,tsx}"],
+          maxWorkers: 1,
+          fileParallelism: false,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "app",
+          exclude: [
+            "node_modules/**",
+            ".next/**",
+            "e2e/**",
+            "src/__tests__/fitness/**",
+          ],
+        },
+      },
+    ],
   },
 });

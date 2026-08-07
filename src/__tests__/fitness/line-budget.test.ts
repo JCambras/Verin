@@ -83,16 +83,20 @@ const CEILINGS = {
   // root, and raises the ceiling to 8700 so a review round has room to correct
   // itself. That figure then went stale the same way, by 141 lines the two
   // review commits after it added, so D-142 KEEPS the ceiling at 8700 and
-  // records the re-measured 8587 - 113 lines of real headroom. Every raise
-  // above is a MEASURED ADR amendment recorded in ADR-0039, never a code
+  // records the re-measured 8587 - 113 lines of real headroom. D-143 keeps it
+  // at 8700 again and re-measures 8607 after the single-sourced real-derived
+  // intake filename rule - 93 lines of real headroom. Every raise above is a
+  // MEASURED ADR amendment recorded in ADR-0039, never a code
   // change - a ceiling raised without a measurement beside it is a ceiling
   // nobody is holding, and a measurement left stale is the same ceiling with a
   // number nobody re-took. Tooling is REPORTED SEPARATELY, never averaged into
   // a platform layer.
   //
-  // `src/__tests__/**` is NOT in any bucket: 37,529 lines that no ceiling
-  // holds. That gap is recorded honestly in D-142 under follow-up key
-  // `fu-corpus-test-tree-budget`, not left implicit here.
+  // `src/__tests__/**` is NOT in any bucket: 38,125 lines that no ceiling
+  // holds (37,529 before D-143 split the two oversized corpus fence files into
+  // per-topic modules, which costs one import header per file). That gap is
+  // recorded honestly in D-142 under follow-up key `fu-corpus-test-tree-budget`,
+  // not left implicit here.
   tooling: 8700,
 } as const;
 

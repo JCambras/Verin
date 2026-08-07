@@ -2,7 +2,9 @@ import type { Taxonomy } from "./defects";
 import type { GeneratedFile } from "./generate";
 import { REAL_DERIVED_DEFERRAL } from "./manifest";
 import {
+  canonicalIntakePath,
   caseSchemaVocabularyProblems,
+  isCanonicalIntakePath,
   loadRealDerivedDelivery,
   RealDerivedCaseSchema,
   realDerivedCaseProblems,
@@ -30,11 +32,11 @@ export function realDerivedCollectionProblems(
   let defects = 0;
   let controls = 0;
   for (const [index, file] of files.entries()) {
-    const canonicalPath = /^real-derived\/RD-[0-9a-f]{16}\.json$/.test(file.relPath);
+    const canonicalPath = isCanonicalIntakePath(file.relPath);
     const where = canonicalPath ? file.relPath : `real-derived delivery ${index + 1}`;
     const parsed = RealDerivedCaseSchema.safeParse(file.value);
     if (!parsed.success) continue;
-    const expected = `real-derived/${parsed.data.caseId}.json`;
+    const expected = canonicalIntakePath(parsed.data.caseId);
     if (file.relPath !== expected)
       problems.push(`${where}: canonical filename is "${expected}"`);
     if (parsed.data.corpusVersion !== corpusVersion)

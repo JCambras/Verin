@@ -8582,3 +8582,61 @@ primitives and the clock import move bound executable authorities, and no case's
 real-derived partition remains empty, and captain signoff remains pending.
 
 **Date:** 2026-08-06 (v3 prompt 11, review wrap-up).
+
+## one intake filename rule, read from the schema that owns the case id (ADR-0039)
+
+**Fence:** `src/__tests__/fitness/corpus-vocabulary-binding.test.ts` (companion of the
+corpus-provenance-split fence), over `scripts/corpus/scrub-contract.ts` and
+`scripts/corpus/real-derived.ts`.
+
+The canonical real-derived intake filename was written out three times: an identical inline
+`/^real-derived\/RD-[0-9a-f]{16}\.json$/` in the delivery loader and in the collection checker, and a
+third statement as `real-derived-case-schema.json`'s `caseId` pattern that the collection checker's
+`expected` path already depended on. Changing the naming rule in one place would leave the other
+disagreeing - the loader refusing a file the checker considers canonically named - and the divergence
+would surface only as a confusing double report. The rule is now derived once, from the schema:
+`intakeCaseIdPattern` reads `properties/caseId/pattern`, and `isCanonicalIntakePath` /
+`canonicalIntakePath` are the only statements of the filename shape.
+
+**Injection 1 - an unanchored schema pattern.** Changed the committed `caseId` pattern from
+`^RD-[0-9a-f]{16}$` to `RD-[0-9a-f]{16}` (a JSON Schema `pattern` is a SEARCH, so unanchored it matches
+`real-derived/x/RD-....json` too).
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected null not to be null
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:58:51
+```
+```
+  ✗ real-derived-case-schema.json: properties/caseId declares no anchored pattern to bind the canonical intake filename to
+corpus: 2 problem(s) - a hand-edited or drifted corpus cannot pass (charter #4)
+```
+
+A pattern that cannot be bound mints NO rule rather than a wider one: `isCanonicalIntakePath` returns
+false for every path and the gap is NAMED by `caseSchemaVocabularyProblems`, so a schema edit cannot
+silently widen the filenames intake accepts.
+
+**Injection 2 - a narrowed schema pattern.** Changed the same pattern to `^RD-[0-9a-f]{8}$` and left
+both call sites untouched.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected false to be true // Object.is equality
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:62:79
+```
+
+The delivery loader's filename rule moved WITH the case-id rule, which is the property the single source
+buys: there is no second copy left to disagree with the schema.
+
+**Standing companion:** `the canonical intake filename is READ FROM the schema caseId pattern, and an
+unbound pattern refuses every delivery` also proves the accepting direction (the committed schema binds a
+pattern, the canonical path round-trips, and a nested or upper-case name is refused), so the refusal
+cannot be satisfied by refusing everything.
+
+**Revert:** both injections were reverted; `fixtures/corpus/spec/real-derived-case-schema.json` hashes
+back to the digest the manifest binds. Canonical regeneration produced `corpusDigest`
+`e1cf309ca05f4df53f137029ff6a7c0af7372dad47eb20d708641d9b38382742` (the intake authority and the
+outcome-problem export move bound executable authorities, and no case's bytes changed), the real-derived
+partition remains empty, and captain signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, review round 18).

@@ -229,7 +229,7 @@ const treatmentFor = (
   return semanticTreatment(rule, selector(item));
 };
 
-function outcomeProblems(item: RealDerivedCase): string[] {
+export function realDerivedOutcomeProblems(item: RealDerivedCase): string[] {
   const outcomes = new Map(
     item.replayPayload.outcomes.map((outcome) => [
       outcome.defectClassId,
@@ -296,12 +296,6 @@ export function realDerivedSemanticDefects(
       ? [entry.id]
       : [];
   });
-}
-
-export function realDerivedOutcomeProblems(
-  item: RealDerivedCase,
-): string[] {
-  return outcomeProblems(item);
 }
 
 export function realDerivedSemanticContractProblems(

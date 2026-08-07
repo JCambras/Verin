@@ -48,10 +48,36 @@ const CASE_SCHEMA_FILE = "real-derived-case-schema.json";
 const caseJsonSchema = schemaFromSpec(CASE_SCHEMA_FILE);
 const replayJsonSchema = schemaFromSpec(REPLAY_SCHEMA_FILE);
 
+const INTAKE_PREFIX = "real-derived/";
+
+/** THE CANONICAL INTAKE FILENAME RULE IS THE CASE-ID RULE. A delivered case
+ * lives at its own case id, so the filename is READ FROM the delivered schema's
+ * `caseId` pattern rather than restated beside it, where the delivery loader and
+ * the collection checker could disagree while both report green. A missing,
+ * unanchored or unparseable pattern mints NO rule: no path is canonical and the
+ * gap is named below, never silently widening what intake accepts. */
+export const intakeCaseIdPattern = (schema: unknown): RegExp | null => {
+  const declared = (schema as { properties?: Record<string, { pattern?: unknown }> } | null)
+    ?.properties?.caseId?.pattern;
+  if (typeof declared !== "string" || !declared.startsWith("^") || !declared.endsWith("$")) return null;
+  try { return new RegExp(declared); } catch { return null; }
+};
+const CASE_ID_PATTERN = intakeCaseIdPattern(caseJsonSchema);
+
+export const canonicalIntakePath = (caseId: string): string => `${INTAKE_PREFIX}${caseId}.json`;
+
+export const isCanonicalIntakePath = (relPath: string, pattern = CASE_ID_PATTERN): boolean =>
+  pattern !== null && relPath.startsWith(INTAKE_PREFIX) && relPath.endsWith(".json") &&
+  pattern.test(relPath.slice(INTAKE_PREFIX.length, -".json".length));
+
 /** The intake vocabulary the delivered schema admits, checked against the
  * executable freshness authority rather than assumed equal to it. */
-export const caseSchemaVocabularyProblems = (): string[] =>
-  evidenceKindVocabularyProblems(caseJsonSchema, CASE_SCHEMA_FILE);
+export const caseSchemaVocabularyProblems = (): string[] => [
+  ...evidenceKindVocabularyProblems(caseJsonSchema, CASE_SCHEMA_FILE),
+  ...(CASE_ID_PATTERN === null
+    ? [`${CASE_SCHEMA_FILE}: properties/caseId declares no anchored pattern to bind the canonical intake filename to`]
+    : []),
+];
 
 function resolveSchema(
   schema: JsonSchemaNode,
@@ -331,15 +357,13 @@ export function realDerivedCaseProblems(
   const payloadProblem = (path: string, invalid: boolean): void => {
     reject(invalid, `replayPayload.${path} is inconsistent`);
   };
-  for (const problem of pendingActionProblems(parsed.data)) {
-    reject(true, problem);
-  }
-  for (const problem of realDerivedTopologyProblems(parsed.data)) {
-    reject(true, problem);
-  }
-  for (const problem of realDerivedOutcomeProblems(parsed.data)) {
-    reject(true, problem);
-  }
+  problems.push(
+    ...[
+      ...pendingActionProblems(parsed.data),
+      ...realDerivedTopologyProblems(parsed.data),
+      ...realDerivedOutcomeProblems(parsed.data),
+    ].map((problem) => `${where}: ${problem}`),
+  );
   const expectedThreshold =
     payload.request.amountMinor < payload.policy.thresholdMinor
       ? "below"
@@ -432,7 +456,7 @@ export function loadRealDerivedDelivery(
         : [];
   for (const [index, entry] of entries.entries()) {
     const delivery = `real-derived delivery ${index + 1}`;
-    if (!/^real-derived\/RD-[0-9a-f]{16}\.json$/.test(entry.relPath)) {
+    if (!isCanonicalIntakePath(entry.relPath)) {
       problems.push(
         `${delivery}: filename must be a top-level RD-<16 lowercase hex>.json`,
       );

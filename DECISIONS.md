@@ -5391,3 +5391,64 @@ wrapping up would either be set at today's number (failing the next fence a revi
 enough to hold nothing.
 **Revert path:** delete the two config lines and restore the `package.json` flags; the deferral is a
 journal entry with no code to revert.
+
+### D-143 · 2026-08-06 · reversible · The two oversized corpus fence files are split move-only; the intake filename rule gets one source; serialization is scoped to `fitness`
+
+Ruling key `corpus11a-opus-review-18`. Four review findings, resolved in the order they constrain each
+other.
+
+**The split.** `corpus-provenance-split.test.ts` (5,572 lines) and `corpus-determinism.test.ts` (2,221)
+were 11x and 4x the 500-line per-file ceiling this same PR extends to `scripts/**` - the discipline was
+being asked of the tooling tree and not of the tree doing the asking. Both are now per-topic files plus
+shared helper modules, and the split is MOVE-ONLY: every test block and every helper was relocated
+verbatim, with no edit to an assertion, a description, or an order within a block. Safety is proved by
+comparison, not by inspection: the sorted set of vitest `fullName`s before and after is IDENTICAL
+(200 + 42 = 242 tests), and the whole suite is green. Two consequences are structural, not cosmetic. Each
+new fence file must carry its own live `describe("detects…")` companion (the
+detection-is-not-verification meta fence reads per FILE), so the enforcement chunks travel with companion
+chunks rather than alone; and every new fitness file must be referenced by `charter-map.json`, so the
+14 new fences are registered in the same change that adds them.
+
+**Two helpers stayed above the ceiling, and are named rather than hidden.**
+`_corpus-nondeterminism-scan.ts` (1,038 lines, `bannedNondeterminismUses`) and, before the verbatim
+hoist of its pure AST readers, `blendingViolations` are single functions whose bodies cannot be divided
+without EDITING them, which the move-only constraint forbids. The blending detector's stateless readers
+moved to `_corpus-blending-ast.ts`, bringing both parts under 500; the nondeterminism scanner's helpers
+are mutually recursive over per-file mutable state, so the same move buys ~200 lines and leaves 830 - not
+compliance. It is left whole and reported here rather than split by a refactor this ruling excludes.
+
+**The D-142 deferral stands.** D-142's un-defer trigger names "a fence-file split, a shared-fixture
+extraction, or any change that moves fence code between trees" - which is exactly this change. The
+ruling holds `fu-corpus-test-tree-budget` as recorded and excludes tree-wide budgets from this round, so
+the trigger is recorded as FIRED-AND-HELD rather than quietly unmet. The measured figure moves with the
+tree: `src/__tests__/**` is 38,125 lines (37,529 before this split, which costs one import header per
+file), stated beside the ceilings that do hold.
+
+**One intake filename rule.** `/^real-derived\/RD-[0-9a-f]{16}\.json$/` appeared identically in the
+delivery loader and the collection checker, and a third time as the schema's `caseId` pattern the
+checker's `expected` path already used. `intakeCaseIdPattern` now reads that pattern from the delivered
+schema and `isCanonicalIntakePath`/`canonicalIntakePath` are its only statements. A pattern that is
+missing, mistyped, unanchored or unparseable binds NO rule: no path is canonical AND
+`caseSchemaVocabularyProblems` names the gap, so a schema edit cannot widen intake by accident. Proof log:
+"one intake filename rule, read from the schema that owns the case id".
+
+**Scope of serial execution.** D-142 moved `maxWorkers: 1` / `fileParallelism: false` into
+`vitest.config.ts` and, in doing so, applied a fitness-specific measurement to `pnpm test:unit`,
+`test:integration` and every other invocation. The measurement is about fences that each build an
+independent full-repository TypeScript program; the unit and integration suites cause none of it. Two
+vitest `projects` now hold the split - `fitness` (serial) and `app` (parallel) - so the constraint still
+cannot be lost by an invocation path, and the rationale comment states the scope it actually enforces.
+
+`realDerivedCaseProblems` appends its three delegated problem lists directly instead of funnelling
+already-formed strings through `reject(true, …)` three times, and `realDerivedOutcomeProblems` is the
+exported name of the function itself rather than a one-line alias for it.
+
+**Why:** a ceiling the authoring tree is exempt from is a ceiling nobody believes, a rule written three
+times is three places to drift while every gate reports green, and a measurement applied outside the tree
+it was taken on is a wall-clock tax for a problem that tree does not have.
+**Alternatives:** split by editing the two indivisible detectors into smaller functions - rejected, the
+ruling requires move-only and a behaviour-preserving refactor of an AST detector is not a review
+wrap-up; budget `src/__tests__/**` now - rejected, see D-142 and the ruling.
+**Revert path:** the split is mechanical (concatenate the per-topic files back, drop the helper modules,
+remove the 14 `charter-map.json` refs); the intake authority and the vitest projects are each a single
+file's change.
