@@ -88,8 +88,16 @@ export const resolveContextKey = (
 
 /**
  * Resolves a value node over the facts plane plus the accumulated context
- * (intent slots and primitive-published facts). Published facts can be
- * structured; a non-scalar reached in a value position is a miss, not a crash.
+ * (intent slots and primitive-published facts).
+ *
+ * EVERY source is scalar-checked at runtime, not just the published-fact one
+ * that is structured by declaration. `PolicyEvaluationFacts` is a plain type
+ * the harness assembles - nothing validates its shape here - and a structured
+ * value that slipped into a declared path would compare by reference in `eq`,
+ * fall into the unorderable branch under every ordering comparator, and never
+ * match an `in` member: three different silent not-fires. A non-scalar in a
+ * value position is therefore the same miss everywhere, which is what makes
+ * the enclosing rule unevaluable and synthesizes its blocker.
  */
 export const resolveValue = (
   node: ValueNode,
@@ -104,13 +112,17 @@ export const resolveValue = (
       const ref = `evidence:${node.evidenceKind}:${node.path}`;
       if (snapshot === undefined) return missing(ref, node.evidenceKind);
       if (!Object.hasOwn(snapshot.values, node.path)) return missing(ref, node.evidenceKind);
-      return { state: "resolved", value: snapshot.values[node.path]! };
+      const value = snapshot.values[node.path];
+      if (!isScalar(value)) return missing(`${ref} (non-scalar)`, node.evidenceKind);
+      return { state: "resolved", value };
     }
     case "household_instruction": {
       const values = facts.instructions.get(node.instructionKind);
       const ref = `instruction:${node.instructionKind}:${node.path}`;
       if (values === undefined || !Object.hasOwn(values, node.path)) return missing(ref);
-      return { state: "resolved", value: values[node.path]! };
+      const value = values[node.path];
+      if (!isScalar(value)) return missing(`${ref} (non-scalar)`);
+      return { state: "resolved", value };
     }
     case "context": {
       const key = node.key as string;

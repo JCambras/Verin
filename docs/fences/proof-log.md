@@ -9094,3 +9094,57 @@ diagnosis.
 test suite are green on the reverted tree.
 
 **Date:** 2026-08-07 (v3 prompt 9 review round three).
+
+---
+
+## Prompt-9 review-round-four semantics - D-182
+
+Four injections against the corrections themselves, each run on the fixed tree with the fix backed
+out and reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - the non-scalar guard removed from the evidence and instruction arms**: deleted both
+`if (!isScalar(value)) return missing(...)` lines from `resolveValue`, leaving the guard on the
+`context` arm only (the pre-fix asymmetry).
+
+**Observed failure (`src/__tests__/unit/policy-evaluate.test.ts:311`):**
+```
+× a STRUCTURED value at a declared path misses in EVERY source, never reading not-fired
+- "unevaluable"
++ "not-fired"
+```
+(both rules read plain `not-fired` on structured data: `eq` degraded to reference equality and the
+`in` member could not match, so a restrictive rule silently did not fire.)
+
+**Injection B - the reserved reason-code namespace check neutralized**: replaced the
+`RESERVED_REASON_CODE_PREFIXES.find(...)` lookup in `loadPolicy` with a constant `undefined`.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:761`):**
+```
+× REFUSES an authored code that shadows a namespace the evaluator synthesizes into
+expected true to be false
+```
+(a policy authoring `blockerCode: "rule-unevaluable:rule-x"` loaded cleanly, and its blocker would
+then merge with the platform's synthesized entry for that very rule.)
+
+**Injection C - the grammar-schema memoization removed**: deleted the cache read from
+`policyAstSchemaFor`, restoring a full rebuild per call.
+
+**Observed failure (`src/__tests__/unit/policy-migration.test.ts:78`):**
+```
+× the factory hands out ONE schema per version, never a rebuild per load
+expected ZodReadonly{...} to be ZodReadonly{...} // Object.is equality
+```
+
+**Injection D - the depth reporting dropped from the structural-cap refusal**: replaced the
+`nests ${overDeep} levels deep` message fragment with a depth-free one.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:131`):**
+```
+× REFUSES a document nested past the structural cap instead of overflowing the stack
+expected 'a node exceeds the 64-level structura…' to match /nests \d+ levels deep/
+```
+
+**Reverted:** all four injections reverted immediately; `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
+and the full test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round four).

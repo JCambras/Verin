@@ -260,6 +260,73 @@ describe("evaluatePolicy - fail-closed totality", () => {
     expect(trace.disposition.kind).toBe("proceed");
   });
 
+  it("a STRUCTURED value at a declared path misses in EVERY source, never reading not-fired", () => {
+    // The facts plane is a plain harness-assembled type with no runtime
+    // validation. A structured value reaching a comparison degrades `eq` to
+    // reference equality and lands every ordering comparator in its type
+    // guard, and `in` can never match a member - three ways for a restrictive
+    // rule to read not-fired on malformed data. It is the same miss the
+    // published-fact source has always produced.
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        {
+          id: "reads-evidence",
+          when: {
+            op: "compare",
+            comparator: "eq",
+            left: { kind: "evidence", evidenceKind: "reservation", path: "amountMinor" },
+            right: { kind: "constant", value: 0 },
+          },
+          effects: [{ kind: "prohibit", prohibitionCode: "never-reached-evidence" }],
+        },
+        {
+          id: "reads-instruction",
+          when: {
+            op: "in",
+            value: {
+              kind: "household_instruction",
+              instructionKind: "standing-preference",
+              path: "rank",
+            },
+            set: [{ kind: "constant", value: 1 }],
+          },
+          effects: [{ kind: "prohibit", prohibitionCode: "never-reached-instruction" }],
+        },
+      ],
+    });
+    const base = worldFacts();
+    const evidence = new Map(base.evidence);
+    evidence.set("reservation", {
+      observedAt: "2026-08-01T09:00:00.000Z",
+      values: { amountMinor: { amountMinor: 0 } as unknown as number },
+    });
+    const facts: PolicyEvaluationFacts = {
+      ...base,
+      evidence,
+      instructions: new Map([["standing-preference", { rank: [1] as unknown as number }]]),
+    };
+    const trace = unwrap(evaluatePolicy(policy, { facts, invocations: [] }, registries));
+    expect(trace.ruleOutcomes.map((outcome) => [outcome.ruleId, outcome.outcome])).toEqual([
+      ["reads-evidence", "unevaluable"],
+      ["reads-instruction", "unevaluable"],
+    ]);
+    expect(trace.ruleOutcomes[0]!.missing).toEqual([
+      "evidence:reservation:amountMinor (non-scalar)",
+    ]);
+    expect(trace.ruleOutcomes[1]!.missing).toEqual([
+      "instruction:standing-preference:rank (non-scalar)",
+    ]);
+    expect(trace.disposition).toEqual({
+      kind: "blocked",
+      blockerCodes: ["rule-unevaluable:reads-evidence", "rule-unevaluable:reads-instruction"],
+    });
+    // The prohibitions did NOT fire: unresolvable data never silently escalates
+    // and never silently relaxes.
+    expect(trace.prohibitions).toEqual([]);
+  });
+
   it("require_evidence(block) blocks exactly when the kind is absent", () => {
     const policy = load({
       schemaVersion: "1.0.0",

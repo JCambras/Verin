@@ -37,6 +37,7 @@ export type PolicyLoadIssueCode =
   | "unknown-strategy"
   | "unknown-approval-template"
   | "template-kind-mismatch"
+  | "reserved-reason-namespace"
   | "type-mismatch"
   | "non-comparable-value"
   | "unorderable-comparison"

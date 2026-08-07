@@ -5675,7 +5675,7 @@ ADR-0053): the ratified grammar as strict versioned Zod schemas in
 `src/contracts/decision-core/policy.ts` with exactly three ratified deltas
 (constants-only `in` sets, the OQ-2 `reviewTemplateId` contract, the OQ-7
 reserved `elapsed` op at grammar 1.1.0, load-refused as grammar-only); the
-seven-check loader with 25 precise issue codes and the conservative
+seven-check loader with its precise accumulated issue codes and the conservative
 disjointness prover (DNF cap 64, reject-when-unprovable, per the captain's
 explicit ruling); the pure four-phase evaluator with Kleene fail-closed
 semantics, commutative accumulation, and the fixed disposition lattice;
@@ -5902,3 +5902,48 @@ rather than falling back to all writers (the general fail-closed rule subsumes i
 defeated by a schema shape the detector did not anticipate).
 
 **Revert path:** D-180's revert path; each correction is independent of the others.
+
+## D-182 - Prompt-9 review round four: the synthesized reason-code namespaces are reserved at load, and every fact source fails closed on a non-scalar
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-178, D-179, D-180, D-181, ADR-0053,
+v3 §6.1, invariant 12/16, charter #4, ruling p9-blocker-namespace
+
+**The evaluator owns its blocker-code namespaces, and the loader proves it.** Trace blockers key
+on the code alone, and the evaluator synthesizes two namespaces into that key space:
+`rule-unevaluable:<ruleId>` and `evidence-required:<kind>`. `ReasonCodeSchema` is
+`brandedString()` with no shape to refuse a collision, so a firm could author a `blockerCode` of
+literally `rule-unevaluable:rule-x` - and the authored entry would MERGE with the platform's, one
+trace blocker pooling firm rule ids and resolving kinds with a platform unevaluability, one
+`blockerCodes` entry standing for both. Fail-closed safety was never at stake; attribution and
+resolvability were. Per the firmmate/captain ruling, option (a) LOAD-TIME RESERVATION: the two
+prefixes are declared ONCE in `trace.ts` next to the constructors that mint them
+(`RESERVED_REASON_CODE_PREFIXES`, `ruleUnevaluableBlockerCode`, `evidenceRequiredBlockerCode`), so
+the loader's refusal and the evaluator's synthesis read the same source and cannot drift, and
+`loadPolicy` refuses an authored `block`/`prohibit` code under either prefix as
+`reserved-reason-namespace`, naming the rule, the code, and the prefix. Option (b), keying
+blockers by (source, code), was explicitly rejected: it changes the trace shape and would move
+every pinned digest for an attribution problem a load-time refusal solves outright.
+
+**A non-scalar is a miss in EVERY value source, not just the published one.** `resolveValue`
+scalar-checked only the `context` arm, where published facts are structured by declaration. But
+`PolicyEvaluationFacts` is a plain harness-assembled type with no runtime validation anywhere in
+the module, and a structured value at a declared evidence or instruction path flowed straight into
+`compareScalars` (where `eq` degrades to reference equality and every ordering comparator lands in
+its type guard) and into `memberOf` (where no member can match) - three different ways for a
+restrictive rule to read `not-fired` on malformed data, in a module whose whole posture is that an
+unresolvable read lands unevaluable and synthesizes a blocker. All three sources now apply the
+same guard.
+
+Also folded in: `policyAstSchemaFor` is memoized per grammar version over the closed
+`POLICY_GRAMMAR_VERSIONS` list (the factory is a pure function of that list, and it was rebuilding
+the lazy predicate union, its discriminator map, the six effect schemas, and two refinements on
+every load); and the pre-parse depth walk carries an integer depth instead of materializing a path
+array per node, since the path was read only by the refusal message and the walk runs over every
+node of every document. Neither moves trace bytes - the pinned migration digests are unchanged.
+
+**Alternatives rejected:** a `ReasonCode` schema-level shape refusal (the brand is deliberately
+opaque, and the reservation belongs to the evaluator that mints into it, not to the id
+vocabulary); a runtime validator over `PolicyEvaluationFacts` (assembly is prompt 14-16's, per
+D-102 - the interpreter's job is to fail closed on what arrives, which it now does uniformly).
+
+**Revert path:** D-181's revert path; each correction is independent of the others.

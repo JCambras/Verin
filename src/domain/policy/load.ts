@@ -11,7 +11,9 @@
  *     (grammar 1.1.0 parses it; nothing evaluates it until its activating
  *     prompt lands semantics - OQ-7);
  *  2. reference closure - unknown evidence kind/path, instruction kind/path,
- *     context key, primitive, parameter, strategy, or approval template;
+ *     context key, primitive, parameter, strategy, or approval template, plus
+ *     the reason-code namespaces the evaluator reserves for its synthesized
+ *     fail-closed blockers, which an authored code may not mint into;
  *  3. type check - comparator operand agreement, ordering only over orderable
  *     types, homogeneous `in` sets, day-or-finer freshness windows,
  *     `set_parameter` constants against the primitive's own schema;
@@ -41,6 +43,7 @@ import {
 } from "@contracts/decision-core/policy";
 import type { PolicyRegistries } from "./registries";
 import { DNF_DISJUNCT_CAP, predicateDnf, proveDisjoint } from "./conflict";
+import { RESERVED_REASON_CODE_PREFIXES } from "./trace";
 import {
   checkEffects,
   checkPredicate,
@@ -97,24 +100,36 @@ const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
  */
 const MAX_DOCUMENT_NESTING_DEPTH = 64;
 
-/** The path of the first node deeper than the cap, or null when none is. */
-const tooDeeplyNested = (root: unknown): readonly (string | number)[] | null => {
-  const pending: { readonly value: unknown; readonly path: readonly (string | number)[] }[] = [
-    { value: root, path: [] },
-  ];
+/**
+ * The depth of the first node deeper than the cap, or null when none is. The
+ * stack carries a plain integer rather than a materialized path: the walk runs
+ * over EVERY node of every document on the happy path, where a per-node path
+ * array is an allocation nothing ever reads, and the refusal below has no rule
+ * to name anyway (it happens before the parse).
+ */
+const tooDeeplyNested = (root: unknown): number | null => {
+  const pending: { readonly value: unknown; readonly depth: number }[] = [{ value: root, depth: 0 }];
   while (pending.length > 0) {
-    const { value, path } = pending.pop()!;
-    if (path.length > MAX_DOCUMENT_NESTING_DEPTH) return path;
+    const { value, depth } = pending.pop()!;
+    if (depth > MAX_DOCUMENT_NESTING_DEPTH) return depth;
     if (Array.isArray(value)) {
-      value.forEach((item, index) => pending.push({ value: item, path: [...path, index] }));
+      for (const item of value) pending.push({ value: item, depth: depth + 1 });
     } else if (typeof value === "object" && value !== null) {
       for (const key of Object.keys(value)) {
-        pending.push({ value: (value as Record<string, unknown>)[key], path: [...path, key] });
+        pending.push({ value: (value as Record<string, unknown>)[key], depth: depth + 1 });
       }
     }
   }
   return null;
 };
+
+/** The authored reason code an effect carries, if it carries one at all. */
+const authoredReasonCode = (effect: PolicyEffect): string | null =>
+  effect.kind === "block"
+    ? effect.blockerCode
+    : effect.kind === "prohibit"
+      ? effect.prohibitionCode
+      : null;
 
 export const loadPolicy = (
   document: unknown,
@@ -130,7 +145,7 @@ export const loadPolicy = (
     return err([
       {
         code: "grammar-parse",
-        message: `${overDeep.join(".")}: nests deeper than the ${MAX_DOCUMENT_NESTING_DEPTH}-level structural cap; a predicate every load and evaluation walk can carry is bounded here, before any of them recurse`,
+        message: `a node nests ${overDeep} levels deep, past the ${MAX_DOCUMENT_NESTING_DEPTH}-level structural cap; a predicate every load and evaluation walk can carry is bounded here, before any of them recurse`,
       },
     ]);
   }
@@ -185,6 +200,24 @@ export const loadPolicy = (
     checkPredicate(rule, registries, report);
     checkEffects(rule, registries, report);
     keyReads.set(rule.id, primitiveKeyReads(rule, registries));
+
+    // Check 2, namespace half: `ReasonCodeSchema` is an opaque brand with no
+    // shape to refuse a collision at parse time, and the evaluator keys its
+    // blockers on the code alone - so an authored code inside a synthesized
+    // namespace would merge with a platform entry instead of standing beside
+    // it. Ownership is therefore proven at admission.
+    for (const effect of rule.effects) {
+      const authored = authoredReasonCode(effect);
+      if (authored === null) continue;
+      const reserved = RESERVED_REASON_CODE_PREFIXES.find((prefix) => authored.startsWith(prefix));
+      if (reserved !== undefined) {
+        report({
+          code: "reserved-reason-namespace",
+          ruleId: rule.id,
+          message: `rule ${rule.id}: reason code '${authored}' is inside the reserved '${reserved}' namespace the evaluator synthesizes its fail-closed blockers under; choose a code outside it`,
+        });
+      }
+    }
 
     // Check 6 - stratification (OQ-6 strict form).
     if (rule.effects.some(isConfigEffect)) {

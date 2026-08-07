@@ -33,6 +33,8 @@ import {
 import {
   compareCanonical,
   compareProhibitions,
+  evidenceRequiredBlockerCode,
+  ruleUnevaluableBlockerCode,
   sortUniqueStrings,
   type ApprovalRequirementOutcome,
   type EvidenceRequirementOutcome,
@@ -115,7 +117,7 @@ export const evaluatePolicy = (
       outcome: "unevaluable",
       missing: sortUniqueStrings(missing),
     });
-    addBlocker(blockers, `rule-unevaluable:${rule.id}`, sortUniqueStrings(evidenceKinds), rule.id);
+    addBlocker(blockers, ruleUnevaluableBlockerCode(rule.id), sortUniqueStrings(evidenceKinds), rule.id);
   };
 
   /**
@@ -249,7 +251,12 @@ export const evaluatePolicy = (
             ruleIds,
           });
           if (!present && effect.absence === "block") {
-            addBlocker(blockers, `evidence-required:${effect.evidenceKind}`, [effect.evidenceKind], rule.id);
+            addBlocker(
+              blockers,
+              evidenceRequiredBlockerCode(effect.evidenceKind),
+              [effect.evidenceKind],
+              rule.id,
+            );
           }
           if (!present && effect.absence === "specialist_review") {
             const template = registries.approvalTemplates.get(effect.reviewTemplateId!);

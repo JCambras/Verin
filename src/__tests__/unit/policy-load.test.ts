@@ -125,6 +125,10 @@ describe("loadPolicy - totality on deep and hostile documents", () => {
       if (loaded.ok) throw new Error("unreachable");
       expect(codesOf(loaded.error)).toEqual(["grammar-parse"]);
       expect(loaded.error[0]!.message).toContain("structural cap");
+      // The refusal reports the depth it reached, never a materialized path:
+      // the walk runs over every node of every document, and a per-node path
+      // array is an allocation only this one message would ever read.
+      expect(loaded.error[0]!.message).toMatch(/nests \d+ levels deep/);
     }
   });
 
@@ -742,5 +746,57 @@ describe("loadPolicy - stratification and self-conflict", () => {
       ]),
       "self-conflict",
     );
+  });
+});
+
+describe("loadPolicy - the synthesized reason-code namespaces are RESERVED", () => {
+  const ruleWith = (effects: readonly unknown[]) =>
+    policyWith([{ id: "r", when: { op: "all", nodes: [] }, effects }]);
+
+  it("REFUSES an authored code that shadows a namespace the evaluator synthesizes into", () => {
+    // Blockers key on the code alone, so this authored code would MERGE with
+    // the platform's own entry for rule-x - one trace blocker pooling firm
+    // rule ids with a platform unevaluability, and one disposition code for
+    // both. ReasonCodeSchema is an opaque brand, so admission owns this.
+    const shadowsUnevaluable = expectIssues(
+      ruleWith([{ kind: "block", blockerCode: "rule-unevaluable:rule-x", resolvingEvidenceKinds: [] }]),
+      "reserved-reason-namespace",
+    );
+    expect(shadowsUnevaluable[0]!.ruleId).toBe("r");
+    expect(shadowsUnevaluable[0]!.message).toContain("rule-unevaluable:rule-x");
+    expect(shadowsUnevaluable[0]!.message).toContain("rule-unevaluable:");
+
+    // `prohibit` mints into the same namespace and is refused identically.
+    expectIssues(
+      ruleWith([{ kind: "prohibit", prohibitionCode: "evidence-required:account-balance" }]),
+      "reserved-reason-namespace",
+    );
+    // The reservation is a PREFIX, so it also covers a code that merely starts
+    // with one - the merge does not care what follows the colon.
+    expectIssues(
+      ruleWith([{ kind: "block", blockerCode: "evidence-required:anything", resolvingEvidenceKinds: [] }]),
+      "reserved-reason-namespace",
+    );
+  });
+
+  it("leaves every legitimate code alone, including near misses", () => {
+    for (const code of [
+      "cash-reserve-breach",
+      "rule-unevaluable",
+      "evidence-required",
+      "unevaluable:rule-x",
+      "firm-rule-unevaluable:rule-x",
+    ]) {
+      const blocked = loadPolicy(
+        ruleWith([{ kind: "block", blockerCode: code, resolvingEvidenceKinds: [] }]),
+        registries,
+      );
+      expect(blocked.ok, code).toBe(true);
+      const prohibited = loadPolicy(
+        ruleWith([{ kind: "prohibit", prohibitionCode: code }]),
+        registries,
+      );
+      expect(prohibited.ok, code).toBe(true);
+    }
   });
 });

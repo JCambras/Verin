@@ -55,10 +55,14 @@ independently in every policy document, exactly as the DecisionInputBundle alrea
 ### Load-time gate (the seven checks, design §3.2)
 
 `loadPolicy(document, registries)` returns a `LoadedPolicy` or an accumulated typed issue list -
-25 precise codes, never a silent fallback. Paths, context keys, primitives, parameters,
+26 precise codes, never a silent fallback. Paths, context keys, primitives, parameters,
 strategies, and templates resolve against Map-backed pinned registries, which is what makes
 injection INERT: `__proto__` is simply an unknown path, and an executable string is data nothing
-ever interprets. The effect-conflict rule (§6.1 normative) uses the conservative syntactic
+ever interprets. Closure covers the reason-code NAMESPACE too: `ReasonCodeSchema` is an opaque
+brand, so an authored `blockerCode`/`prohibitionCode` inside a prefix the evaluator synthesizes
+its fail-closed blockers under (`RESERVED_REASON_CODE_PREFIXES`) is refused as
+`reserved-reason-namespace` rather than silently merging with a platform blocker at evaluation.
+The effect-conflict rule (§6.1 normative) uses the conservative syntactic
 disjointness prover: predicates normalize to DNF (capped at 64 branches - exceeding the cap is
 itself a load error), every cross-rule conjunction pair must carry a contradiction on some shared
 variable, and an unprovable pair is REJECTED naming both rules, the target, and why. Sound by

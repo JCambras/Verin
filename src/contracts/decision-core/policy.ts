@@ -377,14 +377,7 @@ const policyRuleSchemaFor = (version: PolicyGrammarVersion): z.ZodType<GrammarPo
     })
     .readonly();
 
-/**
- * The grammar parse for one declared version. This is deliberately a FACTORY
- * keyed by the closed version list: an unknown schemaVersion has no schema to
- * parse under, which is itself the load failure (never a silent fallback).
- */
-export const policyAstSchemaFor = (
-  version: PolicyGrammarVersion,
-): z.ZodType<GrammarPolicyAst> =>
+const buildPolicyAstSchema = (version: PolicyGrammarVersion): z.ZodType<GrammarPolicyAst> =>
   z
     .strictObject({
       schemaVersion: z.literal(version),
@@ -405,6 +398,30 @@ export const policyAstSchemaFor = (
       });
     })
     .readonly() as unknown as z.ZodType<GrammarPolicyAst>;
+
+/** One built schema per version of the CLOSED version list - see below. */
+const builtAstSchemas = new Map<PolicyGrammarVersion, z.ZodType<GrammarPolicyAst>>();
+
+/**
+ * The grammar parse for one declared version. This is deliberately a FACTORY
+ * keyed by the closed version list: an unknown schemaVersion has no schema to
+ * parse under, which is itself the load failure (never a silent fallback).
+ *
+ * MEMOIZED per version, because the factory is a pure function of a closed
+ * list: building the graph means rebuilding the lazy predicate union, its
+ * discriminator map, the six effect schemas with their refinements, and the
+ * AST refinement - work that used to repeat on EVERY `loadPolicy`. Zod schemas
+ * hold no per-parse state, so a shared instance parses identically.
+ */
+export const policyAstSchemaFor = (
+  version: PolicyGrammarVersion,
+): z.ZodType<GrammarPolicyAst> => {
+  const cached = builtAstSchemas.get(version);
+  if (cached !== undefined) return cached;
+  const built = buildPolicyAstSchema(version);
+  builtAstSchemas.set(version, built);
+  return built;
+};
 
 /**
  * The reserved-op declaration, READ at runtime rather than restated as a case

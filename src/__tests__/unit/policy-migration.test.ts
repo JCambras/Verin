@@ -70,6 +70,34 @@ describe("policy AST migration fixture (grammar 1.0.0 -> 1.1.0)", () => {
     expect(policyAstSchemaFor("1.1.0").safeParse(under110).success).toBe(true);
   });
 
+  it("the factory hands out ONE schema per version, never a rebuild per load", () => {
+    // The version list is closed and the factory is a pure function of it, so
+    // rebuilding the lazy predicate union, its discriminator map, and the
+    // refinements on every `loadPolicy` was pure repeated work. Memoization is
+    // only sound because the versions stay distinct instances.
+    expect(policyAstSchemaFor("1.0.0")).toBe(policyAstSchemaFor("1.0.0"));
+    expect(policyAstSchemaFor("1.1.0")).toBe(policyAstSchemaFor("1.1.0"));
+    expect(policyAstSchemaFor("1.0.0")).not.toBe(policyAstSchemaFor("1.1.0"));
+    // The shared instance still refuses what its own version refuses: the
+    // reserved op parses at 1.1.0 and nowhere else, however many times it runs.
+    const elapsed = {
+      ...under110,
+      rules: [
+        {
+          id: "r",
+          when: { op: "elapsed", value: { kind: "constant", value: 1 }, minimumAge: "P30D" },
+          effects: [{ kind: "prohibit", prohibitionCode: "never" }],
+        },
+      ],
+    };
+    for (let repeat = 0; repeat < 3; repeat += 1) {
+      expect(policyAstSchemaFor("1.1.0").safeParse(elapsed).success).toBe(true);
+      expect(
+        policyAstSchemaFor("1.0.0").safeParse({ ...elapsed, schemaVersion: "1.0.0" }).success,
+      ).toBe(false);
+    }
+  });
+
   it("loads to an identical canonical form under both grammars, matching the pin", () => {
     const digest100 = canonicalDigest(loadedProjection(asDeclared));
     const digest110 = canonicalDigest(loadedProjection(under110));

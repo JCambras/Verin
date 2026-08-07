@@ -101,6 +101,8 @@ const PORT_ESCAPES = new Set([
   "src/domain/policy/temporal.ts :: isCanonicalTimestamp.<call>",
   "src/domain/policy/trace.ts :: compareCanonical.<call>",
   "src/domain/policy/trace.ts :: compareProhibitions.<call>",
+  "src/domain/policy/trace.ts :: evidenceRequiredBlockerCode.<call>",
+  "src/domain/policy/trace.ts :: ruleUnevaluableBlockerCode.<call>",
   "src/domain/policy/trace.ts :: sortUniqueStrings.<call>",
 ]);
 

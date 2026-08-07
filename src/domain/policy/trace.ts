@@ -51,6 +51,33 @@ export type TraceBlocker = {
   readonly ruleIds: readonly string[];
 };
 
+/**
+ * The namespaces the evaluator SYNTHESIZES its fail-closed blocker codes in,
+ * and the constructors that mint them - one declaration, so the loader's
+ * refusal of an authored code inside them cannot drift from what is actually
+ * synthesized. Blockers key on code alone, so an authored `blockerCode` of
+ * `rule-unevaluable:rule-x` would MERGE with the platform's entry for that very
+ * rule: one trace blocker pooling a firm's rule ids and resolving kinds with a
+ * platform unevaluability, and one `blockerCodes` entry for both. Reserving the
+ * prefixes at load is what keeps "policy said so" and "the platform could not
+ * evaluate this" distinguishable (ruling p9-blocker-namespace).
+ */
+const RULE_UNEVALUABLE_PREFIX = "rule-unevaluable:";
+const EVIDENCE_REQUIRED_PREFIX = "evidence-required:";
+
+export const RESERVED_REASON_CODE_PREFIXES: readonly string[] = [
+  RULE_UNEVALUABLE_PREFIX,
+  EVIDENCE_REQUIRED_PREFIX,
+];
+
+/** The blocker a rule that could not be evaluated contributes. */
+export const ruleUnevaluableBlockerCode = (ruleId: string): string =>
+  `${RULE_UNEVALUABLE_PREFIX}${ruleId}`;
+
+/** The blocker a fired requirement for an absent evidence kind contributes. */
+export const evidenceRequiredBlockerCode = (evidenceKind: string): string =>
+  `${EVIDENCE_REQUIRED_PREFIX}${evidenceKind}`;
+
 export type EvidenceRequirementOutcome = {
   readonly evidenceKind: string;
   readonly absence: "block" | "specialist_review";
