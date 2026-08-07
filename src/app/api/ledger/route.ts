@@ -85,7 +85,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const body = {
     verification: {
       ok: verification.ok,
-      levels: verification.levels,
+      levels: verification.levels.map((entry) => ({
+        level: entry.level,
+        ok: entry.ok,
+        entriesChecked: entry.entriesChecked,
+        reason: entry.reason,
+      })),
     },
     total: verification.entriesStored,
     decisionsTotal,

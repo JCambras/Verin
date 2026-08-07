@@ -63,29 +63,54 @@ describe("decision ledger contract", () => {
   });
 
   it("dispatches frozen ledger and replay-source codecs by recorded version", () => {
-    const event = allLedgerEventSamples()[0]!;
-    const ledger = parseRecordedLedgerEvent(
-      event.type,
-      "1.1.0",
-      "1.0.0",
-      event,
-    );
-    expect(ledger.ok).toBe(true);
+    // The write path validates with the LIVE schema, the read path with the PINNED
+    // one. A frozen arm narrower than its contract anywhere - a dropped optional, a
+    // lost union member - is write-accepted and read-rejected, which reports the whole
+    // tenant chain BROKEN with no forward repair. Byte equality against the live
+    // canonicalization is what proves the two accept the same value, per variant.
+    for (const event of allLedgerEventSamples()) {
+      const parsed = parseRecordedLedgerEvent(
+        event.type,
+        "1.1.0",
+        "1.0.0",
+        event,
+      );
+      expect(parsed.ok ? null : parsed.reason).toBe(null);
+      const canonical = canonicalJson(event as unknown as JsonValue);
+      expect(canonical.ok).toBe(true);
+      if (!parsed.ok || !canonical.ok) continue;
+      expect(parsed.canonicalBytes).toBe(canonical.value);
+      expect(parsed.event.type).toBe(event.type);
+    }
+
     const input = decisionRecordingInput();
-    const bundle = parseRecordedReplaySource(
-      "bundle",
-      "1.7.0",
-      "1.0.0",
-      input.inputBundle,
-    );
-    expect(bundle.ok && bundle.hashPreimage?.hashKind).toBe(
-      "decision-input-bundle",
-    );
+    const sources = [
+      ["evidence", input.evidenceSnapshots[0]!, null],
+      ["bundle", input.inputBundle, "decision-input-bundle"],
+      ["decision", input.decisionRecord, "decision-record"],
+    ] as const;
+    for (const [kind, value, hashKind] of sources) {
+      const parsed = parseRecordedReplaySource(kind, "1.7.0", "1.0.0", value);
+      expect(parsed.ok ? null : parsed.reason).toBe(null);
+      const canonical = canonicalJson(value as unknown as JsonValue);
+      expect(canonical.ok).toBe(true);
+      if (!parsed.ok || !canonical.ok) continue;
+      expect(parsed.canonicalBytes).toBe(canonical.value);
+      expect(parsed.hashPreimage?.hashKind ?? null).toBe(hashKind);
+    }
+
+    const sample = allLedgerEventSamples()[0]!;
     expect(parseRecordedLedgerEvent(
-      event.type,
+      sample.type,
       "1.2.0",
       "1.0.0",
-      event,
+      sample,
+    ).ok).toBe(false);
+    expect(parseRecordedReplaySource(
+      "bundle",
+      "1.8.0",
+      "1.0.0",
+      input.inputBundle,
     ).ok).toBe(false);
   });
 

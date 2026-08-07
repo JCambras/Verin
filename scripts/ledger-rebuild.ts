@@ -16,6 +16,7 @@ import { logLevelFor } from "../src/contracts/errors";
 import { getConfig } from "../src/infrastructure/config";
 import { classifyErrorMetadata } from "../src/infrastructure/observability/safe-reason";
 import { decisionLedgerVacuity } from "./decision-ledger-vacuity";
+import { errorMessage } from "./error-message";
 
 async function main(): Promise<void> {
   const db = await createDb();
@@ -65,6 +66,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
-  process.stderr.write(`ledger-rebuild error: ${e instanceof Error ? e.message : String(e)}\n`);
+  process.stderr.write(`ledger-rebuild error: ${errorMessage(e)}\n`);
   process.exit(1);
 });

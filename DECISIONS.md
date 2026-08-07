@@ -4210,3 +4210,38 @@ D-122, D-123.
 **Revert path:** ADR-0050 and the pin revert together with the call's formatting; the D-123
 correction, the script comment, and the runbook note are documentation and independently
 revertible; the hook budget is one line in `vitest.config.ts`.
+
+### D-128 · 2026-08-06 · reversible · A pinned codec is only proven by the values it must accept
+
+**Every frozen arm is proven against the live contract, not against its own bytes.** The write
+path validates with `LedgerEntrySchema`; the read path - L2 and every replay - dispatches through
+the pinned `recordedLedgerV1_1` JSON Schema. The dispatch test exercised one of the sixteen
+variants and one bundle, and the digest test is self-referential: it proves the frozen bytes have
+not changed, never that they correspond to what the live schema accepts. An arm narrower than its
+contract anywhere - a dropped optional, a lost union member - appends fine and then fails L2 on
+read, which reports the ENTIRE tenant chain BROKEN with `/app/ledger` withholding every entry and
+no forward repair. The test now loops all sixteen event variants and all three replay-source
+classes through `parseRecordedLedgerEvent` / `parseRecordedReplaySource` and asserts byte equality
+against the live canonicalization, so a narrowing is caught at the contract, not in production.
+
+**A script's last catch is the one an operator reads.** `scripts/ledger-rebuild.ts` printed
+`e instanceof Error ? e.message : String(e)`, but `appError()` returns a frozen plain object, so
+the refusal that reaches this handler first - `createDb`'s `STORE_UNAVAILABLE` naming
+`VERIN_STORE_DRIVER=pglite` (D-006), the path D-124 just documented as the shipped production
+behavior - printed `[object Object]`. It routes through `scripts/error-message.ts` like every
+sibling script; the per-org handler's `classifyErrorMetadata` refusal is unchanged.
+
+**`brokenAtSequence` leaves the register contract** (charter #5, the same branch D-123 took for
+`correlationId` and the redundant `entriesChecked`/`entriesStored`). `LedgerVerificationLevel`
+extends `ChainVerdict`, so passing `verification.levels` through wholesale serialized a field no
+view model declares and no surface renders - and it disclosed the exact sequence at which
+integrity broke in the very response that deliberately withholds every entry on failed
+verification. The route maps the four `LedgerLevelView` fields explicitly, the way `decisions` and
+`entries` already do; `satisfies` cannot catch this, because excess-property checking does not
+reach a non-fresh nested value.
+
+**Why:** a codec test that only ever parses the first sample proves dispatch, not acceptance, and
+a diagnostic that prints `[object Object]` is the one line the operator most needs.
+**Relates to:** ADR-0039, ADR-0044, ADR-0045, D-006, D-116, D-118, D-123, D-124; charter #4, #5.
+**Revert path:** each is independent - the test loop, one import plus one line in
+`ledger-rebuild.ts`, and one explicit map in the ledger route.

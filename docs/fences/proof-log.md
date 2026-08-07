@@ -6418,3 +6418,33 @@ that adapter must satisfy.
 **Revert:** documentation and a comment; the shipped verdict is untouched.
 
 **Date:** 2026-08-06 (review corrections, D-131).
+---
+
+## A frozen codec arm narrower than its contract is now caught (D-132)
+
+**Invariant:** what the live `LedgerEntrySchema` accepts on the write path, the pinned
+`recordedLedgerV1_1` codec accepts on the read path - for every one of the sixteen variants and
+all three replay-source classes, byte-for-byte.
+
+**Injection:** dropped the optional `evidenceSnapshotRef` property from the `StatusObserved` arm
+of the frozen ledger JSON Schema in `src/infrastructure/ledger/recorded-schemas.ts` - the exact
+"dropped optional" narrowing the invariant guards, since the arm carries
+`additionalProperties: false`.
+
+```text
+FAIL src/__tests__/unit/decision-ledger-contract.test.ts >
+  dispatches frozen ledger and replay-source codecs by recorded version
+AssertionError: expected 'payload does not match its recorded e…' to be null
+```
+
+That is L2's own refusal reason, surfaced at the contract instead of on a stored chain. The
+failure lands on `StatusObserved`, and the eleven variants before it still passed under the
+injected schema - which is precisely why the previous single-sample form of this test
+(`allLedgerEventSamples()[0]`, `DecisionRecorded`) stayed green against the same narrowing. The
+content-digest test failed alongside it, as a byte pin must, but it is self-referential: it
+detects that the bytes moved, never that they moved somewhere the live contract disagrees with.
+
+**Revert:** the schema file was restored from a pre-injection copy and `git diff` reports it
+unchanged; the suite passes 9/9.
+
+**Date:** 2026-08-06 (review corrections, D-132).
