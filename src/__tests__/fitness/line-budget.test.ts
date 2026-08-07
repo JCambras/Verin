@@ -79,17 +79,23 @@ import { join, relative } from "node:path";
 // evidence and instruction fact arms, the per-version grammar-schema
 // memoization, the integer-depth nesting walk) added 80 domain and 17 contracts
 // lines without re-taking either number. ADR-0054 is amended a fourth time with
-// figures RE-MEASURED on the tree as this correction lands: contracts 6,584 and
+// figures RE-MEASURED on the tree as that correction lands: contracts 6,584 and
 // domain 4,328 against UNCHANGED 6,650/4,350 ceilings - 66 and 22 lines of real
-// headroom. The ceilings do not move, because a measurement that stays inside
-// its envelope is not a reason to raise one; but 22 lines is the narrowest this
-// domain ceiling has run, so the next change to `src/domain/**` reads as the
-// measured ADR-0054 amendment it now is rather than as a code change.
-// Re-measure in any commit that
+// headroom, named rather than banked, so the next change to `src/domain/**`
+// reads as the measured ADR-0054 amendment it now is rather than as a code
+// change. The SIXTH review round is that change: making key-shaping parameters
+// non-writable added the catalog declaration in contracts and, in domain, the
+// load check plus `load-effects.ts` - the module the 500-line PER-FILE ceiling
+// forced, since `load-checks.ts` sat at 495 with all of `checkEffects` in it.
+// That is one module header and one import block bought to keep the check where
+// it belongs instead of folding code to fit (ADR-0050), and it is why the
+// domain ceiling moves. ADR-0054 is amended a fifth time to domain 4,500 against
+// a re-measured 4,400 (100 lines of correction room), contracts unmoved at 6,650
+// against 6,602. Re-measure in any commit that
 // changes a layer; a raise is always a measured ADR amendment.
 const CEILINGS = {
-  contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,584 measured)
-  domain: 4350, // ADR-0054, on the prompt-9 policy interpreter module (4,328 measured)
+  contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
+  domain: 4500, // ADR-0054, on the prompt-9 policy interpreter module (4,400 measured)
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
@@ -142,8 +148,9 @@ const CEILINGS = {
   // number nobody re-took. Tooling is REPORTED SEPARATELY, never averaged into
   // a platform layer.
   //
-  // `src/__tests__/**` is NOT in any bucket: 49,014 lines that no ceiling
-  // holds (45,362 before the prompt-9 policy suites, property families, and
+  // `src/__tests__/**` is NOT in any bucket: 49,365 lines that no ceiling
+  // holds (49,014 before the key-shaping load tests, property family G, and the
+  // catalog-declaration fence check; 45,362 before the prompt-9 policy suites, property families, and
   // policy-ast fence landed beneath it; 37,529 before D-173 split the two oversized corpus fence files into
   // per-topic modules, which costs one import header per file; 38,125 before
   // the non-determinism scanner was decomposed into per-concern modules under

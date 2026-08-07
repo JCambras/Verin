@@ -5988,3 +5988,60 @@ one).
 
 **Revert path:** restore the round-three figures in `src/__tests__/fitness/line-budget.test.ts`
 and ADR-0054; the ceilings are unchanged, so there is nothing else to undo.
+
+## D-184 - Prompt-9 review round six: key-shaping parameters are configuration, not policy
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-102, D-104, D-178, D-181, D-183, ADR-0039,
+ADR-0053, ADR-0054, charter #1/#3/#4, ruling `p9-key-shaping-params`
+
+**A primitive's published context keys are DERIVED from its configured parameters, once, at load -
+so a policy write to one of those parameters silently desynchronizes the closed vocabulary from the
+runtime key space.** `candidate-selection.publishedKeys` builds every key from `subjectSlot`,
+`evidence-reconciliation` from `factKind`, `net-availability` from `claimEvidenceKinds`, and
+`restriction-screen` from `restrictionKinds`; all four are ordinary parameters, so
+`parameterSchemaKeys` yielded them and `parameterConstantAdmissible` accepted a write. The
+consequences run past a bad read: rules reading the derived key miss and land unevaluable,
+`published-key-escape` cannot see it because `producedKeys` derives from the same shifted call, and
+two invocations that differ only in that parameter collapse onto one canonical identity - a
+`duplicate-invocation` or `published-key-collision` REFUSAL driven by admissible policy content,
+which `trace.ts` reserves for structural impossibilities.
+
+**The catalog now declares it, and the declaration is the single source of truth.** Every entry
+carries `keyShapingParameters`, and `loadPolicy` refuses a `set_parameter` naming one with
+`key-shaping-parameter-not-writable` (rule, primitive, and parameter named). The check runs BEFORE
+constant admissibility, so an author is told the write is illegal rather than that the value is
+wrong. The `primitive-catalog` fence reads each `publishedKeys` body with ts-morph and requires the
+declaration to equal the parameters it actually reads - the metadata cannot go stale, and a body
+this fence cannot read statically (destructured, computed, whole-object) fails closed rather than
+scanning as "reads nothing". A new property family (G) proves the runtime consequence over EVERY
+parameter of every catalog primitive: no write the loader accepts changes the key set an invocation
+publishes.
+
+**Prompt 10 must not re-open this.** A binding chooses the key scope; a rule may not move it.
+Recorded here and in `docs/primitive-rationale.md` so the binding model inherits the constraint
+rather than rediscovering it.
+
+**Also folded in:** `fast-check` is exact-pinned to `4.9.0`. It was the only floating specifier in a
+manifest where all 37 other dependencies are exact, and its generator and shrinker behavior is what
+the property families registered against v3 invariant 16 are proven with - a silent minor bump
+changes what the invariant means.
+
+**The per-file ceiling forced a split, and the split is the one D-183 named.** `load-checks.ts` sat
+at 495 lines with all of `checkEffects` in it, so the new check had nowhere to land.
+`load-effects.ts` now holds every check that reads an effect, which reunites check 2's
+reserved-namespace half (stranded in `load.ts` by the same ceiling) with the walk it belongs to and
+drops the second iteration over `rule.effects`. That costs one module header and one import block;
+ADR-0054 is amended a fifth time to domain 4,500 against a re-measured 4,400, contracts unmoved at
+6,650 against 6,602 - the raise pays for code, not for formatting (ADR-0050).
+
+**Alternatives rejected:** detecting the desync at evaluation time (it is detectable only as the
+refusal the module contract forbids for policy content, and the trace would carry no rule to blame);
+deriving the shaping set from the AST at load instead of declaring it (the loader would depend on
+source introspection at runtime - the fence is where an AST claim belongs, and it holds the
+declaration honest instead); leaving the parameters writable and re-deriving the registry per
+resolved write (Phase 0 runs after the vocabulary must already be closed, which is what OQ-6
+stratification exists to guarantee).
+
+**Revert path:** drop `keyShapingParameters` from `CatalogPrimitive` and the six entries, delete
+`checkKeyShapingWrite` and its issue code, fold `load-effects.ts` back into `load-checks.ts` and
+`load.ts`, restore ADR-0054's round-five figures and the `^4.9.0` fast-check range.

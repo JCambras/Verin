@@ -9148,3 +9148,43 @@ expected 'a node exceeds the 64-level structura…' to match /nests \d+ levels d
 and the full test suite are green on the reverted tree.
 
 **Date:** 2026-08-07 (v3 prompt 9 review round four).
+
+## Prompt-9 review-round-six semantics - D-184
+
+Two injections against the correction itself, each run on the fixed tree with the fix backed out
+and reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - the key-shaping declaration dropped**: replaced
+`keyShapingParameters: ["subjectSlot"]` on `candidateSelection` with `[]`, the pre-fix state where
+the catalog says nothing about which parameters shape published keys.
+
+**Observed failure (`src/__tests__/fitness/primitive-catalog.test.ts:344`):**
+```
+× enforces: keyShapingParameters is exactly what each publishedKeys body reads
+candidate-selection: publishedKeys reads [subjectSlot] but declares keyShapingParameters []
+```
+(the declaration is read off the real `publishedKeys` body, so a stale one cannot survive; the same
+injection also fails the runtime property at
+`src/__tests__/unit/policy-properties.test.ts:545` -
+`Counterexample: [["candidate-selection","subjectSlot"],"other-slot"]` - proving the fence and the
+property are not restating one another's assumption.)
+
+**Injection B - the load check neutralized**: made `checkKeyShapingWrite` return `false`
+unconditionally, so the loader validates the parameter name and the constant but not writability.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:831`):**
+```
+× REFUSES a write to every parameter the catalog declares key-shaping
+expected true to be false
+```
+(`set_parameter(candidate-selection, subjectSlot, "other-slot")` loaded cleanly; the run would then
+publish `selection.other-slot.*` while the derived registry still declared
+`selection.source-account.*`. Two further assertions fail with it:
+`policy-load.test.ts:847`, where the diagnosis degrades to `parameter-constant-invalid` and points
+an author at the constant rather than at the write, and `policy-load.test.ts:873`, the
+catalog-derived sweep that covers every declared key-shaping parameter.)
+
+**Reverted:** both injections reverted immediately; `pnpm typecheck`, `pnpm lint`, `pnpm knip`, and
+the full test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round six).

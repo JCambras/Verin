@@ -1,7 +1,9 @@
 /**
- * The per-rule closure and type checks behind `loadPolicy` (prompt 9,
- * ADR-0053; ratified design §3.2 checks 2-4, plus the walks checks 6-7 rest
- * on). Split from load.ts under the per-file ceiling. Every lookup goes
+ * The PREDICATE-side closure and type checks behind `loadPolicy` (prompt 9,
+ * ADR-0053; ratified design §3.2 checks 2-4), plus the walks checks 6-7 rest
+ * on and the value-type resolver both halves share. Split from load.ts under
+ * the per-file ceiling, and split again from load-effects.ts (which holds every
+ * check that reads an effect) along the same ceiling. Every lookup goes
  * through the pinned registries' Maps - a `__proto__` path is simply unknown,
  * and constants are inert data the checks validate but never interpret.
  */
@@ -11,10 +13,6 @@ import type {
   PredicateNode,
   ValueNode,
 } from "@contracts/decision-core/policy";
-import {
-  parameterConstantAdmissible,
-  parameterSchemaKeys,
-} from "@contracts/primitives/values";
 import {
   ORDERABLE_VALUE_TYPES,
   type PolicyRegistries,
@@ -34,6 +32,7 @@ export type PolicyLoadIssueCode =
   | "unknown-context-key"
   | "unknown-primitive"
   | "unknown-parameter"
+  | "key-shaping-parameter-not-writable"
   | "unknown-strategy"
   | "unknown-approval-template"
   | "template-kind-mismatch"
@@ -77,8 +76,10 @@ type ResolvedOperand = { readonly type: ResolvedType; readonly isConstant: boole
  * Resolves a value node's declared type against the registries, recording
  * closure issues as it goes. Returns null when the reference itself failed
  * (the closure issue already names it, so type checking stops for that node).
+ * Shared with the effect-side checks in load-effects.ts, so a `set_parameter`
+ * value and a `compare` operand are typed by ONE resolver.
  */
-const resolveValueType = (
+export const resolveValueType = (
   node: ValueNode,
   registries: PolicyRegistries,
   ruleId: string,
@@ -318,124 +319,6 @@ export const checkPredicate = (
         return;
     }
   });
-};
-
-export const checkEffects = (
-  rule: PolicyRule,
-  registries: PolicyRegistries,
-  report: IssueSink,
-): void => {
-  for (const effect of rule.effects) {
-    switch (effect.kind) {
-      case "require_evidence": {
-        if (!registries.evidence.has(effect.evidenceKind)) {
-          report({
-            code: "unknown-evidence-kind",
-            ruleId: rule.id,
-            message: `rule ${rule.id}: require_evidence references unknown evidence kind '${effect.evidenceKind}'`,
-          });
-        }
-        if (effect.reviewTemplateId !== undefined) {
-          const template = registries.approvalTemplates.get(effect.reviewTemplateId);
-          if (template === undefined) {
-            report({
-              code: "unknown-approval-template",
-              ruleId: rule.id,
-              message: `rule ${rule.id}: unknown review template '${effect.reviewTemplateId}'`,
-            });
-          } else if (template.kind !== "specialist_review") {
-            report({
-              code: "template-kind-mismatch",
-              ruleId: rule.id,
-              message: `rule ${rule.id}: review template '${effect.reviewTemplateId}' is kind '${template.kind}', not specialist_review`,
-            });
-          }
-        }
-        break;
-      }
-      case "require_approval": {
-        if (!registries.approvalTemplates.has(effect.templateId)) {
-          report({
-            code: "unknown-approval-template",
-            ruleId: rule.id,
-            message: `rule ${rule.id}: unknown approval template '${effect.templateId}'`,
-          });
-        }
-        break;
-      }
-      case "block": {
-        for (const kind of effect.resolvingEvidenceKinds) {
-          if (!registries.evidence.has(kind)) {
-            report({
-              code: "unknown-evidence-kind",
-              ruleId: rule.id,
-              message: `rule ${rule.id}: block resolving evidence kind '${kind}' is unknown`,
-            });
-          }
-        }
-        break;
-      }
-      case "set_parameter": {
-        const primitive = registries.primitives.get(effect.primitiveId);
-        if (primitive === undefined) {
-          report({
-            code: "unknown-primitive",
-            ruleId: rule.id,
-            message: `rule ${rule.id}: unknown primitive '${effect.primitiveId}'`,
-          });
-          break;
-        }
-        if (!parameterSchemaKeys(primitive.parameterSchema).has(effect.parameter)) {
-          report({
-            code: "unknown-parameter",
-            ruleId: rule.id,
-            message: `rule ${rule.id}: primitive '${effect.primitiveId}' declares no parameter '${effect.parameter}'`,
-          });
-          break;
-        }
-        if (effect.value.kind === "constant") {
-          if (!parameterConstantAdmissible(primitive.parameterSchema, effect.parameter, effect.value.value)) {
-            report({
-              code: "parameter-constant-invalid",
-              ruleId: rule.id,
-              message: `rule ${rule.id}: constant ${JSON.stringify(effect.value.value)} is not admissible for '${effect.primitiveId}.${effect.parameter}'`,
-            });
-          }
-        } else {
-          const type = resolveValueType(effect.value, registries, rule.id, report);
-          if (type === "reference" || type === "structured") {
-            report({
-              code: "non-comparable-value",
-              ruleId: rule.id,
-              message: `rule ${rule.id}: a ${type} value cannot feed set_parameter '${effect.primitiveId}.${effect.parameter}'`,
-            });
-          }
-        }
-        break;
-      }
-      case "select_candidate": {
-        const primitive = registries.primitives.get(effect.primitiveId);
-        if (primitive === undefined) {
-          report({
-            code: "unknown-primitive",
-            ruleId: rule.id,
-            message: `rule ${rule.id}: unknown primitive '${effect.primitiveId}'`,
-          });
-          break;
-        }
-        if (!primitive.allowedStrategies.includes(effect.strategy)) {
-          report({
-            code: "unknown-strategy",
-            ruleId: rule.id,
-            message: `rule ${rule.id}: strategy '${effect.strategy}' is not in '${effect.primitiveId}' allowed strategies [${primitive.allowedStrategies.join(", ")}]`,
-          });
-        }
-        break;
-      }
-      case "prohibit":
-        break;
-    }
-  }
 };
 
 // ── Walks that checks 6-7 and phase classification rest on ──────────────────────

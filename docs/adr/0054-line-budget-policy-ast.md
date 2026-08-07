@@ -19,7 +19,7 @@ never a code change.
 
 ## Decision
 
-Raise the contracts ceiling from 6,110 to 6,650 and the domain ceiling from 1,650 to 4,350.
+Raise the contracts ceiling from 6,110 to 6,650 and the domain ceiling from 1,650 to 4,500.
 Infrastructure stays 7,840 and presentation stays 6,000.
 
 Measured with the fence's own algorithm on the tree AS IT LANDS - that is, after the prompt-9
@@ -33,7 +33,9 @@ three: the discriminated predicate union, the load-time structural nesting bound
 rejection implication, the total evidence-requirement comparator, and the structural
 context-key-collision refusal; round four: the load-time reservation of the synthesized
 blocker-code namespaces, the fail-closed non-scalar guard on the evidence and instruction fact
-arms, the per-version grammar-schema memoization, and the integer-depth nesting walk). The
+arms, the per-version grammar-schema memoization, and the integer-depth nesting walk; round six:
+the catalog's key-shaping parameter declaration, the load check that refuses a write to one, and
+the `load-effects.ts` split the per-file ceiling forced to hold it). The
 figures first recorded here were taken before round one and
 went stale by 20 lines in contracts and 13 in domain, which is exactly what the line-budget fence
 header calls a ceiling with a number nobody re-took. Each round since has re-taken them rather
@@ -41,26 +43,33 @@ than paying for the correction by deleting documentation or folding readable cod
 lines (ADR-0050); round three left the domain ceiling with TWO lines of headroom, which is the
 ADR-0033 failure mode itself, so both ceilings moved to carry real correction room. Round four
 then went stale the same way - it added 80 domain and 17 contracts lines without re-taking either
-number - so the table below is RE-MEASURED on the tree as that correction lands. The ceilings do
-not move again: 6,584 and 4,328 are both inside 6,650 and 4,350, and a measurement that stays
-inside its envelope is not a reason to raise one. The 22 lines left on domain are named here, not
-banked - the next change under `src/domain/**` is a measured amendment to this ADR:
+number - so round five RE-MEASURED at 6,584 and 4,328 and left both ceilings alone, naming the
+22 remaining domain lines rather than banking them.
+
+The SIXTH review round spent them. Making key-shaping parameters non-writable
+(ruling `p9-key-shaping-params`) added the catalog declaration in contracts and, in domain, the
+load check plus the module the 500-line per-file ceiling forced: `load-checks.ts` sat at 495 with
+the whole of `checkEffects` in it, so the new check had nowhere to land. `load-effects.ts` is the
+seam D-183 predicted - every check that reads an effect, including check 2's reserved-namespace
+half, which the per-file ceiling had stranded in `load.ts`. That costs one module header and one
+import block, which is why the domain ceiling moves rather than the code shrinking to fit
+(ADR-0050). Amended a fifth time: domain 4,500 against a re-measured 4,400, contracts unmoved at
+6,650 against 6,602.
 
 | Layer | Measured | Ceiling | Headroom |
 |---|---:|---:|---:|
-| contracts | 6,584 | 6,650 | 66 |
-| domain | 4,328 | 4,350 | 22 |
+| contracts | 6,602 | 6,650 | 48 |
+| domain | 4,400 | 4,500 | 100 |
 | infrastructure | 7,786 | 7,840 | 54 |
 
-What the raises pay for: `src/contracts/decision-core/policy.ts` (450 lines - the ratified
+What the raises pay for: `src/contracts/decision-core/policy.ts` (449 lines - the ratified
 grammar as strict versioned Zod schemas) plus the `parameterSchemaKeys` /
-`parameterConstantAdmissible` helpers in `src/contracts/primitives/values.ts`; and the nine-file
-`src/domain/policy/` module (2,747 lines: load 302, load-checks 495, conflict 384, facts 293,
-evaluate 444, evaluate-primitives 377, registries 156, temporal 121, trace 175). The per-file
-ceiling forced the load/load-checks and evaluate/evaluate-primitives splits, which cost two
-module headers - the same trade D-175 recorded for the corpus intake module. It also kept the
-namespace half of load check 2 in `load.ts` rather than in `load-checks.ts`, which sits five lines
-under the 500-line per-file ceiling.
+`parameterConstantAdmissible` helpers and the `keyShapingParameters` declaration in
+`src/contracts/primitives/values.ts` (262); and the ten-file `src/domain/policy/` module (2,809
+lines: load 277, load-checks 377, load-effects 212, conflict 383, facts 292, evaluate 443,
+evaluate-primitives 376, registries 155, temporal 120, trace 174). The per-file ceiling forced the
+load/load-checks, load-checks/load-effects, and evaluate/evaluate-primitives splits, which cost
+three module headers - the same trade D-175 recorded for the corpus intake module.
 
 The headroom is bounded correction room for the review rounds ahead (the ADR-0033 lesson), not
 growth room. Prompt 10's domain-configuration schema and prompt 16's evaluator completion will

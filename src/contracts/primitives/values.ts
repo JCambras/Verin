@@ -174,6 +174,18 @@ export type CatalogPrimitive = {
   readonly inputSchema: z.ZodType;
   /** Parameter names whose values are evidence kinds - how a binding declares what it consumes. */
   readonly evidenceKindParameters: readonly string[];
+  /**
+   * Parameter names `publishedKeys` reads to SHAPE the published key space -
+   * key names or their declared types. The prompt-9 context-key vocabulary is
+   * derived once, at load, from the CONFIGURED parameters, so a policy
+   * `set_parameter` on one of these would publish a namespace the loader never
+   * closed over: every rule reading the derived key would miss, and two
+   * invocations sharing the write would collapse onto one identity. The loader
+   * therefore refuses such a write, and this declaration is its single source
+   * of truth (the `primitive-catalog` fence proves it against what each
+   * `publishedKeys` body actually reads, so it cannot go stale).
+   */
+  readonly keyShapingParameters: readonly string[];
   /** Closed per-primitive strategy vocabulary; empty for non-selection primitives. */
   readonly allowedStrategies: readonly string[];
   readonly publishedKeys: (parameters: never) => PublishedKeyMap;

@@ -66,6 +66,7 @@ const EXPECTED_DOMAIN_FILES = [
   "evaluate.ts",
   "facts.ts",
   "load-checks.ts",
+  "load-effects.ts",
   "load.ts",
   "registries.ts",
   "temporal.ts",

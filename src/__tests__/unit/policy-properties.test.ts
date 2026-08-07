@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
 import { PRIMITIVE_SET_VERSION } from "@contracts/primitives/catalog";
+import { parameterSchemaKeys } from "@contracts/primitives/values";
 import { unwrap } from "@contracts/result";
 import { loadPolicy } from "@domain/policy/load";
 import { evaluatePolicy } from "@domain/policy/evaluate";
@@ -24,7 +25,11 @@ import {
  *  E. most-restrictive monotonicity - adding a cumulative-effect rule never
  *     weakens the disposition or the authority mode;
  *  F. fail-closed - an unguarded read of absent evidence yields blocked,
- *     never a silent proceed.
+ *     never a silent proceed;
+ *  G. published-key-space stability - a write the loader ACCEPTS never changes
+ *     the keys an invocation publishes, so the derived context-key vocabulary
+ *     and the runtime key space stay the same vocabulary (ruling
+ *     p9-key-shaping-params).
  */
 
 const registries = worldRegistries();
@@ -435,6 +440,112 @@ describe("property F - fail-closed on absent evidence in value positions", () =>
           ).toContain(kind);
         },
       ),
+    );
+  });
+});
+
+// ── G. Published-key-space stability ────────────────────────────────────────────
+
+describe("property G - an accepted policy never reshapes a published key space", () => {
+  const ref = (id: string) => ({ firmId: "firm-a", id });
+
+  /** One configured parameter object per catalog primitive - what a binding supplies. */
+  const CONFIGURED: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
+    "net-availability": {
+      resourceEvidenceKind: "account-balance",
+      claimEvidenceKinds: ["pending-activity", "reservation"],
+      subjectScope: "subject-group",
+    },
+    "horizon-projection": {
+      seriesEvidenceKind: "planned-withdrawals",
+      horizonMonths: 6,
+      direction: "forward",
+    },
+    "sufficiency-check": {
+      mode: "floor-preserving",
+      available: { kind: "context", key: "availability.net" },
+      draw: { kind: "context", key: "intent.amount" },
+      bound: { kind: "context", key: "projection.total" },
+    },
+    "candidate-selection": {
+      candidateEvidenceKind: "funding-candidates",
+      subjectSlot: "source-account",
+      exclusions: [],
+      ambiguityQuestionCode: "which-source-account",
+    },
+    "evidence-reconciliation": {
+      factKind: "balance-fact",
+      sourcesToReconcile: [ref("src-one"), ref("src-two")],
+      tolerance: 0,
+    },
+    "restriction-screen": {
+      restrictionKinds: [{ kind: "regulatory-hold", polarity: "deny-list" }],
+      subjectsInScope: ["source-account"],
+    },
+  };
+
+  /** The published key set, or null when the parameters do not parse at all. */
+  const keysOf = (primitiveId: string, parameters: unknown): readonly string[] | null => {
+    const primitive = registries.primitives.get(primitiveId)!;
+    const parsed = primitive.parameterSchema.safeParse(parameters);
+    if (!parsed.success) return null;
+    return Object.keys(
+      (primitive.publishedKeys as (p: unknown) => Record<string, unknown>)(parsed.data),
+    ).sort();
+  };
+
+  const TARGETS = [...registries.primitives.values()].flatMap((primitive) =>
+    [...parameterSchemaKeys(primitive.parameterSchema)].map(
+      (parameter) => [primitive.id as string, parameter] as const,
+    ),
+  );
+
+  it("covers every parameter of every catalog primitive (charter #4: no vacuous pass)", () => {
+    expect(TARGETS.length).toBeGreaterThanOrEqual(19);
+    expect(new Set(TARGETS.map(([id]) => id)).size).toBe(registries.primitives.size);
+    for (const primitiveId of registries.primitives.keys()) {
+      expect(keysOf(primitiveId, CONFIGURED[primitiveId]), primitiveId).not.toBeNull();
+    }
+  });
+
+  it("no write the loader ACCEPTS can shift the keys the primitive publishes", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...TARGETS),
+        fc.oneof(
+          fc.integer({ min: -8, max: 36 }),
+          fc.constantFrom("other-slot", "other-kind", "forward", "cap-limited", "bound-subject"),
+          fc.boolean(),
+          fc.constant(null),
+        ),
+        ([primitiveId, parameter], value) => {
+          const document = policyOf([
+            {
+              id: "w",
+              when: { op: "all", nodes: [] },
+              effects: [
+                {
+                  kind: "set_parameter",
+                  primitiveId,
+                  parameter,
+                  value: { kind: "constant", value },
+                },
+              ],
+            },
+          ]);
+          // A refused write cannot desync anything - that is the whole point of
+          // the key-shaping check, and the load tests pin which names it names.
+          if (!loadPolicy(document, registries).ok) return;
+          const configured = CONFIGURED[primitiveId]!;
+          const after = keysOf(primitiveId, { ...configured, [parameter]: value });
+          // An override the primitive's own schema refuses never runs it, so it
+          // publishes nothing (fail-closed) - only a PARSING override could
+          // shift the vocabulary `deriveContextKeys` closed over.
+          if (after === null) return;
+          expect(after, `${primitiveId}.${parameter}`).toEqual(keysOf(primitiveId, configured));
+        },
+      ),
+      { numRuns: 500 },
     );
   });
 });

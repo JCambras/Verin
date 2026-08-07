@@ -800,3 +800,81 @@ describe("loadPolicy - the synthesized reason-code namespaces are RESERVED", () 
     }
   });
 });
+
+describe("loadPolicy - key-shaping parameters are NOT policy-writable", () => {
+  const writesNode = (primitiveId: string, parameter: string, value: unknown) =>
+    policyWith([
+      {
+        id: "r",
+        when: { op: "all", nodes: [] },
+        effects: [{ kind: "set_parameter", primitiveId, parameter, value }],
+      },
+    ]);
+  const writes = (primitiveId: string, parameter: string, value: unknown) =>
+    writesNode(primitiveId, parameter, constant(value));
+  // The grammar's constants are scalars, so a write at a collection-typed
+  // parameter can only arrive as a reference - which is still a write.
+  const intentSlot = { kind: "context", key: "intent.destinationType" };
+
+  it("REFUSES a write to every parameter the catalog declares key-shaping", () => {
+    // The derived context-key vocabulary is closed at load over the CONFIGURED
+    // value, so admitting one of these would publish `selection.<other>.*` while
+    // the registry still declares `selection.<configured>.*`: every reader
+    // misses, and two invocations differing only here collapse onto one identity
+    // - a duplicate-invocation refusal driven by admissible policy content.
+    for (const [primitiveId, parameter, value] of [
+      ["candidate-selection", "subjectSlot", constant("other-slot")],
+      ["evidence-reconciliation", "factKind", constant("other-fact")],
+      ["net-availability", "claimEvidenceKinds", intentSlot],
+      ["restriction-screen", "restrictionKinds", intentSlot],
+    ] as const) {
+      const issues = expectIssues(
+        writesNode(primitiveId, parameter, value),
+        "key-shaping-parameter-not-writable",
+      );
+      const named = issues.find((issue) => issue.code === "key-shaping-parameter-not-writable")!;
+      expect(named.ruleId).toBe("r");
+      expect(named.message).toContain(`${primitiveId}.${parameter}`);
+    }
+  });
+
+  it("refuses the write BEFORE judging the constant, so the diagnosis names the real problem", () => {
+    // An inadmissible constant on a key-shaping parameter is refused for being
+    // key-shaping: fixing the constant would not make the write legal.
+    const loaded = loadPolicy(writes("candidate-selection", "subjectSlot", 42), registries);
+    expect(loaded.ok).toBe(false);
+    if (loaded.ok) throw new Error("unreachable");
+    expect(codesOf(loaded.error)).toEqual(["key-shaping-parameter-not-writable"]);
+  });
+
+  it("leaves every non-key-shaping parameter writable", () => {
+    for (const [primitiveId, parameter, value] of [
+      ["horizon-projection", "horizonMonths", 6],
+      ["horizon-projection", "seriesEvidenceKind", "planned-withdrawals"],
+      ["net-availability", "resourceEvidenceKind", "account-balance"],
+      ["evidence-reconciliation", "tolerance", 100],
+      ["sufficiency-check", "mode", "cap-limited"],
+      ["candidate-selection", "candidateEvidenceKind", "funding-candidates"],
+    ] as const) {
+      const loaded = loadPolicy(writes(primitiveId, parameter, value), registries);
+      expect(loaded.ok, `${primitiveId}.${parameter}: ${JSON.stringify(loaded.ok ? "" : loaded.error)}`).toBe(true);
+    }
+  });
+
+  it("holds for EVERY catalog entry, so a new primitive cannot slip past the check", () => {
+    // Derived from the catalog itself rather than from the list above: an added
+    // primitive that shapes keys is covered the day it declares that it does.
+    const declared = [...registries.primitives.values()].flatMap((primitive) =>
+      primitive.keyShapingParameters.map((parameter) => [primitive.id, parameter] as const),
+    );
+    expect(declared.length).toBeGreaterThan(0);
+    for (const [primitiveId, parameter] of declared) {
+      const loaded = loadPolicy(writes(primitiveId, parameter, "anything"), registries);
+      expect(loaded.ok).toBe(false);
+      if (loaded.ok) throw new Error("unreachable");
+      expect(codesOf(loaded.error), `${primitiveId}.${parameter}`).toContain(
+        "key-shaping-parameter-not-writable",
+      );
+    }
+  });
+});

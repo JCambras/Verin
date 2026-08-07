@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Node, Project } from "ts-morph";
+import { Node, Project, SyntaxKind } from "ts-morph";
 import { z } from "zod";
 import { REPO_ROOT, SRC_ROOT, inMemoryProject, walk } from "./_fence-utils";
 import {
@@ -39,6 +39,12 @@ import {
  *  (e) EVIDENCE-KIND DECLARATIONS - every name in an entry's
  *      evidenceKindParameters is a real parameter of that entry's own schema,
  *      so a rename cannot leave the prompt-9 loader binding a dangling name.
+ *  (f) KEY-SHAPING DECLARATIONS - an entry's keyShapingParameters is EXACTLY
+ *      the set of parameters its own `publishedKeys` body reads. That
+ *      declaration is what the prompt-9 loader refuses `set_parameter` against
+ *      (ruling p9-key-shaping-params), so a stale one would silently re-open a
+ *      policy write that reshapes the derived context-key vocabulary. Read off
+ *      the real function body, never off a second hand-written list.
  */
 
 const PRIMITIVES_DIR_SEGMENT = "src/contracts/primitives";
@@ -164,6 +170,101 @@ export function evidenceKindParameterViolations(
   return out;
 }
 
+/**
+ * The parameter names one `publishedKeys` arrow function reads, or null when
+ * the body cannot be read statically (a destructured or computed access). The
+ * walk is deliberately over the SOURCE rather than over sample invocations: a
+ * parameter that shapes keys only on some input would slip past a probe, and
+ * over-declaring merely narrows what policy may write, which is the safe
+ * direction.
+ */
+function publishedKeyParameterReads(fn: Node): readonly string[] | null {
+  if (!Node.isArrowFunction(fn) && !Node.isFunctionExpression(fn)) return null;
+  const parameters = fn.getParameters();
+  if (parameters.length === 0) return [];
+  if (parameters.length > 1) return null;
+  const binding = parameters[0]!.getNameNode();
+  // A destructured binding hides which names the body reads.
+  if (!Node.isIdentifier(binding)) return null;
+  const parameterName = binding.getText();
+  const body = fn.getBody();
+  const reads = new Set<string>();
+  let readable = true;
+  const visit = (node: Node): void => {
+    if (Node.isPropertyAccessExpression(node)) {
+      if (node.getExpression().getText() === parameterName) reads.add(node.getName());
+      return;
+    }
+    if (Node.isElementAccessExpression(node)) {
+      if (node.getExpression().getText() !== parameterName) return;
+      const argument = node.getArgumentExpression();
+      if (argument !== undefined && Node.isStringLiteral(argument)) reads.add(argument.getLiteralValue());
+      else readable = false;
+      return;
+    }
+    // A bare mention that is not a member read (passing the whole object on)
+    // puts every name in play, so the declaration can no longer be proven.
+    if (Node.isIdentifier(node) && node.getText() === parameterName) {
+      const parent = node.getParent();
+      const memberRead =
+        (Node.isPropertyAccessExpression(parent) || Node.isElementAccessExpression(parent)) &&
+        parent.getExpression() === node;
+      if (!memberRead) readable = false;
+    }
+  };
+  visit(body);
+  body.forEachDescendant(visit);
+  return readable ? [...reads].sort() : null;
+}
+
+type KeyShapingEntry = {
+  readonly id: string;
+  readonly keyShapingParameters: readonly string[];
+};
+
+/** The key-shaping declaration check, callable with synthetic sources by the companions. */
+export function keyShapingDeclarationViolations(
+  project: Project,
+  declared: readonly KeyShapingEntry[],
+): string[] {
+  const out: string[] = [];
+  const scanned = new Set<string>();
+  const byId = new Map(declared.map((entry) => [entry.id, entry.keyShapingParameters]));
+  for (const file of project.getSourceFiles()) {
+    for (const literal of file.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
+      const published = literal.getProperty("publishedKeys");
+      const idProperty = literal.getProperty("id");
+      if (!Node.isPropertyAssignment(published) || !Node.isPropertyAssignment(idProperty)) continue;
+      const idLiteral = idProperty
+        .getInitializerOrThrow()
+        .getFirstDescendantByKind(SyntaxKind.StringLiteral);
+      if (idLiteral === undefined) continue;
+      const id = idLiteral.getLiteralValue();
+      scanned.add(id);
+      const reads = publishedKeyParameterReads(published.getInitializerOrThrow());
+      if (reads === null) {
+        out.push(`${id}: publishedKeys reads its parameters in a form this fence cannot verify`);
+        continue;
+      }
+      const declaredNames = byId.get(id);
+      if (declaredNames === undefined) {
+        out.push(`${id}: publishes keys but declares no keyShapingParameters`);
+        continue;
+      }
+      const expected = [...declaredNames].sort().join(",");
+      if (reads.join(",") !== expected) {
+        out.push(
+          `${id}: publishedKeys reads [${reads.join(", ")}] but declares keyShapingParameters [${expected}]`,
+        );
+      }
+    }
+  }
+  for (const entry of declared) {
+    if (!scanned.has(entry.id)) out.push(`${entry.id}: no publishedKeys body was scanned - the walk went blind`);
+  }
+  return out;
+}
+
 const isPrimitivesModulePath = (path: string): boolean =>
   path.replace(/\\/g, "/").includes(PRIMITIVES_DIR_SEGMENT);
 
@@ -235,6 +336,11 @@ describe("primitive-catalog fence", () => {
 
   it("enforces: every declared evidence-kind parameter exists on its own schema", () => {
     const violations = evidenceKindParameterViolations(PRIMITIVE_CATALOG);
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("enforces: keyShapingParameters is exactly what each publishedKeys body reads", () => {
+    const violations = keyShapingDeclarationViolations(project, PRIMITIVE_CATALOG);
     expect(violations, violations.join("\n")).toEqual([]);
   });
 
@@ -457,6 +563,54 @@ describe("primitive-catalog fence", () => {
           { id: "opaque", parameterSchema: z.string(), evidenceKindParameters: [] },
         ]).some((m) => m.includes("went blind")),
       ).toBe(true);
+    });
+
+    it("an under-declared, over-declared, or unreadable key-shaping set fails", () => {
+      const source = (body: string) =>
+        inMemoryProject({
+          "src/contracts/primitives/entry.ts":
+            `export const entry = { id: parsePrimitiveId("some-primitive"), publishedKeys: ${body} };`,
+        });
+      const under = keyShapingDeclarationViolations(
+        source("(parameters: P) => ({ [`slot.${parameters.subjectSlot}.outcome`]: d })"),
+        [{ id: "some-primitive", keyShapingParameters: [] }],
+      );
+      expect(under.some((m) => m.includes("reads [subjectSlot]"))).toBe(true);
+      const over = keyShapingDeclarationViolations(
+        source("(parameters: P) => ({ [`slot.${parameters.subjectSlot}.outcome`]: d })"),
+        [{ id: "some-primitive", keyShapingParameters: ["subjectSlot", "tolerance"] }],
+      );
+      expect(over.some((m) => m.includes("subjectSlot,tolerance"))).toBe(true);
+      const exact = keyShapingDeclarationViolations(
+        source("(parameters: P) => ({ [`slot.${parameters.subjectSlot}.outcome`]: d })"),
+        [{ id: "some-primitive", keyShapingParameters: ["subjectSlot"] }],
+      );
+      expect(exact).toEqual([]);
+    });
+
+    it("a body this fence cannot read statically fails closed rather than passing", () => {
+      const cases = [
+        "({ subjectSlot }: P) => ({ [`slot.${subjectSlot}.outcome`]: d })",
+        "(parameters: P) => ({ [`slot.${parameters[pick()]}.outcome`]: d })",
+        "(parameters: P) => keysOf(parameters)",
+      ];
+      for (const body of cases) {
+        const v = keyShapingDeclarationViolations(
+          inMemoryProject({
+            "src/contracts/primitives/entry.ts":
+              `export const entry = { id: parsePrimitiveId("some-primitive"), publishedKeys: ${body} };`,
+          }),
+          [{ id: "some-primitive", keyShapingParameters: [] }],
+        );
+        expect(v.some((m) => m.includes("cannot verify")), body).toBe(true);
+      }
+    });
+
+    it("a primitive whose publishedKeys body vanished fails instead of passing vacuously", () => {
+      const v = keyShapingDeclarationViolations(inMemoryProject({}), [
+        { id: "some-primitive", keyShapingParameters: [] },
+      ]);
+      expect(v.some((m) => m.includes("went blind"))).toBe(true);
     });
 
     it("aliased and element-access Math escapes fail closed", () => {

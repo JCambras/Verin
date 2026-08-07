@@ -11,9 +11,11 @@
  *     (grammar 1.1.0 parses it; nothing evaluates it until its activating
  *     prompt lands semantics - OQ-7);
  *  2. reference closure - unknown evidence kind/path, instruction kind/path,
- *     context key, primitive, parameter, strategy, or approval template, plus
- *     the reason-code namespaces the evaluator reserves for its synthesized
- *     fail-closed blockers, which an authored code may not mint into;
+ *     context key, primitive, parameter, strategy, or approval template; the
+ *     reason-code namespaces the evaluator reserves for its synthesized
+ *     fail-closed blockers, which an authored code may not mint into; and the
+ *     parameters a primitive's published keys are DERIVED from, which the
+ *     closed context-key vocabulary pins and policy therefore may not write;
  *  3. type check - comparator operand agreement, ordering only over orderable
  *     types, homogeneous `in` sets, day-or-finer freshness windows,
  *     `set_parameter` constants against the primitive's own schema;
@@ -26,9 +28,10 @@
  *     before any primitive has run);
  *  7. self-conflict - one rule writing one target twice.
  *
- * Checks 2-4 live in load-checks.ts (per-file ceiling split), EXCEPT check 2's
- * reserved-namespace half, which that ceiling keeps here. Errors accumulate so
- * an author sees the whole surface at once; a policy loads only when EMPTY.
+ * Checks 2-4 live beside this file under the per-file ceiling, split by what
+ * they read: load-checks.ts holds the predicate side and the shared value-type
+ * resolver, load-effects.ts every check that reads an effect. Errors accumulate
+ * so an author sees the whole surface at once; a policy loads only when EMPTY.
  */
 import { err, ok, type Result } from "@contracts/result";
 import {
@@ -43,9 +46,8 @@ import {
 } from "@contracts/decision-core/policy";
 import type { PolicyRegistries } from "./registries";
 import { DNF_DISJUNCT_CAP, predicateDnf, proveDisjoint } from "./conflict";
-import { RESERVED_REASON_CODE_PREFIXES } from "./trace";
+import { checkEffects } from "./load-effects";
 import {
-  checkEffects,
   checkPredicate,
   effectTargets,
   isConfigEffect,
@@ -123,14 +125,6 @@ const tooDeeplyNested = (root: unknown): number | null => {
   return null;
 };
 
-/** The authored reason code an effect carries, if it carries one at all. */
-const authoredReasonCode = (effect: PolicyEffect): string | null =>
-  effect.kind === "block"
-    ? effect.blockerCode
-    : effect.kind === "prohibit"
-      ? effect.prohibitionCode
-      : null;
-
 export const loadPolicy = (
   document: unknown,
   registries: PolicyRegistries,
@@ -200,24 +194,6 @@ export const loadPolicy = (
     checkPredicate(rule, registries, report);
     checkEffects(rule, registries, report);
     keyReads.set(rule.id, primitiveKeyReads(rule, registries));
-
-    // Check 2, namespace half: `ReasonCodeSchema` is an opaque brand with no
-    // shape to refuse a collision at parse time, and the evaluator keys its
-    // blockers on the code alone - so an authored code inside a synthesized
-    // namespace would merge with a platform entry instead of standing beside
-    // it. Ownership is therefore proven at admission.
-    for (const effect of rule.effects) {
-      const authored = authoredReasonCode(effect);
-      if (authored === null) continue;
-      const reserved = RESERVED_REASON_CODE_PREFIXES.find((prefix) => authored.startsWith(prefix));
-      if (reserved !== undefined) {
-        report({
-          code: "reserved-reason-namespace",
-          ruleId: rule.id,
-          message: `rule ${rule.id}: reason code '${authored}' is inside the reserved '${reserved}' namespace the evaluator synthesizes its fail-closed blockers under; choose a code outside it`,
-        });
-      }
-    }
 
     // Check 6 - stratification (OQ-6 strict form).
     if (rule.effects.some(isConfigEffect)) {

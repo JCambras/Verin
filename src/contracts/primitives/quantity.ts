@@ -122,6 +122,7 @@ export const netAvailability = {
   parameterSchema: NetAvailabilityParameterSchema,
   inputSchema: NetAvailabilityInputSchema,
   evidenceKindParameters: ["resourceEvidenceKind", "claimEvidenceKinds"],
+  keyShapingParameters: ["claimEvidenceKinds"],
   allowedStrategies: [],
   publishedKeys: (
     parameters: z.infer<typeof NetAvailabilityParameterSchema>,
@@ -229,6 +230,7 @@ export const horizonProjection = {
   parameterSchema: HorizonProjectionParameterSchema,
   inputSchema: HorizonProjectionInputSchema,
   evidenceKindParameters: ["seriesEvidenceKind"],
+  keyShapingParameters: [],
   allowedStrategies: [],
   publishedKeys: (): PublishedKeyMap => ({
     "projection.horizon": publishedStructured(
@@ -396,6 +398,7 @@ export const sufficiencyCheck = {
   parameterSchema: SufficiencyParameterSchema,
   inputSchema: SufficiencyInputSchema,
   evidenceKindParameters: [],
+  keyShapingParameters: [],
   allowedStrategies: [],
   publishedKeys: (): PublishedKeyMap => ({
     "sufficiency.headroom": publishedInteger(
