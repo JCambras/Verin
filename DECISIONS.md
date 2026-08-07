@@ -3229,3 +3229,166 @@ below high.
 
 **Revert path:** each selector deletes independently once its consumer bumps past
 the advisory range, at which point the range matches nothing.
+
+## D-102 - Prompt-8 primitive catalog lands in contracts/primitives with executable falsification guards
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: ADR-0023, ADR-0029,
+ADR-0039, ADR-0040, marriage-map C6, waveb-design-ratification, charter #1/#2/#4
+
+The v3 prompt-8 deliverable `src/primitives/catalog.ts` is re-baselined to
+`src/contracts/primitives/catalog.ts` per marriage-map C6 (v3 module paths
+become subsystems inside the four fenced layers - the ruling that landed
+prompt 5 at `src/contracts/decision-core/`). The catalog is pure Zod schemas
+and total pure functions, which is the contracts layer's definition; placing it
+there also keeps it inside the chartered knip vocabulary exemption while
+prompt 10 has no runtime consumer yet, and lets the prompt-9 loader import it
+without a layer escape.
+
+Implementation choices the ratified design left open, fixed here and recorded
+in docs/primitive-rationale.md: the projection window is half-open
+[anchor, anchor + months) with end-of-month clamping; the tz projection of
+bundle.asOf to the anchor date happens once in the evaluation harness so the
+contracts layer never touches tz data; reconciliation below two assertions is
+vacuously consistent (sufficiency belongs to the validation stage) and
+contradictions cite snapshot references never values; exactly-one refuses
+exclusion parameters as self-contradictory; the losing survivors of a
+preference-order selection carry one of two fixed codes -
+ranked-behind-selection when the winner's preference rank is strictly better,
+canonical-order-tiebreak when both tie at the absent rank and only the canonical
+(firmId, id) order decided it (p8-review-askuser-7, so the trace never credits a
+household preference that never spoke); published-key maps declare per-key
+presence (always/conditional) and outputs are fenced to stay inside them.
+
+Falsification criteria are executable: each primitive's ratified kill case
+(conditional claims, backward projection, ratio bounds, quantity allocation,
+aggregate restrictions, trust hierarchies) is asserted unrepresentable in the
+unit suite, so quiet schema growth fails the build and forces the declared
+version-bump path.
+
+**Alternatives rejected:** a literal `src/primitives/` fifth top-level
+directory (unclassified by the dependency fence, unbudgeted, and a reopening of
+the ratified four-layer architecture); placing the catalog in `src/domain/`
+(would need a D-013-style knip escape and blocks the prompt-9 contracts loader
+from importing it); documenting falsification criteria as prose only.
+
+**Revert path:** ADR-0039's revert path (delete the module, registry, doc,
+fence, and unit suite; restore the ADR-0035 ceiling).
+
+## D-103 - The faded color belongs to FreshValue, so the call-site spans came back out
+
+**Date:** 2026-08-05 · **Reversible** · Relates to: ADR-0012, D-036, D-100,
+docs/demo-design-language.md, charter #9
+
+**Superseded by D-100**, which landed on `main` independently while this branch
+was in flight and fixes the same date-driven axe failure one level down:
+`FreshValue` now owns `text-slate-800` whenever it fades, so the guarantee holds
+for every call site rather than the four named below. D-100 rejected call-site
+recoloring as its alternative for exactly that reason.
+
+The demo-journey axe gate failed on main in this environment: the workspace
+account card renders custodian text as slate-600 INSIDE a FreshValue fade, and
+the walking skeleton's fixture asOf dates have aged past the 7-day tier since
+landing, so the flattened color dropped to 4.34:1 - a date-driven time bomb
+that was green in CI when the surface merged. The documented design-language
+rule already covers it: secondary text inside a faded block must be slate-800
+or darker.
+
+Original fix on this branch: the four call sites whose FreshValue children
+inherited slate-600/700 (workspace household line, workspace custodian line,
+workspace pending activity, safety revalidated-at) wrapped the faded content in
+a slate-800 span.
+
+Final state: those four spans are REMOVED, because the component now owns the
+faded color and applies it only while the value actually recedes. The spans
+applied slate-800 unconditionally, so a value under a day old rendered darker
+than its own label - the opposite of the receding-content contract documented in
+`fresh-value.tsx`. Against D-100 the removal restores that contract and costs no
+contrast: slate-800 at the 0.7 opacity floor still measures about 5.3:1 on the
+card surface, and the component supplies it.
+
+Known residual: FreshValue's contract (children must be slate-800+ where the
+component cannot supply the color itself) is prose, not yet a fence; a
+usage-level check belongs to the demo lane's surface fences if the pattern
+recurs.
+
+**Alternatives rejected:** keeping the four spans as harmless redundancy (they
+are not redundant at full opacity - they recolor fresh values the component
+deliberately leaves inheriting); raising the opacity floor (weakens the
+freshness-as-opacity design language); darkening the whole paragraphs (recolors
+full-opacity labels that already pass).
+
+**Revert path:** none needed - the surfaces are byte-identical to their
+pre-branch state; D-100 carries the fix.
+
+## D-104 - Prompt-8's four cross-wave obligations are carried by name to their owning prompts
+
+**Date:** 2026-08-06 · **Reversible** · Relates to: ADR-0039, D-102,
+p8-review-askuser-5/-6/-7, charter #2
+
+Four obligations the prompt-8 catalog states are real and binding, but none is
+fenceable in this PR because none of their subjects exists yet: the config
+loader arrives in prompt 10, the evidence assembler in prompt 14, and the
+validation-stage evidence-sufficiency contract in prompt 15. The charter's
+"fence every invariant in the same PR that states it" cannot be honored against
+a subject that has no code, so the obligations are recorded here by owning
+prompt instead of left as doc prose that a later edit could quietly weaken.
+Each becomes a fence in the PR that builds its subject; none is a
+`not-yet-active` v3-invariants row, because that registry tracks the ratified
+v3 invariant set and these are implementation obligations under ADR-0039.
+
+1. **Prompt 10 - restriction evidence must be declared required.**
+   `restriction-screen` is fail-open on absent evidence by design:
+   `restrictions.matched.<kind> = false` means "screened against everything
+   supplied", never "the evidence was verified present", so a bundle assembled
+   without restriction lists screens clean by construction. The config load MUST
+   therefore cross-check, fail-closed, that every configuration binding
+   `restriction-screen` declares a restriction-source evidence kind as REQUIRED
+   evidence for each bound restriction kind, rejecting the configuration with an
+   error naming the primitive and the undeclared kinds. Until that check exists,
+   nothing stops a governed action clearing over regulatory holds nobody
+   assembled (docs/primitive-rationale.md, `restriction-screen`).
+2. **Prompt 10 - binding multiplicity is a fail-closed load check.** The four
+   unscoped-key primitives (`net-availability`, `horizon-projection`,
+   `sufficiency-check`, `restriction-screen`) are bound AT MOST ONCE per domain
+   configuration, and the two parameter-scoped ones (`candidate-selection` by
+   `subjectSlot`, `evidence-reconciliation` by `factKind`) may repeat only with
+   DISTINCT key scopes. Both halves are config-load errors naming the primitive
+   and both bindings; last-write-wins is not an option, because a second binding
+   silently overwrites published facts under `availability.*`, `projection.*`,
+   `sufficiency.*`, or `restrictions.*` and the AST then evaluates a
+   wrong-but-plausible fact rather than failing.
+3. **Prompt 14 - the evidence assembler owns claim de-duplication.**
+   `net-availability`'s `claims` carries no per-(claimKind, snapshotRef)
+   uniqueness refinement, because one snapshot legitimately yields several claim
+   rows. De-duplicating assembler-side repeats is therefore the assembler's
+   obligation, and whether the evidence-assembly contract should force
+   per-(claimKind, snapshotRef) aggregation is the open question that prompt
+   answers. The failure is conservative in the meantime - a repeat double-counts
+   the claim, understating `availability.net`, so it over-blocks and never
+   over-permits.
+4. **Prompt 15 - reconciliation bindings owe declared evidence sufficiency.**
+   `evidence-reconciliation` is fail-open on absent evidence in the same shape as
+   obligation 1: it declares no `evidenceKindParameters`, and
+   `reconciliation.<factKind>.consistent` is vacuously true below two assertions
+   by ratified design (captain OQ-3 and `p8-review-askuser` ruling 1 - evidence
+   sufficiency belongs to the validation stage, not to the primitive), so a
+   bundle assembled with zero assertions publishes `consistent = true`. The
+   validation-stage evidence-sufficiency contract MUST therefore cover
+   reconciliation bindings, so an AST rule gating on
+   `reconciliation.<factKind>.consistent` cannot clear over evidence nobody
+   assembled; `sourcesToReconcile` (min 2) already names the sources the
+   requirement is derived from (docs/primitive-rationale.md,
+   `evidence-reconciliation`).
+
+**Alternatives rejected:** `not-yet-active` v3-invariants rows (that registry is
+the ratified 30-invariant v3 set, not a scratchpad for per-ADR implementation
+obligations, and its activation semantics would have to be stretched to carry
+them); a fence today against the prompt-10/14 subjects (there is nothing to
+assert, and a fence that passes vacuously is worse than none - charter #2);
+leaving the obligations as rationale-doc prose only (the primitive-catalog fence
+checks only that a per-primitive section and matrix row exist, so the paragraphs
+could be weakened or deleted and the build would stay green).
+
+**Revert path:** delete this entry and the PLAN.md forward-work pointer; the
+obligations then live only in docs/primitive-rationale.md, which is where they
+were before.

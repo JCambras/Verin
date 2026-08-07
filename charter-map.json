@@ -497,6 +497,26 @@
           "ref": "v3-invariants.json"
         }
       ]
+    },
+    {
+      "id": "primitive-vocabulary-versioned",
+      "title": "Primitive vocabulary stays versioned + provisional: registry mirrors the shipped catalog both ways, module is domain-neutral and pure, rationale doc covers every primitive with no phantoms (v3 prompt 8, ADR-0039)",
+      "status": "enforced",
+      "phase": "v3-p8",
+      "mechanisms": [
+        {
+          "type": "config",
+          "ref": "primitive-set-version.json"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/primitive-catalog.test.ts"
+        },
+        {
+          "type": "adr",
+          "ref": "docs/adr/0039-primitive-vocabulary.md"
+        }
+      ]
     }
   ]
 }

@@ -66,6 +66,7 @@ const RATCHETED_ENFORCED_IDS = [
   "golden-cases-truth-set",
   "demo-skeleton-honesty",
   "decision-core-type-system",
+  "primitive-vocabulary-versioned",
 ];
 
 function blockingCiText(): string {

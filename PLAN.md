@@ -400,3 +400,18 @@ the shrink-only global line budget; prose-only invariants.
 **Demo-choreography engines** (Autopilot / walkthroughs / narration / ScreenRecorder) are **planned by ADR
 now, ported at the first demo milestone — never scaffolded empty on day one** (rule 10); their shapes are
 captured for the ADR (AutopilotScene, native-setter typing, audio await-`ended` sync, MediaRecorder).
+
+---
+
+## Appendix 4 - Forward work carried across wave boundaries
+
+Obligations a landed PR states but cannot fence yet, because their subject belongs to a later prompt,
+are recorded in `DECISIONS.md` by owning prompt and become fences in the PR that builds that subject.
+
+- **D-104** - the four prompt-8 primitive-catalog obligations: prompt 10 owes the fail-closed
+  config-load cross-check that a `restriction-screen` binding declares its restriction-source evidence
+  kinds as required evidence, and the fail-closed binding-multiplicity check (unscoped primitives at
+  most once, scoped ones only with distinct key scopes); prompt 14 owes the evidence assembler's claim
+  de-duplication and the per-`(claimKind, snapshotRef)` aggregation question; prompt 15 owes the
+  validation-stage evidence-sufficiency contract that covers `evidence-reconciliation` bindings, whose
+  `consistent` fact is vacuously true below two assertions.

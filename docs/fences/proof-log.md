@@ -5337,3 +5337,300 @@ APP_ENV=development <test-only placeholder env> corepack pnpm build
                                                              # compiled and generated all routes
 corepack pnpm test:e2e                                       # production build and 17 tests passed
 ```
+
+### PF-188 primitive-catalog fence (v3 prompt 8): registry integrity, doc sync, domain neutrality, purity
+
+The prompt-8 decision-primitive vocabulary (ADR-0039, D-102) introduces four
+invariants: primitive-set-version.json mirrors the shipped catalog in both
+directions; docs/primitive-rationale.md covers every primitive with no
+phantoms; the primitives module stays domain-neutral in identifiers and
+non-prose strings (falsification prose is the one reviewed exemption); and the
+module references no clock, randomness, tz/locale machinery, or scheduling
+globals.
+
+**Adversarial proof (four injections, each reverted after failing):**
+
+1. Renamed the published key `availability.gross` to `availability.cash` in
+   the live catalog. The domain-neutrality check failed naming
+   `src/contracts/primitives/quantity.ts:136: cash` and `:161: cash`.
+2. Removed `net-availability` from primitive-set-version.json. The registry
+   check failed with "catalog id net-availability missing from registry", and
+   the real-registry companion failed alongside it.
+3. Added `export const injectedNow = Date.now();` to the live values module.
+   The purity check failed naming `src/contracts/primitives/values.ts:65:
+   Date`.
+4. Renamed the doc heading for `evidence-reconciliation`. The doc-sync check
+   failed with both the missing-section and the phantom-primitive messages.
+
+Companions additionally prove: a registry with an unshipped id, wrong version,
+dropped provisional flag, non-canonical order, malformed shape, or a future
+primitive colliding with a shipped id all fail; a domain word in an identifier,
+string, or template segment is caught with file:line while the same word in
+falsification prose is not; Math.random, aliased Math, element-access Math,
+and Intl fail closed while pure Math members pass; and the scanned module is
+asserted to be the real five files so a renamed path cannot pass vacuously.
+
+### PF-188 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/fitness/primitive-catalog.test.ts
+                                                             # 18 tests passed
+corepack pnpm test                                           # 58 files, 1,277 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm knip                                           # clean
+corepack pnpm v3:invariants                                  # 6 active-pass, 0 active-fail
+corepack pnpm golden:validate                                # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 5 tests passed (contracts ceiling per ADR-0040)
+APP_ENV=development <test-only placeholder env> corepack pnpm build
+                                                             # compiled and generated all routes
+corepack pnpm test:e2e                                       # production build and 17 tests passed
+```
+
+### PF-189 primitive-catalog fence: locale purity and evidence-kind declarations
+
+Review of the prompt-8 vocabulary found the purity check overclaiming and the
+evidence-kind declarations unanchored. The fence header, ADR-0039, and PF-188
+all say the purity check covers "tz/locale machinery", but `IMPURE_GLOBALS`
+only matched the `Intl` IDENTIFIER: `localeCompare` and the `toLocale*`
+formatters are the realistic way ICU collation and formatting enter a
+comparator, and they name no global at all. Separately,
+`CatalogPrimitive.evidenceKindParameters` listed raw parameter NAMES with no
+structural link to the entry's own `parameterSchema`, so a rename compiled,
+type-checked, and passed every gate while leaving the prompt-9 loader binding a
+dangling name. The fence now carries a fifth invariant (e) and a locale-member
+check on any receiver, including element-access forms.
+
+**Adversarial proof (three injections, each reverted after failing):**
+
+1. Added `export const compareSegments = (a: KeySegment, b: KeySegment): number
+   => a.localeCompare(b);` to the live values module. The purity check failed
+   naming `src/contracts/primitives/values.ts:70: localeCompare`.
+2. Renamed the live `claimEvidenceKinds` parameter to `renamedClaimKinds`
+   throughout quantity.ts, leaving `evidenceKindParameters` untouched - the
+   exact silent rename the finding described. The new check failed with
+   "net-availability declares evidence-kind parameter claimEvidenceKinds,
+   absent from its schema", while typecheck stayed clean - proving the check is
+   what catches this class.
+3. Reverted the `Object.hasOwn` slot guard in restriction-screen's input schema
+   back to `slot in input.context.subjects`. The unit case "refuses an
+   inherited slot name rather than screening against Object.prototype" failed,
+   proving the guard is load-bearing: without it a binding declaring
+   `subjectsInScope: ["constructor"]` with NO bound subject parsed clean, and
+   evaluate published a fabricated deny-list match carrying full source
+   attribution and `subjectRef: {}`.
+
+Companions additionally prove: an element-access `n["toLocaleString"]()` is
+caught while codepoint comparison passes untouched; a dangling evidence-kind
+name fails while a name declared by one arm of a discriminated union passes;
+and a schema the key walk cannot see through is refused rather than passing
+over an empty key set (so the check can never go vacuous).
+
+### PF-189 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/fitness/primitive-catalog.test.ts \
+  src/__tests__/unit/primitives.test.ts                      # 71 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm knip                                           # clean
+corepack pnpm golden:validate                                # all 16 signed cases passed
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 5 tests passed (contracts under the ADR-0040 ceiling)
+```
+
+### PF-190 candidate-selection explains an empty outcome; one restriction list per source version
+
+Review of the prompt-8 vocabulary found two parse/evaluate gaps in the shipped
+primitives. `candidate-selection` computed the `rejected` array with each
+candidate's configured exclusion reason code and then discarded it on the empty
+outcome, publishing only `selection.<slot>.outcome`, so an all-excluded run
+could not be explained from its own trace and the reason codes a binding
+configured were unreachable by downstream policy or UI (captain ruling
+p8-review-askuser-4, option A: reuse the already-declared conditional
+`alternatives` key rather than mint a new one). Separately,
+`restriction-screen`'s `evidence.restrictions` was the one collection in the
+module carrying no uniqueness refinement: two lists agreeing on source type,
+source reference, version reference, kind, and slot but differing only in their
+entries tie under `compareRestrictionLists` and, when both violate, emit
+byte-identical entries in `restrictions.matches` - which the platform maps into
+two prohibitions from a single source version.
+
+**Adversarial proof (two injections, each reverted after failing):**
+
+1. Reverted the empty record in `selection.ts` back to
+   `{ [keyOf("outcome")]: "empty" }`. The unit case "explains an empty outcome
+   with the exclusion trace and its configured reason codes" failed at
+   `src/__tests__/unit/primitives.test.ts` with "expected undefined to deeply
+   equal [ { ref: {…}, …(1) }, …(1) ]", proving the assertion reads the
+   published trace and not merely the outcome code. The case covers BOTH empty
+   paths (single-eligible and preference-order) and asserts each configured
+   `reasonCode` reaches the published alternatives in canonical order.
+2. Removed the `hasUniqueByComparator(lists, compareRestrictionLists)`
+   refinement from `RestrictionScreenInputSchema`. The unit case "refuses two
+   lists from one source version differing only in their entries" failed
+   ("expected true to be false"), proving the refinement is what rejects the
+   duplicate at the parse boundary; its second assertion holds a different kind
+   from the same source parsing clean, so the refinement cannot pass by
+   refusing everything.
+
+The published-key subset invariant is re-proved for the new emission: the
+key-discipline case list now evaluates `candidate-selection` on an all-excluded
+input as well, so the empty outcome's keys are checked against the declared map
+(canonical order, valid descriptors, every produced key declared, every `always`
+key produced). The `alternatives` descriptor stays `conditional` - it is absent
+only on the ambiguous outcome.
+
+### PF-190 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/fitness/primitive-catalog.test.ts \
+  src/__tests__/unit/primitives.test.ts                      # 73 tests passed
+corepack pnpm typecheck                                      # clean
+corepack pnpm lint                                           # clean
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                                             # 2 FAILING: contracts 5411 > the 5400 ceiling.
+                                                             # Expected and pre-authorized: these fixes were
+                                                             # landed lean but not truncated, and ADR-0040 is
+                                                             # amended with the re-measured figure in the
+                                                             # follow-up that also lands the rationale-doc updates.
+```
+
+### PF-191 the exclusion trace reaches EVERY selection outcome; ADR-0040 re-measured
+
+PF-190 landed the exclusion trace on the empty outcome only, and the key
+descriptor codified the gap ("absent only on the ambiguous outcome"). The same
+justification applies to ambiguity: `single-eligible` over three candidates
+where one carries a configured exclusion classification publishes two candidates
+in `openQuestion` and no record that a third was filtered out or why, so the
+human answering the structured question cannot see it (captain ruling
+`p8-review-askuser-5`). `candidate-selection` now publishes
+`selection.<slot>.alternatives` on every outcome through one shared helper, and
+the key is genuinely conditional: present whenever candidates were excluded or
+ranked behind, absent only when neither happened, which is exactly what the
+descriptor now says.
+
+**Adversarial proof (two injections, each reverted after failing):**
+
+1. Dropped the trace spread from the `ambiguous` record. The unit case "explains
+   an ambiguous outcome with the exclusion trace of the candidates it filtered
+   out" failed at `src/__tests__/unit/primitives.test.ts` with "expected
+   undefined to deeply equal [ { ref: {…}, …(1) } ]", proving the assertion reads
+   the published trace rather than the outcome code, and that the excluded
+   candidate's configured `reasonCode` is what it checks.
+2. Forced the trace helper's guard to `false` so alternatives published
+   unconditionally (an empty array when nothing was excluded). The unit case
+   "omits the trace only when nothing was excluded or ranked behind" failed
+   ("expected true to be false"), proving the conditional presence the descriptor
+   declares is enforced and not incidentally true.
+
+The published-key subset invariant is re-proved for the new emission: the
+key-discipline case list now evaluates `candidate-selection` on an ambiguous
+input as well as the selected and all-excluded ones, so all three outcomes are
+checked against the declared map (canonical order, valid descriptors, every
+produced key declared, every `always` key produced).
+
+`docs/primitive-rationale.md` records this round's rulings alongside the
+behavior: the every-outcome `alternatives` semantics, the at-most-once binding
+rule with prompt-10's fail-closed double-binding rejection, the
+restriction-screen absent-evidence split (`matched.<kind> = false` means
+"screened against everything supplied", never "evidence verified present"), and
+the 1200-month horizon bound with its totality rationale.
+
+### PF-191 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/unit/primitives.test.ts \
+  src/__tests__/fitness/primitive-catalog.test.ts               # 75 tests passed
+corepack pnpm typecheck                                         # clean
+corepack pnpm lint                                              # clean
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                # 5 tests passed. Re-measured with the fence's own
+                                # algorithm: contracts 5418, domain 1298,
+                                # infrastructure 3484, presentation 928. ADR-0040 is
+                                # amended in place (it is part of this unmerged PR) to
+                                # a 5,460 contracts ceiling - the measured total plus
+                                # bounded correction room. Any further increase stays a
+                                # measured ADR amendment, never a code change.
+                                # SUPERSEDED by PF-192's final measurement (5433).
+```
+
+### PF-192 the closing prompt-8 review round: honest tiebreaks, a frozen id list, year-zero totality, branded reason codes
+
+The last three review rounds changed shipped behavior in `src/contracts/primitives/`
+and this entry proves each change adversarially, closing the round. Four items:
+(1) `candidate-selection` now publishes a SECOND fixed reason code -
+`canonical-order-tiebreak` - so a `preference-order` loser that tied the winner's
+rank (both absent from the household preference list, so the canonical
+`(firmId, id)` order decided it) is no longer labeled `ranked-behind-selection`,
+which asserted a household preference had ranked it behind when nothing ranked it
+at all (captain ruling `p8-review-askuser-7`; the ratified total order itself is
+unchanged). (2) `PRIMITIVE_CATALOG_IDS` is `readonly PrimitiveId[]` over
+`Object.freeze`, so an in-place `sort`/`push` cannot mutate the module-level array
+both fences and every consumer read. (3) `addCalendarMonths` saturates only OUTSIDE
+the parseable range: year 0000 is inside `IsoDateSchema`'s four-digit range, so it is
+now computed exactly instead of jumping FORWARD eleven months to `0001-01-01` - a
+silent widening of the half-open horizon window. (4) `Alternative.rejectedBecause`
+is `ReasonCode`, not `string`, in the one place the module publishes reason codes.
+
+**Adversarial proof (four injections, each reverted after failing):**
+
+1. Collapsed the tiebreak selector back to `RANKED_BEHIND_REASON` for every losing
+   survivor. The unit case "breaks unranked ties by canonical reference order and
+   says so - never crediting a silent preference" failed at
+   `src/__tests__/unit/primitives.test.ts:490` ("expected [ { ref: {…}, …(1) } ] to
+   deeply equal [ { ref: {…}, …(1) } ]"), proving the assertion reads the published
+   reason code and not merely the alternatives' order. The sibling case "separates a
+   real preference rank from the canonical fallback in one trace" stayed GREEN under
+   the injection, so the pair cannot pass by labeling everything with one code: it
+   pins the partition, with genuinely-ranked-behind losers keeping the old code.
+2. Removed the `readonly` annotation and `Object.freeze` from
+   `PRIMITIVE_CATALOG_IDS` and added a `PRIMITIVE_CATALOG_IDS.sort()` before the
+   canonical-order assertion. WITH the freeze, `corepack pnpm typecheck` rejected the
+   mutation at `src/__tests__/unit/primitives.test.ts(61,27)`: "Property 'sort' does
+   not exist on type 'readonly (string & $brand<\"PrimitiveId\">)[]'". WITHOUT it,
+   typecheck was clean AND all 55 unit tests passed - proving the annotation is the
+   only thing standing between a consumer and a silent in-place reorder of the shared
+   array, and that no other gate would have caught it.
+3. Reverted the totality guard to `targetYear >= 1` with an `0001-01-01` floor. The
+   unit case "stays total at the last representable anchor, saturating the window
+   end" failed ("expected '0001-01-01' to be '0000-01-01'"), proving the low-end
+   assertion is real; its next line pins the finding's own case
+   (`addCalendarMonths("0000-01-01", 1) === "0000-02-01"`), and the 9999-12-31
+   saturation assertions stayed green, so the fix did not trade one edge for the other.
+4. Pushed an ad-hoc string literal into the published trace
+   (`rejectedBecause: "ad-hoc-literal"`). WITH the field narrowed to `ReasonCode`,
+   typecheck failed at `src/contracts/primitives/selection.ts(230,45)`: "Type
+   'string' is not assignable to type 'string & $brand<\"ReasonCode\">'". WITH the
+   field widened back to `string`, the same literal compiled clean - proving the
+   narrowing, not any fence or key-discipline case, is what keeps an unregistered
+   code out of `selection.<slot>.alternatives`.
+
+`docs/primitive-rationale.md` carries this round's doc obligations: the two-code
+partition and when each applies, and one sentence recording that the household
+preference ranking is OPTIONAL-BY-DESIGN evidence - advisory ordering whose absence
+is indistinguishable from a household holding no standing preference, honestly
+labeled by the canonical-tiebreak code rather than gated on, and deliberately NOT a
+D-104 obligation (captain ruling `p8-review-askuser-8`). `DECISIONS.md` D-104 carries
+the cross-wave obligations that are NOT fenceable today because their subjects do not
+exist yet (prompt-10 config-load cross-checks, prompt-14 claim de-duplication,
+prompt-15 reconciliation evidence sufficiency).
+
+### PF-192 verification
+
+```
+corepack pnpm exec vitest run src/__tests__/unit/primitives.test.ts \
+  src/__tests__/fitness/primitive-catalog.test.ts               # 76 tests passed
+corepack pnpm typecheck                                         # clean
+corepack pnpm lint                                              # clean
+corepack pnpm test                                              # full suite green
+corepack pnpm knip                                              # clean
+corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
+                                # 5 tests passed. FINAL measurement with the fence's
+                                # own algorithm: contracts 5433, domain 1298,
+                                # infrastructure 3484, presentation 928. The 5,460
+                                # ceiling is unchanged; ADR-0040's table and the fence
+                                # comment are synced to 5,433 / 27 headroom, which
+                                # supersedes PF-191's pre-review 5,418.
+```

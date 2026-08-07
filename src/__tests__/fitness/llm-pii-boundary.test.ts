@@ -97,6 +97,7 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/contracts/decision-core/trigger.ts :: ResolvableBlocker.resolvingEvidence.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
   { ref: "src/contracts/decision-core/trigger.ts :: NormalizableResolvableBlocker.resolvingEvidence", why: "EvidenceRequest descriptors (kind + scope) naming what would unblock a decision - a request FOR evidence, never evidence itself" },
   { ref: "src/contracts/decision-core/trigger.ts :: ResolutionState.gaps.evidenceKind", why: "a branded EvidenceKind discriminator (which KIND of evidence is wanted), carrying no subject data" },
+  { ref: "src/contracts/primitives/values.ts :: CatalogPrimitive.evidenceKindParameters", why: "the NAMES of a primitive's parameters that carry branded EvidenceKind values (v3 prompt 8, ADR-0039) - machine identifiers declaring what a binding consumes, never evidence contents" },
 ];
 const ESCAPE_SET = new Set(NON_PII_ESCAPES.map((e) => e.ref));
 const OPAQUE_LLM_INGRESS_ESCAPES = [
