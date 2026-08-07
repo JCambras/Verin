@@ -1,5 +1,5 @@
 /**
- * CORPUS PRIMITIVES, DEFINED ONCE (v3 prompt 11, ADR-0039).
+ * CORPUS PRIMITIVES, DEFINED ONCE (v3 prompt 11, ADR-0052).
  *
  * These four decide bytes, not convenience: `sortedBy` fixes emission order and
  * therefore case bytes and `corpusDigest`, `nfc` decides whether two spellings

@@ -1,6 +1,6 @@
 # Generated trees. `linguist-generated` collapses them in review diffs and marks
 # their ownership visibly; the ENFORCEMENT is `pnpm corpus:validate`, which
-# regenerates and byte-compares in the blocking `corpus` CI job (ADR-0039).
+# regenerates and byte-compares in the blocking `corpus` CI job (ADR-0052).
 # The hand-owned inputs under fixtures/corpus/spec/ are deliberately NOT marked.
 fixtures/corpus/manifest.json linguist-generated=true
 fixtures/corpus/synthetic/** linguist-generated=true

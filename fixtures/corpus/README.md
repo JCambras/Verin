@@ -1,4 +1,4 @@
-# `fixtures/corpus/` - the replay corpus (v3 prompt 11, ADR-0039)
+# `fixtures/corpus/` - the replay corpus (v3 prompt 11, ADR-0052)
 
 Two ownership planes live here and must never be confused.
 

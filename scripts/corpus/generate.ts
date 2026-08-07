@@ -1,5 +1,5 @@
 /**
- * CORPUS GENERATOR (v3 prompt 11, ADR-0039).
+ * CORPUS GENERATOR (v3 prompt 11, ADR-0052).
  *
  * Hand-owned spec + one root seed -> the synthetic partition, in canonical bytes.
  *

@@ -333,7 +333,7 @@ deferral:
 
 # --------------------------------------------------------------------------
 # The replay-corpus real-derived deferral, as data (captain ruling, 2026-07-28;
-# ADR-0039). A SECOND, independent deferral recorded through the same mechanism
+# ADR-0052). A SECOND, independent deferral recorded through the same mechanism
 # as the Salesforce one. It is a separate section on purpose: the element-level
 # `deferral:` marking above is defined against `deferral.status`, so marking
 # replay-corpus there would claim it is deferred pending a Salesforce sandbox.
@@ -349,7 +349,7 @@ corpus_deferral:
     and agrees a delivery date and review path.
   decided_by: captain ruling, 2026-07-28
   deferred_elements: [replay-corpus]
-  adr: docs/adr/0039-synthetic-corpus-and-provenance-split.md
+  adr: docs/adr/0052-synthetic-corpus-and-provenance-split.md
   gating_rule: >-
     Prompt 11 ships the split-capable corpus, the scrub-intake contract, and an honestly
     empty real-derived partition. Until that partition is populated and reviewed, Phase 1

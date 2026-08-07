@@ -54,7 +54,7 @@ export const PINNED_IDS: Record<string, readonly string[]> = {
     "judgment-complexity",
   ],
   deferral: ["salesforce-sandbox"],
-  // Appended by v3 prompt 11 (ADR-0039, captain ruling 2026-07-28): the
+  // Appended by v3 prompt 11 (ADR-0052, captain ruling 2026-07-28): the
   // replay-corpus real-derived deferral, recorded through the same
   // scenario-matrix mechanism as the Salesforce one. Its cross-references are
   // enforced by the corpus-provenance-split fence.

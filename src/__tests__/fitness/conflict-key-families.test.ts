@@ -14,7 +14,7 @@ import {
 import { real } from "./_corpus-world";
 
 /**
- * CONFLICT-KEY-FAMILIES FENCE (v3 prompt 11, ADR-0039; charter #1/#4/#16).
+ * CONFLICT-KEY-FAMILIES FENCE (v3 prompt 11, ADR-0052; charter #1/#4/#16).
  *
  * The prompt requires "simultaneous-request cases share conflict keys". A
  * constant-returning function satisfies that alone, so this fence proves four

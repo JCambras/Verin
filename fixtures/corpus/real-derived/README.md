@@ -20,7 +20,7 @@ inventing defect history - forbidden, and exactly the circularity the provenance
 (architecture v3 §2.4; demo contract §7).
 
 Captain ruling `corpus-real-derived-provenance` (2026-07-28) formally defers population, recorded through
-the same ADR mechanism the Salesforce deferral uses (ADR-0024 → ADR-0039).
+the same ADR mechanism the Salesforce deferral uses (ADR-0024 → ADR-0052).
 
 ## What is blocked while it is empty
 

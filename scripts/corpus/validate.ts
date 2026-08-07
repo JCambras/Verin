@@ -1,5 +1,5 @@
 /**
- * CORPUS VALIDATOR CORE (v3 prompt 11, ADR-0039).
+ * CORPUS VALIDATOR CORE (v3 prompt 11, ADR-0052).
  *
  * The single authority for "what a corpus must satisfy", imported by BOTH the
  * runner (`scripts/corpus-validate.ts`, the blocking `corpus` CI job) and the

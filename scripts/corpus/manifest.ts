@@ -204,7 +204,7 @@ export const REAL_DERIVED_DEFERRAL: {
   unDeferTrigger:
     "The captain authorizes a scrubbed source of real NIGO returns, custodian rejections, or operational exceptions, names an accountable owner for extraction and de-identification, and agrees a delivery date and review path.",
   decidedBy: "captain ruling, 2026-07-28",
-  adr: "docs/adr/0039-synthetic-corpus-and-provenance-split.md",
+  adr: "docs/adr/0052-synthetic-corpus-and-provenance-split.md",
   procedure: "docs/corpus-scrub-procedure.md",
 } as const;
 export function buildManifest(

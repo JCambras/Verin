@@ -1,6 +1,6 @@
 # Verin - Replay-Corpus Specification (v3 build-sequence prompt 11)
 
-**Normative.** This document and [`ADR-0039`](./adr/0039-synthetic-corpus-and-provenance-split.md) govern
+**Normative.** This document and [`ADR-0052`](./adr/0052-synthetic-corpus-and-provenance-split.md) govern
 the replay corpus. Where this document and a generated artifact disagree, the artifact is wrong: run
 `pnpm corpus:validate`.
 
@@ -65,7 +65,7 @@ binary - the walk drops nothing, because an entry no one can prove untracked mus
 for. That drop set is stated once at the walk and held against `.gitignore` by the
 corpus-provenance-split fence, so it can never name something git tracks by default.
 
-While the ADR-0039 deferral is active, any delivered entry under `real-derived/` fails validation. Once
+While the ADR-0052 deferral is active, any delivered entry under `real-derived/` fails validation. Once
 the deferral is explicitly lifted, every case must be a top-level canonical `RD-<16 hex>.json` file with
 a collection-unique case id and the active corpus version before it is inventoried in the generated
 manifest, included in `corpusDigest`, and supplied to the provenance-specific reporter.
@@ -395,6 +395,6 @@ Fences (`src/__tests__/fitness/`, all registered in `charter-map.json` under `re
 - **the shared world seam** - `corpus-world-sharing` (one `validateCorpus()` per run, rebuilt before a
   watch rerun collects, refusing an unpinned or UTC clock).
 
-Adversarial proofs are PF-188 onward, plus the titled ADR-0039 rounds that follow them, in
+Adversarial proofs are PF-205 onward, plus the titled ADR-0052 rounds that follow them, in
 [`docs/fences/proof-log.md`](./fences/proof-log.md) (the log's numbering note records the
-PF-090..PF-108 → PF-188..PF-206 rebase mapping, D-102).
+PF-090..PF-108 → PF-205..PF-223 rebase mapping, D-132).

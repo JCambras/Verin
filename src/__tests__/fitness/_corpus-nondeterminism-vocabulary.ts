@@ -1,5 +1,5 @@
 /**
- * THE NON-DETERMINISM VOCABULARY (v3 prompt 11, ADR-0039).
+ * THE NON-DETERMINISM VOCABULARY (v3 prompt 11, ADR-0052).
  *
  * WHICH origins are banned and WHAT an operator is told each one is - pure
  * string and set algebra over origin NAMES, with no AST, no filesystem and no

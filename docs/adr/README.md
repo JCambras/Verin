@@ -67,7 +67,7 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0049](./0049-per-file-pin-headroom.md) | The per-file pin gets the same bounded headroom as the layer ceiling | Accepted (amends ADR-0018 and ADR-0048) |
 | [0050](./0050-ledger-store-per-file-pin.md) | The ledger's write chokepoint is pinned rather than compressed | Accepted (amends ADR-0018 and ADR-0049) |
 | [0051](./0051-line-budget-ledger-preview-and-counted-provenance.md) | Contracts and infrastructure ceilings for the scoped rebuild and counted provenance | Accepted (amends ADR-0018, ADR-0048, and ADR-0050) |
-| [0039](./0039-synthetic-corpus-and-provenance-split.md) | Replay corpus: deterministic synthetic substrate, fenced provenance split, honestly empty real-derived partition, digest-bound signoff; `scripts/**` becomes a measured `tooling` budget | Accepted (amends ADR-0018) |
+| [0052](./0052-synthetic-corpus-and-provenance-split.md) | Replay corpus: deterministic synthetic substrate, fenced provenance split, honestly empty real-derived partition, digest-bound signoff; `scripts/**` becomes a measured `tooling` budget | Accepted (amends ADR-0018) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

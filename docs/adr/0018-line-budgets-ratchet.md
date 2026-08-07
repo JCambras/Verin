@@ -1,6 +1,6 @@
 # ADR-0018: Line budgets — ratchet-down platform ceilings, a separate growable presentation budget, a load gate
 
-**Status:** Accepted (amended by ADR-0029, the ADR-0030..0040 line-budget series, ADR-0041, and the ledger series ADR-0042..0045 and ADR-0047..0051, each via this ADR's own amendment path; ADR-0051 carries the live ceilings; amended by ADR-0039 §7: build-time tooling under `scripts/**` becomes a third
+**Status:** Accepted (amended by ADR-0029, the ADR-0030..0040 line-budget series, ADR-0041, and the ledger series ADR-0042..0045 and ADR-0047..0051, each via this ADR's own amendment path; ADR-0051 carries the live ceilings; amended by ADR-0052 §7: build-time tooling under `scripts/**` becomes a third
 measured envelope with its own ceiling, and the per-file ceiling walks that tree too)
 **Date:** 2026-07-18
 **Deciders:** Founding architect
@@ -17,7 +17,7 @@ only by an ADR bump.
 ## Decision
 
 Two independent budgets, both fitness-enforced (Phase B/D) - joined later by a third, the tooling
-envelope of ADR-0039 §7:
+envelope of ADR-0052 §7:
 
 - **Platform ceiling** — `contracts/` + `domain/` + `infrastructure/` production lines. **Ratchet-down
   only**: lowering a ceiling is a code change; raising it is an ADR amendment. Plus a per-file ceiling
@@ -25,7 +25,7 @@ envelope of ADR-0039 §7:
 - **Presentation budget** — `app/presentation/` (+ presentation flows). Its own separate envelope, **grown
   only by an explicit ADR bump** (never a silent edit) so richness is planned. Platform ceilings are
   unaffected by presentation growth.
-- **Tooling envelope** (added by ADR-0039 §7) - `scripts/**`, previously walked by neither budget fence.
+- **Tooling envelope** (added by ADR-0052 §7) - `scripts/**`, previously walked by neither budget fence.
   Same rules: its own ceiling, raised only by an ADR amendment, with the same zero-total staleness guard,
   so moving code out of `src/` measures it instead of hiding it.
 

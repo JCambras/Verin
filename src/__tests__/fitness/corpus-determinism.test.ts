@@ -25,7 +25,7 @@ import {
 } from "./_fence-utils";
 
 /**
- * CORPUS-DETERMINISM FENCE (v3 prompt 11, ADR-0039; charter #1/#4).
+ * CORPUS-DETERMINISM FENCE (v3 prompt 11, ADR-0052; charter #1/#4).
  *
  * The corpus is only usable as replay input if the same spec and seed produce
  * the same bytes forever. Five properties, each of which a plausible generator

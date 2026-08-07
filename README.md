@@ -27,7 +27,7 @@ Practice intelligence for registered investment advisers. The third and final bu
    and acceptance checklist [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md).
 10. **[`docs/golden-cases.md`](./docs/golden-cases.md)** - the captain-signed golden-case truth set
     (D-035), machine-mirrored in `fixtures/golden/` and gated by `pnpm golden:validate`.
-11. **[`docs/corpus.md`](./docs/corpus.md)** - the normative replay-corpus specification (ADR-0039),
+11. **[`docs/corpus.md`](./docs/corpus.md)** - the normative replay-corpus specification (ADR-0052),
     generated into `fixtures/corpus/` and gated by `pnpm corpus:validate`. Its real-derived partition
     ships empty behind [`docs/corpus-scrub-procedure.md`](./docs/corpus-scrub-procedure.md), so no
     detection rate is reported.

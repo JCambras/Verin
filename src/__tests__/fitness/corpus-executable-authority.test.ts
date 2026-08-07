@@ -136,6 +136,7 @@ describe("detects (companion): a blended, mislabeled, unattested or self-congrat
       "src/contracts/decision-core/execution.ts",
       "src/contracts/decision-core/explanation.ts",
       "src/contracts/decision-core/ids.ts",
+      "src/contracts/decision-core/ledger.ts",
       "src/contracts/decision-core/trigger.ts",
       "src/contracts/errors.ts",
       "src/contracts/result.ts",

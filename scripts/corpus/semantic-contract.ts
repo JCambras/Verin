@@ -101,7 +101,12 @@ export const REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES = [
  * merely consumes. `result.ts`/`errors.ts` are the Result/AppError plumbing a
  * refusal travels through, and the decision-core record vocabulary below is
  * reached only by `serialization.ts`'s bundle and decision projections, which
- * the corpus never builds - it calls `canonicalJson` alone.
+ * the corpus never builds - it calls `canonicalJson` alone. `ledger.ts` is the
+ * same shape of plumbing one module further out: the golden loader re-exports
+ * `LEDGER_EVENT_TYPES` for `validateGoldenCases`, and the corpus calls
+ * `loadGoldenCases`/`loadScenarioRefs` only - no corpus byte is derived from the
+ * ledger event vocabulary, so binding it would invalidate a signature over
+ * bytes that did not move (D-177).
  *
  * DECLARED, not discovered: the closure fence holds this list plus the bound
  * list equal to the complete closure, so a corpus module that starts depending
@@ -114,6 +119,7 @@ export const REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES = [
   "src/contracts/decision-core/execution.ts",
   "src/contracts/decision-core/explanation.ts",
   "src/contracts/decision-core/ids.ts",
+  "src/contracts/decision-core/ledger.ts",
   "src/contracts/decision-core/trigger.ts",
   "src/contracts/errors.ts",
   "src/contracts/result.ts",

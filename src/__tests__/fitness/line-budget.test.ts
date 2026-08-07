@@ -56,63 +56,71 @@ const CEILINGS = {
   domain: 1650, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
-  // BUILD-TIME TOOLING under scripts/** (ADR-0039 amendment to ADR-0018). Until
+  // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
   // corpus generator out of src/ would have been evasion rather than
   // discipline. Measured 3636 at introduction; 3818 after the PR-11a review
   // round (D-078/D-080 split observation from business instants and replaced
   // substring resolution with structured parses), then 4254 after D-081 closed
-  // the graph, intake, signoff, and measurement review findings. ADR-0039 raises
+  // the graph, intake, signoff, and measurement review findings. ADR-0052 raises
   // the ceiling from 4000 to 4300 with 46 lines of explicit headroom. D-082
   // raises it to 4900; D-084 records 4900 measured lines after the final
   // replay-intake review. D-085 raises it to 5900 against 5747 measured lines.
   // D-086 raises it to 6200 against 5996 measured lines for outcome-based
   // semantics, request-bound conflict topology, schema-driven uniqueness, and
-  // assignment-aware determinism enforcement. D-122 raises it to 8000 against
-  // 7941 measured lines for exact pending-action balance accounting. D-124
+  // assignment-aware determinism enforcement. D-152 raises it to 8000 against
+  // 7941 measured lines for exact pending-action balance accounting. D-154
   // keeps it at 8000 against 7989 lines after settled-outgoing reconciliation.
-  // D-125 raises it to 8100 against 8018 lines for transitive determinism
-  // provenance and restriction lifecycle recomputation. D-128 (ADR-0039) raises
+  // D-155 raises it to 8100 against 8018 lines for transitive determinism
+  // provenance and restriction lifecycle recomputation. D-158 (ADR-0052) raises
   // it to 8300 for the conflict-safe corpus substrate. The recorded figure then
   // went a round stale (8276 against an actual 8292), leaving EIGHT lines of
   // real headroom - the exact condition the header above argues against, where
   // the next one-line correction fails `pnpm test` on an unrelated ceiling and
-  // the only remedy is an ADR amendment. D-137 (ADR-0039) re-measures 8446
+  // the only remedy is an ADR amendment. D-167 (ADR-0052) re-measures 8446
   // lines AFTER the fail-closed evidence vocabulary, the spec-coverage check,
   // the narrowed executable-authority binding, and the parameterized signoff
   // root, and raises the ceiling to 8700 so a review round has room to correct
   // itself. That figure then went stale the same way, by 141 lines the two
-  // review commits after it added, so D-142 KEEPS the ceiling at 8700 and
-  // records the re-measured 8587 - 113 lines of real headroom. D-143 keeps it
+  // review commits after it added, so D-172 KEEPS the ceiling at 8700 and
+  // records the re-measured 8587 - 113 lines of real headroom. D-173 keeps it
   // at 8700 again and re-measures 8607 after the single-sourced real-derived
-  // intake filename rule - 93 lines of real headroom. D-145 keeps it at 8700
+  // intake filename rule - 93 lines of real headroom. D-175 keeps it at 8700
   // once more and re-measures 8657 after the intake naming authority moved into
   // its own module, which the per-file ceiling forced and which costs one
-  // module header - 43 lines of real headroom. D-146 keeps it at 8700 and
+  // module header - 43 lines of real headroom. D-176 keeps it at 8700 and
   // re-measures 8681 after the intake anchoring rule became a STRUCTURAL read
   // of the pattern rather than a first-and-last-character test - 19 lines of
   // real headroom, the narrowest this ceiling has run, named here so the next
-  // change reads it as the ADR amendment it now is. Every raise above is a
-  // MEASURED ADR amendment recorded in ADR-0039, never a code
+  // change reads it as the ADR amendment it now is. D-177 raises it to 9300
+  // against 9053 measured lines: the envelope arrives on the decision-ledger
+  // trunk, whose OWN build-time tooling (`seed-decision-ledger.ts`,
+  // `ledger-rebuild{,-args}.ts`, `decision-ledger-vacuity.ts`, plus the
+  // chain-verify, restore-drill and seed edits) this bucket now measures for the
+  // first time - 366 lines this branch did not write and cannot shrink. A
+  // ceiling is measured on the tree AS IT LANDS, so it is re-taken here rather
+  // than inherited. Every raise above is a
+  // MEASURED ADR amendment recorded in ADR-0052, never a code
   // change - a ceiling raised without a measurement beside it is a ceiling
   // nobody is holding, and a measurement left stale is the same ceiling with a
   // number nobody re-took. Tooling is REPORTED SEPARATELY, never averaged into
   // a platform layer.
   //
-  // `src/__tests__/**` is NOT in any bucket: 38,728 lines that no ceiling
-  // holds (37,529 before D-143 split the two oversized corpus fence files into
+  // `src/__tests__/**` is NOT in any bucket: 45,362 lines that no ceiling
+  // holds (37,529 before D-173 split the two oversized corpus fence files into
   // per-topic modules, which costs one import header per file; 38,125 before
   // the non-determinism scanner was decomposed into per-concern modules under
-  // the same ceiling; 38,469 before D-145 made the shared corpus world rebuild
-  // itself on a watch rerun and refuse an unpinned clock; 38,641 before D-146
+  // the same ceiling; 38,469 before D-175 made the shared corpus world rebuild
+  // itself on a watch rerun and refuse an unpinned clock; 38,641 before D-176
   // proved the sharing seam against a counted double instead of two more real
-  // validations). Every figure here is re-measured with this file's own
-  // algorithm on the tree AS IT LANDS - the D-145 figure went a review round
+  // validations; 38,728 before the decision-ledger suites and fences landed
+  // beneath it). Every figure here is re-measured with this file's own
+  // algorithm on the tree AS IT LANDS - the D-175 figure went a review round
   // stale by 80 lines, which is what the paragraph above says a number nobody
   // re-took is worth. That gap is recorded
-  // honestly in D-142 under follow-up key `fu-corpus-test-tree-budget`, not left
+  // honestly in D-172 under follow-up key `fu-corpus-test-tree-budget`, not left
   // implicit here.
-  tooling: 8700,
+  tooling: 9300,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";
@@ -177,7 +185,7 @@ describe("line-budget fence (per-layer)", () => {
       expect(bucket(`${REPO_ROOT}src/app/presentation/x.tsx`)).toBe("presentation");
       expect(bucket(`${REPO_ROOT}src/domain/x.ts`)).toBe("domain");
     });
-    it("build-time tooling is charged to `tooling`, never to a platform layer (ADR-0039)", () => {
+    it("build-time tooling is charged to `tooling`, never to a platform layer (ADR-0052)", () => {
       expect(bucket(`${REPO_ROOT}scripts/corpus/generate.ts`)).toBe("tooling");
       expect(bucket(`${REPO_ROOT}scripts/db-seed.ts`)).toBe("tooling");
       expect(bucket(`${REPO_ROOT}src/contracts/x.ts`)).toBe("contracts");

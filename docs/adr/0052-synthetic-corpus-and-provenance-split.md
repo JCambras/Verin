@@ -1,4 +1,4 @@
-# ADR-0039: The replay corpus is a deterministic synthetic substrate with a fenced provenance split, an honestly empty real-derived partition, and digest-bound per-version signoff
+# ADR-0052: The replay corpus is a deterministic synthetic substrate with a fenced provenance split, an honestly empty real-derived partition, and digest-bound per-version signoff
 
 **Status:** Accepted
 **Date:** 2026-07-28
@@ -309,27 +309,27 @@ D-093 keeps the ceiling at 7900 against 7898 measured lines after adding opaque 
 projection, signed validation-gateway roots, ambient-global nondeterminism coverage, and distinct
 settled-credit treatment semantics. The 2-line buffer preserves those existing ownership boundaries
 under the unchanged 500-line file ceiling.
-D-122 raises the ceiling to 8000 against 7941 measured lines for element-access nondeterminism coverage,
+D-152 raises the ceiling to 8000 against 7941 measured lines for element-access nondeterminism coverage,
 explicit pending-action balance inclusion, and exact-once funding arithmetic. The 59-line buffer preserves
 the separated determinism, schema, semantic, and topology owners under the unchanged 500-line file ceiling.
-D-124 keeps the ceiling at 8000 against 7989 measured lines after adding settled-outgoing availability
+D-154 keeps the ceiling at 8000 against 7989 measured lines after adding settled-outgoing availability
 semantics. The 11-line headroom remains measured rather than implicit.
-D-125 raises the ceiling to 8100 against 8018 measured lines for transitive determinism provenance and
+D-155 raises the ceiling to 8100 against 8018 measured lines for transitive determinism provenance and
 restriction lifecycle recomputation. The 82-line buffer preserves the separate fence and semantic owners.
-D-126 keeps the ceiling at 8100 against 8035 measured lines after completing default-binding, callable
+D-156 keeps the ceiling at 8100 against 8035 measured lines after completing default-binding, callable
 alias, CommonJS, and computed-member provenance; restoring the repository-wide no-blending scan; and
 rejecting impossible synthetic effectivity and withdrawal schedules. The 65-line buffer preserves the
 separate fence and schema owners.
-D-128 raises the ceiling to 8300 against 8112 measured lines for complete structured-write provenance,
+D-158 raises the ceiling to 8300 against 8112 measured lines for complete structured-write provenance,
 declared repository-input boundaries, and derivable real-derived time-zone rules. The 188-line buffer
 preserves the separate fence, schema, and semantic owners under the unchanged 500-line file ceiling.
-D-129 keeps the ceiling at 8300 against 8138 measured lines after closing dynamic-code and compound-flow
+D-159 keeps the ceiling at 8300 against 8138 measured lines after closing dynamic-code and compound-flow
 origins plus recorded time-zone and request-source topology. The 162-line buffer preserves the separate
 fence, semantic, and topology owners under the unchanged 500-line file ceiling.
-D-130 keeps the ceiling at 8300 against 8250 measured lines after sealing repository file reads and
+D-160 keeps the ceiling at 8300 against 8250 measured lines after sealing repository file reads and
 making synthetic authority and bank-verification evidence unambiguous. The 50-line buffer preserves the
 separate input, semantic, schema, and fence owners under the unchanged 500-line file ceiling.
-D-137 raises the ceiling to 8700 against 8446 measured lines for the fail-closed evidence-kind
+D-167 raises the ceiling to 8700 against 8446 measured lines for the fail-closed evidence-kind
 vocabulary, the hand-owned spec-coverage check that replaced a tautological digest test, the narrowed
 executable-authority binding with its declared exclusions, and the parameterized signoff root. The
 recorded figure had itself gone a round stale (8276 against an actual 8292), leaving eight lines of real
@@ -337,26 +337,35 @@ headroom - the condition this budget exists to avoid, where a one-line correctio
 unrelated ceiling. The 254-line buffer is deliberate: a ceiling that cannot absorb a review round buys
 no discipline, it converts findings into documentation deletions. Every file stays under the unchanged
 500-line ceiling.
-D-142 KEEPS the ceiling at 8700 against a re-measured 8587 lines, after the serial-execution
-configuration moved out of the `package.json` strings and into `vitest.config.ts`. D-137's figure was
+D-172 KEEPS the ceiling at 8700 against a re-measured 8587 lines, after the serial-execution
+configuration moved out of the `package.json` strings and into `vitest.config.ts`. D-167's figure was
 true when written and went stale by the 141 lines the two review commits after it added - the same
-drift D-137 recorded one round earlier, which is why the measurement is re-taken at the END of a review
+drift D-167 recorded one round earlier, which is why the measurement is re-taken at the END of a review
 round rather than at the change that motivated the ceiling. The 113-line buffer holds; the largest
 tooling file is 475 lines, under the unchanged 500-line ceiling.
-D-143 KEEPS the ceiling at 8700 against a re-measured 8607 lines, after the real-derived intake filename
+D-173 KEEPS the ceiling at 8700 against a re-measured 8607 lines, after the real-derived intake filename
 rule was single-sourced from the case schema. 93 lines of real headroom.
-D-145 KEEPS the ceiling at 8700 against a re-measured 8657 lines, after the intake naming authority moved
+D-175 KEEPS the ceiling at 8700 against a re-measured 8657 lines, after the intake naming authority moved
 into its own module - a move the 500-line per-file ceiling forced, costing one module header. 43 lines of
 real headroom.
-D-146 KEEPS the ceiling at 8700 against a re-measured 8681 lines, after the intake anchoring rule became a
+D-176 KEEPS the ceiling at 8700 against a re-measured 8681 lines, after the intake anchoring rule became a
 STRUCTURAL read of the pattern rather than a first-and-last-character test. 19 lines of real headroom -
 the narrowest this ceiling has run, named here so the next change reads it as the ADR amendment it now is.
+D-177 RAISES the ceiling to 9300 against a re-measured 9053 lines, on the rebase onto the prompt-7
+decision-ledger trunk. 366 of those lines are the trunk's own build-time tooling - `seed-decision-ledger.ts`,
+`ledger-rebuild.ts`, `ledger-rebuild-args.ts`, `decision-ledger-vacuity.ts`, and the chain-verify,
+restore-drill, seed and golden-loader edits - which this envelope measures for the first time because it
+did not exist when they landed. This branch did not write them and cannot shrink them, and a ceiling is
+measured on the tree AS IT LANDS, so the figure is re-taken rather than inherited. The 247-line buffer is
+the same deliberate review-round allowance the 8700 raise argued for; every tooling file stays under the
+unchanged 500-line per-file ceiling.
 
 This amendment budgets `scripts/**` and stops there. `src/__tests__/**` remains outside both budget
-fences - 38,728 lines that no ceiling holds (37,529 before D-143 split the two oversized corpus fence
-files into per-topic modules, then the non-determinism scanner decomposition, the D-145 watch-rerun
-rebuild, and the D-146 counted double) - and the unwalked-tree argument above applies to it
-verbatim. That gap is DEFERRED, not exempted: it is recorded in D-142 under follow-up key
+fences - 45,362 lines that no ceiling holds (37,529 before D-173 split the two oversized corpus fence
+files into per-topic modules, then the non-determinism scanner decomposition, the D-175 watch-rerun
+rebuild, and the D-176 counted double; 38,728 before the decision-ledger suites and fences landed beneath
+it) - and the unwalked-tree argument above applies to it
+verbatim. That gap is DEFERRED, not exempted: it is recorded in D-172 under follow-up key
 `fu-corpus-test-tree-budget`, with the next structural test-tree work as its un-defer trigger.
 
 ## What this PR explicitly does NOT claim

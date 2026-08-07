@@ -12,7 +12,7 @@ import { WorldSpecSchema } from "../../../scripts/corpus/world";
 import { real } from "./_corpus-world";
 
 /**
- * CORPUS-TIMESTAMPS FENCE (v3 prompt 11, ADR-0039; charter #1/#4).
+ * CORPUS-TIMESTAMPS FENCE (v3 prompt 11, ADR-0052; charter #1/#4).
  *
  * "Realistic observed and retrieved timestamps" is decorative unless it has a
  * machine meaning. Six checkable rules, applied to every corpus case:

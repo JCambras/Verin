@@ -4,7 +4,7 @@
 
 Signoff is **per corpus version**, bound to the canonical `corpusDigest` recorded in
 `fixtures/corpus/manifest.json` (captain ruling `corpus-signoff-and-measurement`, 2026-07-28;
-ADR-0039). Two legal states exist and nothing in between:
+ADR-0052). Two legal states exist and nothing in between:
 
 | state | `signedBy` | `signedAt` | `signedDigest` |
 |---|---|---|---|

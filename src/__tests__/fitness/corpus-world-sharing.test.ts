@@ -5,7 +5,7 @@ import setup, { pinConfiguredClock } from "./_corpus-world-setup";
 import { real } from "./_corpus-world";
 
 /**
- * CORPUS-WORLD SHARING SEAM (D-145; charter #4/#8).
+ * CORPUS-WORLD SHARING SEAM (D-175; charter #4/#8).
  *
  * The corpus fences read ONE `validateCorpus()` result computed in the fitness
  * project's global setup. Vitest runs global setup once per PROCESS and never

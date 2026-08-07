@@ -50,15 +50,23 @@ export default defineConfig({
     // worker cap the comment below says they are exempt from. Each project
     // therefore declares its own scope, and only the shared exclusions live here.
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
-    // 20s is an ORDINARY-TEST budget, and it is left ordinary on purpose: no
-    // fence gets a bespoke extension to survive a scheduler.
-    testTimeout: 20000,
+    // The budget is ORDINARY and shared - no fence gets a bespoke extension to
+    // survive a scheduler - but it tracks the slowest HONEST check rather than
+    // the fastest machine. The heaviest fences resolve TYPES across the whole
+    // repo (dependency-rule, tokenized-factory-only, no-secret-fallback,
+    // tenant-context-required) and take ~9-10s on a fast dev machine; a GitHub
+    // runner is roughly twice that, so a 20s budget sat right at the edge and CI
+    // timed all three out in one run while every one passed locally (D-131). A
+    // timeout is a clock verdict, never a correctness one - 60s still catches a
+    // hang, and shrinking a fence to fit a stopwatch is how fences get weakened.
+    // The serial-execution note below is what makes even this budget honest.
+    testTimeout: 60000,
     // Hooks get the SAME budget as test bodies. Spinning up a PGlite instance is
     // identical work whether it happens in a `beforeEach` or inline, and the 10s
     // hook default made the store-backed integration suites time out under
     // parallel load while the same work passed in isolation - flakiness produced
     // by the config, not by the code under test.
-    hookTimeout: 20000,
+    hookTimeout: 60000,
     // THE CORPUS WORLD'S INPUTS ARE WATCHED, or watch mode would assert against
     // a snapshot. The fitness fences read one shared `validateCorpus()` result
     // computed in global setup, which vitest runs ONCE PER PROCESS, and they no
@@ -83,7 +91,7 @@ export default defineConfig({
     // `src/__tests__/unit/decision-core.test.ts` in the OTHER project, which a
     // fitness-scoped list would silently stop rerunning. A hand-kept dependency
     // map whose staleness mode is a green suite is a worse trade than wall
-    // clock (D-146).
+    // clock (D-176).
     forceRerunTriggers: [
       `${ROOT}/**/package.json`,
       `${ROOT}/{vitest,vite}.config.*`,
@@ -101,13 +109,14 @@ export default defineConfig({
     // `generatorProject`), and vitest isolates modules per file, so concurrency
     // multiplies the program, not just the work. Measured on a 12-core machine:
     // serially the whole fitness suite takes ~134s and its slowest single fence
-    // ~5s; at two workers that same fence takes ~16s, at four it crosses 20s and
-    // fails, and at twelve five files fail on timeouts while total CPU doubles.
-    // Above one worker, fitness buys wall-clock with flakiness - so the honest
-    // setting for THAT tree is serial, and the timeouts above are honest under
+    // ~5s; at two workers that same fence takes ~16s, at four it crossed the
+    // then-20s budget and failed, and at twelve five files fail on timeouts
+    // while total CPU doubles. Above one worker, fitness buys wall-clock with
+    // flakiness - so the honest setting for THAT tree is serial, and the budget
+    // above stays a clock allowance rather than a contention allowance under
     // it. The unit and integration suites cause none of that contention and stay
     // parallel; serializing them would be a wall-clock tax for a problem they do
-    // not have (D-142). Holding it in the config, not in two `package.json`
+    // not have (D-172). Holding it in the config, not in two `package.json`
     // strings, is what keeps `pnpm test:watch` and the run
     // `scripts/v3-invariants.ts` spawns from picking fitness up at default
     // parallelism - the measured twelve-worker failure case, reachable by a

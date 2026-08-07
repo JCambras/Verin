@@ -45,7 +45,7 @@ import {
 } from "./_fence-utils";
 
 /**
- * CORPUS-PROVENANCE-SPLIT FENCE (v3 prompt 11, ADR-0039; charter #3/#4;
+ * CORPUS-PROVENANCE-SPLIT FENCE (v3 prompt 11, ADR-0052; charter #3/#4;
  * architecture v3 §2.4; demo contract §7).
  *
  * Architecture §2.4 requires the corpus metric to be split by provenance and

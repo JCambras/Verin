@@ -24,7 +24,7 @@ date (never omitted).
 - **e-sign webhook** — an unauthenticated-by-network external callback that resumes a suspended flow.
 - **House-CRM store** — the system of record (identity PII lives here).
 - **Replay-corpus fixtures** - `fixtures/corpus/`: author-invented synthetic cases today, plus a
-  captain-gated intake for anonymized real defect history that ships EMPTY (ADR-0039).
+  captain-gated intake for anonymized real defect history that ships EMPTY (ADR-0052).
 - **Config/secrets** — `SESSION_SECRET`, `ESIGN_WEBHOOK_SECRET`, DB DSN.
 
 Trust boundaries: client → app (never trust client identity/role); app → store (org-scoped); external
@@ -118,7 +118,7 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   and admit only canonical instants, `tok:<16 hex>` identities, derived ids, and closed vocabularies, so
   an unanticipated string is rejected rather than stored; every case needs a complete `scrubAttestation`
   whose reviewer is not its scrubber; and diagnostics print bounded safe paths only, never rejected values
-  (ADR-0039, `docs/corpus-scrub-procedure.md`). *Fence:* `corpus-intake-attestation`,
+  (ADR-0052, `docs/corpus-scrub-procedure.md`). *Fence:* `corpus-intake-attestation`,
   `corpus-provenance-split` (+ the replay/payload companions), run over the empty partition by the
   blocking `corpus` CI gate.
 
