@@ -10,7 +10,6 @@ import {
   type TenantContext,
 } from "@contracts/tenant";
 import {
-  deriveArtifactProvenance,
   foldStoredProvenance,
   parseRecordProvenance,
   type DerivedProvenance,
@@ -112,15 +111,11 @@ async function replayRegisterWindow(
       ...(decisionRecord ? { decisionRecord } : {}),
     });
     if (!projection) continue;
-    const asOf = current && current.provenance.asOf > eventProvenance.asOf
-      ? current.provenance.asOf
-      : eventProvenance.asOf;
     decisions.set(id, {
       projection,
-      provenance: deriveArtifactProvenance(
+      provenance: foldStoredProvenance(
         current ? [current.provenance, eventProvenance] : [eventProvenance],
-        asOf,
-      ),
+      )!,
     });
   }
   const ordered = [...decisions.values()].sort((left, right) =>

@@ -6516,3 +6516,43 @@ refusal survived the rewrite.
 round's additions. Suites pass 11/11, and `pnpm test` passes 1,436/1,436.
 
 **Date:** 2026-08-06 (review corrections, DECISIONS.md D-129).
+
+## The preview is proven by the store, not by its carrier (DECISIONS.md D-130)
+
+**Invariant A:** the DEFAULT operator invocation writes nothing. `rebuildDecisionProjections(db,
+tenant, { apply: false })` runs the identical replay and leaves the store exactly as it found it.
+
+**Injection:** `if (!apply) throw previewRollback(rebuilt);` replaced by `if (!apply) return
+rebuilt;` - the committing refactor the finding described, which leaves the Symbol carrier itself
+untouched and every argv test green.
+
+```text
+× previews a rebuild without writing, then applies the identical fold
+  src/__tests__/integration/ledger-projections.test.ts:215
+  AssertionError: expected [ { org_id: 'firm-a', decision_id: 'dec:GC-01:0001', … } ] to deeply equal []
+```
+
+The assertion that bit reads `decision_state_projection` back out of the store, so it does not
+depend on how the rollback is carried - only on whether the preview wrote.
+
+**Invariant B:** the rebuild's post-condition rejects a fold that did not cover what it replayed.
+
+**Injection:** `if (uncovered) throw appError("STORE_CONSTRAINT", uncovered);` neutered to
+`if (false && uncovered) …`.
+
+```text
+× rolls a rebuild back on 'a dropped projection write'
+  AssertionError: promise resolved instead of rejecting
+× rolls a rebuild back on 'a derived row stamped outside the replay'
+  AssertionError: promise resolved instead of rejecting
+```
+
+Both arms of `replayCoverageReason` are load-bearing: each case injects its own fault into the
+projection INSERT inside the replay transaction and matches its own reason string, so neither arm
+is passing on the other's behalf.
+
+**Revert:** `src/infrastructure/ledger/ledger-verification.ts` was restored from a pre-injection
+copy after each run; `git diff` reports it unchanged by this round. `ledger-projections.test.ts`
+passes 22/22.
+
+**Date:** 2026-08-06 (review corrections, DECISIONS.md D-130).

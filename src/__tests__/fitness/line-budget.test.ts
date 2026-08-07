@@ -34,7 +34,7 @@ import { relative } from "node:path";
 // for the scoped rebuild preview, the whole-chain counted provenance, and the shared
 // decision-id extractor the dedup moved INTO contracts. MEASURED on the composed tree that
 // also carries ADR-0040's prompt-8 primitive catalog: contracts 6064/6110 (46), domain
-// 1581/1650 (69), infrastructure 7788/7840 (52), presentation 928/6000. A figure recorded
+// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 928/6000. A figure recorded
 // here is a MEASUREMENT, so
 // re-measure it in the commit that changes a layer - ADR-0049's import hoist left this
 // line reading a stale figure while the layer had moved, and the whole ratchet chain rests

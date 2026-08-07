@@ -138,8 +138,8 @@ export function deriveArtifactProvenance(inputs: readonly RecordProvenance[], as
  * `deriveArtifactProvenance` over a list of stored facts, stamped with the LATEST
  * input `asOf` so a folded figure never looks fresher than the newest fact behind it.
  * Null for an EMPTY fold: a figure with no inputs has no origin, so it is withheld
- * rather than labeled. Every displayed count folded from stored rows uses this, so
- * the as-of rule cannot drift between one surface's fold and another's.
+ * rather than labeled. Every figure folded from stored rows uses this - counts and
+ * replayed state alike - so the as-of rule cannot drift between one fold and another.
  */
 export function foldStoredProvenance(
   inputs: readonly RecordProvenance[],

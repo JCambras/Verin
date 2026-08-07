@@ -4332,3 +4332,41 @@ examiner has no way to tell from the screen.
 D-123, D-125, D-128; charter #3, #4, #5.
 **Revert path:** each is independent - the invocation module plus the `apply` option, the badge
 derivation, the two provenance folds, the extractor move, and the fence's deferral keys.
+
+### D-130 · 2026-08-06 · reversible · The preview is proven by the store, not by its carrier
+
+**The dry-run half of the scoped repair now has an automated companion.** D-129 landed
+`rebuildDecisionProjections(db, tenant, { apply: false })` and proved it end-to-end by hand;
+nothing in the suite called it. The mechanism is fragile by construction - a module-local Symbol
+carrier thrown out of `db.transaction` and rethrown unwrapped by the driver - so a refactor that
+returned the rebuild instead of throwing it, or a managed-Postgres adapter (D-006/ADR-0004) that
+normalized the thrown value, would silently turn the DEFAULT operator invocation into a committing
+repair with every test still green. `ledger-projections.test.ts` now wipes derived state, previews,
+and asserts on the STORE: projection and reservation-index rows still empty, `decision_ledger`
+rows byte-unchanged, `applied === false`, and the preview's fold equal to the online one; a second
+run with `--apply` repopulates them. Because the assertions read stored rows rather than the
+carrier, they fail on the committing refactor whatever it does to the Symbol.
+
+**The rebuild post-condition is proven by both of its arms.** `replayCoverageReason` had no
+coverage at all. Two fault-injecting cases now intercept the projection INSERT inside the replay
+transaction - one dropping the write, one stamping a `lastSequence` the replay never covered - and
+each is rejected with its own reason and rolled back. Deleting the post-condition fails both.
+
+**`foldStoredProvenance` now owns every stored fold.** ADR-0051 introduced it so the as-of rule
+could not drift between one surface's fold and another's, but the two sites that produce the
+provenance rendered on the decision CARDS - `replayRegisterWindow` and `prepareProjection` - still
+spelled out the same max-`asOf` reduction beside `deriveArtifactProvenance`. Both now call the
+helper; output is byte-identical, which the rebuild-equality tests already assert. Infrastructure
+re-measured at 7,780/7,840 and the figure in `line-budget.test.ts` was updated, per ADR-0051.
+
+**The two labeled counts read as English again.** Wrapping them in `<Metric>` had restructured both
+sentences into a colon-then-value form ("Showing 50 of the decisions replayable in this displayed
+event window: 73 · Computed · as of …"). The metric is inline again - "Showing 50 of 73 decisions
+replayable …" - keeping the provenance label and demonstration watermark that charter #3 requires.
+
+**Why:** a safety property whose only proof is a manual run is a property the next refactor
+silently removes, and a fold that two modules compute separately is a drift surface an ADR named
+but did not close.
+**Relates to:** ADR-0004, ADR-0022, ADR-0051, D-006, D-129; charter #3, #4.
+**Revert path:** each is independent - the two test cases, the two helper call sites, and the JSX
+copy.

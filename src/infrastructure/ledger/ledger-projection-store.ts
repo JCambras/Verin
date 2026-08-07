@@ -10,7 +10,7 @@ import {
   type TenantContext,
 } from "@contracts/tenant";
 import {
-  deriveArtifactProvenance,
+  foldStoredProvenance,
   type DerivedProvenance,
   type RecordProvenance,
 } from "@contracts/provenance";
@@ -124,12 +124,9 @@ async function prepareProjection(
   });
   if (!next) return undefined;
   const stateJson = canonicalJson(next as unknown as JsonValue);
-  const nextProvenance = deriveArtifactProvenance(
+  const nextProvenance = foldStoredProvenance(
     loaded?.provenance ? [loaded.provenance, provenance] : [provenance],
-    loaded?.provenance && loaded.provenance.asOf > provenance.asOf
-      ? loaded.provenance.asOf
-      : provenance.asOf,
-  );
+  )!;
   const provenanceJson = canonicalJson(nextProvenance as unknown as JsonValue);
   if (!stateJson.ok || !provenanceJson.ok) {
     throw appError("VALIDATION", "decision projection is not canonically serializable");

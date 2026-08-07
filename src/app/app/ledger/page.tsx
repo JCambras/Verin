@@ -104,9 +104,9 @@ export default function DecisionLedgerPage() {
                 {model.decisionsTotal &&
                 model.decisionsTotal.value > model.decisions.length ? (
                   <>
-                    {" "}Showing {model.decisions.length} of the decisions
-                    replayable in this displayed event window:{" "}
-                    <Metric metric={model.decisionsTotal} />.
+                    {" "}Showing {model.decisions.length} of{" "}
+                    <Metric metric={model.decisionsTotal} /> decisions
+                    replayable in this displayed event window.
                   </>
                 ) : null}
               </p>
@@ -239,9 +239,9 @@ export default function DecisionLedgerPage() {
           {model.verification.ok && model.total &&
           model.total.value > model.entries.length ? (
             <p className="text-sm text-slate-600">
-              Showing the latest {model.entries.length} events. Events stored:{" "}
-              <Metric metric={model.total} />. Verification covers the full
-              chain.
+              Showing the latest {model.entries.length} of{" "}
+              <Metric metric={model.total} /> stored events. Verification covers
+              the full chain.
             </p>
           ) : null}
         </>

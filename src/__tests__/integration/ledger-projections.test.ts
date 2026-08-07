@@ -97,6 +97,22 @@ const append = (
   events: Parameters<typeof appendDecisionEvents>[2],
 ) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_TENANT, events, LEDGER_PROVENANCE));
 
+type LedgerTable =
+  | "decision_ledger"
+  | "decision_state_projection"
+  | "decision_reservation_index";
+
+/** Whole stored rows, so a preview is judged by what the STORE holds, not by a return value. */
+const storeRows = async (
+  db: SqlDb,
+  table: LedgerTable,
+  order: string,
+): Promise<Record<string, unknown>[]> =>
+  (await db.query(
+    `SELECT * FROM ${table} WHERE org_id = $1 ORDER BY ${order}`,
+    [LEDGER_ORG],
+  )).rows;
+
 describe("deterministic decision-ledger projections", () => {
   let db: SqlDb;
   beforeEach(async () => {
@@ -159,6 +175,100 @@ describe("deterministic decision-ledger projections", () => {
         escalationMode: "add",
       }],
     });
+  });
+
+  it("previews a rebuild without writing, then applies the identical fold", async () => {
+    const input = decisionRecordingInput();
+    expect((await recordDecision(db, LEDGER_TENANT, input)).ok).toBe(true);
+    const created = allLedgerEventSamples().find(
+      (event) => event.type === "ReservationCreated",
+    )!;
+    await expect(append(db, [created])).resolves.toHaveLength(1);
+    const online = await listDecisionProjections(db, LEDGER_TENANT);
+    const ledgerBefore = await storeRows(db, "decision_ledger", "sequence");
+    const reservationsBefore = await storeRows(
+      db,
+      "decision_reservation_index",
+      "reservation_id",
+    );
+    expect(reservationsBefore).toHaveLength(1);
+
+    await db.query(
+      "DELETE FROM decision_state_projection WHERE org_id = $1",
+      [LEDGER_ORG],
+    );
+    await db.query(
+      "DELETE FROM decision_reservation_index WHERE org_id = $1",
+      [LEDGER_ORG],
+    );
+
+    const preview = await rebuildDecisionProjections(db, LEDGER_TENANT, {
+      apply: false,
+    });
+    expect(preview.applied).toBe(false);
+    expect(preview.entriesReplayed).toBe(ledgerBefore.length);
+    expect(preview.projections).toEqual(online);
+    // The preview is judged by the STORE, never by the rollback carrier: a refactor
+    // that returned the rebuild instead of throwing it would commit the repair and
+    // fail HERE, whatever it did to the carrier.
+    expect(await storeRows(db, "decision_state_projection", "decision_id"))
+      .toEqual([]);
+    expect(await storeRows(db, "decision_reservation_index", "reservation_id"))
+      .toEqual([]);
+    expect(await storeRows(db, "decision_ledger", "sequence")).toEqual(ledgerBefore);
+
+    const applied = await rebuildDecisionProjections(db, LEDGER_TENANT, {
+      apply: true,
+    });
+    expect(applied.applied).toBe(true);
+    expect(applied.projections).toEqual(preview.projections);
+    expect(await listDecisionProjections(db, LEDGER_TENANT)).toEqual(online);
+    expect(await storeRows(db, "decision_reservation_index", "reservation_id"))
+      .toEqual(reservationsBefore);
+    expect(await storeRows(db, "decision_ledger", "sequence")).toEqual(ledgerBefore);
+  });
+
+  it.each([
+    {
+      fault: "a dropped projection write",
+      intercept: () => null,
+      reason: "replayed decision has no derived row after the rebuild",
+    },
+    {
+      fault: "a derived row stamped outside the replay",
+      intercept: (params: unknown[]) => [
+        ...params.slice(0, 2),
+        (params[2] as string).replace(/"lastSequence":\d+/, '"lastSequence":99'),
+        ...params.slice(3),
+      ],
+      reason: "derived row cites a sequence the replay did not cover",
+    },
+  ])("rolls a rebuild back on $fault", async ({ intercept, reason }) => {
+    expect(
+      (await recordDecision(db, LEDGER_TENANT, decisionRecordingInput())).ok,
+    ).toBe(true);
+    const online = await listDecisionProjections(db, LEDGER_TENANT);
+    const faulty: SqlDb = {
+      ...db,
+      transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
+        return db.transaction((tx) => fn({
+          ...tx,
+          async query<U>(
+            sql: string,
+            params?: unknown[],
+          ): Promise<SqlResult<U>> {
+            if (!sql.includes("INSERT INTO decision_state_projection")) {
+              return tx.query<U>(sql, params);
+            }
+            const next = intercept(params ?? []);
+            return next ? tx.query<U>(sql, next) : { rows: [] };
+          },
+        }));
+      },
+    };
+    await expect(rebuildDecisionProjections(faulty, LEDGER_TENANT)).rejects
+      .toMatchObject({ code: "STORE_CONSTRAINT", message: reason });
+    expect(await listDecisionProjections(db, LEDGER_TENANT)).toEqual(online);
   });
 
   it("repairs corrupted derived state but refuses a truncated ledger", async () => {
