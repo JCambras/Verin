@@ -62,11 +62,16 @@ import { join, relative } from "node:path";
 // round (atomic Phase-0 unwind, brand-tight temporal bytes, constant-scoped
 // temporal widening, single-walk key reads): contracts 6,555 against an
 // unchanged 6,600 ceiling, and domain 4,063 - which passed the 4,050 ceiling,
-// so the ceiling moves to 4,150. Re-measure in any commit that changes a
-// layer; a raise is always a measured ADR amendment.
+// so the ceiling moved to 4,150. The SECOND review round (cascaded unwind of
+// every primitive a rejected rule configured, per-parameter rejection
+// attribution, one shared context-key precedence, the fail-closed
+// future-observation freshness read, the constant-binding assembly guard)
+// added 101 domain lines and passed 4,150 in turn: ADR-0054 is amended again to
+// 4,250 against a re-measured 4,164, contracts unmoved at 6,555. Re-measure in
+// any commit that changes a layer; a raise is always a measured ADR amendment.
 const CEILINGS = {
   contracts: 6600, // ADR-0054, on the prompt-9 policy grammar (6,555 measured)
-  domain: 4150, // ADR-0054, on the prompt-9 policy interpreter module (4,063 measured)
+  domain: 4250, // ADR-0054, on the prompt-9 policy interpreter module (4,164 measured)
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until

@@ -5764,3 +5764,69 @@ tautology).
 
 **Revert path:** D-178's revert path; each correction is independent of the
 others.
+
+## D-180 - Prompt-9 review round two: the unwind cascades, and rejection blames only the rule that wrote the refused name
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-179, ADR-0053, ADR-0054,
+firm ruling `p9-unwind-scope-and-freshness`, v3 §6.1, invariant 12/16, charter #4
+
+Five corrections to D-179's atomic unwind and its neighbourhood, all forward
+fixes:
+
+**The unwind cascades to every primitive the rejected rule configured.** D-179
+unwound a rejected rule's Phase-0 contributions, but Phase 1 had already run and
+only the REFUSING primitive was skipped. One rule may write `set_parameter` to
+two primitives (load check 7 keys on `set_parameter:<primitiveId>:<parameter>`),
+so the other could publish a result computed from a write the trace no longer
+records. Per the ruling, option (i): every primitive a rejected rule configured
+by `set_parameter` or `select_candidate` now lands `unevaluable`, publishes
+nothing, and its dependents fall out unevaluable through the ordinary
+missing-binding path - so no published value anywhere in the trace rests on a
+deleted write. No re-evaluation pass (option (ii) was rejected).
+
+**Rejection blames only the rule whose written name was refused.** The rejection
+was attributed to every rule that had written ANY parameter on that primitive,
+which under atomicity erased an innocent rule's whole Phase-0 contribution.
+Attribution now reads the parameter names the schema refusal actually names
+(issue `path[0]`, strict-object `keys`, recursing through union arm `errors`)
+and implicates exactly the rules that wrote one; when no policy-written name is
+among them the malformed harness assembly keeps the structural refusal.
+
+**One context-key precedence.** `resolveValue` read intent first and the Phase-1
+binding assembly read published facts first, so a key present in both would
+resolve two ways in one evaluation. Both now go through `resolveContextKey`:
+published facts, then intent. `deriveContextKeys` already refuses the collision
+upstream, so the order decides nothing today - naming it once is what keeps it
+that way.
+
+**A future-dated observation is unevaluable, not maximally fresh.** `is_fresh`
+computed `asOf - observedAt <= window`, and a negative age satisfies every
+window, so impossible-in-time data read as fresh and a `not(is_fresh(...))`
+staleness guard silently did not fire - the one fail-open corner in a
+fail-closed evaluator. It now returns unevaluable with an
+`is_fresh:<kind> (observation after asOf)` ref, so the rule synthesizes its
+blocker like every other content failure.
+
+**Symmetric assembly guards, deterministic rejection keys.** The constant
+binding overwrote a disagreeing harness context entry while the context binding
+refused one; both now refuse with `context-assembly-conflict`. A rejected
+invocation's execution was also filed under `<primitiveId>:<executions.size>`,
+which is invocation-LIST order - two rejections in different input orders
+produced different trace bytes. Every execution, rejected or not, is now keyed
+by its canonical `(primitive, parameter bytes)` identity, and duplicate
+detection moved onto that one key so a duplicated rejected invocation is refused
+rather than silently collapsing.
+
+ADR-0054's domain figure went stale again by this round's 101 lines and passed
+its own 4,150 ceiling. Re-measured on the tree as it lands: contracts 6,555
+(unmoved) and domain 4,164, so ADR-0054 is amended to a 4,250 domain ceiling.
+The pinned migration-fixture digests are unchanged - the fixture exercises
+neither the rejection path nor a future-dated observation.
+
+**Alternatives rejected:** re-running Phase 1 without the unwound rule's writes
+(ruled out explicitly - a second evaluation pass is a second semantics);
+unwinding an innocent co-writer's contributions too (its write resolved, nothing
+refused it, and nothing published rests on it).
+
+**Revert path:** D-179's revert path; each correction is independent of the
+others.

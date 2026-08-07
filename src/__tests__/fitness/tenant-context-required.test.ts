@@ -82,6 +82,7 @@ const PORT_ESCAPES = new Set([
   "src/domain/policy/evaluate.ts :: evaluatePolicy.<call>",
   "src/domain/policy/evaluate-primitives.ts :: runPrimitivePhase.<call>",
   "src/domain/policy/facts.ts :: evaluatePredicate.<call>",
+  "src/domain/policy/facts.ts :: resolveContextKey.<call>",
   "src/domain/policy/facts.ts :: resolveValue.<call>",
   "src/domain/policy/load.ts :: loadPolicy.<call>",
   "src/domain/policy/load-checks.ts :: checkEffects.<call>",

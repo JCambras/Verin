@@ -4,6 +4,7 @@ import { unwrap } from "@contracts/result";
 import { loadPolicy, type LoadedPolicy } from "@domain/policy/load";
 import { evaluatePolicy } from "@domain/policy/evaluate";
 import { compareProhibitions } from "@domain/policy/trace";
+import type { PolicyEvaluationFacts } from "@domain/policy/facts";
 import {
   canonicalDigest,
   firmAPolicyDocument,
@@ -181,6 +182,22 @@ describe("evaluatePolicy - fail-closed totality", () => {
     });
     const rule = trace.ruleOutcomes.find((o) => o.ruleId === "rule-reserve-evidence-freshness")!;
     expect(rule.outcome).toBe("unevaluable");
+  });
+
+  it("an observation dated AFTER asOf is unevaluable, never maximally fresh", () => {
+    // A negative age satisfies every window, so a `not(is_fresh(...))` guard
+    // would silently not fire on impossible-in-time data. Age is undefined
+    // here, and the fail-closed answer is the blocker every content failure
+    // gets - not the freshest possible reading.
+    const trace = evaluate(firmA, worldFacts({ withdrawalsObservedAt: "2026-08-02T09:00:00.000Z" }));
+    expect(trace.disposition).toEqual({
+      kind: "blocked",
+      blockerCodes: ["rule-unevaluable:rule-reserve-evidence-freshness"],
+    });
+    expect(trace.blockers[0]!.resolvingEvidenceKinds).toEqual(["planned-withdrawals"]);
+    expect(
+      trace.ruleOutcomes.find((o) => o.ruleId === "rule-reserve-evidence-freshness")!.missing,
+    ).toEqual(["is_fresh:planned-withdrawals (observation after asOf)"]);
   });
 
   it("a rule reading missing evidence in a value position synthesizes a blocker", () => {
@@ -383,8 +400,10 @@ describe("evaluatePolicy - a rejected policy-resolved parameter unwinds its rule
         ruleIds: ["rule-out-of-range-horizon"],
       },
     ]);
-    // Fail-closed throughout: the synthesized blocker carries the disposition,
-    // so dropping the unwound prohibition never relaxes the outcome.
+    // The disposition stays fail-closed: the synthesized blocker carries it.
+    // Dropping the unwound prohibition DOES move `prohibited` to `blocked` -
+    // the ruled consequence of atomicity, not an accident - and that is safe
+    // because the blocker offers no resolving evidence to clear it with.
     expect(trace.disposition).toEqual({
       kind: "blocked",
       blockerCodes: ["rule-unevaluable:rule-out-of-range-horizon"],
@@ -423,6 +442,118 @@ describe("evaluatePolicy - a rejected policy-resolved parameter unwinds its rule
         ruleIds: ["rule-surviving"],
       },
     ]);
+  });
+
+  it("cascades to the OTHER primitive the same rule configured, so nothing published survives on a deleted write", () => {
+    // One rule, two targets: net-availability accepts its write and would run,
+    // horizon-projection refuses its own. Unwinding the rule deletes BOTH
+    // writes, so net-availability may not keep a result computed from one.
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        rejectedRule([
+          {
+            kind: "set_parameter",
+            primitiveId: "net-availability",
+            parameter: "subjectScope",
+            value: { kind: "constant", value: "bound-subject" },
+          },
+        ]),
+      ],
+    });
+    const trace = evaluate(policy);
+    expect(trace.parameterResolutions).toEqual([]);
+    const outcomeOf = (primitiveId: string) =>
+      trace.primitiveExecutions.find((e) => e.primitiveId === primitiveId)!;
+    expect(outcomeOf("horizon-projection").outcome).toBe("unevaluable");
+    expect(outcomeOf("net-availability")).toEqual({
+      primitiveId: "net-availability",
+      outcome: "unevaluable",
+      missing: ["configured by unevaluable rule rule-out-of-range-horizon"],
+    });
+    // Its facts are absent, so its dependent falls out unevaluable too - no
+    // published value anywhere in the trace rests on the deleted write.
+    expect(outcomeOf("sufficiency-check")).toEqual({
+      primitiveId: "sufficiency-check",
+      outcome: "unevaluable",
+      missing: ["context:availability.net", "context:projection.total"],
+    });
+    expect(trace.primitiveExecutions.every((e) => e.outcome === "unevaluable")).toBe(true);
+    expect(trace.disposition.kind).toBe("blocked");
+  });
+
+  it("blames only the rule whose OWN written parameter the schema refused", () => {
+    // Two writers on one primitive: the horizonMonths write is refused, the
+    // direction write is fine - and its rule's effects must survive intact.
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        rejectedRule([]),
+        {
+          id: "rule-innocent-writer",
+          when: { op: "all", nodes: [] },
+          effects: [
+            {
+              kind: "set_parameter",
+              primitiveId: "horizon-projection",
+              parameter: "direction",
+              value: { kind: "constant", value: "forward" },
+            },
+            { kind: "prohibit", prohibitionCode: "innocent-prohibition" },
+          ],
+        },
+      ],
+    });
+    const trace = evaluate(policy);
+    expect(trace.ruleOutcomes.find((o) => o.ruleId === "rule-innocent-writer")!.outcome).toBe("fired");
+    expect(trace.prohibitions).toEqual([
+      { code: "innocent-prohibition", source: "firm_policy", ruleIds: ["rule-innocent-writer"] },
+    ]);
+    // Its own write survives too: it resolved, nothing refused it, and no
+    // published result rests on it - the refused primitive published nothing.
+    expect(trace.parameterResolutions).toEqual([
+      {
+        primitiveId: "horizon-projection",
+        parameter: "direction",
+        value: "forward",
+        ruleId: "rule-innocent-writer",
+      },
+    ]);
+    expect(trace.blockers.map((b) => b.code)).toEqual([
+      "rule-unevaluable:rule-out-of-range-horizon",
+    ]);
+  });
+
+  it("refuses structurally when the refused parameter is the harness default, not a policy write", () => {
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        {
+          id: "rule-valid-write",
+          when: { op: "all", nodes: [] },
+          effects: [
+            {
+              kind: "set_parameter",
+              primitiveId: "net-availability",
+              parameter: "subjectScope",
+              value: { kind: "constant", value: "bound-subject" },
+            },
+          ],
+        },
+      ],
+    });
+    const malformed = worldInvocations().map((invocation) =>
+      invocation.primitiveId === "net-availability"
+        ? { ...invocation, parameters: { ...invocation.parameters, claimEvidenceKinds: [] } }
+        : invocation,
+    );
+    const refused = evaluatePolicy(policy, { facts: worldFacts(), invocations: malformed }, registries);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) throw new Error("unreachable");
+    expect(refused.error.code).toBe("invalid-invocation-parameters");
   });
 });
 
@@ -501,6 +632,58 @@ describe("evaluatePolicy - Phase 1 machinery", () => {
     expect(colliding.ok).toBe(false);
     if (colliding.ok) throw new Error("unreachable");
     expect(colliding.error.code).toBe("published-key-collision");
+  });
+
+  it("resolves one context key the SAME way for an AST read and a primitive binding", () => {
+    // `deriveContextKeys` refuses a published/intent collision, so this shape
+    // cannot come out of a derived registry - it is here to pin the ONE
+    // precedence both resolution paths share if some future derivation ever
+    // admits one: published facts win, in the AST plane and the binding plane
+    // alike. A split here would resolve the same key two ways in one run.
+    const base = worldFacts();
+    const collided: PolicyEvaluationFacts = {
+      ...base,
+      intent: new Map([...base.intent, ["availability.net", 1]]),
+    };
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        {
+          id: "reads-collided-key",
+          when: {
+            op: "compare",
+            comparator: "eq",
+            left: { kind: "context", key: "availability.net" },
+            right: { kind: "constant", value: 18_000_000 },
+          },
+          effects: [{ kind: "block", blockerCode: "read-published", resolvingEvidenceKinds: [] }],
+        },
+      ],
+    });
+    const trace = unwrap(
+      evaluatePolicy(policy, { facts: collided, invocations: worldInvocations() }, registries),
+    );
+    expect(trace.ruleOutcomes[0]!.outcome).toBe("fired");
+    // The binding plane agrees: headroom is computed from 18,000,000, not 1.
+    const sufficiency = trace.primitiveExecutions.find((e) => e.primitiveId === "sufficiency-check")!;
+    expect(sufficiency.published!["sufficiency.headroom"]).toBe(9_700_000);
+  });
+
+  it("refuses a harness context entry that disagrees with a CONSTANT binding", () => {
+    const invocations = worldInvocations().map((invocation) =>
+      invocation.primitiveId === "sufficiency-check"
+        ? {
+            ...invocation,
+            parameters: { ...invocation.parameters, bound: { kind: "constant", amountMinor: 4_800_000 } },
+            context: { bound: 1 },
+          }
+        : invocation,
+    );
+    const refused = evaluatePolicy(firmA, { facts: worldFacts(), invocations }, registries);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) throw new Error("unreachable");
+    expect(refused.error.code).toBe("context-assembly-conflict");
   });
 
   it("refuses an invocation naming a primitive outside the pinned catalog", () => {

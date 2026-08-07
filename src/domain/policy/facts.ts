@@ -68,6 +68,24 @@ const isScalar = (value: unknown): value is Scalar =>
   (typeof value === "number" && Number.isFinite(value));
 
 /**
+ * THE context-key precedence, shared by the AST value plane and the Phase-1
+ * binding assembly so one key can never resolve two ways inside one
+ * evaluation: primitive-published facts first, then intent slots. The two
+ * vocabularies are disjoint by construction - `deriveContextKeys` surfaces a
+ * collision as a derivation error rather than admitting the key - so the order
+ * decides nothing today; naming it in ONE place is what keeps it that way.
+ */
+export const resolveContextKey = (
+  key: string,
+  facts: PolicyEvaluationFacts,
+  publishedFacts: ReadonlyMap<string, unknown>,
+): { readonly found: true; readonly value: unknown } | { readonly found: false } => {
+  if (publishedFacts.has(key)) return { found: true, value: publishedFacts.get(key) };
+  if (facts.intent.has(key)) return { found: true, value: facts.intent.get(key) };
+  return { found: false };
+};
+
+/**
  * Resolves a value node over the facts plane plus the accumulated context
  * (intent slots and primitive-published facts). Published facts can be
  * structured; a non-scalar reached in a value position is a miss, not a crash.
@@ -95,15 +113,10 @@ export const resolveValue = (
     }
     case "context": {
       const key = node.key as string;
-      if (facts.intent.has(key)) {
-        return { state: "resolved", value: facts.intent.get(key)! };
-      }
-      if (publishedFacts.has(key)) {
-        const value = publishedFacts.get(key);
-        if (isScalar(value)) return { state: "resolved", value };
-        return missing(`context:${key} (non-scalar)`);
-      }
-      return missing(`context:${key}`);
+      const resolved = resolveContextKey(key, facts, publishedFacts);
+      if (!resolved.found) return missing(`context:${key}`);
+      if (!isScalar(resolved.value)) return missing(`context:${key} (non-scalar)`);
+      return { state: "resolved", value: resolved.value };
     }
   }
 };
@@ -125,10 +138,8 @@ const valueExists = (
       const values = facts.instructions.get(node.instructionKind);
       return values !== undefined && Object.hasOwn(values, node.path);
     }
-    case "context": {
-      const key = node.key as string;
-      return facts.intent.has(key) || publishedFacts.has(key);
-    }
+    case "context":
+      return resolveContextKey(node.key as string, facts, publishedFacts).found;
   }
 };
 
@@ -225,6 +236,19 @@ export const evaluatePredicate = (
       if (observedAt === null || asOf === null) {
         return unevaluable([
           { ref: `is_fresh:${node.evidenceKind} (non-canonical instant)`, evidenceKind: node.evidenceKind },
+        ]);
+      }
+      // An observation the bundle claims to postdate its own asOf has a
+      // NEGATIVE age, which every window admits - impossible data would read as
+      // maximally fresh and a staleness guard would silently not fire. Age is
+      // undefined here, so the honest answer is the same unevaluable every
+      // other content failure gets, and the rule synthesizes its blocker.
+      if (asOf - observedAt < 0) {
+        return unevaluable([
+          {
+            ref: `is_fresh:${node.evidenceKind} (observation after asOf)`,
+            evidenceKind: node.evidenceKind,
+          },
         ]);
       }
       const window = durationToMillis(node.maxAge);

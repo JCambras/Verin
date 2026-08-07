@@ -356,6 +356,13 @@ describe("property D - purity under poisoned ambient sources", () => {
 const DISPOSITION_RANK = { proceed: 0, blocked: 1, prohibited: 2 } as const;
 const MODE_RANK = { automatic: 0, approval: 1, specialist_review: 2 } as const;
 
+/**
+ * Scope: `cumulativeEffect` generates no `set_parameter`, so this family never
+ * reaches the atomic unwind - which by ruled design MAY move `prohibited` to
+ * `blocked` when the rule that prohibited turns out unevaluable. That is a
+ * rank DECREASE, and it is the one documented exception to the monotonicity
+ * asserted here; widening the generator to write parameters must state it.
+ */
 describe("property E - most-restrictive monotonicity", () => {
   it("adding a cumulative-effect rule never weakens disposition or authority", () => {
     fc.assert(

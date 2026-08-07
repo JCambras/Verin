@@ -15,7 +15,7 @@ import { err, ok, type Result } from "@contracts/result";
 import type { PIIBearing } from "@contracts/pii";
 import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
 import type { PublishedFactRecord, PublishedKeyMap } from "@contracts/primitives/values";
-import type { PolicyEvaluationFacts } from "./facts";
+import { resolveContextKey, type PolicyEvaluationFacts } from "./facts";
 import type { PolicyRegistries } from "./registries";
 import {
   compareCanonical,
@@ -65,6 +65,41 @@ const contextBinding = (value: unknown): { readonly key: string } | null =>
     ? { key: (value as Record<string, unknown>)["key"] as string }
     : null;
 
+/**
+ * The parameter names a schema refusal actually NAMES. A field issue carries
+ * the name at `path[0]`; a strict object refusing an unknown key reports at the
+ * object with the offending names in `keys`; a union reports per-arm issue
+ * lists under `errors`, so the walk recurses. Attribution keys on this rather
+ * than on "every rule that wrote anything here": under the atomic unwind an
+ * over-broad blame erases an innocent rule's whole Phase-0 contribution.
+ */
+const collectRefusedNames = (issues: unknown, into: Set<string>): void => {
+  if (!Array.isArray(issues)) return;
+  for (const entry of issues) {
+    if (Array.isArray(entry)) {
+      collectRefusedNames(entry, into);
+      continue;
+    }
+    if (typeof entry !== "object" || entry === null) continue;
+    const issue = entry as Record<string, unknown>;
+    const path = issue["path"];
+    if (Array.isArray(path) && typeof path[0] === "string") into.add(path[0]);
+    const keys = issue["keys"];
+    if (Array.isArray(keys)) {
+      for (const key of keys) if (typeof key === "string") into.add(key);
+    }
+    collectRefusedNames(issue["errors"], into);
+  }
+};
+
+const refusedParameterNames = (error: unknown): ReadonlySet<string> => {
+  const names = new Set<string>();
+  if (typeof error === "object" && error !== null) {
+    collectRefusedNames((error as Record<string, unknown>)["issues"], names);
+  }
+  return names;
+};
+
 const constantBinding = (value: unknown): { readonly amount: unknown } | null =>
   typeof value === "object" &&
   value !== null &&
@@ -101,6 +136,7 @@ export const runPrimitivePhase = (
   const parameterRejections: { primitiveId: string; ruleIds: readonly string[] }[] = [];
 
   const prepared: PreparedInvocation[] = [];
+  const seenKeys = new Set<string>();
   for (const invocation of invocations) {
     const primitive = registries.primitives.get(invocation.primitiveId);
     if (primitive === undefined) {
@@ -110,28 +146,47 @@ export const runPrimitivePhase = (
       );
     }
     const overridden: Record<string, unknown> = { ...invocation.parameters };
-    const overridingRules = new Set<string>();
+    const writtenBy = new Map<string, string>();
     for (const resolution of parameterResolutions.values()) {
       if (resolution.primitiveId !== invocation.primitiveId) continue;
       overridden[resolution.parameter] = resolution.value;
-      overridingRules.add(resolution.ruleId);
+      writtenBy.set(resolution.parameter, resolution.ruleId);
     }
+    // Identity is (primitive, canonical parameter bytes): the ONE canonical
+    // serializer orders nested keys too, so invocation-list order never leaks -
+    // including into the key a REJECTED invocation's execution is filed under.
+    const canonicalParameters = canonicalJson(overridden as JsonValue);
+    if (!canonicalParameters.ok) {
+      return refuse(
+        "invalid-invocation-parameters",
+        `parameters for '${invocation.primitiveId}' are not canonically serializable: ${canonicalParameters.error.message}`,
+      );
+    }
+    const canonicalKey = `${invocation.primitiveId}:${canonicalParameters.value}`;
+    if (seenKeys.has(canonicalKey)) {
+      return refuse(
+        "duplicate-invocation",
+        `primitive '${invocation.primitiveId}' is invoked twice with identical parameters - published facts would collide`,
+      );
+    }
+    seenKeys.add(canonicalKey);
     const parsedParameters = primitive.parameterSchema.safeParse(overridden);
     if (!parsedParameters.success) {
-      if (overridingRules.size === 0) {
+      const refused = refusedParameterNames(parsedParameters.error);
+      const implicated = sortUniqueStrings(
+        [...writtenBy].flatMap(([parameter, ruleId]) => (refused.has(parameter) ? [ruleId] : [])),
+      );
+      if (implicated.length === 0) {
         return refuse(
           "invalid-invocation-parameters",
-          `invocation of '${invocation.primitiveId}' carries parameters its own schema refuses (no policy override involved - the assembly is malformed)`,
+          `invocation of '${invocation.primitiveId}' carries parameters its own schema refuses, none of them policy-written - the assembly is malformed`,
         );
       }
-      // A policy-resolved parameter its target refuses: the writing rules are
-      // reported for fail-closed blockers and the primitive does not run half
-      // configured - its execution is unevaluable too.
-      parameterRejections.push({
-        primitiveId: invocation.primitiveId,
-        ruleIds: sortUniqueStrings(overridingRules),
-      });
-      executions.set(`${invocation.primitiveId}:${executions.size}`, {
+      // A policy-resolved parameter its target refuses: exactly the rules that
+      // wrote a REFUSED name are reported for fail-closed blockers, and the
+      // primitive does not run half configured - its execution is unevaluable.
+      parameterRejections.push({ primitiveId: invocation.primitiveId, ruleIds: implicated });
+      executions.set(canonicalKey, {
         primitiveId: invocation.primitiveId,
         outcome: "unevaluable",
         missing: [`parameters rejected by '${invocation.primitiveId}' schema`],
@@ -150,17 +205,8 @@ export const runPrimitivePhase = (
     const publishedKeyMap: PublishedKeyMap = (
       primitive.publishedKeys as unknown as (parameters: unknown) => PublishedKeyMap
     )(parsedParameters.data);
-    // Identity is (primitive, canonical parameter bytes): the ONE canonical
-    // serializer orders nested keys too, so invocation-list order never leaks.
-    const canonicalParameters = canonicalJson(overridden as JsonValue);
-    if (!canonicalParameters.ok) {
-      return refuse(
-        "invalid-invocation-parameters",
-        `parameters for '${invocation.primitiveId}' are not canonically serializable: ${canonicalParameters.error.message}`,
-      );
-    }
     prepared.push({
-      canonicalKey: `${invocation.primitiveId}:${canonicalParameters.value}`,
+      canonicalKey,
       primitiveId: invocation.primitiveId,
       parameters: parsedParameters.data,
       evidence: invocation.evidence,
@@ -172,15 +218,27 @@ export const runPrimitivePhase = (
     });
   }
 
+  /**
+   * CASCADED UNWIND (firm ruling p9-unwind-scope-and-freshness). A rule whose
+   * write one primitive refused is about to be marked unevaluable and unwound
+   * whole, so no OTHER primitive it configured may keep a published result that
+   * depended on a write the trace no longer records. Every primitive such a
+   * rule configured - by set_parameter or select_candidate - therefore lands
+   * unevaluable too, publishes nothing, and its dependents fall out unevaluable
+   * through the ordinary missing-binding path.
+   */
+  const rejectedRuleIds = new Set(parameterRejections.flatMap((rejection) => rejection.ruleIds));
+  const configuredByRejected = new Map<string, Set<string>>();
+  const taint = (primitiveId: string, ruleId: string): void => {
+    if (!rejectedRuleIds.has(ruleId)) return;
+    const ruleIds = configuredByRejected.get(primitiveId) ?? new Set<string>();
+    ruleIds.add(ruleId);
+    configuredByRejected.set(primitiveId, ruleIds);
+  };
+  for (const resolution of parameterResolutions.values()) taint(resolution.primitiveId, resolution.ruleId);
+  for (const resolution of strategyResolutions.values()) taint(resolution.primitiveId, resolution.ruleId);
+
   prepared.sort((a, b) => compareCanonical(a.canonicalKey, b.canonicalKey));
-  for (let index = 1; index < prepared.length; index += 1) {
-    if (prepared[index]!.canonicalKey === prepared[index - 1]!.canonicalKey) {
-      return refuse(
-        "duplicate-invocation",
-        `primitive '${prepared[index]!.primitiveId}' is invoked twice with identical parameters - published facts would collide`,
-      );
-    }
-  }
 
   // Canonical dependency order: Kahn's algorithm over published->consumed
   // edges, ready set kept sorted by canonical key.
@@ -206,31 +264,50 @@ export const runPrimitivePhase = (
   }
 
   for (const entry of ordered) {
+    const rejectedWriters = configuredByRejected.get(entry.primitiveId);
+    if (rejectedWriters !== undefined) {
+      executions.set(entry.canonicalKey, {
+        primitiveId: entry.primitiveId,
+        outcome: "unevaluable",
+        missing: sortUniqueStrings(
+          [...rejectedWriters].map((ruleId) => `configured by unevaluable rule ${ruleId}`),
+        ),
+      });
+      continue;
+    }
     const assembled: Record<string, unknown> = { ...entry.harnessContext };
     const missingBindings: string[] = [];
     const parameterRecord = entry.parameters as Readonly<Record<string, unknown>>;
     for (const [name, value] of Object.entries(parameterRecord)) {
       const context = contextBinding(value);
       if (context !== null) {
-        const resolved = publishedFacts.has(context.key)
-          ? publishedFacts.get(context.key)
-          : facts.intent.has(context.key)
-            ? facts.intent.get(context.key)
-            : undefined;
-        if (resolved === undefined) {
+        const resolved = resolveContextKey(context.key, facts, publishedFacts);
+        if (!resolved.found) {
           missingBindings.push(context.key);
           continue;
         }
-        if (Object.hasOwn(assembled, name) && assembled[name] !== resolved) {
+        if (Object.hasOwn(assembled, name) && assembled[name] !== resolved.value) {
           return refuse(
             "context-assembly-conflict",
             `invocation of '${entry.primitiveId}' supplies context '${name}' that disagrees with the bound key '${context.key}'`,
           );
         }
-        assembled[name] = resolved;
+        assembled[name] = resolved.value;
       }
       const constant = constantBinding(value);
-      if (constant !== null) assembled[name] = constant.amount;
+      if (constant !== null) {
+        // Same disagreement guard the bound-key path applies: a harness entry
+        // that contradicts the binding is a malformed assembly in BOTH binding
+        // forms, and silently overwriting it would hide the contradiction from
+        // the sufficiency check that re-compares them.
+        if (Object.hasOwn(assembled, name) && assembled[name] !== constant.amount) {
+          return refuse(
+            "context-assembly-conflict",
+            `invocation of '${entry.primitiveId}' supplies context '${name}' that disagrees with its constant binding`,
+          );
+        }
+        assembled[name] = constant.amount;
+      }
     }
     if (missingBindings.length > 0) {
       executions.set(entry.canonicalKey, {
