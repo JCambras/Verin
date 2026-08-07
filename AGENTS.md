@@ -71,9 +71,15 @@ prompts 9-10 consume the catalog (published keys -> AST context vocabulary; bind
 The policy AST + interpreter (v3 prompt 9, ADR-0053) are the grammar in
 `src/contracts/decision-core/policy.ts` (CLOSED: exactly the ratified variants; grammar 1.0.0
 active, 1.1.0 adds only the reserved `elapsed` op, which the loader refuses as grammar-only) and
-the pure module `src/domain/policy/` (seven-check loader, conservative effect-conflict prover
-that REJECTS when disjointness is unprovable, four-phase fail-closed evaluator; no Date/Intl/IO -
-temporal math is integer-only in `temporal.ts`). Predicate arms are a DISCRIMINATED union on `op`
+the pure module `src/domain/policy/` (ten files: seven-check loader - every effect-reading check
+lives in `load-effects.ts` - conservative effect-conflict prover that REJECTS when disjointness is
+unprovable, four-phase fail-closed evaluator; no Date/Intl/IO - temporal math is integer-only in
+`temporal.ts`). A primitive's KEY-SHAPING parameters (the catalog's `keyShapingParameters`, the
+ones its `publishedKeys` reads) are configuration-only: the loader refuses a policy write to one as
+`key-shaping-parameter-not-writable`, and prompt 10's binding model must not re-open that (D-184).
+A context key resolves by its DECLARED ORIGIN (primitive-origin from the published facts,
+intent-origin from the intent slots), so a stray intent entry can never substitute for a fact an
+unevaluable primitive did not publish (D-185). Predicate arms are a DISCRIMINATED union on `op`
 (a plain union re-parses every arm's children: measured 2^depth), and `loadPolicy` refuses a
 document nested past a structural cap BEFORE parsing - bounding admission once is what keeps the
 parse and all five recursive walks below it total, since the evaluator only ever consumes a

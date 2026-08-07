@@ -15,7 +15,11 @@ import { err, ok, type Result } from "@contracts/result";
 import type { PIIBearing } from "@contracts/pii";
 import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
 import type { PublishedFactRecord, PublishedKeyMap } from "@contracts/primitives/values";
-import { resolveContextKey, type PolicyEvaluationFacts } from "./facts";
+import {
+  resolveContextKey,
+  type PolicyContextPlane,
+  type PolicyEvaluationFacts,
+} from "./facts";
 import type { PolicyRegistries } from "./registries";
 import {
   compareCanonical,
@@ -132,6 +136,12 @@ export const runPrimitivePhase = (
   strategyResolutions: ReadonlyMap<string, StrategyResolution>,
 ): Result<PrimitivePhaseOutcome, PolicyEvaluationRefusal> => {
   const publishedFacts = new Map<string, unknown>();
+  // The binding plane resolves keys by the SAME declared origin the AST plane
+  // does, over the facts published so far - one key, one resolution per run.
+  const contextPlane: PolicyContextPlane = {
+    published: publishedFacts,
+    contextKeys: registries.contextKeys,
+  };
   const executions = new Map<string, PrimitiveExecution>();
   const parameterRejections: { primitiveId: string; ruleIds: readonly string[] }[] = [];
 
@@ -295,7 +305,7 @@ export const runPrimitivePhase = (
     for (const [name, value] of Object.entries(parameterRecord)) {
       const context = contextBinding(value);
       if (context !== null) {
-        const resolved = resolveContextKey(context.key, facts, publishedFacts);
+        const resolved = resolveContextKey(context.key, facts, contextPlane);
         if (!resolved.found) {
           missingBindings.push(context.key);
           continue;

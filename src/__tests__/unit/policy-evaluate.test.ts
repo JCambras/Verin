@@ -7,6 +7,7 @@ import { compareProhibitions } from "@domain/policy/trace";
 import type { PolicyEvaluationFacts } from "@domain/policy/facts";
 import {
   canonicalDigest,
+  FIRM,
   firmAPolicyDocument,
   firmBPolicyDocument,
   worldFacts,
@@ -849,6 +850,76 @@ describe("evaluatePolicy - Phase 1 machinery", () => {
     expect(colliding.ok).toBe(false);
     if (colliding.ok) throw new Error("unreachable");
     expect(colliding.error.code).toBe("published-key-collision");
+  });
+
+  it("never lets an intent entry stand in for a key an unevaluable primitive did not publish", () => {
+    // The dangerous half of the same collision: `availability.net` is declared
+    // PRIMITIVE-origin, net-availability refuses its own input here, and a stray
+    // intent entry sits under that key. Resolving it would fire the rule on
+    // harness data instead of landing unevaluable - a silent fail-OPEN.
+    const base = worldFacts();
+    const shadowed: PolicyEvaluationFacts = {
+      ...base,
+      intent: new Map([...base.intent, ["availability.net", 18_000_000]]),
+    };
+    const invocations = worldInvocations().map((invocation) =>
+      invocation.primitiveId === "net-availability"
+        ? {
+            ...invocation,
+            evidence: {
+              resource: { snapshotRef: { firmId: FIRM, id: "snap-balance" }, amountMinor: 20_000_000 },
+              claims: [
+                {
+                  claimKind: "reservation-release",
+                  snapshotRef: { firmId: FIRM, id: "snap-undeclared" },
+                  amountMinor: 1,
+                },
+              ],
+            },
+          }
+        : invocation,
+    );
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        {
+          id: "reads-unpublished-key",
+          when: {
+            op: "compare",
+            comparator: "eq",
+            left: { kind: "context", key: "availability.net" },
+            right: { kind: "constant", value: 18_000_000 },
+          },
+          effects: [{ kind: "block", blockerCode: "read-published", resolvingEvidenceKinds: [] }],
+        },
+      ],
+    });
+    const trace = unwrap(
+      evaluatePolicy(policy, { facts: shadowed, invocations }, registries),
+    );
+    expect(
+      trace.primitiveExecutions.find((e) => e.primitiveId === "net-availability")!.outcome,
+    ).toBe("unevaluable");
+    expect(trace.ruleOutcomes).toEqual([
+      {
+        ruleId: "reads-unpublished-key",
+        phase: "evaluation",
+        outcome: "unevaluable",
+        missing: ["context:availability.net"],
+      },
+    ]);
+    // The authored block never fired; the synthesized one carries the reason.
+    expect(trace.blockers.map((blocker) => blocker.code)).toEqual([
+      "rule-unevaluable:reads-unpublished-key",
+    ]);
+    // The binding plane applies the same origin rule: sufficiency-check's
+    // `available` binding misses rather than reading the intent entry.
+    expect(trace.primitiveExecutions.find((e) => e.primitiveId === "sufficiency-check")).toEqual({
+      primitiveId: "sufficiency-check",
+      outcome: "unevaluable",
+      missing: ["context:availability.net"],
+    });
   });
 
   it("resolves one context key the SAME way for an AST read and a primitive binding", () => {

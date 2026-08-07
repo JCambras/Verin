@@ -6045,3 +6045,54 @@ stratification exists to guarantee).
 **Revert path:** drop `keyShapingParameters` from `CatalogPrimitive` and the six entries, delete
 `checkKeyShapingWrite` and its issue code, fold `load-effects.ts` back into `load-checks.ts` and
 `load.ts`, restore ADR-0054's round-five figures and the `^4.9.0` fast-check range.
+
+## D-185 - Prompt-9 review round seven: a context key resolves by its declared origin
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-102, D-181, D-182, D-183, D-184, ADR-0053,
+ADR-0054, charter #3/#4
+
+**Searching two planes in order is a fail-OPEN when one of them is unvalidated harness input.**
+`resolveContextKey` read the published facts first and fell back to `facts.intent` for ANY key.
+`PolicyEvaluationFacts.intent` is a plain `ReadonlyMap<string, Scalar>` the harness assembles, and
+nothing checks its keys against `registries.contextKeys` - so a stray intent entry sitting under a
+primitive's published key SUBSTITUTED for the fact whenever that primitive landed unevaluable and
+published nothing. `net-availability` refusing its own input left `availability.net` unpublished,
+the intent entry resolved, and the Phase-2 rule reading it compared, fired, and reached its effects
+on harness data - in a module whose contract is that an unresolvable read makes the enclosing rule
+unevaluable and synthesizes its blocker. The structural collision refusal of D-181 closed the
+DERIVED vocabulary; it could not close this, because the two keys never meet in the registry.
+
+**Resolution now reads the key's DECLARED ORIGIN, not a search order.** A key the registry declares
+`{source: "primitive"}` resolves ONLY from that run's published facts; `{source: "intent"}` resolves
+ONLY from the intent slots; a key the registry never declared resolves nowhere. The registry rides
+with the published facts as one `PolicyContextPlane`, so the AST value plane and the Phase-1 binding
+assembly cannot disagree - the same object serves both, which is what keeps one key to one
+resolution per run. The substitution is now unrepresentable rather than improbable: the map the
+harness controls is never consulted for a key it does not own.
+
+**Fenced by a companion that fails on the old code.** The regression case puts an intent entry under
+`availability.net` while `net-availability` refuses its input, and pins BOTH planes - the rule lands
+unevaluable with `context:availability.net` and only its synthesized blocker, and `sufficiency-check`
+misses the same binding. Restoring the ordered search makes the rule read `fired`, which is the
+whole finding. The both-present precedence case of D-180 is unchanged: published still wins, because
+`availability.net` is primitive-origin.
+
+**Also folded in:** ADR-0054's TITLE and the `docs/adr/README.md` index row said domain 4,350 while
+the Decision section, table, and fence all said 4,500 - the two artifacts a reader consults first
+disagreeing with the enforced number, which is D-183's staleness class in the headings rather than
+the figures. Both now read 4,500, and both the fence header and the ADR table are re-measured on the
+tree as this correction lands: contracts 6,602/6,650 (48), domain 4,444/4,500 (56). The ceilings do
+NOT move - a measurement inside its envelope is not a reason to raise one. AGENTS.md's policy-AST
+paragraph gains the D-184 key-shaping constraint (prompt 10's implementer reads that file every
+session; DECISIONS.md and `docs/primitive-rationale.md` are not loaded), the corrected ten-file
+inventory with `load-effects.ts`, and this origin rule.
+
+**Alternatives rejected:** validating `facts.intent` keys against the registry at the evaluator
+boundary (it turns a harness assembly bug into a whole-evaluation refusal, which `trace.ts` reserves
+for structural impossibilities, and it would still leave the resolution order deciding the answer for
+every key that passed); keeping the ordered search and documenting the hazard (the same
+documented-not-enforced posture D-181 rejected for the collision case).
+
+**Revert path:** restore the two-line ordered lookup in `resolveContextKey`, drop
+`PolicyContextPlane` and pass `publishedFacts` again through `facts.ts`, `evaluate.ts`, and
+`evaluate-primitives.ts`, and delete the shadowing regression case.

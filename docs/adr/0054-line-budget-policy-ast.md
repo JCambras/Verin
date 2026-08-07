@@ -1,4 +1,4 @@
-# ADR-0054: Contracts ceiling 6,650 and domain ceiling 4,350 for the policy AST and interpreter
+# ADR-0054: Contracts ceiling 6,650 and domain ceiling 4,500 for the policy AST and interpreter
 
 **Status:** Accepted
 **Date:** 2026-08-07
@@ -35,7 +35,8 @@ context-key-collision refusal; round four: the load-time reservation of the synt
 blocker-code namespaces, the fail-closed non-scalar guard on the evidence and instruction fact
 arms, the per-version grammar-schema memoization, and the integer-depth nesting walk; round six:
 the catalog's key-shaping parameter declaration, the load check that refuses a write to one, and
-the `load-effects.ts` split the per-file ceiling forced to hold it). The
+the `load-effects.ts` split the per-file ceiling forced to hold it; round seven: origin-keyed
+context resolution). The
 figures first recorded here were taken before round one and
 went stale by 20 lines in contracts and 13 in domain, which is exactly what the line-budget fence
 header calls a ceiling with a number nobody re-took. Each round since has re-taken them rather
@@ -56,18 +57,26 @@ import block, which is why the domain ceiling moves rather than the code shrinki
 (ADR-0050). Amended a fifth time: domain 4,500 against a re-measured 4,400, contracts unmoved at
 6,650 against 6,602.
 
+The SEVENTH review round spends part of that room and re-takes the figures rather than inheriting
+them: resolving a context key by its DECLARED ORIGIN (a primitive-origin key comes only from the
+published facts, so an intent entry can never stand in for a fact an unevaluable primitive did not
+publish) adds the context-plane type and its rationale in `facts.ts` plus the two plane
+constructions in the evaluator. Both ceilings stay where they are - domain 4,444 against 4,500,
+contracts unmoved at 6,602 against 6,650 - and the remaining 56 domain lines are NAMED here rather
+than banked, so the next change to `src/domain/**` reads as the measured amendment it will be.
+
 | Layer | Measured | Ceiling | Headroom |
 |---|---:|---:|---:|
 | contracts | 6,602 | 6,650 | 48 |
-| domain | 4,400 | 4,500 | 100 |
+| domain | 4,444 | 4,500 | 56 |
 | infrastructure | 7,786 | 7,840 | 54 |
 
 What the raises pay for: `src/contracts/decision-core/policy.ts` (449 lines - the ratified
 grammar as strict versioned Zod schemas) plus the `parameterSchemaKeys` /
 `parameterConstantAdmissible` helpers and the `keyShapingParameters` declaration in
-`src/contracts/primitives/values.ts` (262); and the ten-file `src/domain/policy/` module (2,809
-lines: load 277, load-checks 377, load-effects 212, conflict 383, facts 292, evaluate 443,
-evaluate-primitives 376, registries 155, temporal 120, trace 174). The per-file ceiling forced the
+`src/contracts/primitives/values.ts` (262); and the ten-file `src/domain/policy/` module (2,853
+lines: load 277, load-checks 377, load-effects 212, conflict 383, facts 316, evaluate 453,
+evaluate-primitives 386, registries 155, temporal 120, trace 174). The per-file ceiling forced the
 load/load-checks, load-checks/load-effects, and evaluate/evaluate-primitives splits, which cost
 three module headers - the same trade D-175 recorded for the corpus intake module.
 

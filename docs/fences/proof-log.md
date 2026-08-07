@@ -9188,3 +9188,32 @@ catalog-derived sweep that covers every declared key-shaping parameter.)
 the full test suite are green on the reverted tree.
 
 **Date:** 2026-08-07 (v3 prompt 9 review round six).
+
+---
+
+## Prompt-9 review-round-seven semantics - D-185
+
+One injection against the correction itself, run on the fixed tree with the fix backed out and
+reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - origin-keyed context resolution replaced by the ordered search**: replaced the
+`context.contextKeys.get(key)?.origin` dispatch in `resolveContextKey` with the pre-fix
+published-then-intent fallback (`if (context.published.has(key)) ...; if (facts.intent.has(key)) ...`).
+
+**Observed failure (`src/__tests__/unit/policy-evaluate.test.ts:904`):**
+```
+× never lets an intent entry stand in for a key an unevaluable primitive did not publish
+AssertionError: expected [ { …(3) } ] to deeply equal [ { …(4) } ]
+- ruleId: "reads-unpublished-key", phase: "evaluation", outcome: "unevaluable",
+-   missing: [ "context:availability.net" ]
++ ruleId: "reads-unpublished-key", phase: "evaluation", outcome: "fired"
+```
+(`net-availability` had refused its own input and published nothing, so the stray `availability.net`
+entry in `facts.intent` resolved in its place: the rule compared harness data, fired, and reached
+its `block` effect instead of landing unevaluable and synthesizing its blocker - a silent fail-OPEN
+in the plane whose contract is that an unresolvable read makes the enclosing rule unevaluable.)
+
+**Reverted:** the injection was reverted immediately; `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
+and the full test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round seven).

@@ -23,7 +23,12 @@
  */
 import { err, ok, type Result } from "@contracts/result";
 import type { PIIBearing } from "@contracts/pii";
-import { evaluatePredicate, resolveValue, type PolicyEvaluationFacts } from "./facts";
+import {
+  evaluatePredicate,
+  resolveValue,
+  type PolicyContextPlane,
+  type PolicyEvaluationFacts,
+} from "./facts";
 import type { LoadedPolicy, LoadedPolicyRule } from "./load";
 import type { PolicyRegistries } from "./registries";
 import {
@@ -153,9 +158,9 @@ export const evaluatePolicy = (
 
   const applyRule = (
     rule: LoadedPolicyRule,
-    publishedFacts: ReadonlyMap<string, unknown>,
+    context: PolicyContextPlane,
   ): PolicyEvaluationRefusal | null => {
-    const outcome = evaluatePredicate(rule.when, facts, publishedFacts);
+    const outcome = evaluatePredicate(rule.when, facts, context);
     if (outcome.truth === "unevaluable") {
       markUnevaluable(
         rule,
@@ -191,7 +196,7 @@ export const evaluatePolicy = (
           message: `(${effect.primitiveId}, ${effect.parameter}) written twice at runtime - the load-time conflict prover was bypassed`,
         };
       }
-      const resolution = resolveValue(effect.value, facts, publishedFacts);
+      const resolution = resolveValue(effect.value, facts, context);
       if (resolution.state === "missing") {
         markUnevaluable(
           rule,
@@ -302,9 +307,13 @@ export const evaluatePolicy = (
   };
 
   // ── Phase 0 ───────────────────────────────────────────────────────────────────
-  const emptyPublished = new Map<string, unknown>();
+  // Nothing is published yet, and a primitive-origin key resolves ONLY from the
+  // published plane - which is what load check 6's stratification already
+  // proves no configuration rule reads.
+  const { contextKeys } = registries;
+  const configurationContext: PolicyContextPlane = { published: new Map(), contextKeys };
   for (const rule of configurationRules) {
-    const refusal = applyRule(rule, emptyPublished);
+    const refusal = applyRule(rule, configurationContext);
     if (refusal !== null) return err(refusal);
   }
 
@@ -343,8 +352,9 @@ export const evaluatePolicy = (
   }
 
   // ── Phase 2 ───────────────────────────────────────────────────────────────────
+  const evaluationContext: PolicyContextPlane = { published: publishedFacts, contextKeys };
   for (const rule of evaluationRules) {
-    const refusal = applyRule(rule, publishedFacts);
+    const refusal = applyRule(rule, evaluationContext);
     if (refusal !== null) return err(refusal);
   }
 

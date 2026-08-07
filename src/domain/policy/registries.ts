@@ -122,10 +122,10 @@ const publishedKindToValueType = {
  * admit a colliding key by ignoring a side channel. That matters far beyond
  * tidiness. Admitting the key would keep the intent descriptor and drop the
  * primitive's, so `primitiveKeyReads` would not count a read of it, the rule
- * would classify `configuration`, the OQ-6 stratification check would stay
- * silent, and the SAME key would resolve from intent in Phase 0 and from the
- * published facts in Phase 2 - the one-key-two-resolutions outcome
- * `resolveContextKey` is written to make impossible.
+ * would classify `configuration`, and the OQ-6 stratification check would stay
+ * silent - while `resolveContextKey`, which resolves by the DECLARED ORIGIN,
+ * would read the intent slot in every phase and leave the fact the primitive
+ * actually published permanently unreachable under its own name.
  */
 export const deriveContextKeys = (
   intentSlots: Readonly<Record<string, PolicyValueType>>,

@@ -25,6 +25,7 @@ import type {
 } from "@contracts/decision-core/policy";
 import type { Scalar } from "@contracts/decision-core/decision";
 import type { PIIBearing } from "@contracts/pii";
+import type { ContextKeyDescriptor } from "./registries";
 import { durationToMillis, epochMillisOf } from "./temporal";
 
 export type EvidenceFactSnapshot = {
@@ -68,22 +69,45 @@ const isScalar = (value: unknown): value is Scalar =>
   (typeof value === "number" && Number.isFinite(value));
 
 /**
- * THE context-key precedence, shared by the AST value plane and the Phase-1
+ * The context plane a key resolves against: what the bound primitives have
+ * published SO FAR in this run, plus the derived registry that declares where
+ * each key legitimately comes from.
+ */
+export type PolicyContextPlane = {
+  readonly published: ReadonlyMap<string, unknown>;
+  readonly contextKeys: ReadonlyMap<string, ContextKeyDescriptor>;
+};
+
+/**
+ * THE context-key resolution, shared by the AST value plane and the Phase-1
  * binding assembly so one key can never resolve two ways inside one
- * evaluation: primitive-published facts first, then intent slots. The two
- * vocabularies are disjoint by construction, and structurally so:
- * `deriveContextKeys` returns NO registry on a collision, so no caller can
- * admit a colliding key. The order therefore decides nothing today; naming it
- * in ONE place is what keeps it that way if some future derivation ever does.
+ * evaluation. It reads the key's DECLARED ORIGIN rather than searching both
+ * planes in order: a primitive-origin key comes only from the published facts,
+ * an intent-origin key only from the intent slots, and a key the registry never
+ * declared resolves nowhere.
+ *
+ * Searching in order would be a fail-OPEN. `facts.intent` is a plain map the
+ * harness assembles - nothing validates its keys against the vocabulary - so an
+ * intent entry sitting under a primitive's published key would SUBSTITUTE for a
+ * fact whenever that primitive landed unevaluable and published nothing. The
+ * enclosing rule would then fire on harness data instead of landing unevaluable
+ * and synthesizing its blocker, which is precisely the silent not-fail-closed
+ * this module exists to prevent. Origin-keyed resolution makes the substitution
+ * unrepresentable rather than merely improbable.
  */
 export const resolveContextKey = (
   key: string,
   facts: PolicyEvaluationFacts,
-  publishedFacts: ReadonlyMap<string, unknown>,
+  context: PolicyContextPlane,
 ): { readonly found: true; readonly value: unknown } | { readonly found: false } => {
-  if (publishedFacts.has(key)) return { found: true, value: publishedFacts.get(key) };
-  if (facts.intent.has(key)) return { found: true, value: facts.intent.get(key) };
-  return { found: false };
+  const origin = context.contextKeys.get(key)?.origin;
+  if (origin === undefined) return { found: false };
+  if (origin.source === "intent") {
+    return facts.intent.has(key) ? { found: true, value: facts.intent.get(key) } : { found: false };
+  }
+  return context.published.has(key)
+    ? { found: true, value: context.published.get(key) }
+    : { found: false };
 };
 
 /**
@@ -102,7 +126,7 @@ export const resolveContextKey = (
 export const resolveValue = (
   node: ValueNode,
   facts: PolicyEvaluationFacts,
-  publishedFacts: ReadonlyMap<string, unknown>,
+  context: PolicyContextPlane,
 ): ValueResolution => {
   switch (node.kind) {
     case "constant":
@@ -126,7 +150,7 @@ export const resolveValue = (
     }
     case "context": {
       const key = node.key as string;
-      const resolved = resolveContextKey(key, facts, publishedFacts);
+      const resolved = resolveContextKey(key, facts, context);
       if (!resolved.found) return missing(`context:${key}`);
       if (!isScalar(resolved.value)) return missing(`context:${key} (non-scalar)`);
       return { state: "resolved", value: resolved.value };
@@ -138,7 +162,7 @@ export const resolveValue = (
 const valueExists = (
   node: ValueNode,
   facts: PolicyEvaluationFacts,
-  publishedFacts: ReadonlyMap<string, unknown>,
+  context: PolicyContextPlane,
 ): boolean => {
   switch (node.kind) {
     case "constant":
@@ -152,7 +176,7 @@ const valueExists = (
       return values !== undefined && Object.hasOwn(values, node.path);
     }
     case "context":
-      return resolveContextKey(node.key as string, facts, publishedFacts).found;
+      return resolveContextKey(node.key as string, facts, context).found;
   }
 };
 
@@ -213,13 +237,13 @@ const memberOf = (value: Scalar, set: readonly PolicyConstant[]): boolean =>
 export const evaluatePredicate = (
   node: PredicateNode,
   facts: PolicyEvaluationFacts,
-  publishedFacts: ReadonlyMap<string, unknown>,
+  context: PolicyContextPlane,
 ): PredicateOutcome => {
   switch (node.op) {
     case "all": {
       const missingValues: MissingValue[] = [];
       for (const child of node.nodes) {
-        const outcome = evaluatePredicate(child, facts, publishedFacts);
+        const outcome = evaluatePredicate(child, facts, context);
         if (outcome.truth === "false") return FALSE;
         if (outcome.truth === "unevaluable") missingValues.push(...outcome.missing);
       }
@@ -228,19 +252,19 @@ export const evaluatePredicate = (
     case "any": {
       const missingValues: MissingValue[] = [];
       for (const child of node.nodes) {
-        const outcome = evaluatePredicate(child, facts, publishedFacts);
+        const outcome = evaluatePredicate(child, facts, context);
         if (outcome.truth === "true") return TRUE;
         if (outcome.truth === "unevaluable") missingValues.push(...outcome.missing);
       }
       return missingValues.length > 0 ? unevaluable(missingValues) : FALSE;
     }
     case "not": {
-      const outcome = evaluatePredicate(node.node, facts, publishedFacts);
+      const outcome = evaluatePredicate(node.node, facts, context);
       if (outcome.truth === "unevaluable") return outcome;
       return outcome.truth === "true" ? FALSE : TRUE;
     }
     case "exists":
-      return ofBoolean(valueExists(node.value, facts, publishedFacts));
+      return ofBoolean(valueExists(node.value, facts, context));
     case "is_fresh": {
       const snapshot = facts.evidence.get(node.evidenceKind);
       if (snapshot === undefined) return FALSE;
@@ -273,8 +297,8 @@ export const evaluatePredicate = (
       return ofBoolean(asOf - observedAt <= window.millis);
     }
     case "compare": {
-      const left = resolveValue(node.left, facts, publishedFacts);
-      const right = resolveValue(node.right, facts, publishedFacts);
+      const left = resolveValue(node.left, facts, context);
+      const right = resolveValue(node.right, facts, context);
       if (left.state === "missing" || right.state === "missing") {
         return unevaluable([
           ...(left.state === "missing" ? left.missing : []),
@@ -284,7 +308,7 @@ export const evaluatePredicate = (
       return compareScalars(node.comparator, left.value, right.value);
     }
     case "in": {
-      const value = resolveValue(node.value, facts, publishedFacts);
+      const value = resolveValue(node.value, facts, context);
       if (value.state === "missing") return unevaluable(value.missing);
       return ofBoolean(memberOf(value.value, node.set));
     }
