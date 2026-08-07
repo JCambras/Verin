@@ -13,6 +13,7 @@
  * is what ties prompt 8 (published-key declarations) to prompt 9 (closable
  * paths) - and it is why a policy can never read a fact nothing produces.
  */
+import { err, ok, type Result } from "@contracts/result";
 import type { CatalogPrimitive, PublishedKeyMap } from "@contracts/primitives/values";
 import { PRIMITIVE_CATALOG } from "@contracts/primitives/catalog";
 
@@ -113,9 +114,18 @@ const publishedKindToValueType = {
 
 /**
  * Derives the context-key registry from intent slots plus the published keys
- * of the bound primitives. A key published by two bindings is a derivation
- * error surfaced to the caller, never last-writer-wins - the same fail-closed
- * posture as D-104's binding-multiplicity obligation.
+ * of the bound primitives. A key claimed twice is a derivation FAILURE, never
+ * last-writer-wins - the same fail-closed posture as D-104's
+ * binding-multiplicity obligation.
+ *
+ * The refusal is structural: no registry comes back at all, so a caller cannot
+ * admit a colliding key by ignoring a side channel. That matters far beyond
+ * tidiness. Admitting the key would keep the intent descriptor and drop the
+ * primitive's, so `primitiveKeyReads` would not count a read of it, the rule
+ * would classify `configuration`, the OQ-6 stratification check would stay
+ * silent, and the SAME key would resolve from intent in Phase 0 and from the
+ * published facts in Phase 2 - the one-key-two-resolutions outcome
+ * `resolveContextKey` is written to make impossible.
  */
 export const deriveContextKeys = (
   intentSlots: Readonly<Record<string, PolicyValueType>>,
@@ -123,7 +133,7 @@ export const deriveContextKeys = (
     readonly primitiveId: string;
     readonly publishedKeys: PublishedKeyMap;
   }[],
-): { readonly contextKeys: ReadonlyMap<string, ContextKeyDescriptor>; readonly collisions: readonly string[] } => {
+): Result<ReadonlyMap<string, ContextKeyDescriptor>, readonly string[]> => {
   const contextKeys = new Map<string, ContextKeyDescriptor>();
   const collisions: string[] = [];
   for (const [key, valueType] of Object.entries(intentSlots)) {
@@ -141,5 +151,5 @@ export const deriveContextKeys = (
       });
     }
   }
-  return { contextKeys, collisions };
+  return collisions.length > 0 ? err([...new Set(collisions)].sort()) : ok(contextKeys);
 };

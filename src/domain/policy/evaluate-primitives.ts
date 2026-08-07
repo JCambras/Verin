@@ -173,18 +173,32 @@ export const runPrimitivePhase = (
     const parsedParameters = primitive.parameterSchema.safeParse(overridden);
     if (!parsedParameters.success) {
       const refused = refusedParameterNames(parsedParameters.error);
-      const implicated = sortUniqueStrings(
+      const named = sortUniqueStrings(
         [...writtenBy].flatMap(([parameter, ruleId]) => (refused.has(parameter) ? [ruleId] : [])),
       );
+      // Attribution prefers the rules the refusal NAMES - under the atomic
+      // unwind an over-broad blame erases an innocent rule's whole Phase-0
+      // contribution. But a name is not always available: a write can flip the
+      // arm of a discriminated parameter union (set_parameter on a `mode`-style
+      // discriminator), and the newly selected strict arm then refuses a
+      // DEFAULT the harness supplied, naming only that default. The policy
+      // write caused a refusal it is not named in, so the honest reading is
+      // fail-closed implication of every rule that wrote here - never the
+      // structural refusal below, which would diagnose legal policy content as
+      // a malformed assembly and abort the whole evaluation.
+      const implicated = named.length > 0 ? named : sortUniqueStrings(writtenBy.values());
       if (implicated.length === 0) {
+        // Reached ONLY with no policy write on this primitive at all: the
+        // invocation the harness assembled is refused by its own target's
+        // schema, which is structural and has no rule to attribute.
         return refuse(
           "invalid-invocation-parameters",
           `invocation of '${invocation.primitiveId}' carries parameters its own schema refuses, none of them policy-written - the assembly is malformed`,
         );
       }
-      // A policy-resolved parameter its target refuses: exactly the rules that
-      // wrote a REFUSED name are reported for fail-closed blockers, and the
-      // primitive does not run half configured - its execution is unevaluable.
+      // A policy-resolved parameter its target refuses: the implicated rules
+      // are reported for fail-closed blockers, and the primitive does not run
+      // half configured - its execution is unevaluable.
       parameterRejections.push({ primitiveId: invocation.primitiveId, ruleIds: implicated });
       executions.set(canonicalKey, {
         primitiveId: invocation.primitiveId,

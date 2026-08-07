@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { PRIMITIVE_SET_VERSION } from "@contracts/primitives/catalog";
+import { publishedBoolean } from "@contracts/primitives/values";
 import { loadPolicy, type PolicyLoadIssue } from "@domain/policy/load";
+import { deriveContextKeys } from "@domain/policy/registries";
 import {
   firmAPolicyDocument,
   firmBPolicyDocument,
@@ -55,6 +57,83 @@ const amountLte = (threshold: number) => ({
   comparator: "lte",
   left: { kind: "context", key: "intent.amount" },
   right: constant(threshold),
+});
+
+describe("deriveContextKeys - a colliding key is refused BY CONSTRUCTION", () => {
+  const published = { "quantity.satisfied": publishedBoolean("whether the check passed") };
+
+  it("returns no registry at all when an intent slot and a published key claim one name", () => {
+    const derived = deriveContextKeys({ "quantity.satisfied": "boolean" }, [
+      { primitiveId: "some-primitive", publishedKeys: published },
+    ]);
+    // A side channel a caller could ignore is what would let an admitted key
+    // resolve from intent in Phase 0 and from published facts in Phase 2.
+    expect(derived.ok).toBe(false);
+    if (derived.ok) throw new Error("unreachable");
+    expect(derived.error).toEqual(["quantity.satisfied"]);
+  });
+
+  it("derives both origins when the two vocabularies are disjoint", () => {
+    const derived = deriveContextKeys({ "intent.amount": "integer" }, [
+      { primitiveId: "some-primitive", publishedKeys: published },
+    ]);
+    expect(derived.ok).toBe(true);
+    if (!derived.ok) throw new Error("unreachable");
+    expect(derived.value.get("intent.amount")).toEqual({
+      valueType: "integer",
+      origin: { source: "intent" },
+    });
+    expect(derived.value.get("quantity.satisfied")).toEqual({
+      valueType: "boolean",
+      origin: { source: "primitive", primitiveId: "some-primitive" },
+    });
+  });
+});
+
+describe("loadPolicy - totality on deep and hostile documents", () => {
+  /** `depth` nested `any` connectives wrapped around one trivially true node. */
+  const nested = (depth: number): unknown => {
+    let node: unknown = { op: "all", nodes: [] };
+    for (let index = 0; index < depth; index += 1) node = { op: "any", nodes: [node] };
+    return node;
+  };
+
+  const nestedPolicy = (depth: number) =>
+    policyWith([
+      { id: "deep", when: nested(depth), effects: [{ kind: "prohibit", prohibitionCode: "never" }] },
+    ]);
+
+  it("parses nesting in LINEAR time - the arms discriminate on op, never try each other", () => {
+    // Under a plain (non-discriminated) union the `all` arm re-parsed every
+    // `any` node's children before the right arm was reached: MEASURED 588ms at
+    // depth 20 and quadrupling every two levels, so depth 26 alone would have
+    // outrun this budget by itself. Nothing here should take milliseconds.
+    const started = process.hrtime.bigint();
+    const loaded = loadPolicy(nestedPolicy(26), registries);
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+    expect(loaded.ok, loaded.ok ? "" : JSON.stringify(loaded.error)).toBe(true);
+    expect(elapsedMs).toBeLessThan(2_000);
+  });
+
+  it("REFUSES a document nested past the structural cap instead of overflowing the stack", () => {
+    // A recursive `safeParse` (and every walk behind it) threw a RangeError out
+    // of a function contracted to return typed errors. The bound is proven at
+    // admission, so no later walk has to carry a depth it cannot.
+    for (const depth of [200, 5_000, 100_000]) {
+      const loaded = loadPolicy(nestedPolicy(depth), registries);
+      expect(loaded.ok).toBe(false);
+      if (loaded.ok) throw new Error("unreachable");
+      expect(codesOf(loaded.error)).toEqual(["grammar-parse"]);
+      expect(loaded.error[0]!.message).toContain("structural cap");
+    }
+  });
+
+  it("terminates on a self-referential document rather than walking forever", () => {
+    const cyclic: Record<string, unknown> = { schemaVersion: "1.0.0" };
+    cyclic["rules"] = [{ id: "r", when: cyclic, effects: [] }];
+    const loaded = loadPolicy(cyclic, registries);
+    expect(loaded.ok).toBe(false);
+  });
 });
 
 describe("loadPolicy - grammar and closure", () => {

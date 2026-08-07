@@ -5830,3 +5830,75 @@ refused it, and nothing published rests on it).
 
 **Revert path:** D-179's revert path; each correction is independent of the
 others.
+
+## D-181 - Prompt-9 review round three: the predicate union discriminates, admission is depth-bounded, and rejection implicates rather than misdiagnoses
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-178, D-179, D-180, ADR-0053, ADR-0054,
+v3 §6.1, invariant 12/16, charter #4
+
+Five corrections, all forward fixes, none of them narrowing the ratified grammar:
+
+**The predicate arms discriminate on `op`.** `predicateSchemaFor` built its arm list with
+`z.union`, which tries every option in order, and a strict object does not abandon its remaining
+keys once one fails - so the `all` arm fully re-parsed the children of every `any` node before the
+right arm was reached. MEASURED: 588ms at eleven nested connectives, quadrupling every two more,
+against 0.03ms for the same document once the arms discriminate. `ValueNodeSchema` and
+`PolicyEffectSchema` already discriminated; the predicate arms now match them, which also means a
+wrong `op` reports itself instead of aggregating seven arms of noise. The arms lost their
+`.readonly()` wrapper (a wrapper carries no discriminator, and the ratified value and effect
+unions never froze their outputs either); canonical bytes are unchanged, so the pinned
+migration-fixture digests did not move.
+
+**Admission is depth-bounded, because everything below it recurses.** `all`/`any`/`not` nest
+without limit by ratification, and the Zod parse, `findReservedOps`, the closure and key-read
+walks, `predicateDnf`, and `evaluatePredicate` all recurse with them - so a deep document threw a
+RangeError out of `loadPolicy`, which is contracted to return typed errors and never throw
+(MEASURED: `safeParse` overflowed between 600 and 800 levels). `loadPolicy` now refuses a document
+nested past a 64-level structural cap, BEFORE the parse and by an ITERATIVE walk, since the parse
+is one of the recursions the bound protects. Bounding once at admission is what makes the module
+total: a `LoadedPolicy` is the only thing the evaluator consumes, so no later walk has to carry a
+depth it cannot. The cap counts raw document nesting (roughly two levels per connective), leaving
+~30 nested connectives against the three or four a real firm policy uses.
+
+**A rejection with no attributable name implicates the writers, it does not misdiagnose.** D-180
+attributed a parameter rejection to exactly the rules that wrote a NAMED refused parameter and
+kept the structural refusal otherwise. But a write can flip the arm of a discriminated parameter
+union - `set_parameter(sufficiency-check, mode, "cap-limited")` is admissible at load, and at
+runtime the newly selected strict arm refuses the `available` DEFAULT the harness supplied,
+naming a key no rule wrote. The evaluator then hard-refused `invalid-invocation-parameters` on
+legal policy content, contradicting the rule that a refusal is a STRUCTURAL impossibility. When
+the refusal names no policy-written parameter but a policy write DID reach that primitive, every
+writer on it is now implicated and the ordinary fail-closed unwind runs; the structural refusal is
+kept for the case it was written for - no policy write on the refusing primitive at all. D-180's
+named-attribution rule still wins whenever a name IS available, so an innocent co-writer's
+Phase-0 contribution is still not erased on a refusal that names someone else.
+
+**The evidence-requirement comparator is as total as its accumulation key.** Entries accumulate
+under `kind:absence:reviewTemplateId` but sorted on `(kind, absence)`, so two specialist
+requirements on one evidence kind under DIFFERENT review templates compared equal and fell back to
+Map insertion order - rule-id order leaking into bytes the migration fixture pins.
+`reviewTemplateId` is now the third term.
+
+**The context-key collision refusal is structural.** `deriveContextKeys` returned
+`{ contextKeys, collisions }` with the colliding key ADMITTED under the intent origin, so a caller
+that ignored the side channel would register a key `primitiveKeyReads` does not count as a
+primitive read - the rule classifies `configuration`, the OQ-6 stratification check never fires,
+and the same key resolves from intent in Phase 0 and from published facts in Phase 2. That is
+precisely the one-key-two-resolutions outcome D-180 said was impossible. It now returns a
+`Result`: no registry at all on a collision, so no caller can admit one.
+
+Also folded in: the Phase-0 parameter writes are keyed by their `(primitiveId, parameter)` target
+instead of re-scanned out of a list by object identity, which drops a quadratic lookup and a
+non-null assertion from a function documented never to throw. ADR-0054's domain figure passed
+inside its 4,250 ceiling by TWO lines, which is the ADR-0033 failure mode the line-budget header
+exists to prevent, so ADR-0054 is amended a third time to 6,650/4,350 against re-measured
+6,567/4,248.
+
+**Alternatives rejected:** capping depth inside the grammar (the Zod parse is itself one of the
+recursions, so a refinement runs too late); a dedicated `predicate-too-deep` issue code (the
+refusal happens before any rule is parsed, so it has no rule to name - `grammar-parse` is the code
+the other pre-parse structural refusal already uses); detecting discriminator flips specifically
+rather than falling back to all writers (the general fail-closed rule subsumes it and cannot be
+defeated by a schema shape the detector did not anticipate).
+
+**Revert path:** D-180's revert path; each correction is independent of the others.

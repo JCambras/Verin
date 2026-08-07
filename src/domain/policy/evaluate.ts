@@ -22,8 +22,6 @@
  * the `policy-ast` fence holds the whole module to that.
  */
 import { err, ok, type Result } from "@contracts/result";
-import type { Scalar } from "@contracts/decision-core/decision";
-import type { PolicyEffect } from "@contracts/decision-core/policy";
 import type { PIIBearing } from "@contracts/pii";
 import { evaluatePredicate, resolveValue, type PolicyEvaluationFacts } from "./facts";
 import type { LoadedPolicy, LoadedPolicyRule } from "./load";
@@ -170,10 +168,27 @@ export const evaluatePolicy = (
     }
 
     // A fired rule applies atomically: resolve every set_parameter value FIRST,
-    // and if any is missing the WHOLE rule is unevaluable (no half-applied rule).
-    const resolvedWrites: { effect: Extract<PolicyEffect, { kind: "set_parameter" }>; value: Scalar }[] = [];
+    // and if any is missing the WHOLE rule is unevaluable (no half-applied
+    // rule). Keyed by the write TARGET, which load check 7 proves unique within
+    // a rule, so the application below reads its own resolution by name - an
+    // identity re-scan of a list would be quadratic and would lean on a
+    // non-null assertion inside a function contracted never to throw.
+    const resolvedWrites = new Map<string, ParameterResolution>();
     for (const effect of rule.effects) {
       if (effect.kind !== "set_parameter") continue;
+      if (rule.phase !== "configuration") {
+        return {
+          code: "config-effect-in-evaluation-phase",
+          message: `rule ${rule.id}: set_parameter reached Phase 2 - the loader was bypassed`,
+        };
+      }
+      const key = `${effect.primitiveId}:${effect.parameter}`;
+      if (resolvedWrites.has(key) || parameterResolutions.has(key)) {
+        return {
+          code: "duplicate-parameter-write",
+          message: `(${effect.primitiveId}, ${effect.parameter}) written twice at runtime - the load-time conflict prover was bypassed`,
+        };
+      }
       const resolution = resolveValue(effect.value, facts, publishedFacts);
       if (resolution.state === "missing") {
         markUnevaluable(
@@ -183,36 +198,24 @@ export const evaluatePolicy = (
         );
         return null;
       }
-      resolvedWrites.push({ effect, value: resolution.value });
+      resolvedWrites.set(key, {
+        primitiveId: effect.primitiveId,
+        parameter: effect.parameter,
+        value: resolution.value,
+        ruleId: rule.id,
+      });
     }
 
     ruleOutcomes.set(rule.id, { ruleId: rule.id, phase: rule.phase, outcome: "fired" });
+    // The resolutions ARE the parameter writes, so they land together with the
+    // pass that proved them applicable - all of them or, above, none.
+    for (const [key, write] of resolvedWrites) parameterResolutions.set(key, write);
 
     for (const effect of rule.effects) {
       switch (effect.kind) {
-        case "set_parameter": {
-          if (rule.phase !== "configuration") {
-            return {
-              code: "config-effect-in-evaluation-phase",
-              message: `rule ${rule.id}: set_parameter reached Phase 2 - the loader was bypassed`,
-            };
-          }
-          const write = resolvedWrites.find((candidate) => candidate.effect === effect)!;
-          const key = `${effect.primitiveId}:${effect.parameter}`;
-          if (parameterResolutions.has(key)) {
-            return {
-              code: "duplicate-parameter-write",
-              message: `(${effect.primitiveId}, ${effect.parameter}) written twice at runtime - the load-time conflict prover was bypassed`,
-            };
-          }
-          parameterResolutions.set(key, {
-            primitiveId: effect.primitiveId,
-            parameter: effect.parameter,
-            value: write.value,
-            ruleId: rule.id,
-          });
+        // Applied above, atomically with the resolution pass that produced it.
+        case "set_parameter":
           break;
-        }
         case "select_candidate": {
           if (rule.phase !== "configuration") {
             return {
@@ -416,9 +419,15 @@ export const evaluatePolicy = (
         ...(entry.reviewTemplateId === undefined ? {} : { reviewTemplateId: entry.reviewTemplateId }),
         ruleIds: sortUniqueStrings(entry.ruleIds),
       }))
+      // As total as the accumulation key `kind:absence:reviewTemplateId`, or
+      // two specialist requirements on one evidence kind under DIFFERENT review
+      // templates would compare equal and fall back to Map insertion order -
+      // rule-id order leaking into bytes the migration fixture pins.
       .sort(
         (a, b) =>
-          compareCanonical(a.evidenceKind, b.evidenceKind) || compareCanonical(a.absence, b.absence),
+          compareCanonical(a.evidenceKind, b.evidenceKind) ||
+          compareCanonical(a.absence, b.absence) ||
+          compareCanonical(a.reviewTemplateId ?? "", b.reviewTemplateId ?? ""),
       ),
     approvalRequirements: approvalOutcomes,
     prohibitions: traceProhibitions,

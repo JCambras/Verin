@@ -67,11 +67,17 @@ import { join, relative } from "node:path";
 // attribution, one shared context-key precedence, the fail-closed
 // future-observation freshness read, the constant-binding assembly guard)
 // added 101 domain lines and passed 4,150 in turn: ADR-0054 is amended again to
-// 4,250 against a re-measured 4,164, contracts unmoved at 6,555. Re-measure in
-// any commit that changes a layer; a raise is always a measured ADR amendment.
+// 4,250 against a re-measured 4,164, contracts unmoved at 6,555. The THIRD
+// review round (discriminated predicate union, load-time structural nesting
+// bound, fail-closed rejection implication, total evidence-requirement
+// comparator, structural context-key-collision refusal) landed domain at 4,248
+// - INSIDE 4,250 by two lines, which is the ADR-0033 failure mode this header
+// exists to prevent, not a pass to bank. ADR-0054 is amended a third time to
+// 6,650/4,350 against re-measured 6,567/4,248. Re-measure in any commit that
+// changes a layer; a raise is always a measured ADR amendment.
 const CEILINGS = {
-  contracts: 6600, // ADR-0054, on the prompt-9 policy grammar (6,555 measured)
-  domain: 4250, // ADR-0054, on the prompt-9 policy interpreter module (4,164 measured)
+  contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,567 measured)
+  domain: 4350, // ADR-0054, on the prompt-9 policy interpreter module (4,248 measured)
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until

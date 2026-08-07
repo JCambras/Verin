@@ -69,8 +69,7 @@ export const worldRegistries = (): PolicyRegistries => {
     "intent.amount": "integer",
     "intent.destinationType": "string",
   };
-  const { contextKeys, collisions } = deriveContextKeys(intentSlots, boundPublishedKeys());
-  if (collisions.length > 0) throw new Error(`context-key collisions: ${collisions.join(", ")}`);
+  const contextKeys = unwrap(deriveContextKeys(intentSlots, boundPublishedKeys()));
   return {
     evidence: new Map([
       ["account-balance", evidenceKindDescriptor({ amountMinor: "integer" })],

@@ -71,9 +71,10 @@ const isScalar = (value: unknown): value is Scalar =>
  * THE context-key precedence, shared by the AST value plane and the Phase-1
  * binding assembly so one key can never resolve two ways inside one
  * evaluation: primitive-published facts first, then intent slots. The two
- * vocabularies are disjoint by construction - `deriveContextKeys` surfaces a
- * collision as a derivation error rather than admitting the key - so the order
- * decides nothing today; naming it in ONE place is what keeps it that way.
+ * vocabularies are disjoint by construction, and structurally so:
+ * `deriveContextKeys` returns NO registry on a collision, so no caller can
+ * admit a colliding key. The order therefore decides nothing today; naming it
+ * in ONE place is what keeps it that way if some future derivation ever does.
  */
 export const resolveContextKey = (
   key: string,

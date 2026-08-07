@@ -4,10 +4,12 @@
  * registries, and EVERY closure failure is a load error, never an evaluation
  * surprise. The seven checks, in order:
  *
- *  1. grammar parse (strict objects, closed unions; unknown operators, effects,
- *     comparators, and grammar versions are parse failures), plus refusal of
- *     the reserved `elapsed` op (grammar 1.1.0 parses it; nothing evaluates it
- *     until its activating prompt lands semantics - OQ-7);
+ *  1. grammar parse (strict objects, closed discriminated unions; unknown
+ *     operators, effects, comparators, and grammar versions are parse
+ *     failures), behind the structural nesting bound that keeps every recursive
+ *     walk below this one total, plus refusal of the reserved `elapsed` op
+ *     (grammar 1.1.0 parses it; nothing evaluates it until its activating
+ *     prompt lands semantics - OQ-7);
  *  2. reference closure - unknown evidence kind/path, instruction kind/path,
  *     context key, primitive, parameter, strategy, or approval template;
  *  3. type check - comparator operand agreement, ordering only over orderable
@@ -75,6 +77,45 @@ const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null &&
   (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 
+/**
+ * The structural nesting bound, and why it is a LOAD-TIME admission rule rather
+ * than a grammar arm. `all`/`any`/`not` recurse without limit by ratification,
+ * and every consumer of a predicate recurses with them: the Zod parse itself,
+ * `findReservedOps`, the closure and key-read walks, `predicateDnf`, and the
+ * evaluator's `evaluatePredicate`. An unbounded document therefore exhausts the
+ * stack INSIDE a function contracted to return typed errors and never throw -
+ * MEASURED, a RangeError out of `safeParse` at a few hundred levels.
+ *
+ * Bounding admission is what makes the whole module total: a `LoadedPolicy` is
+ * the only thing the evaluator consumes, so a depth every walk can carry is
+ * proven once, here, instead of guarded (or forgotten) at five recursion sites.
+ * The cap counts raw document nesting - roughly two levels per `all`/`any`
+ * step - which leaves ~30 nested connectives against the three or four a real
+ * firm policy uses, and stays an order of magnitude below the shallowest engine
+ * limit measured. It is enforced BEFORE the parse, by an ITERATIVE walk,
+ * because the parse is one of the recursions it exists to protect.
+ */
+const MAX_DOCUMENT_NESTING_DEPTH = 64;
+
+/** The path of the first node deeper than the cap, or null when none is. */
+const tooDeeplyNested = (root: unknown): readonly (string | number)[] | null => {
+  const pending: { readonly value: unknown; readonly path: readonly (string | number)[] }[] = [
+    { value: root, path: [] },
+  ];
+  while (pending.length > 0) {
+    const { value, path } = pending.pop()!;
+    if (path.length > MAX_DOCUMENT_NESTING_DEPTH) return path;
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => pending.push({ value: item, path: [...path, index] }));
+    } else if (typeof value === "object" && value !== null) {
+      for (const key of Object.keys(value)) {
+        pending.push({ value: (value as Record<string, unknown>)[key], path: [...path, key] });
+      }
+    }
+  }
+  return null;
+};
+
 export const loadPolicy = (
   document: unknown,
   registries: PolicyRegistries,
@@ -82,6 +123,15 @@ export const loadPolicy = (
   if (!isPlainRecord(document)) {
     return err([
       { code: "grammar-parse", message: "a policy document must be a plain JSON object" },
+    ]);
+  }
+  const overDeep = tooDeeplyNested(document);
+  if (overDeep !== null) {
+    return err([
+      {
+        code: "grammar-parse",
+        message: `${overDeep.join(".")}: nests deeper than the ${MAX_DOCUMENT_NESTING_DEPTH}-level structural cap; a predicate every load and evaluation walk can carry is bounded here, before any of them recurse`,
+      },
     ]);
   }
   const declared = Object.hasOwn(document, "schemaVersion") ? document["schemaVersion"] : undefined;

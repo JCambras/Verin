@@ -192,51 +192,60 @@ const comparatorSchema = z.enum(COMPARATORS);
  * Builds the recursive predicate schema for one grammar version. The leaf arms
  * are shared; only the reserved-op arm differs, so an additive minor version is
  * PROVABLY a superset (the migration fixture asserts it byte-for-byte).
+ *
+ * The arms form a DISCRIMINATED union on `op`, exactly as `ValueNodeSchema` and
+ * `PolicyEffectSchema` do on `kind` - never a plain `z.union`. A plain union
+ * tries every arm in order and a strict object does not abandon its remaining
+ * keys once one fails, so `all` would fully re-parse the children of every
+ * `any` node before the right arm was reached: MEASURED at ~2^depth (588ms at
+ * eleven nested nodes, and quadrupling every two more). Discriminating on `op`
+ * selects one arm from the discriminator alone, which makes the parse linear in
+ * document size and makes a wrong `op` report itself instead of aggregating
+ * seven arms' worth of noise. Arms are therefore bare strict objects: a
+ * `.readonly()` wrapper carries no discriminator, and freezing the parse output
+ * was never part of the contract (the ratified value and effect unions do not
+ * freeze theirs either, and the canonical bytes are identical).
  */
 const predicateSchemaFor = (version: PolicyGrammarVersion): z.ZodType<GrammarPredicateNode> => {
   const self: z.ZodType<GrammarPredicateNode> = z.lazy((): z.ZodType<GrammarPredicateNode> => {
-    const allArm: z.ZodType<GrammarPredicateNode> = z
-      .strictObject({ op: z.literal("all"), nodes: z.array(self).readonly() })
-      .readonly();
-    const anyArm: z.ZodType<GrammarPredicateNode> = z
-      .strictObject({ op: z.literal("any"), nodes: z.array(self).readonly() })
-      .readonly();
-    const notArm: z.ZodType<GrammarPredicateNode> = z
-      .strictObject({ op: z.literal("not"), node: self })
-      .readonly();
-    const existsArm: z.ZodType<GrammarPredicateNode> = z
-      .strictObject({ op: z.literal("exists"), value: ValueNodeSchema })
-      .readonly();
-    const isFreshArm: z.ZodType<GrammarPredicateNode> = z
-      .strictObject({
-        op: z.literal("is_fresh"),
-        evidenceKind: EvidenceKindSchema,
-        maxAge: DurationSchema,
-      })
-      .readonly();
-    const compareArm: z.ZodType<GrammarPredicateNode> = z
-      .strictObject({
-        op: z.literal("compare"),
-        comparator: comparatorSchema,
-        left: ValueNodeSchema,
-        right: ValueNodeSchema,
-      })
-      .readonly();
+    const allArm: z.ZodType<GrammarPredicateNode> = z.strictObject({
+      op: z.literal("all"),
+      nodes: z.array(self).readonly(),
+    });
+    const anyArm: z.ZodType<GrammarPredicateNode> = z.strictObject({
+      op: z.literal("any"),
+      nodes: z.array(self).readonly(),
+    });
+    const notArm: z.ZodType<GrammarPredicateNode> = z.strictObject({
+      op: z.literal("not"),
+      node: self,
+    });
+    const existsArm: z.ZodType<GrammarPredicateNode> = z.strictObject({
+      op: z.literal("exists"),
+      value: ValueNodeSchema,
+    });
+    const isFreshArm: z.ZodType<GrammarPredicateNode> = z.strictObject({
+      op: z.literal("is_fresh"),
+      evidenceKind: EvidenceKindSchema,
+      maxAge: DurationSchema,
+    });
+    const compareArm: z.ZodType<GrammarPredicateNode> = z.strictObject({
+      op: z.literal("compare"),
+      comparator: comparatorSchema,
+      left: ValueNodeSchema,
+      right: ValueNodeSchema,
+    });
     // v1 restriction: `in` members are constants ONLY (see the module header).
-    const inArm: z.ZodType<GrammarPredicateNode> = z
-      .strictObject({
-        op: z.literal("in"),
-        value: ValueNodeSchema,
-        set: z.array(PolicyConstantSchema).min(1).readonly(),
-      })
-      .readonly();
-    const elapsedArm: z.ZodType<GrammarPredicateNode> = z
-      .strictObject({
-        op: z.literal("elapsed"),
-        value: ValueNodeSchema,
-        minimumAge: DurationSchema,
-      })
-      .readonly();
+    const inArm: z.ZodType<GrammarPredicateNode> = z.strictObject({
+      op: z.literal("in"),
+      value: ValueNodeSchema,
+      set: z.array(PolicyConstantSchema).min(1).readonly(),
+    });
+    const elapsedArm: z.ZodType<GrammarPredicateNode> = z.strictObject({
+      op: z.literal("elapsed"),
+      value: ValueNodeSchema,
+      minimumAge: DurationSchema,
+    });
     const arms: readonly z.ZodType<GrammarPredicateNode>[] = [
       allArm,
       anyArm,
@@ -247,7 +256,10 @@ const predicateSchemaFor = (version: PolicyGrammarVersion): z.ZodType<GrammarPre
       inArm,
       ...(version === "1.1.0" ? [elapsedArm] : []),
     ];
-    return z.union(arms) as z.ZodType<GrammarPredicateNode>;
+    return z.discriminatedUnion(
+      "op",
+      arms as unknown as readonly [z.core.$ZodTypeDiscriminable, ...z.core.$ZodTypeDiscriminable[]],
+    ) as z.ZodType<GrammarPredicateNode>;
   });
   return self;
 };

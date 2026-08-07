@@ -73,7 +73,11 @@ The policy AST + interpreter (v3 prompt 9, ADR-0053) are the grammar in
 active, 1.1.0 adds only the reserved `elapsed` op, which the loader refuses as grammar-only) and
 the pure module `src/domain/policy/` (seven-check loader, conservative effect-conflict prover
 that REJECTS when disjointness is unprovable, four-phase fail-closed evaluator; no Date/Intl/IO -
-temporal math is integer-only in `temporal.ts`). Extending the grammar or the interpreter is a
+temporal math is integer-only in `temporal.ts`). Predicate arms are a DISCRIMINATED union on `op`
+(a plain union re-parses every arm's children: measured 2^depth), and `loadPolicy` refuses a
+document nested past a structural cap BEFORE parsing - bounding admission once is what keeps the
+parse and all five recursive walks below it total, since the evaluator only ever consumes a
+`LoadedPolicy` (D-181). Extending the grammar or the interpreter is a
 version bump re-proving the migration fixture (`fixtures/policy/migration-1.0.0.json`), never a
 quiet widening - the `policy-ast` fence pins the vocabulary, purity, domain neutrality, fixture
 digests, and named-deferral reachability (callers land at prompts 10/16/20). Invariant 16 is

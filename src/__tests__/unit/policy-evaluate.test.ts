@@ -312,6 +312,63 @@ describe("evaluatePolicy - fail-closed totality", () => {
     });
   });
 
+  it("orders two review templates on ONE evidence kind by content, never by rule id", () => {
+    // Same kind, same absence, DIFFERENT templates: the accumulation key
+    // separates these entries, so the emit comparator has to as well. Rule ids
+    // are chosen so insertion order (a-then-b, hence z-then-a) is the reverse
+    // of the canonical template order - if the sort were underdetermined, the
+    // trace would hash on rule ids, and the migration fixture pins those bytes.
+    const twoSpecialists = {
+      ...registries,
+      approvalTemplates: new Map([
+        ...registries.approvalTemplates,
+        ["tmpl-z-specialist", { kind: "specialist_review" as const }],
+        ["tmpl-a-specialist", { kind: "specialist_review" as const }],
+      ]),
+    };
+    const requires = (id: string, reviewTemplateId: string) => ({
+      id,
+      when: { op: "all", nodes: [] },
+      effects: [
+        {
+          kind: "require_evidence",
+          evidenceKind: "funding-candidates",
+          absence: "specialist_review",
+          reviewTemplateId,
+        },
+      ],
+    });
+    const policy = unwrap(
+      loadPolicy(
+        {
+          schemaVersion: "1.0.0",
+          primitiveSetVersion: PRIMITIVE_SET_VERSION,
+          rules: [requires("rule-a", "tmpl-z-specialist"), requires("rule-b", "tmpl-a-specialist")],
+        },
+        twoSpecialists,
+      ),
+    ) as LoadedPolicy;
+    const trace = unwrap(
+      evaluatePolicy(policy, { facts: worldFacts(), invocations: [] }, twoSpecialists),
+    );
+    expect(trace.evidenceRequirements).toEqual([
+      {
+        evidenceKind: "funding-candidates",
+        absence: "specialist_review",
+        outcome: "absent",
+        reviewTemplateId: "tmpl-a-specialist",
+        ruleIds: ["rule-b"],
+      },
+      {
+        evidenceKind: "funding-candidates",
+        absence: "specialist_review",
+        outcome: "absent",
+        reviewTemplateId: "tmpl-z-specialist",
+        ruleIds: ["rule-a"],
+      },
+    ]);
+  });
+
   it("prohibitions outrank blockers and the primary is code-lexicographic (OQ-5)", () => {
     const policy = load({
       schemaVersion: "1.0.0",
@@ -526,7 +583,49 @@ describe("evaluatePolicy - a rejected policy-resolved parameter unwinds its rule
     ]);
   });
 
-  it("refuses structurally when the refused parameter is the harness default, not a policy write", () => {
+  // net-availability requires at least one claim evidence kind, so an empty
+  // list is refused by its own schema and NAMES only that harness-supplied key.
+  const malformedNetAvailability = () =>
+    worldInvocations().map((invocation) =>
+      invocation.primitiveId === "net-availability"
+        ? { ...invocation, parameters: { ...invocation.parameters, claimEvidenceKinds: [] } }
+        : invocation,
+    );
+
+  it("refuses structurally ONLY when no policy write reached the refusing primitive", () => {
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        {
+          id: "rule-writes-elsewhere",
+          when: { op: "all", nodes: [] },
+          effects: [
+            {
+              kind: "set_parameter",
+              primitiveId: "horizon-projection",
+              parameter: "horizonMonths",
+              value: { kind: "constant", value: 6 },
+            },
+          ],
+        },
+      ],
+    });
+    const refused = evaluatePolicy(
+      policy,
+      { facts: worldFacts(), invocations: malformedNetAvailability() },
+      registries,
+    );
+    expect(refused.ok).toBe(false);
+    if (refused.ok) throw new Error("unreachable");
+    expect(refused.error.code).toBe("invalid-invocation-parameters");
+  });
+
+  it("fails CLOSED when a write reached the primitive but the refusal names only a default", () => {
+    // The refusal names `claimEvidenceKinds`, which no rule wrote - but this
+    // rule DID configure the refusing primitive, so it cannot be exonerated.
+    // A structural refusal here would abort the whole evaluation on a false
+    // diagnosis; the honest outcome is the ordinary fail-closed unwind.
     const policy = load({
       schemaVersion: "1.0.0",
       primitiveSetVersion: PRIMITIVE_SET_VERSION,
@@ -545,15 +644,66 @@ describe("evaluatePolicy - a rejected policy-resolved parameter unwinds its rule
         },
       ],
     });
-    const malformed = worldInvocations().map((invocation) =>
-      invocation.primitiveId === "net-availability"
-        ? { ...invocation, parameters: { ...invocation.parameters, claimEvidenceKinds: [] } }
-        : invocation,
+    const trace = unwrap(
+      evaluatePolicy(
+        policy,
+        { facts: worldFacts(), invocations: malformedNetAvailability() },
+        registries,
+      ),
     );
-    const refused = evaluatePolicy(policy, { facts: worldFacts(), invocations: malformed }, registries);
-    expect(refused.ok).toBe(false);
-    if (refused.ok) throw new Error("unreachable");
-    expect(refused.error.code).toBe("invalid-invocation-parameters");
+    expect(trace.ruleOutcomes).toEqual([
+      {
+        ruleId: "rule-valid-write",
+        phase: "configuration",
+        outcome: "unevaluable",
+        missing: ["set_parameter rejected by net-availability"],
+      },
+    ]);
+    expect(trace.parameterResolutions).toEqual([]);
+    expect(trace.blockers.map((b) => b.code)).toEqual(["rule-unevaluable:rule-valid-write"]);
+    expect(trace.disposition.kind).toBe("blocked");
+  });
+
+  it("implicates the discriminator writer when a write flips a parameter union's arm", () => {
+    // sufficiency-check's parameters are a discriminated union on `mode`, and
+    // the cap-limited arm has no `available`. Writing the discriminator is
+    // admissible at load (the constant parses in that arm), and at runtime the
+    // newly selected strict arm refuses the `available` DEFAULT the harness
+    // supplied - naming a key the rule never wrote.
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        {
+          id: "rule-flips-mode",
+          when: { op: "all", nodes: [] },
+          effects: [
+            {
+              kind: "set_parameter",
+              primitiveId: "sufficiency-check",
+              parameter: "mode",
+              value: { kind: "constant", value: "cap-limited" },
+            },
+          ],
+        },
+      ],
+    });
+    const trace = unwrap(
+      evaluatePolicy(policy, { facts: worldFacts(), invocations: worldInvocations() }, registries),
+    );
+    expect(trace.ruleOutcomes).toEqual([
+      {
+        ruleId: "rule-flips-mode",
+        phase: "configuration",
+        outcome: "unevaluable",
+        missing: ["set_parameter rejected by sufficiency-check"],
+      },
+    ]);
+    expect(
+      trace.primitiveExecutions.find((e) => e.primitiveId === "sufficiency-check")!.outcome,
+    ).toBe("unevaluable");
+    expect(trace.blockers.map((b) => b.code)).toEqual(["rule-unevaluable:rule-flips-mode"]);
+    expect(trace.disposition.kind).toBe("blocked");
   });
 });
 

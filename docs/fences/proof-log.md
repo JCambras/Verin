@@ -9024,3 +9024,73 @@ from `typesAgree`.
 full test suite are green on the reverted tree.
 
 **Date:** 2026-08-07 (v3 prompt 9 review round).
+
+---
+
+## Prompt-9 review-round-three semantics - D-181
+
+Five injections against the corrections themselves, each run on the fixed tree with the fix backed
+out and reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - the predicate arms un-discriminated**: restored
+`z.union(arms)` in place of `z.discriminatedUnion("op", arms)` in `predicateSchemaFor`.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:115`):**
+```
+× parses nesting in LINEAR time - the arms discriminate on op, never try each other 23645ms
+expect(elapsedMs).toBeLessThan(2_000)
+```
+(26 nested connectives took 23.6 SECONDS; the same document parses in under a millisecond once the
+arms discriminate.)
+
+**Injection B - the structural nesting bound removed**: replaced the `tooDeeplyNested(document)`
+call in `loadPolicy` with a constant `null`.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:124`):**
+```
+× REFUSES a document nested past the structural cap instead of overflowing the stack
+expected true to be false
+```
+(at 200 levels the unbounded loader accepted the document; at the deeper probes the recursive
+`safeParse` throws a RangeError out of a function contracted to return typed errors.)
+
+**Injection C - rejection blame restricted to NAMED parameters only**: replaced
+`named.length > 0 ? named : sortUniqueStrings(writtenBy.values())` with `named` in
+`evaluate-primitives.ts`.
+
+**Observed failures (`src/__tests__/unit/policy-evaluate.test.ts:647` and `:691`):**
+```
+× fails CLOSED when a write reached the primitive but the refusal names only a default
+× implicates the discriminator writer when a write flips a parameter union's arm
+```
+(both hard-refused `invalid-invocation-parameters` on legal policy content instead of unwinding.)
+
+**Injection D - the evidence-requirement comparator left partial**: dropped the
+`reviewTemplateId` term from the emit sort in `evaluate.ts`.
+
+**Observed failure (`src/__tests__/unit/policy-evaluate.test.ts:354`):**
+```
+× orders two review templates on ONE evidence kind by content, never by rule id
+```
+(the two entries came back in rule-id insertion order, not canonical template order.)
+
+**Injection E - the context-key collision admitted again**: replaced the collision `Result` with
+an unconditional `ok(contextKeys)` in `deriveContextKeys`.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:71`):**
+```
+× returns no registry at all when an intent slot and a published key claim one name
+expected true to be false
+```
+
+**Standing companions:** the disjoint-vocabulary case proves the derivation still returns both
+origins rather than refusing everything; the linear-time case asserts a SUCCESSFUL load, so the
+depth bound cannot satisfy it by refusing; the structural-refusal case (no policy write on the
+refusing primitive) proves the fail-closed implication did not swallow the malformed-assembly
+diagnosis.
+
+**Revert:** all five injections were reverted; `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
+`pnpm build`, `pnpm v3:invariants`, `pnpm golden:validate`, `pnpm corpus:validate`, and the full
+test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round three).
