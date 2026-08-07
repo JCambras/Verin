@@ -4386,3 +4386,28 @@ but did not close.
 **Relates to:** ADR-0004, ADR-0022, ADR-0051, D-006, D-129; charter #3, #4.
 **Revert path:** each is independent - the two test cases, the two helper call sites, and the JSX
 copy.
+
+### D-131 · 2026-08-07 · reversible · The test budget tracks the slowest check, not the fastest machine
+
+**The whole-repo semantic fences outgrew the 20s per-test budget, so the budget moved.** CI timed
+out `dependency-rule`, `no-secret-fallback`, and `tokenized-factory-only` - the three fences that
+resolve TYPES across every shipped file - while all 1,439 other tests passed. Measured on this
+machine they take 9.2s, 9.5s, and 9.0s, and measured at the base commit `e4290f22` they take
+9.4s, 9.0s, and 8.9s: prompt 7's ~5,000 shipped lines moved them by well under a second, so the
+20s ceiling was already sitting inside a GitHub runner's ~2x margin and this branch only pushed
+the three closest over it. Four more whole-repo fences (`tenant-context-required` at 6.6s and
+4.6s, `ledger-append-only` at 4.3s, `governed-actions` at 3.8s and 3.6s) sit just under the same
+line and would have gone next. `testTimeout` is now 60s, and `hookTimeout` tracks it per D-127 -
+the integration `beforeEach` hooks still do strictly more work than the bodies they set up.
+
+**The alternative was to shrink the fences, which is the wrong trade.** The cost in all three is
+per-identifier type resolution, and every cheap way to cut it - filtering candidate identifiers by
+spelling before asking the checker - is exactly the aliasing bypass those fences exist to catch
+(`ns["principalFromIdentity"]`, a renamed import). A weak fence is worse than none, so the
+stopwatch moved instead of the fence.
+
+**Why:** a suite that fails a different file each run trains everyone to ignore red (charter #8,
+the same reason the clock is pinned non-UTC), and a timeout is a verdict about the clock, never
+about correctness - 60s still catches a hang, which is the only thing the budget is for.
+**Relates to:** D-127; charter #4, #8.
+**Revert path:** two numbers in `vitest.config.ts`.

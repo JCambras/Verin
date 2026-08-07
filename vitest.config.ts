@@ -37,11 +37,19 @@ export default defineConfig({
     setupFiles: ["./src/__tests__/setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
-    testTimeout: 20000,
+    // The budget tracks the slowest HONEST check, not the fastest machine. The heaviest
+    // fitness fences resolve TYPES across the whole repo (dependency-rule,
+    // tokenized-factory-only, no-secret-fallback, tenant-context-required) and take ~9-10s
+    // on a fast dev machine; a GitHub runner is roughly twice that, so a 20s budget sat
+    // right at the edge and CI timed all three out in one run while every one passed
+    // locally. A timeout is a clock verdict, never a correctness one - 60s still
+    // catches a hang, and shrinking a fence to fit a stopwatch is how fences get weakened.
+    testTimeout: 60000,
     // Integration `beforeEach` hooks create a PGlite instance, run every migration, and
-    // seed - strictly MORE work than the test bodies this 20s budget was raised for. The
-    // default 10s hook budget made that setup the suite's flakiest step under parallel
-    // load, failing a different file each run while every one passed in isolation.
-    hookTimeout: 20000,
+    // seed - strictly MORE work than the test bodies, so the hook budget matches the test
+    // budget rather than trailing it. The default 10s made that setup the suite's flakiest
+    // step under parallel load, failing a different file each run while every one passed
+    // in isolation.
+    hookTimeout: 60000,
   },
 });
