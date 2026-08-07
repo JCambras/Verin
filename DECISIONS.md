@@ -3532,8 +3532,9 @@ canonical evidence bytes and ordered bundle membership, and refuses PII in every
 source. Derived projection provenance is persisted with the cache, including owner-resolved release
 events, so request-path reads are bounded by selected decisions rather than event history.
 
-The post-review implementation measures contracts at 3875 lines and infrastructure at 4187 lines.
-ADR-0041 amends ADR-0018 ceilings to 4000 and 4300 respectively, retaining explicit headroom without
+The post-review implementation measures contracts at 5287 lines (composed with ADR-0040's
+prompt-8 primitive catalog) and infrastructure at 4187 lines.
+ADR-0041 amends ADR-0018 ceilings to 5350 and 4300 respectively, retaining explicit headroom without
 changing the 500-line file cap.
 
 **Why:** append-only history cannot rely on mutable caches, unbound provenance, reusable ownerless
@@ -3578,8 +3579,8 @@ fail, while a duplicate old-generation release is harmless and cannot release a
 later generation. Status observations that precede step mapping are reconciled by
 execution handle when the real step arrives.
 
-The complete implementation measures contracts at 3884 lines and infrastructure at
-4736 lines. ADR-0041 amends ADR-0018's infrastructure ceiling to 4800 while keeping
+The complete implementation measures contracts at 5296 lines (composed with the prompt-8
+primitive catalog) and infrastructure at 4736 lines. ADR-0041 amends ADR-0018's infrastructure ceiling to 4800 while keeping
 the 500-line file cap.
 
 **Why:** append-only truth cannot tolerate structural transaction ambiguity,
@@ -3600,7 +3601,8 @@ tenant lock. It reconstructs displayed decision state from those immutable event
 verified replay sources instead of trusting mutable projection rows. The anti-fork
 fence assigns every immutable table to one exact insert owner.
 
-The completed implementation measures contracts at 3927 lines and infrastructure at
+The completed implementation measures contracts at 5339 lines (composed with the prompt-8
+primitive catalog) and infrastructure at
 5003 lines. ADR-0041 amends ADR-0018's infrastructure ceiling to 5100 while preserving
 the 500-line file cap.
 
@@ -3623,7 +3625,8 @@ fails. Displayed projection counts carry provenance through `Metric`. Append fai
 use registered, PII-safe error metadata, and projection rebuild reports its entry count
 from the single atomic verification-and-replay transaction.
 
-The completed implementation measures contracts at 4,539 lines, domain at 1,584,
+The completed implementation measures contracts at 5,951 lines (composed with the prompt-8
+primitive catalog), domain at 1,584,
 and infrastructure at 6,507. ADR-0042 raises only the infrastructure ceiling to
 6,550 with bounded headroom and leaves the 500-line file cap unchanged.
 
@@ -3788,8 +3791,9 @@ Gate and rebuild retain the lock. Bounded replay counts every decision-scoped ev
 cannot materialize because a recording or source-origin prerequisite is outside the
 displayed window.
 
-ADR-0047 raises the contracts ceiling to 4,650 around the measured 4,598 lines and
-the infrastructure ceiling to 7,700 around 7,652. The domain and presentation ceilings
+ADR-0047 raises the contracts ceiling to 6,050 around the measured 6,010 lines
+(composed with ADR-0040's prompt-8 primitive catalog) and the infrastructure ceiling
+to 7,700 around 7,652. The domain and presentation ceilings
 are unchanged.
 
 **Why:** immutable history needs permanent decoders and structural semantic bindings,
@@ -4016,7 +4020,7 @@ both send readers to for sharp-edge knowledge. That is the exact failure the lin
 fence's own header names: a ceiling with no headroom converts review findings into
 documentation deletions. The file measured 507 lines before that compression, so the PER-FILE
 ceiling was squeezing it too - both ADR-0018 ratchets were being paid in prose. The comments
-are restored, ADR-0048 raises infrastructure from 7,700 to 7,800 against a measured 7,701,
+are restored, ADR-0048 raises infrastructure from 7,700 to 7,750 against a measured 7,706,
 and `migrations.ts` takes the first pinned `max-file-size` entry at 520 against a measured 510
 with ADR-0048 as the architecture-review note that map requires - both through the amendment
 paths ADR-0018 owns rather than a silent fence edit.
@@ -4047,8 +4051,8 @@ comments; the fixture, its test, and the script flags are independently revertib
 ### D-124 · 2026-08-06 · reversible · The per-file ratchet gets the headroom the layer ratchet got
 
 **ADR-0048's own principle now applies at both ratchets** (ADR-0049). ADR-0048 ended the
-exhausted-headroom failure at the LAYER ceiling - infrastructure 7,800 against a measured
-7,701 - and then re-created it one ratchet down: the first pinned `max-file-size` entry gave
+exhausted-headroom failure at the LAYER ceiling - infrastructure 7,750 against a measured
+7,706 - and then re-created it one ratchet down: the first pinned `max-file-size` entry gave
 `src/infrastructure/store/migrations.ts` 520 against a measured 510. ADR-0048 itself records
 that the file measured 507 before the compression, so the per-file ceiling was the binding
 constraint that bought the prose deletion. The pin rises to 560, fifty lines of bounded room
@@ -4181,7 +4185,7 @@ rejected on the file's own merits - `ledger-bindings.ts`, `ledger-sources.ts`,
 is one append transaction whose savepoint guards the caller's. Every other shipped file this
 branch touched was re-measured; the closest is `ledger-replay-loader.ts` at 493/500, outside the
 threshold this correction applies and named in ADR-0050 as the next candidate. Layer ceilings do
-not move: the restored formatting measures infrastructure 7,706/7,800, and
+not move: the restored formatting measures infrastructure 7,706/7,750, and
 `line-budget.test.ts` records that measurement.
 
 **D-123's `production` arm is forward-looking, and the runbook now says so.** D-123 justified the

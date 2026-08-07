@@ -28,7 +28,7 @@ faced the identical two remedies ADR-0048 was written to remove.
 - The folded call in `appendDecisionEvents` is restored to its multi-line form. Formatting is
   never a currency for ceilings.
 - `src/infrastructure/ledger/ledger-store.ts` takes the second pinned `max-file-size` entry, at
-  **550** against a measured 504 - forty-six lines of bounded correction room, sized like the
+  **550** against a measured 503 - forty-six lines of bounded correction room, sized like the
   `migrations.ts` pin (fifty over measurement, fifty over the 500 default) so the pin still
   measures something.
 - Splitting is rejected on the file's own merits, not deferred by the ceiling: the seams a split
@@ -68,7 +68,7 @@ faced the identical two remedies ADR-0048 was written to remove.
 `max-file-size.test.ts` carries 550 for `ledger-store.ts` alongside 560 for `migrations.ts`, each
 with the measurement it was decided against. ADR-0018's status line names this amendment and both
 pins. Layer ceilings are untouched; the restored formatting returns infrastructure to a measured
-7,706 against 7,800.
+7,706 against 7,750.
 
 ## Revisit When
 

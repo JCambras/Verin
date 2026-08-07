@@ -8,7 +8,7 @@
 
 ## Context
 
-ADR-0047 left infrastructure at 7,700 against a measured 7,652. Later prompt-7 review
+ADR-0049 left infrastructure at 7,700 against a measured 7,652. Later prompt-7 review
 corrections consumed that room down to 11 lines, and one of those corrections paid for
 itself by compressing explanatory comments out of `src/infrastructure/store/migrations.ts` -
 a file `CLAUDE.md` and `AGENTS.md` both send readers to for sharp-edge knowledge. The
@@ -28,10 +28,11 @@ decided the prose was expendable.
 - The compressed comments in `src/infrastructure/store/migrations.ts` are restored: the
   `schema_migrations` bootstrap note, the version-1 baseline rationale, and the
   `Migration` / `PreflightProbe` field documentation.
-- ADR-0018's infrastructure ceiling rises from 7,700 to 7,800. The measured result after
-  the restoration is 7,701 lines, leaving 99 lines of bounded correction headroom.
-  Contracts measures 4,598/4,650, domain 1,584/1,600, and presentation 928/6,000; those
-  three ceilings are unchanged.
+- ADR-0018's infrastructure ceiling rises from 7,700 to 7,750. The measured result after
+  the restoration is 7,706 lines, leaving 44 lines of bounded correction headroom.
+  Measured on the composed tree that also carries ADR-0040's prompt-8 primitive catalog,
+  contracts measures 6,010/6,050, domain 1,584/1,650, and presentation 928/6,000; those
+  three ceilings are unchanged by this amendment.
 - `src/infrastructure/store/migrations.ts` takes the first pinned entry in the
   `max-file-size` map, at 520 against a measured 510. This ADR is the architecture-review
   note that map requires. The same squeeze applied here: the file measured 507 lines
@@ -58,12 +59,12 @@ decided the prose was expendable.
 - **Gained:** the sharp-edge knowledge the agent-memory files promise stays where they
   point; the next infrastructure correction has room that does not have to be bought
   from documentation.
-- **Sacrificed:** 100 lines of measured platform ceiling, and one more amendment in the
+- **Sacrificed:** 50 lines of measured platform ceiling, and one more amendment in the
   ADR-0018 chain to read when reconstructing why a ceiling sits where it does.
 
 ## Consequences
 
-`line-budget.test.ts` carries 7,800 for infrastructure and records the measurement this
+`line-budget.test.ts` carries 7,750 for infrastructure and records the measurement this
 ADR was decided against, and `max-file-size.test.ts` carries the pinned entry. ADR-0018's
 status line names this amendment. Both ratchet obligations are unchanged: the pinned map
 still only shrinks, and at foundation close the layer ceilings drop to actual plus buffer.

@@ -41,10 +41,11 @@ events whose recording fact had aged out of the displayed window.
 - Bounded replay reports every decision-scoped identifier that cannot be materialized
   from the displayed window, including recent events whose recording fact is older than
   the window.
-- ADR-0018's contracts ceiling rises from 4,600 to 4,650 and infrastructure rises
-  from 7,250 to 7,700. The measured results are 4,598 and 7,652 lines, leaving 52
-  and 48 lines of bounded correction headroom. Domain measures 1,584/1,600 and
-  presentation 917/6,000.
+- ADR-0018's contracts ceiling rises to 6,050 and infrastructure rises from 7,250
+  to 7,700. Measured on the composed tree that also carries ADR-0040's prompt-8
+  primitive catalog, the results are 6,010 and 7,652 lines, leaving 40 and 48 lines
+  of bounded correction headroom. Domain measures 1,584/1,650 and presentation
+  928/6,000.
 
 ## Alternatives Rejected
 

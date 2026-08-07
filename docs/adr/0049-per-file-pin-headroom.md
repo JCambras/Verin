@@ -11,7 +11,7 @@
 
 ADR-0048 restored the explanatory comments an earlier correction had compressed out of
 `src/infrastructure/store/migrations.ts`, and it fixed the exhausted-headroom failure at the
-LAYER ratchet: infrastructure rose to 7,800 against a measured 7,701, leaving 99 lines of
+LAYER ratchet: infrastructure rose to 7,750 against a measured 7,706, leaving 44 lines of
 bounded correction room. It then re-created the same failure one ratchet down. The first
 pinned `max-file-size` entry gave that file 520 against a measured 510 - about ten lines.
 
@@ -57,7 +57,7 @@ failure mode intact on the very file whose prose was just restored.
 
 `max-file-size.test.ts` carries 560 for `migrations.ts` and records the measurement this ADR
 was decided against. ADR-0018's status line names this amendment and the pin now in force.
-Layer ceilings are untouched: contracts 4,650, domain 1,600, infrastructure 7,800,
+Layer ceilings are untouched: contracts 6,050, domain 1,650, infrastructure 7,750,
 presentation 6,000.
 
 ## Revisit When

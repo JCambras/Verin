@@ -109,7 +109,7 @@ export default function DecisionLedgerPage() {
                 {model.decisions.map((decision) => (
                   <li
                     key={decision.decisionId}
-                    className="rounded border border-slate-200 px-3 py-2"
+                    className="min-w-0 rounded border border-slate-200 px-3 py-2"
                   >
                     <p className="font-mono text-xs text-slate-800">
                       {decision.decisionId}
@@ -117,7 +117,7 @@ export default function DecisionLedgerPage() {
                     <p className="mt-1 text-sm text-slate-900">
                       {decision.disposition} · {decision.approvalMode}
                     </p>
-                    <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs text-slate-700">
+                    <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs text-slate-700 [&>dd]:min-w-0">
                       <dt>Approval stages</dt>
                       <dd>
                         {decision.approvalStages.length === 0
