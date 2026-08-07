@@ -109,7 +109,10 @@ every case names the active corpus version before any case enters manifest inven
 printed only after it passes that canonical filename check. Invalid names are represented by a bounded
 delivery ordinal, never their raw filesystem text.
 
-Adversarially proven in `corpus-provenance-split.test.ts`: a valid case is accepted; duplicate JSON keys,
+Adversarially proven across `corpus-provenance-split.test.ts` (delivery, filenames, inventory),
+`corpus-intake-attestation.test.ts` (case shape, attestation, freshness) and
+`corpus-replay-payload.test.ts` (strict JSON and the replay payload) - D-143 split them move-only out
+of the single file that once held them all: a valid case is accepted; duplicate JSON keys,
 a free-text subject, a free-text field or key, a missing attestation, a self-reviewed scrub, an inflated
 record count, a dangling evidence subject, a mismatched derived-id suffix, a mislabeled provenance, a
 hidden or nested delivery, a duplicate case id, a stale corpus version, an unknown freshness policy,

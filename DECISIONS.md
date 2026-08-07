@@ -5383,6 +5383,14 @@ split, a shared-fixture extraction, or any change that moves fence code between 
 bucket-and-ceiling decision with it. Until then the gap is stated in `line-budget.test.ts` beside the
 ceilings that do hold, so no reader mistakes silence for coverage.
 
+**DEFERRED, registered here for discoverability (ruling key `corpus11a-opus-review-20`, ruled after
+this entry was written):** a formal amendment of [ADR-0016](docs/adr/0016-testing-strategy.md), which
+still describes only the five test tiers and the non-UTC clock and not the execution policy this
+decision moved into `vitest.config.ts`, is deferred under follow-up key `fu-adr-0016-amendment`;
+AGENTS.md plus D-142/D-143/D-144 carry the fact meanwhile. **Un-defer trigger:** the next change to the
+test execution policy - a project added or repartitioned, a worker-count change, or any move of the
+constraint back out of `vitest.config.ts`.
+
 **Why:** a constraint documented in one file and enforced in another is a constraint one refactor from
 being lost, and an unmeasured tree that a fence's own rationale condemns should be named as a debt with
 a trigger, not left to look like a scope nobody noticed.
@@ -5531,7 +5539,7 @@ and summer offsets disagree with the named zone, each by name, keeping the UTC r
 **One validation per run is now true.** `conflict-key-families` and `corpus-timestamps` still called
 `validateCorpus()` at module scope, making a full fitness run three validations rather than one; both read
 the injected world. A corpus that does not validate is reported through that world as the recorded reason
-and raised in the fences that READ it, rather than aborting global setup and taking all 53 fitness files
+and raised in the fences that READ it, rather than aborting global setup and taking all 54 fitness files
 down with a setup error - fail-closed either way, since no fence can read a world that was never built.
 
 **The intake naming rule is its own module.** `canonicalIntakeFilenameRule` rendered its message with
