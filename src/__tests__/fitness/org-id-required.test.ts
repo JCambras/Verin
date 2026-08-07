@@ -22,6 +22,13 @@ const DATA_TABLES = [
   "users",
   "credentials",
   "audit_log",
+  "evidence_snapshots",
+  "decision_input_bundles",
+  "decision_input_bundle_evidence",
+  "decision_records",
+  "decision_ledger",
+  "decision_state_projection",
+  "decision_reservation_index",
 ];
 // Reviewed NON-tenant tables (each with the reason it needs no org_id filter). The
 // derivation check below proves DATA_TABLES + NON_TENANT_TABLES = exactly the
@@ -33,6 +40,8 @@ const NON_TENANT_TABLES = [
   "crm_write_cache", // idempotency cache, PK (org_id, idempotency_key) — always key-scoped
   "audit_outbox", // internal delivery queue, keyed by row id claims
   "audit_anchor", // one integrity row per org, keyed by org_id PK upserts
+  "decision_ledger_anchor", // one integrity row per org, keyed by org_id PK upserts
+  "decision_projection_checkpoint", // dropped by migration 8; migration 4 keeps its shipped DDL
   "schema_migrations", // migration ledger (D-016), global infra table keyed by version - no tenant data
 ];
 // Columns that are themselves an unguessable capability (scope the row without org_id).

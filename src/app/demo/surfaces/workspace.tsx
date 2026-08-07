@@ -32,7 +32,7 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
               <p className="text-sm">
                 <Metric metric={a.balance} />
               </p>
-              <p className="flex items-center gap-2 text-xs text-slate-600">
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
                 Custodian: <FreshValue provenance={a.custodian.provenance}>{a.custodian.display}</FreshValue>
                 <DevProvenanceBadge label={DEV_BADGE_TEXT[a.fakeClass]} />
               </p>

@@ -25,6 +25,7 @@ export function AppNav({ actor, role }: { actor: string; role: string }) {
     { href: "/app/account-opening", label: "Open account" },
     { href: "/app/console", label: "Console" },
     { href: "/app/audit", label: "Audit trail" },
+    { href: "/app/ledger", label: "Decision ledger" },
   ];
   return (
     <header className="flex items-center justify-between border-b border-slate-200 px-6 py-3 print-hide">

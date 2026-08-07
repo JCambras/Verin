@@ -25,6 +25,13 @@ import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
+import {
+  DECISION_LEDGER_GENERATIONS_SQL,
+  DECISION_LEDGER_HISTORY_INDEXES_SQL,
+  DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL,
+  DECISION_LEDGER_RESERVATION_SEQUENCE_DROP_SQL,
+  DECISION_LEDGER_SQL,
+} from "./decision-ledger-migration";
 
 export interface Migration {
   /** Monotonic, gap-free version. Recorded in `schema_migrations` once applied. */
@@ -347,6 +354,11 @@ export const MIGRATIONS: readonly Migration[] = [
       sql: orphanProbeSql(e),
     })),
   },
+  { version: 4, name: "decision-ledger-foundation", sql: DECISION_LEDGER_SQL },
+  { version: 5, name: "decision-ledger-reservation-generations", sql: DECISION_LEDGER_GENERATIONS_SQL },
+  { version: 6, name: "decision-ledger-history-indexes", sql: DECISION_LEDGER_HISTORY_INDEXES_SQL },
+  { version: 7, name: "decision-reservation-drop-created-sequence", sql: DECISION_LEDGER_RESERVATION_SEQUENCE_DROP_SQL },
+  { version: 8, name: "decision-drop-projection-checkpoint", sql: DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free

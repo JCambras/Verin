@@ -3392,3 +3392,1022 @@ could be weakened or deleted and the build would stay green).
 **Revert path:** delete this entry and the PLAN.md forward-work pointer; the
 obligations then live only in docs/primitive-rationale.md, which is where they
 were before.
+
+## D-105 - Prompt-7 decision ledger is a synchronous sibling, not an audit-log extension
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: ADR-0007, ADR-0018,
+ADR-0019, ADR-0043, v3 prompt 7, charter #1/#2/#7/#13
+
+The decision and replay storage foundation lands as an independent
+`decision_ledger` chain beside the unchanged operational `audit_log`. Immutable
+evidence snapshots, exact input-bundle bytes, ordered evidence membership, and
+decision records commit with their typed recording events in one transaction.
+Composite tenant foreign keys, append-only database triggers, the repository
+anti-fork fence, L1-L4 chain verification, and one pure online/rebuild projection
+fold make the storage claim executable. The 16-event vocabulary includes explicit
+approval-stage expiry and escalation facts but no authority evaluation, execution
+behavior, or second orchestration engine.
+
+The `/app/ledger` register makes the source reachable and read-only; the seeded
+chain is visibly labeled `Synthetic fixture`. Existing demo fake decision and
+status histories remain because this prompt lands no real producers. They become
+deletion/switchover candidates only with the later decision, approval, and
+execution prompts. ADR-0043 records the topology, retention extension, forward-only
+migration, and ADR-0018 ceiling amendments.
+
+## D-106 - Ledger provenance, reservation ownership, and register verification scope
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-105, ADR-0043, charter #4/#5
+
+Review of D-105 surfaced four storage-level gaps, all fixed in the same forward-only
+migration rather than a follow-up one.
+
+**Provenance is stored, not inferred.** Every `decision_ledger` row carries
+`prov_source`/`prov_asof`/`prov_confidence` supplied by the producer, and both write
+paths refuse an unknown source. The register derives its badge from the stored source
+through `isSyntheticSource`, so renaming the seed actor - or adding any other synthetic
+producer - can no longer render fixture history as real (charter #4). The badge text now
+comes from the single `DEV_BADGE_TEXT` taxonomy, which moved to `contracts/provenance.ts`
+because real surfaces label unlanded paths from it too, not only the demo skeleton.
+
+**Reservation ownership is indexed, not searched.** A release names no decision, so the
+owner was previously found by scanning every projection in physical row order - a choice
+the online fold and a later rebuild could disagree on. `decision_reservation_index` maps
+`(org_id, reservation_id) -> decision_id` with a status, making the lookup a single keyed
+read and a rebuild linear. A `ReservationCreated` that names a reservation another decision
+holds live is refused rather than resolved arbitrarily.
+
+**Immutable sources are reusable.** Evidence snapshots and input bundles are
+content-addressed, so a second decision over the same inputs (the natural shape of an
+exception re-decision) reuses the stored bytes. Reuse requires byte equality; a
+same-id/different-bytes collision, or identical content already stored under another
+bundle id, is refused with a legible error instead of an opaque constraint violation.
+
+**Verification scope is honest.** `verifyAndListDecisionLedger` accepts a window, and the
+register verifies its most recent 200 entries against the stored hash of their predecessor
+instead of re-running L1-L4 over the whole chain on every page load under the store's single
+connection. The unbounded form remains the examiner-grade check the `audit-chain-verify`
+gate runs, and the UI states which scope it is showing.
+
+`ExceptionDecisionRequested.triggeringEntryRef` is now a promoted, foreign-keyed column
+checked by L3, so a causal link to a nonexistent entry cannot be stored. The register also
+renders replayed decision state, making the projection fold reachable from the UI in the
+PR that lands it (charter #5). `appendDecisionEvents` stays dormant until Wave D/F
+producers land; it is exercised by integration tests, not by a fake producer.
+
+**Why:** derived state that depends on physical row order is not deterministic, and a label
+derived from a magic actor string is not provenance.
+**Revert path:** the added columns and derived table are additive; the window argument is
+optional and defaults to the full chain.
+
+## D-107 - Ledger failure diagnosis, post-decision evidence, and derived-state labeling
+
+**Date:** 2026-07-28 · **Reversible** · Relates to: D-105, D-106, ADR-0043, charter #4/#5
+
+Review of D-103 surfaced four gaps in the ledger's failure and labeling behavior. All are
+fixed in place; none needs a new migration.
+
+**A failed append is diagnosable.** `recordDecision` used to map every non-`AppError`
+thrown inside its transaction to one generic `STORE_CONSTRAINT` and logged nothing, so an
+outage, a programming bug, and a genuine unique/FK violation were indistinguishable 409s
+with no trail - the exact failure `auditedWrite` already learned ("a swallowed TypeError
+here once surfaced as a generic 409"). Both write chokepoints use the hardened error
+metadata classifier, so only a real SQLSTATE class-23 violation is the non-retryable
+conflict and anything else is `INTERNAL`. Logs retain only closed error codes,
+fixed-shape SQLSTATE categories, and registered reasons, never driver prose.
+
+**Post-decision evidence has a write path.** `StatusObserved.evidenceSnapshotRef` promotes
+a foreign-keyed `evidence_snapshot_id`, but the only writer of `evidence_snapshots` was
+`recordDecision`, and `appendDecisionEvents` refused `EvidenceSnapshotRecorded` outright -
+so evidence gathered AFTER a decision, which is precisely what a verification-time status
+observation cites, could never be stored and the field was structurally unusable.
+`appendDecisionEvents` now takes the snapshots recorded by its own batch, and a cited
+snapshot that is not stored is refused by name instead of surfacing as a raw FK violation.
+Both write paths share one correspondence rule: evidence and the event recording it are
+appended together, same tenant, one event per snapshot.
+
+**Derived state is labeled by its least trustworthy input.** The register joined a
+projection's provenance from its single `DecisionRecorded` row, so a decision recorded by a
+real producer that later folded in synthetic approval, execution, or status events rendered
+with no badge. `listDecisionProjections` now derives each projection's provenance from every
+contributing row through `deriveArtifactProvenance` (ADR-0022), and one synthetic event
+makes the whole displayed fold a demonstration that `canFeedComplianceDecision` refuses.
+A `ReservationReleased` names no decision in a promoted column, so it is attributed through
+the reservation index for the fold but not yet for the label - the narrow remainder, closed
+when Wave D/F producers land and reservations become promoted facts.
+
+**The projection window is bounded like the entry window.** ~~`listDecisionProjections`
+takes a limit; the register reads the 50 most recently active decisions, reports how many
+exist, and says so on screen, instead of a full-table read and an unbounded grid per page
+load.~~ **Superseded by D-108/D-116:** the register reads no projection at all. It replays
+the verified event window (`replayRegisterWindow`), bounds the decisions it renders, and
+reports its totals and withheld counts from that replay, so the projection store is the
+replay/repair path only and carries no bounded read to keep honest.
+
+`rebuildDecisionProjections` is reachable as `pnpm ledger:rebuild`, the operator repair
+surface for corrupted derived state: it refuses to replay a chain that does not verify, and
+a run that rebuilds nothing exits non-zero. The anchor and projection checkpoint are now
+upserted per entry rather than once per batch, so if a future producer swallows a mid-batch
+refusal inside its own transaction, the rows that committed still have an anchor covering
+them - a partial append stays verifiable and repairable instead of breaking L4 forever with
+no repair path (`decision_ledger` rejects DELETE).
+
+**Why:** an opaque error code and an unlabeled synthetic fold are both silent failures, and
+immutable DDL is the wrong place to discover a field can never be written.
+**Revert path:** the shared error helpers, the optional snapshot argument, and the optional
+limit are all additive; the per-entry anchor upsert changes write frequency, not schema.
+
+### D-108 · 2026-07-28 · reversible · Ledger replay trust and projection ownership are structural
+
+**Reservation-ownership portion superseded by D-107.**
+
+Projection preconditions are evaluated before immutable insertion, and reservation identifiers
+remain permanently owned by their first decision because release events carry no owner reference.
+Blocked and prohibited decisions project approval mode `none`.
+
+The ledger chain now binds producer provenance through a versioned preimage. Evidence-recording
+events bind a digest of the complete canonical snapshot metadata. Projection rebuild dispatches
+events through the recorded-version registry, recomputes decision and bundle hashes, verifies
+canonical evidence bytes and ordered bundle membership, and refuses PII in every immutable replay
+source. Derived projection provenance is persisted with the cache, including owner-resolved release
+events, so request-path reads are bounded by selected decisions rather than event history.
+
+The post-review implementation measures contracts at 5287 lines (composed with ADR-0040's
+prompt-8 primitive catalog) and infrastructure at 4187 lines.
+ADR-0041 amends ADR-0018 ceilings to 5350 and 4300 respectively, retaining explicit headroom without
+changing the 500-line file cap.
+
+**Why:** append-only history cannot rely on mutable caches, unbound provenance, reusable ownerless
+identifiers, or replay inputs that are only schema-shaped rather than hash-verified.
+**Revert path:** none while Prompt 7 claims replayable immutable sources and deterministic projections.
+
+### D-109 · 2026-07-28 · reversible · Dynamic store paths stay outside the build trace
+
+The runtime-only relative PGlite data-directory resolution carries Turbopack's trace-boundary
+annotation. This preserves relative paths in development and CI while preventing the production
+build from tracing the whole repository through `process.cwd()`.
+
+**Re-verified 2026-08-05 (D-116).** Review read the annotation as inert on a non-`import()`
+call site. It is not: `next build` emits zero NFT warnings with it and "Encountered unexpected
+file in NFT list" without it, on this exact `resolve(process.cwd(), …)` form - which is the
+form Turbopack's own warning text prescribes. The call site now says so, so the next reader
+does not delete it.
+
+**Why:** the build otherwise succeeds with an NFT warning and packages unrelated project files.
+**Revert path:** remove the annotation if the store path becomes statically rooted or Turbopack
+stops tracing this runtime-only resolution.
+
+### D-110 · 2026-07-28 · captain-decision · Ledger appends, replay sources, and reservation reuse fail closed
+
+Later ledger appends require the nominal transaction capability issued by the SQL
+driver and run under a savepoint, so a caller cannot catch an error and commit a
+source or event prefix. Chain verification locks the tenant before reading its
+snapshot, and rebuild verifies L1-L4 plus every retained replay source before
+clearing derived state. The scheduled chain gate and restore drill run the same
+non-mutating source verification. Evidence, bundle, and decision rows dispatch
+through versioned recorded-source codecs with identity upcasts for the current
+version.
+
+Immutable retained text is a code/reference projection. The boundary rejects
+unclassified attribution, summaries, explanations, structured reasons, and source
+statuses without rewriting the submitted bytes.
+
+Reservation identifiers are reusable after release. Each generation is the tuple
+of reservation reference, owning decision reference, and immutable creation entry.
+Every release cites the exact tuple. Cross-owner and unknown-generation releases
+fail, while a duplicate old-generation release is harmless and cannot release a
+later generation. Status observations that precede step mapping are reconciled by
+execution handle when the real step arrives.
+
+The complete implementation measures contracts at 5296 lines (composed with the prompt-8
+primitive catalog) and infrastructure at 4736 lines. ADR-0041 amends ADR-0018's infrastructure ceiling to 4800 while keeping
+the 500-line file cap.
+
+**Why:** append-only truth cannot tolerate structural transaction ambiguity,
+mutable-snapshot verification, host-current replay parsing, retained free text, or
+ownerless reservation reuse.
+**Revert path:** none while Prompt 7 promises atomic append, deterministic rebuild,
+fail-closed retention, and reusable reservation identifiers.
+
+### D-111 · 2026-07-28 · reversible · Register state replays the exact verified window
+
+`DecisionRecorded` advances to ledger schema 1.1.0 and binds both the decision hash
+and input-bundle hash. Causal and exception-trigger references must name preceding
+entries. Retained decision text uses closed code registries or opaque text references,
+and the shared PII traversal is iterative.
+
+The register now verifies, reads, and replays one bounded event window under the same
+tenant lock. It reconstructs displayed decision state from those immutable events and
+verified replay sources instead of trusting mutable projection rows. The anti-fork
+fence assigns every immutable table to one exact insert owner.
+
+The completed implementation measures contracts at 5339 lines (composed with the prompt-8
+primitive catalog) and infrastructure at
+5003 lines. ADR-0041 amends ADR-0018's infrastructure ceiling to 5100 while preserving
+the 500-line file cap.
+
+**Why:** a cryptographic claim must bind the exact bundle and the exact state displayed,
+and retained text cannot become safe merely by duplicating an untrusted value.
+**Revert path:** none while Prompt 7 promises cryptographically bound replay inputs,
+causal event order, fail-closed retention, and an honestly verified register.
+
+### D-112 · 2026-08-04 · reversible · Ledger review boundaries require sealed authority and verified disclosure
+
+Decision-ledger repositories now require sealed tenant authority before SQL and
+compare every source and event tenant with that authority. Retained ledger values use
+a ledger-specific iterative boundary: structural identifiers and hashes must use
+opaque machine syntax, while unclassified text retains the ambiguous-sensitive-text
+refusal. Evidence references are no longer mistaken for free text.
+
+The register is governed by both `audit.export` and `pii.view`, proves both grants
+name the same tenant, and returns no rows or derived state when L1-L4 verification
+fails. Displayed projection counts carry provenance through `Metric`. Append failures
+use registered, PII-safe error metadata, and projection rebuild reports its entry count
+from the single atomic verification-and-replay transaction.
+
+The completed implementation measures contracts at 5,951 lines (composed with the prompt-8
+primitive catalog), domain at 1,584,
+and infrastructure at 6,507. ADR-0042 raises only the infrastructure ceiling to
+6,550 with bounded headroom and leaves the 500-line file cap unchanged.
+
+**Why:** transaction capability alone does not prove tenant ownership, immutable
+identifiers cannot accept human-shaped text, and failed integrity verification cannot
+authorize disclosure of the bytes that failed verification.
+**Relates to:** ADR-0041, ADR-0042.
+**Revert path:** restore the raw-org boundaries and single-grant register only if the
+sealed-authority, PII-retention, governed-disclosure, and metric-provenance invariants
+are withdrawn together.
+
+### D-113 · 2026-08-05 · reversible · Ledger retention and anti-fork boundaries fail closed
+
+Decision-ledger producer provenance now rejects `computed` and derived values because
+the immutable row and chain envelope retain only source, time, and confidence. A
+demonstration trace can no longer be discarded before hashing and replay. Persisting
+derived producer provenance remains a future versioned-schema choice rather than a
+silent reinterpretation of existing bytes.
+
+Every retained ledger reason and failure code must belong to the reviewed code
+registry. Structural identifiers accept only canonical UUIDs, hashes, firm ids,
+namespaced references, versioned references, or reviewed code identifiers, so a
+lowercase human-shaped slug cannot enter immutable history as a reference.
+
+The append-only fence now resolves SQL executor calls, static concatenation, template
+interpolation, and bound constants before assigning immutable-table insert ownership.
+An `INSERT` with a dynamic table target fails closed. The register presents failed
+verification as an explicit entries-withheld incident and reserves its empty state for
+a verified ledger with zero stored events.
+
+The measured implementation remains inside the existing ceilings at contracts
+4,542/4,600, domain 1,584/1,600, infrastructure 6,544/6,550, and presentation
+917/6,000.
+
+**Why:** immutable history cannot safely strip derivation trust, accept open code or
+identifier vocabularies, rely on source-fragment matching for write ownership, or
+represent withheld evidence as an empty record.
+**Alternatives:** adding provenance columns and a new chain envelope was rejected for
+this correction because no current producer requires derived provenance and prior
+bytes must remain stable. A broader lowercase-name heuristic was rejected because it
+would reject legitimate machine codes without proving identity.
+**Revert path:** restore the permissive provenance parser, retained-value traversal,
+literal-fragment fence, and shared empty UI state together only if their trust and
+disclosure claims are withdrawn.
+
+### D-114 · 2026-08-05 · reversible · Ledger retention, insert ownership, and bounded replay fail closed
+
+Unresolved SQL passed to an executor is now an immutable-table ownership violation unless
+it belongs to the exact database-driver or migration-runner boundary. Imported constants,
+helper returns, literal unions, concatenations, and templates are resolved before that
+decision. The reviewed migration escape is paired with a complete migration-plan check
+that refuses immutable inserts and non-read-only preflights.
+
+Retained replay traversal rejects sensitive-length numeric primitives and admits readable
+namespaced or versioned identifiers only through exact reviewed values and numeric-prefix
+registries. Human-shaped lowercase and uppercase references therefore fail before
+immutable bytes are stored.
+
+Bounded register replay selects an evidence recording inside the verified window and
+before the citing decision while separately proving that some recording fact exists.
+A repeated snapshot can no longer make a complete in-window decision disappear because an
+older occurrence was outside the window. ADR-0019 now states that the bounded register is
+an operator view and defers a complete decision-ledger examiner export until the first
+examiner or regulated-customer requirement.
+
+The corrected implementation measures infrastructure at 6,608 lines. ADR-0043 raises the
+ceiling to 6,650 with 42 lines of bounded headroom; contracts, domain, presentation, and
+the 500-line file cap remain unchanged.
+
+**Why:** immutable history cannot rely on unresolved SQL classification, open reference
+grammars, ignored numeric primitives, or evidence selection outside the window whose state
+is displayed.
+**Revert path:** restore these boundaries together only if the append-only ownership,
+PII-retention, bounded-replay, and examiner-surface claims are withdrawn.
+
+### D-115 · 2026-08-05 · reversible · Ledger verification and replay-source trust share immutable recording edges
+
+L2 now reapplies the append path's retained-PII and immutable-source binding
+authorities and checks causal order set-wise before reporting PASS. Correctly chained
+bytes that the repository would refuse therefore cannot be disclosed by the register or
+consumed by rebuild.
+
+Replay-source trust belongs to the first hash-bound recording edge for immutable
+evidence and bundle bytes. Every reuse retains its own producer provenance, and online,
+bounded, and rebuild folds derive from both. A fixture bundle reused by a `verin-crm`
+producer remains a demonstration and cannot feed a compliance decision.
+
+Register replay batch-loads evidence, decisions, bundles, memberships, and source
+origins before folding and reuses the verified row snapshot. A 14-decision regression
+falls from 65 statements to a constant category-bounded query count. ADR-0041's
+migration guidance now names versions 4 and 5. ADR-0044 records the trust ownership and
+raises the infrastructure ceiling to 7,050 around the measured 6,927 lines, with the
+500-line cap unchanged.
+
+**Why:** canonical schema bytes alone do not prove repository acceptance, and mutable
+use claims cannot upgrade immutable synthetic inputs.
+**Revert path:** none while L1-L4 authorizes disclosure and rebuild, source reuse is
+supported, and bounded register replay runs under a tenant lock.
+
+### D-116 · 2026-08-05 · reversible · Ledger ordering, transaction, and disclosure authority is structural
+
+Decision-event and reservation-generation order now derives from immutable ledger facts
+through one set-based authority shared by append, rebuild, and L2. The mutable reservation
+index can no longer authorize a competing active generation after cache deletion.
+
+Transaction authenticity lives in a process-global weak registry shared by separately
+evaluated Next.js bundles. Every exported raw-ledger disclosure requires sealed
+`audit.export` and `pii.view` grants with identical tenant and actor scope, and ledger rows
+carry the audit-export governed-output marker.
+
+Bounded replay uses provenance only when the global first evidence or bundle recording
+edge is inside the verified snapshot. Decisions whose true trust origin lies outside the
+window are withheld rather than relabeled by unchecked historical bytes. ADR-0045 raises
+the infrastructure ceiling to 7,250 around the measured 7,174 lines while retaining the
+500-line file cap.
+
+**Why:** mutable caches, module-local seals, route-only authorization, and provenance
+outside the verified snapshot cannot authenticate immutable history or disclosure.
+**Revert path:** none while L1-L4 authorizes disclosure, reusable source trust belongs to
+the first recording edge, and transaction capabilities cross Next.js bundle boundaries.
+
+### D-117 · 2026-08-05 · reversible · Register verification authenticates complete ledger history
+
+The request-path register now runs L1-L4 over the complete tenant chain before it
+selects the bounded event rows and replay window. Historical decision and reservation
+prerequisites consumed by L2 are therefore part of the authenticated snapshot rather
+than unchecked inputs to a tail verdict.
+
+Replay-source corruption becomes a safe L2 failure that withholds all entries. A
+provenance-bound count identifies decisions omitted because their source origins fall
+outside the displayed event window. Exact machine identifiers no longer receive a
+second partial account-number scan after their grammar and general PII checks pass.
+
+Migration version 6 adds partial indexes for source origins and reservation history.
+Savepoint-protected batches advance their anchor and checkpoint once at the batch head.
+The corrected infrastructure layer measures 7,231/7,250, so the existing ADR-0045
+ceiling remains unchanged.
+
+**Why:** a predecessor hash cannot authenticate arbitrary promoted facts outside a
+verified tail, and integrity failures or bounded omissions must never appear as missing
+history.
+**Relates to:** ADR-0041, ADR-0045, ADR-0046.
+**Revert path:** none while historical facts authorize L2 ordering and the register
+returns a verified integrity verdict.
+
+### D-118 · 2026-08-05 · reversible · Ledger compatibility and register availability are explicit
+
+The immutable-write fence now recognizes PostgreSQL `INSERT INTO ONLY`, `COPY FROM`,
+and `MERGE INTO` targets in addition to ordinary inserts, while unresolved write SQL
+continues to fail closed. Append and L2 share immutable decision parsing that binds
+approval stages, escalation indexes, and execution steps to the authority and plan
+recorded by that decision.
+
+Ledger 1.1.0 and decision-core 1.7.0 recorded schemas are frozen as digest-pinned JSON
+Schema artifacts. Literal additive registry entries own their recorded parser, v1
+canonical serializer, hash and chain preimage handlers, and current upcast. A
+two-version companion proves entries remain independently dispatchable.
+
+The request register captures tenant, anchor, and complete chain in one consistent
+statement, then runs full-chain verification without holding the tenant append lock.
+Gate and rebuild retain the lock. Bounded replay counts every decision-scoped event it
+cannot materialize because a recording or source-origin prerequisite is outside the
+displayed window.
+
+ADR-0047 raises the contracts ceiling to 6,050 around the measured 6,010 lines
+(composed with ADR-0040's prompt-8 primitive catalog) and the infrastructure ceiling
+to 7,700 around 7,652. The domain and presentation ceilings
+are unchanged.
+
+**Why:** immutable history needs permanent decoders and structural semantic bindings,
+and a complete-chain operator read must not block tenant writes for retention-linear
+verification work.
+**Relates to:** ADR-0041, ADR-0046, ADR-0047.
+**Revert path:** none while retained ledger versions require replay and full-chain
+request verification remains the disclosure authority.
+
+### D-119 · 2026-08-05 · reversible · Ledger vocabulary, versions, and reachability are shipped facts
+
+**Test vocabulary leaves the production boundary.** The immutable-source PII boundary
+recognised ~60 identifiers whose only justification was a fixture, so renaming a test
+constant meant editing production authority and the allowlist grew with the suite.
+Fixture vocabulary now enters through `registerTestLedgerIdentifier` /
+`registerTestLedgerIdentifierPrefix` in the reserved `test` namespace - the shape
+`registerTestSpanName` and `registerTestSystemActor` already use - and the shipped
+allowlists carry reviewed production, seed, demo, and golden identifiers only. The
+`ledger-pii-vocabulary` fence derives both halves from the module: the seams stay
+exported, no shipped module (src outside the test tree, or scripts) can reference
+either one (keyed on resolved symbol, so an alias is caught), and no entry in any
+`REGISTERED_*` set lives in the reserved namespace.
+
+**Bundle versions are validated by shape, not by today's build.** `engineVersion` and
+`primitiveSetVersion` were pinned to the literal set `{"0", "0.0.0"}`, so the first
+real engine version bump would have refused every `recordDecision` as `PII_VIOLATION` -
+an operator sent hunting for personal data that was never there. They are checked
+against a bounded machine-token grammar instead, the residual account-reference refusal
+still runs over the values, and an unsupported version reports itself as a `VALIDATION`
+refusal that the append and replay paths pass through unflattened.
+
+**One projection authority per event.** Every append folded the projection twice with
+identical arguments - once to validate before the insert, once to persist after it - so
+the sole write path paid double the round trips for the same verdict. The pre-insert
+pass is gone; the transaction and the append savepoint already guarantee that a refused
+projection commits nothing. Because the substrate is now the first authority to refuse a
+cross-generation release, `appendDecisionEvents` maps adapter-boundary failures through
+the same classifier `recordDecision` uses, so a caller aborting its transaction still
+sees a typed `STORE_CONSTRAINT` rather than driver prose.
+
+**Derived state carries no column no reader can validate.** Migration 7 drops
+`decision_reservation_index.created_sequence` forward-only (migration 5 keeps its shipped
+DDL). The generation identity - reservation ref, owning decision, immutable creation
+entry - and the `decision_reservation_one_active` partial unique index are untouched.
+
+**Unreachable reads are removed; the one real deferral is named.** `listDecisionLedger`
+(an unverified grant-authorized listing) is superseded by `verifyAndListDecisionLedger`,
+and `verifyDecisionLedger` by `verifyDecisionLedgerIntegrity`; `countDecisionProjections`
+and the bounded `listDecisionProjections` limit path were orphaned when the register
+started replaying its verified event window, which reports its own totals. All are
+deleted. `appendDecisionEvents` stays: it is the shared later-append boundary this prompt
+exists to land, and its first shipped producer arrives with multistage approval in
+**v3 prompt 18** - the earliest prompt in the sequence that emits a post-decision fact
+(`ApprovalRecorded`, `ApprovalInvalidated`, and the stage expiry/escalation events), since
+`appendDecisionEvents` refuses `DecisionRecorded` and everything before it either has no
+event variant or travels in the bundle through `recordDecision`. The reservation,
+execution, and verification producers follow in prompts 23-26 - which is what D-104's
+"Wave D/F" already said. The `ledger-reachability` fence derives shipped callers for every
+ledger export and requires each unreachable one to be that named deferral or a fenced test
+seam - and fails just as loudly when a named deferral gains a caller, so the list cannot
+become a standing amnesty.
+
+**A refused replay says which repair it needs.** `pnpm ledger:rebuild` reported every
+per-org failure as "ledger or retained replay sources do not verify", so an outage, a bug,
+and a genuine integrity break were one message. It now prints the closed error code, the
+fixed-shape reason, and the level beside the org id, and never driver text.
+
+**D-104 correction.** The projection window paragraph in D-104 described a register that
+read the 50 most recently active decisions through `listDecisionProjections`. That register
+was replaced by `replayRegisterWindow` (D-108): the request path reads no projection at
+all, it replays the verified event window and reports totals and withheld counts from it.
+**D-106 upheld.** Review reported the Turbopack trace annotation as a no-op outside a
+dynamic `import()`. Measured both ways instead of reasoned about: `next build` is clean
+with the annotation and warns "Encountered unexpected file in NFT list" without it. The
+annotation stays, and the call site now records the measurement.
+
+**Why:** a production allowlist that carries fixtures, a version gate pinned to one build,
+a duplicated fold, an unvalidatable column, and an unreachable read are each a claim the
+code cannot keep.
+**Relates to:** ADR-0041, D-104, D-105, D-106, D-107, D-108.
+**Revert path:** the seams, the version grammar, and the fences are additive; migration 7
+is forward-only and the deleted reads have verified successors.
+
+### D-120 · 2026-08-06 · reversible · The drill tenant, the plain-context rescan, and the removed bounded start
+
+**The backup-restore drill seeds an opaque tenant id.** The nightly drill (charter #11)
+seeded the decision ledger under org id `"org"`. Once the immutable-source boundary
+became fail-closed, `firmId` - carried by every ledger event and replay source - had to
+be a UUID, a hash, or a reviewed shipped identifier, so `seedDecisionLedger` threw
+`PII_VIOLATION` and the drill aborted before it ever reached the backup step. Reproduced
+end-to-end with the scheduled job's own environment before the fix. The drill now uses a
+fixed UUID tenant, which satisfies the boundary structurally and keeps a drill-only
+string out of the production allowlist. The runbook records the fresh run.
+
+**The identifier-context memo no longer suppresses the plain-context scan.** The
+immutable-source traversal memoised visited containers on a single flag, so an object
+first reached through an identifier field was skipped when it was later reached through a
+plain one. The two contexts are not ordered: identifier strings are checked against the
+opaque-identifier grammar, plain strings against `looksLikeAmbiguousSensitiveText`, and a
+registered machine identifier passes the first while failing the second. The memo keys on
+(container, context), so each container is scanned once per context. Proved adversarially:
+the new unit test passes on the fix and fails on the old memo.
+
+**The bounded chain start is removed rather than revived.** `LedgerSnapshot.start` and
+`verifyStoredByteChain`'s `start` parameter were the last plumbing of the tail-verification
+design ADR-0046 replaced, constructed as `undefined` at both shipped call sites and covered
+by nothing. Reviving them would re-open exactly what ADR-0046 closed - a stored predecessor
+hash proves continuity, not that the predecessor or its promoted columns are authentic -
+and ADR-0046 names measured request latency, not review, as the trigger for an
+authenticated checkpoint design. The parameter is gone; verification stays GENESIS-rooted.
+
+**D-106 upheld again.** Review reported the Turbopack trace annotation as an inert
+argument comment for the third time. Re-measured on this branch: `next build` is clean
+with it and warns "Encountered unexpected file in NFT list" without it. The annotation
+stays.
+
+**Why:** a drill that cannot run is not evidence, a memo that depends on traversal order is
+not a boundary, and dead plumbing for a rejected design is an invitation to rebuild it.
+**Relates to:** ADR-0041, ADR-0046, D-106, D-116.
+**Revert path:** the drill tenant is one constant, the memo change is additive, and the
+bounded start returns only with the authenticated checkpoint design ADR-0046 defers.
+
+### D-121 · 2026-08-06 · reversible · Derived cursors, verification verdicts, and reachability say what they know
+
+**The projection checkpoint is dropped, not given a reader** (key `ledger-fresh5-checkpoint`).
+`decision_projection_checkpoint` was written by every append and by every rebuild and
+read by nothing: no verification level, surface, or script ever selected from it, so a
+stale `last_sequence` was undetectable while the sole write path paid to maintain it -
+exactly the shape migration 7 removed for `created_sequence`. Migration 8 drops the
+table forward-only (migration 4 keeps its shipped DDL) and the three writers go with it.
+The ordering facts it duplicated already live in the immutable ledger and its
+independently maintained anchor. The bounded checkpoint-reuse verification the cursor
+was plumbing for is NOT revived here: ADR-0046/ADR-0047 ratified GENESIS-rooted
+full-chain verification and named MEASURED request latency, not review, as the trigger
+for an authenticated-checkpoint design. That design stays deferred to that trigger, and
+request-path verification stays linear in retained entries by the ratified trade.
+
+**An integrity verdict carries its own reason.** `verifyDecisionLedgerIntegrity` caught
+every replay-source failure bare and reported one static string, so the precise
+`STORE_CONSTRAINT` reasons the replay loader is careful to produce ("evidence snapshot is
+missing during replay", "decision replay source binding differs during replay", an
+unsupported recorded version) were discarded - and a driver outage or the cross-tenant
+`AUTH_FAILED` throw was reported as a BROKEN chain, sending an operator after a tamper
+incident that never happened. The catch is narrowed to `STORE_CONSTRAINT` the way
+`readVerifiedDecisionRegister` already narrows its own, everything else re-throws, and
+the carried reason is printed by `pnpm audit:chain` and the backup-restore drill - the
+two operator surfaces where the field previously had no consumer at all.
+
+**Reachability is transitive from shipped entry points.** The `ledger-reachability` fence
+counted ANY shipped reference as a caller, and every ledger file is itself shipped, so an
+intra-subsystem call satisfied it: `preflightEvidenceSnapshots` passed unnamed while its
+only call site was inside `appendDecisionEvents`, the one export the fence itself records
+as deferred. Roots are now references from shipped files OUTSIDE the ledger directory
+(routes, surfaces, scripts) and reachability propagates only through the bodies of
+reached declarations, private helpers included. The scan also covers exported `const`
+arrows and classes, which a `getFunctions()`-only walk could not see.
+`preflightEvidenceSnapshots` is therefore a NAMED deferral whose first shipped caller
+arrives with `appendDecisionEvents` in **v3 prompt 18** - it is reached through that
+boundary's body, so it becomes reachable in the same prompt whatever the first producer's
+events happen to carry - and each deferral now cites the decision entry that records it
+rather than resolving against the rest of the file.
+
+**The register applies its window once.** `/api/ledger` re-sliced rows to `MAX_ENTRIES`
+after `readVerifiedDecisionRegister` had already applied the same bound as its event
+window, so one limit lived in two places and could drift.
+
+**D-106 upheld a third time.** The Turbopack trace annotation was reported inert again.
+It stays - measured, not reasoned about - and the call site now carries a one-line
+pointer beside the annotation itself so the next reader sees the constraint without
+scrolling to the block comment above it.
+
+**Why:** a cursor no reader validates, a verdict that hides which failure it saw, and a
+reachability rule a subsystem can satisfy from inside are each a check that reports more
+confidence than it has.
+**Relates to:** ADR-0041, ADR-0046, ADR-0047, D-106, D-116, D-117.
+**Revert path:** migration 8 is forward-only and additive; the narrowed catch, the
+transitive fence, and the inline pointer are each independently revertible.
+
+### D-122 · 2026-08-06 · reversible · Ledger payload fields are bound to the immutable plan
+
+**The plan owns its keys, not just its step ids** (key `ledger-fresh-fix-review-f37-f38`).
+Append and L2 bound approval stages, escalation steps, and execution-step EXISTENCE to
+the immutable decision, but never the payload fields the plan itself declares: an
+`ExecutionStarted` naming a real step could carry any idempotency key, a
+`ReservationCreated` could name a reservation or conflict-key set the plan never
+declared, and a `VerificationClosed` could close against a rule no step owns - each
+accepted into history and then reported by replay as an authorized fact. The shared
+binding now resolves the OWNING plan action for those three events (a step and the
+compensating action it carries, which owns its own key, reservations, conflict keys, and
+rule) and refuses a mismatch with its own reason, at the append boundary and again when
+L2 re-proves stored history. A mismatch is REJECTED, never recorded as a labeled anomaly.
+What the immutable decision authorizes now lives in its own module
+(`ledger-decision-binding.ts`), leaving `ledger-bindings.ts` the storage-acceptance half:
+the combined file crossed the ADR-0018 per-file ceiling, and the seam is the real one.
+
+**A decision row states the decision's encoding.** `decision_records.schema_version` and
+`serializer_version` - the exact columns `parseRecordedReplaySource("decision", …)`
+dispatches on - were written from the cited BUNDLE's fields. They agree today only
+because the bundle schema pins the same literal; the first decision-core bump that let a
+record cite an older bundle would have named the wrong decoder for every stored decision.
+They are written from the decision-core constants, as evidence snapshots already were.
+
+**One ordering authority per path.** `rebuildDecisionProjections` proved ledger ordering
+set-wide in its L2 pass and then re-proved it per entry through `prepareProjection` - up
+to three extra round trips per event while holding the exclusive tenant lock, so an
+incident repair on a retained tenant blocked appends for work already done. The per-event
+proof moves to `appendPrepared`, where admission belongs: it runs before the row is
+inserted on the online path, and the rebuild keeps the batch pass as its only authority.
+
+**A failed recovery does not destroy the verdict.** `appendDecisionEvents` awaited
+`ROLLBACK TO SAVEPOINT` and `RELEASE SAVEPOINT` before classifying its error, so a
+connection lost mid-recovery replaced the typed `STORE_CONSTRAINT` with raw driver prose
+in the one place D-116 added the classification for. The error is classified first,
+recovery is attempted defensively, and the classified value reaches the caller either way.
+
+**Why:** a replay is only as trustworthy as the facts it refuses to accept, and a stored
+row that names the wrong decoder or a verdict that loses its reason are both failures
+that surface as a mystery months later.
+**Relates to:** ADR-0041, ADR-0046, ADR-0047, D-115, D-116, D-118.
+**Revert path:** the plan binding, the decision-row codec key, the moved ordering proof,
+and the defensive recovery are each independently revertible; no migration changed.
+
+### D-123 · 2026-08-06 · reversible · A ceiling absorbs the correction; documentation never pays for it
+
+**The compressed migration prose is restored, and the ceiling that squeezed it is amended**
+(key `ledger-fresh6-budget-headroom`, ADR-0048). An earlier prompt-7 correction bought its
+lines by compressing the explanatory comments out of `src/infrastructure/store/migrations.ts` -
+the `schema_migrations` CREATE-IF-NOT-EXISTS bootstrap note, the version-1 baseline rationale,
+and the `Migration`/`PreflightProbe` field documentation - a file `CLAUDE.md` and `AGENTS.md`
+both send readers to for sharp-edge knowledge. That is the exact failure the line-budget
+fence's own header names: a ceiling with no headroom converts review findings into
+documentation deletions. The file measured 507 lines before that compression, so the PER-FILE
+ceiling was squeezing it too - both ADR-0018 ratchets were being paid in prose. The comments
+are restored, ADR-0048 raises infrastructure from 7,700 to 7,750 against a measured 7,706,
+and `migrations.ts` takes the first pinned `max-file-size` entry at 520 against a measured 510
+with ADR-0048 as the architecture-review note that map requires - both through the amendment
+paths ADR-0018 owns rather than a silent fence edit.
+
+**The compensating-action widening is proven, not just written.** D-119's plan binding admits
+each step AND the compensating action it carries, but no fixture carried one, so the widened
+branch never executed: the proof showed the step-owned half REFUSING, never the compensation
+half ACCEPTING. `compensatedRecordingInput` records a plan whose step declares a compensation
+with its own idempotency key, and the ledger integration suite asserts an `ExecutionStarted`
+citing that key is accepted while an unrelated key is still refused with its own reason.
+
+**`pnpm test:fitness` runs the way the gate does.** The convenience script CLAUDE.md points
+agents at inherited vitest's default file parallelism, so several workers each rebuilt the
+whole type-checked ts-morph Project at once and four to six semantic fences timed out at 20s -
+on a clean tree, with a varying set each run. `pnpm test` never saw it because it already
+pins `--maxWorkers=1 --fileParallelism=false`; the subset script now pins the same, and all
+908 fitness tests pass. A documented command that fails on an untouched checkout trains agents
+to read red as noise.
+
+**Why:** paying a correction with prose the agent-memory files promise is a loss that surfaces
+months later as a reader following a pointer to nothing, a binding branch that only ever
+proves its refusal is detection without verification, and a flaky documented command erodes
+the signal every other fence depends on.
+**Relates to:** ADR-0018, ADR-0047, ADR-0048, D-116, D-119.
+**Revert path:** ADR-0048 and the two ceiling figures revert together with the restored
+comments; the fixture, its test, and the script flags are independently revertible.
+
+### D-124 · 2026-08-06 · reversible · The per-file ratchet gets the headroom the layer ratchet got
+
+**ADR-0048's own principle now applies at both ratchets** (ADR-0049). ADR-0048 ended the
+exhausted-headroom failure at the LAYER ceiling - infrastructure 7,750 against a measured
+7,706 - and then re-created it one ratchet down: the first pinned `max-file-size` entry gave
+`src/infrastructure/store/migrations.ts` 520 against a measured 510. ADR-0048 itself records
+that the file measured 507 before the compression, so the per-file ceiling was the binding
+constraint that bought the prose deletion. The pin rises to 560, fifty lines of bounded room
+sized like the layer amendment: the twelve restored lines plus a few near-term corrections,
+and still sixty over the 500 default so the pin keeps measuring something. It remains the only
+pinned entry, so no other file needed the same correction, and the map still ONLY SHRINKS as a
+code change.
+
+**The bottom-of-file `appError` import in `recorded-version-registry.ts` moved to the top.**
+It resolved (ESM hoists, and `@contracts/errors` opens no cycle back into infrastructure), but
+it read as a missing import to anyone scanning the module head while every sibling ledger
+module leads with its imports.
+
+**Why:** a ceiling ten lines above measurement is not discipline, it is a scheduled choice
+between an ADR amendment and deleting the documentation `CLAUDE.md` and `AGENTS.md` point
+readers at - fixing that at one ratchet while leaving it at the other closes nothing.
+**Relates to:** ADR-0018, ADR-0048, ADR-0049, D-120.
+**Revert path:** ADR-0049 and the pin figure revert together; the import move is independently
+revertible.
+
+### D-125 · 2026-08-06 · reversible · The whole append is classified, and a recorded figure is a measurement
+
+**`appendDecisionEvents` classifies its prologue too.** The tenant lock, the evidence
+preflight, and the `SAVEPOINT` statement ran BEFORE the `try` that maps adapter-boundary
+failures, so a deadlock, a lock timeout, a serialization failure, or a lost connection on the
+tenant row - the designed contention point for concurrent appends - reached the caller as raw
+driver prose with no `"decision ledger append failed"` log line at all, in the one function
+D-116 added the classification for and whose sibling `recordDecision` wraps its entire
+transaction body. All three now run inside that `try`. Recovery is guarded by whether the
+savepoint was actually opened, so a prologue failure never poisons the caller's transaction
+with a rollback to a savepoint that never existed, and `storeFailure` still returns a known
+`AppError` unchanged - the typed `NOT_FOUND` from the tenant lock reaches the caller as
+`NOT_FOUND`, now with the log line it always owed.
+
+**A figure recorded in the ratchet is a measurement, not a memory.** ADR-0049's commit hoisted
+one import into `recorded-version-registry.ts` and left `line-budget.test.ts` and the D-121
+proof-log entry both reading infrastructure 7,701 against a measured 7,702, the proof log
+asserting "unchanged" about the commit that changed it. Both records are corrected, and this
+round's classification restructure returns the layer to 7,701 measured. The ADR-0041
+`Amended by` line stopped at ADR-0046 while ADR-0042 and ADR-0047 both declare they amend it,
+so a reader following the ledger chain never reached the frozen-codec and non-locking
+verification decisions that govern the shipped code; both are appended.
+
+**Deferred, keyed `ledger-followup-decision-id-extractor`.** The three-line decision-id
+extractor (`decisionRef.id`, else `priorDecisionRef.id`) is written six times -
+`ledger-store.ts`, `ledger-bindings.ts`, `ledger-projection-store.ts`, `ledger-register.ts`,
+`ledger-schema-registry.ts`, and `domain/ledger/projections.ts` - two returning `null` and
+four `undefined`. It is a structural property of the `LedgerEntry` union, so its home is
+`contracts/decision-core/ledger.ts`, which every one of those modules may import, including
+the domain projector that cannot import infrastructure. The same key carries the ADR
+back-reference convention: ADR-0042, 0041, 0042, 0045, and 0046 carry no `Amended by` line
+though each is amended later, so the convention is either completed across the chain or
+dropped for `docs/adr/README.md` as the single index. The same key also carries
+`correlationId`, removed from the register view model by D-123: it is the natural spine of a
+future examiner surface that groups an entry with the request that caused it, and belongs in
+the contract again on the PR that renders it. All are polish, not correctness, and
+wrap-up mode is in force; the trigger is the next prompt that touches the ledger modules.
+
+**Why:** an unclassified failure at the ledger's only write chokepoint is undiagnosable
+exactly when an operator needs it most, and a ratchet whose recorded figure drifts from its
+measurement trains the next agent to trust the record instead of re-measuring.
+**Relates to:** ADR-0018, ADR-0041, ADR-0047, ADR-0049, D-116, D-118, D-121.
+**Revert path:** the prologue restructure, the corrected figures, and the ADR back-reference
+are independently revertible; the deferral is a note.
+
+### D-126 · 2026-08-06 · reversible · Emptiness is honest only where it is the ratified design
+
+**The decision-ledger vacuity guards told a healthy deployment it was broken.** Prompt 7 ships
+the post-decision append surface unwired (D-116), so a real deployment holds ZERO
+`decision_ledger` rows by design until a later prompt lands a producer: `verifyDecisionLedgerIntegrity`
+returns `ok` with `entriesChecked === 0`, and `audit-chain-verify` then exited 1 with
+"typed-chain verification is vacuous". `ledger-rebuild` did the same on `0 decision projections
+rebuilt`. Both are what `docs/runbooks/backup-and-restore.md` steps 3 and 4 point an operator at
+to verify a production restore, where under RTO pressure that exit code reads as a corrupted
+chain. The pre-existing audit-entry guard has no such problem, because production writes real
+audited entries.
+
+**The verdict now distinguishes three states, not two.** `scripts/decision-ledger-vacuity.ts`
+is the single authority both scripts call. Rows that exist but were never covered stay a hard
+failure in EVERY environment - that is the failure the guard exists for. An empty ledger fails
+in `development`, where CI and the local gates run against a store seeded in the same job and
+emptiness means the seed never ran. An empty ledger in `staging`/`production` is reported
+explicitly - "the post-decision append surface is deferred (D-116)" - and passes. Emptiness is
+forgiven only where the charter's own design produced it, never as a blanket exit 0.
+
+**Corrected by D-124: the `production` arm is forward-looking, not exercised behavior.** Only
+`staging` reaches the deferred-empty verdict today. `getConfig()` requires
+`store.driver=postgres` under `APP_ENV=production` and `createDb` refuses that driver with
+`STORE_UNAVAILABLE` (D-006/ADR-0004), so both scripts fail at store creation in production long
+before the verdict is consulted. The paragraph above justified the arm with a production restore
+operator; that operator cannot run these commands until the managed-Postgres adapter lands. The
+arm and its runbook steps are the procedure that adapter must satisfy, and the dev/CI behavior is
+unchanged.
+
+**A field that reaches no surface leaves the contract (charter #5).** `LedgerEntryView.correlationId`
+and the top-level `verification.entriesChecked`/`entriesStored` crossed `/api/ledger` and were
+typed into the view model, but `/app/ledger` renders neither: the per-level `entriesChecked` is
+what the integrity panel shows and `total` is what the entry count reads. knip cannot see
+interface fields, so nothing else would have caught them. All three are removed from the view
+model and the route payload rather than grown into the page; `correlationId` is recorded as a
+candidate for a future examiner surface under `ledger-followup-decision-id-extractor`.
+
+**ADR-0045 does not amend ADR-0041.** Its own header declares it amends ADR-0018 and ADR-0044,
+and `docs/adr/README.md` agrees; it was a stale carry-over on the `Amended by` line D-122
+corrected, so it is dropped. A back-reference that names a decision which does not govern the
+file is the same defect as one that omits a decision which does.
+
+**Why:** a gate that cannot tell a ratified empty state from unseeded data either reads a
+healthy restore as a break at the worst possible moment or lets a broken CI gate pass green,
+and both failures come from the same missing distinction.
+**Relates to:** ADR-0041, ADR-0046, ADR-0047, D-116, D-118, D-122; charter #4, #5.
+**Revert path:** the shared verdict, the view-model removals, and the ADR back-reference are
+independently revertible; restoring the old guards is a one-line change in each script.
+
+### D-127 · 2026-08-06 · reversible · Formatting is not a currency for ceilings either
+
+**The ledger's write chokepoint is pinned** (ADR-0050). ADR-0049 closed the exhausted-headroom
+failure at the first per-file pin and recorded that no other file needed the correction. The
+binding constraint had simply moved to the DEFAULT ceiling:
+`src/infrastructure/ledger/ledger-store.ts` measured exactly 500 at ADR-0049, and D-122's
+prologue-classification fix bought its own lines back by folding a six-line
+`insertEvidenceSnapshots(...)` call onto one, landing at 499 where the unfolded form would have
+measured 504 and failed the fence. That fold was a ceiling being paid
+in code shape rather than in prose - the same anti-pattern in a cheaper disguise, on the decision
+ledger's SOLE write chokepoint and the module this branch corrects most often. The call is
+restored to its multi-line form and the file takes the second pinned entry at 550 against a
+measured 504: forty-six lines of bounded room, sized like the `migrations.ts` pin. Splitting was
+rejected on the file's own merits - `ledger-bindings.ts`, `ledger-sources.ts`,
+`ledger-projection-store.ts`, and `ledger-verification.ts` are already the seams, and what remains
+is one append transaction whose savepoint guards the caller's. Every other shipped file this
+branch touched was re-measured; the closest is `ledger-replay-loader.ts` at 493/500, outside the
+threshold this correction applies and named in ADR-0050 as the next candidate. Layer ceilings do
+not move: the restored formatting measures infrastructure 7,706/7,750, and
+`line-budget.test.ts` records that measurement.
+
+**D-123's `production` arm is forward-looking, and the runbook now says so.** D-123 justified the
+deferred-empty verdict with a production restore operator reading exit(1) as a corrupted chain,
+but that operator cannot occur yet: production requires the postgres driver and `createDb` refuses
+it with `STORE_UNAVAILABLE` (D-006/ADR-0004), so `pnpm audit:chain` and `pnpm ledger:rebuild` fail
+at store creation there, and only `staging` reaches the verdict today. D-123 carries the
+correction, `scripts/decision-ledger-vacuity.ts` states which arm is exercised and which awaits
+the adapter, and `docs/runbooks/backup-and-restore.md` marks its steps 3-4 as the procedure that
+adapter must satisfy rather than commands to run against a production instance. The guard, the
+verdict, and the dev/CI behavior are unchanged; building the postgres adapter stays out of scope.
+
+**Hook timeouts match the test timeout the same PGlite slowness bought.** `vitest.config.ts`
+raised `testTimeout` to 20s for PGlite and left `hookTimeout` at the 10s default, though the
+integration `beforeEach` hooks create an instance, run every migration, and seed - more work than
+the bodies. Verifying this round's fixes surfaced it twice: a full run failed
+`tenant-isolation.test.ts`, the next failed `store-schema.test.ts`'s setup hook, and both files
+passed in isolation. A suite that fails a different file each run trains everyone to ignore red
+(charter #8, the same reason the clock is pinned non-UTC), so the hook budget now matches.
+
+**Why:** a ratchet that can only be satisfied by reformatting teaches the next agent that ceilings
+are paid in readability, and a decision entry justified by a scenario the deferral makes
+impossible is read by a later agent as behavior someone exercised.
+**Relates to:** ADR-0004, ADR-0018, ADR-0048, ADR-0049, ADR-0050, D-006, D-116, D-120, D-121,
+D-122, D-123.
+**Revert path:** ADR-0050 and the pin revert together with the call's formatting; the D-123
+correction, the script comment, and the runbook note are documentation and independently
+revertible; the hook budget is one line in `vitest.config.ts`.
+
+### D-128 · 2026-08-06 · reversible · A pinned codec is only proven by the values it must accept
+
+**Every frozen arm is proven against the live contract, not against its own bytes.** The write
+path validates with `LedgerEntrySchema`; the read path - L2 and every replay - dispatches through
+the pinned `recordedLedgerV1_1` JSON Schema. The dispatch test exercised one of the sixteen
+variants and one bundle, and the digest test is self-referential: it proves the frozen bytes have
+not changed, never that they correspond to what the live schema accepts. An arm narrower than its
+contract anywhere - a dropped optional, a lost union member - appends fine and then fails L2 on
+read, which reports the ENTIRE tenant chain BROKEN with `/app/ledger` withholding every entry and
+no forward repair. The test now loops all sixteen event variants and all three replay-source
+classes through `parseRecordedLedgerEvent` / `parseRecordedReplaySource` and asserts byte equality
+against the live canonicalization, so a narrowing is caught at the contract, not in production.
+
+**A script's last catch is the one an operator reads.** `scripts/ledger-rebuild.ts` printed
+`e instanceof Error ? e.message : String(e)`, but `appError()` returns a frozen plain object, so
+the refusal that reaches this handler first - `createDb`'s `STORE_UNAVAILABLE` naming
+`VERIN_STORE_DRIVER=pglite` (D-006), the path D-124 just documented as the shipped production
+behavior - printed `[object Object]`. It routes through `scripts/error-message.ts` like every
+sibling script; the per-org handler's `classifyErrorMetadata` refusal is unchanged.
+
+**`brokenAtSequence` leaves the register contract** (charter #5, the same branch D-123 took for
+`correlationId` and the redundant `entriesChecked`/`entriesStored`). `LedgerVerificationLevel`
+extends `ChainVerdict`, so passing `verification.levels` through wholesale serialized a field no
+view model declares and no surface renders - and it disclosed the exact sequence at which
+integrity broke in the very response that deliberately withholds every entry on failed
+verification. The route maps the four `LedgerLevelView` fields explicitly, the way `decisions` and
+`entries` already do; `satisfies` cannot catch this, because excess-property checking does not
+reach a non-fresh nested value.
+
+**Why:** a codec test that only ever parses the first sample proves dispatch, not acceptance, and
+a diagnostic that prints `[object Object]` is the one line the operator most needs.
+**Relates to:** ADR-0039, ADR-0044, ADR-0045, D-006, D-116, D-118, D-123, D-124; charter #4, #5.
+**Revert path:** each is independent - the test loop, one import plus one line in
+`ledger-rebuild.ts`, and one explicit map in the ledger route.
+
+### D-129 · 2026-08-06 · reversible · The repair is scoped, the label is read, and the count is labeled
+
+**The operator repair takes a tenant and previews by default.** `pnpm ledger:rebuild` read no
+argv: it selected every org and re-folded derived decision state fleet-wide, immediately. The
+restore runbook points an operator here under RTO pressure, where the intent is "repair THIS
+tenant" and where a run that writes before it is inspected is the wrong default. The invocation
+contract now lives in `scripts/ledger-rebuild-args.ts` (testable without importing a module whose
+top level runs the repair): exactly one org id, no fleet-wide form, an unrecognized flag refused
+rather than ignored, and no argument at all meaning no action. Writing takes `--apply`. Without it,
+`rebuildDecisionProjections` runs the IDENTICAL one-transaction replay - verify the chain and its
+replay sources, discard derived rows, fold every stored event, prove the rebuilt rows cover what
+was replayed - and then rolls it back, so the preview an operator inspects is the rebuild itself,
+discarded, and cannot drift from what applying would write. Immutable rows are never touched, and
+the per-org `classifyErrorMetadata` refusal (D-125) is preserved verbatim.
+
+**A badge reports the class the producer stored, not the class the code was written against.**
+`/api/ledger` returned `DEV_BADGE_TEXT["synthetic-fixture"]` for EVERY provenance that failed
+`canFeedComplianceDecision`, so a row appended by an `estimate` producer - or a fold whose least
+trustworthy input was one - would have rendered as a fake class it does not belong to. The
+adjacent comment claimed provenance was read from the row and never inferred; the label alone was
+a constant. `syntheticBadgeLabel` (beside `DEV_BADGE_TEXT`, so no surface forks the vocabulary)
+derives it: an estimate labels as `estimate`, a default as `default`, a fixture as the canonical
+`synthetic fixture`, and a derivation from the flattened synthetic leaves that made it a
+demonstration. The refusal itself is unchanged - only the label became truthful.
+
+**No bare synthetic-derived number renders (charter #3).** `total` and `decisionsTotal` were plain
+numbers in a view model whose three sibling counts already carried provenance, and `/app/ledger`
+rendered both as user-facing text over a ledger that is entirely synthetic seed data. Both are now
+`DisplayMetric`s. `total` folds the provenance of EVERY stored row, not the displayed window - a
+synthetic row outside the window would otherwise leave a whole-chain figure wearing the window's
+label - and a count whose origin cannot be established is withheld rather than labeled. The
+`metric-provenance` fence does not reach either field, because the fence derives its registry from
+the data dictionary's `display: "metric"` flag and these are view-model fields with no dictionary
+entry; closing that gap for view-model counts is recorded under
+`ledger-followup-recorded-schema-authoring` below, not implemented here.
+
+**Closed: `ledger-followup-decision-id-extractor`.** The three-line decision-id extractor written
+six times is now `referencedDecisionId` in `contracts/decision-core/ledger.ts`, the module that
+defines the `LedgerEntry` union it reads, consumed by all six sites with no behavior change. The
+promoted `decision_id` column, L3's drift check, projection keying, and the register fold share one
+definition, so a variant that named its decision differently can no longer make them silently
+disagree. The two `null`-returning copies became `?? null` at the two column sites. The ADR
+back-reference convention and `correlationId`'s future examiner surface stay deferred under the
+same key.
+
+**Deferred, keyed `ledger-followup-recorded-schema-authoring`.** The four frozen recorded JSON
+Schemas in `src/infrastructure/ledger/recorded-schemas.ts` are ~90KB packed into four single-line
+string literals (9,305 / 28,081 / 2,250 / 49,859 characters). Three consequences: the file reports
+as 9 lines to `line-budget` and `max-file-size`, so the largest artifact in the ledger subsystem is
+invisible to the very ceilings ADR-0048/0049/0050 were amended to keep honest; the content is
+undiffable, since any change shows as one rewritten line; and there is no generator or documented
+procedure, so authoring v1.2 / v1.8 means hand-editing a 50KB literal. The digest pin plus the
+all-variant byte-equality proof (D-128) covers drift, so this is maintainability, not correctness,
+and reformatting frozen bytes late in the window risks digest-pin churn for no verification gain.
+The trigger is the next recorded schema version: it lands `.json` fixtures or a checked-in
+generator over the live Zod schemas, pinned by the same digests. The same key carries the
+`metric-provenance` fence gap above - the fence sees dictionary fields, not view-model counts, so
+`total` and `decisionsTotal` were caught by review rather than by a gate.
+
+**A stale deferral key points at an entry that never recorded it.** `ledger-reachability`'s
+`DEFERRED_EXPORTS` named D-116 for `appendDecisionEvents` and D-118 for
+`preflightEvidenceSnapshots`; neither entry has ever contained those names, so the fence's
+"each deferral names its prompt in its own DECISIONS.md entry" assertion had been failing since it
+landed. The deferrals are recorded in D-119 and D-121, which name both the export and **v3 prompt
+18**; the map now points there. A fence that asserts against the wrong record is not a weaker fence,
+it is a red build nobody can act on.
+
+**The named prompt was wrong, and a deferral that names the wrong prompt names nothing.** Both
+records cited "v3 prompt 8", which is the primitive-vocabulary prompt (ADR-0039, D-102) - already
+landed at this branch's base, and shipping no ledger producer at all. The corrected citation is
+**v3 prompt 18** (authority, multistage approval, and override), the first prompt in
+`docs/v3/verin-prompt-sequence-v3.md` whose deliverables are post-decision ledger facts. The
+correction is factual only: the fence, the deferral set, and the exports are unchanged, and the
+"a named deferral that gained a caller must be retired" check now points at a prompt that can
+actually retire it.
+
+**The ceilings absorbed it, per ADR-0051.** Three of these corrections add capability, and the one
+that only subtracts moved lines OUT of infrastructure and domain INTO contracts. Both affected
+layers ran out of headroom, leaving the two remedies ADR-0048 and ADR-0050 exist to remove: delete
+prose, or fold readable code. ADR-0051 amends ADR-0018 instead - contracts 6,050 to 6,110 against a
+measured 6,064, infrastructure 7,750 to 7,840 against a measured 7,788 - and every figure recorded
+in `line-budget.test.ts` was re-measured, not carried forward. No per-file pin was added; the
+largest touched files are `ledger-store.ts` at 502/550 and `ledger-verification.ts` at 426/500.
+
+**Why:** an unscoped repair, a hardcoded fake class, and an unlabeled count all make the same
+mistake in three places - the surface says something the stored facts do not, and the operator or
+examiner has no way to tell from the screen.
+**Relates to:** ADR-0018, ADR-0022, ADR-0041, ADR-0048, ADR-0050, ADR-0051, D-116, D-119, D-121,
+D-123, D-125, D-128; charter #3, #4, #5.
+**Revert path:** each is independent - the invocation module plus the `apply` option, the badge
+derivation, the two provenance folds, the extractor move, and the fence's deferral keys.
+
+### D-130 · 2026-08-06 · reversible · The preview is proven by the store, not by its carrier
+
+**The dry-run half of the scoped repair now has an automated companion.** D-129 landed
+`rebuildDecisionProjections(db, tenant, { apply: false })` and proved it end-to-end by hand;
+nothing in the suite called it. The mechanism is fragile by construction - a module-local Symbol
+carrier thrown out of `db.transaction` and rethrown unwrapped by the driver - so a refactor that
+returned the rebuild instead of throwing it, or a managed-Postgres adapter (D-006/ADR-0004) that
+normalized the thrown value, would silently turn the DEFAULT operator invocation into a committing
+repair with every test still green. `ledger-projections.test.ts` now wipes derived state, previews,
+and asserts on the STORE: projection and reservation-index rows still empty, `decision_ledger`
+rows byte-unchanged, `applied === false`, and the preview's fold equal to the online one; a second
+run with `--apply` repopulates them. Because the assertions read stored rows rather than the
+carrier, they fail on the committing refactor whatever it does to the Symbol.
+
+**The rebuild post-condition is proven by both of its arms.** `replayCoverageReason` had no
+coverage at all. Two fault-injecting cases now intercept the projection INSERT inside the replay
+transaction - one dropping the write, one stamping a `lastSequence` the replay never covered - and
+each is rejected with its own reason and rolled back. Deleting the post-condition fails both.
+
+**`foldStoredProvenance` now owns every stored fold.** ADR-0051 introduced it so the as-of rule
+could not drift between one surface's fold and another's, but the two sites that produce the
+provenance rendered on the decision CARDS - `replayRegisterWindow` and `prepareProjection` - still
+spelled out the same max-`asOf` reduction beside `deriveArtifactProvenance`. Both now call the
+helper; output is byte-identical, which the rebuild-equality tests already assert. Infrastructure
+re-measured at 7,780/7,840 and the figure in `line-budget.test.ts` was updated, per ADR-0051.
+
+**The two labeled counts read as English again.** Wrapping them in `<Metric>` had restructured both
+sentences into a colon-then-value form ("Showing 50 of the decisions replayable in this displayed
+event window: 73 · Computed · as of …"). The metric is inline again - "Showing 50 of 73 decisions
+replayable …" - keeping the provenance label and demonstration watermark that charter #3 requires.
+
+**Why:** a safety property whose only proof is a manual run is a property the next refactor
+silently removes, and a fold that two modules compute separately is a drift surface an ADR named
+but did not close.
+**Relates to:** ADR-0004, ADR-0022, ADR-0051, D-006, D-129; charter #3, #4.
+**Revert path:** each is independent - the two test cases, the two helper call sites, and the JSX
+copy.
+
+### D-131 · 2026-08-07 · reversible · The test budget tracks the slowest check, not the fastest machine
+
+**The whole-repo semantic fences outgrew the 20s per-test budget, so the budget moved.** CI timed
+out `dependency-rule`, `no-secret-fallback`, and `tokenized-factory-only` - the three fences that
+resolve TYPES across every shipped file - while all 1,439 other tests passed. Measured on this
+machine they take 9.2s, 9.5s, and 9.0s, and measured at the base commit `e4290f22` they take
+9.4s, 9.0s, and 8.9s: prompt 7's ~5,000 shipped lines moved them by well under a second, so the
+20s ceiling was already sitting inside a GitHub runner's ~2x margin and this branch only pushed
+the three closest over it. Four more whole-repo fences (`tenant-context-required` at 6.6s and
+4.6s, `ledger-append-only` at 4.3s, `governed-actions` at 3.8s and 3.6s) sit just under the same
+line and would have gone next. `testTimeout` is now 60s, and `hookTimeout` tracks it per D-127 -
+the integration `beforeEach` hooks still do strictly more work than the bodies they set up.
+
+**The alternative was to shrink the fences, which is the wrong trade.** The cost in all three is
+per-identifier type resolution, and every cheap way to cut it - filtering candidate identifiers by
+spelling before asking the checker - is exactly the aliasing bypass those fences exist to catch
+(`ns["principalFromIdentity"]`, a renamed import). A weak fence is worse than none, so the
+stopwatch moved instead of the fence.
+
+**Why:** a suite that fails a different file each run trains everyone to ignore red (charter #8,
+the same reason the clock is pinned non-UTC), and a timeout is a verdict about the clock, never
+about correctness - 60s still catches a hang, which is the only thing the budget is for.
+**Relates to:** D-127; charter #4, #8.
+**Revert path:** two numbers in `vitest.config.ts`.

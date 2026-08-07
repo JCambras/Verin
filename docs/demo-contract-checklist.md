@@ -3,15 +3,18 @@
 **What this is.** The acceptance checklist for the seven-minute journey in
 [`demo-contract.md`](./demo-contract.md): each §3 timeline moment mapped to the §4 product surface
 that carries it, the visible-proof items the audience must see, and the ledger artifact(s) that back
-them. Ledger artifact names are the `LedgerEntry` type names from the v3 core contracts (the
-14-entry union: `DecisionRecorded`, `EvidenceSnapshotRecorded`, `ApprovalRecorded`,
-`ApprovalInvalidated`, `ReservationCreated`, `ReservationReleased`, `ExecutionStarted`,
-`ExecutionSucceeded`, `ExecutionPartiallySucceeded`, `ExecutionFailed`, `StatusObserved`,
-`VerificationClosed`, `VerificationStuck`, `ExceptionDecisionRequested`). The committed referent
-for these names (and for `DecisionRecord`, `DecisionInputBundle`, and `ObservedStatus`) is
-[`docs/v3/verin-core-contracts.ts`](./v3/verin-core-contracts.ts), which lands in the parallel
-ratification branch `fm/verin-ratify-x2` under its arch-version pin (architecture v3); this
-document points at that referent rather than duplicating it.
+them. Ledger artifact names are the `LedgerEntry` type names: `DecisionRecorded`,
+`EvidenceSnapshotRecorded`, `ApprovalRecorded`, `ApprovalInvalidated`, `ReservationCreated`,
+`ReservationReleased`, `ExecutionStarted`, `ExecutionSucceeded`, `ExecutionPartiallySucceeded`,
+`ExecutionFailed`, `StatusObserved`, `VerificationClosed`, `VerificationStuck`,
+`ExceptionDecisionRequested`. The **shipped** referent for these names is
+[`src/contracts/decision-core/ledger.ts`](../src/contracts/decision-core/ledger.ts) (v3 prompt 7,
+ADR-0041), whose `LEDGER_EVENT_TYPES` froze the vocabulary at **16** types: v3's 14 above plus
+`ApprovalStageExpired` and `ApprovalStageEscalated`, which back the Authority moment's
+expiration-and-escalation proof item.
+The ratified referent for the vocabulary (and for `DecisionRecord`, `DecisionInputBundle`, and
+`ObservedStatus`) remains [`docs/v3/verin-core-contracts.ts`](./v3/verin-core-contracts.ts) under
+its arch-version pin (architecture v3); this document points at both rather than duplicating them.
 
 **How a moment passes.** Every visible-proof item renders on its named surface from recorded
 artifacts - real ones, or labeled fakes where the contract's `[deferred-pending-sandbox]`
@@ -31,7 +34,7 @@ milestone, never Phase 1 completion.
 | 0:00-0:45 Intent | 1 Household workspace · 2 Contextual intent panel | none yet (see note below) |
 | 0:45-1:30 Evidence | 3 Evidence and conflict view | `EvidenceSnapshotRecorded` |
 | 1:30-2:30 Decision | 4 Recommendation and alternatives · 5 Policy and precedence trace | `DecisionRecorded` |
-| 2:30-3:20 Authority | 6 Approval stages and actor status | `ApprovalRecorded` |
+| 2:30-3:20 Authority | 6 Approval stages and actor status | `ApprovalRecorded`; `ApprovalStageExpired` / `ApprovalStageEscalated` on the expiry branch |
 | 3:20-4:05 Safety before execution | 7 Pre-execution safety check | `EvidenceSnapshotRecorded`, `ReservationCreated`, `ApprovalInvalidated` (invalidation branch), `ReservationReleased` (release branch) |
 | 4:05-5:00 Real execution | 8 Execution timeline | `ExecutionStarted`, `ExecutionSucceeded` / `ExecutionPartiallySucceeded` / `ExecutionFailed` |
 | 5:00-5:40 Honest verification | 9 Verification state | `StatusObserved`, `VerificationClosed` / `VerificationStuck`, `ExceptionDecisionRequested` (delayed-NIGO branch) |
@@ -42,8 +45,10 @@ milestone, never Phase 1 completion.
 **Ledger-vocabulary notes (recorded, not improvised around):**
 
 - **Intent capture has no dedicated `LedgerEntry` type.** The intent is pinned by the later
-  `DecisionRecorded` entry through `DecisionRecord.intentRef`. Whether intake deserves its own ledger
-  event is an open architecture question for the ledger prompt (build-sequence prompt 7).
+  `DecisionRecorded` entry through `DecisionRecord.intentRef`. This was the open architecture question
+  for the ledger prompt (build-sequence prompt 7); it is now **settled**: ADR-0041 froze the vocabulary
+  at 16 event types and added no intake event, so a later intake event is a ledger-schema version bump
+  through the registry, never a quiet addition.
 - **Policy-version activation has no dedicated `LedgerEntry` type.** The draft's approval,
   activation, and the changed rerun are proven by the rerun's `DecisionRecorded`, whose input bundle
   pins the new `policyVersionRef`. Whether policy lifecycle transitions get their own ledger events
@@ -101,7 +106,9 @@ Surface: **6 Approval stages and actor status**.
 - [ ] Approval bound to the exact decision hash, visibly.
 
 Backing: `ApprovalRecorded` per approval outcome, each carrying `decisionHash` and
-`inputBundleHash` (the visible binding).
+`inputBundleHash` (the visible binding). The expiration/escalation proof item is backed by the
+dedicated `ApprovalStageExpired` and `ApprovalStageEscalated` entries the prompt-7 vocabulary added
+(ADR-0041) - the demo-contract §5 `specialist-review-expiration` branch, GC-16.
 
 ## Minute 3:20-4:05 - Safety before execution
 

@@ -9,7 +9,9 @@ import * as evidenceSchemas from "@contracts/decision-core/evidence";
 import * as executionSchemas from "@contracts/decision-core/execution";
 import * as explanationSchemas from "@contracts/decision-core/explanation";
 import * as idSchemas from "@contracts/decision-core/ids";
+import * as ledgerSchemas from "@contracts/decision-core/ledger";
 import * as normalizationSchemas from "@contracts/decision-core/normalization";
+import * as replayProvenanceSchemas from "@contracts/decision-core/replay-provenance";
 import * as serializationSchemas from "@contracts/decision-core/serialization";
 import * as triggerSchemas from "@contracts/decision-core/trigger";
 import { DecisionRecordSchema } from "@contracts/decision-core/decision";
@@ -23,6 +25,7 @@ import {
   IntentSchema,
 } from "@contracts/decision-core/trigger";
 import { REPO_ROOT } from "./_fence-utils";
+import { allLedgerEventSamples } from "../helpers/ledger-fixtures";
 
 type SchemaModule = readonly [file: string, exports: Record<string, unknown>];
 type SchemaDefinition = {
@@ -42,7 +45,9 @@ const DECISION_CORE_SCHEMA_MODULES: readonly SchemaModule[] = [
   ["execution.ts", executionSchemas],
   ["explanation.ts", explanationSchemas],
   ["ids.ts", idSchemas],
+  ["ledger.ts", ledgerSchemas],
   ["normalization.ts", normalizationSchemas],
+  ["replay-provenance.ts", replayProvenanceSchemas],
   ["serialization.ts", serializationSchemas],
   ["trigger.ts", triggerSchemas],
 ];
@@ -441,6 +446,9 @@ const SCOPED_REFERENCE_BOUNDARY_PROBES: Readonly<
   "explanation.ts:ExplanationNodeSchema": explanationNode,
   "ids.ts:NonEmptyRoleRefSetSchema": roleRefSet,
   "ids.ts:RoleRefSetSchema": roleRefSet,
+  "ledger.ts:LedgerEntrySchema": allLedgerEventSamples().find(
+    (event) => event.type === "ApprovalStageEscalated",
+  )!,
   "trigger.ts:AmbiguityRefSchema": ambiguityRef,
   "trigger.ts:EvidenceRequestSchema": evidenceRequest,
   "trigger.ts:IntentSchema": intent,

@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createMemoryDb, type SqlDb } from "@infra/store/db";
+import {
+  createMemoryDb,
+  type SqlDb,
+  type SqlTx,
+} from "@infra/store/db";
 import { MIGRATIONS, MIGRATION_SQL, runMigrations, type Migration } from "@infra/store/migrations";
 
 /**
@@ -12,9 +16,8 @@ import { MIGRATIONS, MIGRATION_SQL, runMigrations, type Migration } from "@infra
  * migration that silently NULLs or deletes a row a human put there is data loss
  * dressed as an upgrade.
  *
- * The rehearsal is real: a fully-migrated PGlite store is rewound to version 2 (the
- * v3 constraints dropped, the ledger row removed), legacy rows are planted, and the
- * SHIPPED `runMigrations` is re-run against it.
+ * The rehearsal is real: PGlite boots from the shipped plan through version 2,
+ * legacy rows are planted, and the complete SHIPPED `runMigrations` is re-run.
  */
 const TS = "2026-01-01T00:00:00.000Z";
 const A = "org-1";
@@ -30,8 +33,6 @@ const V3_CONSTRAINTS: ReadonlyArray<readonly [string, string]> = [
   ["account_opening_applications", "applications_contact_household_org_fk"],
   ["tasks", "tasks_household_org_fk"],
 ];
-
-const V3_INDEXES = ["users_id_org_unique", "households_id_org_unique", "contacts_id_household_org_unique"];
 
 async function seed(db: SqlDb): Promise<void> {
   for (const org of [A, B]) {
@@ -57,13 +58,14 @@ async function seed(db: SqlDb): Promise<void> {
   }
 }
 
-/** Put the store back in the state a pre-migration-3 deployment left it in. */
-async function rewindToVersion2(db: SqlDb): Promise<void> {
-  for (const [table, constraint] of V3_CONSTRAINTS) {
-    await db.exec(`ALTER TABLE ${table} DROP CONSTRAINT ${constraint};`);
+async function createVersion2Db(): Promise<SqlDb> {
+  const plan = MIGRATIONS as Migration[];
+  const deferred = plan.splice(2);
+  try {
+    return await createMemoryDb();
+  } finally {
+    plan.push(...deferred);
   }
-  for (const index of V3_INDEXES) await db.exec(`DROP INDEX ${index};`);
-  await db.query("DELETE FROM schema_migrations WHERE version = 3");
 }
 
 async function rewindToVersion1(db: SqlDb): Promise<void> {
@@ -174,9 +176,8 @@ const ORPHANS: ReadonlyArray<{
 describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
   let db: SqlDb;
   beforeEach(async () => {
-    db = await createMemoryDb();
+    db = await createVersion2Db();
     await seed(db);
-    await rewindToVersion2(db);
   });
 
   it("the planted classes cover EXACTLY the relationships migration 3 preflights (no class goes unchecked)", () => {
@@ -189,7 +190,7 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
   it("the all-valid upgrade path applies migration 3 and records it", async () => {
     expect(await appliedVersions(db)).toEqual([1, 2]);
     await runMigrations(db);
-    expect(await appliedVersions(db)).toEqual([1, 2, 3]);
+    expect(await appliedVersions(db)).toEqual(MIGRATIONS.map((migration) => migration.version));
     // The constraints really came back: a cross-tenant contact is refused again.
     await expect(db.query(
       "INSERT INTO contacts (id,org_id,household_id,first_name,last_name,email,phone,created_at,prov_source,prov_asof,prov_confidence) VALUES ('c-after',$1,'hh1','F','L',NULL,NULL,$2,'verin-crm',$2,'high')",
@@ -220,14 +221,16 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
 
   it("interleaves dependent preflights with pending DDL in one ordered transaction", async () => {
     const plan = MIGRATIONS as Migration[];
+    const createVersion = plan.length + 1;
+    const readVersion = createVersion + 1;
     plan.push(
       {
-        version: 4,
+        version: createVersion,
         name: "test-create-preflight-source",
         sql: "CREATE TABLE migration_dependency_probe (id integer PRIMARY KEY, valid boolean NOT NULL); INSERT INTO migration_dependency_probe VALUES (1, true);",
       },
       {
-        version: 5,
+        version: readVersion,
         name: "test-read-preflight-source",
         sql: "CREATE INDEX migration_dependency_probe_valid ON migration_dependency_probe(valid);",
         preflight: [{
@@ -239,7 +242,7 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
     );
     try {
       await runMigrations(db);
-      expect(await appliedVersions(db)).toEqual([1, 2, 3, 4, 5]);
+      expect(await appliedVersions(db)).toEqual(plan.map((migration) => migration.version));
       const rows = await db.query("SELECT id, valid FROM migration_dependency_probe");
       expect(rows.rows).toEqual([{ id: 1, valid: true }]);
     } finally {
@@ -249,14 +252,16 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
 
   it("rolls back earlier pending DDL and ledger rows when a dependent later preflight refuses", async () => {
     const plan = MIGRATIONS as Migration[];
+    const createVersion = plan.length + 1;
+    const refuseVersion = createVersion + 1;
     plan.push(
       {
-        version: 4,
+        version: createVersion,
         name: "test-create-refusing-source",
         sql: "CREATE TABLE migration_rollback_probe (id integer PRIMARY KEY, valid boolean NOT NULL); INSERT INTO migration_rollback_probe VALUES (1, false);",
       },
       {
-        version: 5,
+        version: refuseVersion,
         name: "test-refuse-dependent-source",
         sql: "CREATE INDEX migration_rollback_probe_valid ON migration_rollback_probe(valid);",
         preflight: [{
@@ -271,7 +276,7 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
         () => "",
         (error: { message?: string }) => error.message ?? "",
       );
-      expect(message).toContain("migration 5 (test-refuse-dependent-source) cannot be applied");
+      expect(message).toContain(`migration ${refuseVersion} (test-refuse-dependent-source) cannot be applied`);
       expect(await appliedVersions(db)).toEqual([1, 2]);
       const relation = await db.query<{ exists: boolean }>(
         "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'migration_rollback_probe') AS exists",
@@ -322,14 +327,17 @@ describe("migration 3 upgrade rehearsal (preflight, integration)", () => {
       [B, TS],
     );
     await runMigrations(db);
-    expect(await appliedVersions(db)).toEqual([1, 2, 3]);
+    expect(await appliedVersions(db)).toEqual(MIGRATIONS.map((migration) => migration.version));
   });
 });
 
 describe("migration ledger prefix validation", () => {
   it.each([
     ["gap", (db: SqlDb) => db.query("DELETE FROM schema_migrations WHERE version = 2")],
-    ["extra version", (db: SqlDb) => db.query("INSERT INTO schema_migrations (version, name) VALUES (4, 'unknown')")],
+    ["extra version", (db: SqlDb) => db.query(
+      "INSERT INTO schema_migrations (version, name) VALUES ($1, 'unknown')",
+      [MIGRATIONS.length + 1],
+    )],
     ["renamed row", (db: SqlDb) => db.query("UPDATE schema_migrations SET name = 'renamed' WHERE version = 2")],
     ["reordered names", (db: SqlDb) => db.query(`
       UPDATE schema_migrations SET name = CASE version
@@ -451,14 +459,16 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
     const db = await createMemoryDb();
     await db.exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
     const plan = MIGRATIONS as Migration[];
+    const createVersion = plan.length + 1;
+    const refuseVersion = createVersion + 1;
     plan.push(
       {
-        version: 4,
+        version: createVersion,
         name: "test-create-virgin-source",
         sql: "CREATE TABLE migration_virgin_probe (id integer PRIMARY KEY, valid boolean NOT NULL); INSERT INTO migration_virgin_probe VALUES (1, false);",
       },
       {
-        version: 5,
+        version: refuseVersion,
         name: "test-refuse-virgin-source",
         sql: "CREATE INDEX migration_virgin_probe_valid ON migration_virgin_probe(valid);",
         preflight: [{
@@ -473,7 +483,7 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
         () => "",
         (error: { message?: string }) => error.message ?? "",
       );
-      expect(message).toContain("migration 5 (test-refuse-virgin-source) cannot be applied");
+      expect(message).toContain(`migration ${refuseVersion} (test-refuse-virgin-source) cannot be applied`);
       const relations = await db.query<{ name: string }>(
         "SELECT relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema()",
       );
@@ -510,7 +520,9 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
 
   it("the managed-object set is DERIVED from the shipped DDL, so a new table cannot escape it", async () => {
     // Not a hand-list: every table, index, trigger, and function the migrations
-    // create must be present in the live schema of a fully-migrated store.
+    // create must be present in the live schema of a fully-migrated store, unless a
+    // LATER migration dropped it forward-only - and each such drop must have actually
+    // taken effect, so a forward-only removal cannot be claimed without happening.
     const db = await createMemoryDb();
     const live = new Set((await schemaSnapshot(db)).map((row) => String((row as { name: string }).name)));
     const declared = [
@@ -519,8 +531,12 @@ describe("virgin-store proof (restored dump with a missing ledger)", () => {
       ...MIGRATION_SQL.matchAll(/CREATE\s+TRIGGER\s+([a-z_][a-z0-9_]*)/gi),
       ...MIGRATION_SQL.matchAll(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+([a-z_][a-z0-9_]*)/gi),
     ].map((m) => m[1]!.toLowerCase());
+    const dropped = [
+      ...MIGRATION_SQL.matchAll(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([a-z_][a-z0-9_]*)/gi),
+    ].map((m) => m[1]!.toLowerCase());
     expect(declared.length).toBeGreaterThan(20);
-    expect(declared.filter((name) => !live.has(name))).toEqual([]);
+    expect(declared.filter((name) => !live.has(name) && !dropped.includes(name))).toEqual([]);
+    expect(dropped.filter((name) => live.has(name))).toEqual([]);
   });
 });
 
@@ -541,7 +557,7 @@ describe("migration failure diagnostics", () => {
     const stub: SqlDb = {
       query,
       exec: async () => undefined,
-      transaction: async (fn) => fn({ query, exec }),
+      transaction: async (fn) => fn({ query, exec } as unknown as SqlTx),
       dump: async () => new Blob(),
       close: async () => undefined,
     };
@@ -594,7 +610,7 @@ describe("migration failure diagnostics", () => {
     const stub: SqlDb = {
       exec: async () => undefined,
       query,
-      transaction: async (fn) => fn({ query, exec }),
+      transaction: async (fn) => fn({ query, exec } as unknown as SqlTx),
       dump: async () => new Blob(),
       close: async () => undefined,
     };

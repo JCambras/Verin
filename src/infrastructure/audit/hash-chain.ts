@@ -3,6 +3,12 @@
  * entry's hash covers a canonical serialization of its fields PLUS the previous
  * entry's hash, so any edit/reorder/deletion breaks the chain and is detected by
  * verifyChain(). One chain per org, ordered by sequence.
+ *
+ * This module also owns the SHARED chain primitive (computeChainHash) and the
+ * stored-preimage verifier (verifyStoredByteChain) that the sibling decision
+ * ledger builds its independent chain on (ADR-0041). Sharing the primitive is
+ * deliberate; the two chains stay separate tables, sequences, and anchors, and
+ * existing audit preimages remain byte-for-byte unchanged.
  */
 import { createHash } from "node:crypto";
 import type { GovernedOutput } from "@contracts/authz";
@@ -39,7 +45,61 @@ export function canonicalize(e: ChainableEntry): string {
 }
 
 export function computeEntryHash(e: ChainableEntry, prevHash: string): string {
-  return createHash("sha256").update(canonicalize(e)).update("|").update(prevHash).digest("hex");
+  return computeChainHash(canonicalize(e), prevHash);
+}
+
+/** Shared chain primitive. Existing audit preimages remain byte-for-byte unchanged. */
+export function computeChainHash(canonicalBytes: string, prevHash: string): string {
+  return createHash("sha256")
+    .update(canonicalBytes)
+    .update("|")
+    .update(prevHash)
+    .digest("hex");
+}
+
+export interface StoredByteChainRow {
+  readonly sequence: number;
+  readonly canonicalBytes: string;
+  readonly prevHash: string;
+  readonly entryHash: string;
+}
+
+/**
+ * L1 verification for chains whose authoritative preimage is already persisted.
+ * Always demands a complete GENESIS-rooted chain: a suffix rooted at a stored
+ * predecessor hash proves continuity but not that the predecessor is authentic
+ * (ADR-0044), so there is no bounded-start form to pass here.
+ */
+export function verifyStoredByteChain(
+  rows: StoredByteChainRow[],
+): ChainVerdict {
+  let prev = GENESIS_HASH;
+  let expectedSequence = 0;
+  let checked = 0;
+  for (const row of rows) {
+    if (row.sequence !== expectedSequence) {
+      return broken(row.sequence, checked, `sequence gap: expected ${expectedSequence}, got ${row.sequence}`);
+    }
+    if (row.prevHash !== prev) {
+      return broken(row.sequence, checked, "prev_hash does not match preceding entry_hash");
+    }
+    if (computeChainHash(row.canonicalBytes, prev) !== row.entryHash) {
+      return broken(row.sequence, checked, "entry_hash does not match stored canonical bytes");
+    }
+    prev = row.entryHash;
+    expectedSequence += 1;
+    checked += 1;
+  }
+  return { ok: true, entriesChecked: rows.length, brokenAtSequence: null, reason: null };
+}
+
+function broken(sequence: number, checked: number, reason: string): ChainVerdict {
+  return {
+    ok: false,
+    entriesChecked: checked,
+    brokenAtSequence: sequence,
+    reason,
+  };
 }
 
 export interface ChainRow extends ChainableEntry, GovernedOutput<"audit.export"> {

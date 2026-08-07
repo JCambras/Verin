@@ -107,6 +107,22 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   parser in `db.ts` (OID 1184 → `new Date(v).toISOString()`) normalizes reads to canonical UTC ISO - do
   NOT expect `Date` objects, and the byte-exact round-trip is what keeps the audit hash chain verifiable.
   Adding a table? Classify it in the `org-id-required` fence (it derives from this DDL).
+- **Decision history is NOT `audit_log`.** The prompt-7 source of truth is the sibling
+  `decision_ledger` plus immutable replay tables (`src/infrastructure/ledger/`, ADR-0041).
+  `recordDecision` commits source rows and recording events together;
+  `appendDecisionEvents` runs inside its CALLER'S transaction so CRM audit-outbox intent and a
+  decision event can commit atomically, and both require the producer's `RecordProvenance` -
+  surfaces classify a row from the stored `prov_source`, never from an actor name. Ledger hashes
+  cover a versioned envelope of stored `payload_json` bytes plus producer provenance. Never rewrite
+  old bytes; raw inserts into an immutable
+  source table belong ONLY in `ledger-store.ts` (chain) or `ledger-sources.ts` (content-addressed
+  evidence/bundle/record rows, reusable when the bytes match). Derived state lives in
+  `ledger-projection-store.ts` and is rebuilt through `ledger-rebuild.ts`. Reservation reuse is
+  generation-bound: a release cites its reservation ref, owning decision, and creation ledger entry,
+  so an old release cannot affect a later reuse. L1-L4 plus immutable replay-source verification and
+  the `ledger-append-only` fence enforce these assumptions; the register authenticates the complete
+  chain from a consistent non-locking snapshot while bounding disclosure and replay, and
+  `audit-chain-verify` verifies both chains and retained replay sources whole.
 - **Prod guards key on `APP_ENV`, never `NODE_ENV`:** `next build`/`next start` force `NODE_ENV=production`
   even in dev/CI, so the config fail-closed guards and the secure-cookie flag use `APP_ENV` (real
   deployment env). Same for the e2e webserver.
@@ -210,11 +226,16 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   emits a tenant- and field-scoped HMAC digest under a domain-separated purpose key. A failed mint
   redacts rather than aborting failure reporting; the governed audit chain retains the raw record id.
 - **Test-only vocabulary/authority enters through injection seams, never production allowlists:**
-  `registerTestSpanName` (`domain/observability/safe-values.ts`) and `registerTestSystemActor`
-  (`contracts/tenant.ts`). Both are fenced to have NO shipped caller, keyed on resolved symbol so an
-  aliased import cannot evade it. The observability vocabularies (span names, log messages, actions,
-  enums, numeric fields, id fields) are derived from real call sites BOTH ways by
-  `observability-vocabulary` - an unregistered value would silently log as `[REDACTED]`.
+  `registerTestSpanName` (`domain/observability/safe-values.ts`), `registerTestSystemActor`
+  (`contracts/tenant.ts`), and `registerTestLedgerIdentifier`/`registerTestLedgerIdentifierPrefix`
+  (`infrastructure/ledger/ledger-pii.ts`, reserved `test:` namespace). All are fenced to have NO
+  shipped caller, keyed on resolved symbol so an aliased import cannot evade it. The observability
+  vocabularies (span names, log messages, actions, enums, numeric fields, id fields) are derived from
+  real call sites BOTH ways by `observability-vocabulary` - an unregistered value would silently log
+  as `[REDACTED]`; `ledger-pii-vocabulary` does the same for the immutable-source PII allowlists (no
+  shipped `REGISTERED_*` entry may live in the reserved namespace). A ledger export that no shipped
+  surface or script can reach fails `ledger-reachability` unless it is a NAMED deferral (D-116)
+  saying which prompt lands its caller - knip cannot see this, since every export has a test.
 
 ## Maintaining this file
 

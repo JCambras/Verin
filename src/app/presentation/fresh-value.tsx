@@ -33,11 +33,11 @@ export function FreshValue({ provenance, children }: { provenance: RecordProvena
   const label = provenanceLabel(provenance);
   const opacity = opacityForAge(provenance.asOf);
   return (
-    <span className="inline-flex items-baseline gap-1.5">
+    <span className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
       <span className={opacity < 1 ? "text-slate-800" : undefined} style={{ opacity, transition: "opacity 150ms ease" }} title={label}>
         {children}
       </span>
-      <span className="text-xs text-slate-600">· {label}</span>
+      <span className="whitespace-nowrap text-xs text-slate-600">· {label}</span>
     </span>
   );
 }

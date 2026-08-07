@@ -5634,3 +5634,953 @@ corepack pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts
                                 # comment are synced to 5,433 / 27 headroom, which
                                 # supersedes PF-191's pre-review 5,418.
 ```
+
+### PF-193 decision-ledger append-only anti-fork and database protection
+
+**Invariant:** the sibling decision ledger and its evidence, bundle, membership,
+and decision source rows are immutable. Raw ledger inserts exist only in the sole
+repository and the forward migration; the repository exports no immutable
+update/delete surface.
+
+**Injection:** added
+`src/infrastructure/ledger/ledger-violation-probe.ts` with a raw
+`INSERT INTO decision_ledger`, then ran:
+
+```text
+pnpm vitest run src/__tests__/fitness/ledger-append-only.test.ts --reporter=verbose
+× anti-fork: only the ledger repository and migration contain raw ledger INSERTs
+raw decision-ledger inserts bypass the repository:
+src/infrastructure/ledger/ledger-violation-probe.ts:2
+```
+
+The production-path integration companions also execute UPDATE, DELETE, and
+TRUNCATE against every immutable table in real PGlite, and L1-L4 tampering tests
+independently alter stored bytes, canonical form, promoted columns, and the
+anchor. Each attack is rejected or detected at its claimed layer.
+
+**Revert:** removed the planted source file. The fence and all companions pass.
+
+**Date:** 2026-07-28 (v3 prompt 7, ADR-0043, D-105).
+
+### PF-194 decision-ledger anti-fork fence widened to every immutable source table
+## Decision-ledger anti-fork fence widened to every immutable source table (D-110)
+
+**Invariant:** the anti-fork rule covers ALL immutable source tables, not only the
+chain, so splitting the repository into a chain writer and a source writer cannot
+silently move `INSERT INTO decision_records` (or evidence/bundle/membership) into a
+third module.
+
+**Injection:** appended a raw `INSERT INTO decision_records` string to
+`src/infrastructure/ledger/ledger-bindings.ts`, then ran:
+
+```text
+pnpm vitest run src/__tests__/fitness/ledger-append-only.test.ts
+× anti-fork: only the ledger repository and migration contain raw immutable-source INSERTs
+raw decision-ledger inserts bypass the repository:
+src/infrastructure/ledger/ledger-bindings.ts:66
+```
+
+**Revert:** `git checkout src/infrastructure/ledger/ledger-bindings.ts`. Fence green.
+
+### PF-195 reservation ownership is refused, not resolved arbitrarily
+
+**Invariant:** one live reservation belongs to exactly one decision, and a release
+resolves its owner through the keyed index rather than physical row order.
+
+**Injection:** removed the `WHERE decision_reservation_index.decision_id =
+EXCLUDED.decision_id OR ... status = 'released'` guard from the claim upsert in
+`src/infrastructure/ledger/ledger-projection-store.ts`, then ran:
+
+```text
+pnpm vitest run src/__tests__/integration/ledger-projections.test.ts
+× releases a reservation against its owning decision and refuses a competing live claim
+AssertionError: promise resolved "[ { …(3) } ]" instead of rejecting
+```
+
+The same test proves the release resolves through the index and that a rebuild
+reproduces the online fold byte-identically.
+
+**Revert:** restored the guard. All four projection companions pass.
+
+**Date:** 2026-07-28 (review follow-up to v3 prompt 7, ADR-0043, D-106).
+
+### PF-196 a swallowed mid-batch refusal leaves a verifiable anchor
+## A swallowed mid-batch refusal leaves a verifiable anchor (D-111)
+
+**Superseded by D-107:** later appends are now savepoint-atomic, so a caught refusal
+commits no prefix. Per-entry anchors remain as defense in depth.
+
+**Invariant:** the ledger anchor covers exactly the entries that committed, even when a
+caller catches the abort and commits its own transaction anyway.
+
+**Injection:** moved the per-entry anchor and checkpoint upserts in
+`src/infrastructure/ledger/ledger-store.ts` back out of the append loop (one upsert per
+batch, after it), then ran:
+
+```text
+pnpm vitest run src/__tests__/integration/decision-ledger.test.ts -t "swallows a mid-batch refusal"
+× keeps the anchor verifiable when a producer swallows a mid-batch refusal
+AssertionError: ledger anchor count, sequence, or head hash differs: expected false to be true
+```
+
+**Revert:** restored the per-entry upserts. L4 verifies the partial append.
+
+### PF-197 replayed decision state is labeled by its least trustworthy event
+
+**Invariant:** a projection folded from any synthetic event renders as a demonstration,
+whatever provenance recorded the decision (ADR-0022).
+
+**Injection:** restored the `AND l.event_type = 'DecisionRecorded'` filter on the
+provenance join in `src/infrastructure/ledger/ledger-projection-store.ts`, so the label
+came from the recording row alone, then ran:
+
+```text
+pnpm vitest run src/__tests__/integration/ledger-projections.test.ts -t "least trustworthy"
+× labels replayed state by its least trustworthy event, not by the recording one
+AssertionError: expected false to be true
+```
+
+**Revert:** restored the join over every contributing row.
+
+**Date:** 2026-07-28 (review follow-up to D-106, ADR-0043, D-107).
+
+### PF-198 decision-ledger residual review corrections
+## Decision-ledger residual review corrections (D-114)
+
+**Invariants:** later appends require a real transaction and commit no partial
+source/event prefix; rebuild refuses any L1-L4 or replay-source corruption before
+clearing projections; verification reads under the tenant lock; retained immutable
+text is an explicit code/reference projection; reservation reuse is generation-bound;
+execution placeholders reconcile by handle.
+
+Before the implementation changes, the focused adversarial suite failed six
+production paths:
+
+```text
+× repairs corrupted derived state but refuses a truncated ledger
+  promise resolved instead of rejecting
+× does not let a delayed release affect a reused reservation identifier
+  expected active, received released
+× replaces an observed execution placeholder when the real step arrives
+  duplicate observed and real step remained
+× refuses retained names and unformatted account numbers without rewriting bytes
+  expected false, received true
+× rolls back every event when a producer catches a mid-batch refusal
+  expected 5 entries, received 6
+× rejects a direct database handle where a transaction capability is required
+  direct SqlDb reached the append path
+```
+
+The completed companions additionally prove that an unsupported immutable-source
+codec fails full integrity while L1-L4 alone remains intact, the first verification
+query locks the tenant, evidence collisions are preflighted before any source insert,
+cross-owner and unknown-generation releases fail, and a delayed duplicate release
+cannot affect a reused reservation.
+
+**Revert:** no planted source remains. The focused typecheck, ledger contract,
+integration, and projection suites pass.
+
+**Date:** 2026-07-28 (review corrections F1-F9, ADR-0043, D-110).
+
+## Decision-ledger binding and verified register corrections (D-111)
+## Decision-ledger binding and verified register corrections (D-115)
+
+**Invariants:** the recorded decision binds the exact input bundle hash; causal
+references point only backward; retained text is a registered code or opaque
+reference; PII traversal is stack-safe; the register verifies and replays the exact
+immutable window it displays under one tenant lock; immutable-table insert ownership
+is exact per table and module.
+
+Before the corrections, the adversarial tests reproduced the bundle substitution,
+retained-name, deep-traversal, causal-loop, projection-cache, and split-register
+failures:
+
+```text
+× binds DecisionRecorded to the exact input bundle hash
+  expected a sha256 bundleHash, received undefined
+× refuses duplicated free text masquerading as a code or source id
+  expected false, received true
+× scans deeply nested retained values without recursive stack exhaustion
+  RangeError: Maximum call stack size exceeded
+× rejects self-causation and non-preceding causal references
+  self-referencing events parsed and stored
+× serves replayed state from the verified immutable window
+  corrupted decision_state_projection bytes were returned
+× reads verification, events, and decision state in one locked transaction
+  register data was read outside the verification transaction
+```
+
+For the anti-fork companion, a raw evidence insert was planted in
+`src/infrastructure/ledger/ledger-store.ts`, then the focused fence reported:
+
+```text
+× anti-fork: each immutable table has one exact raw-insert owner
+raw decision-ledger inserts bypass the repository:
+src/infrastructure/ledger/ledger-store.ts:56
+```
+
+**Revert:** removed the planted raw insert. The focused correction suite passes.
+
+**Date:** 2026-07-28 (review corrections F1-F7, ADR-0043, D-111).
+## Decision-ledger authority, retention, and disclosure corrections (D-112)
+## Decision-ledger authority, retention, and disclosure corrections (D-116)
+
+**Invariants:** every ledger SQL boundary receives sealed tenant authority and compares
+it before SQL; structural immutable identifiers refuse human-shaped text without
+misclassifying evidence references; the register requires `audit.export` and `pii.view`
+for one tenant and discloses no bytes after failed verification; displayed counts retain
+metric provenance.
+
+The original implementation reproduced the reported failures. A normal evidence-backed
+`recordDecision` returned `PII_VIOLATION`, the tenant and governed-action fences reported
+28 raw-org ledger repository boundaries plus the role-only register route, the metric
+fence reported both naked projection counts, and the observability fence rejected the
+unregistered raw-error log call.
+
+Three real-tree injections then proved the corrected runtime boundaries:
+
+```text
+# recordDecision validated against the self-asserted record firm instead of tenant.orgId
+x refuses a sealed authority for another tenant before opening a transaction
+  expected 'INTERNAL' to be 'AUTH_FAILED'
+  src/__tests__/integration/decision-ledger.test.ts:192
+
+# structural identifier leaves skipped requireOpaqueIdentifier
+x refuses a person name used only as an immutable source identifier
+  expected true to be false
+  src/__tests__/integration/decision-ledger.test.ts:663
+
+# readVerifiedDecisionRegister listed rows regardless of verification.ok
+x suppresses every register row when stored actor metadata fails verification
+  expected five ledger rows to deeply equal []
+  src/__tests__/integration/ledger-projections.test.ts:512
+```
+
+**Revert:** restored all three guards. The focused 164-test boundary suite and the full
+1,278-test non-UTC suite pass. Typecheck, lint, knip, the 500-line cap, and the measured
+ADR-0044 line ceiling also pass.
+
+**Date:** 2026-08-04 (review corrections F1-F9, ADR-0043/0042, D-112).
+
+### PF-199 decision-ledger retention and constructed-SQL anti-fork coverage
+
+**Invariants:** derived producer provenance cannot lose its demonstration trace before
+immutable persistence; retained event codes and references are closed machine
+vocabularies; immutable-table inserts have one exact owner even when SQL is assembled;
+failed verification discloses no rows and does not present an empty-ledger state.
+
+The focused regression tests first reproduced all three storage failures:
+
+```text
+× refuses derived producer provenance that immutable rows cannot retain
+  expected false, received true
+× refuses an unregistered retained failureCode
+  promise resolved instead of rejecting
+× refuses a PII-shaped immutable source identifier (robert-smith)
+  expected false, received true
+```
+
+Two in-memory source injections then assembled the raw insert through concatenation
+and a dynamic template table. Before the fence correction both companions failed:
+
+```text
+× detects an immutable insert assembled from concatenated fragments
+  expected [] to have a length of 1
+× fails closed when an INSERT uses a dynamic table identifier
+  expected [] to have a length of 1
+```
+
+After the correction, both planted sources resolve to the exact diagnostic
+`src/infrastructure/evil.ts:2`, and the focused fence and ledger integration suites
+pass. The Playwright register companion supplies a failed L1 response with five stored
+entries and proves the page renders `ledger-entries-withheld` while the empty-ledger
+copy is absent.
+
+**Revert:** no planted production source remains. The companion fixtures stay in the
+test suites as the detection-is-not-verification proof.
+
+**Date:** 2026-08-05 (review corrections F1-F4, D-113).
+
+### PF-200 fail-closed ledger SQL, retained values, and bounded evidence replay
+
+**Invariants:** unresolved SQL cannot evade immutable-table insert ownership;
+sensitive-length numeric values and unregistered namespaced or versioned references
+cannot enter immutable replay bytes; a bounded register decision uses a qualifying
+evidence recording inside the verified window and before that decision.
+
+The new companions were added before the production corrections and reproduced the
+reported failures:
+
+```text
+× detects an immutable insert returned by a helper
+  expected [] to deeply equal [{ file: "src/infrastructure/evil.ts", line: 5 }]
+× refuses a PII-shaped immutable source identifier (subject:ROBERT-SMITH)
+  expected true to be false
+× refuses a PII-shaped immutable source identifier (subject:robert-smith)
+  expected true to be false
+× refuses an unclassified sensitive-length numeric recommendation parameter
+  expected true to be false
+× uses a repeated evidence recording inside the verified register window
+  expected [] to deeply equal ["dec:GC-01:0002"]
+```
+
+The anti-fork suite additionally covers a typed imported SQL constant and a wholly
+unresolved executor argument. Reviewed dynamic SQL is limited to the database driver
+and migration runner; the companion independently checks every shipped migration SQL
+value for immutable inserts and every preflight for a read-only `SELECT` head.
+
+After the corrections, the five focused append-only, size, budget, decision-ledger, and
+projection suites pass 86 tests. The line-budget companion measures infrastructure at
+6,608 lines under the ADR-0043 ceiling.
+
+**Revert:** no planted production source remains. The in-memory SQL sources and runtime
+payloads stay as detection-is-not-verification companions.
+
+**Date:** 2026-08-05 (review corrections F10-F14, ADR-0043, D-114).
+
+### PF-201 ledger acceptance, source trust, and batched register replay
+
+**Invariants:** L1-L4 never verifies event bytes the append boundary would refuse;
+immutable source reuse cannot upgrade fixture provenance; bounded register I/O scales
+with source categories rather than event count.
+
+Five real PGlite regressions were added before the production corrections and failed:
+
+```text
+× L2 reapplies the ledger PII boundary to correctly rechained bytes
+  expected false, received true
+× L2 rechecks immutable decision hashes after a privileged rechain
+  expected false, received true
+× L2 rejects a correctly rechained causal reference to a later entry
+  expected false, received true
+× does not relabel a fixture bundle when a real producer reuses it
+  expected true, received false
+× batch-loads register replay sources before folding the event window
+  expected 65 statements to be less than or equal to 13
+```
+
+The corrected L2 calls the shared PII and source-binding authorities plus one set-based
+causal check. Replay derives source trust from the first chain-bound recording edge and
+the current use edge. The batch companion creates fourteen decisions, reads a one-item
+display limit, and proves all fourteen are counted without per-event source queries.
+
+**Revert:** no planted production data remains. The correctly rechained rows and
+query-count harness remain as detection-is-not-verification companions.
+
+**Date:** 2026-08-05 (review corrections F15-F18, ADR-0044, D-115).
+
+### PF-202 immutable ledger ordering, transaction authenticity, and bounded origin trust
+
+**Invariants:** L2 and append use immutable decision and reservation order; a genuine SQL
+transaction remains valid across independently evaluated modules; raw ledger disclosure
+requires both governed grants; bounded replay consumes provenance only from verified
+origin edges.
+
+Four real PGlite regressions were added before the production corrections and failed:
+
+```text
+× L2 rejects a correctly rechained decision event before its recording fact
+  expected true to be false
+× accepts a transaction capability created by another module evaluation
+  promise rejected with VALIDATION instead of resolving
+× refuses a competing reservation after its derived index row is deleted
+  competing immutable event was accepted
+× withholds decisions whose true source origins are outside the verified window
+  expected no decisions, received one compliance-eligible projection
+```
+
+The corrected ordering authority is category-batched and sequence-aware, including for
+bounded verification. The reservation regression deletes the derived index before a
+competing append. The transaction regression reevaluates the database module before
+passing its driver-issued capability to the original ledger bundle. The provenance
+regression edits old origin metadata without rechaining it and proves a verified tail
+does not consume those unchecked bytes.
+
+The governed-actions fence also derives both exact grants from every exported row
+disclosure and verifies their contiguous authority prologue. The focused integration,
+governed-action, tenant-context, append-only, and line-budget suites pass after the
+corrections.
+
+**Revert:** no planted production data remains. The reordered chain, deleted cache row,
+module reevaluation, and old-origin tamper remain as detection-is-not-verification
+companions.
+
+**Date:** 2026-08-05 (review corrections F19-F23, ADR-0045, D-116).
+
+### PF-203 immutable write forms and ledger compatibility bindings
+
+**Invariants:** every PostgreSQL path that can add an immutable ledger row has one
+reviewed owner; recorded approval and execution identifiers belong to their immutable
+decision; historical encodings remain dispatchable; request verification does not hold
+the tenant append lock; bounded omissions are visible.
+
+The companions were added before the production corrections and reproduced the
+reported failures:
+
+```text
+× detects INSERT INTO ONLY against an immutable table
+  expected [] to deeply equal [{ file: "src/infrastructure/evil.ts", line: 2 }]
+× detects COPY FROM against an immutable table
+  expected [] to deeply equal [{ file: "src/infrastructure/evil.ts", line: 2 }]
+× detects MERGE against an immutable table
+  expected [] to deeply equal [{ file: "src/infrastructure/evil.ts", line: 2 }]
+× refuses approval and execution identifiers absent from the immutable decision
+  invalid stage and step events appended successfully
+× L2 rejects a correctly rechained event with an unknown approval stage
+  expected false, received true
+× verifies a consistent register snapshot without holding the tenant write lock
+  expected direct queries, received one tenant-locked transaction
+× withholds a recent event whose DecisionRecorded prerequisite is outside the window
+  expected one withheld decision, received zero
+```
+
+The corrected fence resolves all supported row-creation targets and keeps its dynamic
+SQL refusal. The structural regressions use real PGlite rows, including a privileged
+rechain for L2. Frozen-schema digests and a two-version registry companion protect the
+recorded compatibility path. Query instrumentation proves the register captures the
+anchor and complete ledger together without `FOR UPDATE` or a transaction.
+
+After correction, the focused append-only, contract, ledger, projection, and budget
+suites pass. The line-budget companion measures contracts at 4,598 lines and
+infrastructure at 7,652 under the ADR-0047 ceilings.
+
+**Revert:** no planted production SQL or invalid history remains. The in-memory write
+forms, privileged rechain, query harness, and frozen-schema pins remain as
+detection-is-not-verification companions.
+
+**Date:** 2026-08-05 (review corrections F30-F35, ADR-0047, D-118).
+---
+
+### PF-204 ledger-pii-vocabulary + ledger-reachability · `src/__tests__/fitness/ledger-pii-vocabulary.test.ts`, `src/__tests__/fitness/ledger-reachability.test.ts`
+
+**Invariants:** the shipped immutable-source PII allowlists carry reviewed production,
+seed, demo, and golden identifiers only; the test-only registration seams have no shipped
+caller; and every ledger export is reachable from a shipped surface or is a NAMED
+deferral that says which prompt lands its caller.
+
+**Injection 1** (test-shaped entry ships): added `"test:projection:bounded"` to
+`REGISTERED_INDEXED_IDENTIFIER_PREFIXES` in `src/infrastructure/ledger/ledger-pii.ts`.
+
+```text
+FAIL src/__tests__/fitness/ledger-pii-vocabulary.test.ts > enforces: no shipped allowlist entry lives in the reserved test namespace
+AssertionError: expected [ Array(1) ] to deeply equal []
++ "src/infrastructure/ledger/ledger-pii.ts: REGISTERED_INDEXED_IDENTIFIER_PREFIXES ships reserved-namespace entry \"test:projection:bounded\""
+```
+
+**Injection 2** (shipped module widens the boundary through an ALIASED import): added
+`import { registerTestLedgerIdentifier as widen } … ; widen("test:seed:sneaky");` to
+`scripts/seed-decision-ledger.ts`.
+
+```text
+FAIL src/__tests__/fitness/ledger-pii-vocabulary.test.ts > enforces: no shipped module can widen the ledger identifier boundary
+AssertionError: expected [ Array(1) ] to deeply equal []
++ "scripts/seed-decision-ledger.ts:22 references widen"
+```
+
+**Injection 3** (a new ledger export nothing ships can reach): added
+`export function unusedLedgerHelper(value: string): string { return value; }` to
+`src/infrastructure/ledger/ledger-canonical.ts`.
+
+```text
+FAIL src/__tests__/fitness/ledger-reachability.test.ts > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+AssertionError: expected [ 'appendDecisionEvents', …(1) ] to deeply equal [ 'appendDecisionEvents' ]
++ "unusedLedgerHelper"
+```
+
+**Injection 4** (the other direction - a deferral that already has a shipped caller):
+added `["recordDecision", "v3 prompt 8"]` to `DEFERRED_EXPORTS`.
+
+```text
+FAIL … > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+AssertionError: expected [ 'appendDecisionEvents' ] to deeply equal [ 'appendDecisionEvents', …(1) ]
+FAIL … > enforces: a named deferral that gained a shipped caller must be retired
+AssertionError: expected [ 'recordDecision' ] to deeply equal []
+```
+
+Each injection was reverted and both fences pass. The in-memory companions (shipped
+caller, aliased shipped caller, smuggled test entry, un-exported seam, bare re-export,
+test-only caller) remain as detection-is-not-verification proof.
+
+**Revert:** no planted allowlist entry, seam caller, export, or deferral remains.
+
+**Date:** 2026-08-05 (review corrections, D-123).
+## Ledger reachability made transitive (D-125)
+
+The one-hop rule counted ANY shipped reference as a caller, and every ledger file is
+itself shipped, so an intra-subsystem call satisfied the fence. Reachability now roots
+OUTSIDE the subsystem and propagates only through the bodies of reached declarations.
+
+**Injection 1** (an export whose only caller is itself a named deferral - the exact class
+the one-hop rule missed): added `export function preflightEvidenceOrigins(...)` to
+`ledger-sources.ts` and called it from `appendDecisionEvents` in `ledger-store.ts`.
+
+```text
+FAIL src/__tests__/fitness/ledger-reachability.test.ts > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+AssertionError: expected [ 'appendDecisionEvents', …(2) ] to deeply equal [ 'appendDecisionEvents', …(1) ]
++ "preflightEvidenceOrigins"
+```
+
+**Injection 2** (an exported arrow `const`, invisible to the previous `getFunctions()`-only
+scan): appended `export const unusedLedgerConst = (value: string): string => value;` to
+`ledger-canonical.ts`.
+
+```text
+FAIL … > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+AssertionError: expected [ 'appendDecisionEvents', …(2) ] to deeply equal [ 'appendDecisionEvents', …(1) ]
++ "unusedLedgerConst"
+```
+
+**Injection 3** (the other direction - a deferral that already has a shipped caller, and a
+deferral its own decision entry does not name): added
+`["recordDecision", { prompt: "v3 prompt 8", decision: "D-125" }]` to `DEFERRED_EXPORTS`.
+
+```text
+FAIL … > enforces: every unreachable ledger export is a NAMED deferral or a fenced seam
+FAIL … > enforces: a named deferral that gained a shipped caller must be retired
+AssertionError: expected [ 'recordDecision' ] to deeply equal []
+FAIL … > enforces: each deferral names its prompt in its own DECISIONS.md entry
+AssertionError: D-125 does not name recordDecision
+```
+
+Each injection was reverted and the fence passes (11 tests). The in-memory companions add
+the transitive cases directly: an unreachable export cannot vouch for what it calls, a
+reached export carries reachability through a private helper, and an exported arrow const
+is scanned. The strengthened fence flagged `preflightEvidenceSnapshots` on first run - it
+is now a NAMED deferral rather than a silent pass. Its record has since been corrected
+twice, so read `DEFERRED_EXPORTS` for the live values rather than this line: the decision
+key to D-121 (D-129), and the prompt to v3 prompt 18, the first prompt that lands a
+post-decision producer.
+
+**Revert:** no planted export, const, or deferral remains.
+
+**Date:** 2026-08-06 (review corrections, D-125).
+---
+
+## Payload fields bound to the immutable plan (D-126)
+
+**Invariants:** an `ExecutionStarted` idempotency key, a `ReservationCreated` reservation
+and its conflict keys, and a `VerificationClosed` verification rule are the ones the
+immutable execution plan authorizes - at the shared append boundary and again when L2
+re-proves stored history; a rebuild proves ledger ordering exactly once; and a savepoint
+recovery that fails does not destroy the classified refusal.
+
+**Injection 1** (the binding itself): replaced `planFieldReason(event, record)` with
+`null` in `decisionStructureReason`, leaving the stage/step existence checks intact.
+
+```text
+FAIL … > refuses payload fields the immutable execution plan does not authorize
+  src/__tests__/integration/decision-ledger.test.ts:505
+  expected promise to reject, but it resolved
+FAIL … > L2 re-proves the plan binding of a correctly rechained ExecutionStarted
+FAIL … > L2 re-proves the plan binding of a correctly rechained ReservationCreated
+FAIL … > L2 re-proves the plan binding of a correctly rechained VerificationClosed
+  src/__tests__/integration/decision-ledger.test.ts:550
+  expected true to be false
+```
+
+**Injection 2** (the removed per-event ordering re-proof): restored
+`assertLedgerHistoryOrdering` inside `prepareProjection`, so a rebuild proves ordering
+per entry on top of the set-wide L2 pass.
+
+```text
+FAIL … > rebuilds an empty projection store byte-identically using the online fold
+  src/__tests__/integration/ledger-projections.test.ts:148
+  expected 4 ordering queries to equal 1
+```
+
+**Injection 3** (savepoint recovery): restored the awaited
+`ROLLBACK TO SAVEPOINT` / `RELEASE SAVEPOINT` pair ahead of the classification.
+
+```text
+FAIL … > keeps the classified refusal when savepoint recovery itself fails
+  expected { code: "STORE_CONSTRAINT", … }
+  actual   TypeError { message: "connection lost mid-recovery" }
+```
+
+Each injection was reverted and the ledger, projection, contract, and budget suites pass.
+The four refusals carry their own reason ("ledger idempotency key is absent from the
+immutable execution step", "ledger reservation is absent from the immutable execution
+plan", "ledger conflict keys differ from the immutable execution plan", "ledger
+verification rule is absent from the immutable execution plan"), and each is asserted by
+message, not only by code. The line-budget companion measures contracts at 4,598 lines
+and infrastructure at 7,689 under the ADR-0047 ceilings.
+
+**Revert:** no planted binding bypass, ordering re-proof, or savepoint form remains.
+
+**Date:** 2026-08-06 (review corrections F38, D-126).
+---
+
+## The compensating-action widening accepts, not only refuses (D-127)
+
+**Invariant:** the plan binding admits the compensating action a step carries, so an
+`ExecutionStarted` citing the compensation's OWN idempotency key is accepted while an
+unrelated key is still refused. D-126 proved the refusal; nothing proved the acceptance,
+because no recording fixture carried a compensation and the widened branch never ran.
+
+**Injection** (the widening itself): replaced
+`step.compensatingAction ? [step, step.compensatingAction] : [step]` with `[step]` in
+`planActions`, collapsing the plan to its steps alone.
+
+```text
+FAIL … > authorizes the compensating action's own key, and still refuses an unrelated one
+  src/__tests__/integration/decision-ledger.test.ts:552
+  promise rejected "{ code: 'STORE_CONSTRAINT', …(1) }" instead of resolving
+```
+
+The injection was reverted. `compensatedRecordingInput` records the golden proceed plan
+with a compensating action whose idempotency key differs from the step's (the schema
+refuses a shared key), and the same test asserts the unrelated key is still refused with
+"ledger idempotency key is absent from the immutable execution step" - so the branch is
+proven in both directions, not merely reached.
+
+The line-budget companion measures contracts 4,598, domain 1,584, infrastructure 7,701,
+and presentation 928 under the ADR-0048 ceilings, after restoring the migration prose an
+earlier correction had compressed away to fit the previous ceilings. `migrations.ts`
+measured 507 lines before that compression, so the per-file ratchet was squeezing it too;
+it now carries the first pinned `max-file-size` entry (520 against a measured 510), and
+that fence's companion still flags a synthetic file one line over the default.
+
+**Revert:** no planted `planActions` narrowing remains.
+
+**Date:** 2026-08-06 (review corrections, D-127).
+---
+
+## The raised per-file pin still fences (D-128)
+
+**Invariant:** the `max-file-size` pin ADR-0049 raises for
+`src/infrastructure/store/migrations.ts` (520 to 560, against a measured 510) is a real
+ceiling with bounded headroom, not an exemption - the file is still measured and still
+fails one line over.
+
+**Injection:** appended 51 padding lines to `src/infrastructure/store/migrations.ts`,
+taking it from 510 to 561.
+
+```text
+FAIL  src/__tests__/fitness/max-file-size.test.ts > max-file-size fence > enforces: no shipped file exceeds its ceiling (default 500)
+AssertionError: oversized files (split them):
+src/infrastructure/store/migrations.ts: 561 > 560
+```
+
+The injection was reverted and the file measures 510 again. The fence's own companion
+still flags a synthetic file one line over the default and passes a small one, so the
+default is unaffected by the pin; `migrations.ts` remains the ONLY pinned entry, so no
+other file sits near its ceiling under the same squeeze. The line-budget companion
+measures contracts 4,598, domain 1,584, and presentation 928 under unmoved ceilings,
+since ADR-0049 amends no layer ceiling. **Corrected under D-122:** infrastructure
+measured 7,702, not the 7,701 first recorded here - the same commit hoisted the
+`appError` import in `recorded-version-registry.ts`, one added infrastructure line.
+
+**Revert:** no planted padding remains in `migrations.ts`.
+
+**Date:** 2026-08-06 (review corrections, D-128).
+---
+
+## A prologue failure leaves the append classified (D-129)
+
+**Invariant:** every adapter-boundary failure in `appendDecisionEvents` reaches the caller
+as a typed `AppError` with its `"decision ledger append failed"` log line - including the
+tenant lock, the evidence preflight, and the `SAVEPOINT` statement, which ran outside the
+classification and so could return raw driver prose from the designed contention point for
+concurrent appends. Savepoint recovery still runs only against a savepoint that was opened.
+
+**Injection:** restored the pre-fix shape - `lockDecisionLedgerTenant`,
+`preflightEvidenceSnapshots`, and the `SAVEPOINT` exec lifted back out of the `try`.
+
+```text
+FAIL  src/__tests__/integration/decision-ledger.test.ts > classifies a prologue failure and leaves an unopened savepoint alone
+  src/__tests__/integration/decision-ledger.test.ts:1726
+  "actual": TypeError { "message": "lock wait timeout on the tenant row" }
+  "expected": { "code": "INTERNAL", "message": "decision ledger append failed" }
+```
+
+**Second injection** (the recovery guard): weakened `if (savepointOpen)` to
+`if (savepointOpen || true)`.
+
+```text
+AssertionError: expected [ …(4) ] to deeply equal []
+  "actual": [ "ROLLBACK TO SAVEPOINT decision_ledger_append", "RELEASE SAVEPOINT …", … ]
+```
+
+Both injections were reverted. The guard assertion is therefore not vacuous: without it the
+prologue failure issues a rollback to a savepoint that was never established, which in
+Postgres aborts the caller's transaction. The same test also proves a typed `NOT_FOUND` from
+the tenant lock still reaches the caller unchanged rather than collapsing into `INTERNAL`.
+
+The line-budget companion measures contracts 4,598, domain 1,584, infrastructure 7,701,
+and presentation 928: the classification restructure folded one call onto a single line,
+returning the layer to the figure ADR-0048 recorded. No ceiling moved and `migrations.ts`
+still measures 510 against its 560 pin.
+
+**Revert:** no planted prologue-outside-the-try shape remains in `ledger-store.ts`.
+
+**Date:** 2026-08-06 (review corrections, D-129).
+---
+
+## An empty ledger is honest only where the design made it empty (D-130)
+
+**Invariant:** the decision-ledger operator gates hard-fail whenever rows EXIST but none were
+covered, in every environment, and hard-fail an empty ledger in `development`, where they run
+against a store seeded in the same job. Only `staging`/`production` emptiness passes, because
+the post-decision append surface is deferred there by D-123 - and both scripts say so on stdout
+rather than exiting 1 at the operator running a production restore.
+
+**Injection A** (the fail-closed half): `decisionLedgerVacuity` rewritten to return
+`"empty-by-design"` for present-but-uncovered rows.
+
+```text
+FAIL  src/__tests__/unit/decision-ledger-vacuity.test.ts > decisionLedgerVacuity > fails stored-but-uncovered entries in EVERY environment
+  src/__tests__/unit/decision-ledger-vacuity.test.ts:21:51
+  AssertionError: expected 'empty-by-design' to be 'vacuous'
+```
+
+**Injection B** (the environment half): the `appEnv` discrimination collapsed to a bare
+`return "empty-by-design";`.
+
+```text
+FAIL  src/__tests__/unit/decision-ledger-vacuity.test.ts > decisionLedgerVacuity > fails an empty ledger in dev/CI, where the gate runs against a seeded store
+  src/__tests__/unit/decision-ledger-vacuity.test.ts:11:56
+  AssertionError: expected 'empty-by-design' to be 'vacuous'
+```
+
+Both injections were reverted. The verdict is therefore not a blanket exit 0: each half of it
+is load-bearing on its own.
+
+**End-to-end** against a PGlite store holding one org with a real verified audit chain and zero
+`decision_ledger` rows - the exact shape of a deployment before a producer ships:
+
+```text
+APP_ENV=staging      audit-chain-verify: decision ledger empty - the post-decision append surface
+                     is deferred (D-123) ... exit=0
+APP_ENV=development  audit-chain-verify: 0 decision-ledger entries stored and 0 verified ...
+                     typed-chain verification is vacuous ... exit=1
+APP_ENV=staging      ledger-rebuild: decision ledger empty ... exit=0
+APP_ENV=development  ledger-rebuild: 0 entries replayed into 0 decision projection(s) ... exit=1
+```
+
+The seeded dev store is unchanged: `db:seed && audit:chain` reports 1 audit and 5 decision
+entries at exit 0, and `ledger:rebuild` replays 5 entries into 1 projection at exit 0.
+
+**Revert:** no planted verdict remains in `scripts/decision-ledger-vacuity.ts`.
+
+**Date:** 2026-08-06 (review corrections, D-130).
+---
+
+## The second per-file pin still fences (D-131)
+
+**Invariant:** the `max-file-size` pin ADR-0050 adds for
+`src/infrastructure/ledger/ledger-store.ts` (550 against a measured 504, with the folded
+`insertEvidenceSnapshots(...)` call restored to its multi-line form) is a real ceiling with
+bounded headroom, not an exemption - the file is still measured and still fails one line over.
+
+**Injection:** appended 47 padding lines to `src/infrastructure/ledger/ledger-store.ts`,
+taking it from 504 to 551.
+
+```text
+FAIL  src/__tests__/fitness/max-file-size.test.ts > max-file-size fence > enforces: no shipped file exceeds its ceiling (default 500)
+AssertionError: oversized files (split them):
+src/infrastructure/ledger/ledger-store.ts: 551 > 550: expected [ Array(1) ] to deeply equal []
+```
+
+The injection was reverted and the file measures 504 again. The fence's own companion still
+flags a synthetic file one line over the DEFAULT and passes a small one, so neither pin
+weakens the default. Every other shipped file was re-measured with this fence's algorithm:
+`migrations.ts` 510/560, `ledger-replay-loader.ts` 493/500 (the closest unpinned file, outside
+the threshold this correction applies), and nothing else above 445. The line-budget companion
+measures contracts 4,598, domain 1,584, infrastructure 7,706, and presentation 928 - the
+restored formatting is the +5 on infrastructure, against an unmoved 7,800 ceiling.
+
+**Revert:** no planted padding remains in `ledger-store.ts`.
+
+**Date:** 2026-08-06 (review corrections, D-131).
+
+---
+
+## D-130's production arm is forward-looking, and the record now says so (D-131)
+
+**Invariant:** a DECISIONS entry describes behavior that can occur. D-130 justified the
+deferred-empty vacuity verdict with a production restore operator; production cannot reach that
+verdict until the managed-Postgres adapter lands (D-006/ADR-0004), so `staging` is the arm
+exercised today. Verified against the shipped scripts:
+
+```text
+APP_ENV=production VERIN_STORE_DRIVER=postgres DATABASE_URL=postgres://...
+  audit-chain-verify error: STORE_UNAVAILABLE: postgres store adapter is deferred
+  (ADR-0004/D-006); use VERIN_STORE_DRIVER=pglite for dev/CI
+
+APP_ENV=production VERIN_STORE_DRIVER=pglite
+  Error: FATAL: invalid configuration: store.driver: PROD_REQUIRES_POSTGRES:
+  production must use the postgres store driver
+```
+
+Both refusals land at store creation and config validation respectively - before
+`decisionLedgerVacuity` is consulted at all. No guard, verdict, or dev/CI behavior changed:
+D-130 carries the correction, the script header names which arm is exercised and which awaits
+the adapter, and `docs/runbooks/backup-and-restore.md` marks its steps 3-4 as the procedure
+that adapter must satisfy.
+
+**Revert:** documentation and a comment; the shipped verdict is untouched.
+
+**Date:** 2026-08-06 (review corrections, D-131).
+---
+
+## A frozen codec arm narrower than its contract is now caught (D-132)
+
+**Invariant:** what the live `LedgerEntrySchema` accepts on the write path, the pinned
+`recordedLedgerV1_1` codec accepts on the read path - for every one of the sixteen variants and
+all three replay-source classes, byte-for-byte.
+
+**Injection:** dropped the optional `evidenceSnapshotRef` property from the `StatusObserved` arm
+of the frozen ledger JSON Schema in `src/infrastructure/ledger/recorded-schemas.ts` - the exact
+"dropped optional" narrowing the invariant guards, since the arm carries
+`additionalProperties: false`.
+
+```text
+FAIL src/__tests__/unit/decision-ledger-contract.test.ts >
+  dispatches frozen ledger and replay-source codecs by recorded version
+AssertionError: expected 'payload does not match its recorded e…' to be null
+```
+
+That is L2's own refusal reason, surfaced at the contract instead of on a stored chain. The
+failure lands on `StatusObserved`, and the eleven variants before it still passed under the
+injected schema - which is precisely why the previous single-sample form of this test
+(`allLedgerEventSamples()[0]`, `DecisionRecorded`) stayed green against the same narrowing. The
+content-digest test failed alongside it, as a byte pin must, but it is self-referential: it
+detects that the bytes moved, never that they moved somewhere the live contract disagrees with.
+
+**Revert:** the schema file was restored from a pre-injection copy and `git diff` reports it
+unchanged; the suite passes 9/9.
+
+**Date:** 2026-08-06 (review corrections, D-132).
+---
+
+## The repair cannot run unscoped, and the badge cannot report one fixed class (DECISIONS.md D-129)
+
+> Citation note: from "Ledger reachability made transitive" onward, the `(D-1xx)` parentheticals in
+> the entries above run four ahead of the `DECISIONS.md` headers they name (that entry proves
+> D-121's work, not D-125's). The drift is pre-existing and left uncorrected here rather than
+> bulk-renumbered late in the window; this entry names its decision by file and number to stay
+> unambiguous. Recorded under `ledger-followup-recorded-schema-authoring`.
+
+**Invariant A:** `pnpm ledger:rebuild` refuses to run unscoped or to write without `--apply`.
+A repair that discards and re-folds derived decision state must not be reachable by accident.
+
+**Injection:** `parseRebuildInvocation` collapsed to
+`return { orgId: positional[0] ?? "", apply: true };` - the fleet-wide, write-by-default form the
+contract replaced.
+
+```text
+× refuses an unscoped run: no argument means no action
+  AssertionError: expected { orgId: '', apply: true } to be null
+× refuses a fleet-wide run: exactly one tenant, never several
+  AssertionError: expected { orgId: 'org-a', apply: true } to be null
+× refuses an unrecognized flag rather than silently ignoring it
+  AssertionError: expected { orgId: 'org-a', apply: true } to be null
+× previews by default and writes only when --apply is explicit
+  AssertionError: expected { orgId: 'org-a', apply: true } to deeply equal { orgId: 'org-a', apply: false }
+```
+
+All four halves are load-bearing on their own: no single one of them passes under the collapse.
+
+**Invariant B:** a synthetic value badges with the class its producer STORED, never one fixed class.
+
+**Injection:** `syntheticBadgeLabel`'s derived branch replaced by
+`return DEV_BADGE_TEXT["synthetic-fixture"];` - exactly the constant the finding reported.
+
+```text
+× badges a synthetic value with its OWN class, never one fixed class
+  AssertionError: expected 'synthetic fixture' to be 'estimate'
+× badges a derivation from the synthetic leaves that made it a demonstration
+  AssertionError: expected 'synthetic fixture' to be 'estimate'
+```
+
+The `fixture` case still passed under the injection, which is why the seeded ledger looked correct
+before this round: the only synthetic producer that ships today is the one the constant named.
+
+**End-to-end** against a seeded PGlite store (one org, five ledger entries, one decision), with
+derived state deliberately wiped first:
+
+```text
+after wipe             projections=0 [] reservations=0
+ledger:rebuild <org>   would rebuild 1 decision projection(s) from 5 replayed entr(ies)
+                       PREVIEW only - nothing was written; re-run with --apply to commit
+after preview          projections=0 [] reservations=0
+ledger:rebuild --apply rebuilt 1 decision projection(s) from 5 replayed entr(ies)
+after apply            projections=1 [dec:GC-01:0001] reservations=0
+(no argument)          usage: pnpm ledger:rebuild <org-id> [--apply]      exit=1
+<org> --force          usage: pnpm ledger:rebuild <org-id> [--apply]      exit=1
+ledger:rebuild org-nope  org org-nope REFUSED - NOT_FOUND (app-error:NOT_FOUND, info)  exit=1
+```
+
+The preview left the derived tables byte-identical to the wiped state, and the classified per-org
+refusal survived the rewrite.
+
+**Revert:** both injected files were restored from pre-injection copies; `git diff` reports
+`scripts/ledger-rebuild-args.ts` unchanged and `src/contracts/provenance.ts` carrying only this
+round's additions. Suites pass 11/11, and `pnpm test` passes 1,436/1,436.
+
+**Date:** 2026-08-06 (review corrections, DECISIONS.md D-129).
+
+## The preview is proven by the store, not by its carrier (DECISIONS.md D-130)
+
+**Invariant A:** the DEFAULT operator invocation writes nothing. `rebuildDecisionProjections(db,
+tenant, { apply: false })` runs the identical replay and leaves the store exactly as it found it.
+
+**Injection:** `if (!apply) throw previewRollback(rebuilt);` replaced by `if (!apply) return
+rebuilt;` - the committing refactor the finding described, which leaves the Symbol carrier itself
+untouched and every argv test green.
+
+```text
+× previews a rebuild without writing, then applies the identical fold
+  src/__tests__/integration/ledger-projections.test.ts:215
+  AssertionError: expected [ { org_id: 'firm-a', decision_id: 'dec:GC-01:0001', … } ] to deeply equal []
+```
+
+The assertion that bit reads `decision_state_projection` back out of the store, so it does not
+depend on how the rollback is carried - only on whether the preview wrote.
+
+**Invariant B:** the rebuild's post-condition rejects a fold that did not cover what it replayed.
+
+**Injection:** `if (uncovered) throw appError("STORE_CONSTRAINT", uncovered);` neutered to
+`if (false && uncovered) …`.
+
+```text
+× rolls a rebuild back on 'a dropped projection write'
+  AssertionError: promise resolved instead of rejecting
+× rolls a rebuild back on 'a derived row stamped outside the replay'
+  AssertionError: promise resolved instead of rejecting
+```
+
+Both arms of `replayCoverageReason` are load-bearing: each case injects its own fault into the
+projection INSERT inside the replay transaction and matches its own reason string, so neither arm
+is passing on the other's behalf.
+
+**Revert:** `src/infrastructure/ledger/ledger-verification.ts` was restored from a pre-injection
+copy after each run; `git diff` reports it unchanged by this round. `ledger-projections.test.ts`
+passes 22/22.
+
+**Date:** 2026-08-06 (review corrections, DECISIONS.md D-130).
+
+## The named deferral prompt is bound to its own record, not to prose (documentation sync)
+
+The two ledger deferrals cited "v3 prompt 8" - the primitive-vocabulary prompt, already landed and
+shipping no ledger producer. Corrected to **v3 prompt 18** (authority, multistage approval, and
+override) in `DEFERRED_EXPORTS`, D-119, D-121, D-129, and `PLAN.md` Appendix 4: it is the first
+prompt in `docs/v3/verin-prompt-sequence-v3.md` whose deliverables are post-decision facts, which
+is the only class `appendDecisionEvents` accepts.
+
+**Injection** (the correction is coupled, not two independent edits): `DEFERRED_EXPORTS` restored
+to `{ prompt: "v3 prompt 8", decision: "D-119" }` while DECISIONS.md kept the corrected prose.
+
+```text
+× enforces: each deferral names its prompt in its own DECISIONS.md entry
+  AssertionError: D-119 does not name v3 prompt 8: expected '### D-119 · 2026-08-05 · reversible ·…'
+  to contain 'v3 prompt 8'
+```
+
+So the fence's registry cannot drift from the entry that records it in either direction - the
+existing PF-204 injections already prove the reachability and stale-deferral arms.
+
+**Revert:** the injection was reverted; `DEFERRED_EXPORTS` carries prompt 18 and the fence passes
+11/11. No export, deferral, or seam was added or removed.
+
+**Date:** 2026-08-06 (documentation sync).

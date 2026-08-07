@@ -7,9 +7,13 @@
  * (src/__tests__/fitness/golden-cases.test.ts), so the check that runs in CI and
  * the check that is adversarially proven are the exact same code (no drift).
  *
- * The vocabularies below (dispositions, execution states, ledger event types,
- * authority modes, freshness) are the v3 core-contracts vocabulary
- * (docs/v3/verin-core-contracts.ts). Where the golden cases share a vocabulary
+ * The vocabularies below (dispositions, execution states, authority modes,
+ * freshness) are the v3 core-contracts vocabulary
+ * (docs/v3/verin-core-contracts.ts). Ledger event types are NOT re-declared here:
+ * LEDGER_EVENT_TYPES is imported from the shipped contract
+ * (src/contracts/decision-core/ledger.ts, v3 prompt 7 / ADR-0041, which froze the
+ * union at 16 types) and re-exported, so a golden case and the engine can never
+ * disagree about the vocabulary. Where the golden cases share a vocabulary
  * with the demo scenario matrix (config/demo/scenarios.yaml) - firm ids, state
  * ids, provenance labels, scenario ids, the deferral status - validateGoldenCases
  * cross-checks each case against the LIVE matrix (loadScenarioRefs), so a golden
@@ -23,29 +27,14 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseDocument } from "yaml";
+import { LEDGER_EVENT_TYPES } from "../src/contracts/decision-core/ledger";
 
 export const REPO_ROOT = resolve(import.meta.dirname, "..");
 export const GOLDEN_DIR = join(REPO_ROOT, "fixtures/golden");
 export const GOLDEN_DOC = join(REPO_ROOT, "docs/golden-cases.md");
 export const SCENARIOS_YAML = join(REPO_ROOT, "config/demo/scenarios.yaml");
 
-/** The 14 LedgerEntry.type values (docs/v3/verin-core-contracts.ts). */
-export const LEDGER_EVENT_TYPES = [
-  "DecisionRecorded",
-  "EvidenceSnapshotRecorded",
-  "ApprovalRecorded",
-  "ApprovalInvalidated",
-  "ReservationCreated",
-  "ReservationReleased",
-  "ExecutionStarted",
-  "ExecutionSucceeded",
-  "ExecutionPartiallySucceeded",
-  "ExecutionFailed",
-  "StatusObserved",
-  "VerificationClosed",
-  "VerificationStuck",
-  "ExceptionDecisionRequested",
-] as const;
+export { LEDGER_EVENT_TYPES };
 
 /** AuthorityRequirement.mode, plus the "none" sentinel a golden case uses to
  * state, positively, that a non-proceed disposition carries NO authority

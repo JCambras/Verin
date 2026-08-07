@@ -27,12 +27,21 @@ export interface SqlQueryable {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<SqlResult<T>>;
 }
 
+declare const SQL_TRANSACTION: unique symbol;
+
+const globalTransactionRegistry = globalThis as unknown as {
+  __verinSqlTransactions?: WeakSet<object>;
+};
+const SQL_TRANSACTIONS = globalTransactionRegistry.__verinSqlTransactions ??=
+  new WeakSet<object>();
+
 /**
  * A transaction context. Adds `exec` (a multi-statement script, no params) to the
  * queryable, so a caller can run DDL and a parameterized write in ONE atomic unit -
  * used by the migration runner (a migration's DDL + its schema_migrations record).
  */
 export interface SqlTx extends SqlQueryable {
+  readonly [SQL_TRANSACTION]: true;
   exec(sql: string): Promise<void>;
 }
 
@@ -42,6 +51,15 @@ export interface SqlDb extends SqlQueryable {
   /** Dump the whole store for backup (ADR-0019). */
   dump(): Promise<Blob>;
   close(): Promise<void>;
+}
+
+export function isSqlTransaction(value: SqlQueryable): value is SqlTx {
+  return SQL_TRANSACTIONS.has(value);
+}
+
+function registerSqlTransaction(value: Omit<SqlTx, typeof SQL_TRANSACTION>): SqlTx {
+  SQL_TRANSACTIONS.add(value);
+  return value as SqlTx;
 }
 
 function wrap(pg: PGlite): SqlDb {
@@ -74,7 +92,7 @@ function wrap(pg: PGlite): SqlDb {
     transaction<T>(fn: (tx: SqlTx) => Promise<T>): Promise<T> {
       return serialize(() =>
         pg.transaction(async (tx) => {
-          const q: SqlTx = {
+          const q = registerSqlTransaction({
             async query<U>(sql: string, params?: unknown[]) {
               const res = await tx.query<U>(sql, params as unknown[] | undefined);
               return { rows: res.rows };
@@ -82,7 +100,7 @@ function wrap(pg: PGlite): SqlDb {
             async exec(sql: string) {
               await tx.exec(sql);
             },
-          };
+          });
           return fn(q);
         }) as Promise<T>,
       );
@@ -117,8 +135,15 @@ export async function createDb(opts?: { dataDir?: string | null }): Promise<SqlD
   }
   const configured = opts && "dataDir" in opts ? opts.dataDir : cfg.store.dataDir;
   // Resolve relative dirs to an absolute path so every process (seed, server)
-  // opens the SAME store regardless of its working directory.
-  const dataDir = configured && !isAbsolute(configured) ? resolve(process.cwd(), configured) : configured;
+  // opens the SAME store regardless of its working directory. The annotation is
+  // LOAD-BEARING, not decoration: Turbopack's file tracer follows this exact
+  // `resolve(process.cwd(), …)` form, and removing it makes `next build` warn that the
+  // whole repository was traced ("Encountered unexpected file in NFT list") and package
+  // it. Verified both ways - see D-106.
+  const dataDir = configured && !isAbsolute(configured)
+    // The annotation below is NOT inert - it is the NFT-trace constraint above. D-106.
+    ? resolve(/* turbopackIgnore: true */ process.cwd(), configured)
+    : configured;
   const pg = dataDir ? new PGlite(dataDir, { parsers: STORE_PARSERS }) : new PGlite({ parsers: STORE_PARSERS });
   const db = wrap(pg);
   await runMigrations(db);

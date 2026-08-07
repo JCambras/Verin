@@ -80,5 +80,27 @@ describe("no-pii-in-audit-store fence", () => {
       // …and accepts the legitimately-scrubbed shape.
       expect(() => assertNoPIIValues({ firstName: REDACTED, phone: null, note: "id 42" }, "audit")).not.toThrow();
     });
+    it("walks deeply nested retained records without using the host call stack", () => {
+      const root: Record<string, unknown> = {};
+      let cursor = root;
+      for (let index = 0; index < 12_000; index += 1) {
+        const next: Record<string, unknown> = {};
+        cursor.child = next;
+        cursor = next;
+      }
+      cursor.status = "safe-code";
+      expect(() =>
+        assertNoPIIValues(root, "decision ledger replay source")
+      ).not.toThrow();
+    });
+    it("rechecks a shared container reached through a PII field", () => {
+      const shared = { value: "Robert Smith" };
+      expect(() =>
+        assertNoPIIValues(
+          { firstName: shared, harmlessAlias: shared },
+          "decision ledger replay source",
+        )
+      ).toThrow(/PII_VIOLATION/);
+    });
   });
 });

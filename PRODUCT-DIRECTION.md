@@ -443,7 +443,9 @@ first demo must make an investor believe.
 
 Per charter #5, this direction doc distinguishes plainly:
 - **Built today (foundation):** login + real auth; the account-opening flow (suspend/resume, idempotent
-  audited write); the tamper-evident audit chain (`/app/audit`); the house-CRM console (`/app/console`); the
+  audited write); the tamper-evident audit chain (`/app/audit`); the append-only decision ledger and its
+  read-only register (`/app/ledger`) - storage, verification, and replay only; no decision producer has
+  landed, so it shows labeled-synthetic seeded history; the house-CRM console (`/app/console`); the
   presentation tier (`brand`, `why-bubble`, `fresh-value`, `metric`, `progress-steps`, `step-info-card`,
   `ui`); provenance on all 9 entities; one populated org with two seeded users.
 - **Lands in Wave 1 (the demo this doc anchors):** the populated, labeled world; the CCO persona +

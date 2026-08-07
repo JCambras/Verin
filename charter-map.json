@@ -82,6 +82,10 @@
         {
           "type": "config",
           "ref": "knip.json"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/ledger-reachability.test.ts"
         }
       ]
     },
@@ -130,6 +134,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/tenant-context-required.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/ledger-pii-vocabulary.test.ts"
         }
       ]
     },
@@ -233,6 +241,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/no-pii-in-audit-store.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/ledger-append-only.test.ts"
         },
         {
           "type": "ci-gate",

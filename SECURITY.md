@@ -26,7 +26,10 @@ days. Please allow coordinated disclosure before any public write-up.
 - **PII & model boundary:** PII-bearing types cannot reach `src/infrastructure/llm/`; model-bound text and
   evidence must be scrubber-minted, deeply frozen `Tokenized<T>` values. Logs and traces admit only closed
   vocabularies; request-derived record UUIDs are emitted only as tenant- and field-scoped keyed digests.
-- **Audit:** append-only, hash-chained, tamper-evident audit trail re-verified by a scheduled job.
+- **Audit:** two independent append-only, hash-chained, tamper-evident trails — the operational `audit_log`
+  and the sibling `decision_ledger` with its immutable replay sources — each with its own per-organization
+  chain and anchor, both re-verified by a scheduled job. Immutable rows are protected at the substrate by
+  database triggers, not only by the repository.
 - **Change control:** protected `main`, no direct pushes, no self-approval; every change through an
   independent gate review (CODEOWNERS + the no-mistakes pipeline + the persona board's fresh-context rule).
 

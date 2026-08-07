@@ -43,6 +43,22 @@ projection growth under an unchanged hash-preimage version. Every named tenant-o
 `{ firmId, id }` reference, compensating actions carry the same retry-safety contract as execution
 steps, and replay time zones are pinned to a persisted versioned registry instead of host ICU data.
 
+**v3 decision ledger (`src/contracts/decision-core/ledger.ts`, `src/domain/ledger`, `src/infrastructure/ledger`,
+ADR-0041, D-105..D-130):** an append-only `decision_ledger` **sibling** to the operational `audit_log` -
+never an extension of it - with its own GENESIS-rooted, per-organization sequence and hash chain whose
+versioned preimage binds the exact canonical typed-event bytes plus the producer's provenance. The event
+vocabulary is frozen at 16 discriminated types (v3's 14 plus `ApprovalStageExpired` and
+`ApprovalStageEscalated`). `recordDecision` commits immutable content-addressed evidence snapshots, input
+bundles, the decision record, its recording events, the anchor, and derived projection state in ONE
+transaction; `appendDecisionEvents` runs inside its caller's transaction behind a savepoint. Composite
+`(org_id, id)` foreign keys make every link structurally same-tenant, database triggers reject
+UPDATE/DELETE/TRUNCATE on every immutable source table, and L1-L4 verification (stored bytes, frozen
+schema/serializer dispatch, promoted columns, per-org anchor) plus retained replay-source verification is
+what `pnpm audit:chain` re-runs over BOTH chains. Projections are a pure fold (`src/domain/ledger`) whose
+online result is byte-equal to an empty-store rebuild; `pnpm ledger:rebuild <org-id> [--apply]` is the
+tenant-scoped, preview-by-default operator repair. The read-only register is reachable at **`/app/ledger`**
+(`/api/ledger`, `audit.export` + `pii.view`), rendering integrity failures as withheld-entry rows.
+
 **v3 decision-primitive vocabulary (`src/contracts/primitives`, ADR-0039, D-102):** primitive set
 `1.0.0`, **versioned and provisional** - six pure primitives (`candidate-selection`,
 `evidence-reconciliation`, `horizon-projection`, `net-availability`, `restriction-screen`,
@@ -74,10 +90,10 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
   and managed-schema virginity, then applies all pending DDL and read-only orphan preflights atomically.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
   the "Verin." wordmark, WhyBubble doctrine, and the micro-components the skeleton renders — all axe-clean.
-- **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey)
-  plus axe, green on a non-UTC clock; `pnpm test:e2e` reports the live count.
+- **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey,
+  decision ledger) plus axe, green on a non-UTC clock; `pnpm test:e2e` reports the live count.
 
-**Governance:** 40 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 51 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
@@ -92,8 +108,9 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-192; every PF id names exactly one
-proof — the prompt-6 entries were renumbered on rebase, see the numbering note in the log).
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-204; every PF id names exactly one
+proof — the prompt-6 entries were renumbered on rebase, see the numbering note in the log; the prompt-7
+entries carry a separate `(D-1xx)` citation drift the log records at its own tail).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
@@ -132,14 +149,21 @@ proof — the prompt-6 entries were renumbered on rebase, see the numbering note
 | `governed-actions` (AST: per-action `ActionGrant` bound at each governed request surface) | governed human actions authorized per-action, never by a bare role check (#12, v3 §15.3) | PF-033 + companions |
 | `observability-vocabulary` (AST: span/log/action/attribute values drawn from a sealed vocabulary) | un-listed telemetry values degrade to `[REDACTED]`, never leak PII (#14) | PF-035 + companions |
 | `primitive-catalog` (registry/catalog agreement both ways, rationale-doc coverage without phantoms, domain-neutral naming, purity, evidence-kind declarations resolving to real parameters) | the primitive vocabulary stays versioned, provisional, domain-neutral, and pure - a new or stretched primitive is a version bump, never a quiet edit (#1/#4, v3 prompt 8, ADR-0039, D-102) | PF-188, PF-189 + companions |
+| `ledger-append-only` (AST + DDL: every immutable source table carries UPDATE/DELETE/TRUNCATE triggers, and raw INSERTs into one resolve to its single allowlisted owner even when the SQL is assembled or the table identifier is dynamic) | decision history is append-only at the substrate, not just in the repository - no second writer can fork an immutable table (#1/#13, ADR-0041, v3 invariant 5) | PF-193, PF-194, PF-199 + companions |
+| `ledger-pii-vocabulary` (derived both ways from `ledger-pii.ts`: the reserved-namespace test seams exist, no shipped module reaches them, and no shipped `REGISTERED_*` entry sits in that namespace) | the fail-closed PII boundary on immutable rows carries reviewed production identifiers only; fixture vocabulary enters through an injection seam, never a production allowlist (#3/#7, D-119) | PF-204 + companions |
+| `ledger-reachability` (transitive reachability from shipped entry points OUTSIDE the ledger subsystem; re-exports are not callers) | every ledger export is reachable or is a NAMED deferral saying which prompt lands its caller - and a deferral that gains one must be retired, so the list never becomes an amnesty (#5, D-116/D-119; knip cannot see this class) | PF-204 + companions |
 
-**Current prompt-8 line-budget PR evidence:** contracts 5,433/5,460 (27
-headroom), domain 1,298/1,350 (52), infrastructure 3,484/3,550 (66), and
-presentation 928/6,000 (5,072). ADR-0040 is the latest ceiling amendment,
-measured with the fence's own algorithm after the primitive catalog AND its
-review hardening landed (PF-192), so the headroom is bounded correction room
-rather than a stale pre-review figure. No useful implementation or
-documentation was removed or compressed.
+**Current prompt-7 line-budget PR evidence:** contracts 6,064/6,110 (46
+headroom), domain 1,581/1,650 (69), infrastructure 7,780/7,840 (60), and
+presentation 928/6,000 (5,072). ADR-0051 is the latest ceiling amendment,
+measured with the fence's own algorithm after the decision ledger AND its
+review hardening landed, so the headroom is bounded correction room rather
+than a stale pre-review figure. Two files carry a `max-file-size` pin instead
+of the 500-line default: `migrations.ts` (510/560, ADR-0049) and the ledger's
+sole write chokepoint `ledger-store.ts` (502/550, ADR-0050).
+No useful implementation or documentation was removed or compressed - the
+rule that a ceiling is never paid for by deleting prose (ADR-0048) or by
+folding readable code onto fewer lines (ADR-0050) is itself an ADR now.
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is
@@ -152,6 +176,12 @@ back to `planned` (a monotonic ratchet).
   `pnpm exec vitest run src/__tests__/fitness/<fence>` — it fails with `file:line`; revert → green.
 - **Webhook replay exactly-once + audit chain:** `pnpm exec vitest run src/__tests__/integration/account-opening.test.ts` (fires the webhook twice → one financial account, chain verified).
 - **Audit-chain edit rejected + tamper detected:** `src/__tests__/integration/audit-chain.test.ts` (UPDATE/DELETE blocked by trigger; `verifyChain` catches a row altered after disabling the trigger).
+- **Decision-ledger append-only + deterministic replay:** `src/__tests__/integration/decision-ledger.test.ts`
+  (UPDATE/DELETE/TRUNCATE blocked on every immutable source table; L1 catches edited payload bytes, L2
+  re-applies the PII boundary to correctly rechained bytes, structural foreign keys reject cross-tenant
+  causation, and replay refuses changed decision/bundle/evidence bytes) and
+  `src/__tests__/integration/ledger-projections.test.ts`
+  (the online fold is byte-equal to an empty-store rebuild). End-to-end: `e2e/decision-ledger.spec.ts`.
 - **Authz bypass attempt:** `e2e/access-control.spec.ts` (unauthenticated mutation → 401; advisor → 403 on audit; forged webhook signature → 401).
 - **~2-minute walkthrough:** `e2e/walkthrough.spec.ts` drives login → account opening → suspend → sign
   webhook → resume → finalize → the verified audit chain, headed via `pnpm exec playwright test e2e/walkthrough.spec.ts --headed` (records a trace/video under `test-results/`).

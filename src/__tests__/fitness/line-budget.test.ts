@@ -16,8 +16,10 @@ import { relative } from "node:path";
 // ADR-0033 amended these to the smallest rounded envelopes that leave BOUNDED room
 // for correction; ADR-0034 and ADR-0036 raised infrastructure alone,
 // ADR-0035 raised contracts alone for normalized failure snapshots,
-// ADR-0037 raised domain alone for pre-load runtime tenant validation, and
-// ADR-0038 raised domain and infrastructure for identifier provenance. Before
+// ADR-0037 raised domain alone for pre-load runtime tenant validation,
+// ADR-0038 raised domain and infrastructure for identifier provenance,
+// ADR-0040 raised contracts for the prompt-8 primitive catalog, and
+// ADR-0041 raised all three for the prompt-7 decision ledger. Before
 // ADR-0033, domain and infrastructure sat at exactly ZERO headroom, so one added
 // line in either failed `pnpm test` on an unrelated ceiling and the only remedy was
 // an ADR amendment rather than a code change - which is what compressed doc comments
@@ -26,14 +28,23 @@ import { relative } from "node:path";
 // absorb a correction buys no discipline; it just converts review findings into
 // documentation deletions.
 //
-// MEASURED after D-102 and its review hardening, with this file's own algorithm:
-// contracts 5433/5460 (27), domain 1298/1350 (52), infrastructure 3484/3550 (66).
-// These are the real figures, not a stale decision-table row. Any FURTHER increase is
-// still a measured ADR amendment, never a code change.
+// ADR-0048 restored the migration prose an earlier correction had compressed away to
+// fit this ceiling - the exact anti-pattern the paragraph above names - and raised
+// infrastructure to absorb it. ADR-0051 then raised contracts and infrastructure together
+// for the scoped rebuild preview, the whole-chain counted provenance, and the shared
+// decision-id extractor the dedup moved INTO contracts. MEASURED on the composed tree that
+// also carries ADR-0040's prompt-8 primitive catalog: contracts 6064/6110 (46), domain
+// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 928/6000. A figure recorded
+// here is a MEASUREMENT, so
+// re-measure it in the commit that changes a layer - ADR-0049's import hoist left this
+// line reading a stale figure while the layer had moved, and the whole ratchet chain rests
+// on the recorded figure being the measured one. Any FURTHER increase remains a measured
+// ADR amendment rather than a silent fence edit, and no correction is ever paid for by
+// deleting documentation - nor, per ADR-0050, by folding readable code onto fewer lines.
 const CEILINGS = {
-  contracts: 5460, // ADR-0040, on the measured 5,433 prompt-8 catalog baseline
-  domain: 1350, // ADR-0038, on a re-measured 1,298 baseline
-  infrastructure: 3550, // ADR-0038, on a re-measured 3,484 baseline
+  contracts: 6110, // ADR-0051, on the shared decision-id extractor and provenance fold
+  domain: 1650, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
+  infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
 } as const;
 

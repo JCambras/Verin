@@ -1,0 +1,18 @@
+{
+  "ApprovalInvalidated": "6c96221a918973b9e887197245a1d02b6aa03a8f65a601203f8662eb92c32347",
+  "ApprovalRecorded": "f0bc0ba1335f7ee0a02a5199bf42bc6a562bbf044c9ec25e2ddadc22ffc5f2a3",
+  "ApprovalStageEscalated": "57ca29734ac94c38d6db4439d0a37971a07a376912eef1c2f67c9cff27b45ecb",
+  "ApprovalStageExpired": "ebebf3a6269555718af1ade2b8b0bdec66dfcee516a0ebeb24a16fd623ae824d",
+  "DecisionRecorded": "162868a3e233ac48ba013c0e095689f726a3b29afedddf1e9369e5404b8331e4",
+  "EvidenceSnapshotRecorded": "cbe402bf5ec69dc84120b4544d873da129d35ce565d53070c7716dba4904934e",
+  "ExceptionDecisionRequested": "992974d4bbbff219df043873813d3fa722c00e4fd4a1431a0debc9c040fe158a",
+  "ExecutionFailed": "d2c6aa2ca9cd6e820a46ece716b38059f302a251c5179122155484665beaab50",
+  "ExecutionPartiallySucceeded": "53c141dbe556b481ff310da3fee307fe88ce61229b4482435e58b57a2f0ab439",
+  "ExecutionStarted": "5963a08b6f4b5322272a37d69cd67980df44f3c61314d48389bbaa0ac4ed8220",
+  "ExecutionSucceeded": "311916371f040c1f4c077e67a4d29b3904e12f095561a708629e9ce2f1a0b54b",
+  "ReservationCreated": "b04f167632faa5bee59ebaf6d76d34dc02dd54030b1ba995b11aff842787d811",
+  "ReservationReleased": "1fa404b6c20641b19f1112576d88378eb409164f09c88f72a0ce1fcf0480176e",
+  "StatusObserved": "5d547e7e5e2f90983413beb1709986e15fc365e0d63a081ec36ac344fb56f8c0",
+  "VerificationClosed": "0ab27fbceca6a0a02589e6fa64d09d94ca6a20dc153d6dce38b5ddac607b8aeb",
+  "VerificationStuck": "58d7c27ffc294f95ddae930936a346a492421a2c4e05aef40aeb7284a01a8710"
+}

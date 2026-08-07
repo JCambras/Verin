@@ -20,7 +20,8 @@ export type SourceSystem = (typeof SOURCE_SYSTEMS)[number];
 
 export const SYNTHETIC_SOURCES: readonly SourceSystem[] = ["estimate", "default", "fixture"];
 
-export type Confidence = "high" | "medium" | "low";
+export const CONFIDENCES = ["high", "medium", "low"] as const;
+export type Confidence = (typeof CONFIDENCES)[number];
 
 export const SURVIVORSHIP_RULES = [
   "source-precedence", // a fixed source ranking wins
@@ -35,6 +36,27 @@ export interface RecordProvenance {
   readonly source: SourceSystem;
   readonly asOf: string; // ISO-8601
   readonly confidence: Confidence;
+}
+
+export function parseRecordProvenance(value: unknown): RecordProvenance | null {
+  if (value === null || typeof value !== "object") return null;
+  const candidate = value as Partial<RecordProvenance>;
+  if (
+    !SOURCE_SYSTEMS.some((source) => source === candidate.source) ||
+    candidate.source === "computed" ||
+    !CONFIDENCES.some((confidence) => confidence === candidate.confidence) ||
+    typeof candidate.asOf !== "string" ||
+    Number.isNaN(Date.parse(candidate.asOf)) ||
+    "demonstration" in value ||
+    "derivedFrom" in value
+  ) {
+    return null;
+  }
+  return {
+    source: candidate.source!,
+    asOf: new Date(candidate.asOf).toISOString(),
+    confidence: candidate.confidence!,
+  };
 }
 
 /** A value bound to its provenance (used for displayed metrics — charter #3). */
@@ -112,9 +134,72 @@ export function deriveArtifactProvenance(inputs: readonly RecordProvenance[], as
   };
 }
 
+/**
+ * `deriveArtifactProvenance` over a list of stored facts, stamped with the LATEST
+ * input `asOf` so a folded figure never looks fresher than the newest fact behind it.
+ * Null for an EMPTY fold: a figure with no inputs has no origin, so it is withheld
+ * rather than labeled. Every figure folded from stored rows uses this - counts and
+ * replayed state alike - so the as-of rule cannot drift between one fold and another.
+ */
+export function foldStoredProvenance(
+  inputs: readonly RecordProvenance[],
+): DerivedProvenance | null {
+  return inputs.length === 0 ? null : deriveArtifactProvenance(
+    inputs,
+    inputs.reduce((latest, p) => (p.asOf > latest ? p.asOf : latest), ""),
+  );
+}
+
 /** True iff `p` is a demonstration-derived artifact (charter #3 / ADR-0022). */
 export function isDemonstration(p: RecordProvenance | DerivedProvenance): boolean {
   return "demonstration" in p && p.demonstration === true;
+}
+
+// ── Fake-class taxonomy (demo contract §6 / design language §11.1-11.2) ──────────
+// The single vocabulary for "what is backing this element". It lives here, beside the
+// SourceSystem vocabulary, because every surface - demo skeleton or real - labels its
+// unlanded paths from the SAME taxonomy; a surface-local literal forks it.
+// `real-salesforce-sandbox-response` is deferred-pending-sandbox and cannot be
+// produced now, so it is deliberately absent from this union.
+export type FakeClass =
+  | "synthetic-fixture"
+  | "real-derived-fixture"
+  | "fake-adapter-response"
+  | "user-entered-demo-input"
+  | "deterministic-engine-output"
+  | "llm-proposed-draft";
+
+/** The DevProvenanceBadge text per class - lowercase and plain (design §11.2). */
+export const DEV_BADGE_TEXT: Record<FakeClass, string> = {
+  "synthetic-fixture": "synthetic fixture",
+  "real-derived-fixture": "sample data · anonymized history",
+  "fake-adapter-response": "fake adapter",
+  "user-entered-demo-input": "demo input",
+  "deterministic-engine-output": "engine output · fake",
+  "llm-proposed-draft": "llm draft",
+};
+
+/** The badge text per SYNTHETIC source - same lowercase plain register (design §11.2). */
+const SYNTHETIC_BADGE_TEXT: Record<"estimate" | "default" | "fixture", string> = {
+  estimate: "estimate",
+  default: "default",
+  fixture: DEV_BADGE_TEXT["synthetic-fixture"],
+};
+
+/**
+ * The badge a value owes, READ from the provenance its producer stored: null when the
+ * value may feed a compliance decision, its own synthetic class when it has one, and
+ * the flattened synthetic leaves of a derivation (ADR-0022) when a fold made it a
+ * demonstration. Pinning one class here labels every synthetic producer as the single
+ * class the code happened to be written against - a fake class it does not belong to.
+ */
+export function syntheticBadgeLabel(p: RecordProvenance | DerivedProvenance): string | null {
+  if (canFeedComplianceDecision(p)) return null;
+  const leaves = new Set<SourceSystem>(isDerived(p) ? p.derivedFrom : [p.source]);
+  const classes = Object.entries(SYNTHETIC_BADGE_TEXT)
+    .filter(([source]) => leaves.has(source as SourceSystem))
+    .map(([, text]) => text);
+  return classes.length > 0 ? classes.join(" · ") : "demonstration";
 }
 
 /** A short, human-visible source/asOf label for the UI (charter #3). */

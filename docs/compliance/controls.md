@@ -37,7 +37,7 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | CC6.6 | Boundary protection | security headers, CSRF | none yet (explicit gap below) | `next.config.ts` | CI |
 | CC6.7 | Confidentiality of data | PII boundary, secret containment | PII fences, `llm-pii-boundary`, `tokenized-factory-only`, `no-secret-fallback` | ADR-0006, ADR-0031 | scrub coverage; CI |
 | CC7.1/7.2 | Detect anomalies | OTel trace spans + pino logs | `observability-coverage`, `observability-vocabulary` | ADR-0013 | telemetry |
-| **CC7.4** | Records integrity | append-only + hash chain | `audited-write-required`, `audit-chain-verify` | ADR-0007 | scheduled chain-verify evidence |
+| **CC7.4** | Records integrity | sibling append-only operational and decision chains | `audited-write-required`, `ledger-append-only`, `audit-chain-verify` | ADR-0007, ADR-0041 | scheduled dual-chain verification evidence |
 | CC8.1 | Change management | protected main, PR template, CODEOWNERS | CI gates block merge | this doc; `.github/` | PR/merge history; no-mistakes runs |
 | CC9.1 | Risk mitigation (vendors/supply chain) | pinned lockfile, scanners | `secret-scan`, `sast`, `dependency-audit` | ADR-0017 | CI; SBOM on release |
 
@@ -64,6 +64,8 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | Field-level PII-at-rest encryption | CC6.7 | red-team persona | WISP technical control (pre-launch) |
 | Full DSAR/erasure workflow (retention hold is defined) | P4 | compliance persona | design contract; build before first customer PII at scale |
 | WORM archive for 17a-4(f) | CC7.4 / P | founder | scale-ladder trigger: first Tier-1 entry nears 6 years |
+| Decision-ledger examiner export (the `/app/ledger` register is a bounded operator view, not an export) | CC7.4 | founder | ADR-0019: the first examiner or regulated-customer export requirement, and before that review |
+| External anchor witnessing / HMAC-signed chains (both anchors are unkeyed and co-located with their chains) | CC7.4 | red-team persona | ADR-0007: production deploy (same milestone as the managed-Postgres adapter) |
 | Formal org-policy set (12 policies) & vendor risk register | CC1/CC9 | founder | pre-audit (Vanta/Drata/Secureframe templates) |
 | Per-tenant rate limiting | A1.1 | red-team persona | scale-ladder trigger (ADR-0015) |
 | Alerting rules as code | CC7.2 | founder | deploy-target selection (ADR-0003/0013) |

@@ -13,32 +13,16 @@
  * fake service (./service.ts) and the surface components share exactly one vocabulary.
  */
 import type { DisplayMetric } from "@contracts/metric";
-import type { RecordProvenance, DerivedProvenance, SourceSystem } from "@contracts/provenance";
+import type { RecordProvenance, DerivedProvenance, SourceSystem, FakeClass } from "@contracts/provenance";
 
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
 // has landed yet), so every element carries one of these classes and a DevProvenanceBadge
 // (§11.2) that is removable ONLY in the PR that lands its real path (§11.3, charter #5
-// ADR-0027). `real-salesforce-sandbox-response` is deferred-pending-sandbox and can never
-// be produced now, so it is deliberately absent from this union.
-export type FakeClass =
-  | "synthetic-fixture"
-  | "real-derived-fixture"
-  | "fake-adapter-response"
-  | "user-entered-demo-input"
-  | "deterministic-engine-output"
-  | "llm-proposed-draft";
-
-/** The DevProvenanceBadge text per class - lowercase and plain (§11.2). "engine output ·
- * fake" and the rest are honest: in the skeleton NO real path has landed. */
-export const DEV_BADGE_TEXT: Record<FakeClass, string> = {
-  "synthetic-fixture": "synthetic fixture",
-  "real-derived-fixture": "sample data · anonymized history",
-  "fake-adapter-response": "fake adapter",
-  "user-entered-demo-input": "demo input",
-  "deterministic-engine-output": "engine output · fake",
-  "llm-proposed-draft": "llm draft",
-};
+// ADR-0027). The taxonomy itself lives in the provenance contract because REAL surfaces
+// label their unlanded paths from it too; it is re-exported here so the demo vocabulary
+// stays one import.
+export { DEV_BADGE_TEXT, type FakeClass } from "@contracts/provenance";
 
 // ── Decision Spine (design §4) ──────────────────────────────────────────────────────
 // Seven fixed stations. The spine shows POSITION, never disposition; it is generated

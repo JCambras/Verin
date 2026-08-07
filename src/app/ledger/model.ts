@@ -1,0 +1,49 @@
+import type { DisplayMetric } from "@contracts/metric";
+
+export interface LedgerLevelView {
+  readonly level: "L1" | "L2" | "L3" | "L4";
+  readonly ok: boolean;
+  readonly entriesChecked: number;
+  readonly reason: string | null;
+}
+
+export interface LedgerEntryView {
+  readonly sequence: number;
+  readonly occurredAt: string;
+  readonly eventType: string;
+  readonly actor: string;
+  readonly decisionId: string | null;
+  readonly entryHash: string;
+  readonly provenanceLabel: string | null;
+}
+
+/** Replayed decision state - stated facts only, never a computed decision. */
+export interface DecisionStateView {
+  readonly decisionId: string;
+  readonly disposition: string;
+  readonly approvalMode: string;
+  readonly approvalStages: readonly {
+    readonly stageId: string;
+    readonly status: string;
+  }[];
+  readonly activeReservations: DisplayMetric;
+  readonly executionSteps: DisplayMetric;
+  readonly exceptionRequested: boolean;
+  readonly lastEventType: string;
+  readonly lastSequence: number;
+  readonly provenanceLabel: string | null;
+}
+
+export interface LedgerRegisterViewModel {
+  readonly verification: {
+    readonly ok: boolean;
+    readonly levels: readonly LedgerLevelView[];
+  };
+  /** Stored events across the whole chain; null when no count can be labeled (charter #3). */
+  readonly total: DisplayMetric | null;
+  /** Replayable decisions in the displayed event window; larger than `decisions` when limited. */
+  readonly decisionsTotal: DisplayMetric | null;
+  readonly decisionsWithheld: DisplayMetric | null;
+  readonly decisions: readonly DecisionStateView[];
+  readonly entries: readonly LedgerEntryView[];
+}

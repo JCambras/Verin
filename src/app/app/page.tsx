@@ -8,6 +8,7 @@ export default function AppHome() {
     { href: "/app/account-opening", title: "Open an account", desc: "Run the account-opening flow: KYC, e-signature, and finalize.", regulation: "SEC Reg BI / FINRA 2090" },
     { href: "/app/console", title: "House-CRM console", desc: "Create and edit households. Every edit is an audited, tamper-evident record.", regulation: "SEC Rule 204-2" },
     { href: "/app/audit", title: "Audit trail", desc: "Inspect the append-only, hash-chained audit log and verify its integrity.", regulation: "SEC 17a-4 / SOC 2 CC7.4" },
+    { href: "/app/ledger", title: "Decision ledger", desc: "Inspect typed decision events and verify the independent L1-L4 integrity chain.", regulation: "Verin v3 invariant 5 / SEC 17a-4" },
   ];
   return (
     <div className="flex flex-col gap-6">

@@ -69,9 +69,13 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/tenant-context-required.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/ledger-append-only.test.ts"
         }
       ],
-      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts use structured tenant-scoped references and their registered boundaries reject cross-tenant configuration, source, policy, instruction, evidence snapshot, intent, input bundle, derived decision, approval template, role, subject, scope, execution target, reservation, verification rule, and ambiguity-candidate values. An exact runtime inventory covers every exported Zod value whose schema graph contains a scoped-reference collection, regardless of export name, alias, or wrapper reuse, and executes a legal and mixed-tenant parse probe for every registered boundary. EXTENDED by prompt 6: sealed TenantContext (contracts/tenant.ts) required on every repository/port signature (tenant-context-required fence) - missing tenant context cannot compile (unique-symbol brand) or parse (runtime seal assert)."
+      "notes": "org_id is the store-layer spelling of v3's FirmId (ADR-0026): every table carries org_id, every SELECT/UPDATE/DELETE must filter on it (AST-derived from the DDL). Prompt-5 decision contracts and prompt-7 ledger events use structured tenant-scoped references, and prompt-7 storage adds composite same-org foreign keys for decisions, bundles, evidence, and causation. Their registered boundaries reject cross-tenant configuration, source, policy, instruction, evidence snapshot, intent, input bundle, derived decision, approval template, role, subject, scope, execution target, reservation, verification rule, and ambiguity-candidate values. An exact runtime inventory covers every exported Zod value whose schema graph contains a scoped-reference collection, regardless of export name, alias, or wrapper reuse, and executes a legal and mixed-tenant parse probe for every registered boundary. EXTENDED by prompt 6: sealed TenantContext (contracts/tenant.ts) required on every repository/port signature (tenant-context-required fence) - missing tenant context cannot compile (unique-symbol brand) or parse (runtime seal assert)."
     },
     {
       "id": 3,
@@ -89,8 +93,13 @@
       "name": "Import boundaries match v3 \u00a716",
       "status": "not-yet-active",
       "activatesWhen": "the \u00a716 module subsystems exist; each v3 dependency rule (decision/ never imports llm/, no module imports config/, ...) lands as a ts-morph fence in the wave that creates its subject (ADR-0026)",
-      "mechanisms": [],
-      "notes": "Substrate today: the four-layer dependency rule is already fenced (src/__tests__/fitness/dependency-rule.test.ts); \u00a716 modules will live INSIDE those layers."
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/dependency-rule.test.ts"
+        }
+      ],
+      "notes": "The four-layer dependency rule is already fenced, and prompt-7 ledger contracts, pure projection fold, infrastructure repository, and app transport honor it. The invariant remains not-yet-active until the remaining §16 subsystems and their pairwise import rules exist."
     },
     {
       "id": 5,
@@ -102,6 +111,10 @@
       "mechanisms": [
         {
           "type": "fitness",
+          "ref": "src/__tests__/fitness/ledger-append-only.test.ts"
+        },
+        {
+          "type": "fitness",
           "ref": "src/__tests__/fitness/audited-write-required.test.ts"
         },
         {
@@ -110,10 +123,14 @@
         },
         {
           "type": "file",
+          "ref": "src/infrastructure/store/decision-ledger-migration.ts"
+        },
+        {
+          "type": "file",
           "ref": "src/infrastructure/store/migrations.ts"
         }
       ],
-      "notes": "The current ledger substrate is the hash-chained audit_log: BEFORE UPDATE/DELETE/TRUNCATE triggers RAISE EXCEPTION (migrations.ts), every write flows through the audited-write helper (fence), and the per-org chain is re-verified by the audit-chain-verify CI gate. The typed v3 LedgerEntry union + projections land ON this substrate (Wave A prompt 7)."
+      "notes": "Both audit-class stores stay mapped. The operational audit_log keeps its append-only DDL (migrations.ts) and audited-write helper fence. The sibling decision_ledger is synchronously appended with immutable evidence, input bundles, and decision records. All source tables reject UPDATE/DELETE/TRUNCATE; a ts-morph anti-fork fence permits raw inserts only in the repository and migration. L1-L4 verification covers stored bytes, schema/serializer dispatch, promoted columns, and the per-org anchor. The CI gate verifies both decision and operational audit chains non-vacuously."
     },
     {
       "id": 6,
@@ -299,8 +316,13 @@
       "name": "Every execution and status occurrence is recorded as a ledger event",
       "status": "not-yet-active",
       "activatesWhen": "the typed LedgerEntry union (Wave A prompt 7) and execution events (Wave F prompt 25) land",
-      "mechanisms": [],
-      "notes": "Substrate today: every store write is audited via the audited-write helper (audited-write-required fence); the typed execution/status event vocabulary does not exist yet."
+      "mechanisms": [
+        {
+          "type": "file",
+          "ref": "src/contracts/decision-core/ledger.ts"
+        }
+      ],
+      "notes": "Prompt 7 lands the typed execution/status event vocabulary and append-only store. The invariant remains not-yet-active until Wave F execution and status producers prove every real occurrence reaches it."
     },
     {
       "id": 24,

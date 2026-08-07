@@ -41,7 +41,7 @@ and never define a color, font, radius, or keyframe anywhere else.
 | [`src/app/presentation/progress-steps.tsx`](../src/app/presentation/progress-steps.tsx) | `ProgressSteps`: done / active / pending step states, the accessible ordered-list recipe. The Decision Spine's parent (§4). |
 | [`src/app/presentation/step-info-card.tsx`](../src/app/presentation/step-info-card.tsx) | `StepInfoCard`: the "Step N of M" kicker idiom and contextual-teaching card recipe. |
 | [`src/app/presentation/why-bubble.tsx`](../src/app/presentation/why-bubble.tsx) | `WhyBubble`: the explainability disclosure ("Why did Verin do this?" + regulation citation) and its slate-50 panel recipe. |
-| [`src/contracts/provenance.ts`](../src/contracts/provenance.ts) | The provenance vocabulary: `SOURCE_SYSTEMS`, `provenanceLabel`, `DerivedProvenance`, `deriveArtifactProvenance`, `isDemonstration`, `canFeedComplianceDecision`, `DEMO_WATERMARK`. |
+| [`src/contracts/provenance.ts`](../src/contracts/provenance.ts) | The provenance vocabulary: `SOURCE_SYSTEMS`, `provenanceLabel`, `DerivedProvenance`, `deriveArtifactProvenance`, `foldStoredProvenance` (the "latest input `asOf`" rule; null for an empty fold, so an origin-less figure is withheld rather than labeled), `isDemonstration`, `canFeedComplianceDecision`, `DEMO_WATERMARK`, and the fake-class taxonomy `FakeClass` / `DEV_BADGE_TEXT` / `syntheticBadgeLabel` (§11.1). |
 | [`src/contracts/metric.ts`](../src/contracts/metric.ts) | `DisplayMetric` / `metric()` / `formatMetricValue` / `metricWatermark`: a metric cannot exist without provenance. |
 | [`src/app/app/audit/page.tsx`](../src/app/app/audit/page.tsx) | The **register idiom**: the audit-trail table (uppercase `text-xs tracking-wide` headers on `bg-surface`, `divide-y` rows, `font-mono text-xs` hashes and identifiers, focusable scroll region). The lineage for every tabular/ledger surface in the demo (§8, §9). |
 | [`src/app/app/layout.tsx`](../src/app/app/layout.tsx) | Page chrome and measure: `main` at `mx-auto max-w-3xl px-6 py-8`, nav above. |
@@ -83,7 +83,7 @@ typography, stamp/seal metaphors, orchestrated motion set-pieces) is rejected ou
 |---|---|
 | Decision Spine as a styled persistent top rail | `DecisionSpine`, a horizontal `ProgressSteps` derivative - calm, secondary, one line (§4) |
 | Prohibited shows "the stamp" | A solid `slate-900` StatusBadge plus doctrine copy - authority, not theatrics (§5) |
-| "Ledger-register" display style | The existing audit-trail register idiom (§1 table, `src/app/app/audit/page.tsx`) |
+| "Ledger-register" display style | The existing audit-trail register idiom (§1 table, `src/app/app/audit/page.tsx`); `src/app/app/ledger/page.tsx` (the decision-ledger register) is the first surface derived from it and re-derives nothing |
 | Three orchestrated motion moments (evidence stagger, revalidation sweep, hash seal-and-void) | The established motion budget only: container fade, disclosure slide, check-pop, one fade at invalidation. No sweeps, no seals, no stagger choreography (§12) |
 | Disposition color coding | `StatusBadge` lineage in the established palette (§5) |
 | Approval-invalidation as "seal void" animation | A state change that lands through content and restraint, not animation (§7.3) |
@@ -544,23 +544,31 @@ mapped onto the repo's vocabulary:
 |---|---|---|
 | Synthetic fixture | `source: "fixture"` (`SOURCE_SYSTEMS`) | Already renders as "Sample data · as of …" via `provenanceLabel` |
 | Real-derived fixture (anonymized history) | `fixture` + corpus provenance metadata | The corpus intake (v3 prompt 11) extends the vocabulary; until then the interim string is the `DevProvenanceBadge` text for this row, in the badge's established lowercase style (§11.2): "sample data - anonymized history" - the `FreshValue` `provenanceLabel` output ("Sample data · as of …") is unchanged |
-| Fake adapter response | dev-only view-model class (not a `SourceSystem`) | Exists only while the real adapter is pending; carried by the typed view model |
+| Fake adapter response | dev-only `FakeClass` (not a `SourceSystem`) | Exists only while the real adapter is pending; carried by the typed view model |
 | Real Salesforce sandbox response | `source: "salesforce"` | |
 | User-entered demo input | `source: "user-input"` + demo `dataClass` | |
 | Deterministic engine output | `source: "computed"` (`DerivedProvenance`) | Full-weight rendering per §6.5 |
 | LLM-proposed draft or wording | new class, to be added with the first LLM surface | Set-apart treatment per §6.5; never a number |
 
-Extending the machine vocabulary (`SOURCE_SYSTEMS`, the view-model classes) is build work owned
-by the prompt that lands each path; this section fixes the labels and their renderings so no
-build prompt invents its own.
+The `FakeClass` union and its `DEV_BADGE_TEXT` labels live in
+[`src/contracts/provenance.ts`](../src/contracts/provenance.ts) beside `SOURCE_SYSTEMS` - not in a
+view model - because REAL surfaces label their unlanded paths from the same taxonomy; the demo
+model re-exports it so the demo vocabulary stays one import. A surface that needs a badge for a
+value whose provenance it read from storage uses `syntheticBadgeLabel` (same module), which reports
+THAT row's own class rather than a hardcoded one. Extending the machine vocabulary (`SOURCE_SYSTEMS`,
+`FakeClass`) is build work owned by the prompt that lands each path; this section fixes the labels
+and their renderings so no build prompt invents its own.
 
 ### 11.2 `DevProvenanceBadge` (built, D-036)
 
 The visible development-only badge on every fake-backed element:
 
-- **Recipe:** `inline-flex items-center rounded border border-dashed border-slate-400 px-1.5
-  py-0.5 text-xs text-slate-600`. The dashed border is the established "not yet real" idiom
-  (EmptyState's `border-dashed`); the chip shape follows the watermark chip in `metric.tsx`.
+- **Recipe:** `inline-flex items-center whitespace-nowrap rounded border border-dashed
+  border-slate-400 px-1.5 py-0.5 text-xs text-slate-600`. The dashed border is the established
+  "not yet real" idiom (EmptyState's `border-dashed`); the chip shape follows the watermark chip
+  in `metric.tsx`. The chip never breaks internally - `whitespace-nowrap` on the badge, and
+  `flex-wrap` + `gap-x`/`gap-y` on the `FreshValue` and `Metric` rows that carry it, so a chip
+  moves to the next line intact instead of overflowing a narrow card.
 - **Text:** the taxonomy label, lowercase and plain - "fake adapter", "synthetic fixture",
   "LLM draft".
 - Placed adjacent to the value or panel it labels, in normal flow - visible, not decorative,

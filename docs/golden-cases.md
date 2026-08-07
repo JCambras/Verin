@@ -9,7 +9,10 @@ by `pnpm golden:validate` (CI job `golden-cases`) and the `golden-cases` fitness
 **Vocabulary sources:** [`config/demo/scenarios.yaml`](../config/demo/scenarios.yaml) (scenario ids,
 firm ids, state vocabulary, provenance labels, deferral status - all under that file's append-only
 stability contract) and [`docs/v3/verin-core-contracts.ts`](./v3/verin-core-contracts.ts)
-(dispositions, authority modes, ledger event types, freshness, ObservedStatus).
+(dispositions, authority modes, freshness, ObservedStatus). Ledger event types are validated against the
+**shipped** vocabulary, [`LEDGER_EVENT_TYPES`](../src/contracts/decision-core/ledger.ts) (16 types: v3's
+14 plus `ApprovalStageExpired`/`ApprovalStageEscalated`, ADR-0041) - the validator imports it rather than
+re-declaring it, so a vocabulary change cannot pass here and fail in the engine.
 **Acceptance:** the engine is later judged against these explicit domain outcomes instead of
 self-generated tests (all signed golden cases run at Gate B and again at prompt 28).
 
@@ -116,7 +119,7 @@ Every case - in this document and in its fixture - states all of:
 8. **expected execution eligibility** - eligible flag, reason, idempotency key, reservations,
    preconditions;
 9. **expected explanation nodes** - code + summary each;
-10. **expected ledger events** - ordered `LedgerEntry` types (v3 core contracts) with notes;
+10. **expected ledger events** - ordered `LedgerEntry` types (the shipped `LEDGER_EVENT_TYPES`) with notes;
 11. **expected verification state** - reached flag, observed status (execution-plane state
     vocabulary), the settled-claim rule, note;
 12. **signoff** - §1.

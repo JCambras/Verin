@@ -14,6 +14,7 @@ import { getConfig } from "../src/infrastructure/config";
 import { systemTenant } from "../src/contracts/tenant";
 import { systemWriteActor } from "../src/contracts/principal";
 import { errorMessage } from "./error-message";
+import { seedDecisionLedger } from "./seed-decision-ledger";
 
 export const DEMO_ORG_ID = "org-verin-demo";
 // DEMO ONLY (labeled local/CI seed) — not a production secret.
@@ -54,6 +55,7 @@ export async function seed(): Promise<void> {
     perform: async () => ({ users: DEMO_USERS.length }),
   });
   if (!audited.ok) throw new Error(`seed audit entry failed: ${audited.error.code} ${audited.error.message}`);
+  await seedDecisionLedger(db, DEMO_ORG_ID);
   await db.close();
 }
 
