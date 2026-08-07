@@ -1,0 +1,108 @@
+{
+  "specVersion": "1.0.0",
+  "note": "CLOSED vocabulary. A corpus case may carry exactly one label: a defect class from this list, or the clean control. Nothing here describes a real observed defect - every class is derived from a requirement or a signed case that already exists IN THIS REPOSITORY, and each carries the citation to it. `sourceCitation.file` is validated to exist on disk, so a class can never cite a document that was renamed or never written. Populating a class with anonymized REAL defect history is the deferred work recorded in docs/adr/0052-synthetic-corpus-and-provenance-split.md; until then no class here is evidence that the defect has ever occurred in production.",
+  "cleanControlLabel": {
+    "id": "clean-control",
+    "title": "Labeled clean control",
+    "description": "A case that carries NO defect. Controls exist so a false-positive rate can be reported beside defect coverage: a detector that blocks everything scores perfect coverage and must be caught by its false-positive rate instead.",
+    "sourceCitation": { "file": "docs/demo-contract.md", "anchor": "7. Measured proof" }
+  },
+  "defectClasses": [
+    {
+      "id": "identity-resolution-ambiguity",
+      "title": "Household or party identity resolved from an ambiguous name",
+      "description": "Two households share a surname, or a trust name contains a household surname, and the system binds a request to one of them without a human selection.",
+      "sourceCitation": { "file": "fixtures/golden/GC-08-ambiguous-household.json", "anchor": "ambiguous household" }
+    },
+    {
+      "id": "authority-scope-error",
+      "title": "Authority inferred from household membership or an expired grant",
+      "description": "A signer's authority is derived from household membership, or an authority that lapsed inside the evidence-gathering interval is treated as still in force.",
+      "sourceCitation": { "file": "docs/v3/verin-architecture-v3.md", "anchor": "5.1 Identity, tenancy, and trigger" }
+    },
+    {
+      "id": "destination-integrity-defect",
+      "title": "Payment destination accepted on an insufficient discriminator",
+      "description": "A destination is treated as identified by bank plus last-four, or a destination change's blast radius is scoped to one account when the instruction is shared.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-03-recent-bank-change-firm-a" }
+    },
+    {
+      "id": "instruction-conflict-unresolved",
+      "title": "Conflicting instructions collapsed instead of surfaced",
+      "description": "Two owners of one account, or two instruction planes, disagree and the system silently picks one instead of routing the conflict to a human.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-06-household-restriction" }
+    },
+    {
+      "id": "liquidity-reserve-miscalculation",
+      "title": "Reserve floor computed from a scalar monthly withdrawal",
+      "description": "The reserve floor assumes one flat monthly amount, or assumes a schedule exists at all, so a segmented or absent schedule produces a wrong or fabricated floor.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-05-insufficient-liquidity" }
+    },
+    {
+      "id": "evidence-staleness-unnoticed",
+      "title": "Stale evidence carried into a material computation",
+      "description": "An input beyond its freshness window feeds a decision because freshness was recorded by the producer rather than recomputed against the firm's window.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-09-stale-evidence" }
+    },
+    {
+      "id": "evidence-interval-collapse",
+      "title": "Evidence treated as a point rather than an interval",
+      "description": "A fact that changed between observation and retrieval is reported as of one instant, hiding the change.",
+      "sourceCitation": { "file": "docs/v3/verin-architecture-v3.md", "anchor": "5.2 Evidence snapshot and replay input" }
+    },
+    {
+      "id": "restriction-lifecycle-error",
+      "title": "Restriction lifecycle ignored",
+      "description": "A recorded restriction is treated as in force regardless of its effective window, so an expired one blocks and a future-dated one does not.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-06-household-restriction" }
+    },
+    {
+      "id": "hold-scope-error",
+      "title": "Legal-hold scope widened or narrowed",
+      "description": "A position-level hold is applied to the whole account, or ignored because the account itself is unheld.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-07-regulatory-prohibition" }
+    },
+    {
+      "id": "pending-activity-miscount",
+      "title": "Pending activity reduced effective liquidity uniformly",
+      "description": "All pending activity is netted the same way, so a blocked action is counted as if it will settle.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-05-insufficient-liquidity" }
+    },
+    {
+      "id": "temporal-rendering-defect",
+      "title": "Local time rendered from a fixed offset",
+      "description": "An instant is rendered with a hardcoded UTC offset, or a business-day count lands on a weekend, because the time-zone database was not consulted.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-14-delayed-nigo" }
+    },
+    {
+      "id": "canonical-identity-defect",
+      "title": "Identity compared on non-canonical bytes",
+      "description": "Two spellings of one name (composed and decomposed Unicode) are treated as different subjects, or one canonical form is assumed without normalizing.",
+      "sourceCitation": { "file": "docs/v3/verin-architecture-v3.md", "anchor": "5. Core domain contracts" }
+    },
+    {
+      "id": "threshold-boundary-error",
+      "title": "Threshold applied at the boundary instead of above it",
+      "description": "A rule written as 'above X' fires at exactly X, or vice versa, so requests at the exact threshold route to the wrong authority.",
+      "sourceCitation": { "file": "docs/demo-contract.md", "anchor": "2. Canonical scenario" }
+    },
+    {
+      "id": "deadline-feasibility-error",
+      "title": "Deadline feasibility assumed",
+      "description": "A requested deadline earlier than the decision instant, or unreachable in business days, is accepted as satisfiable.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-14-delayed-nigo" }
+    },
+    {
+      "id": "blast-radius-underestimation",
+      "title": "Change blast radius scoped too narrowly",
+      "description": "A single shared record is changed and only its primary subject is re-evaluated, leaving the other affected subjects on stale conclusions.",
+      "sourceCitation": { "file": "CHARTER.md", "anchor": "2. Canonical schema + provenance before any adapter" }
+    },
+    {
+      "id": "tax-consequence-blindness",
+      "title": "Liquidity treated as source-agnostic",
+      "description": "A funding source is selected on balance alone, so the only sufficient source being a retirement account produces a recommendation with an unstated tax consequence.",
+      "sourceCitation": { "file": "docs/golden-cases.md", "anchor": "GC-01-firm-a-happy-path" }
+    }
+  ]
+}

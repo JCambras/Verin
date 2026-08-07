@@ -23,6 +23,8 @@ date (never omitted).
   exposure is `/app/ledger` → `/api/ledger` (both `audit.export` and `pii.view`).
 - **e-sign webhook** — an unauthenticated-by-network external callback that resumes a suspended flow.
 - **House-CRM store** — the system of record (identity PII lives here).
+- **Replay-corpus fixtures** - `fixtures/corpus/`: author-invented synthetic cases today, plus a
+  captain-gated intake for anonymized real defect history that ships EMPTY (ADR-0052).
 - **Config/secrets** — `SESSION_SECRET`, `ESIGN_WEBHOOK_SECRET`, DB DSN.
 
 Trust boundaries: client → app (never trust client identity/role); app → store (org-scoped); external
@@ -108,6 +110,17 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   in a `WeakMap`. Serialization and `util.inspect` yield `[REDACTED]`, while spread and enumeration expose
   no raw property. The raw value is read solely through the free function `revealSecret`, restricted to
   the fence-allowlisted HMAC consumers. *Fence:* `no-secret-fallback` (SecretValue containment; v3 §15.4).
+- **T-I6 (High): a residual identifier reaches the repository through real-derived corpus intake.**
+  *Exploit:* scrubbed defect history is hand-delivered into `fixtures/corpus/real-derived/` carrying a
+  name, account number, or institution inside a narrative or an unanticipated field, and is committed
+  forever. *Control:* the partition is deferred and any delivered entry fails validation until the
+  captain lifts it; the hand-owned intake schemas are strict at every boundary, carry NO free-text field,
+  and admit only canonical instants, `tok:<16 hex>` identities, derived ids, and closed vocabularies, so
+  an unanticipated string is rejected rather than stored; every case needs a complete `scrubAttestation`
+  whose reviewer is not its scrubber; and diagnostics print bounded safe paths only, never rejected values
+  (ADR-0052, `docs/corpus-scrub-procedure.md`). *Fence:* `corpus-intake-attestation`,
+  `corpus-provenance-split` (+ the replay/payload companions), run over the empty partition by the
+  blocking `corpus` CI gate.
 
 ### D — Denial of service
 - **T-D1 (Medium): unbounded request body / query.** *Control:* request size limits; bounded queries;
@@ -147,4 +160,6 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
 Attempt: (1) an authz bypass (forge role, cross-tenant read); (2) an edit to EITHER chain — the operational
 `audit_log` and the `decision_ledger` with its immutable replay sources (UPDATE/DELETE, then
 re-verify); (3) a webhook forgery/replay (bad signature; double-fire → assert exactly-once); (4) a secret
-leak (planted secret must fail gitleaks + the fence). Findings → `docs/reviews/` and become regression fences.
+leak (planted secret must fail gitleaks + the fence); (5) a corpus-intake miss (deliver a case carrying
+free text, an unanticipated field, or a self-reviewed attestation → `pnpm corpus:validate` must reject it
+without echoing the rejected value). Findings → `docs/reviews/` and become regression fences.

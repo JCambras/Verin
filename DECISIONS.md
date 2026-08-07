@@ -4411,3 +4411,1254 @@ the same reason the clock is pinned non-UTC), and a timeout is a verdict about t
 about correctness - 60s still catches a hang, which is the only thing the budget is for.
 **Relates to:** D-127; charter #4, #8.
 **Revert path:** two numbers in `vitest.config.ts`.
+
+### D-132 · 2026-07-28 · reversible · Replay corpus lands as build-time tooling with a measured `tooling` budget
+
+The corpus generator lives in `scripts/corpus/`, beside `golden-cases.lib.ts`, `v3-invariants.ts` and
+`load-smoke.ts`. **Prompt 11 adds zero lines to `contracts`, `domain`, `infrastructure` or
+`presentation`** - no corpus type enters `src/` until a runtime surface consumes it (charter #5).
+
+That move would be evasion rather than discipline if `scripts/**` stayed unmeasured, which it was: both
+budget fences walked `SRC_ROOT` only. The same PR adds a `tooling` bucket to `line-budget.test.ts`
+(measured **3636** at introduction, ceiling **4000**) and extends `max-file-size.test.ts` to walk
+`scripts/**` under the same 500-line per-file ceiling. Tooling is reported as its own bucket, never
+averaged into a platform layer; the existing zero-total staleness guard covers it.
+
+Numbering: upstream assigned the topic branch's ADR, decision and proof ranges before integration, twice
+- the corpus ADR moved 0034 -> 0039 -> 0052 (D-167, D-177). The canonical mappings are
+**D-070..D-077 -> D-132..D-139**, **D-078..D-092 -> D-140..D-154**, **PF-090..PF-093 -> PF-205..PF-208**,
+and **PF-094..PF-108 -> PF-209..PF-223**. Earlier corpus references use these mappings.
+
+**Why:** the line ceilings are only meaningful if code cannot escape them by moving directory.
+**Revert path:** move the generator under `src/domain` plus an ADR-0018 amendment, and drop the bucket.
+**Ratchet-down point:** after the corpus generator's first post-prompt-19 simplification pass.
+
+### D-133 · 2026-07-28 · reversible · Corpus derivation is path-keyed, not a stream PRNG
+
+Every generated value is `SHA-256(seed ‖ path ‖ field)` keyed by its own address. A stateful stream
+makes the corpus order-fragile: inserting one household at position 3 reshuffles every subsequent value
+and churns every downstream digest. The `corpus-determinism` fence proves the property directly by
+inserting a household mid-spec and requiring exactly one changed file, and PF-205's second injection
+shows a fully deterministic ordinal-keyed generator still failing it.
+
+**Why:** a corpus whose bytes churn on an unrelated edit cannot anchor replay.
+**Revert path:** a different `derive()` plus one full regeneration and a captain re-signoff.
+
+### D-134 · 2026-07-28 · reversible · Corpus entities stay corpus-plane; the corpus is never seeded into the store
+
+Eight of prompt 11's twelve entity kinds have no canonical entity, dictionary row or table. They are NOT
+added to `DATA_DICTIONARY`: charter #2 forbids speculative modeling, and a fixture generator is not a
+declared day-one flow. They graduate when a real evidence source port needs them (prompt 14), under the
+existing `provenance-required` fence. The corpus is a fixture-plane asset and is never written to the
+house-CRM store, which keeps `org-id-required`, the audit chain and the PII boundary out of scope.
+
+Each corpus record carries `RecordProvenance` structurally, imported from `src/contracts/provenance.ts`
+rather than redeclared, so the corpus and the product share one provenance vocabulary.
+
+**Why:** charter #2 and #5; a fixture plane needs no schema commitment.
+**Revert path:** promote the types into `domain/schema` with dictionary rows and a migration.
+
+### D-135 · 2026-07-28 · reversible · `conflictKey(scope, family) = "conflict:<scope>-<family>"`, read OUT of signed truth
+
+The derivation is defined to reproduce the signed literals (`conflict:smiths-liquidity`,
+`res:GC-01:liquidity`, `idem:GC-01:smiths-75000-2026-08-15`) EXACTLY, so no signed fixture changes and
+no re-signoff is triggered. Seven families ship; `external-submission` is deliberately excluded because
+idempotency and conflict control are different mechanisms - giving a retry a conflict key would make it
+contend with itself.
+
+**Correction to the design report:** the report predicted a facts-only idempotency key would collide
+GC-10 with GC-11. Measured against the live signed set, GC-11 carries `idempotencyKey: null` (it is
+blocked), so that pair cannot collide. The real collision is larger and better evidence: **seven** of the
+eight signed idempotency literals (GC-01, GC-02, GC-03, GC-12, GC-13, GC-14, GC-15) share the facts
+`smiths-75000-2026-08-15`, so a facts-only derivation collapses seven distinct decisions onto one key.
+The fence proves the collision on that live set instead of on the predicted pair.
+
+**Why:** deriving from signed literals rather than imposing on them keeps signed truth untouched.
+**Revert path:** a different derivation plus a captain re-attestation of the affected literals.
+
+### D-136 · 2026-07-28 · reversible · The manifest carries a signoff POINTER, not a signature
+
+The design sketched a `signoff` block inside the generated manifest. Shipped instead: the manifest
+carries `signoffRef` (file + `boundTo: "corpusDigest"`), and the signature itself lives only in the
+hand-owned `spec/SIGNOFF.md`. This makes "agents never sign" structural rather than procedural - **no
+generated file can contain a signature**, and the fence proves no corpus code path originates a
+`signedBy`/`signedAt`/`signedDigest` literal and that the generator can emit only into `synthetic/`.
+
+**Why:** a generated file holding a signature would make regeneration a signing act.
+**Revert path:** mirror the parsed signoff into the manifest and re-fence the mirror.
+
+### D-137 · 2026-07-28 · reversible · Restrictions carry `recordedAt` distinct from `effectiveFrom`
+
+Awkward structure AS-13 (an expired-but-recorded restriction and a future-dated one) exposed that
+evidence over a restriction observes its RECORDING, not its effectivity. Modelling those as one field
+produced evidence observing the future, which the timestamp rules correctly refused. Household
+instructions are modelled as restrictions scoped to a party rather than as a thirteenth record type.
+
+**Why:** "recorded" and "in force" are different facts, which is the assumption AS-13 exists to falsify.
+**Revert path:** collapse the fields and drop AS-13.
+
+### D-138 · 2026-07-28 · reversible · The corpus deferral is recorded in the scenario matrix as its own section
+
+Captain ruling `corpus-real-derived-provenance` requires the deferral to be recorded "through the same
+ADR and scenario-matrix mechanism used for Salesforce". `config/demo/scenarios.yaml` gains a
+`corpus_deferral` section (a purely additive append, with its id appended to the demo-scenarios fence's
+`PINNED_IDS` as that fence's ratchet demands).
+
+It is a SEPARATE section rather than an entry in the existing `deferral` block because the element-level
+`deferral:` marking is defined against `deferral.status` - marking `replay-corpus` there would claim it
+is deferred pending a *Salesforce sandbox*, which is false. The new section is not decorative: the
+`corpus-provenance-split` fence cross-checks its id, status, `deferred_elements`, ADR path and un-defer
+trigger against `fixtures/corpus/manifest.json`.
+
+**Why:** two independent deferrals with different triggers must not share one status field.
+**Revert path:** generalize the fence's deferral cross-reference to iterate deferral-shaped sections and
+merge the two.
+
+### D-139 · 2026-07-28 · reversible · Labeled clean controls and a false-positive rate are part of the corpus contract
+
+Per captain ruling `corpus-signoff-and-measurement`: every coverage figure ships beside a false-positive
+rate computed from labeled clean controls, and a coverage figure without one is `interpretable: false`.
+A corpus with no clean controls FAILS validation. Five of the twenty-seven shipped cases are controls.
+The standing companion proves a detector that flags everything scores 1.0 coverage **and** 1.0 false
+positives, so blocking everything cannot read as success.
+
+**Why:** a detection rate without a false-positive rate is not a metric.
+**Revert path:** none without reopening the captain ruling.
+
+### D-140 · 2026-07-28 · reversible · Corpus records carry an observation instant distinct from their business dates
+
+Review finding `clean-controls-carry-stale-evidence`: `observedAtOf` derived an evidence item's
+`observedAt` from a business date (authority → `effectiveFrom`, restriction → `recordedAt`, bank
+instruction → `changedAt`, …). Only `balance` had a real observation instant. That conflation makes a
+long-standing fact NECESSARILY stale, so four of the five labeled clean controls emitted
+`freshness: "stale"` - planting `evidence-staleness-unnoticed` in the very cases that form the
+false-positive denominator, on a corpus whose reason for existing is to make coverage interpretable.
+
+Every record kind now carries its own `observedAt` in the hand-owned spec, the way `balanceObservedAt`
+always did. The business dates stay, as separate fields carried into the emitted subgraph, and each
+evidence item emits three instants with three jobs: `recordChangedAt` (when the fact changed → the
+recent-change window), `observedAt` (when the source observed it → freshness), `retrievedAt` (when this
+evaluation retrieved it → the per-kind band, measured from `trigger.asOf`). A long-standing authority,
+an in-force instruction, a single-owner account and a verified destination are all OLD IN BUSINESS AGE
+and FRESHLY OBSERVED; all five controls are now semantically clean, with their business facts unchanged.
+Staleness is a deliberate per-record property, never an artifact of the model.
+
+Two rules keep it honest, both fenced with live companions in `corpus-provenance-split`:
+`cleanControlProblems` refuses a control carrying any defect signature (stale, lapsed, out-of-force,
+unverified, last-four-colliding, dangling, infeasible, or structure-asserting), driven by relabeling
+real defect cases as controls; and `taxonomyExerciseProblems` mirrors the spec loader's
+unexercised-assumption rule for defect classes.
+
+**Why:** a clean control that contains the defect being measured makes the false-positive rate it exists
+to produce meaningless.
+**Revert path:** collapse `observedAt` back into the business dates, and delete both rules with the case
+and assumption below.
+
+### D-141 · 2026-07-28 · reversible · AS-21 and one focused case exercise `evidence-staleness-unnoticed`
+
+`evidence-staleness-unnoticed` was the one class in the closed taxonomy that no case carried - visible
+only because D-140 added the reverse completeness check. Rather than relabel a control to satisfy a
+count, the corpus gains ONE focused case: `CS-stale-model-assignment-evidence` (AS-21), an IRA model
+assignment last observed twelve weeks ago against a seven-day freshness window, treated as the account's
+current allocation. It is deliberately benign in content (`pendingRebalance: false`) so the case is about
+the staleness and nothing else. Counts move to twenty-one awkward structures and twenty-seven cases
+(22 defect + 5 controls); `corpusDigest` changes, which is correct - the corpus is `pending-captain`, so
+no signature is invalidated, and agents never sign.
+
+**Why:** an unexercised class inflates the taxonomy relative to what the corpus actually exercises.
+**Revert path:** delete AS-21 and the case, and the completeness check fails until the class is removed.
+
+### D-142 · 2026-07-28 · reversible · Cross-record references resolve by structured parse, never by substring or input order
+
+Two determinism leaks found in review, fixed at the same root: an identifier is resolved by parsing it,
+not by scanning for it. Legal holds resolve through `legalHoldSubject` (exact `account:<key>` /
+`position:<key>:<id>` segments) instead of `subjectRef.includes(":" + householdKey)`, which matched any
+key extending an existing one and leaked a foreign household's hold into `smiths`; the determinism
+fence's inserted household is now keyed `smiths-west` with its own hold, so the prefix collision is
+actually proven rather than assumed. Conflict scope reads the case's evidence AFTER sorting, so a
+semantically neutral reorder in `cases.json` can no longer move a conflict key, a case's bytes or
+`corpusDigest`. `loadSpec` additionally resolves every restriction and legal-hold subject by path, and
+an unmodeled position-scoped RESTRICTION is refused rather than silently dropped from every subgraph.
+
+**Why:** "adding a household changes only that household's bytes" is the property the whole corpus rests
+on; substring matching and input-order sensitivity both break it invisibly.
+**Revert path:** none worth taking - both replaced strictly weaker checks.
+
+### D-143 · 2026-07-28 · captain-decision · Corpus graph, intake, signoff, and measurement boundaries fail closed
+
+The prompt-11a corpus now validates every evidence and request reference against the complete emitted
+case graph with exactly-one semantics. Evidence-producing collections are required; every keyed spec
+collection rejects duplicates; planned withdrawals, authority grants, and model assignments carry
+distinct prefixed ids; recent changes are emitted; restriction subjects are preserved; and explicitly
+referenced cross-household destinations remain in the case graph.
+
+The real-derived deferral rejects any delivered file while active. Once explicitly lifted, valid
+real-derived cases are inventoried in the generated manifest, included in `corpusDigest`, and supplied to
+the real-derived report path. Intake ids admit only opaque token components and closed suffix vocabularies;
+attestations name an opaque extractor and enforce occurrence, extraction, scrubbing, and review chronology.
+
+The `verin-corpus/1.1.0` signed preimage includes both partition inventories and the versioned semantic
+digest of the defect taxonomy. Signed records accept only `signedBy: "captain"` and a canonical UTC
+`signedAt`. A partially evaluated detector run withholds both figures with
+`detector-outcomes-incomplete`, and provenance-specific outcome types plus runtime checks reject
+cross-partition inputs. The no-blending fence scans both `src/` and `scripts/` and follows local and
+imported aliases through arithmetic, calls, reducers, arrays, and concatenation.
+
+ADR-0052's tooling ceiling rises from 4000 to 4300 against a measured 4254 lines. The explicit
+46-line buffer preserves the existing design documentation and keeps every new script under the
+separate 500-line file ceiling.
+
+**Why:** labels, their meaning, and every referenced evidence entity are the signed measurement
+substrate. A favorable evaluated subset, a hidden real-derived case, or an id-shaped PII leak would make
+the resulting claim indefensible.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-144 · 2026-07-28 · captain-decision · Corpus measurement, topology, intake, and freshness authorities are structural
+
+The report derives counts and labels from the manifest inventory, recomputes the signed inventory digest,
+validates signoff internally, and rejects duplicate, unknown, cross-partition, or relabeled outcomes.
+Missing outcomes remain missing and withhold both figures. Structured numeric results stay private to the
+report owner; shipped callers receive only the string-rendering boundary, so syntax-level laundering
+cannot acquire both partition figures.
+
+Pending-action kind is a closed registry with typed direction and liquidity class. Only live unresolved
+outgoing distributions or debits reduce effective liquidity. Incoming value does not increase availability
+until settlement. Accounts and bank instructions retain `householdRef`; every non-primary household
+appears exactly once as an opaque referenced-household node with closed relationship reasons.
+
+Generated and real-derived trees are recursively inventoried. Active deferral rejects every delivered
+entry. After un-deferral, real-derived case ids are collection-unique, filenames are canonical, corpus
+versions are current, and only fully valid files reach inventory. Actual generated artifact values are
+recursively refused if they contain a signature key.
+
+Real-derived evidence records `evaluation.asOf` and the closed
+`verin-real-derived-freshness/1.0.0` policy. Freshness is derived per evidence kind,
+`observedAt <= retrievedAt <= evaluation.asOf`, and `unknown` requires the typed missing-observation arm.
+The `verin-corpus/1.2.0` signed preimage binds the policy version and semantic digest beside the taxonomy
+digest and both partition inventories.
+
+ADR-0052's tooling ceiling rises from 4300 to 4900 against 4818 measured lines, leaving 82 lines of
+headroom for this completed boundary set. The post-prompt-19 ratchet-down point remains unchanged.
+
+**Why:** a signed digest must bind the exact denominator and the policies that interpret it; replay
+topology and freshness cannot depend on caller convention or source-syntax heuristics.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-145 · 2026-07-28 · captain-decision · Replay intake and measurement carry closed semantic identity
+
+Real-derived delivery accepts only canonical JSON bytes with unique object keys. Strict hand-owned case
+and replay schemas admit exactly the typed destination, ownership, liquidity, direction, authority,
+threshold, policy, tax-review, instruction-conflict, temporal, evidence, reservation, and execution
+inputs required by the supported defect classes. Cross-field identity, lifecycle, chronology, freshness,
+pending-action treatment, and exact reference inventories are recomputed. Rejected prose and
+unrecognized key text never enter diagnostics.
+
+Cross-household topology uses minimal opaque projected account and bank-instruction nodes plus ownership
+edges. The destination expansion does not import foreign balances, tax attributes, owner roster records,
+or unrelated household records. Local time selects the chronologically latest qualifying transition and
+rejects duplicate instants. The determinism fence resolves direct, imported, aliased, and destructured
+nondeterministic APIs.
+
+Detector outcomes attribute closed defect-class ids. Exact signed-class attribution earns defect
+coverage, any attributed class on a clean control is a false positive, null is incomplete, and duplicate,
+unknown, or contradictory attribution is invalid. Structured measurement remains module-private. The
+`verin-corpus/1.3.0` signed preimage binds label kind and label id beside each case's partition, id, and
+byte digest.
+
+The tooling bucket remains at its D-144 measurement of 4818 lines under the 4900 ceiling, preserving 82
+lines of headroom without deleting existing design documentation.
+
+**Why:** a signed measurement cannot depend on a lossy JSON parse, a case-level boolean, caller-supplied
+labels, foreign household data, input ordering, or diagnostics that disclose the value being rejected.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-146 · 2026-07-28 · captain-decision · Replay truth, signoff, and schema semantics fail closed
+
+The real-derived intake derives a closed defect signature for every taxonomy class. A defect label must
+name a present signature, while a clean control must satisfy every class's absence signature. After the
+deferral is lifted, the partition must include at least one valid defect and one valid clean control before
+it can enter inventory, signoff, or measurement. Invalid delivery paths are represented only by bounded
+ordinals in diagnostics.
+
+The `verin-corpus/1.4.0` signed preimage binds both versioned real-derived JSON Schemas by identifier,
+exact-byte digest, and canonical semantic projection beside taxonomy, freshness policy, labels, and case
+bytes. Hand-owned signoff YAML rejects parser errors, duplicate or unexpected keys, aliases, unsupported
+shapes, missing keys, multiple blocks, and ambiguity before interpreting captain authority. Determinism
+enforcement includes callable `Date` and the supported crypto randomness surface through direct,
+destructured, imported, and aliased origins.
+
+The tooling bucket is exactly 4900 measured lines under the existing 4900 ceiling. No ceiling increase or
+unmeasured headroom is introduced; the post-prompt-19 ratchet-down point remains unchanged.
+
+**Why:** signed corpus truth cannot depend on a caller's label, a stale schema version string, permissive
+YAML recovery, a one-sided denominator, a sensitive filename, or a nondeterministic API spelling.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-147 · 2026-07-29 · captain-decision · Replay semantics, evidence, and funding are signed authorities
+
+The `verin-corpus/1.5.0` preimage binds the versioned
+`verin-real-derived-semantics/1.0.0` registry and exact digests of every executable authority that
+interprets replay topology, pending actions, freshness, evidence support, funding, and defect signatures.
+Both real-derived schemas advance to `1.1.0`. Every hand-owned corpus JSON document rejects duplicate
+keys before parsing or hashing.
+
+Replay references are entity-kind-scoped. Each material plane requires exactly one evidence record
+matching its kind, subject, and source. Request, household, account, instruction, owner, actor, grant, and
+policy relationships fail closed when disconnected. Funding is an explicit duplicate-free account set:
+each selection resolves once, belongs to the request household, shares an owner with the request source
+account, has a supported tax class, and contributes to aggregate sufficiency for the request, reserve, and
+reducing pending actions. Tax blindness is evaluated against exactly the selected set.
+
+The tooling ceiling rises from 4900 to 5900 against 5747 measured lines, leaving 153 lines of explicit
+headroom for the separated schema, semantic, topology, and parsing owners. The post-prompt-19 ratchet-down
+point remains unchanged. The real-derived partition stays deferred and empty, and captain signoff stays
+pending.
+
+**Why:** signed cases cannot change meaning under an unchanged digest, and disconnected evidence or
+implicit funding cannot substantiate either a defect label or a clean control.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-148 · 2026-07-29 · captain-decision · Replay defects require typed outcome mismatches
+
+The `verin-corpus/1.6.0` preimage binds `verin-real-derived-replay/1.2.0` and
+`verin-real-derived-semantics/1.1.0`. The semantic registry separates awkward context from system
+treatment. Every supported class has one closed context rule, expected treatment, and defective
+treatment. A defect requires the relevant context and a typed expected-versus-observed mismatch; a clean
+control records the expected treatment for every class. Context without a mismatch cannot substantiate
+a defect.
+
+Instruction-conflict witnesses bind the exact request and tenant household. Each referenced instruction
+belongs to that household, and impacted subjects intersect the request source account or destination
+instruction. Identity resolution, every schema-declared unique array, set-like synthetic assumptions,
+and nondeterministic call origins are validated at their ownership boundaries.
+
+The tooling ceiling rises from 5900 to 6200 against 5996 measured lines, leaving 204 lines of explicit
+headroom for the separated semantic, topology, schema, and determinism authorities. The post-prompt-19
+ratchet-down point remains unchanged. The real-derived partition stays deferred and empty, and captain
+signoff stays pending.
+
+**Why:** awkward data is legitimate evidence context, not a product failure, and disconnected conflict
+references or laundered nondeterminism cannot define signed replay truth.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-149 · 2026-07-29 · captain-decision · Outcome semantics govern both corpus partitions
+
+The `verin-corpus/1.7.0` preimage binds `verin-real-derived-replay/1.3.0` and
+`verin-real-derived-semantics/1.2.0`. Synthetic and real-derived cases use the same closed
+expected-versus-observed treatment authority. A synthetic defect requires exactly one context-bound
+mismatch for its label, while correctly treated awkward context remains a clean control. Every taxonomy
+signature is checked over emitted control bytes.
+
+Pending actions carry entity-kind-scoped account and household references. They bind to the governed
+request, one selected funding account, and exact action evidence, while liquidity treatment comes from
+the shared closed pending-action authority. Selected retirement funding is cross-checked against tax
+review state. Missing reserve schedules use an unavailable treatment distinct from correctly segmented
+reserves. Signed threshold policy carries a strict or inclusive comparator that selects the applicable
+treatment pair. Synthetic request source accounts must belong to the request household.
+
+The semantic data, executable synthetic authority, replay schema, and emitted treatment bytes are bound
+into `corpusDigest`. The tooling ceiling rises from 6200 to 6500 against 6426 measured lines, leaving 74
+lines of explicit headroom for the separated semantic, generation, topology, and validation owners. The
+post-prompt-19 ratchet-down point remains unchanged. The real-derived partition stays deferred and empty,
+and captain signoff stays pending.
+
+**Why:** context alone cannot define signed defect truth, and disconnected pending actions or unsigned
+policy comparison cannot alter replay funding or threshold treatment.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-150 · 2026-07-29 · captain-decision · Corpus labels, attribution, and synthetic funding are exact
+
+The `verin-corpus/1.8.0` preimage binds `verin-real-derived-semantics/1.3.0`. A real-derived defect label
+must equal the exact singleton semantic mismatch. A detector result for a defect case is valid only as an
+empty miss or the exact signed-label singleton, so unrelated extra classes cannot earn coverage without
+penalty.
+
+Every synthetic case carries an explicit duplicate-free `selectedFundingRefs` set in its hand-owned
+request and emitted bytes. Each selected account resolves exactly once to the request household. Pending
+actions and pending model assignments used by synthetic semantics must bind to an account in that exact
+set. Missing reserve state derives from emitted schedule absence, and an `AS-12` assertion with a schedule
+is contradictory.
+
+The signed executable authority inventory now includes the synthetic input schema, spec topology,
+emitted-graph topology, and detector report boundary alongside the existing semantic validators. The
+tooling ceiling rises from 6500 to 6700 against 6552 measured lines, leaving 148 lines of explicit
+headroom. The post-prompt-19 ratchet-down point is unchanged. The real-derived partition stays empty and
+deferred, and captain signoff stays pending.
+
+**Why:** one signed label cannot hide multiple replay defects, one detector result cannot smuggle extra
+classes into coverage, and pending liquidity semantics cannot infer funding from unrelated accounts.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-151 · 2026-07-29 · captain-decision · Replay tenant, observation, funding, and ownership semantics are structural
+
+The `verin-corpus/1.9.0` preimage binds `verin-real-derived-case/1.2.0`,
+`verin-real-derived-replay/1.4.0`, and `verin-real-derived-semantics/1.4.0`. Each real-derived case has
+one opaque `firmRef`, and its replay request plus every reservation must carry that same exact value.
+Reservation identity is the tuple `firmRef` plus `conflictKey`; tenant scope is never inferred from
+household or display data.
+
+One centralized observation-state authority covers every semantic evidence plane. Missing evidence can
+support only an explicit absence or unavailable payload of the same typed plane. Concrete request,
+identity, balance, timestamp, status, reference, and other material values require observed evidence.
+Adding a later evidence plane without classifying its observation semantics fails closed.
+
+Synthetic tax context and generator defaults derive from all and only the explicit selected funding set
+through one shared authority. Every cited pending action binds to the request household and selected set
+before its reducing treatment is selected. Bank-instruction and pending-action account edges must match
+their declared households. AS-04 retains the outside-household LLC signer: the signer is emitted as one
+separate resolvable party and cannot also appear in the LLC household membership edge.
+
+The tooling ceiling rises from 6700 to 7000 against 6878 measured lines, leaving 122 lines of explicit
+headroom across separated schema, topology, evidence, and funding owners. The 500-line per-file ceiling,
+empty deferred real-derived partition, path-keyed isolation, generated-file ownership, and pending
+captain signoff remain unchanged.
+
+**Why:** signed replay truth cannot accept unsupported concrete values, tenant-ambiguous reservations,
+funding semantics from unselected accounts, or contradictory ownership edges.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-152 · 2026-07-29 · captain-decision · Identity, tenant, and funding truth is reproducible and exact
+
+The `verin-corpus/1.10.0` preimage binds `verin-real-derived-case/1.3.0`,
+`verin-real-derived-replay/1.5.0`, and `verin-real-derived-semantics/1.5.0`. Synthetic identity context
+now comes from typed unresolved UTF-8 bytes, canonical values, exact candidate references, candidate raw
+bytes, and household bindings in the emitted case. Ambiguity requires at least two resolving candidates,
+and canonical collision requires distinct raw bytes that normalize to one value. Assumption ids alone
+cannot substantiate either label.
+
+Generic real-derived subject references exclude firm ids. Case, request, and reservations remain the only
+firm-scoped fields and must share one exact `firmRef`, so an impacted subject or subject inventory cannot
+introduce a second tenant. Every money field rejects values outside the safe integer boundary, and
+aggregate funding sufficiency uses `bigint` throughout.
+
+The tooling ceiling rises from 7000 to 7300 against 7129 measured lines, leaving 171 lines of explicit
+headroom across separate identity, topology, and funding owners. Only the two identity synthetic cases
+change; path-keyed determinism, the empty deferred real-derived partition, generated-file ownership,
+pending captain signoff, and the 500-line file ceiling remain unchanged.
+
+**Why:** signed defect context must be replayable from emitted inputs, tenant scope cannot enter a generic
+subject collection, and one-cent funding differences must survive aggregation.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-153 · 2026-07-29 · captain-decision · Instruction truth and signed authorities are closed
+
+The `verin-corpus/1.11.0` preimage binds `verin-real-derived-case/1.4.0`,
+`verin-real-derived-replay/1.6.0`, and `verin-real-derived-semantics/1.6.0`. Synthetic and real-derived
+instruction conflicts derive from one typed authority. Each term names its governed action, exact source,
+typed target, and required or forbidden polarity. Witnesses share the request firm and household.
+Assumption labels, termless records, and unconnected terms cannot substantiate conflict context, while a
+correctly governed request remains a clean control. Every nonempty real-derived instruction set requires
+exact observed evidence for each instruction identity.
+
+The executable semantic inventory equals the complete repository-local runtime dependency closure of its
+declared roots, including data imports. Signoff YAML rejects warnings and all tagged nodes before
+conversion. Taxonomy citations must resolve to regular files whose canonical paths remain inside the
+repository. Both tooling budgets use one executable-source extension predicate covering TypeScript and
+JavaScript variants.
+
+The tooling ceiling rises from 7300 to 7700 against 7541 measured lines, leaving 159 lines of explicit
+headroom across separate evidence, semantic, topology, and fence owners. The 500-line file ceiling,
+path-keyed isolation, generated-file ownership, empty deferred real-derived partition, and pending
+captain signoff remain unchanged.
+
+**Why:** signed replay meaning cannot change through an unbound runtime dependency, untyped conflict
+claim, parser recovery, host-dependent citation, or unmeasured executable file.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-154 · 2026-07-29 · captain-decision · Temporal, blast-radius, owner, and authority-closure semantics derive from signed facts
+
+The `verin-corpus/1.12.0` preimage binds `verin-real-derived-semantics/1.7.0`. Synthetic DST context
+requires cited recent-change records with exact UTC and local renderings, one signed zone identity, and
+different offsets connected by an emitted transition from the pinned transition table. Shared-instruction
+blast radius requires one exact cited changed instruction whose emitted topology resolves to multiple
+distinct governed accounts. Assumption ids, same-offset timestamps, arbitrary recent records,
+disconnected subjects, and distinct instruction identities cannot substantiate either context. A
+correctly treated awkward context remains a clean control.
+
+Instruction analysis preserves a destination's explicit duplicate-free normalized owner set. Multiple
+owners no longer invalidate source-account, request, or destination-instruction terms, and
+destination-subject terms match exact members of that set. The executable-authority closure reuses the
+repository's comprehensive module-reference detector, follows runtime import-equals references, and
+fails closed on createRequire, aliased require, module.require, and other indirect or non-literal loaders.
+
+The tooling ceiling rises from 7700 to 7900 against 7739 measured lines, leaving 161 lines of explicit
+headroom for the separate structural-context and fence owners. Only the DST synthetic case gains temporal
+authority bytes. Path-keyed isolation, generated-file ownership, the empty deferred real-derived
+partition, the unchanged 500-line file ceiling, and pending unsigned captain signoff remain intact.
+
+**Why:** signed defect context must come from emitted facts, joint ownership must not invalidate
+unrelated terms, and a local loader spelling cannot change signed semantics outside the digest.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-155 · 2026-08-05 · captain-decision · Corpus privacy, validation, determinism, and settled credits fail closed
+
+Cross-household destination owners are emitted only as opaque `referencedOwners` ids unless another
+request-household relationship independently makes the party local. Full roster names, kinds, and roles
+remain confined to local parties. The referenced-owner collection participates in exact graph resolution,
+so privacy minimization does not create dangling ownership edges.
+
+The signed executable-authority roots include both real-derived intake and corpus validation gateways.
+The nondeterminism fence resolves `globalThis` and `global` property roots through direct, aliased,
+destructured, and bracket access. The `verin-corpus/1.12.0` preimage now binds
+`verin-real-derived-replay/1.7.0` and `verin-real-derived-semantics/1.8.0`.
+
+A settled incoming credit selects the distinct expected treatment
+`credit-settled-incoming-availability`; omitting that credit is the signed mismatch
+`omit-settled-incoming-availability`. Synthetic and real-derived validation derive this selector from the
+same closed pending-action authority. The tooling ceiling remains 7900 against 7898 measured lines. The
+real-derived partition remains empty and deferred, generated-file ownership remains intact, and captain
+signoff remains pending.
+
+**Why:** foreign ownership cannot expand private roster data, acceptance gateways cannot sit outside
+signed semantics, ambient-global spellings cannot bypass determinism, and settled funds cannot disappear
+behind a generic nonreducing treatment.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-156 · 2026-08-05 · reversible · Ambient access and pending-action balance accounting are explicit
+
+The nondeterminism fence now records sensitive origins reached through property or element access, so
+`globalThis.Intl.DateTimeFormat` and nested bracket access to `process.env` cannot bypass the source ban.
+
+Every synthetic and real-derived pending action states `availableMinorIncludesAction`. Real-derived
+funding applies no adjustment when the source-reported amount already includes the action, subtracts an
+excluded reducing action once, and credits an excluded settled incoming action once. The closed treatment
+selector distinguishes an included settled credit from an excluded one. The replay schema advances to
+`verin-real-derived-replay/1.8.0`, the semantic contract advances to
+`verin-real-derived-semantics/1.9.0`, and the captain-facing signoff prose names that exact scope.
+
+The tooling ceiling rises from 7900 to 8000 against 7941 measured lines, leaving 59 lines of explicit
+headroom across the existing determinism, schema, semantic, and topology owners. The 500-line file ceiling,
+empty deferred real-derived partition, generated-file ownership, path-keyed isolation, and pending captain
+signoff remain unchanged.
+
+The complete fitness entry point now uses the same single-worker, file-serial policy as the default test
+command. Two consecutive parallel runs pushed `dependency-rule` past its per-test timeout at 21 seconds;
+the same test passed alone in 9.4 seconds. Assertions and timeouts remain unchanged.
+
+**Why:** replay bytes must say whether an action is already reflected in reported availability, or the
+same payload permits both adding and preserving the amount. A sensitive ambient origin must be recorded
+independently of whether source syntax uses dots or brackets.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-157 · 2026-08-05 · reversible · Executable provenance and availability reconciliation share complete authorities
+
+The corpus determinism project discovers source files through the same executable-source predicate as
+the tooling budgets, covering TypeScript and JavaScript variants. Nondeterministic origin tracing follows
+resolved declarations across local modules, fixed object and array members, callable returns, binding
+patterns, and fixed control-flow alternatives. A forbidden origin cannot become safe by crossing a file
+or a plain-data container.
+
+Pending-action funding now computes one adjustment as expected liquidity effect minus the directional
+effect already reflected in source-reported availability. This preserves included reducing outflows and
+settled credits, applies excluded effects once, and reverses included blocked outflows or unsettled
+inflows whose signed treatment requires no effect. An included action with unknown direction is refused.
+The semantic contract's funding clause names exact-once pending-action accounting rather than only
+reducing pending actions.
+
+The tooling bucket measures 7972 lines under the unchanged 8000 ceiling. Canonical regeneration produces
+`corpusDigest` `8d01240c5a65b36e2d80ab44d26dcc4e4b4314b6d750f833dd53923d98a33bbf`.
+The real-derived partition remains empty and deferred, and captain signoff remains pending.
+
+**Why:** executable coverage cannot depend on a filename suffix or module boundary, and source-reported
+availability must be reconciled with the signed action treatment before sufficiency can be evaluated.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-158 · 2026-08-05 · reversible · Alternate origins, parameter binding, ambient APIs, and settled debits fail closed
+
+The corpus determinism fence carries every possible origin through conditional and logical arms, callable
+returns, declarations, and fixed containers. Object and array parameter patterns bind recursively from
+their corresponding argument members. Runtime-state process APIs and entropy-producing prime generation
+join the closed nondeterminism registry, including direct, imported, aliased, and destructured forms.
+
+Pending-action availability now distinguishes settled incoming and outgoing directions. A settled
+outgoing debit already reflected in source-reported availability is preserved; one not yet reflected is
+debited exactly once. The replay schema advances to `verin-real-derived-replay/1.9.0`, and the semantic
+contract advances to `verin-real-derived-semantics/1.10.0` with explicit included and excluded outgoing
+treatments.
+
+The tooling bucket measures 7989 lines under the unchanged 8000 ceiling. Canonical regeneration produces
+`corpusDigest` `77388ead4e7cfd738954dc7b9915b32ecdcca7b013208ac20664505c643182c9`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** one safe branch cannot hide a reachable nondeterministic origin, parameter destructuring cannot
+erase provenance, and settled debits cannot be added back or omitted during funding reconciliation.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-159 · 2026-08-05 · reversible · Determinism provenance and restriction lifecycle derive from complete facts
+
+The corpus determinism project now expands from `scripts/corpus/` through the complete transitive local
+executable import closure. Origin tracing covers method declarations, property accessors, and defaulted
+parameters. Every process member and every `node:os` member is treated as host state, so a newly used
+property or operating-system API cannot bypass a selected-member registry.
+
+Real-derived restriction policy now carries `restrictionEffectiveFrom` and `restrictionEffectiveTo`.
+Lifecycle state is recomputed from those instants at `evaluation.asOf`; absent restrictions require null
+instants, present restrictions require a start instant, inverted intervals fail, and a claimed enum that
+disagrees with the derived state is rejected before semantic attribution. The restriction defect context
+uses the same derived authority. The replay schema advances to `verin-real-derived-replay/1.10.0`, and the
+semantic contract advances to `verin-real-derived-semantics/1.11.0` with an explicit declarative lifecycle
+rule.
+
+The tooling ceiling rises from 8000 to 8100 against 8018 measured lines, leaving 82 lines of explicit
+headroom for the existing determinism and semantic owners. Canonical regeneration produces
+`corpusDigest` `befa00adb2f5081ba8854e4393a79373a05105078c37f2c872c0b594a271629c`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** imported executable helpers can alter corpus bytes, host state is an open category rather than a
+stable API list, and a signed lifecycle defect cannot be replayed from a trusted enum without its
+effectivity facts.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-160 · 2026-08-05 · reversible · Determinism and synthetic schedules fail closed
+
+Corpus determinism provenance now models JavaScript default semantics conservatively, including an
+explicit `undefined` argument and nested object or array binding defaults. Callable aliases preserve
+method provenance, built-in origins enter through import-equals and ambient CommonJS loaders, constant
+computed members resolve to their actual origin, and dynamic access on a sensitive origin fails closed.
+
+The repository-wide no-blending fence again scans shipped product and tooling code. It follows local and
+imported partition aliases and rejects arithmetic, reducers, helper calls, concatenation, constructors,
+and rendered templates that combine synthetic and real-derived measurements. Only the symbol-resolved
+report owner may receive both partitions, so a same-named local shadow receives no exemption.
+
+Synthetic restriction and authorized-signer intervals now require `effectiveFrom` to precede a non-null
+`effectiveTo`. Planned-withdrawal months must be valid calendar months in strictly increasing order, so
+the hand-owned order is canonical and duplicate or descending segments cannot create ambiguous replay
+bytes. The world spec advances to `1.5.0`.
+
+The tooling bucket measures 8035 lines under the unchanged 8100 ceiling. Canonical regeneration produces
+`corpusDigest` `67dadb0ecd3eed8c7b9ae0e52fc5c78fd1aa0eca4836b187f0d84e56b20a5f3f`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** default evaluation, module syntax, and computed access cannot erase a host-state origin; a
+measurement cannot evade provenance separation by changing its spelling; and signed synthetic evidence
+cannot rely on an impossible interval or an order-sensitive schedule with no valid ordering.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-161 · 2026-08-05 · reversible · Mutable keys and assignment provenance fail closed
+
+Computed member resolution now trusts an initializer only for a `const` binding. A mutable key is treated
+as dynamic sensitive access even when its declaration initializer is harmless, so a later assignment
+cannot hide `Math.random`, `process.env`, or another forbidden origin.
+
+The no-blending fence propagates partition taint to a fixed point across all analyzed source files. Direct
+variable assignments, imported assigned values, and exact property or element assignments retain their
+partition provenance. Member taint remains path-specific, so assigning a synthetic value to one property
+does not contaminate an unrelated property.
+
+Four review reports about identity cardinality, authority nullability, legal-hold scope, and reserve shape
+were stale. The signed replay schema already rejects each contradictory state before topology or semantic
+attribution. One explicit regression now exercises both identity cardinalities, missing authority facts,
+an absent hold with an active scope, and missing or segmented reserves with incompatible schedule facts.
+
+The corpus regenerates byte-identically with digest
+`67dadb0ecd3eed8c7b9ae0e52fc5c78fd1aa0eca4836b187f0d84e56b20a5f3f`; the signed semantic authority and
+pending captain signoff remain unchanged.
+
+**Why:** a declaration initializer does not prove the reaching value of a mutable key, assignment cannot
+erase measurement provenance, and already-enforced signed schema rules should be proven rather than
+duplicated in a downstream semantic owner.
+**Revert path:** none while the determinism and no-blending fences claim to cover mutable dataflow.
+
+### D-162 · 2026-08-05 · reversible · Structured provenance, repository inputs, and temporal rules fail closed
+
+The no-blending fence propagates partition provenance through object and array binding patterns and
+`Object.assign` mutation writes. Exact member paths remain distinct, while dynamic mutation sources fail
+closed onto the target. Separate structured writes cannot erase provenance before arithmetic, calls, or
+rendering consume their values.
+
+The determinism fence treats filesystem, subprocess, built-in network, and global fetch access as host
+inputs. Repository reads are permitted only inside a closed list of named input owners, and an equivalent
+read in another function is rejected. Those owners load the signed spec, schemas, semantic authorities,
+inventories, citations, golden truth, or signoff state rather than ambient host data. The real-derived
+tree reader rejects a symlinked root before traversal.
+
+Real-derived temporal replay now carries the event's exact local rendering, IANA zone, tzdb version,
+standard offset, and chronological transition table. Transition state and local rendering are derived
+from those facts, and semantic attribution consumes the derived state. The replay schema advances to
+`verin-real-derived-replay/1.11.0`, and the semantic contract advances to
+`verin-real-derived-semantics/1.12.0`. Synthetic world transitions must be strictly chronological, and
+beneficiary emission uses every output field as a total sort key.
+
+ADR-0052 raises the tooling ceiling from 8100 to 8300 against 8112 measured lines, leaving 188 lines of
+explicit headroom. Canonical regeneration produces `corpusDigest`
+`3cd3c36730bd27adfad0c6b4b94ea065e49b5bf8b06166a4a6b7cd512174e94b`. The real-derived partition
+remains empty and deferred, generated-file ownership remains intact, and captain signoff remains pending.
+
+**Why:** container syntax and host-I/O spelling cannot weaken corpus controls, a filesystem boundary must
+validate its root, replayed temporal defects require signed rule facts, and semantically neutral source
+ordering cannot alter generated bytes.
+**Revert path:** none while the corpus fences claim structured provenance, host independence, replayable
+time-zone semantics, and order-independent generation.
+
+### D-163 · 2026-08-05 · reversible · Corpus runtime and replay roots fail closed
+
+The determinism fence rejects `eval`, the `Function` constructor, and their aliases rather than attempting
+to inspect dynamically compiled source. Logical compound assignments preserve every possible ambient
+origin. Declared repository-input owners now propagate their root requirements through local calls and
+accept only the exact repository root or derivations made by symbol-resolved `node:path` transforms. An
+external literal, an external caller parameter, or a shadowed path helper cannot authorize host bytes.
+
+The no-blending fence propagates synthetic and real-derived provenance through standard container
+mutations, including array insertion, set/map insertion, fill, and splice. Separate mutation calls cannot
+erase both partitions before a reducer, arithmetic expression, helper, or rendering consumes the target.
+
+Real-derived temporal replay accepts a zone and tzdb version only when the pair belongs to the recorded
+IANA registry already bound into executable semantic authority. The request source account resolves
+exactly once to the request household whether or not it appears in the selected funding set. The semantic
+contract advances to `verin-real-derived-semantics/1.13.0` so both requirements invalidate prior signoff.
+
+The tooling bucket measures 8138 lines under the unchanged 8300 ceiling. Canonical regeneration produces
+`corpusDigest` `3403293fc63b3026616d9d00572f48ab3d8f00e3d5901b3be108f4730b38874a`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** runtime syntax, mutable flow, container APIs, loader call paths, self-asserted zone labels, and
+foreign source accounts cannot weaken signed corpus acceptance.
+**Revert path:** none while the corpus claims host independence, partition separation, recorded IANA
+semantics, and request-household topology.
+
+### D-164 · 2026-08-05 · reversible · Repository input and synthetic evidence semantics fail closed
+
+Repository-root provenance follows only immutable bindings, so reassignment cannot redirect an approved
+loader after a trusted initializer. All signed spec, schema, signoff, golden-case, and executable-authority
+file reads pass through one runtime boundary that requires a regular file whose canonical target remains
+inside the repository. A worktree symlink cannot import host bytes into corpus truth.
+
+Synthetic authority state requires exactly one cited signer record. Multiple cited signers are rejected
+instead of selecting the first emitted row. Bank-instruction verification is valid only after the current
+change and no later than its source observation or the evaluation instant. The world schema and emitted
+semantic validator enforce the same chronology.
+
+The tooling bucket measures 8250 lines under the unchanged 8300 ceiling. Canonical regeneration produces
+`corpusDigest` `5e945ae5da8f460f637980d2471d298480a14d84040b671b3bfbf187804e9b01`.
+The real-derived partition remains empty and deferred, generated-file ownership remains intact, and
+captain signoff remains pending.
+
+**Why:** mutable aliases, canonical-path escapes, input-order-selected authority, and impossible
+verification chronology cannot become signed replay truth.
+**Revert path:** none while the corpus claims repository-contained inputs and replayable synthetic
+authority and destination evidence.
+
+### D-165 · 2026-08-05 · reversible · Repository-input refusals name their cause and one authority binding backs every digest
+
+Every refusal from the single repository-input read path names the input and distinguishes a missing
+path, an escape from the repository, and a non-regular file. Containment is decided on the canonical
+target, which is also the path read, so an in-repository symlink resolves normally and only a target
+that leaves the repository is refused. The blocking `corpus` job can no longer fail with a message that
+names no file.
+
+The versioned semantics a corpus is digested under - freshness policy, both real-derived JSON Schemas,
+and the real-derived semantic contract with its executable authorities - are resolved once per validation
+and passed explicitly to the manifest, to the digest recomputed beside it, and to the measurement report.
+The manifest's `corpusDigest` and the validator's are the same object by construction rather than two
+equal-by-coincidence rebuilds of the same ~50 hashed files, and `renderCorpusReport` reads no file: a
+fully specified `ReportInput` is exactly what it measures. `buildManifest` takes only the inventory it
+publishes, so a supplied inventory can no longer disagree with a separate file list. The dead
+`CORPUS_VERSION` and `derivePick` exports are gone; `spec.world.corpusVersion` is the only corpus version.
+
+The tooling bucket measures 8276 lines under the unchanged 8300 ceiling. Canonical regeneration produces
+`corpusDigest` `7c9030abc5582face72119990c0839f3e37695428fe220527519db6c820cda7d`. The real-derived
+partition remains empty and deferred, generated-file ownership remains intact, and captain signoff
+remains pending.
+
+**Why:** an anonymous refusal is unusable in a blocking gate, a second unenforced source of truth for a
+signoff-bound value drifts silently, and a digest rebuilt independently in two places is only accidentally
+the same digest.
+**Revert path:** none while the corpus reads repository-contained inputs and binds signoff to a digest.
+
+### D-166 · 2026-08-05 · reversible · One containment predicate, a named root, and LF as the repo-wide digest byte
+
+The repository-input reader names the ROOT as well as the input: an unresolvable root is refused as
+`repository root "..." does not exist` instead of a bare `ENOENT`, and a refusal describes its input
+against whichever spelling of the root - the caller's or its canonical form - actually contains it, so a
+repository reached through a symlinked root still names files repo-relatively.
+
+Containment is decided in exactly one place. The taxonomy-citation check no longer hand-rolls its own
+`realpath` + relative + regular-file sequence; it calls the same resolver the reader calls, exposed as
+`isRepositoryContainedFile` because a detector over injected input must REPORT rather than abort. Two
+copies of a containment predicate are two places to weaken it.
+
+`CorpusValidation` carries the seed it validated under, so `pnpm corpus:report` measures the digest
+inputs the validator used rather than a separately imported constant that only happens to agree. `loadSpec`
+parses the two spec files it consumes; the defect taxonomy and the real-derived semantic contract are
+strict-parsed by the loaders that own their schemas, and a discarded second parse was never a second check.
+
+Canonical LF bytes are pinned repo-wide rather than for the fixture trees alone. `corpusDigest` folds in
+the raw bytes of every executable semantic authority under `scripts/` and `src/contracts/`, and the
+arch-version fence pins document bytes the same way, so a CRLF checkout would have broken the blocking
+`corpus` job for a reason unrelated to any change.
+
+The tooling bucket measures 8292 lines under the unchanged 8300 ceiling. Canonical regeneration produces
+`corpusDigest` `71636c4034c16b6d3c6a2737d7c3e3acf8f98a820f6360105f7e117700b0fe17`. The real-derived
+partition remains empty and deferred, generated-file ownership remains intact, and captain signoff
+remains pending.
+
+**Why:** a root is an input too, a duplicated security predicate drifts, a digest input carried beside the
+result cannot disagree with it, and a byte-exact signature needs byte-exact checkouts.
+**Revert path:** none while the corpus reads repository-contained inputs and binds signoff to a digest
+over committed bytes.
+
+### D-167 · 2026-08-06 · reversible · The corpus ADR is renumbered, its authority binding narrowed, and its tooling ceiling re-measured
+
+The prompt-11 corpus ADR shipped as `ADR-0034`, colliding with the already-shipped
+`0034-line-budget-infrastructure-headroom.md`. It is renumbered to **ADR-0052**, every reference is
+updated, and it is registered in the ADR index it was never added to. The shipped ADR-0034 and the
+ADR-0035/0036 amendment references that point at it are untouched.
+
+`REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES` no longer binds the whole runtime closure. It binds the
+corpus-owned semantic modules plus exactly the shipped surfaces the replay result depends on:
+`canonicalJson` and the record predicate it admits values through, the recorded IANA time-zone registry
+and its reader, and the golden-case loader. `result.ts`, `errors.ts`, and the decision-record vocabulary
+reached only through serializer projections the corpus never builds move to a declared
+`REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES` list. The fence holds the two lists TOGETHER equal to the
+complete closure, so a new shipped dependency must be classified before it can build, and proves both
+directions: a byte appended to any bound module moves the digest, every excluded module leaves it still,
+and a drifted generated file still fails the byte comparison.
+
+An evidence kind with no committed freshness window is now refused by name instead of computing
+`x > NaN` and reading `"fresh"` for arbitrarily stale evidence, and the delivered schema's `evidenceKind`
+enum is held equal to the executable vocabulary and the policy's windows rather than coupled to them by a
+cast. A missing spec file in the generator preimage throws instead of hashing empty bytes, matching its
+two sibling binders. The tautological `generatorDigest(...).length === 64` check is replaced by one that
+can fail: every hand-owned file under `spec/` must be bound by a digest, so a new hand-owned input cannot
+sit outside `SPEC_FILES`, the schema bindings, and the signoff while a signature survives edits to it.
+
+The cross-time-zone determinism fence builds its in-process expectation from BOTH partitions, as the
+runner does, so it reports genuine time-zone nondeterminism rather than an inventory mismatch the day the
+real-derived partition is populated.
+
+The fitness suite is now parallel-SAFE: three proofs planted fixture directories inside `REPO_ROOT`,
+where they raced every fence that walks the repository, and `loadSignoff` takes a `repoRoot` like
+`loadTaxonomy` already did, so containment is proven against a temp-tree root. It still runs SERIALLY,
+and the reason is recorded in `vitest.config.ts` rather than left as bare flags: seven fences each build
+an independent full-repository TypeScript program, and vitest isolates modules per file, so concurrency
+multiplies the program. Measured on twelve cores - serial 134s with a 5s slowest fence, two workers 85s
+with a 16s slowest, four workers crossing the 20s budget, twelve workers failing five files. The 40s and
+60s timeout extensions the previous round added are therefore REMOVED: under the configuration CI
+actually runs, no fence needs them, and a bespoke extension that only exists to survive a scheduler hides
+the very slowdown a budget is for. (On the rebase onto the decision-ledger trunk the SHARED budget is
+D-131's 60s, measured against a GitHub runner rather than this machine; the bespoke per-fence extensions
+this entry removed stay removed - see D-177.)
+
+ADR-0052's tooling ceiling rises from 8300 to 8700 against 8446 measured lines, taken after every change
+above. The previous recorded figure was a round stale (8276 against 8292), leaving eight lines of real
+headroom - the condition ADR-0033 wrote the honest-headroom rule to prevent.
+
+**Why:** two ADRs cannot share a number; a signature invalidated by unrelated plumbing is one people
+re-sign without reading; a silent default and a tautological check are both worse than no check; and a
+suite forced serial without a measured reason hides whichever of the two it is.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-168 · 2026-08-06 · reversible · The corpus root is a closed inventory, strict JSON fails closed, and a contract gap reports
+
+`fixtures/corpus/` is now an EXACT inventory. Every committed entry must be `manifest.json`, live under
+`spec/`, `synthetic/`, or `real-derived/`, or be the allowlisted `README.md`; anything else fails
+`pnpm corpus:validate` by name, and a missing or non-regular `README.md` fails it too. Each bucket names
+the mechanism that accounts for it - regenerate-and-byte-compare, the spec digest coverage rule, the
+fail-closed intake contract - so a file governed by nothing cannot sit in the tree unremarked. The
+allowlist is stated in `docs/corpus.md` §2 and `fixtures/corpus/README.md`, not implied by which reader
+happens to select what.
+
+`parseStrictJson` refuses any input the YAML strict pass cannot finish instead of falling through to
+`JSON.parse`. That pass is the only thing that sees a repeated key at all - `JSON.parse` resolves one
+last-wins - so a diagnostic that ABANDONS the scan was a duplicate-key bypass for the four hand-owned
+spec files, which get no canonical-byte re-serialization check to catch it downstream.
+
+`inspectRealDerivedPartition` resolves semantic-contract problems BEFORE the per-file spread and skips
+that spread when any are present. The per-case detectors execute the very authorities a contract gap
+names, so a mis-declared contract plus one delivered intake file aborted the blocking `corpus` job with
+an unhandled stack trace instead of the problem list `realDerivedSemanticContractProblems` exists to
+produce. The underlying strictness is unchanged - the throws still guard a caller that reaches those
+authorities without resolving the contract first.
+
+`addBusinessDays` steps in LOCAL calendar days rather than fixed 86 400-second hops, so a DST transition
+cannot drift the local wall clock and move `settlementEarliest` by a day; `isWithinRecentChangeWindow`'s
+parameter is named `recordChangedAt` after the instant both call sites pass, the conflation D-078/D-080
+removed; and `detectUnsanctionedReveal` takes only a `Project`, memoizing its secret-access scan per
+project so the signature can no longer express a project paired with another project's access list.
+
+**Why:** a bucket nobody named is a bucket nobody checks; a parser that gives up quietly is worse than
+one that refuses; and a detector over injected data that crashes reports nothing at all.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+### D-169 · 2026-08-06 · reversible · The corpus tree walk drops only what git refuses, and the DST correction is proven
+
+`readTree` skips the entry names the repository's own `.gitignore` refuses to track
+(`UNTRACKABLE_ENTRY_NAMES`, `.DS_Store` today). Every reader of that walk - the regenerate-and-
+byte-compare gate, the exact root inventory (D-168), the spec digest-coverage rule - asks what the
+COMMITTED tree holds, so surfacing a platform dropping turned opening `fixtures/corpus/` in a file
+browser into a `pnpm corpus:validate` / `pnpm corpus:report` / `pnpm test` failure for a file that is
+neither committed nor committable. The drop set is stated once at the walk rather than guessed per
+reader, and the corpus-provenance-split fence holds every name in it against `.gitignore`, so the list
+can never grant an exemption git does not; everything git WOULD track still fails closed by name.
+
+`addBusinessDays`'s local-calendar-day stepping (D-168) now has a companion that crosses a pinned
+transition in each direction and asserts the exact instant and local rendering, both of which the fixed
+86 400-second stepping fails. The prior assertion stepped entirely inside EDT and passed byte-identically
+under the bug.
+
+**Why:** a check that says "committed" while reading the working tree fails on things no one can commit,
+and a correction indistinguishable from the bug it replaced is detection without verification (charter #4).
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+### D-170 · 2026-08-06 · reversible · The corpus walk drops on TRACKEDNESS, not on a name
+
+`readTree` drops an entry only when git confirms it untracked, and only under a name in
+`UNTRACKABLE_ENTRY_NAMES` (D-169). Keying the drop on the NAME alone made a force-added `.DS_Store` -
+`git add -f`, or a commit predating the ignore rule - a genuinely committed byte under `fixtures/corpus/`
+that no closure could see: not regenerated, not digest-bound, not intake-governed, not NFC-scanned, and
+invisible to the exact root inventory D-168 added to forbid exactly that state. Trackedness is asked
+lazily and once per walk (`git ls-files -z --cached`), so a tree holding no dropping never shells out,
+and when git cannot answer at all - no repository, no binary - the walk drops nothing: an entry no one
+can prove untracked is accounted for rather than assumed away.
+
+The subprocess is the ONE the corpus tooling may run, registered in the corpus-determinism fence's input
+boundaries with its exact argument. It cannot move a corpus byte: the drop set is a subset of
+`UNTRACKABLE_ENTRY_NAMES`, and no generated path, intake path, or spec path can bear one of those names,
+so no generated, inventoried, or digested value varies with git's answer. Untracked entries under any
+OTHER name stay surfaced, so a delivered-but-uncommitted intake file is still validated rather than
+silently passing as an empty partition.
+
+**Why:** an exemption that a name alone can claim is an exemption anyone can plant; the walk must ask the
+authority the readers actually mean - git - and fail closed when it has no answer.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+### D-171 · 2026-08-06 · reversible · The dead-export gate reaches `scripts/**`, and freshness refuses an unparseable instant
+
+`knip.json` listed `scripts/**/*.ts` as an ENTRY pattern, so every export under `scripts/` was assumed
+reachable and the charter #5 dead-export gate could not see the tooling tree at all - the same escape
+hatch ADR-0052 closed for the two budget fences, left open for a tree that now carries the corpus
+generator. The entry is narrowed to `scripts/*.ts` - every TOP-LEVEL file, which is the invoked runners
+plus two non-runner libraries that keep the exemption, `scripts/golden-cases.lib.ts` and
+`scripts/error-message.ts` - with `scripts/**/*.ts` still in project scope. So the closure is the
+`scripts/corpus/**` subtree and any future subdirectory, not the whole tooling tree; naming it as "the
+runners" overstated it. `ignoreExportsUsedInFile: true` narrows it again: the gate sees only NEVER-
+referenced exports, so the four symbols de-exported in this same change were beyond its reach either way
+and the planted probe proves the subtree property, not the file-local one. Narrowing it immediately named
+three dead exports no reviewer had found, all removed; the proof log records a planted export failing the
+gate at `file:line`.
+
+`deriveRealDerivedFreshness` now takes both instants through the corpus clock's `diffSeconds`, which
+asserts canonical UTC. Its own local subtraction returned `NaN` for an unparseable instant, and
+`NaN > windowDays * 86_400` is false - evidence of unknown age read `"fresh"` inside the fail-closed
+intake path. The schema's `$defs/instant` pattern admits `garbage.123Z`, so nothing upstream was
+guaranteed to have refused it. This is the failure the module already refuses for a missing window,
+applied to the instant instead of the window.
+
+The primitives that decide corpus bytes - `nfc`, `sha256`, `byKey`, `sortedBy`, `duplicates` - collapse
+into `scripts/corpus/_util.ts`, a bound executable authority. `sortedBy` fixes emission order and
+therefore `corpusDigest`, so a second copy is a second place for the corpus to drift while every gate
+still reports green. Regeneration moved `corpusDigest` (bound authorities changed) and left every case's
+bytes identical.
+
+**Why:** a gate that cannot see a tree does not govern it, and a comparison that reads "fresh" for an
+instant it could not parse is a fail-open in the one path built to fail closed.
+**Revert path:** none while corpus version `2026.07.0` and ADR-0052 remain supported.
+
+### D-172 · 2026-08-06 · reversible · Serial execution moves into `vitest.config.ts`; the test tree is named as unbudgeted
+
+`vitest.config.ts` argues at length that these timeouts are honest only under `--maxWorkers=1
+--fileParallelism=false`, and records the twelve-worker measurement where five files fail. It did not
+HOLD that configuration: the flags lived in two `package.json` strings, so `pnpm test:watch` - a plain
+`vitest` over an `include` of `src/**/*.{test,spec}.{ts,tsx}` - ran every fitness fence at default
+parallelism, which is the measured failure case reachable by a documented command. `maxWorkers: 1` and
+`fileParallelism: false` move into the config, and the three redundant copies (`test`, `test:fitness`,
+the run `scripts/v3-invariants.ts` spawns) are dropped so one file both states the constraint and holds
+it. No invocation path is left that can run these timeouts in the configuration their own rationale
+calls dishonest.
+
+ADR-0052's tooling ceiling stays at 8700 against a re-measured 8587 lines - 113 of real headroom. The
+8446 recorded at D-167 was true when written and went stale by the 141 lines the two review commits
+after it added, which is the same drift D-167 itself called out one round earlier. The figure beside a
+ceiling is only worth what its last measurement is worth.
+
+**DEFERRED, recorded rather than silently exempt:** `src/__tests__/**` is in no budget bucket.
+`isShippedSourceFilePath` excludes it and `ceilingScopedFiles()` is shipped-source plus `scripts/**`, so
+37,529 lines across 62 files - including this PR's 8,454 and a single 5,573-line fence file - sit under
+no ceiling at all, while `scripts/**` now has to meet a 500-line per-file one. ADR-0052's own argument
+against an unwalked tree ("moving code to `scripts/` would have been evasion rather than discipline")
+applies to this tree verbatim; nothing about it being test code answers that argument. Extending the
+fences is structural work, not a wrap-up correction, so it is deferred under follow-up key
+`fu-corpus-test-tree-budget`. **Un-defer trigger:** the next structural test-tree work - a fence-file
+split, a shared-fixture extraction, or any change that moves fence code between trees - takes the
+bucket-and-ceiling decision with it. Until then the gap is stated in `line-budget.test.ts` beside the
+ceilings that do hold, so no reader mistakes silence for coverage.
+
+**DEFERRED, registered here for discoverability (ruling key `corpus11a-opus-review-20`, ruled after
+this entry was written):** a formal amendment of [ADR-0016](docs/adr/0016-testing-strategy.md), which
+still describes only the five test tiers and the non-UTC clock and not the execution policy this
+decision moved into `vitest.config.ts`, is deferred under follow-up key `fu-adr-0016-amendment`;
+AGENTS.md plus D-172/D-173/D-174 carry the fact meanwhile. **Un-defer trigger:** the next change to the
+test execution policy - a project added or repartitioned, a worker-count change, or any move of the
+constraint back out of `vitest.config.ts`.
+
+**Why:** a constraint documented in one file and enforced in another is a constraint one refactor from
+being lost, and an unmeasured tree that a fence's own rationale condemns should be named as a debt with
+a trigger, not left to look like a scope nobody noticed.
+**Alternatives:** budget `src/__tests__/**` now - rejected for this round, since a ceiling picked while
+wrapping up would either be set at today's number (failing the next fence a review adds) or set high
+enough to hold nothing.
+**Revert path:** delete the two config lines and restore the `package.json` flags; the deferral is a
+journal entry with no code to revert.
+
+### D-173 · 2026-08-06 · reversible · The two oversized corpus fence files are split move-only; the intake filename rule gets one source; serialization is scoped to `fitness`
+
+Ruling key `corpus11a-opus-review-18`. Four review findings, resolved in the order they constrain each
+other.
+
+**The split.** `corpus-provenance-split.test.ts` (5,572 lines) and `corpus-determinism.test.ts` (2,221)
+were 11x and 4x the 500-line per-file ceiling this same PR extends to `scripts/**` - the discipline was
+being asked of the tooling tree and not of the tree doing the asking. Both are now per-topic files plus
+shared helper modules, and the split is MOVE-ONLY: every test block and every helper was relocated
+verbatim, with no edit to an assertion, a description, or an order within a block. Safety is proved by
+comparison, not by inspection: the sorted set of vitest `fullName`s before and after is IDENTICAL
+(200 + 42 = 242 tests), and the whole suite is green. Two consequences are structural, not cosmetic. Each
+new fence file must carry its own live `describe("detects…")` companion (the
+detection-is-not-verification meta fence reads per FILE), so the enforcement chunks travel with companion
+chunks rather than alone; and every new fitness file must be referenced by `charter-map.json`, so the
+14 new fences are registered in the same change that adds them.
+
+**Two helpers stayed above the ceiling, and are named rather than hidden.**
+`_corpus-nondeterminism-scan.ts` (1,038 lines, `bannedNondeterminismUses`) and, before the verbatim
+hoist of its pure AST readers, `blendingViolations` are single functions whose bodies cannot be divided
+without EDITING them, which the move-only constraint forbids. The blending detector's stateless readers
+moved to `_corpus-blending-ast.ts`, bringing both parts under 500; the nondeterminism scanner's helpers
+are mutually recursive over per-file mutable state, so the same move buys ~200 lines and leaves 830 - not
+compliance. It is left whole and reported here rather than split by a refactor this ruling excludes.
+
+**The D-172 deferral stands.** D-172's un-defer trigger names "a fence-file split, a shared-fixture
+extraction, or any change that moves fence code between trees" - which is exactly this change. The
+ruling holds `fu-corpus-test-tree-budget` as recorded and excludes tree-wide budgets from this round, so
+the trigger is recorded as FIRED-AND-HELD rather than quietly unmet. The measured figure moves with the
+tree: `src/__tests__/**` is 38,125 lines (37,529 before this split, which costs one import header per
+file), stated beside the ceilings that do hold.
+
+**One intake filename rule.** `/^real-derived\/RD-[0-9a-f]{16}\.json$/` appeared identically in the
+delivery loader and the collection checker, and a third time as the schema's `caseId` pattern the
+checker's `expected` path already used. `intakeCaseIdPattern` now reads that pattern from the delivered
+schema and `isCanonicalIntakePath`/`canonicalIntakePath` are its only statements. A pattern that is
+missing, mistyped, unanchored or unparseable binds NO rule: no path is canonical AND
+`caseSchemaVocabularyProblems` names the gap, so a schema edit cannot widen intake by accident. Proof log:
+"one intake filename rule, read from the schema that owns the case id".
+
+**Scope of serial execution.** D-172 moved `maxWorkers: 1` / `fileParallelism: false` into
+`vitest.config.ts` and, in doing so, applied a fitness-specific measurement to `pnpm test:unit`,
+`test:integration` and every other invocation. The measurement is about fences that each build an
+independent full-repository TypeScript program; the unit and integration suites cause none of it. Two
+vitest `projects` now hold the split - `fitness` (serial) and `app` (parallel) - so the constraint still
+cannot be lost by an invocation path, and the rationale comment states the scope it actually enforces.
+
+`realDerivedCaseProblems` appends its three delegated problem lists directly instead of funnelling
+already-formed strings through `reject(true, …)` three times, and `realDerivedOutcomeProblems` is the
+exported name of the function itself rather than a one-line alias for it.
+
+**Why:** a ceiling the authoring tree is exempt from is a ceiling nobody believes, a rule written three
+times is three places to drift while every gate reports green, and a measurement applied outside the tree
+it was taken on is a wall-clock tax for a problem that tree does not have.
+**Alternatives:** split by editing the two indivisible detectors into smaller functions - rejected, the
+ruling requires move-only and a behaviour-preserving refactor of an AST detector is not a review
+wrap-up; budget `src/__tests__/**` now - rejected, see D-172 and the ruling.
+**Revert path:** the split is mechanical (concatenate the per-topic files back, drop the helper modules,
+remove the 14 `charter-map.json` refs); the intake authority and the vitest projects are each a single
+file's change.
+
+### D-174 · 2026-08-06 · reversible · The non-determinism scanner is decomposed into a scanner object; the intake refusal is rendered from its rule; the corpus world is validated once; the vitest projects actually partition
+
+Ruling key `corpus11a-opus-review-19`, plus one defect found while verifying it.
+
+**The scanner object.** D-173 left `bannedNondeterminismUses` whole at 1,038 lines because the move-only
+constraint forbade the only split available: its inner helpers close over per-file mutable state
+(`origins`, `localFunctions`) and the walk is mutually recursive, so relocating text alone cannot divide
+it. This ruling authorizes the refactor for that one function. The closure state is now an explicit
+`OriginResolver` handed to each step, and the walk lives in five modules under the 500-line ceiling -
+vocabulary (which origins are banned and what they are reported as), stateless AST reads, calls, member
+reads, and the resolver itself - with the recorder and the reporting passes in `_corpus-nondeterminism-scan.ts`.
+The proof replacing move-only is equivalence, not inspection: the FULL violation set over five trees is
+byte-identical before and after in file, line, api and order (184 findings), the fence's 42 adversarial
+companions are green, and an injected `Date.now()` is still caught with `file:line`.
+
+**The refusal is rendered, not restated.** D-173 single-sourced the intake filename PREDICATE and left
+the message a literal - a smaller copy of the same drift. `canonicalIntakeFilenameRule` renders the
+sentence from `CASE_ID_PATTERN`, so a schema change moves rule and message together; an unbound pattern
+names the schema that failed to mint a rule rather than a shape nobody holds. Proof log: "the intake
+refusal is rendered from the rule it enforces".
+
+**One corpus validation per run.** `_corpus-world.ts` called `validateCorpus()` at module scope, and
+vitest isolates modules per test file, so the D-173 split raised that from 2 executions to 13 - serially,
+under the fitness worker cap. A fitness-project `globalSetup` computes it once and injects it. Global
+setup runs in vitest's MAIN process, which does NOT inherit `test.env`, so it reads the pinned zone back
+from that same config and refuses a UTC clock the way `src/__tests__/setup.ts` does: a corpus validated in
+UTC and asserted in New York is a green suite proving nothing (charter #8). No fence's assertions changed;
+each still reads the same validated corpus.
+
+**The projects did not partition (defect).** D-173 split `fitness` (serial) from `app` (parallel), but
+`extends: true` runs vite's `mergeConfig`, which CONCATENATES arrays - so the root `include` was ADDED to
+the fitness project's, never replaced by it. Every unit, integration and component file was collected by
+BOTH projects: 21 files run twice per `pnpm test`, and one of those runs serialized under the very worker
+cap D-173's comment says they are exempt from, while `pnpm test:unit` ran each file twice. The root
+`include` is removed and each project declares its own scope; collection is now 53 fitness + 21 app, each
+file in exactly one project, and `pnpm test` is 74 files / 1,497 tests in 144s.
+
+**Why:** a rule stated twice drifts even when one copy is only prose; work that runs thirteen times to
+produce one deterministic answer is wall clock nobody chose; and a project split that does not split is
+worse than none, because the comment above it certifies a partition that never happened.
+**Alternatives:** accept the 1,038-line helper with the reason recorded - rejected, the ruling authorizes
+the decomposition and equivalence is provable; disable vitest isolation for `fitness` so a module-scope
+`validateCorpus()` runs once - rejected, eight fitness files use `vi.mock`/`vi.stubEnv` and would leak
+across a shared registry; give `fitness` an exclude list instead of removing the root `include` - rejected,
+a complement list silently re-leaks the next time a test directory is added.
+**Revert path:** each part is one file's change - concatenate the five scanner modules back into
+`bannedNondeterminismUses`, inline the refusal literal, restore the module-scope `validateCorpus()` and
+drop the `globalSetup` line, or put `include` back at the root of `vitest.config.ts`.
+
+### D-175 · 2026-08-06 · reversible · The shared corpus world rebuilds on a watch rerun, refuses an unpinned clock, and the intake naming rule moves into its own module
+
+Review round 20 (wrap-up), under the recorded review-15 runtime obligation that governs the shared-world
+design. The ruled shape is kept; the recorded `globalsetup-widens-corpus-failure-blast-radius` cost is
+narrowed in passing (a corpus that does not validate now fails the fences that READ it, not all 53).
+
+**A watch session cannot assert against a snapshot.** D-174 moved `validateCorpus()` into a fitness
+`globalSetup`, and vitest runs global setup ONCE PER PROCESS - it never re-invokes it - so every rerun in
+a `pnpm test:watch` session read the world computed at startup. The fences had also stopped importing the
+generator, so a `fixtures/corpus/**` or `scripts/corpus/**` edit had no module-graph edge either: the
+fences would not rerun at all, or rerun green against bytes that no longer exist. Two mechanisms close it:
+`forceRerunTriggers` declares the world's real inputs (corpus fixtures, corpus generator, golden fixtures
+and their loader, the scenario matrix, the golden doc), and the global setup registers an `onTestsRerun`
+hook that REBUILDS and re-provides the world before the rerun collects - only for its own project, so an
+`app` rerun does not pay for a world it never reads. The triggers are ROOT-ANCHORED absolute globs: a bare
+`**/…` refuses to traverse a dot-directory, so under a checkout like `~/.worktrees/x` (or an agent
+worktree) they - and vitest's own two defaults - silently match nothing. Proven end to end in a scripted
+watch session: editing `fixtures/corpus/spec/world.json` reruns `corpus-timestamps` RED and reverting it
+returns GREEN, while the same edit with the rebuild hook removed reruns green against the stale world.
+
+**The clock guard fails closed.** `pinConfiguredClock` skipped the pin when `project.config.env.TZ` did
+not resolve and only refused UTC, so a config-binding break left the corpus built on the machine's own
+clock - a Europe/Paris laptop passes both offset checks while the workers assert under America/New_York.
+It now refuses an absent, empty or non-string zone, an unresolvable zone, and a process clock whose winter
+and summer offsets disagree with the named zone, each by name, keeping the UTC refusal (charter #8).
+
+**One validation per run is now true.** `conflict-key-families` and `corpus-timestamps` still called
+`validateCorpus()` at module scope, making a full fitness run three validations rather than one; both read
+the injected world. A corpus that does not validate is reported through that world as the recorded reason
+and raised in the fences that READ it, rather than aborting global setup and taking all 54 fitness files
+down with a setup error - fail-closed either way, since no fence can read a world that was never built.
+
+**The intake naming rule is its own module.** `canonicalIntakeFilenameRule` rendered its message with
+`pattern.source.slice(1, -1)`, which is only correct because `intakeCaseIdPattern` refuses unanchored
+input - but both exported consumers take a `RegExp` from any caller, and an unanchored one corrupts both
+(a substring match widens what intake accepts; a blind slice chops real pattern characters off each end
+and prints a name intake rejects). The anchoring invariant is now asserted where it is relied on and
+refused by name. `scripts/corpus/scrub-contract.ts` was two lines under the 500-line ceiling, so the rule -
+the schema read, the pattern binding, the path, the refusal and the predicate - moved to
+`scripts/corpus/intake-filename.ts` and joined the executable authority inventory (`corpusDigest` is
+`86f870e6a5a35849fd7187e08136ce2da22d7771593fd5db0241c688d3080d20`; no case's bytes changed and captain
+signoff remains `pending-captain`).
+
+**Why:** a rerun that reads a snapshot is a green suite proving nothing, which is the exact class the
+charter targets; a guard that silently keeps the machine's clock is the failure it exists to prevent, one
+zone over; and an invariant only the default path enforces is an invariant the next caller breaks.
+**Alternatives:** record the watch-mode limitation beside D-174 instead of fixing it - rejected, a
+documented command that reports stale green is worse than no sharing; recompute the world on EVERY rerun -
+rejected, an `app`-only rerun would pay for a world it never reads; keep the naming rule in
+`scrub-contract.ts` and shrink prose to fit the ceiling - rejected, the rule has two consumers in two
+files and the ceiling was telling the truth about the file.
+**Revert path:** each part is one file's change - drop the `onTestsRerun` hook and the `forceRerunTriggers`
+list, restore the permissive zone check, re-inline the two `validateCorpus()` calls, or fold
+`intake-filename.ts` back into `scrub-contract.ts` and regenerate.
+
+### D-176 · 2026-08-06 · reversible · The sharing fence proves the seam against a counted double, the intake anchoring rule is read structurally, and the watch trigger's cost is recorded
+
+Review round 21 (wrap-up), under the recorded review-15 (one validation per run, without weakening) and
+review-17 (real measurements) obligations.
+
+**The fence that measures the seam no longer moves it.** `corpus-world-sharing` called the REAL global
+setup and then the REAL rerun hook, so a full fitness run paid THREE `validateCorpus()` executions - the
+one D-175 claimed was the only one, plus two the fence spent watching itself. The builder is now a
+parameter of `setup()` defaulted to the real one, and the fence drives it with a counted double whose every
+result is distinct. That proves MORE than before, not less: the exact object provided at each point is
+pinned, so a rebuild can no longer be confused with a re-provide of a cached world, and the build COUNT is
+asserted (one at setup, none on another project's rerun, one on this project's). What a double cannot see -
+that the shipped default builds a real corpus - is proven by a new case reading the injected world and by
+the eighteen fences that already read it, all on the single validation the run had already paid for.
+
+**Anchoring is a structural property, not the first and last character.** `isWholeStringRule` tested
+`startsWith("^") && endsWith("$")`, which admits three shapes that then produce exactly the corruption the
+assertion exists to prevent: a top-level alternation (`/^RD-[0-9a-f]{16}|junk$/`) leaves a branch anchored
+at neither end, so `.test()` matches a substring and widens what intake accepts; an escaped trailing dollar
+(`/^RD-\$/`) is a literal, and slicing it for display prints a filename intake rejects; and the `m` flag
+redefines both anchors while `g`/`y` make `.test()` answer differently on the same input each call. The
+rule is now read structurally - class- and group-aware, escape-aware, flags checked - and each shape is
+refused by its own name. A bounded alternation INSIDE the anchors still passes, so the check refuses
+corruption without refusing regexes. `scripts/corpus/intake-filename.ts` is a bound executable authority,
+so this changes `corpusDigest` to
+`2de7c9fe090ffaf29e51063eed5261e0f949f883d55337d094a088a224ab3e25`; no case's bytes or labels changed and
+captain signoff remains `pending-captain`.
+
+**The blunt watch trigger is kept, with its cost stated.** `forceRerunTriggers` schedules every file BOTH
+projects have already run, so a corpus edit mid-`pnpm test:watch` costs a full-suite cycle (MEASURED 177s
+and 185s on two runs) against 48s for the 18 corpus fences that actually read the world - a ~4x tax on
+corpus iteration in watch mode, most of it the serial fitness tree. Vitest 4's targeted
+`watchTriggerPatterns` was weighed and refused on correctness, not taste: `getTestFilesFromWatcherTrigger`
+runs BEFORE `handleFileChanged` and suppresses it on a match, so a scoped trigger must itself enumerate
+every test depending on the changed input by ANY route including the module graph - and these inputs are
+read with `readFileSync`, so no compiler edge backs that list. It would already be wrong:
+`config/demo/scenarios.yaml` is read by `src/__tests__/unit/decision-core.test.ts` in the OTHER project,
+which a fitness-scoped list would silently stop rerunning.
+
+**Why:** a fence whose own cost falsifies the claim it proves is the measurement problem this repo refuses,
+and an invariant only the default path enforces is an invariant the next caller breaks. A hand-kept
+dependency map whose staleness mode is a green suite is a worse trade than wall clock.
+**Alternatives:** reword the "one validation per run" claim to admit the fence's two - rejected, the seam
+is provable without paying them; probe whole-string-ness behaviourally by appending a prefix and suffix to
+a known match - rejected, no caller supplies a known-matching id, so the probe would only work on the
+default path that already holds; adopt `watchTriggerPatterns` - rejected above.
+**Revert path:** drop the builder parameter and let the fence call the real setup twice; restore the
+two-character anchoring check and regenerate the manifest; the trigger list is unchanged.
+
+### D-177 · 2026-08-07 · reversible · The corpus identifier spaces, tooling ceiling, and test budget are re-taken on the decision-ledger trunk
+
+Rebasing this branch onto the prompt-7 decision-ledger trunk collided on three identifier spaces, and two
+records cannot share a key. Prompt 7 shipped ADR-0041..ADR-0051, D-105..D-131, and PF-193..PF-204, so:
+
+- **ADR:** the corpus ADR moves 0039 -> **0052** and its file is renamed. It has now moved twice (0034 ->
+  0039 -> 0052, D-167 owning the first); the trunk's ADR-0039 (primitive vocabulary) and every ledger ADR
+  keep their numbers untouched.
+- **DECISIONS:** this branch's D-102..D-146 shift to **D-132..D-176**.
+- **Proof log:** the corpus rounds PF-188..PF-218 shift to **PF-205..PF-235**.
+
+Every reference moves with them - `charter-map.json`, the scenario-matrix deferral, `.gitattributes`, the
+generator sources, the fence headers, and the numbering notes in D-132 and the proof log, which now record
+both moves. Only lines this branch authored were renumbered; a trunk line citing a trunk id is untouched.
+`fixtures/corpus/{manifest.json,synthetic/}` are REGENERATED, not hand-edited: the taxonomy note cites the
+ADR path, so `corpusDigest` moves with it, to
+`6a1d00b8678275660ce62f5c82476578d95724db348bdf8aa5b80d4ca4a216de`. No case's bytes or labels changed and
+signoff was already `pending-captain`, so no signature is invalidated.
+
+**The ledger's own tooling is charged to the envelope that now measures it.** `scripts/**` was unbudgeted
+until this branch added the `tooling` bucket, so the trunk's build-time scripts - `seed-decision-ledger.ts`,
+`ledger-rebuild.ts`, `ledger-rebuild-args.ts`, `decision-ledger-vacuity.ts`, plus the chain-verify,
+restore-drill, seed and golden-loader edits, 366 lines in total - are measured here for the first time.
+The ceiling rises 8700 -> **9300** against a re-measured **9053**, recorded as an ADR-0052 §7 amendment. A
+ceiling is measured on the tree AS IT LANDS; inheriting the pre-rebase figure would have been a ceiling
+nobody re-took. The unbudgeted `src/__tests__/**` figure is re-measured at **45,362** (the ledger suites
+and fences land in the same tree); the gap stays DEFERRED under `fu-corpus-test-tree-budget`, not exempt.
+
+**`src/contracts/decision-core/ledger.ts` is classified as a general-purpose dependency, not bound
+authority.** The trunk's golden-case loader now imports and re-exports `LEDGER_EVENT_TYPES`, which put a
+new module in the corpus's runtime closure - the `corpus-executable-authority` fence caught it and refused
+to build until it was classified, which is the behaviour that fence exists for. It is consumed only by
+`validateGoldenCases`; the corpus calls `loadGoldenCases`/`loadScenarioRefs` and derives no byte from the
+ledger event vocabulary, so binding it would invalidate a signature over bytes that cannot move.
+
+**The shared test timeout stays the trunk's 60s.** D-167 removed this branch's bespoke per-fence
+extensions and left the shared budget at 20s, measured on a fast dev machine under serial fitness
+execution. D-131 then raised the shared budget to 60s because a GitHub runner is roughly twice as slow and
+CI timed out three whole-repo semantic fences that pass locally. Both hold: the bespoke extensions stay
+removed, and the shared budget stays the one measured against the machine CI actually uses. The serial
+`fitness` project, its `globalSetup` world, and the parallel `app` project are unchanged.
+
+**Why:** two records cannot share a key; a ceiling measured on a tree that no longer exists is not
+holding anything; a closure the fence cannot classify is the review decision it was built to force.
+**Revert path:** none - the trunk's ids are load-bearing and this branch's are the ones that moved. The
+tooling ceiling reverts to 8700 only by removing the trunk's ledger scripts from `scripts/**`.

@@ -13,10 +13,10 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --maxWorkers=1 --fileParallelism=false",
+    "test": "vitest run",
     "test:unit": "vitest run src/__tests__/unit",
     "test:integration": "vitest run src/__tests__/integration",
-    "test:fitness": "vitest run --maxWorkers=1 --fileParallelism=false src/__tests__/fitness",
+    "test:fitness": "vitest run src/__tests__/fitness",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "knip": "knip",
@@ -28,6 +28,9 @@
     "load:smoke": "LOG_LEVEL=warn tsx scripts/load-smoke.ts",
     "v3:invariants": "tsx scripts/v3-invariants.ts",
     "golden:validate": "tsx scripts/golden-cases-validate.ts",
+    "corpus:generate": "tsx scripts/corpus-generate.ts",
+    "corpus:validate": "tsx scripts/corpus-validate.ts",
+    "corpus:report": "tsx scripts/corpus-report.ts",
     "sbom": "cdxgen -t pnpm --no-install-deps -o sbom.json ."
   },
   "dependencies": {

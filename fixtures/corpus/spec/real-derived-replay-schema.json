@@ -1,0 +1,1116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "verin-real-derived-replay/1.11.0",
+  "title": "Verin scrubbed real-derived replay payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "request",
+    "identity",
+    "destination",
+    "liquidity",
+    "authority",
+    "policy",
+    "taxReviewState",
+    "taxReviewEvidenceSourceRef",
+    "instructionConflict",
+    "temporal",
+    "outcomes",
+    "evidenceRefs",
+    "execution"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "verin-real-derived-replay/1.11.0" },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "firmRef",
+        "requestRef",
+        "householdRef",
+        "action",
+        "actorRef",
+        "sourceAccountRef",
+        "destinationRef",
+        "evidenceSourceRef",
+        "amountMinor",
+        "currency",
+        "deadlineAt",
+        "settlementEarliestAt"
+      ],
+      "properties": {
+        "firmRef": { "$ref": "#/$defs/firmRef" },
+        "requestRef": { "$ref": "#/$defs/requestRef" },
+        "householdRef": { "$ref": "#/$defs/householdRef" },
+        "action": { "const": "distribution" },
+        "actorRef": { "$ref": "#/$defs/actorRef" },
+        "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+        "destinationRef": { "$ref": "#/$defs/instructionRef" },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" },
+        "amountMinor": { "$ref": "#/$defs/money" },
+        "currency": { "const": "USD" },
+        "deadlineAt": { "$ref": "#/$defs/nullableInstant" },
+        "settlementEarliestAt": { "$ref": "#/$defs/nullableInstant" }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subjectRef",
+        "resolution",
+        "candidateRefs",
+        "evidenceSourceRef"
+      ],
+      "properties": {
+        "subjectRef": { "$ref": "#/$defs/actorRef" },
+        "resolution": {
+          "enum": ["unique", "ambiguous", "canonical-collision"]
+        },
+        "candidateRefs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/actorRef" }
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
+      }
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instructionRef",
+        "householdRef",
+        "ownerRefs",
+        "ownership",
+        "verificationState",
+        "discriminatorState",
+        "evidenceSourceRef"
+      ],
+      "properties": {
+        "instructionRef": { "$ref": "#/$defs/instructionRef" },
+        "householdRef": { "$ref": "#/$defs/householdRef" },
+        "ownerRefs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/ownerRef" }
+        },
+        "ownership": {
+          "enum": ["same-household", "cross-household"]
+        },
+        "verificationState": {
+          "enum": ["verified", "unverified", "missing"]
+        },
+        "discriminatorState": {
+          "enum": ["unique", "collision", "missing"]
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
+      }
+    },
+    "liquidity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sources",
+        "selectedFundingRefs",
+        "reserveState",
+        "reserveRequiredMinor",
+        "reserveEvidenceSourceRef",
+        "withdrawalSegmentsMinor",
+        "pendingAction"
+      ],
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "accountRef",
+              "householdRef",
+              "ownerRefs",
+              "evidenceSourceRef",
+              "availableMinor",
+              "sourceTaxClass"
+            ],
+            "properties": {
+              "accountRef": { "$ref": "#/$defs/accountRef" },
+              "householdRef": { "$ref": "#/$defs/householdRef" },
+              "ownerRefs": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "$ref": "#/$defs/ownerRef" }
+              },
+              "evidenceSourceRef": {
+                "$ref": "#/$defs/evidenceSourceRef"
+              },
+              "availableMinor": { "$ref": "#/$defs/money" },
+              "sourceTaxClass": {
+                "enum": [
+                  "taxable",
+                  "retirement",
+                  "trust",
+                  "entity",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        },
+        "selectedFundingRefs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/accountRef" }
+        },
+        "reserveState": {
+          "enum": ["modeled-scalar", "modeled-segmented", "missing"]
+        },
+        "reserveRequiredMinor": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reserveEvidenceSourceRef": {
+          "$ref": "#/$defs/evidenceSourceRef"
+        },
+        "withdrawalSegmentsMinor": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/money" }
+        },
+        "pendingAction": { "$ref": "#/$defs/pendingAction" }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grantRef",
+        "actorRef",
+        "evidenceSourceRef",
+        "authorityScope",
+        "authorityState",
+        "validFrom",
+        "validTo"
+      ],
+      "properties": {
+        "grantRef": { "$ref": "#/$defs/nullableGrantRef" },
+        "actorRef": { "$ref": "#/$defs/actorRef" },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" },
+        "authorityScope": {
+          "enum": ["distribution-request", "other", "missing"]
+        },
+        "authorityState": {
+          "enum": [
+            "effective",
+            "expired",
+            "not-yet-effective",
+            "wrong-scope",
+            "missing"
+          ]
+        },
+        "validFrom": { "$ref": "#/$defs/nullableInstant" },
+        "validTo": { "$ref": "#/$defs/nullableInstant" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyRef",
+        "policyVersionRef",
+        "evidenceSourceRef",
+        "thresholdMinor",
+        "thresholdComparison",
+        "thresholdComparator",
+        "restrictionRef",
+        "restrictionEvidenceSourceRef",
+        "restrictionState",
+        "restrictionEffectiveFrom",
+        "restrictionEffectiveTo",
+        "legalHoldRef",
+        "legalHoldEvidenceSourceRef",
+        "legalHoldScope"
+      ],
+      "properties": {
+        "policyRef": { "$ref": "#/$defs/policyRef" },
+        "policyVersionRef": { "$ref": "#/$defs/policyVersionRef" },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" },
+        "thresholdMinor": { "$ref": "#/$defs/money" },
+        "thresholdComparison": {
+          "enum": ["below", "equal", "above"]
+        },
+        "thresholdComparator": {
+          "enum": ["strict", "inclusive"]
+        },
+        "restrictionRef": { "$ref": "#/$defs/nullableRestrictionRef" },
+        "restrictionEvidenceSourceRef": {
+          "$ref": "#/$defs/nullableEvidenceSourceRef"
+        },
+        "restrictionState": {
+          "enum": ["absent", "in-force", "expired", "future"]
+        },
+        "restrictionEffectiveFrom": {
+          "$ref": "#/$defs/nullableInstant"
+        },
+        "restrictionEffectiveTo": {
+          "$ref": "#/$defs/nullableInstant"
+        },
+        "legalHoldRef": { "$ref": "#/$defs/nullableLegalHoldRef" },
+        "legalHoldEvidenceSourceRef": {
+          "$ref": "#/$defs/nullableEvidenceSourceRef"
+        },
+        "legalHoldScope": {
+          "enum": ["none", "account", "position"]
+        }
+      }
+    },
+    "taxReviewState": {
+      "enum": [
+        "not-required",
+        "required-pending",
+        "completed",
+        "unavailable"
+      ]
+    },
+    "taxReviewEvidenceSourceRef": {
+      "$ref": "#/$defs/evidenceSourceRef"
+    },
+    "instructionConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conflictState",
+        "requestRef",
+        "householdRef",
+        "instructions",
+        "impactedSubjectRefs",
+        "evidenceSourceRef"
+      ],
+      "properties": {
+        "conflictState": { "enum": ["none", "present", "resolved"] },
+        "requestRef": { "$ref": "#/$defs/requestRef" },
+        "householdRef": { "$ref": "#/$defs/householdRef" },
+        "instructions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["instructionRef", "firmRef", "householdRef", "term"],
+            "properties": {
+              "instructionRef": { "$ref": "#/$defs/instructionRef" },
+              "firmRef": { "$ref": "#/$defs/firmRef" },
+              "householdRef": { "$ref": "#/$defs/householdRef" },
+              "term": { "$ref": "#/$defs/instructionTerm" }
+            }
+          }
+        },
+        "impactedSubjectRefs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityRef" }
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
+      }
+    },
+    "outcomes": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/treatmentOutcome" }
+    },
+    "temporal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventAt",
+        "eventAtLocal",
+        "timeZone",
+        "timeZoneDataVersion",
+        "standardOffsetMinutes",
+        "timeZoneTransitions",
+        "timeZoneRuleRef",
+        "transitionState",
+        "evidenceSourceRef"
+      ],
+      "properties": {
+        "eventAt": { "$ref": "#/$defs/instant" },
+        "eventAtLocal": { "$ref": "#/$defs/localInstant" },
+        "timeZone": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z][A-Za-z0-9_+-]*)+$"
+        },
+        "timeZoneDataVersion": {
+          "type": "string",
+          "pattern": "^iana-tzdb/[0-9]{4}[a-z]$"
+        },
+        "standardOffsetMinutes": {
+          "type": "integer",
+          "minimum": -840,
+          "maximum": 840
+        },
+        "timeZoneTransitions": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at", "offsetMinutes"],
+            "properties": {
+              "at": { "$ref": "#/$defs/instant" },
+              "offsetMinutes": {
+                "type": "integer",
+                "minimum": -840,
+                "maximum": 840
+              }
+            }
+          }
+        },
+        "timeZoneRuleRef": { "$ref": "#/$defs/timeZoneRuleRef" },
+        "transitionState": {
+          "enum": ["standard", "daylight", "boundary"]
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
+      }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/evidenceId" }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reservationKeys",
+        "preconditions",
+        "evidenceSourceRef"
+      ],
+      "properties": {
+        "reservationKeys": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/conflictKey" }
+        },
+        "preconditions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "destination-verified",
+              "liquidity-sufficient",
+              "authority-valid",
+              "threshold-satisfied",
+              "tax-reviewed",
+              "instructions-resolved",
+              "evidence-fresh",
+              "reservation-available"
+            ]
+          }
+        },
+        "evidenceSourceRef": { "$ref": "#/$defs/evidenceSourceRef" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["identity"],
+          "properties": {
+            "identity": {
+              "type": "object",
+              "required": ["resolution", "candidateRefs"],
+              "properties": {
+                "resolution": { "const": "unique" },
+                "candidateRefs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": { "$ref": "#/$defs/actorRef" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["identity"],
+          "properties": {
+            "identity": {
+              "type": "object",
+              "required": ["resolution", "candidateRefs"],
+              "properties": {
+                "resolution": {
+                  "enum": ["ambiguous", "canonical-collision"]
+                },
+                "candidateRefs": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": { "$ref": "#/$defs/actorRef" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["liquidity"],
+          "properties": {
+            "liquidity": {
+              "type": "object",
+              "required": [
+                "reserveState",
+                "reserveRequiredMinor",
+                "withdrawalSegmentsMinor"
+              ],
+              "properties": {
+                "reserveState": { "const": "missing" },
+                "reserveRequiredMinor": { "type": "null" },
+                "withdrawalSegmentsMinor": {
+                  "type": "array",
+                  "maxItems": 0,
+                  "items": { "$ref": "#/$defs/money" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["liquidity"],
+          "properties": {
+            "liquidity": {
+              "type": "object",
+              "required": [
+                "reserveState",
+                "reserveRequiredMinor",
+                "withdrawalSegmentsMinor"
+              ],
+              "properties": {
+                "reserveState": { "const": "modeled-scalar" },
+                "reserveRequiredMinor": { "$ref": "#/$defs/money" },
+                "withdrawalSegmentsMinor": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 1,
+                  "items": { "$ref": "#/$defs/money" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["liquidity"],
+          "properties": {
+            "liquidity": {
+              "type": "object",
+              "required": [
+                "reserveState",
+                "reserveRequiredMinor",
+                "withdrawalSegmentsMinor"
+              ],
+              "properties": {
+                "reserveState": { "const": "modeled-segmented" },
+                "reserveRequiredMinor": { "$ref": "#/$defs/money" },
+                "withdrawalSegmentsMinor": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": { "$ref": "#/$defs/money" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["authority"],
+          "properties": {
+            "authority": {
+              "type": "object",
+              "required": [
+                "grantRef",
+                "authorityScope",
+                "authorityState",
+                "validFrom",
+                "validTo"
+              ],
+              "properties": {
+                "grantRef": { "type": "null" },
+                "authorityScope": { "const": "missing" },
+                "authorityState": { "const": "missing" },
+                "validFrom": { "type": "null" },
+                "validTo": { "type": "null" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["authority"],
+          "properties": {
+            "authority": {
+              "type": "object",
+              "required": [
+                "grantRef",
+                "authorityScope",
+                "authorityState",
+                "validFrom",
+                "validTo"
+              ],
+              "properties": {
+                "grantRef": { "$ref": "#/$defs/grantRef" },
+                "authorityScope": {
+                  "enum": ["distribution-request", "other"]
+                },
+                "authorityState": {
+                  "enum": [
+                    "effective",
+                    "expired",
+                    "not-yet-effective",
+                    "wrong-scope"
+                  ]
+                },
+                "validFrom": { "$ref": "#/$defs/instant" },
+                "validTo": { "$ref": "#/$defs/nullableInstant" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["instructionConflict"],
+          "properties": {
+            "instructionConflict": {
+              "type": "object",
+              "required": [
+                "conflictState",
+                "instructions",
+                "impactedSubjectRefs"
+              ],
+              "properties": {
+                "conflictState": { "const": "none" },
+                "instructions": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "instructionRef",
+                      "firmRef",
+                      "householdRef",
+                      "term"
+                    ],
+                    "properties": {
+                      "instructionRef": { "$ref": "#/$defs/instructionRef" },
+                      "firmRef": { "$ref": "#/$defs/firmRef" },
+                      "householdRef": { "$ref": "#/$defs/householdRef" },
+                      "term": { "$ref": "#/$defs/instructionTerm" }
+                    }
+                  }
+                },
+                "impactedSubjectRefs": {
+                  "type": "array",
+                  "maxItems": 0,
+                  "items": { "$ref": "#/$defs/entityRef" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["instructionConflict"],
+          "properties": {
+            "instructionConflict": {
+              "type": "object",
+              "required": [
+                "conflictState",
+                "instructions",
+                "impactedSubjectRefs"
+              ],
+              "properties": {
+                "conflictState": { "enum": ["present", "resolved"] },
+                "instructions": {
+                  "type": "array",
+                  "minItems": 2,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "instructionRef",
+                      "firmRef",
+                      "householdRef",
+                      "term"
+                    ],
+                    "properties": {
+                      "instructionRef": { "$ref": "#/$defs/instructionRef" },
+                      "firmRef": { "$ref": "#/$defs/firmRef" },
+                      "householdRef": { "$ref": "#/$defs/householdRef" },
+                      "term": { "$ref": "#/$defs/instructionTerm" }
+                    }
+                  }
+                },
+                "impactedSubjectRefs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "$ref": "#/$defs/entityRef" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["policy"],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "required": [
+                "restrictionRef",
+                "restrictionState",
+                "restrictionEffectiveFrom",
+                "restrictionEffectiveTo"
+              ],
+              "properties": {
+                "restrictionRef": { "type": "null" },
+                "restrictionState": { "const": "absent" },
+                "restrictionEffectiveFrom": { "type": "null" },
+                "restrictionEffectiveTo": { "type": "null" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["policy"],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "required": [
+                "restrictionRef",
+                "restrictionState",
+                "restrictionEffectiveFrom",
+                "restrictionEffectiveTo"
+              ],
+              "properties": {
+                "restrictionRef": { "$ref": "#/$defs/restrictionRef" },
+                "restrictionState": {
+                  "enum": ["in-force", "expired", "future"]
+                },
+                "restrictionEffectiveFrom": { "$ref": "#/$defs/instant" },
+                "restrictionEffectiveTo": { "$ref": "#/$defs/nullableInstant" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["policy"],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "required": ["legalHoldRef", "legalHoldScope"],
+              "properties": {
+                "legalHoldRef": { "type": "null" },
+                "legalHoldScope": { "const": "none" }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["policy"],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "required": ["legalHoldRef", "legalHoldScope"],
+              "properties": {
+                "legalHoldRef": { "$ref": "#/$defs/legalHoldRef" },
+                "legalHoldScope": { "enum": ["account", "position"] }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "$defs": {
+    "firmRef": {
+      "type": "string",
+      "pattern": "^firm:tok:[0-9a-f]{16}$"
+    },
+    "requestRef": {
+      "type": "string",
+      "pattern": "^request:tok:[0-9a-f]{16}$"
+    },
+    "householdRef": {
+      "type": "string",
+      "pattern": "^household:tok:[0-9a-f]{16}$"
+    },
+    "accountRef": {
+      "type": "string",
+      "pattern": "^account:tok:[0-9a-f]{16}$"
+    },
+    "nullableAccountRef": {
+      "type": ["string", "null"],
+      "pattern": "^account:tok:[0-9a-f]{16}$"
+    },
+    "nullableHouseholdRef": {
+      "type": ["string", "null"],
+      "pattern": "^household:tok:[0-9a-f]{16}$"
+    },
+    "instructionRef": {
+      "type": "string",
+      "pattern": "^instruction:tok:[0-9a-f]{16}$"
+    },
+    "ownerRef": {
+      "type": "string",
+      "pattern": "^owner:tok:[0-9a-f]{16}$"
+    },
+    "actorRef": {
+      "type": "string",
+      "pattern": "^actor:tok:[0-9a-f]{16}$"
+    },
+    "grantRef": {
+      "type": "string",
+      "pattern": "^grant:tok:[0-9a-f]{16}$"
+    },
+    "nullableGrantRef": {
+      "type": ["string", "null"],
+      "pattern": "^grant:tok:[0-9a-f]{16}$"
+    },
+    "policyRef": {
+      "type": "string",
+      "pattern": "^policy:tok:[0-9a-f]{16}$"
+    },
+    "policyVersionRef": {
+      "type": "string",
+      "pattern": "^policy-version:tok:[0-9a-f]{16}$"
+    },
+    "restrictionRef": {
+      "type": "string",
+      "pattern": "^restriction:tok:[0-9a-f]{16}$"
+    },
+    "nullableRestrictionRef": {
+      "type": ["string", "null"],
+      "pattern": "^restriction:tok:[0-9a-f]{16}$"
+    },
+    "legalHoldRef": {
+      "type": "string",
+      "pattern": "^legal-hold:tok:[0-9a-f]{16}$"
+    },
+    "nullableLegalHoldRef": {
+      "type": ["string", "null"],
+      "pattern": "^legal-hold:tok:[0-9a-f]{16}$"
+    },
+    "pendingActionRef": {
+      "type": "string",
+      "pattern": "^pending-action:tok:[0-9a-f]{16}$"
+    },
+    "nullablePendingActionRef": {
+      "type": ["string", "null"],
+      "pattern": "^pending-action:tok:[0-9a-f]{16}$"
+    },
+    "timeZoneRuleRef": {
+      "type": "string",
+      "pattern": "^time-zone-rule:tok:[0-9a-f]{16}$"
+    },
+    "evidenceSourceRef": {
+      "type": "string",
+      "pattern": "^evidence-source:tok:[0-9a-f]{16}$"
+    },
+    "nullableEvidenceSourceRef": {
+      "type": ["string", "null"],
+      "pattern": "^evidence-source:tok:[0-9a-f]{16}$"
+    },
+    "entityRef": {
+      "oneOf": [
+        { "$ref": "#/$defs/requestRef" },
+        { "$ref": "#/$defs/householdRef" },
+        { "$ref": "#/$defs/accountRef" },
+        { "$ref": "#/$defs/instructionRef" },
+        { "$ref": "#/$defs/ownerRef" },
+        { "$ref": "#/$defs/actorRef" },
+        { "$ref": "#/$defs/grantRef" },
+        { "$ref": "#/$defs/policyRef" },
+        { "$ref": "#/$defs/policyVersionRef" },
+        { "$ref": "#/$defs/restrictionRef" },
+        { "$ref": "#/$defs/legalHoldRef" },
+        { "$ref": "#/$defs/pendingActionRef" },
+        { "$ref": "#/$defs/timeZoneRuleRef" }
+      ]
+    },
+    "instructionTerm": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governedAction",
+            "sourceAccountRef",
+            "targetKind",
+            "targetRef",
+            "polarity"
+          ],
+          "properties": {
+            "governedAction": { "const": "distribution" },
+            "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+            "targetKind": { "const": "source-account" },
+            "targetRef": { "$ref": "#/$defs/accountRef" },
+            "polarity": { "enum": ["required", "forbidden"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governedAction",
+            "sourceAccountRef",
+            "targetKind",
+            "targetRef",
+            "polarity"
+          ],
+          "properties": {
+            "governedAction": { "const": "distribution" },
+            "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+            "targetKind": { "const": "destination-instruction" },
+            "targetRef": { "$ref": "#/$defs/instructionRef" },
+            "polarity": { "enum": ["required", "forbidden"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governedAction",
+            "sourceAccountRef",
+            "targetKind",
+            "targetRef",
+            "polarity"
+          ],
+          "properties": {
+            "governedAction": { "const": "distribution" },
+            "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+            "targetKind": { "const": "destination-subject" },
+            "targetRef": { "$ref": "#/$defs/ownerRef" },
+            "polarity": { "enum": ["required", "forbidden"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "governedAction",
+            "sourceAccountRef",
+            "targetKind",
+            "targetRef",
+            "polarity"
+          ],
+          "properties": {
+            "governedAction": { "const": "distribution" },
+            "sourceAccountRef": { "$ref": "#/$defs/accountRef" },
+            "targetKind": { "const": "request" },
+            "targetRef": { "$ref": "#/$defs/requestRef" },
+            "polarity": { "enum": ["required", "forbidden"] }
+          }
+        }
+      ]
+    },
+    "instant": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "\\.\\d{3}Z$"
+    },
+    "localInstant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}[+-][0-9]{2}:[0-9]{2}$"
+    },
+    "nullableInstant": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "pattern": "\\.\\d{3}Z$"
+    },
+    "money": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "evidenceId": {
+      "type": "string",
+      "pattern": "^evs:tok:[0-9a-f]{16}:(request|identity-resolution|balance|bank-instruction|household-instruction|planned-withdrawals|pending-actions|restriction|authority|legal-hold|recent-change|policy|tax-review|time-zone-rule|execution-precondition)$"
+    },
+    "conflictKey": {
+      "type": "string",
+      "pattern": "^conflict:tok:[0-9a-f]{16}:(liquidity|bank-instruction|account-registration|household-instruction|regulatory-hold|party-authority|model-rebalance)$"
+    },
+    "treatment": {
+      "enum": [
+        "accept-effective-authority",
+        "accept-ineffective-authority",
+        "accept-infeasible-deadline",
+        "accept-nonintegral-destination",
+        "apply-inclusive-threshold-boundary",
+        "apply-restriction-lifecycle",
+        "apply-strict-threshold-boundary",
+        "auto-bind-ambiguous-identity",
+        "calculate-scalar-reserve",
+        "calculate-segmented-reserve",
+        "calculate-structured-reserve",
+        "collapse-evidence-interval",
+        "collapse-instruction-conflict",
+        "compare-canonical-identities",
+        "compare-raw-identities",
+        "count-nonreducing-pending",
+        "credit-settled-incoming-availability",
+        "debit-settled-outgoing-availability",
+        "exclude-nonreducing-pending",
+        "exclude-stale-evidence",
+        "ignore-restriction-lifecycle",
+        "invent-reserve-from-missing-schedule",
+        "mark-reserve-unavailable",
+        "omit-settled-incoming-availability",
+        "omit-settled-outgoing-availability",
+        "preserve-settled-incoming-availability",
+        "preserve-settled-outgoing-availability",
+        "preserve-evidence-interval",
+        "preserve-hold-scope",
+        "proceed-without-completed-tax-review",
+        "reevaluate-all-impacted-subjects",
+        "reevaluate-partial-subjects",
+        "reject-ineffective-authority",
+        "reject-effective-authority-by-membership",
+        "reject-infeasible-deadline",
+        "render-with-fixed-offset",
+        "render-with-time-zone-rules",
+        "require-completed-tax-review",
+        "require-human-selection",
+        "require-integral-destination",
+        "surface-instruction-conflict",
+        "use-stale-evidence",
+        "widen-or-ignore-hold-scope"
+      ]
+    },
+    "treatmentOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defectClassId",
+        "expectedTreatment",
+        "observedTreatment"
+      ],
+      "properties": {
+        "defectClassId": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "expectedTreatment": { "$ref": "#/$defs/treatment" },
+        "observedTreatment": { "$ref": "#/$defs/treatment" }
+      }
+    },
+    "pendingAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actionRef",
+        "accountRef",
+        "householdRef",
+        "actionKind",
+        "actionState",
+        "direction",
+        "liquidityClass",
+        "availableMinorIncludesAction",
+        "amountMinor",
+        "evidenceSourceRef",
+        "reducesEffectiveLiquidity",
+        "increasesAvailableLiquidity"
+      ],
+      "properties": {
+        "actionRef": { "$ref": "#/$defs/nullablePendingActionRef" },
+        "accountRef": { "$ref": "#/$defs/nullableAccountRef" },
+        "householdRef": { "$ref": "#/$defs/nullableHouseholdRef" },
+        "actionKind": {
+          "type": ["string", "null"],
+          "enum": [
+            "outgoing-distribution",
+            "outgoing-debit",
+            "incoming-transfer",
+            "incoming-credit",
+            "unknown",
+            "unclassified",
+            null
+          ]
+        },
+        "actionState": {
+          "type": ["string", "null"],
+          "enum": [
+            "pending",
+            "settling",
+            "blocked",
+            "cancelled",
+            "rejected",
+            "settled",
+            null
+          ]
+        },
+        "direction": {
+          "type": ["string", "null"],
+          "enum": ["outgoing", "incoming", "unknown", null]
+        },
+        "liquidityClass": {
+          "type": ["string", "null"],
+          "enum": [
+            "distribution",
+            "debit",
+            "credit",
+            "unclassified",
+            null
+          ]
+        },
+        "availableMinorIncludesAction": { "type": ["boolean", "null"] },
+        "amountMinor": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "evidenceSourceRef": {
+          "$ref": "#/$defs/nullableEvidenceSourceRef"
+        },
+        "reducesEffectiveLiquidity": { "type": "boolean" },
+        "increasesAvailableLiquidity": { "type": "boolean" }
+      }
+    }
+  }
+}

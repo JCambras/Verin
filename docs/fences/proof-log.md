@@ -6584,3 +6584,2317 @@ existing PF-204 injections already prove the reachability and stale-deferral arm
 11/11. No export, deferral, or seam was added or removed.
 
 **Date:** 2026-08-06 (documentation sync).
+
+## PF-205..PF-208 · replay-corpus fences · v3 prompt 11 (ADR-0052)
+
+**Numbering note.** Upstream assigned the topic branch's proof range before integration, and moved it
+again when this branch rebased onto the prompt-7 decision-ledger trunk (D-177). The canonical mappings
+are **PF-090..PF-093 -> PF-205..PF-208** and
+**PF-094..PF-108 -> PF-209..PF-223**. Earlier corpus references use these mappings. Recorded as D-132.
+
+**Decomposition note.** The two corpus fence files named in the PF-205..PF-235 headings below were later
+split move-only under the 500-line `max-file-size` ceiling (D-173). Every proof still re-runs from this
+repo alone with `pnpm test:fitness`, but a proof's case may now live in a sibling file. The cases stayed
+byte-equivalent; only their file changed:
+
+- `corpus-determinism.test.ts` -> also `corpus-determinism-origins.test.ts`,
+  `corpus-determinism-repository-inputs.test.ts`
+- `corpus-provenance-split.test.ts` -> also `corpus-executable-authority.test.ts`,
+  `corpus-intake-attestation.test.ts`, `corpus-liquidity-treatments.test.ts`,
+  `corpus-measurement-boundary.test.ts`, `corpus-provenance-inventory.test.ts`,
+  `corpus-replay-{ownership,payload,topology}.test.ts`,
+  `corpus-synthetic-{case-semantics,context,instructions}.test.ts`,
+  `corpus-vocabulary-binding.test.ts`
+
+The headings are left at the file that held the case when it was proven; this note is the redirect.
+
+---
+
+## PF-205 · corpus-determinism · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (ADR-0052):** the same spec and seed produce the same bytes forever; a different seed
+produces a different corpus; inserting a household mid-spec changes ONLY that household's cases; no
+clock, randomness, locale API or environment read exists under `scripts/corpus/`; and generation is
+time-zone independent.
+
+**Injection 1 - randomness at the derivation primitive.** Replaced the path-keyed body of
+`deriveIntInRange` (`scripts/corpus/seed.ts:61`) with `min + Math.floor(Math.random() * (max - min + 1))`.
+
+**Observed failure (verbatim, abridged to the distinct assertions):**
+```
+FAIL src/__tests__/fitness/corpus-determinism.test.ts > (d) enforces: no clock, randomness, locale API, or env read under scripts/corpus/
+AssertionError: non-deterministic APIs in the generator:
+scripts/corpus/seed.ts:61 Math.random: expected [ { …(3) } ] to deeply equal []
+
+FAIL src/__tests__/fitness/corpus-determinism.test.ts > (a) enforces: two generations of the same spec + seed are byte-identical
+AssertionError: expected [ …(26) ] to deeply equal []
++   "synthetic/CS-absent-withdrawal-schedule.json",
++   "synthetic/CS-authority-lapse-inside-retrieval.json",
+    … all 26 cases …
+```
+Five of the fence's assertions failed: the AST ban, double-generation byte identity, the committed-tree
+comparison, the mid-spec insertion property, and TZ independence.
+
+**Injection 2 - ORDER-SENSITIVE derivation (the stream-PRNG failure mode).** Changed the derivation
+path in `scripts/corpus/generate.ts:303` from the case's stable id to its ORDINAL POSITION in the spec
+(`case/${spec.cases.cases.indexOf(corpusCase)}`) - deterministic across runs, but position-keyed.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/corpus-determinism.test.ts > (c) enforces: inserting a household mid-spec changes ONLY that household's cases
+AssertionError: expected [ …(14) ] to deeply equal [ Array(1) ]
++   "synthetic/CS-blocked-pending-action.json",
++   "synthetic/CS-clean-ample-liquidity.json",
++   "synthetic/CS-clean-fresh-authority.json",
+    … 14 unrelated cases churned by one insertion …
+
+FAIL src/__tests__/fitness/corpus-determinism.test.ts > (a) enforces: the COMMITTED corpus equals a fresh regeneration (no hand edits)
+AssertionError: committed corpus drifted:
+synthetic/CS-absent-withdrawal-schedule.json: committed bytes differ from regeneration (3511 vs 3511 bytes) - generated files are never hand-edited
+```
+This is the proof that matters most: a plausible, fully deterministic generator still fails, because
+determinism alone is not order-independence.
+
+**Injection 3 - hand edit to a generated file.** Flipped `"kind":"clean-control"` to `"kind":"defect"`
+in `fixtures/corpus/synthetic/CS-clean-verified-destination.json` (a label change - the exact edit that
+would inflate a coverage figure).
+
+**Observed failure (verbatim, `pnpm corpus:validate`):**
+```
+  ✗ synthetic/CS-clean-verified-destination.json: committed bytes differ from regeneration (5231 vs 5238 bytes) - generated files are never hand-edited
+
+corpus: 1 problem(s) - a hand-edited or drifted corpus cannot pass (charter #4)
+```
+
+**Injection 4 - oversized tooling file** (proving the ADR-0052 extension of `max-file-size` to
+`scripts/**` is live). Created `scripts/corpus/_adv-big.ts` with 501 comment lines.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/max-file-size.test.ts > enforces: no shipped or tooling file exceeds its ceiling (default 500)
+AssertionError: oversized files (split them):
+scripts/corpus/_adv-big.ts: 502 > 500: expected [ Array(1) ] to deeply equal []
+```
+
+**Revert:** every injected file restored from a pre-injection copy and byte-compared
+(`diff -r` clean over `scripts/corpus` and `fixtures/corpus`); `pnpm test:fitness` →
+`Tests 432 passed (432)`; `pnpm corpus:validate` → `regenerated byte-identical; every rule holds`.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a).
+
+---
+
+## PF-206 · corpus-provenance-split · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (architecture v3 §2.4, demo contract §7, ADR-0052):** the corpus metric is split by
+provenance and never blended; an empty real-derived partition yields `detectionRate: null` with a reason
+code and never borrows the synthetic figure; labeled clean controls exist so a false-positive rate is
+reportable beside coverage; the real-derived intake contract is fail-closed; agents never sign.
+
+**Injection 1 - a blending function.** Added `scripts/corpus/_adv-blend.ts`:
+`export const headline = (r: CorpusReport): number => r.synthetic.defectCases + r.realDerived.defectCases;`
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/corpus-provenance-split.test.ts > (c) enforces: no code in scripts/ blends the two provenance partitions
+AssertionError: blended provenance figures:
+scripts/corpus/_adv-blend.ts:3: combines the synthetic and real-derived partitions into one figure: expected [ Array(1) ] to deeply equal []
+```
+
+**Injection 2 - substituting a figure for the empty partition.** Changed the empty-partition branch of
+`measurePartition` (`scripts/corpus/report.ts:109`) to return `{ value: 1, reasonCode: null }` instead of
+withholding - i.e. an empty real-derived partition reporting a perfect rate.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/corpus-provenance-split.test.ts > (d) enforces: with an empty real-derived partition the reporter withholds detectionRate
+AssertionError: expected { value: 1, reasonCode: null } to deeply equal { value: null, …(1) }
+-   "reasonCode": "real-derived-corpus-absent",
+-   "value": null,
++   "reasonCode": null,
++   "value": 1,
+```
+
+**Injection 3 - a corpus with no clean controls.** Removed every `clean-control` case from
+`fixtures/corpus/spec/cases.json` and regenerated.
+
+**Observed failure (verbatim, `pnpm corpus:validate`):**
+```
+  ✗ corpus: no labeled clean controls - a coverage figure without a false-positive rate is not a measurement (captain ruling 2026-07-28)
+```
+
+**Injection 4 - a stale captain signature.** Set `spec/SIGNOFF.md` to `status: signed` with
+`signedDigest: 0000…0000` (i.e. a signature carried across a regeneration).
+
+**Observed failure (verbatim):**
+```
+  ✗ fixtures/corpus/spec/SIGNOFF.md: signed-but-regenerated - signedDigest 0000000000000000000000000000000000000000000000000000000000000000 does not match the current corpusDigest d3fe7e8164bb7765027910267dfa78d8cbec9e65b37473ca4f0de089172cef7c; regeneration invalidates the signature and requires re-signing
+```
+
+**Injection 5 - real-derived cases that leak PII, two ways.** (a) a case carrying an UNANTICIPATED
+key `advisorNote` with real-looking prose; (b) a case with prose inside an ANTICIPATED key, `subjects`.
+
+**Observed failures (verbatim):**
+```
+  ✗ real-derived/RD-0011223344556677.json: (root) - Unrecognized key: "advisorNote"
+  ✗ real-derived/RD-00aabbccddeeff00.json: subjects.0 - Invalid string: must match pattern /^tok:[0-9a-f]{16}$/
+```
+Both halves of fail-closed: an unanticipated field is rejected by the strict shape, and an anticipated
+one is rejected by the closed-vocabulary scan.
+
+**Standing companions (run every CI build) that this fence needs to stay non-vacuous:** a POPULATED
+real-derived partition produces `detectionRate: {value: 0.5}` (so the `null` is a real branch, not a
+stub); a detector that flags every case scores `syntheticDefectCoverage 1.0` **and**
+`falsePositiveRate 1.0`; coverage measured with no controls is `interpretable: false`; a VALID
+real-derived case is accepted (the intake contract is not a blanket reject); a self-reviewed scrub and
+an inflated record count are rejected.
+
+**Revert:** all injected files removed/restored and byte-compared; `pnpm test:fitness` →
+`Tests 432 passed (432)`.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a).
+
+---
+
+## PF-207 · corpus-timestamps · `src/__tests__/fitness/corpus-timestamps.test.ts`
+
+**Invariant (ADR-0052, design §4.6):** observation precedes retrieval and never postdates the trigger;
+retrieval lands inside the committed per-kind band; freshness and recent-change membership are
+RECOMPUTED, never trusted; business-day arithmetic never lands on a local weekend; and local renderings
+come from pinned tz transitions, checked against the platform time-zone database.
+
+**Injection - a hardcoded UTC offset.** Replaced the computed offset suffix in `renderLocal`
+(`scripts/corpus/clock.ts:132`) with a literal `-04:00` - the single most common real-world version of
+this bug, and one that renders plausibly for two-thirds of the year.
+
+**Observed failure (verbatim, abridged):**
+```
+FAIL src/__tests__/fitness/corpus-timestamps.test.ts > enforces: every emitted local rendering agrees with the platform time-zone database
+AssertionError: local renderings drifted from the tz database:
+CS-clean-fresh-authority/evs:CS-clean-fresh-authority:authority:daniel-on-okonkwo: rendered -04:00 but tzdb says -300 minutes
+CS-dst-straddling-observations/evs:CS-dst-straddling-observations:recent-change:smiths-review-est: rendered -04:00 but tzdb says -300 minutes
+CS-expired-and-future-restrictions/evs:CS-expired-and-future-restrictions:restriction:smiths-expired-cap: rendered -04:00 but tzdb says -300 minutes
+CS-joint-owners-conflicting-instructions/evs:…:household-instruction:smiths-robert-instruction: rendered -04:00 but tzdb says -300 minutes
+```
+Two further assertions failed with it: "the corpus actually straddles a DST boundary (both offsets
+appear)" and the companion "flags a DST-boundary instant rendered with a FIXED -04:00 offset". The
+oracle is ICU, which the generator is forbidden to touch - so the check cannot be satisfied by the same
+mistake that produced the data.
+
+**Standing companions:** `retrievedAt` before `observedAt`; evidence observed after the trigger; ZERO
+retrieval latency; a lag outside the per-kind band; `retrievalLagSeconds` disagreeing with the emitted
+instants; a `fresh` label on genuinely stale evidence (the GC-09 hole nothing checked before); a change
+claimed "recent" outside the firm window; a settlement horizon on a weekend; a `deadlineFeasible` flag
+contradicting its own dates; and an instant outside the pinned transition table, which is REFUSED rather
+than defaulted to standard time.
+
+**Revert:** `scripts/corpus/clock.ts` restored and byte-compared; fence green.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a).
+
+---
+
+## PF-208 · conflict-key-families · `src/__tests__/fitness/conflict-key-families.test.ts`
+
+**Invariant (ADR-0052, design §4.5):** the derivation reproduces every signed `conflict:`/`res:`/`idem:`
+literal exactly; same scope + family ⇒ identical key; different scope or different family ⇒ different
+key; and one scope under two firms is NEVER the same conflict, because reservation identity is the pair
+`(firmId, conflictKey)`.
+
+**Injection 1 - a family-blind key.** Made `conflictKey` (`scripts/corpus/conflict-keys.ts:58`) always
+return `conflict:${scopeSlug}-liquidity` - a function that still satisfies the prompt's literal
+requirement ("simultaneous-request cases share conflict keys") while collapsing every family.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/conflict-key-families.test.ts > enforces: property 3 - a different family in the same scope yields a different key
+AssertionError: expected 1 to be 7 // Object.is equality
+- 7
++ 1
+```
+This is exactly why property 1 alone is not a test: the injected function passes it.
+
+**Injection 2 - string-only conflict identity.** Dropped the `firmId` comparison from `sameConflict`
+(`scripts/corpus/conflict-keys.ts:82`), i.e. reservation lookup keyed on the conflict string alone.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/conflict-key-families.test.ts > enforces: property 4 - one scope under two firms is never the same conflict
+AssertionError: expected true to be false
+
+FAIL src/__tests__/fitness/conflict-key-families.test.ts > detects (companion): treating a cross-firm key as shared is caught by property 4
+AssertionError: expected true to be false
+```
+Under `FirmId ≡ org_id` (ADR-0026) this bug would let Firm A's reservation on
+`conflict:smiths-liquidity` block Firm B's request for the same household - the demo's headline act.
+Reservations land at prompt 23; this fence records and holds the requirement now.
+
+**Standing companions:** a constant-returning derivation; a family collision; an unknown family and a
+malformed scope (both refused rather than silently keyed); and the proof that a facts-only idempotency
+key COLLIDES on live signed data - seven of the eight signed idempotency literals share the facts
+`smiths-75000-2026-08-15`, so a
+naive derivation collapses seven distinct decisions onto one key, while the shipped decision-keyed
+derivation yields one key per case.
+
+**Revert:** `scripts/corpus/conflict-keys.ts` restored and byte-compared; fence green
+(`Tests 14 passed`).
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a).
+
+---
+
+## PF-209 · corpus-provenance-split (clean-control honesty + taxonomy completeness) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-078/D-079, ADR-0052 §2b/§6):** a labeled clean control is the false-positive DENOMINATOR,
+so it may not carry the defect being measured - not through a stale observation, an authority lapsing
+inside the evidence interval, a restriction recorded but out of force, an unverified or
+last-four-colliding destination, an evidence item pointing at a record absent from its own subgraph, an
+infeasible deadline, or an asserted awkward structure. And every class in the closed taxonomy must be
+carried by at least one labeled defect case, mirroring the spec loader's unexercised-assumption rule.
+
+**Injection 1 - the pre-D-078 evidence model.** Restored one line of `observedAtOf`
+(`scripts/corpus/generate.ts`) to infer an authority's observation from its business date
+(`find(world.authorizedSigners).effectiveFrom`) - the shape the whole generator had before this change,
+and the shape that makes a long-standing fact necessarily stale.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/corpus-provenance-split.test.ts > (e) enforces: no clean control carries a defect implicitly (stale, lapsed, expired, or unverified evidence)
+AssertionError: clean controls carrying the defect being measured:
+CS-clean-fresh-authority/evs:CS-clean-fresh-authority:authority:daniel-on-okonkwo: evidence is "stale" - a control cannot carry evidence-staleness-unnoticed: expected [ Array(1) ] to deeply equal []
+```
+`CS-clean-fresh-authority` is titled "long-standing, unexpired authority" and its rationale says "no
+interval question arises" - and it was shipping `freshness: "stale"`. Four of the five controls did.
+
+**Injection 2 - the unexercised class.** Deleted `AS-21` and `CS-stale-model-assignment-evidence` from
+`fixtures/corpus/spec/cases.json`, returning the corpus to the state where one taxonomy class was
+carried by no case at all.
+
+**Observed failure (verbatim):**
+```
+✗ defectClasses[evidence-staleness-unnoticed] is carried by no labeled defect case - an unexercised class is decoration
+corpus: 3 problem(s) - a hand-edited or drifted corpus cannot pass (charter #4)
+```
+
+**Injection 3 - a drifted un-defer trigger.** Rewrote `corpus_deferral.un_defer_trigger` in
+`config/demo/scenarios.yaml` to a DIFFERENT 166-character sentence naming a different authorized source.
+The previous assertion was `String(...).length > 40`, which this passes.
+
+**Observed failure (verbatim, abridged):**
+```
+FAIL src/__tests__/fitness/corpus-provenance-split.test.ts > (d) enforces: the scenario matrix records the same deferral, with the same trigger
+AssertionError: expected 'The captain authorizes a scrubbed sou…' to be 'The captain authorizes a scrubbed sou…' // Object.is equality
+Expected: "…real NIGO returns, custodian rejections, or operational exceptions…"
+Received: "…real operational exception history…"
+```
+
+**Standing companions:** five real defect cases relabeled as clean controls, one per mechanical defect
+signature (staleness, interval collapse, restriction lifecycle, destination integrity, deadline
+feasibility), each required to be caught; a control that still asserts an awkward structure; a control
+whose evidence points at a record stripped from its own subgraph; and a taxonomy class dropped from the
+case set.
+
+**Revert:** `scripts/corpus/generate.ts`, `fixtures/corpus/spec/cases.json` and
+`config/demo/scenarios.yaml` restored and byte-compared; `pnpm corpus:validate` reports "regenerated
+byte-identical; every rule holds"; fences green.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 1).
+
+---
+
+## PF-210 · corpus-determinism (prefix-colliding household + input-order neutrality) · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (D-080):** "adding a household changes only that household's bytes" must survive a new
+household whose key EXTENDS an existing one, and a semantically neutral reorder of a case's evidence
+array must not move a conflict key, a case's bytes, or `corpusDigest`.
+
+**Injection 1 - substring subject resolution.** Restored the unanchored legal-hold filter in
+`householdSubgraph` (`row.subjectRef.includes(":" + householdKey)`) in place of the structured
+`requireLegalHoldSubject` parse. The fence's inserted household is now keyed `smiths-west` and carries
+its own hold `position:smiths-west-taxable:NBRD-2031`.
+
+**Observed failure (verbatim, abridged):**
+```
+FAIL src/__tests__/fitness/corpus-determinism.test.ts > (c) enforces: inserting a PREFIX-COLLIDING household mid-spec changes ONLY that household's cases
+AssertionError: expected [ …(17) ] to deeply equal [ Array(1) ]
++   "synthetic/CS-authority-lapse-inside-retrieval.json",
++   "synthetic/CS-beneficiary-versus-destination-restriction.json",
+    … 17 files, all of them `smiths` cases …
+```
+Seventeen foreign cases changed because one new household's hold leaked into `smiths`. The previous
+fence inserted a household keyed `inserted`, which collides with nothing and could not detect this.
+
+**Injection 2 - raw-order conflict scope.** Made `conflictScope` scan `corpusCase.evidence` in spec
+order again instead of the sorted list.
+
+**Observed failure (verbatim):**
+```
+FAIL src/__tests__/fitness/corpus-determinism.test.ts > (a) enforces: the COMMITTED corpus equals a fresh regeneration (no hand edits)
+AssertionError: synthetic/CS-joint-owners-conflicting-instructions.json: committed bytes differ from regeneration (9788 vs 9791 bytes) - generated files are never hand-edited
+```
+Exactly the one case whose conflict scope is chosen from its evidence list.
+
+**Positive control:** with the fix in place, swapping that case's evidence array into a different order
+in `fixtures/corpus/spec/cases.json` leaves the whole fence green (`Tests 14 passed`) - the reorder is
+byte-neutral, which is the property itself rather than the absence of a symptom.
+
+**Revert:** `scripts/corpus/generate.ts` and `fixtures/corpus/spec/cases.json` restored and
+byte-compared; fence green.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 1).
+
+---
+
+## PF-211 · corpus-provenance-split (graph, intake, signoff, and measurement boundaries) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-081, ADR-0052):** every evidence and request reference resolves to exactly one emitted
+record; the active real-derived deferral admits no delivered file; the signed preimage covers taxonomy
+semantics; partial detector runs emit no figure; scrub ids and signoff use closed authority vocabularies;
+and no `src/` or `scripts/` path blends provenance partitions.
+
+**Injection 1 - dangling evidence.** Changed model-assignment evidence back to the generic `subject:` id
+while emitted model records retained the distinct `model-assignment:` id.
+
+**Observed failure (verbatim):**
+```
+CS-pending-rebalance-during-evaluation/...subjectRef: reference "subject:smiths-joint-model" resolves to 0 emitted records, expected exactly one
+CS-stale-model-assignment-evidence/...subjectRef: reference "subject:smiths-ira-model" resolves to 0 emitted records, expected exactly one
+```
+
+**Injection 2 - deferral and taxonomy bypasses.** Made the active-deferral check accept every delivered
+file and removed `taxonomyDigest` from the signed corpus preimage.
+
+**Observed failures (verbatim):**
+```
+AssertionError: expected +0 to be 1
+AssertionError: expected '4bfd918d...' not to be '4bfd918d...'
+```
+
+**Injection 3 - favorable subset.** Replaced the incomplete-outcomes guard with an unreachable condition.
+
+**Observed failure (verbatim):**
+```
+Expected: {"reasonCode":"detector-outcomes-incomplete","value":null}
+Received: {"reasonCode":null,"value":1}
+```
+
+**Injection 4 - bypassable provenance split.** Removed call expressions from the repository-wide AST
+detector.
+
+**Observed failures (verbatim):**
+```
+the blending detector catches helper aliases in product source
+the blending detector catches array concatenation in product source
+AssertionError: expected 0 to be greater than 0
+```
+
+**Injection 5 - open scrub and signoff vocabularies.** Broadened evidence ids to any id-shaped string and
+disabled the closed captain-authority check.
+
+**Observed failures (verbatim):**
+```
+a real-derived derived id cannot hide a name or use an open suffix
+AssertionError: expected 0 to be greater than 0
+
+signed signoff requires the closed captain authority and canonical signedAt instant
+AssertionError: expected '...signedAt "not-a-date"...' to contain 'closed captain authority'
+```
+
+**Standing companions:** missing collection, dangling reference, multi-resolving reference, duplicate
+spec key, cross-household destination, real-derived inventory after un-deferral, extractor absence,
+reversed custody chronology, dangling real-derived evidence, mismatched derived-id suffixes, partial
+detector outcomes, wrong-partition outcomes, division, reducers, helper calls, concatenation, imported
+alias laundering, opaque-id suffixes, captain authority, and canonical `signedAt`.
+
+**Revert:** all seven injected changes reverted with patch edits; focused fence green
+(`Tests 48 passed (48)`).
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 2).
+
+---
+
+## PF-212 · corpus-provenance-split (inventory, topology, recursive intake, freshness, and artifact ownership) · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-082, ADR-0052):** reporting is bound to the signed manifest inventory; numeric partition
+results stay inside their owner; pending-action liquidity is direction-aware; every household edge
+resolves; generated and intake trees are recursive; real-derived freshness is policy-derived; and actual
+generated artifacts contain no signature keys.
+
+**Injection 1 - action state ignored.** Replaced the live-state predicate in
+`scripts/corpus/pending-actions.ts` with `true`.
+
+**Observed failure:**
+```
+pending-action liquidity treatment is closed and direction-aware for every kind and state
+AssertionError: expected true to be false
+```
+
+**Injection 2 - signed inventory detached.** Disabled the recomputed inventory-digest comparison in
+`scripts/corpus/report.ts`.
+
+**Observed failure:**
+```
+the signed corpus digest binds the exact inventory supplied to reporting
+AssertionError: expected [Function] to throw an error
+```
+
+**Injection 3 - recursive walk removed.** Made `scripts/corpus/tree.ts` ignore directories.
+
+**Observed failure:**
+```
+(d) enforces: generated and real-derived trees are recursively inventoried, including hidden and nested files
+AssertionError: expected [ 'manifest.json' ] to deeply equal [ 'manifest.json', ...(3) ]
+```
+
+**Injection 4 - freshness trusted.** Disabled the supplied-versus-derived freshness comparison in
+`scripts/corpus/scrub-contract.ts`.
+
+**Observed failure:**
+```
+real-derived freshness is derived from evaluation.asOf and the versioned per-kind policy
+AssertionError: expected false to be true
+```
+
+**Injection 5 - generated signature scan emptied.** Replaced the generated signature-key set with an
+empty set.
+
+**Observed failure:**
+```
+recursive signature keys are rejected in actual generated artifacts
+AssertionError: expected [] to have a length of 3 but got +0
+```
+
+**Injection 6 - referenced household suppressed.** Made the referenced-household collector return before
+recording a non-primary household.
+
+**Observed failure:**
+```
+CS-beneficiary-versus-destination-restriction/...mira-roth.householdRef:
+reference "subject:smith-mira" resolves to 0 emitted records, expected exactly one
+CS-beneficiary-versus-destination-restriction/...mira-primary.householdRef:
+reference "subject:smith-mira" resolves to 0 emitted records, expected exactly one
+```
+
+**Injection 7 - structured measurement escaped.** Added `buildCorpusReport` to the shipped report CLI's
+imports.
+
+**Observed failure:**
+```
+scripts/corpus-report.ts:15: structured corpus measurement is private to scripts/corpus/report.ts
+```
+
+**Revert:** all seven injections were reverted with patch edits. The focused fence passed
+(`Tests 56 passed (56)`), and `pnpm corpus:validate` reported regenerated byte-identical with every rule
+holding.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 3).
+
+---
+
+## PF-213 · corpus intake, attribution, privacy, digest, clock, and determinism boundaries · `src/__tests__/fitness/corpus-{provenance-split,timestamps,determinism}.test.ts`
+
+**Invariant (D-083, ADR-0052):** real-derived delivery cannot lose hidden JSON members or disclose
+rejected text; replay input is complete and closed; detector credit names the exact signed defect class;
+foreign topology is minimal; structured measurement is private; signed inventory binds labels; transition
+selection is chronological; and nondeterministic APIs cannot hide behind imports or destructuring.
+
+**Injection 1 - duplicate-key admission.** Removed the canonical-byte equality check after `JSON.parse`.
+
+**Observed failure:**
+```
+duplicate JSON keys are rejected before a delivered value can enter inventory
+AssertionError: expected [ { ... } ] to deeply equal []
+"subject": "tok:0123456789abcdef"
+```
+The lossy parse admitted the last duplicate value and discarded the earlier raw name.
+
+**Injection 2 - diagnostic disclosure.** Returned Zod's raw issue message instead of the redacted
+schema-validation description.
+
+**Observed failure:**
+```
+a real-derived case with a free-text field in an UNANTICIPATED key is rejected (fail-closed)
+Expected diagnostic not to contain: "Robert Smith"
+Received: Unrecognized key: "Robert Smith"
+```
+
+**Injection 3 - case-level detector credit.** Disabled the signed-label contradiction check at the
+measurement boundary.
+
+**Observed failure:**
+```
+coverage credits only the exact signed defect class attribution
+AssertionError: expected [Function] to throw an error
+```
+
+**Injection 4 - foreign household expansion.** Added projected foreign accounts back into the full
+`accounts` collection.
+
+**Observed failure:**
+```
+CS-beneficiary-versus-destination-restriction/...accountRefs:
+reference "subject:mira-roth" resolves to 2 emitted records, expected exactly one
+```
+
+**Injection 5 - structured result export.** Exported `buildCorpusReport`.
+
+**Observed failure:**
+```
+structured partition measurements stay inside the partition-safe report owner
+Expected: [ "renderCorpusReport" ]
+Received: [ "buildCorpusReport", "renderCorpusReport" ]
+```
+
+**Injection 6 - label-free signed preimage.** Removed `labelKind` and `labelId` from the case tuple.
+
+**Observed failure:**
+```
+the signed digest binds each case label beside its bytes
+AssertionError: expected relabeled digest not to equal corpusDigest
+```
+
+**Injection 7 - input-order transition lookup.** Restored last-qualifying-input behavior. The companion
+uses three explicit transitions with distinct offsets, because reversing the committed table happened to
+select two transitions with the same offset and was not adversarial.
+
+**Observed failure:**
+```
+transition lookup is order-independent and duplicate instants are refused
+Expected: -240
+Received: -300
+```
+
+**Injection 8 - named-import laundering.** Skipped the `node:crypto` named-import origin.
+
+**Observed failure:**
+```
+flags destructured, aliased, and named-import nondeterministic APIs
+Expected set contained "randomUUID"; received set did not
+```
+
+**Standing companions:** missing, extra, ambiguous, and incompatible replay-payload fields; duplicate
+payload references; pending-action registry mismatch; exact evidence, reservation, and subject
+inventories; unknown and contradictory defect attribution; duplicate transition instants; destructured
+`Math`, `Date`, and `process` APIs; recursive generated-signature rejection; and malicious free text in
+both a value and an unrecognized key.
+
+**Revert:** all eight source injections were reverted with patch edits. Focused fences, typecheck,
+canonical regeneration, and the full repository gates are green.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 4).
+
+---
+
+## PF-214 · real-derived truth, diagnostics, signoff, schema, denominator, and determinism boundaries · `src/__tests__/fitness/corpus-{provenance-split,determinism}.test.ts`
+
+**Invariant (D-084, ADR-0052):** real-derived labels match closed replay semantics; clean controls carry
+no supported defect signature; unsafe filenames never enter diagnostics; signoff YAML is unambiguous;
+both schema meanings and bytes are signed; an active real-derived partition has both measurement
+denominators; and callable clocks or crypto randomness cannot bypass deterministic generation.
+
+**Injection 1 - semantic relabeling.** Disabled the defect-label signature check.
+
+**Observed failure:**
+```
+a real-derived defect label must match its closed replay semantics
+expected '' to contain 'label.defectClassId does not match replay semantics'
+```
+
+The standing table companion also exercised all 16 taxonomy signatures and refused each relabel as a
+clean control.
+
+**Injection 2 - raw delivery path disclosure.** Used the raw relative path as the intake diagnostic
+identity before canonical filename validation.
+
+**Observed failure:**
+```
+unsafe delivery filenames never enter intake diagnostics
+expected 'real-derived/Robert-Smith/account-1234.json...' not to contain 'Robert-Smith'
+```
+
+**Injection 3 - permissive YAML recovery.** Ignored the YAML parser's duplicate-key errors before
+interpreting the signoff record.
+
+**Observed failure:**
+```
+signoff parsing rejects duplicate keys, aliases, unexpected keys, and multiple blocks
+expected '' to contain 'parse error'
+```
+
+**Injection 4 - unsigned schema semantics.** Removed both real-derived schema bindings from the corpus
+digest payload.
+
+**Observed failure:**
+```
+the signed digest covers both real-derived schema ids and bytes
+expected changed schema digest not to equal corpusDigest
+```
+
+**Injection 5 - one-sided real-derived inventory.** Disabled the active-partition requirement for at
+least one defect and one clean control.
+
+**Observed failure:**
+```
+an active real-derived partition requires both measurement denominators
+expected '' to contain 'no labeled clean controls'
+```
+
+**Injection 6 - callable clock and crypto randomness laundering.** Removed callable `Date` and the
+expanded crypto origins from the AST detector.
+
+**Observed failure:**
+```
+flags callable Date and every supported crypto randomness form
+Expected: Date() (callable), generateKey, getRandomValues, randomBytes, randomFill, randomFillSync, randomInt
+Received: none
+```
+
+**Revert:** all six injections were reverted with patch edits. The focused fences passed
+(`Tests 102 passed (102)`), typecheck passed, and canonical corpus validation reported regenerated
+byte-identical with every rule holding.
+
+**Date:** 2026-07-28 (v3 prompt 11, PR-11a review round 5).
+
+---
+
+## PF-215 · signed replay semantics, topology, evidence, funding, and strict JSON · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-085, ADR-0052):** the signed preimage changes with declarative or executable replay
+semantics; references are entity-kind-scoped; every material plane has exact evidence; selected funding
+is explicit, owner-aligned, sufficient in aggregate, and tax-evaluated as a set; and every hand-owned
+corpus JSON document rejects duplicate keys before interpretation.
+
+**Injection 1 - executable authority ignored.** Made the semantic binding reread committed source instead
+of hashing the supplied authority bytes.
+
+**Observed failure:**
+```
+semantic data or executable authority changes invalidate corpus signoff
+src/__tests__/fitness/corpus-provenance-split.test.ts:1419
+expected changedAuthority.digest not to be original.digest
+```
+
+**Injection 2 - material evidence disconnected.** Removed the evidence-support authority from replay
+topology validation.
+
+**Observed failure:**
+```
+a material replay plane requires evidence with matching kind, subject, and source
+src/__tests__/fitness/corpus-provenance-split.test.ts:1447
+expected '' to contain 'destination evidence'
+```
+
+**Injection 3 - entity identity de-scoped.** Weakened `requestRef` to a generic token and removed the
+subject and evidence topology guards that independently expose the mismatch.
+
+**Observed failure:**
+```
+entity-kind-scoped references prevent one token from satisfying the replay topology
+src/__tests__/fitness/corpus-provenance-split.test.ts:1459
+expected '' to contain 'schema validation failed'
+```
+
+**Injection 4 - aggregate tax risk reduced to per-account sufficiency.** Considered a retirement source
+only when it individually covered the full request and reserve.
+
+**Observed failure:**
+```
+selected funding is explicit and aggregate sufficiency drives tax risk
+src/__tests__/fitness/corpus-provenance-split.test.ts:1508
+expected '' to contain 'tax-consequence-blindness'
+```
+
+**Injection 5 - funding ownership disabled.** Removed the selected-funding authority, admitting a second
+same-household account with an owner unrelated to the request source account.
+
+**Observed failure:**
+```
+selected funding rejects an additional source owned outside the request source ownership
+src/__tests__/fitness/corpus-provenance-split.test.ts:1574
+expected '' to contain 'selected funding sources must share an owner with the request source account'
+```
+
+**Injection 6 - duplicate-key parser bypassed.** Sent hand-owned JSON directly to `JSON.parse`.
+
+**Observed failure:**
+```
+duplicate keys in hand-owned corpus schemas are rejected before parsing or hashing
+src/__tests__/fitness/corpus-provenance-split.test.ts:1799
+expected function to throw an error
+```
+
+**Standing companions:** source-account exact resolution; missing, duplicate, unsupported,
+cross-household, insufficient, and unknown-tax selections; exact kind, subject, and source evidence
+tuples; all 16 defect signatures; schema and semantic data digest mutation; every executable authority
+source digest; nested extra-field rejection; and duplicate probes against every hand-owned corpus JSON
+file.
+
+**Revert:** all six injections were reverted with patch edits. Canonical regeneration restored
+`corpusDigest` `e30aca83e8c443babbc32d765e3deff9de823a631270f7714ea3bfd48bfe0298`, and all six focused
+companions passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 6).
+
+---
+
+## PF-216 · outcome-based replay truth and request-bound topology · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-086, ADR-0052):** awkward context is not itself a defect; a signed defect requires the
+class's typed expected-versus-observed mismatch; instruction conflicts connect to the exact request and
+household; identity and every schema-declared unique array fail closed.
+
+**Injection 1 - context treated as failure.** Evaluated a verified cross-household destination using the
+old context-only destination predicate.
+
+**Observed failure:**
+```
+awkward context remains a clean control when every treatment is correct
+expected ['destination-integrity-defect'] to deeply equal []
+```
+
+**Injection 2 - outcome authority omitted.** Labeled awkward destination context as a defect without a
+typed treatment mismatch.
+
+**Observed failure:**
+```
+awkward context cannot substantiate a defect without an outcome mismatch
+expected '' to contain 'expected-versus-observed'
+```
+
+**Injection 3 - request topology disconnected.** Used arbitrary same-household instruction and impacted
+subject references that did not connect to the governed request.
+
+**Observed failure:**
+```
+instruction conflict evidence must connect to the exact governed request
+expected '' to contain 'instruction conflict'
+```
+
+**Injection 4 - identity candidate unrelated.** Declared unique identity resolution with a sole candidate
+different from the governed identity subject.
+
+**Observed failure:**
+```
+unique identity resolution requires exactly the governed subject
+expected '' to contain 'unique identity candidate'
+```
+
+**Injection 5 - nested uniqueness omitted.** Duplicated one liquidity source owner while relying on the
+signed schema's `uniqueItems`.
+
+**Observed failure:**
+```
+every signed-schema uniqueItems array rejects duplicates
+expected '' to contain 'unique items'
+```
+
+**Standing companions:** all 16 awkward contexts remain clean with expected treatments; all 16 defect
+classes require their closed mismatch; wrong request, household, instruction ownership, and impacted
+subjects fail; zero and unrelated unique identity candidates fail; all nested schema unique arrays are
+driven adversarially.
+
+**Revert:** all five injections were reverted with patch edits, and the focused companions passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 8).
+
+## PF-217 · set-order and nondeterminism-flow closure · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (D-086, ADR-0052):** set-like spec order cannot change emitted bytes, and banned
+nondeterministic APIs cannot be laundered through assignments, parameters, local returns, or dynamic
+imports.
+
+**Injection 1 - assumptions emitted in source order.** Reversed the hand-owned assumption collection
+without sorting the filtered case assumptions.
+
+**Observed failure:**
+```
+assumption order is semantically neutral
+expected changed files to deeply equal []
+received ['CS-retirement-only-sufficient-source.json']
+```
+
+**Injection 2 - callable origins laundered.** Assigned `Date`, passed `randomBytes` through a function
+parameter and return, and called a function obtained through dynamic import.
+
+**Observed failure:**
+```
+nondeterministic APIs cannot be laundered through assignments, parameters, returns, or dynamic imports
+expected [] to deeply equal expected Date and randomBytes findings
+```
+
+**Standing companions:** household insertion isolation, complete spec reorder invariance, assumption-only
+reorder invariance, direct and imported nondeterministic sources, aliases, destructuring, assignments,
+parameters, returns, literal dynamic imports, and nonliteral dynamic-import rejection.
+
+**Revert:** both injections were reverted with patch edits, and the focused companions passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 8).
+
+---
+
+## PF-218 · partition-wide outcome and replay selector closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-087, ADR-0052):** both partitions require context-bound typed treatment mismatches;
+pending actions bind to the request, selected funding, and exact evidence; pending liquidity treatment is
+shared; retirement treatment includes review state; reserve and threshold treatments follow signed
+selectors; and synthetic source accounts belong to their request household.
+
+**Injection 1 - synthetic mismatch optional.** Allowed a synthetic defect label to carry no treatment
+mismatch.
+
+**Observed failure:**
+```
+a synthetic defect without its typed treatment mismatch fails closed
+src/__tests__/fitness/corpus-provenance-split.test.ts:1110
+expected '' to contain 'defect label lacks one matching expected-versus-observed treatment mismatch'
+```
+
+**Injection 2 - pending topology disabled.** Reversed the present-action guard around the household and
+selected-account relationship check.
+
+**Observed failure:**
+```
+pending actions bind to the request household, selected account, and exact evidence
+src/__tests__/fitness/corpus-provenance-split.test.ts:1944
+expected '' to match /pending action|pending-action evidence/
+```
+
+**Injection 3 - pending authority narrowed.** Excluded settling incoming transfers from the shared
+nonreducing treatment rule.
+
+**Observed failure:**
+```
+a settling incoming transfer uses the shared nonreducing pending authority
+src/__tests__/fitness/corpus-provenance-split.test.ts:1968
+label.defectClassId does not match replay expected-versus-observed semantics
+```
+
+**Injection 4 - tax review ignored.** Treated every selected retirement source as defect context even
+when review was completed.
+
+**Observed failure:**
+```
+retirement treatment requires a completed review or an explicit mismatch
+src/__tests__/fitness/corpus-provenance-split.test.ts:1990
+expected '' to contain 'claims a defect treatment without its required context'
+```
+
+**Injection 5 - reserve selector fixed.** Forced every reserve outcome through the segmented treatment
+pair.
+
+**Observed failure:**
+```
+reserve treatments distinguish scalar, segmented, and missing schedules
+src/__tests__/fitness/corpus-provenance-split.test.ts:2052
+RD-missing-reserve.json outcome is outside its closed treatment vocabulary
+```
+
+**Injection 6 - threshold comparator ignored.** Forced inclusive policy through the strict treatment
+pair.
+
+**Observed failure:**
+```
+threshold treatment follows the signed strict or inclusive comparator
+src/__tests__/fitness/corpus-provenance-split.test.ts:2097
+RD-inclusive-threshold.json outcome is outside its closed treatment vocabulary
+```
+
+**Injection 7 - source ownership disabled.** Removed the request-household check from synthetic source
+account resolution.
+
+**Observed failure:**
+```
+a request source account must belong to the request household
+src/__tests__/fitness/corpus-provenance-split.test.ts:1143
+expected '' to contain 'belongs to household "smith-mira", not request household "smiths"'
+```
+
+**Standing companions:** every synthetic taxonomy class fails when its defect is relabeled as a control;
+correctly treated authority and owner-beneficiary context remains clean; pending account, household,
+selection, subject, and source mismatches fail; completed and not-required retirement review
+contradictions fail; scalar, segmented, and missing reserves use distinct treatments; strict and
+inclusive threshold policies swap the expected and defective treatment; and every changed schema and
+semantic authority changes the signed digest.
+
+**Revert:** all seven injections were reverted with patch edits. Canonical validation restored
+`corpusDigest` `bde8bcd2df731c7cfc95089d099ea884a8d9abd90e58d73ca8d498c9a1f3da5d`,
+and all 151 focused corpus companions passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 9).
+
+---
+
+## PF-219 · exact corpus outcomes and synthetic funding topology · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-088, ADR-0052):** a real-derived defect label equals the only semantic mismatch; detector
+attribution for a defect is empty or the exact signed-label singleton; synthetic funding is explicit,
+unique, and request-household-owned; pending action and model semantics use only that exact set; and
+missing reserve state comes from emitted schedule absence.
+
+**Injection 1 - extra replay defect accepted.** Added a threshold mismatch beside the signed destination
+mismatch while keeping the destination label.
+
+**Observed failure:**
+```
+a real-derived defect label must equal the only semantic defect
+src/__tests__/fitness/corpus-provenance-split.test.ts:1519
+expected '' to contain 'exactly one replay semantic defect'
+```
+
+**Injection 2 - extra detector class accepted.** Attributed both the signed defect and another known class
+to one defect case.
+
+**Observed failure:**
+```
+coverage credits only the exact signed defect class attribution
+src/__tests__/fitness/corpus-provenance-split.test.ts:1334
+expected function to throw an error
+```
+
+**Injection 3 - selected funding absent.** Required every generated synthetic request to carry a
+non-empty selected set.
+
+**Observed failure:**
+```
+synthetic selected funding is explicit, unique, and owned by the request household
+src/__tests__/fitness/corpus-provenance-split.test.ts:2006
+expected false to be true
+```
+
+**Injection 4 - pending semantics crossed accounts.** Moved the cited blocked action and pending model
+assignment to another same-household account outside the selected set.
+
+**Observed failure:**
+```
+synthetic pending semantics use only the exact selected funding set
+src/__tests__/fitness/corpus-provenance-split.test.ts:2058
+expected '' to contain 'selected funding'
+```
+
+**Injection 5 - missing-schedule assumption contradicted bytes.** Added an emitted schedule while retaining
+`AS-12`.
+
+**Observed failure:**
+```
+synthetic missing reserve state comes from emitted schedule absence
+src/__tests__/fitness/corpus-provenance-split.test.ts:2088
+expected '' to contain 'AS-12 contradicts emitted withdrawal schedules'
+```
+
+**Standing companions:** unrelated extra semantic defects and detector classes fail; selected funding is
+present on every synthetic case and rejects duplicates or cross-household accounts; cited pending actions
+and model assignments reject unselected accounts; and an asserted missing schedule rejects emitted
+schedule bytes.
+
+**Revert:** all five injected states remain only in companions. The production authorities reject each,
+and canonical validation restored `corpusDigest`
+`fe921fcd64c77e5b10dbff05d8a382eb0fdd2a0b57776586ec582f796ef194de`. All 199 focused companions
+passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 10).
+
+---
+
+## PF-220 · tenant, observation, funding, and ownership closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-089, ADR-0052):** the AS-04 signer is outside the LLC household membership edge;
+bank-instruction and pending-action accounts belong to their declared households; selected-funding tax
+and pending semantics use all and only the explicit selected set; concrete replay values require observed
+evidence; every evidence plane has an observation-state authority; and real-derived case, request, and
+reservation scope is one exact opaque firm reference.
+
+**Injection 1 - contradictory AS-04 membership.** Added the cited LLC signer to the request household
+membership edge.
+
+**Injection 2 - contradictory owned edges.** Assigned a bank instruction and pending action to accounts
+owned by another household.
+
+**Injection 3 - selected funding ignored.** Added retirement funding beside a taxable request source and
+moved a cited live outgoing action to an unselected account.
+
+**Injection 4 - missing evidence accepted concrete values.** Changed request, balance, and identity
+evidence from observed to missing without changing their concrete replay payloads.
+
+**Injection 5 - tenant scope absent.** Passed a complete real-derived case with no firm reference on the
+case, request, or reservation.
+
+**Observed failure:**
+```
+Test Files  1 failed (1)
+Tests       8 failed | 136 passed (144)
+AS-04 outside-household signer
+bank instruction account belongs to household
+request evidence requires observed support
+liquidity-source evidence requires observed support
+identity evidence requires observed support
+firmRef
+selected funding
+active "tax-consequence-blindness" context lacks a typed treatment
+```
+
+**Standing companions:** the outside signer is emitted exactly once as a separate party; inside
+membership fails; bank-instruction and pending-action ownership mismatches fail; cited reducing and
+nonreducing actions reject unselected accounts; tax context and generator defaults use the same selected
+funding authority; concrete request, balance, and identity planes reject missing evidence; explicit
+missing reserve payloads accept typed missing evidence; an unclassified future evidence plane fails; and
+absent, mismatched-request, and cross-reservation firm scope each fail.
+
+**Revert:** all injected states remain only in companions. Canonical validation restored
+`corpusDigest` `81d8426eb9450b59b20880523aecf1deeec212607727e9d9616c842e66903967`.
+The real-derived partition remains empty, signoff remains pending, only the three Varn synthetic case
+files changed, and all 174 focused corpus, determinism, budget, and file-size tests passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 11).
+
+---
+
+## PF-221 · typed identity, tenant subjects, and exact funding · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-090, ADR-0052):** synthetic identity context is derived from typed raw bytes, exact
+candidates, and household bindings; real-derived generic subject references exclude firm scope; and
+funding aggregates preserve exact safe-integer minor units.
+
+**Injection 1 - assumption-only identity accepted.** Disabled the typed identity-input requirement while
+retaining the ambiguity assumption.
+
+**Observed failure:**
+```
+synthetic identity context derives from exact emitted inputs and bindings
+src/__tests__/fitness/corpus-provenance-split.test.ts:2274
+expected problems to contain 'identity context requires typed identity input'
+```
+
+**Injection 2 - firm admitted as a generic subject.** Added `firmRef` to the replay schema's generic
+`entityRef` union and supplied it as an instruction-conflict impacted subject.
+
+**Observed failure:**
+```
+real-derived cases require one exact firm scope across case, request, and reservations
+src/__tests__/fitness/corpus-provenance-split.test.ts:2093
+expected problems to contain 'schema validation failed'
+```
+
+**Injection 3 - floating-point aggregate accepted.** Replaced exact integer aggregation with JavaScript
+number addition for a one-cent shortfall above the safe aggregate boundary.
+
+**Observed failure:**
+```
+real-derived funding aggregates preserve exact minor-unit arithmetic
+src/__tests__/fitness/corpus-provenance-split.test.ts:2133
+expected problems to contain 'selected funding aggregate does not cover request, reserve, and pending reductions'
+```
+
+**Standing companions:** assumption IDs without typed identity inputs fail; one-candidate ambiguity,
+invalid raw-byte relationships, and incorrect household bindings fail; firm references fail in impacted
+subjects and the generic subject inventory; unsafe individual amounts fail schema validation; and a
+one-cent aggregate shortfall is detected with exact arithmetic.
+
+**Revert:** all three injections were reverted. Canonical generation restored `corpusDigest`
+`e1f5dec83c44a807b26eb2c5a812ec41177f29bba8a222cb74c7a106498a17de`. The real-derived partition
+remains empty, signoff remains pending, path-keyed isolation passes, and all 195 focused corpus,
+determinism, timestamp, budget, and file-size tests passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, PR-11a review round 12).
+
+---
+
+## PF-222 · instruction and signed-authority closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-091, ADR-0052):** instruction-conflict truth comes from request-bound typed terms and exact
+evidence; the signed executable inventory equals its runtime dependency closure; signoff YAML rejects
+warnings and tags; citations remain regular files inside the repository; and both tooling fences discover
+every supported TypeScript and JavaScript source extension.
+
+**Injection 1 - runtime authority omitted.** Removed `scripts/corpus/clock.ts` from the executable
+authority inventory.
+
+**Injection 2 - termless context accepted.** Treated every cited instruction record as a conflict without
+requiring a connected typed term.
+
+**Injection 3 - parser recovery accepted.** Ignored YAML warnings and explicit tags before conversion.
+
+**Injection 4 - citation escaped.** Removed the canonical repository-containment check while retaining
+the regular-file check.
+
+**Injection 5 - executable files hidden.** Reduced shared source discovery to `.ts` only.
+
+**Observed failure:**
+```
+Test Files  3 failed (3)
+Tests       6 failed | 158 skipped (164)
+missing executable authority dependency scripts/corpus/clock.ts
+expected '' to contain 'defect label lacks one matching expected-versus-observed treatment mismatch'
+expected '' to contain 'YAML warning'
+expected '' to contain 'is not a regular file contained in this repository'
+expected [ 'a.ts' ] to deeply equal [ 'a.ts', 'b.tsx', 'c.mts', ... ]
+expected discovered files to contain big.mjs
+```
+
+**Standing companions:** removing any runtime dependency fails the exact closure comparison; assumption
+labels, termless, expired, and source-unconnected restrictions cannot prove conflict; exact Mira
+targeting and correctly governed controls remain live; warnings and explicit tags invalidate signoff; traversal
+and symlink citation escapes fail; and `.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, and `.cjs`
+all enter both tooling fences.
+
+**Revert:** all five weakenings were reverted. Canonical validation restored `corpusDigest`
+`4218a81abc15cd2f90cf20af3bad1c8982e5de27d87d096912a3ed304e89e9a5`. The real-derived partition
+remains empty, captain signoff remains pending, and all 164 focused corpus, budget, and file-size tests
+passed.
+
+**Date:** 2026-07-29 (v3 prompt 11, D-091 review hardening).
+
+---
+
+## PF-223 · emitted structural context and complete authority closure · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-092, ADR-0052):** DST and shared-instruction blast-radius context derives from exact
+emitted signed facts, joint destinations retain target-specific owner semantics, and the signed
+executable-authority closure covers every supported runtime loader form.
+
+**Injection 1 - assumption-only context.** Replaced both structural context authorities with checks for
+`AS-16` and `AS-06`.
+
+**Injection 2 - global singular owner rule.** Restored the unconditional requirement that every
+destination have exactly one owner before analyzing the term target.
+
+**Injection 3 - incomplete module traversal.** Filtered import-equals, createRequire, and indirect
+require references out of the shared module-reference results.
+
+**Observed failure:**
+```
+Test Files  1 failed (1)
+Tests       4 failed | 152 skipped (156)
+expected [] to include 'missing executable authority dependency scripts/corpus/conflict-keys.ts'
+synthetic DST context requires exact zone-bound records crossing a declared transition
+synthetic blast radius requires one cited changed instruction with multiple governed accounts
+expected problems to deeply equal []
+```
+
+**Standing companions:** same-offset and missing-zone temporal records fail; assumption-only temporal
+context fails; a one-account, differently changed instruction, or mismatched instruction-change instant
+fails blast-radius context; correctly treated shared-instruction context remains a clean control; joint
+destinations work for unrelated term
+kinds and exact destination-subject members; duplicate owners fail; import-equals reaches a local helper;
+and createRequire, aliased require, and module.require fail closed.
+
+**Revert:** all three weakenings were reverted. Canonical validation restored `corpusDigest`
+`a4b7ee7cad29d17e697154069a20f09e4215681ea0bbab28a6a37e5994ed07f4`. The real-derived partition
+remains empty, captain signoff remains pending, path-keyed generation changes only the DST case, and all
+156 corpus-provenance companions pass.
+
+**Date:** 2026-07-29 (v3 prompt 11, D-092 review hardening).
+
+---
+
+## PF-224 · corpus privacy, gateway authority, determinism, and settled credits · `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-093, ADR-0052):** foreign destination owners remain opaque, both acceptance gateways are
+signed executable-authority roots, ambient-global access cannot bypass nondeterminism detection, and a
+settled incoming credit has a distinct treatment in both corpus partitions.
+
+**Injection 1 - foreign owner expanded.** Changed a cross-household destination instruction to an
+otherwise unrelated party and attempted to resolve the owner through the full party collection.
+
+**Injection 2 - validation gateway omitted.** Removed each of `scripts/corpus/real-derived.ts` and
+`scripts/corpus/validate.ts` from the signed root set.
+
+**Injection 3 - ambient global clock.** Added
+`scripts/corpus/review-globalthis-proof.ts:1` with `globalThis.Date.now()`.
+
+**Injection 4 - settled credit omitted.** Supplied a settled incoming credit in synthetic and
+real-derived pending context while recording the generic nonreducing treatment.
+
+**Observed failure:**
+```
+scripts/corpus/review-globalthis-proof.ts:1 Date.now
+missing executable authority gateway root scripts/corpus/real-derived.ts
+missing executable authority gateway root scripts/corpus/validate.ts
+foreign destination owner appeared in records.parties
+expected credit-settled-incoming-availability, observed omit-settled-incoming-availability
+```
+
+**Standing companions:** an unrelated foreign owner resolves exactly once through `referencedOwners`
+and exposes only an opaque id; a local owner remains a complete party; omitting either gateway root fails;
+direct, aliased, destructured, and bracket access through `globalThis` and `global` is detected; and both
+partitions select the settled-credit expected-versus-observed pair from the shared pending-action
+authority.
+
+**Revert:** all temporary injections were reverted. The proof source was deleted, canonical regeneration
+restored `corpusDigest` `c6fe1a9292b5b653d0ae524244d9a5f73ba8c962893da9433169125ec6db773e`,
+the real-derived partition remains empty, captain signoff remains pending, and all 1,428 tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-093 review hardening).
+
+---
+
+## PF-225 · ambient origins and exact-once action accounting · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-152, ADR-0052):** property and element access record the same sensitive ambient origins;
+replay bytes state whether reported availability includes the cited action; funding applies that action
+exactly once; and captain-facing signoff prose names the semantic contract it asks the captain to attest.
+
+**Injection 1 - bracketed ambient access.** Added `globalThis.Intl.DateTimeFormat("en-US")` and
+`globalThis["process"]["env"]["SEED"]` to the in-memory generator companion while the recorder scanned
+property access only.
+
+**Injection 2 - ambiguous settled credit.** Added an inclusion field to a settled-credit payload before
+the replay schema or treatment selector recognized it.
+
+**Injection 3 - double-countable funding.** Used the same reported availability and settled credit first
+as already included and then as excluded, with only the inclusion bit changed.
+
+**Injection 4 - stale attestation scope.** Left the signoff prose on semantic contract 1.7.0 while the
+manifest bound 1.8.0.
+
+**Observed failure:**
+```
+expected Set{} to deeply equal Set{ 'Intl', 'process.env' }
+replayPayload.liquidity.pendingAction.(redacted) - schema validation failed
+selected funding aggregate does not cover request and reserve after exact-once pending-action accounting
+expected signoff prose to contain verin-real-derived-semantics/1.9.0
+```
+
+**Standing companions:** direct and bracketed ambient-global paths report the same APIs; an absent
+`availableMinorIncludesAction` fails schema validation; an included settled credit selects preservation;
+an excluded settled credit selects one credit adjustment; the same reported amount cannot pass both
+accounting states; and the signoff document must name the live semantic contract version.
+
+**Revert:** the recorder now scans both access forms, replay schema 1.8.0 requires the inclusion state,
+semantic contract 1.9.0 carries both settled-credit treatments, canonical regeneration produced
+`corpusDigest` `faf3ce228307841c4038a9c28186ac61acf1d4ae272cff3637daa3afcae8b3ed`, the real-derived partition
+remains empty, captain signoff remains pending, and the focused companions pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-152 review hardening).
+
+---
+
+## PF-226 · executable provenance and exact availability reconciliation · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-153, ADR-0052):** every supported executable source enters determinism analysis; sensitive
+origins remain visible across local modules and fixed containers; pending-action funding reconciles the
+expected effect with any directional effect already reflected in reported availability; and the signed
+funding clause describes that exact accounting rule.
+
+**Injection 1 - non-TypeScript executable source.** Added
+`scripts/corpus/review-extension-proof.mjs:1` with `Math.random()`.
+
+**Injection 2 - local-module and container laundering.** Exported `process` from one local module, read
+its environment through an import in another, and placed the same origin in a direct object member.
+
+**Injection 3 - included zero-effect action left reflected.** Replaced the shared reconciliation with
+the old zero adjustment for every included action.
+
+**Injection 4 - stale funding authority.** Restored the reducing-only funding clause in the hand-owned
+semantic contract while the executable schema required exact-once reconciliation.
+
+**Observed failure:**
+```
+scripts/corpus/review-extension-proof.mjs:1 Math.random
+scripts/corpus/review-origin-consumer.ts:3 process.env
+scripts/corpus/review-origin-consumer.ts:4 process.env
+expected '' to contain 'exact-once pending-action accounting'
+funding.sufficiency: expected selected-aggregate-covers-request-reserve-after-exact-once-pending-action-accounting
+```
+
+**Standing companions:** all eight TypeScript and JavaScript source variants enter the project; imported
+values and fixed object or array members preserve sensitive origins; included unsettled inflows are
+removed before sufficiency, included blocked outflows are restored, included unknown directions fail
+closed, and the semantic contract literal cannot revert to reducing-only wording.
+
+**Revert:** every injection was reverted. Canonical regeneration restored `corpusDigest`
+`8d01240c5a65b36e2d80ab44d26dcc4e4b4314b6d750f833dd53923d98a33bbf`, the real-derived partition
+remains empty, captain signoff remains pending, and the focused companions pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-153 review hardening).
+
+---
+
+## PF-227 · alternate origins, parameter bindings, ambient APIs, and settled debits · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-154, ADR-0052):** every possible dataflow origin remains visible; nested parameter
+patterns preserve argument provenance; runtime clocks and entropy APIs are closed; and settled outgoing
+debits remain reflected exactly once in effective availability.
+
+**Injection 1 - alternate origin hidden.** Selected `Math` before `process` in conditional, logical, and
+callable-return alternatives, then read `runtime.env.SEED`.
+
+**Injection 2 - destructured parameter.** Passed `process` through object, nested-object, and array
+parameter patterns before reading its environment.
+
+**Injection 3 - unregistered ambient APIs.** Called `process.uptime()`, `crypto.generatePrime()`, and
+`crypto.generatePrimeSync()` through direct and imported forms.
+
+**Injection 4 - settled debit reversed.** Reconciled a settled outgoing debit once with the source
+balance already reflecting it and once with the source balance excluding it.
+
+**Observed failure:**
+```
+expected [] to have a length of 3 but got 0
+expected Set{} to deeply equal Set{ 'process.uptime', 'generatePrime', 'generatePrimeSync' }
+expected 500n to be 0n
+```
+
+**Standing companions:** conditional, logical, declaration, container, and callable-return paths merge
+all possible origins; cross-module callable parameters recursively bind fixed object and array members;
+direct and imported process clocks and crypto prime generation are detected; settled outgoing actions
+select direction-specific included or excluded treatments and reconcile to zero or one debit.
+
+**Revert:** every injection was replaced by a standing in-memory companion. Canonical regeneration
+produced `corpusDigest` `77388ead4e7cfd738954dc7b9915b32ecdcca7b013208ac20664505c643182c9`,
+the real-derived partition remains empty, captain signoff remains pending, and all 1,436 tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-154 review hardening).
+
+---
+
+## PF-228 · executable closure, callable origins, host state, and restriction lifecycle · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-155, ADR-0052):** determinism analysis covers every local executable dependency and
+callable provenance path, process and operating-system host state cannot enter corpus bytes, and
+restriction lifecycle context is recomputed from signed effectivity facts at the evaluation instant.
+
+**Injection 1 - dependency outside the scan root.** Imported `process` through a sibling helper outside
+the synthetic corpus source root and read its environment from the corpus entry point.
+
+**Injection 2 - callable shape loss.** Returned `process` through a class method, a getter, and an omitted
+parameter whose default was `process`, then read `env.SEED` through each result.
+
+**Injection 3 - host-state registry gaps.** Read `process.platform`, `process.argv`,
+`node:os.hostname()`, and `node:os.release()`.
+
+**Injection 4 - asserted restriction state.** Claimed an expired restriction while its supplied interval
+was in force at `evaluation.asOf`.
+
+**Observed failure:**
+```
+expected [ SourceFile ] to have a length of 2 but got 1
+expected [] to have a length of 3 but got 0
+expected Set{} to deeply equal Set{ 'process.platform', 'process.argv', 'os.hostname', 'os.release' }
+expected schema validation output to contain 'restriction lifecycle state'
+```
+
+**Standing companions:** a sibling executable helper enters the project and preserves its origin;
+methods, getters, and default parameters each expose `process.env`; process properties and OS calls are
+reported by semantic origin; and a restriction whose enum disagrees with its signed effectivity interval
+fails with the lifecycle-specific refusal.
+
+**Revert:** each injection became a standing adversarial companion. Canonical regeneration produced
+`corpusDigest` `befa00adb2f5081ba8854e4393a79373a05105078c37f2c872c0b594a271629c`,
+the real-derived partition remains empty, captain signoff remains pending, and the focused companions
+pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-155 review hardening).
+
+---
+
+## PF-229 · defaults, module origins, provenance separation, and synthetic schedule order · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`, `src/__tests__/fitness/corpus-timestamps.test.ts`
+
+**Invariant (D-156, ADR-0052):** every reachable host-state origin is rejected regardless of default
+evaluation, callable alias, module syntax, or computed member spelling; product and tooling code never
+combine provenance-partition measurements; and synthetic effectivity and withdrawal schedules are
+ordered evidence.
+
+**Injection 1 - default evaluation and callable aliases.** Passed explicit `undefined` to a parameter
+defaulted to `process`, omitted nested destructured members defaulted to `process`, and invoked a method
+returning `process` through a variable alias.
+
+**Injection 2 - module and member spelling.** Loaded operating-system and process built-ins through
+import-equals and CommonJS `require`, read `process.env` and `Math.random` through constant property-key
+aliases, and indexed `process` through a runtime key.
+
+**Injection 3 - provenance blending.** Added `scripts/corpus/review-blend-proof.ts` with a synthetic plus
+real-derived metric whose name did not contain `overallRate`.
+
+**Injection 4 - impossible synthetic evidence.** Set a restriction and an authorized signer to end
+before they began, then supplied descending, duplicate, and month-13 planned-withdrawal segments.
+
+**Observed failure:**
+```
+expected [] to have a length of 3 but got 0
+expected [] to have a length of 1 but got 0
+expected Set{} to deeply equal Set{ 'os.hostname', 'process.env', 'os.release' }
+expected Set{} to deeply equal Set{ 'process.env', 'Math.random', 'process.[computed]' }
+scripts/corpus/review-blend-proof.ts:7: combines the synthetic and real-derived partitions into one figure
+expected true to be false
+```
+
+**Standing companions:** explicit and nested defaults, callable method aliases, import-equals, ambient
+CommonJS loaders, local same-named loader controls, constant and dynamic computed members, arithmetic,
+reducers, helper calls, concatenation, report-boundary shadows, imported and destructured partition
+aliases, rendered templates, inverted effectivity intervals, and invalid or unordered withdrawal months
+all exercise the production detectors.
+
+**Revert:** every injection was removed or replaced by a standing in-memory companion. Canonical
+regeneration produced `corpusDigest` `67dadb0ecd3eed8c7b9ae0e52fc5c78fd1aa0eca4836b187f0d84e56b20a5f3f`,
+the real-derived partition remains empty, captain signoff remains pending, and the tooling bucket measures
+8035 lines under its unchanged 8100-line ceiling. All 1,459 unit, integration, and fitness tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-156 review hardening).
+
+---
+
+## PF-230 · mutable member keys, assignment taint, and replay-state coherence · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-157, ADR-0052):** mutable computed keys cannot hide a sensitive runtime origin,
+partition provenance survives assignment and exact member storage across modules, and contradictory
+replay states fail at the signed schema boundary before semantic attribution.
+
+**Injection 1 - mutable computed key.** Initialized a `let` key to `"fixed"`, reassigned it to
+`"random"`, and invoked `Math[key]()`.
+
+**Injection 2 - assignment provenance loss.** Assigned synthetic and real-derived values into
+uninitialized locals, exact object members, and exported variables consumed through imported aliases,
+then combined each pair.
+
+**Injection 3 - contradictory replay states.** Supplied two candidates for a unique identity, one
+candidate for an ambiguous identity, a non-missing authority without grant or start facts, an absent
+legal hold with position scope, a missing reserve with schedule facts, and a segmented reserve without
+segments.
+
+**Observed failure:**
+```
+expected [] to deeply equal [ 'Math.[computed]' ]
+expected [] to have a length of 2 but got 0
+```
+
+The replay-state injections already returned `schema validation failed` before the analyzer fixes, proving
+the four semantic review reports were not live bypasses.
+
+**Standing companions:** mutable sensitive member access fails closed; local, member, and imported
+assignment chains retain partition taint to a fixed point; an unrelated member stays untainted; and all
+six contradictory replay shapes fail at schema validation.
+
+**Revert:** the injections remain as standing companions. Canonical regeneration stayed byte-identical at
+`67dadb0ecd3eed8c7b9ae0e52fc5c78fd1aa0eca4836b187f0d84e56b20a5f3f`, the real-derived partition remains
+empty, captain signoff remains pending, and all 1,463 unit, integration, and fitness tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-157 review hardening).
+
+---
+
+## PF-231 · structured provenance, host inputs, replayable time zones, and canonical trees · `src/__tests__/fitness/corpus-provenance-split.test.ts`, `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-timestamps.test.ts`
+
+**Invariant (D-158, ADR-0052):** structured writes retain partition provenance; ambient host I/O cannot
+enter corpus generation or validation outside declared repository-input owners; real-derived time-zone
+state derives from signed rule facts; intake roots are real directories; and neutral collection order
+cannot alter case bytes.
+
+**Injection 1 - structured provenance loss.** Destructured synthetic and real-derived measurements from
+one array, then wrote both partitions into one object through separate `Object.assign` calls before
+combining the stored values.
+
+**Injection 2 - ambient host I/O.** Read `/etc/hostname`, executed the host `hostname` command, and fetched
+a network resource from an in-memory corpus dependency.
+
+**Injection 3 - asserted time-zone state.** Labeled an ordinary real-derived event as a transition
+boundary without zone rules or a reproducible local rendering.
+
+**Injection 4 - filesystem and ordering ambiguity.** Replaced the real-derived intake root with a
+symlink, reversed the valid world transition table, and reordered two distinct beneficiary rows that
+shared the old partial sort key.
+
+**Observed failure:**
+```
+expected [] to have a length of 2 but got 0
+expected Set{} to deeply equal Set{ 'fs.readFileSync', 'child_process.execFileSync', 'fetch' }
+expected '' to contain 'temporal transition state must match replayable time-zone rules'
+expected '' to contain 'real-derived intake root must be a regular directory'
+expected true to be false
+expected [ sixteen changed synthetic paths ] to deeply equal []
+```
+
+**Standing companions:** object and array patterns plus mutation helpers retain taint; filesystem,
+subprocess, built-in network, and fetch inputs are rejected outside named owners; an unlisted read inside
+a corpus module is still rejected; arbitrary boundary claims and wrong local renderings fail; symlinked
+intake roots fail before traversal; transition input is chronological; and beneficiary ordering is total
+across account, party, tier, and share.
+
+**Revert:** every injection remains as a standing in-memory or temporary-directory companion. Canonical
+regeneration produced `corpusDigest` `3cd3c36730bd27adfad0c6b4b94ea065e49b5bf8b06166a4a6b7cd512174e94b`,
+the real-derived partition remains empty, captain signoff remains pending, and the focused corpus gates
+plus all 1,468 tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-158 review hardening).
+
+---
+
+## PF-232 · runtime, repository-root, registry, mutation, and request-topology closure · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Invariant (D-159, ADR-0052):** dynamic code and logical compound flow cannot introduce ambient state;
+declared repository input owners remain rooted inside the exact repository; container mutation retains
+partition provenance; real-derived zones belong to their recorded IANA registry; and request source
+accounts belong to the request household.
+
+**Injection 1 - runtime and root escape.** Aliased `eval` and `globalThis.Function`, assigned `process`
+through `??=`, called `loadSpec` with an absolute external root directly and through a wrapper, traversed
+above the trusted root, and shadowed `join` with a helper that returned an external root.
+
+**Injection 2 - mutation provenance loss.** Inserted synthetic and real-derived defect counts into one
+array through separate `push` calls, then reduced the container to one blended figure.
+
+**Injection 3 - asserted registry and foreign topology.** Supplied a self-consistent transition table
+under `Mars/Olympus` and `iana-tzdb/9999z`, then moved an unselected request source account to another
+household while selecting a different local account.
+
+**Observed failure:**
+```
+expected Set{} to deeply equal Set{ 'eval', 'Function' }
+expected false to be true
+expected false to be true
+expected 0 to be greater than 0
+expected '' to contain 'time zone must belong to its recorded tzdb registry'
+expected '' to contain 'request source account must belong to the request household'
+```
+
+**Standing companions:** dynamic constructors and their aliases are rejected; compound origins survive
+assignment; external literals, forwarded roots, traversal, and shadowed path helpers fail root analysis;
+standard container insertions taint their target; an unknown recorded zone/version pair fails before
+transition derivation; and a foreign request source fails even when every selected funding account is local.
+
+**Revert:** every injection remains as a standing AST or replay companion. Canonical validation
+regenerated byte-identically at `corpusDigest`
+`3403293fc63b3026616d9d00572f48ab3d8f00e3d5901b3be108f4730b38874a`, the real-derived partition
+remains empty, captain signoff remains pending, and all 1,472 unit, integration, and fitness tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-159 review hardening).
+
+---
+
+## PF-233 · repository input and synthetic evidence closure · `src/__tests__/fitness/corpus-determinism.test.ts`, `src/__tests__/fitness/corpus-provenance-split.test.ts`, `src/__tests__/fitness/corpus-timestamps.test.ts`
+
+**Invariant (D-160, ADR-0052):** repository roots remain immutable, repository file targets remain
+canonical and contained, authority state has one cited owner, and destination verification chronology is
+replayable from emitted facts.
+
+**Injection 1 - mutable and canonical root escape.** Initialized a mutable loader root from `REPO_ROOT`,
+reassigned it to an external directory, and placed a signoff symlink inside the worktree whose target was
+outside the repository.
+
+**Injection 2 - ambiguous authority.** Added a second cited signer with an ineffective scope to a clean
+authority control while preserving the original effective signer.
+
+**Injection 3 - impossible verification.** Moved destination verification before the current bank change,
+then after both source observation and evaluation.
+
+**Observed failure:**
+```
+expected false to be true
+expected [Function] to throw an error
+expected '' to contain 'authority semantics require exactly one cited signer'
+expected '' to contain 'destination verification chronology is invalid'
+expected true to be false
+```
+
+**Standing companions:** mutable loader aliases fail static root analysis; repository readers reject
+symlink targets outside the canonical root; multiple cited signers fail semantic validation; emitted
+verification after observation or evaluation fails; and the world schema rejects verification before the
+current change or after source observation.
+
+**Revert:** every injection remains as an AST, temporary-directory, emitted-case, or schema companion.
+Canonical regeneration produced `corpusDigest`
+`5e945ae5da8f460f637980d2471d298480a14d84040b671b3bfbf187804e9b01`, the real-derived partition
+remains empty, captain signoff remains pending, and all 1,477 unit, integration, and fitness tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-160 review hardening).
+
+## PF-234 · named repository-input refusals and single-source digest authority · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (D-161, ADR-0052):** every repository-input refusal names the input and its reason, containment
+is decided on the canonical target that is also read, and one resolved authority binding backs both the
+manifest digest and any digest recomputed beside it.
+
+**Injection 1 - anonymous refusal.** Restored the blanket `catch` that discarded the path and the reason,
+so a renamed spec file failed the blocking `corpus` job with one message naming no file.
+
+**Injection 2 - pre-canonical file test.** Restored `lstatSync(path).isFile()`, so containment was decided
+on the canonical target while the regular-file test ran against the un-resolved path and refused every
+in-repository symlink.
+
+**Observed failure:**
+```
+expected [Function] to throw error matching /"[^"]*SIGNOFF\.md" resolves outside this repository/
+Error: repository input ".corpus-input-proof-pY1V45/SIGNOFF.md" is not a regular file
+  ❯ readRepositoryFile scripts/corpus/tree.ts:44:11
+```
+
+**Standing companions:** a missing input must be refused by name; an in-repository symlink must be read;
+a directory in a file's place must be refused as not a regular file; and a symlink target outside the
+canonical root must be refused as an escape.
+
+**Revert:** both injections remain as temporary-directory companions in the determinism fence. Canonical
+regeneration produced `corpusDigest`
+`7c9030abc5582face72119990c0839f3e37695428fe220527519db6c820cda7d`, the real-derived partition remains
+empty, captain signoff remains pending, and all 1,478 unit, integration, and fitness tests pass.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-161 review hardening).
+
+## PF-235 · the repository root is a named input, and one predicate decides containment · `src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Invariant (D-162, ADR-0052):** every repository-input refusal names its input and its reason - an
+unresolvable ROOT included - and a refusal stays repo-relative when the repository is reached through a
+symlinked root. Containment is decided by ONE predicate shared by the reader and the taxonomy-citation
+reporter.
+
+**Injection 1 - unguarded root.** Moved `realpathSync(repoRoot)` back outside the guarded section, so a
+root that does not resolve escaped the naming rule entirely.
+
+**Observed failure:**
+```
+expected [Function] to throw error matching /repository root "[^"]*absent-root" does not exist/
+Error: ENOENT: no such file or directory, lstat '/private/var/folders/.../verin-corpus-root-proof-UaPywY/absent-root'
+```
+
+**Injection 2 - single-spelling description.** Described the input against the caller's root only, so a
+repository reached through a symlinked root named every refusal by absolute path.
+
+**Observed failure:**
+```
+expected [Function] to throw error matching /repository input "absent-input\.md" does not exist/
+Received: "repository input \"/Users/.../.corpus-input-proof-cCnes4/absent-input.md\" does not exist"
+```
+
+**Injection 3 - fs call outside the shared predicate.** Added `realpathSync(repoRoot)` back into
+`taxonomyProblems`, whose repository-input allowlist is now empty because it owns no filesystem access.
+
+**Observed failure:**
+```
+non-deterministic APIs in the generator:
+/scripts/corpus/defects.ts:49 fs.realpathSync
+```
+
+**Standing companions:** an unresolvable root must be refused by name; a symlinked root must still name
+inputs repo-relatively; a taxonomy citation that escapes the repository or is not a regular file must be
+reported, not thrown; and any filesystem call outside the registered repository-input boundaries fails
+the determinism ban.
+
+**Revert:** all three injections remain as temporary-directory and AST companions in the determinism
+fence. Canonical regeneration produced `corpusDigest`
+`71636c4034c16b6d3c6a2737d7c3e3acf8f98a820f6360105f7e117700b0fe17`, the real-derived partition remains
+empty, and captain signoff remains pending.
+
+**Date:** 2026-08-05 (v3 prompt 11, D-162 review hardening).
+
+## corpus vocabulary, spec coverage, and the narrowed executable-authority binding (ADR-0052)
+
+**Injection 1 - an evidence kind the schema admits but no freshness window covers.** Appended
+`"custodian-memo"` to `$defs/evidenceKind.enum` in `fixtures/corpus/spec/real-derived-case-schema.json`.
+
+**Observed failure:**
+```
+✗ real-derived-case-schema.json: evidence kind "custodian-memo" has no executable freshness authority
+```
+
+Before this round the same drift passed the vocabulary check entirely: the window lookup returned
+`undefined`, `diffSeconds(...) > undefined * 86_400` evaluated `x > NaN` as `false`, and arbitrarily
+stale evidence read `"fresh"`. `deriveRealDerivedFreshness` now refuses the kind by name, the same shape
+as its policy-version guard:
+```
+REFUSED: unsupported freshness evidence kind "custodian-memo"
+```
+
+**Injection 2 - a hand-owned spec input bound by no digest.** Added
+`fixtures/corpus/spec/extra-policy.json`.
+
+**Observed failure:**
+```
+✗ spec/extra-policy.json: hand-owned corpus input is bound by no digest - register it in SPEC_FILES
+  or a schema binding, or delete it
+```
+
+This replaces `generatorDigest(seed, spec.rawBytes).length === 64`, which could never emit a problem:
+`digest("hex")` is 64 characters by construction. A check that cannot fail is worse than none
+(charter #4).
+
+**Injection 3 - a runtime dependency in neither declared authority list.** Added a runtime
+`import { isSyntheticProvenance } from "../../src/contracts/provenance"` to
+`scripts/corpus/selected-funding.ts`.
+
+**Observed failure:**
+```
+AssertionError: expected [ Array(1) ] to deeply equal []
++   "missing executable authority dependency src/contracts/provenance.ts"
+```
+
+This is what makes the NARROWING safe. `REAL_DERIVED_EXECUTABLE_AUTHORITY_FILES` no longer binds the
+whole closure, but the bound list plus `REAL_DERIVED_GENERAL_PURPOSE_DEPENDENCIES` are held equal to it,
+so a corpus module that starts depending on new shipped behaviour cannot land unclassified.
+
+**Injection 4 - bytes appended to a bound versus an excluded module.** Recomputed the semantic-contract
+binding with one trailing newline added to `src/contracts/decision-core/serialization.ts` (bound), then
+with `src/contracts/result.ts` (excluded) replaced entirely:
+```
+bound serialization.ts edit moves digest : true
+excluded result.ts edit leaves it still  : true
+```
+The excluded direction is safe only because the blocking gate is byte equality over the REGENERATED
+tree; a drifted generated file is reported as `committed bytes differ from regeneration` regardless of
+which module moved it.
+
+**Injection 5 - a spec file missing from the generator preimage.**
+```
+REFUSED: missing corpus spec bytes for world.json
+```
+Previously `rawBytes[name] ?? ""` folded `sha256("")` into the digest preimage silently, while both
+sibling binders already threw.
+
+**Standing companions:** the schema enum, the executable evidence vocabulary and the committed freshness
+windows must be one list (a repeat, an addition, a removal and a missing enum are each named); every file
+under `spec/` must be bound by a digest in both directions; the bound authority list must equal what the
+manifest publishes and exclude every general-purpose contract by name; the two declared lists must equal
+the complete runtime closure; and a byte appended to any bound module must move the digest.
+
+**Revert:** every injection was reverted and each survives as a companion in
+`corpus-provenance-split.test.ts`. Canonical regeneration produced `corpusDigest`
+`ba9a7bbbbe543dd4a9de145349d6eaca13b8e788b877cb1ba909572b344fc4bd`, the real-derived partition remains
+empty, and captain signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, D-167 review hardening).
+
+## the corpus root is a closed inventory, and no gap reaches a crash (ADR-0052)
+
+**Injection 1 - a committed corpus file nothing accounts for.** Added `fixtures/corpus/extra/x.json`.
+
+**Observed failure (verbatim):**
+```
+✗ extra/x.json: committed corpus entry is outside every accounted-for bucket - nothing generates,
+  digests, or governs it
+```
+
+Before this round `readCommittedCorpus` surfaced only `manifest.json` and `synthetic/**`, so a file
+outside `spec/` and `real-derived/` was byte-compared by nothing, NFC-scanned by nothing, and bound by no
+digest. The allowlist is now stated (`fixtures/corpus/README.md`, `docs/corpus.md` §2) and held both
+ways.
+
+**Injection 2 - the allowlisted documentation removed.** Moved `fixtures/corpus/README.md` aside.
+
+**Observed failure (verbatim):**
+```
+✗ README.md: allowlisted corpus documentation is missing from the committed tree
+```
+
+An allowlist that only ever grants is an allowlist nobody is holding; the entry must exist to keep its
+exemption.
+
+**Injection 3 - the strict-JSON fail-open restored.** Deleted the `document.errors.length > 0` refusal
+so any diagnostic other than `DUPLICATE_KEY` fell through to `JSON.parse` again.
+
+**Observed failure:**
+```
+✗ bytes the strict pass cannot finish are REFUSED, never handed to a duplicate-blind JSON.parse
+  expected [Function] to throw an error
+```
+
+The YAML pass is the ONLY thing that sees a repeated key at all - `JSON.parse` resolves one last-wins -
+so a diagnostic that ABANDONS the scan is a duplicate-key bypass. The companion searches for a nesting
+the composer gives up on (the depth where it does is a property of the host stack, not of the corpus),
+confirms `JSON.parse` accepts the same bytes, and requires refusal.
+
+**Injection 4 - the report-never-abort guard removed, with a mis-declared contract.** Deleted the
+`contractProblems.length === 0` gate in `inspectRealDerivedPartition` and renamed one `contextRule` in
+`fixtures/corpus/spec/real-derived-semantic-contract.json` to `identity-ambiguous-x`, with one delivered
+intake file present.
+
+**Observed failure (verbatim):**
+```
+Error: semantic context rule "identity-ambiguous-x" has no executable authority
+ ❯ scripts/corpus/real-derived-semantics.ts:284:13
+ ❯ realDerivedSemanticDefects scripts/corpus/real-derived-semantics.ts:281:31
+ ❯ realDerivedCaseProblems scripts/corpus/scrub-contract.ts:386:27
+ ❯ inspectRealDerivedPartition scripts/corpus/real-derived.ts:81:23
+```
+
+With the gate restored, the same input reports instead of crashing:
+```
+real-derived semantic context rule "identity-ambiguous-x" has no executable authority
+```
+The per-case detectors EXECUTE the very authorities a contract gap names, so the gap has to be resolved
+first - `validate.ts`'s own rule is that a detector over injected data reports and only the generator may
+abort. The underlying strictness is unchanged: the throw still guards a caller that reaches those
+authorities without resolving the contract.
+
+**Standing companions:** a stray root file, a missing allowlisted README, a non-regular allowlisted
+README, and a near-miss path prefix (`specimen/`) are each named; bytes the strict pass abandons are
+refused while a plain duplicate key still reports as one; and a contract gap beside a delivered file
+yields a named problem list with the per-file spread proven not to have run.
+
+**Revert:** every injection was reverted and each survives as a companion in
+`corpus-provenance-split.test.ts`. Canonical regeneration produced `corpusDigest`
+`680f86ce6110471c71339b91ad5bbe11eb50827f59f2752c8e3408f76d8cb275`, the real-derived partition remains
+empty, and captain signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, D-168 review hardening).
+
+## business-day arithmetic is DST-correct, and the corpus walk only drops what git refuses (ADR-0052)
+
+**Fences:** `src/__tests__/fitness/corpus-timestamps.test.ts`,
+`src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Injection 1 - the fixed 86 400-second business-day step restored.** Replaced
+`addLocalDay(current, transitions)` in `addBusinessDays` with `addDays(current, 1)`, the raw-seconds
+stepping the DST correction replaced.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected '2027-03-15T04:30:00.000Z' to be '2027-03-16T03:30:00.000Z'
+ ❯ src/__tests__/fitness/corpus-timestamps.test.ts:249:27
+```
+
+One business day from local Friday 2027-03-12 23:30 EST must be local Monday 2027-03-15 23:30 EDT. A
+fixed 24-hour step holds the UTC time of day still and drags the LOCAL wall clock an hour across the
+spring-forward transition, stepping from local Saturday straight to local Monday 00:30 without ever
+landing on Sunday - `settlementEarliest` a day out. The pre-existing assertion stepped entirely inside
+EDT, so it passed byte-identically under the bug: a correction indistinguishable from what it replaced
+is not verified.
+
+**Injection 2 - the untrackable-name skip removed, with a platform dropping present.** Deleted the
+`untrackableNames.has(entry.name)` skip in `readTree` and created `fixtures/corpus/.DS_Store`.
+
+**Observed failure (verbatim):**
+```
+✗ .DS_Store: committed corpus entry is outside every accounted-for bucket - nothing generates, digests, or governs it
+```
+```
+AssertionError: expected [ '.DS_Store', 'README.md', …(3) ] to deeply equal [ 'README.md', 'manifest.json', …(1) ]
+ ❯ src/__tests__/fitness/corpus-provenance-split.test.ts:5442:60
+```
+
+The inventory refuses COMMITTED entries but was fed a working-tree walk, so a file `.gitignore`
+explicitly refuses to track - one a file browser writes just by opening the directory - failed
+`pnpm corpus:validate`, `pnpm corpus:report`, and `pnpm test`. The walk now drops exactly the names git
+refuses, so the byte-compare, the exact root inventory, and the spec digest-coverage check all see the
+committed tree they each claim to be reading. Everything git WOULD track still fails closed.
+
+**Injection 3 - an exemption git does not grant.** Added `"Thumbs.db"` to `UNTRACKABLE_ENTRY_NAMES`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: "Thumbs.db" is dropped from the corpus walk but .gitignore would still track it: expected [ '# dependencies', …(27) ] to include 'Thumbs.db'
+ ❯ src/__tests__/fitness/corpus-provenance-split.test.ts:2007:9
+```
+
+An exemption list that can name anything is a hole with a comment on it; each name must be a rule the
+repository already states, so widening the drop set is a `.gitignore` change under review.
+
+**Standing companions:** a business-day step across each pinned transition asserts the exact instant and
+its local rendering; a dropping planted at the corpus root AND inside `synthetic/` reaches neither the
+inventory nor the byte-compare while a stray `notes.md` is still named; and every exempted name is held
+against `.gitignore`.
+
+**Revert:** every injection was reverted. Canonical regeneration produced `corpusDigest`
+`b3ba437c89802a5ee519dadfad97bd5d30278920de9c727805e17a4397a8bf77` (`tree.ts` is a bound executable
+authority, so the walk change moves the digest), the real-derived partition remains empty, and captain
+signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, D-169 review hardening).
+
+## the corpus walk drops on trackedness, so a force-added dropping still fails closed (ADR-0052)
+
+**Fence:** `src/__tests__/fitness/corpus-provenance-split.test.ts`
+
+**Injection 1 - the name alone decides, once git answers.** Replaced the drop predicate
+`tracked !== null && !tracked.has(relPath)` in `readTree` with `tracked !== null`, the name-keyed rule
+D-169 shipped, and force-added a `.DS_Store` at the corpus root and inside `synthetic/`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: a tracked ".DS_Store" was dropped from the walk: expected [ 'README.md', 'manifest.json', …(1) ] to include '.DS_Store'
+ ❯ src/__tests__/fitness/corpus-provenance-split.test.ts:5485:75
+```
+
+A dropping `git add -f` put in the index is a COMMITTED byte: nothing regenerates it, no digest binds
+it, no intake contract governs it, and no NFC scan reads it. Keying the exemption on the file's name let
+it sit under `fixtures/corpus/` accounted for by nothing - the exact state the exact root inventory
+(D-168) exists to forbid. Only git can answer whether an entry is in the committed tree, so only git
+grants the exemption.
+
+**Injection 2 - an unanswerable git read as "untracked".** Returned `new Set()` instead of `null` from
+`trackedRelPaths` when the `git ls-files` call fails, so a directory outside any repository reports
+everything untracked.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected '' to contain '.DS_Store: committed corpus entry is …'
+ ❯ src/__tests__/fitness/corpus-provenance-split.test.ts:5451:72
+```
+
+Assuming absence of proof is proof of absence turns "git is not installed here" into a silent exemption.
+The walk drops nothing when it cannot ask.
+
+**Injection 3 - the real corpus, end to end.** Wrote `fixtures/corpus/.DS_Store` and ran
+`pnpm corpus:validate` twice, before and after `git add -f`.
+
+**Observed (verbatim):**
+```
+corpus: regenerated byte-identical; every rule holds
+```
+```
+✗ .DS_Store: committed corpus entry is outside every accounted-for bucket - nothing generates, digests, or governs it
+
+corpus: 1 problem(s) - a hand-edited or drifted corpus cannot pass (charter #4)
+```
+
+Untracked, a file browser's dropping still cannot red the blocking gate (D-169); tracked, the same bytes
+are refused by name. The two halves are the whole rule.
+
+**Standing companion:** one temp corpus proves all three states of the same dropping - unprovable
+(no repository yet) is surfaced, untracked is dropped from the walk, the inventory, and the byte-compare,
+and force-added is surfaced and refused at the root and inside `synthetic/` - while a stray `notes.md`
+is named throughout and every exempted name is still held against `.gitignore`.
+
+**Revert:** every injection was reverted, the probe `.DS_Store` was removed from the index and the disk,
+and `git status` returned to the four intended modifications. Canonical regeneration produced
+`corpusDigest` `ab9603d4313c36b73753c3f0040fad07b4b96cdbf5289d394fa7233356b5599e` (`tree.ts` is a bound
+executable authority, so the walk change moves the digest), the real-derived partition remains empty, and
+captain signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, D-170 review hardening).
+
+## corpus freshness refuses an unparseable instant, and dead tooling exports have a gate (ADR-0052)
+
+**Injection 1 - freshness computed without a canonical-instant assertion.** Replaced the `diffSeconds`
+imported from `scripts/corpus/clock.ts` with a local
+`(new Date(later).getTime() - new Date(earlier).getTime()) / 1000`, the shape this module shipped with.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/corpus-provenance-split.test.ts > deriving freshness from a non-canonical instant REFUSES rather than reading fresh
+AssertionError: expected [Function] to throw an error
+ ❯ src/__tests__/fitness/corpus-provenance-split.test.ts:5411:9
+```
+
+An unparseable instant makes the subtraction `NaN`, and `NaN > windowDays * 86_400` is false - so evidence
+of unknown age reads `"fresh"` inside a fail-closed intake path. The schema's `$defs/instant` pattern
+admits `garbage.123Z`, so nothing upstream is guaranteed to have refused it. This is the same failure
+shape the module already refuses for a missing window, applied to the instant.
+
+**Injection 2 - a dead export under `scripts/corpus/`.** Appended
+`export const proofOnlyDeadCorpusExport = "dead";` to `scripts/corpus/_util.ts` and ran `pnpm knip`.
+
+**Observed failure (verbatim):**
+```
+Unused exports (1)
+proofOnlyDeadCorpusExport  scripts/corpus/_util.ts:31:14
+ ELIFECYCLE  Command failed with exit code 1.
+```
+
+Before this change `knip.json` listed `scripts/**/*.ts` as an ENTRY pattern, so the whole tooling tree was
+exempt from the charter's dead-export gate and the same injection passed silently. The entry is now
+`scripts/*.ts` - every TOP-LEVEL file, so the closure covers `scripts/corpus/**` and any future
+subdirectory, while two non-runner top-level libraries (`golden-cases.lib.ts`, `error-message.ts`) keep
+the exemption - with `scripts/**/*.ts` still in project scope, which is the ADR-0052 closure already
+applied to the two budget fences. `ignoreExportsUsedInFile: true` bounds it further: the gate reports only
+NEVER-referenced exports, which is exactly the property this injection proves - a file-local-only export
+would still pass. Narrowing it immediately named three dead exports the review had
+not found (`SYNTHETIC_DIR` re-exported from `validate.ts`, `CaseLabel` in `case-spec.ts` and its `world.ts`
+re-export), all removed.
+
+**Standing companion:** `deriving freshness from a non-canonical instant REFUSES rather than reading fresh`
+holds both operands to the corpus clock and still proves a canonical in-window pair reads `"fresh"`, so the
+refusal cannot be satisfied by refusing everything.
+
+**Revert:** both injections were reverted and the probe export removed; `scripts/corpus/_util.ts` and
+`scripts/corpus/real-derived-policy.ts` hash back to the digests the manifest binds. Canonical regeneration
+produced `corpusDigest` `2a6a60d27dedf8029d2f4e3e6b33e986717942f7ff407a056f743a8c857e01a3` (the hoisted
+primitives and the clock import move bound executable authorities, and no case's bytes changed), the
+real-derived partition remains empty, and captain signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, review wrap-up).
+
+## one intake filename rule, read from the schema that owns the case id (ADR-0052)
+
+**Fence:** `src/__tests__/fitness/corpus-vocabulary-binding.test.ts` (companion of the
+corpus-provenance-split fence), over `scripts/corpus/scrub-contract.ts` and
+`scripts/corpus/real-derived.ts`.
+
+The canonical real-derived intake filename was written out three times: an identical inline
+`/^real-derived\/RD-[0-9a-f]{16}\.json$/` in the delivery loader and in the collection checker, and a
+third statement as `real-derived-case-schema.json`'s `caseId` pattern that the collection checker's
+`expected` path already depended on. Changing the naming rule in one place would leave the other
+disagreeing - the loader refusing a file the checker considers canonically named - and the divergence
+would surface only as a confusing double report. The rule is now derived once, from the schema:
+`intakeCaseIdPattern` reads `properties/caseId/pattern`, and `isCanonicalIntakePath` /
+`canonicalIntakePath` are the only statements of the filename shape.
+
+**Injection 1 - an unanchored schema pattern.** Changed the committed `caseId` pattern from
+`^RD-[0-9a-f]{16}$` to `RD-[0-9a-f]{16}` (a JSON Schema `pattern` is a SEARCH, so unanchored it matches
+`real-derived/x/RD-....json` too).
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected null not to be null
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:58:51
+```
+```
+  ✗ real-derived-case-schema.json: properties/caseId declares no anchored pattern to bind the canonical intake filename to
+corpus: 2 problem(s) - a hand-edited or drifted corpus cannot pass (charter #4)
+```
+
+A pattern that cannot be bound mints NO rule rather than a wider one: `isCanonicalIntakePath` returns
+false for every path and the gap is NAMED by `caseSchemaVocabularyProblems`, so a schema edit cannot
+silently widen the filenames intake accepts.
+
+**Injection 2 - a narrowed schema pattern.** Changed the same pattern to `^RD-[0-9a-f]{8}$` and left
+both call sites untouched.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected false to be true // Object.is equality
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:62:79
+```
+
+The delivery loader's filename rule moved WITH the case-id rule, which is the property the single source
+buys: there is no second copy left to disagree with the schema.
+
+**Standing companion:** `the canonical intake filename is READ FROM the schema caseId pattern, and an
+unbound pattern refuses every delivery` also proves the accepting direction (the committed schema binds a
+pattern, the canonical path round-trips, and a nested or upper-case name is refused), so the refusal
+cannot be satisfied by refusing everything.
+
+**Revert:** both injections were reverted; `fixtures/corpus/spec/real-derived-case-schema.json` hashes
+back to the digest the manifest binds. Canonical regeneration produced `corpusDigest`
+`e1cf309ca05f4df53f137029ff6a7c0af7372dad47eb20d708641d9b38382742` (the intake authority and the
+outcome-problem export move bound executable authorities, and no case's bytes changed), the real-derived
+partition remains empty, and captain signoff remains pending.
+
+**Date:** 2026-08-06 (v3 prompt 11, review round 18).
+
+## the intake refusal is rendered from the rule it enforces, and the decomposed scanner still catches a clock (ADR-0052)
+
+**Fences:** `src/__tests__/fitness/corpus-vocabulary-binding.test.ts`,
+`src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Claims:** (1) the operator-facing intake refusal is DERIVED from the same bound `caseId` pattern the
+predicate tests, so message and rule cannot drift; (2) splitting `bannedNondeterminismUses` into a
+scanner object plus per-concern modules changed no verdict.
+
+Review round 18 single-sourced the intake filename PREDICATE but left the refusal a literal -
+`filename must be a top-level RD-<16 lowercase hex>.json` - restating the shape the code no longer held.
+A schema change would have moved `isCanonicalIntakePath` and left intake refusing a delivery while naming
+exactly the filename it had just rejected. `canonicalIntakeFilenameRule` now renders the sentence from
+`CASE_ID_PATTERN` through `canonicalIntakePath`, and an unbound pattern names the schema that failed to
+mint a rule instead of a stale shape.
+
+**Injection 1 - the refusal hard-coded again.** Replaced the rendered message with the old literal,
+leaving the predicate untouched.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected 'filename must be a top-level RD-<16 l…' to be 'filename must be real-derived/RD-[0-9…' // Object.is equality
+
+Expected: "filename must be real-derived/RD-[0-9a-f]{16}.json"
+Received: "filename must be a top-level RD-<16 lowercase hex>.json"
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:74:43
+```
+
+**Injection 2 - the refusal bound to a DIFFERENT pattern than the predicate.** Defaulted
+`canonicalIntakeFilenameRule` to `/^RD-[0-9a-f]{8}$/` while `isCanonicalIntakePath` kept the schema's.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected 'filename must be real-derived/RD-[0-9…' to be 'filename must be real-derived/RD-[0-9…' // Object.is equality
+
+Expected: "filename must be real-derived/RD-[0-9a-f]{16}.json"
+Received: "filename must be real-derived/RD-[0-9a-f]{8}.json"
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:74:43
+```
+
+The message is now caught BOTH ways: restated as a literal, and derived from anything other than the
+pattern the loader actually enforces.
+
+**Injection 3 - a clock in a corpus module, read through the decomposed scanner.** Appended
+`export const injectedDrift = (): number => Date.now();` to `scripts/corpus/seed.ts`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: non-deterministic APIs in the generator:
+scripts/corpus/seed.ts:72 Date.now: expected [ { …(3) } ] to deeply equal []
+ ❯ src/__tests__/fitness/corpus-determinism.test.ts
+```
+
+**Equivalence, not inspection.** `bannedNondeterminismUses` was decomposed from one 1,038-line closure
+into a scanner object (`OriginResolver`) plus per-concern modules. The proof that no verdict moved is a
+before/after comparison of the FULL violation set on the current tree, scanned with the same projects the
+fences build: `scripts` (106), `src/infrastructure` (62), `src/domain` (1), `src/contracts` (1),
+`src/app` (14) - 184 findings, byte-identical in file, line, api AND order. The fence's own adversarial
+companions (42 tests across the three determinism files) are green, as is the whole suite.
+
+**Revert:** all three injections were reverted; `pnpm corpus:validate` regenerates byte-identical and
+`corpusDigest` is `6566b226f4d408f4c65818bb7752cb16289db5fb8c814f21342e260782dd83f6` (the rendered refusal
+moves a bound executable authority; no case's bytes changed). The real-derived partition remains empty and
+captain signoff remains `pending-captain`.
+
+**Date:** 2026-08-06 (v3 prompt 11, review round 19).
+
+## the shared corpus world rebuilds on a watch rerun and refuses an unpinned clock (ADR-0052)
+
+**Fences:** `src/__tests__/fitness/corpus-world-sharing.test.ts`,
+`src/__tests__/fitness/corpus-vocabulary-binding.test.ts`
+
+**Claims:** (1) a watch rerun of the fitness project REBUILDS the shared corpus world, so a corpus edit
+mid-session is measured against the bytes on disk and not against the snapshot global setup took at
+startup; (2) the shared world refuses an absent, unresolvable or UTC clock by name instead of keeping the
+machine's; (3) an unanchored intake case-id pattern is refused rather than sliced for display or tested as
+a substring.
+
+**Injection 1 - the rerun rebuild removed (end-to-end watch session).** A scripted `startVitest(…, {watch:
+true})` session over `corpus-timestamps.test.ts`: run clean, then edit
+`fixtures/corpus/spec/world.json` (`"timeZone": "America/New_York"` -> `"America/Chicago"`), then revert.
+
+**Observed, with the rebuild hook in place (verbatim):**
+```
+PROOF first run (clean corpus): src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+ RERUN  fixtures/corpus/spec/world.json x1
+PROOF after corpus edit: src/__tests__/fitness/corpus-timestamps.test.ts -> fail
+ RERUN  fixtures/corpus/spec/world.json x2
+PROOF after revert: src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+```
+
+**Observed with the hook removed (the pre-fix behaviour, verbatim):**
+```
+PROOF first run (clean corpus): src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+ RERUN  fixtures/corpus/spec/world.json x1
+PROOF after corpus edit: src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+ RERUN  fixtures/corpus/spec/world.json x2
+PROOF after revert: src/__tests__/fitness/corpus-timestamps.test.ts -> pass
+```
+
+Both halves are load-bearing and both are proven: `forceRerunTriggers` schedules the rerun (without it the
+edit produced no rerun at all, since the fences no longer import the generator), and the rebuild hook is
+what makes that rerun measure the new bytes. The triggers are ROOT-ANCHORED: a bare `**/fixtures/corpus/**`
+does not traverse a dot-directory, so in this worktree (`~/.no-mistakes/…`) it - and vitest's own
+`**/package.json/**` default - matched nothing, which is exactly how a watch session would have kept
+reporting stale green on a developer machine that checks out under one.
+
+**Injection 2 - the clock guard failing open.** Restored the permissive `if (typeof zone === "string")
+process.env.TZ = zone;` and returned early for a missing zone.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/__tests__/fitness/corpus-world-sharing.test.ts:65:51
+     65|       expect(() => pinConfiguredClock(undefined)).toThrow(/no configur…
+```
+
+**Injection 3 - the anchoring assertion disabled.** Made `assertWholeStringRule` a no-op, leaving the
+display slice and the substring `.test()` reachable.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:88:61
+     88|       expect(() => canonicalIntakeFilenameRule(unanchored)).toThrow(
+```
+
+**Standing companion:** the same case still proves the ACCEPTING direction (the committed schema binds a
+pattern, the canonical path round-trips, a nested or upper-case name is refused, and an unbound pattern
+names the schema), so the refusal cannot be satisfied by refusing everything. The sharing-seam fence's
+first case proves the rebuild is scoped: an `app`-project rerun must NOT rebuild the world.
+
+**Revert:** all three injections were reverted and the scripted watch session's file writes restored
+`fixtures/corpus/spec/world.json` byte-for-byte. `pnpm corpus:validate` regenerates byte-identical with
+`corpusDigest` `86f870e6a5a35849fd7187e08136ce2da22d7771593fd5db0241c688d3080d20` (the intake naming rule
+moved into `scripts/corpus/intake-filename.ts`, a newly bound executable authority; no case's bytes
+changed). The real-derived partition remains empty and captain signoff remains `pending-captain`.
+
+**Date:** 2026-08-06 (v3 prompt 11, review round 20).
+
+## the sharing seam is proven without paying for it, and the intake rule is read structurally (ADR-0052)
+
+**Fences:** `src/__tests__/fitness/corpus-world-sharing.test.ts`,
+`src/__tests__/fitness/corpus-vocabulary-binding.test.ts`
+
+**Claims:** (1) global setup builds the shared corpus world EXACTLY ONCE, rebuilds it on this project's
+watch rerun and not on another project's, and the shipped default builds a real corpus - all on the one
+validation the run already pays; (2) a case-id pattern that is not whole-string is refused by name, where
+whole-string is read STRUCTURALLY (escapes, character classes, group depth, flags) rather than as the first
+and last character.
+
+**Injection 1 - the rerun hook stops rebuilding.** Replaced the hook body with `void specifications;`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: a fitness rerun kept the world computed at process start: expected [ { built: 1 } ] to have a length of 2 but got 1
+```
+
+**Injection 2 - the rebuild loses its project scope.** Replaced the specification predicate with
+`specifications.length >= 0`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: an unrelated project's rerun rebuilt a world it never reads: expected [ { built: 1 }, { built: 2 } ] to have a length of 1 but got 2
+```
+
+Both are counted against a DOUBLE, so the fence proves the seam without spending a second and third real
+`validateCorpus()` on watching itself - which is what made D-175's "one validation per run" false. The
+standing companion in the same file reads the injected world (`real.taxonomy`, `real.manifest`) and so
+still proves the SHIPPED default builds a real corpus; a stubbed default would fail it, and would also fail
+the eighteen fences that read that world.
+
+**Injection 3 - the flags check removed** (`void flags;`), leaving `/^RD-…$/m` (anchors redefined to line
+boundaries) and `/^RD-…$/g` (a stateful `.test()`) accepted as whole-string rules.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+```
+
+**Injection 4 - escape handling removed** (`if (ch === "\\") { continue; }`), so an escaped trailing dollar
+reads as an anchor and `caseIdShape` would print `real-derived/RD-\.json`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected /^RD-\$/ to be null
+
+- Expected:
+null
+
++ Received:
+/^RD-\$/
+```
+
+**Injection 5 - the top-level alternation check removed**, restoring the exact hole the
+first-and-last-character test had: a branch anchored at neither end, which `.test()` matches as a
+substring.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected /^RD-[0-9a-f]{16}|junk$/ to be null
+
+- Expected:
+null
+
++ Received:
+/^RD-[0-9a-f]{16}|junk$/
+```
+
+**Standing companion:** the same case proves the ACCEPTING direction - the committed schema binds a
+pattern, the canonical path round-trips, and a bounded alternation INSIDE the anchors
+(`/^(RD|RX)-[0-9a-f]{16}$/`) both renders and matches - so the refusal cannot be satisfied by refusing
+every regex.
+
+**Revert:** all five injections were reverted. `pnpm corpus:validate` regenerates byte-identical with
+`corpusDigest` `2de7c9fe090ffaf29e51063eed5261e0f949f883d55337d094a088a224ab3e25` (the structural read
+changed `scripts/corpus/intake-filename.ts`, a bound executable authority; no case's bytes or labels
+changed). The real-derived partition remains empty and captain signoff remains `pending-captain`.
+
+**Date:** 2026-08-06 (v3 prompt 11, review round 21).

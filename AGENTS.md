@@ -36,6 +36,24 @@ plus `fixtures/golden/` (D-035): captain-signoff-gated (agents never sign; the c
 on 2026-07-26, making their expected outcomes binding product truth), validated by `pnpm golden:validate`
 (CI job `golden-cases`) and the `golden-cases` fence.
 
+The replay corpus (v3 prompt 11, ADR-0052) is a SEPARATE artifact from the signed 16 and disjoint from
+them by construction: [`docs/corpus.md`](./docs/corpus.md) is normative, hand-owned input lives in
+`fixtures/corpus/spec/`, and `fixtures/corpus/{manifest.json,synthetic/}` are GENERATED - never hand-edit
+them, `pnpm corpus:validate` regenerates and byte-compares (CI job `corpus`). Derivation is path-keyed
+(`SHA-256(seed‖path‖field)`), so adding a household changes only that household's bytes. The real-derived
+partition ships EMPTY behind a fail-closed intake contract ([`docs/corpus-scrub-procedure.md`](./docs/corpus-scrub-procedure.md));
+`detectionRate` is `null` with a reason code and is NEVER substituted by the synthetic figure, whose name
+is `syntheticDefectCoverage`. Signoff is per corpus version bound to `corpusDigest`, including exact case
+bytes and labels, schemas, taxonomy, freshness, and declarative plus executable replay semantics.
+Both partitions require typed expected-versus-observed treatment, and a defect without a context-bound
+mismatch fails closed. Defect labels and detector attributions are exact singletons. Both partitions use
+explicit selected funding, with synthetic pending semantics bound to that exact request-household set.
+Synthetic identity context carries raw UTF-8 bytes, exact candidates, and household bindings instead of
+assumption-only proof. Real-derived replay uses entity-kind-scoped references with firm ids excluded from
+generic subjects, exact kind/subject/source evidence, exact-integer aggregate selected funding, pending
+actions bound to the request and selected account, and threshold treatment selected by signed comparator
+policy. Regeneration invalidates signoff, and agents never sign.
+
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
 branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces under
@@ -85,7 +103,8 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 `corepack pnpm install` · `pnpm dev` · `pnpm build` · `pnpm typecheck` · `pnpm lint` ·
 `pnpm test` (unit+integration+fitness, **non-UTC clock**) · `pnpm test:fitness` · `pnpm test:e2e`
 (Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report) ·
-`pnpm golden:validate` (16-case golden truth set). All gates
+`pnpm golden:validate` (16-case golden truth set) ·
+`pnpm corpus:{generate,validate,report}` (replay corpus; `validate` is the blocking `corpus` gate). All gates
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
@@ -141,7 +160,15 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   from a server component (it would throw on the cookie write). Renewal drives off the already-selected
   `expires_at`, so the pinned org-id-required SELECT escape is unchanged.
 - Tests must run on a non-UTC TZ (`vitest.config.ts` pins `America/New_York`); `src/__tests__/setup.ts`
-  fails loudly if the clock is UTC.
+  fails loudly if the clock is UTC. That config also HOLDS the execution policy, so no invocation path
+  (`pnpm test`, `test:watch`, the run `scripts/v3-invariants.ts` spawns) can lose it: two projects -
+  `fitness` (serial; several fences each build their own full-repository ts-morph program) and `app`
+  (parallel) - each declaring its OWN `include`, because `extends: true` CONCATENATES arrays and a root
+  `include` would be added to both (D-172/D-173/D-174). The fitness project computes one shared
+  `validateCorpus()` world in `globalSetup` (`_corpus-world-setup.ts`, which re-pins the clock because
+  global setup does not inherit `test.env`) and rebuilds it on a watch rerun via `forceRerunTriggers`;
+  read the corpus world through `_corpus-world.ts`, never by calling `validateCorpus()` at module scope
+  (D-175/D-176).
 - ESLint pinned to 9.x (typescript-eslint 8 is incompatible with ESLint 10's scope-manager API);
   TypeScript pinned to 6.x (not the Go-based TS 7) for tooling compatibility.
 - Fences prefer AST (`ts-morph`) over regex; a weak/tautological fence is worse than none — the self-audit
@@ -236,6 +263,13 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   shipped `REGISTERED_*` entry may live in the reserved namespace). A ledger export that no shipped
   surface or script can reach fails `ledger-reachability` unless it is a NAMED deferral (D-116)
   saying which prompt lands its caller - knip cannot see this, since every export has a test.
+- **`scripts/**` is budgeted AND dead-export-gated now (ADR-0052, D-171).** Both budget fences used to
+  walk `src/` only, so moving code to `scripts/` was an escape hatch. `line-budget` has a `tooling` bucket
+  and `max-file-size` walks `scripts/**` under the same 500-line per-file ceiling. `knip.json` entries are
+  `scripts/*.ts` (top-level runners plus two library files), NOT `scripts/**/*.ts`, so a never-referenced
+  export under `scripts/corpus/` or any future subdirectory now fails the dead-export gate. Build-time
+  tooling is a legitimate home for generators — it is not an unmeasured one. `src/__tests__/**` is still
+  in no bucket: that gap is DEFERRED, not exempt (D-172, follow-up `fu-corpus-test-tree-budget`).
 
 ## Maintaining this file
 

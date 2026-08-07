@@ -445,9 +445,21 @@ function sanctionedHmacReveal(access: SecretAccess): boolean {
     importedNodeCreateHmac(parent);
 }
 
+/** Memoized PER PROJECT, so the detector and the stale-allowlist check share one
+ * scan of the real project without a caller ever being able to hand one project
+ * an access list scanned from a different one. */
+const secretAccessCache = new WeakMap<Project, readonly SecretAccess[]>();
+function cachedSecretAccesses(project: Project): readonly SecretAccess[] {
+  const cached = secretAccessCache.get(project);
+  if (cached !== undefined) return cached;
+  const accesses: readonly SecretAccess[] = secretAccesses(project);
+  secretAccessCache.set(project, accesses);
+  return accesses;
+}
+
 export function detectUnsanctionedReveal(project: Project): string[] {
   const out: string[] = [];
-  for (const access of secretAccesses(project)) {
+  for (const access of cachedSecretAccesses(project)) {
     if (!sanctionedHmacReveal(access)) {
       out.push(`${access.file}:${access.line}`);
     }
@@ -455,6 +467,9 @@ export function detectUnsanctionedReveal(project: Project): string[] {
   out.push(...secretModuleExportViolations(project));
   return [...new Set(out)];
 }
+
+const realSecretAccesses = (): readonly SecretAccess[] =>
+  cachedSecretAccesses(realSemanticProject());
 
 /** The committed template's lines, or null when the file is missing entirely. */
 export function readEnvExampleLines(): string[] | null {
@@ -545,7 +560,7 @@ describe("config-hygiene fence (no secret fallback / no live org domain / placeh
     expect(o, `unsanctioned secret reveals:\n${o.join("\n")}`).toEqual([]);
   });
   it("enforces: every reveal-allowlisted module still reveals (no stale allowlist, charter #4)", () => {
-    const calls = secretAccesses(realSemanticProject());
+    const calls = realSecretAccesses();
     for (const entry of REVEAL_ALLOWLIST) {
       expect(
         calls.some((call) =>

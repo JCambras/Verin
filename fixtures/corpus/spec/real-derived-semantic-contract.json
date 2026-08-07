@@ -1,0 +1,109 @@
+{
+  "contractVersion": "verin-real-derived-semantics/1.13.0",
+  "defectRules": [
+    { "id": "authority-scope-error", "contextRule": "authority-boundary", "treatmentSelector": "authority-state", "treatments": [
+      { "selectorValue": "effective", "expectedTreatment": "accept-effective-authority", "defectTreatment": "reject-effective-authority-by-membership" },
+      { "selectorValue": "ineffective", "expectedTreatment": "reject-ineffective-authority", "defectTreatment": "accept-ineffective-authority" }
+    ] },
+    { "id": "blast-radius-underestimation", "contextRule": "resolved-conflict-multi-subject", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "reevaluate-all-impacted-subjects", "defectTreatment": "reevaluate-partial-subjects" }
+    ] },
+    { "id": "canonical-identity-defect", "contextRule": "canonical-identity-collision", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "compare-canonical-identities", "defectTreatment": "compare-raw-identities" }
+    ] },
+    { "id": "deadline-feasibility-error", "contextRule": "deadline-infeasible", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "reject-infeasible-deadline", "defectTreatment": "accept-infeasible-deadline" }
+    ] },
+    { "id": "destination-integrity-defect", "contextRule": "destination-not-integral", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "require-integral-destination", "defectTreatment": "accept-nonintegral-destination" }
+    ] },
+    { "id": "evidence-interval-collapse", "contextRule": "authority-lapses-during-evidence-interval", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "preserve-evidence-interval", "defectTreatment": "collapse-evidence-interval" }
+    ] },
+    { "id": "evidence-staleness-unnoticed", "contextRule": "stale-evidence-present", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "exclude-stale-evidence", "defectTreatment": "use-stale-evidence" }
+    ] },
+    { "id": "hold-scope-error", "contextRule": "position-hold-present", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "preserve-hold-scope", "defectTreatment": "widen-or-ignore-hold-scope" }
+    ] },
+    { "id": "identity-resolution-ambiguity", "contextRule": "identity-ambiguous", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "require-human-selection", "defectTreatment": "auto-bind-ambiguous-identity" }
+    ] },
+    { "id": "instruction-conflict-unresolved", "contextRule": "instruction-conflict-present", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "surface-instruction-conflict", "defectTreatment": "collapse-instruction-conflict" }
+    ] },
+    { "id": "liquidity-reserve-miscalculation", "contextRule": "reserve-not-scalar", "treatmentSelector": "reserve-state", "treatments": [
+      { "selectorValue": "modeled-scalar", "expectedTreatment": "calculate-scalar-reserve", "defectTreatment": "calculate-structured-reserve" },
+      { "selectorValue": "modeled-segmented", "expectedTreatment": "calculate-segmented-reserve", "defectTreatment": "calculate-scalar-reserve" },
+      { "selectorValue": "missing", "expectedTreatment": "mark-reserve-unavailable", "defectTreatment": "invent-reserve-from-missing-schedule" }
+    ] },
+    { "id": "pending-activity-miscount", "contextRule": "nonreducing-pending-action-present", "treatmentSelector": "pending-availability", "treatments": [
+      { "selectorValue": "unchanged", "expectedTreatment": "exclude-nonreducing-pending", "defectTreatment": "count-nonreducing-pending" },
+      { "selectorValue": "settled-incoming-included", "expectedTreatment": "preserve-settled-incoming-availability", "defectTreatment": "omit-settled-incoming-availability" },
+      { "selectorValue": "settled-incoming-excluded", "expectedTreatment": "credit-settled-incoming-availability", "defectTreatment": "omit-settled-incoming-availability" },
+      { "selectorValue": "settled-outgoing-included", "expectedTreatment": "preserve-settled-outgoing-availability", "defectTreatment": "omit-settled-outgoing-availability" },
+      { "selectorValue": "settled-outgoing-excluded", "expectedTreatment": "debit-settled-outgoing-availability", "defectTreatment": "omit-settled-outgoing-availability" }
+    ] },
+    { "id": "restriction-lifecycle-error", "contextRule": "restriction-not-in-force", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "apply-restriction-lifecycle", "defectTreatment": "ignore-restriction-lifecycle" }
+    ] },
+    { "id": "tax-consequence-blindness", "contextRule": "selected-retirement-source-without-completed-review", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "require-completed-tax-review", "defectTreatment": "proceed-without-completed-tax-review" }
+    ] },
+    { "id": "temporal-rendering-defect", "contextRule": "time-zone-boundary", "treatmentSelector": "fixed", "treatments": [
+      { "selectorValue": "fixed", "expectedTreatment": "render-with-time-zone-rules", "defectTreatment": "render-with-fixed-offset" }
+    ] },
+    { "id": "threshold-boundary-error", "contextRule": "threshold-equality", "treatmentSelector": "threshold-comparator", "treatments": [
+      { "selectorValue": "strict", "expectedTreatment": "apply-strict-threshold-boundary", "defectTreatment": "apply-inclusive-threshold-boundary" },
+      { "selectorValue": "inclusive", "expectedTreatment": "apply-inclusive-threshold-boundary", "defectTreatment": "apply-strict-threshold-boundary" }
+    ] }
+  ],
+  "evidencePlanes": [
+    { "plane": "request", "evidenceKind": "request" },
+    { "plane": "identity", "evidenceKind": "identity-resolution" },
+    { "plane": "destination", "evidenceKind": "bank-instruction" },
+    { "plane": "liquidity-source", "evidenceKind": "balance" },
+    { "plane": "reserve", "evidenceKind": "planned-withdrawals" },
+    { "plane": "pending-action", "evidenceKind": "pending-actions" },
+    { "plane": "authority", "evidenceKind": "authority" },
+    { "plane": "policy", "evidenceKind": "policy" },
+    { "plane": "restriction", "evidenceKind": "restriction" },
+    { "plane": "legal-hold", "evidenceKind": "legal-hold" },
+    { "plane": "instruction-conflict", "evidenceKind": "household-instruction" },
+    { "plane": "recent-change", "evidenceKind": "recent-change" },
+    { "plane": "tax-review", "evidenceKind": "tax-review" },
+    { "plane": "temporal", "evidenceKind": "time-zone-rule" },
+    { "plane": "execution", "evidenceKind": "execution-precondition" }
+  ],
+  "funding": {
+    "selection": "explicit-account-reference-set-in-both-partitions",
+    "sufficiency": "selected-aggregate-covers-request-reserve-after-exact-once-pending-action-accounting",
+    "taxRisk": "any-selected-retirement-source-requires-completed-review",
+    "arithmetic": "exact-safe-integer-minor-units"
+  },
+  "topology": {
+    "referenceIdentity": "entity-kind-scoped",
+    "tenantScope": "case-request-reservations-share-one-firm-reference",
+    "genericSubjects": "exclude-firm-references",
+    "syntheticIdentity": "typed-raw-bytes-candidates-and-household-bindings",
+    "sourceAccount": "must-resolve-once-to-request-household",
+    "selectedFunding": "must-resolve-once-to-request-household",
+    "realDerivedSelectedFundingOwner": "must-share-owner-with-request-source",
+    "pendingAction": "must-resolve-to-request-household-and-selected-funding",
+    "pendingModel": "must-resolve-to-request-household-and-selected-funding",
+    "materialEvidence": "kind-subject-source-observation-exactly-once",
+    "instructionConflict": "derived-from-request-bound-typed-instruction-terms",
+    "instructionOwners": "target-specific-normalized-destination-owner-set",
+    "restrictionLifecycle": "derived-from-effective-instants-at-evaluation",
+    "realDerivedTemporal": "derive-zone-state-and-local-rendering-from-recorded-iana-registry-and-transition-rules",
+    "syntheticTemporal": "cited-zone-bound-records-cross-declared-transition",
+    "syntheticBlastRadius": "one-cited-instruction-change-reaches-multiple-topology-subjects"
+  },
+  "outcomes": {
+    "completeness": "one-expected-observed-treatment-per-defect-class",
+    "defect": "exactly-one-context-bound-mismatched-treatment",
+    "control": "all-observed-treatments-match-expected",
+    "synthetic": "context-requires-typed-treatment",
+    "attribution": "defect-empty-or-exact-label-singleton"
+  }
+}

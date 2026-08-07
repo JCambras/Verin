@@ -52,6 +52,58 @@
           "ref": "docs/adr/0022-derived-compliance-artifacts-demonstration.md"
         },
         {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-provenance-split.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-provenance-inventory.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-synthetic-case-semantics.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-measurement-boundary.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-executable-authority.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-replay-topology.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-replay-ownership.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-synthetic-context.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-synthetic-instructions.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-liquidity-treatments.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-replay-payload.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-intake-attestation.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-vocabulary-binding.test.ts"
+        },
+        {
           "type": "ci-gate",
           "ref": "provenance-trace"
         }
@@ -487,6 +539,106 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/demo-skeleton-honesty.test.ts"
+        }
+      ]
+    },
+    {
+      "id": "replay-corpus-substrate",
+      "title": "Replay corpus is deterministic, provenance-split, honestly empty where it has no real data, and signed per version against its corpusDigest (v3 prompt 11, ADR-0052)",
+      "status": "enforced",
+      "phase": "v3-p11",
+      "mechanisms": [
+        {
+          "type": "adr",
+          "ref": "docs/adr/0052-synthetic-corpus-and-provenance-split.md"
+        },
+        {
+          "type": "file",
+          "ref": "docs/corpus.md"
+        },
+        {
+          "type": "procedure",
+          "ref": "docs/corpus-scrub-procedure.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-determinism.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-determinism-repository-inputs.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-determinism-origins.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-provenance-split.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-provenance-inventory.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-synthetic-case-semantics.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-measurement-boundary.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-executable-authority.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-replay-topology.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-replay-ownership.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-synthetic-context.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-synthetic-instructions.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-liquidity-treatments.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-replay-payload.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-intake-attestation.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-vocabulary-binding.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-timestamps.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/conflict-key-families.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/corpus-world-sharing.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "corpus"
         }
       ]
     },

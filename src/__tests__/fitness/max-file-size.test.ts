@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { shippedSourceFiles, REPO_ROOT } from "./_fence-utils";
+import {
+  shippedSourceFiles,
+  REPO_ROOT,
+  toolingSourceFiles,
+} from "./_fence-utils";
 import { relative, join } from "node:path";
 
 /**
@@ -10,6 +14,10 @@ import { relative, join } from "node:path";
  * never prevented). Default ceiling for shipped files; a pinned map of
  * known-larger files that ONLY SHRINKS — lower a ceiling when you split a file;
  * never raise one or add an entry without an architecture-review note.
+ *
+ * EXTENDED to `scripts/**` by ADR-0052 (v3 prompt 11): build-time tooling was
+ * invisible to this fence, so a 2,000-line generator could have landed there
+ * unnoticed. Tooling is held to the same per-file ceiling as shipped source.
  */
 const DEFAULT_CEILING = 500;
 const CEILINGS: Record<string, number> = {
@@ -47,14 +55,24 @@ export function detectOversizedFiles(files: string[]): string[] {
   return out;
 }
 
+/** Shipped source PLUS build-time tooling (ADR-0052). */
+export function ceilingScopedFiles(): string[] {
+  return [...shippedSourceFiles(), ...toolingSourceFiles()];
+}
+
 describe("max-file-size fence", () => {
-  it(`enforces: no shipped file exceeds its ceiling (default ${DEFAULT_CEILING})`, () => {
-    const over = detectOversizedFiles(shippedSourceFiles());
+  it(`enforces: no shipped or tooling file exceeds its ceiling (default ${DEFAULT_CEILING})`, () => {
+    const over = detectOversizedFiles(ceilingScopedFiles());
     expect(over, `oversized files (split them):\n${over.join("\n")}`).toEqual([]);
   });
 
+  it("enforces: the walk covers scripts/ too, so tooling cannot grow unmeasured", () => {
+    const scoped = ceilingScopedFiles().map((f) => relative(REPO_ROOT, f).replace(/\\/g, "/"));
+    expect(scoped.filter((f) => f.startsWith("scripts/")).length).toBeGreaterThanOrEqual(10);
+  });
+
   it("the pinned CEILINGS map references only existing files (keeps the ratchet honest)", () => {
-    const existing = new Set(shippedSourceFiles().map((f) => relative(REPO_ROOT, f).replace(/\\/g, "/")));
+    const existing = new Set(ceilingScopedFiles().map((f) => relative(REPO_ROOT, f).replace(/\\/g, "/")));
     const stale = Object.keys(CEILINGS).filter((k) => !existing.has(k));
     expect(stale, `CEILINGS entries point at missing files: ${stale.join(", ")}`).toEqual([]);
   });
@@ -62,13 +80,14 @@ describe("max-file-size fence", () => {
   describe("detects (companion): an over-ceiling file is caught", () => {
     it("flags a real file above the default ceiling; a small file passes", () => {
       const dir = mkdtempSync(join(tmpdir(), "verin-fence-"));
-      const big = join(dir, "big.ts");
+      const big = join(dir, "big.mjs");
       const small = join(dir, "small.ts");
       try {
         writeFileSync(big, "// x\n".repeat(DEFAULT_CEILING + 1));
         writeFileSync(small, "// x\n".repeat(10));
-        expect(detectOversizedFiles([big]).length).toBe(1);
-        expect(detectOversizedFiles([small])).toEqual([]);
+        const discovered = toolingSourceFiles(dir);
+        expect(discovered).toEqual(expect.arrayContaining([big, small]));
+        expect(detectOversizedFiles(discovered).length).toBe(1);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
