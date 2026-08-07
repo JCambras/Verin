@@ -415,3 +415,12 @@ are recorded in `DECISIONS.md` by owning prompt and become fences in the PR that
   de-duplication and the per-`(claimKind, snapshotRef)` aggregation question; prompt 15 owes the
   validation-stage evidence-sufficiency contract that covers `evidence-reconciliation` bindings, whose
   `consistent` fact is vacuously true below two assertions.
+- **D-116 / D-119 / D-121** - the prompt-7 ledger deferrals. Prompt 7 deliberately ships the
+  post-decision append boundary (`appendDecisionEvents`) and `preflightEvidenceSnapshots` with no shipped
+  caller: the storage and verification foundation lands now, the producers arrive with the later
+  intake/judgment/execution prompts. Unlike the D-104 obligations these are ALREADY fenced -
+  `ledger-reachability` requires every unreachable ledger export to be a NAMED deferral carrying the
+  prompt that lands its caller and the `DECISIONS.md` entry that records it, and fails just as loudly
+  when a named deferral gains a caller, so the list cannot become a standing amnesty. The authoritative
+  registry is that fence's `DEFERRED_EXPORTS` map, not this appendix. Separately, ADR-0044 defers bounded
+  checkpoint-reuse verification to its authenticated-checkpoint measured-latency trigger.

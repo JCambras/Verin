@@ -14,7 +14,10 @@ is not Critical/High. Map findings to CWE; each ends as a regression fitness tes
 
 1. **Authz bypass** — forge a role/identity (header/body), attempt a cross-tenant read.
 2. **Audit-chain edit** — UPDATE/DELETE an `audit_log` row (trigger?), or bypass the trigger and re-verify
-   the chain (detected?).
+   the chain (detected?). Repeat on the sibling decision ledger: `decision_ledger` and every immutable
+   replay source (`evidence_snapshots`, `decision_input_bundles` + membership, `decision_records`), then
+   re-run L1-L4 and the retained-source check. Also try to fork a second raw-INSERT path into one of those
+   tables (`ledger-append-only`?).
 3. **Webhook forgery/replay** — a bad HMAC signature (rejected?), a doubly-fired callback (exactly-once?).
 4. **Secret/tenancy hygiene** — a planted secret (gitleaks/fence?), a `process.env` read outside config, a
    query missing `org_id`.

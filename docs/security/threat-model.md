@@ -1,11 +1,12 @@
 # Verin STRIDE threat model (foundation)
 
 **Owner:** the security red-team persona (`docs/personas/` — maintained, attacked each audit round).
-**Scope:** the walking-skeleton foundation — identity/sessions, RBAC/authz at the port, the tamper-evident
-audit chain, the simulated e-sign webhook, the house-CRM store, and config/secrets. Updated when a new
-entry point or asset is added. Every High/Critical threat names a concrete exploit (attacker, entry point,
-payload, result) and the control + the fence/gate that enforces it. If a threat has no enforcing mechanism,
-it is listed as an explicit gap with an owner and date (never omitted).
+**Scope:** the walking-skeleton foundation — identity/sessions, RBAC/authz at the port, the two
+tamper-evident chains (operational audit + decision ledger), the simulated e-sign webhook, the house-CRM
+store, and config/secrets. Updated when a new entry point or asset is added. Every High/Critical threat
+names a concrete exploit (attacker, entry point, payload, result) and the control + the fence/gate that
+enforces it. If a threat has no enforcing mechanism, it is listed as an explicit gap with an owner and
+date (never omitted).
 
 ## Assets & trust boundaries
 
@@ -15,6 +16,11 @@ it is listed as an explicit gap with an owner and date (never omitted).
   scope ordinary repository/port calls; exact capability-keyed, pre-auth, and readiness escapes are reviewed.
   A per-action `ActionGrant` gates every governed action (v3 §15).
 - **Audit chain** — append-only, hash-chained `audit_log`; the "prove it wasn't edited" asset.
+- **Decision ledger** — the sibling append-only, hash-chained `decision_ledger` plus its immutable replay
+  sources (`evidence_snapshots`, `decision_input_bundles` + membership, `decision_records`) and per-org
+  `decision_ledger_anchor` (ADR-0041). Independent of `audit_log`: a separate chain, a separate anchor, and
+  its own L1-L4 verification. The "prove the decision was made on these exact inputs" asset; read-only
+  exposure is `/app/ledger` → `/api/ledger` (both `audit.export` and `pii.view`).
 - **e-sign webhook** — an unauthenticated-by-network external callback that resumes a suspended flow.
 - **House-CRM store** — the system of record (identity PII lives here).
 - **Config/secrets** — `SESSION_SECRET`, `ESIGN_WEBHOOK_SECRET`, DB DSN.
@@ -49,6 +55,17 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   only inside the helper. *Fence:* `audited-write-required` (+ anti-fork).
 - **T-T3 (Medium): SQL injection via inputs.** *Control:* parameterized queries only (every adapter binds
   `$n` placeholders). *Fence:* none yet; an injection-defense fence is an explicit gap (see Gaps).
+- **T-T4 (Critical): rewrite decision history or fork a second writer into it.** *Exploit:* an
+  attacker/insider `UPDATE`/`DELETE`s `decision_ledger` or an immutable replay source to change what a
+  decision was made on, or adds a second `INSERT` path that writes rows the chain never covers.
+  *Control:* BEFORE UPDATE/DELETE/TRUNCATE triggers on every immutable source table; an independent
+  GENESIS-rooted per-org hash chain whose versioned preimage binds the exact stored payload bytes plus
+  producer provenance; content-addressed evidence/bundle/record rows; and one allowlisted raw-INSERT owner
+  per table (`ledger-store.ts` for the chain, `ledger-sources.ts` for sources) that holds even when the SQL
+  is assembled or the table identifier is dynamic. L1-L4 plus retained replay-source verification runs in
+  the `audit-chain-verify` gate over BOTH chains. *Fence:* `ledger-append-only`, `audit-chain-verify` gate
+  (ADR-0041). *Residual:* the anchor is unkeyed and co-located with its chain — external witnessing/HMAC is
+  the ADR-0007 deferral, whose trigger is production deploy.
 
 ### R — Repudiation
 - **T-R1 (High): "I didn't make that change."** *Control:* every write records `org_id` + `actor` (threaded
@@ -65,13 +82,20 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   from `src/infrastructure/llm/`; anything projected to a model is `Tokenized<T>`, constructible only through
   the scrubber factory. Request text comes from a reviewed static-template factory whose exact sensitive
   spans are masked, and one separator-aware account classifier drives extraction, masking, and residual
-  refusal (ADR-0006, ADR-0031). *Fence:* `no-pii-in-audit-store`,
-  no-console, `observability-vocabulary`, `llm-pii-boundary`, `tokenized-factory-only`.
+  refusal (ADR-0006, ADR-0031). Immutable ledger rows carry their own fail-closed boundary: a value enters
+  only if it is a UUID, a hash, a retained-text reference, or a reviewed identifier, and that recognition
+  list — production authority, since a listed string is accepted into a real tenant's chain forever — may
+  never be widened by a fixture (test vocabulary enters through the reserved-namespace
+  `registerTestLedgerIdentifier` seam). *Fence:* `no-pii-in-audit-store`,
+  no-console, `observability-vocabulary`, `llm-pii-boundary`, `tokenized-factory-only`,
+  `ledger-pii-vocabulary`.
 - **T-I2 (High): cross-tenant read.** *Exploit:* org A reads org B's rows. *Control:* ordinary tenant-row
   queries carry an `org_id` predicate and sealed tenant authority, so an unscoped call cannot compile or
   parse. Exact capability-keyed loads are registered; related rows must agree on organization before work,
-  and resume validates its caller context before loading execution state. Pre-auth identity and
-  deployment-readiness reads are separately reviewed. *Fence:*
+  and resume validates its caller context before loading execution state. Ledger links go further: composite
+  `(org_id, id)` foreign keys make decision, evidence, membership, and causation references structurally
+  same-tenant, so a cross-tenant reference is rejected by the database, not only by a predicate. Pre-auth
+  identity and deployment-readiness reads are separately reviewed. *Fence:*
   `org-id-required`, `tenant-context-required` (Phase B; v3 §15.2).
 - **T-I3 (Medium): internal error detail leaks to clients.** *Control:* `toResponse` normalizes `unknown`;
   only a factory-authenticated message survives, while a recognized foreign code receives a static
@@ -98,8 +122,10 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   roles enum in contracts. Every governed human action (view PII, supply evidence, draft/approve policy,
   approve/override a decision, initiate execution, export audit) additionally passes `authorizeGovernedAction`,
   which yields a sealed `ActionGrant` or a typed `FORBIDDEN`; governed route surfaces call `requireActionGrant`,
-  never a bare role check, and system actors are refused categorically. *Fence:* `auth-enforcement`,
-  `governed-actions` (routes resolve a session and check role/grant; v3 §15.3).
+  never a bare role check, and system actors are refused categorically. Raw decision-history disclosure is
+  held to BOTH `audit.export` and `pii.view` on one tenant and actor (`/api/ledger`, ADR-0045), and the
+  register withholds entries it could not authenticate rather than showing them unverified. *Fence:*
+  `auth-enforcement`, `governed-actions` (routes resolve a session and check role/grant; v3 §15.3).
 - **T-E2 (High): demo/seed affordance reachable in production.** *Control:* the config fail-closed guards
   refuse a non-postgres driver or placeholder secrets in production (ADR-0003); the populated demo world
   is deferred (D-005), and the one demo affordance that ships - the D-036 walking-skeleton screens under
@@ -118,6 +144,7 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
 
 ## Attack-round checklist (each audit)
 
-Attempt: (1) an authz bypass (forge role, cross-tenant read); (2) an audit-chain edit (UPDATE/DELETE, then
+Attempt: (1) an authz bypass (forge role, cross-tenant read); (2) an edit to EITHER chain — the operational
+`audit_log` and the `decision_ledger` with its immutable replay sources (UPDATE/DELETE, then
 re-verify); (3) a webhook forgery/replay (bad signature; double-fire → assert exactly-once); (4) a secret
 leak (planted secret must fail gitleaks + the fence). Findings → `docs/reviews/` and become regression fences.

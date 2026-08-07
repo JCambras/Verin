@@ -3,6 +3,12 @@
  * entry's hash covers a canonical serialization of its fields PLUS the previous
  * entry's hash, so any edit/reorder/deletion breaks the chain and is detected by
  * verifyChain(). One chain per org, ordered by sequence.
+ *
+ * This module also owns the SHARED chain primitive (computeChainHash) and the
+ * stored-preimage verifier (verifyStoredByteChain) that the sibling decision
+ * ledger builds its independent chain on (ADR-0041). Sharing the primitive is
+ * deliberate; the two chains stay separate tables, sequences, and anchors, and
+ * existing audit preimages remain byte-for-byte unchanged.
  */
 import { createHash } from "node:crypto";
 import type { GovernedOutput } from "@contracts/authz";

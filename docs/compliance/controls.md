@@ -64,6 +64,8 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | Field-level PII-at-rest encryption | CC6.7 | red-team persona | WISP technical control (pre-launch) |
 | Full DSAR/erasure workflow (retention hold is defined) | P4 | compliance persona | design contract; build before first customer PII at scale |
 | WORM archive for 17a-4(f) | CC7.4 / P | founder | scale-ladder trigger: first Tier-1 entry nears 6 years |
+| Decision-ledger examiner export (the `/app/ledger` register is a bounded operator view, not an export) | CC7.4 | founder | ADR-0019: the first examiner or regulated-customer export requirement, and before that review |
+| External anchor witnessing / HMAC-signed chains (both anchors are unkeyed and co-located with their chains) | CC7.4 | red-team persona | ADR-0007: production deploy (same milestone as the managed-Postgres adapter) |
 | Formal org-policy set (12 policies) & vendor risk register | CC1/CC9 | founder | pre-audit (Vanta/Drata/Secureframe templates) |
 | Per-tenant rate limiting | A1.1 | red-team persona | scale-ladder trigger (ADR-0015) |
 | Alerting rules as code | CC7.2 | founder | deploy-target selection (ADR-0003/0013) |

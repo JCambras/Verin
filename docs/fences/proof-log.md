@@ -5861,8 +5861,8 @@ x suppresses every register row when stored actor metadata fails verification
 ADR-0044 line ceiling also pass.
 
 **Date:** 2026-08-04 (review corrections F1-F9, ADR-0043/0042, D-112).
+
 ### PF-199 decision-ledger retention and constructed-SQL anti-fork coverage
-### PF-204 decision-ledger retention and constructed-SQL anti-fork coverage
 
 **Invariants:** derived producer provenance cannot lose its demonstration trace before
 immutable persistence; retained event codes and references are closed machine
@@ -5900,8 +5900,8 @@ copy is absent.
 test suites as the detection-is-not-verification proof.
 
 **Date:** 2026-08-05 (review corrections F1-F4, D-113).
+
 ### PF-200 fail-closed ledger SQL, retained values, and bounded evidence replay
-### PF-205 fail-closed ledger SQL, retained values, and bounded evidence replay
 
 **Invariants:** unresolved SQL cannot evade immutable-table insert ownership;
 sensitive-length numeric values and unregistered namespaced or versioned references
@@ -5937,8 +5937,8 @@ projection suites pass 86 tests. The line-budget companion measures infrastructu
 payloads stay as detection-is-not-verification companions.
 
 **Date:** 2026-08-05 (review corrections F10-F14, ADR-0043, D-114).
+
 ### PF-201 ledger acceptance, source trust, and batched register replay
-### PF-206 ledger acceptance, source trust, and batched register replay
 
 **Invariants:** L1-L4 never verifies event bytes the append boundary would refuse;
 immutable source reuse cannot upgrade fixture provenance; bounded register I/O scales
@@ -5968,8 +5968,8 @@ display limit, and proves all fourteen are counted without per-event source quer
 query-count harness remain as detection-is-not-verification companions.
 
 **Date:** 2026-08-05 (review corrections F15-F18, ADR-0044, D-115).
+
 ### PF-202 immutable ledger ordering, transaction authenticity, and bounded origin trust
-### PF-207 immutable ledger ordering, transaction authenticity, and bounded origin trust
 
 **Invariants:** L2 and append use immutable decision and reservation order; a genuine SQL
 transaction remains valid across independently evaluated modules; raw ledger disclosure
@@ -6006,8 +6006,8 @@ module reevaluation, and old-origin tamper remain as detection-is-not-verificati
 companions.
 
 **Date:** 2026-08-05 (review corrections F19-F23, ADR-0045, D-116).
+
 ### PF-203 immutable write forms and ledger compatibility bindings
-### PF-208 immutable write forms and ledger compatibility bindings
 
 **Invariants:** every PostgreSQL path that can add an immutable ledger row has one
 reviewed owner; recorded approval and execution identifiers belong to their immutable
@@ -6051,7 +6051,7 @@ detection-is-not-verification companions.
 **Date:** 2026-08-05 (review corrections F30-F35, ADR-0047, D-118).
 ---
 
-### PF-209 ledger-pii-vocabulary + ledger-reachability · `src/__tests__/fitness/ledger-pii-vocabulary.test.ts`, `src/__tests__/fitness/ledger-reachability.test.ts`
+### PF-204 ledger-pii-vocabulary + ledger-reachability · `src/__tests__/fitness/ledger-pii-vocabulary.test.ts`, `src/__tests__/fitness/ledger-reachability.test.ts`
 
 **Invariants:** the shipped immutable-source PII allowlists carry reviewed production,
 seed, demo, and golden identifiers only; the test-only registration seams have no shipped
