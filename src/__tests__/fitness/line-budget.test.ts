@@ -73,11 +73,23 @@ import { join, relative } from "node:path";
 // comparator, structural context-key-collision refusal) landed domain at 4,248
 // - INSIDE 4,250 by two lines, which is the ADR-0033 failure mode this header
 // exists to prevent, not a pass to bank. ADR-0054 is amended a third time to
-// 6,650/4,350 against re-measured 6,567/4,248. Re-measure in any commit that
+// 6,650/4,350 against re-measured 6,567/4,248. Those figures then went stale in
+// the very next commit: the FOURTH review round (load-time reservation of the
+// synthesized blocker-code namespaces, the fail-closed non-scalar guard on the
+// evidence and instruction fact arms, the per-version grammar-schema
+// memoization, the integer-depth nesting walk) added 80 domain and 17 contracts
+// lines without re-taking either number. ADR-0054 is amended a fourth time with
+// figures RE-MEASURED on the tree as this correction lands: contracts 6,584 and
+// domain 4,328 against UNCHANGED 6,650/4,350 ceilings - 66 and 22 lines of real
+// headroom. The ceilings do not move, because a measurement that stays inside
+// its envelope is not a reason to raise one; but 22 lines is the narrowest this
+// domain ceiling has run, so the next change to `src/domain/**` reads as the
+// measured ADR-0054 amendment it now is rather than as a code change.
+// Re-measure in any commit that
 // changes a layer; a raise is always a measured ADR amendment.
 const CEILINGS = {
-  contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,567 measured)
-  domain: 4350, // ADR-0054, on the prompt-9 policy interpreter module (4,248 measured)
+  contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,584 measured)
+  domain: 4350, // ADR-0054, on the prompt-9 policy interpreter module (4,328 measured)
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
@@ -130,8 +142,9 @@ const CEILINGS = {
   // number nobody re-took. Tooling is REPORTED SEPARATELY, never averaged into
   // a platform layer.
   //
-  // `src/__tests__/**` is NOT in any bucket: 45,362 lines that no ceiling
-  // holds (37,529 before D-173 split the two oversized corpus fence files into
+  // `src/__tests__/**` is NOT in any bucket: 49,014 lines that no ceiling
+  // holds (45,362 before the prompt-9 policy suites, property families, and
+  // policy-ast fence landed beneath it; 37,529 before D-173 split the two oversized corpus fence files into
   // per-topic modules, which costs one import header per file; 38,125 before
   // the non-determinism scanner was decomposed into per-concern modules under
   // the same ceiling; 38,469 before D-175 made the shared corpus world rebuild

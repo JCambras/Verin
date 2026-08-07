@@ -5947,3 +5947,44 @@ vocabulary); a runtime validator over `PolicyEvaluationFacts` (assembly is promp
 D-102 - the interpreter's job is to fail closed on what arrives, which it now does uniformly).
 
 **Revert path:** D-181's revert path; each correction is independent of the others.
+
+## D-183 - Prompt-9 review round five: ADR-0054's ceilings hold, and its figures are re-taken
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-178, D-182, ADR-0018, ADR-0033, ADR-0054,
+charter #1/#14
+
+**A ceiling raised without a measurement beside it is a ceiling nobody is holding, and a
+measurement left stale is the same ceiling with a number nobody re-took.** That is the
+line-budget fence's own header, and D-182's commit broke it: 80 domain lines (trace, load, facts,
+evaluate, load-checks) and 17 contracts lines (the grammar-schema memoization) landed while the
+header and ADR-0054's table still read the round-three figures, 6,567/4,248. The build passed on
+4,328 against 4,350, so nothing failed - which is exactly why a stale figure is dangerous rather
+than loud: it reports 102 lines of correction room where 22 exist, and the next one-line fix
+anywhere under `src/domain/**` fails `pnpm test` on an unrelated ceiling. Both the fence header
+and ADR-0054's table are re-measured with the fence's own algorithm on the tree as this
+correction lands: contracts 6,584/6,650 (66), domain 4,328/4,350 (22), infrastructure
+7,786/7,840 (54). The `src/__tests__/**` figure, which no ceiling holds, is re-taken the same way
+at 49,014 (45,362 before the prompt-9 suites, property families, and fence landed).
+
+**The ceilings do NOT move.** Both layers measure inside their envelopes, and a measurement that
+stays inside its envelope is not a reason to raise one - raising on a passing measurement is how a
+ratchet turns into a rubber stamp. The 22 lines left on domain are named in both places instead of
+banked, so the next change under `src/domain/**` reads as the measured ADR-0054 amendment it now
+is. This correction touches only comment and documentation text, so it cannot move the totals it
+records: `load.ts`'s header sentence was rewritten line-for-line, and the re-measure was taken
+after the edit and confirmed against the fence's own reported totals.
+
+Also folded in: that `load.ts` header now says checks 2-4 live in `load-checks.ts` EXCEPT check
+2's reserved-namespace half, which the 500-line per-file ceiling keeps in `load.ts` -
+`load-checks.ts` sits at 495. The documentation now matches the real layout rather than the
+intended one.
+
+**Alternatives rejected:** raising the domain ceiling to buy the round-five headroom the finding
+suggested (nothing exceeded it, and ADR-0018 makes a raise a measured amendment for growth that
+happened, not for growth anticipated); moving the namespace half of check 2 into `load-checks.ts`
+to match the header (it would push that file to ~511 and fail the per-file fence - the seam to
+reunite check 2 is a reference-closure module, and that is the next edit to that file, not this
+one).
+
+**Revert path:** restore the round-three figures in `src/__tests__/fitness/line-budget.test.ts`
+and ADR-0054; the ceilings are unchanged, so there is nothing else to undo.

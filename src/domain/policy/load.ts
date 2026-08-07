@@ -26,9 +26,9 @@
  *     before any primitive has run);
  *  7. self-conflict - one rule writing one target twice.
  *
- * Checks 2-4 live in load-checks.ts (per-file ceiling split). Errors
- * accumulate so an author sees the whole surface at once; a policy loads only
- * when the issue list is EMPTY.
+ * Checks 2-4 live in load-checks.ts (per-file ceiling split), EXCEPT check 2's
+ * reserved-namespace half, which that ceiling keeps here. Errors accumulate so
+ * an author sees the whole surface at once; a policy loads only when EMPTY.
  */
 import { err, ok, type Result } from "@contracts/result";
 import {

@@ -31,26 +31,36 @@ configured, per-parameter rejection attribution, the one shared context-key prec
 fail-closed future-observation freshness read, and the constant-binding assembly guard; round
 three: the discriminated predicate union, the load-time structural nesting bound, fail-closed
 rejection implication, the total evidence-requirement comparator, and the structural
-context-key-collision refusal). The figures first recorded here were taken before round one and
+context-key-collision refusal; round four: the load-time reservation of the synthesized
+blocker-code namespaces, the fail-closed non-scalar guard on the evidence and instruction fact
+arms, the per-version grammar-schema memoization, and the integer-depth nesting walk). The
+figures first recorded here were taken before round one and
 went stale by 20 lines in contracts and 13 in domain, which is exactly what the line-budget fence
 header calls a ceiling with a number nobody re-took. Each round since has re-taken them rather
 than paying for the correction by deleting documentation or folding readable code onto fewer
 lines (ADR-0050); round three left the domain ceiling with TWO lines of headroom, which is the
-ADR-0033 failure mode itself, so both ceilings move to carry real correction room:
+ADR-0033 failure mode itself, so both ceilings moved to carry real correction room. Round four
+then went stale the same way - it added 80 domain and 17 contracts lines without re-taking either
+number - so the table below is RE-MEASURED on the tree as that correction lands. The ceilings do
+not move again: 6,584 and 4,328 are both inside 6,650 and 4,350, and a measurement that stays
+inside its envelope is not a reason to raise one. The 22 lines left on domain are named here, not
+banked - the next change under `src/domain/**` is a measured amendment to this ADR:
 
 | Layer | Measured | Ceiling | Headroom |
 |---|---:|---:|---:|
-| contracts | 6,567 | 6,650 | 83 |
-| domain | 4,248 | 4,350 | 102 |
+| contracts | 6,584 | 6,650 | 66 |
+| domain | 4,328 | 4,350 | 22 |
 | infrastructure | 7,786 | 7,840 | 54 |
 
-What the raises pay for: `src/contracts/decision-core/policy.ts` (433 lines - the ratified
+What the raises pay for: `src/contracts/decision-core/policy.ts` (450 lines - the ratified
 grammar as strict versioned Zod schemas) plus the `parameterSchemaKeys` /
 `parameterConstantAdmissible` helpers in `src/contracts/primitives/values.ts`; and the nine-file
-`src/domain/policy/` module (2,667 lines: load 269, load-checks 494, conflict 384, facts 281,
-evaluate 437, evaluate-primitives 377, registries 156, temporal 121, trace 148). The per-file
+`src/domain/policy/` module (2,747 lines: load 302, load-checks 495, conflict 384, facts 293,
+evaluate 444, evaluate-primitives 377, registries 156, temporal 121, trace 175). The per-file
 ceiling forced the load/load-checks and evaluate/evaluate-primitives splits, which cost two
-module headers - the same trade D-175 recorded for the corpus intake module.
+module headers - the same trade D-175 recorded for the corpus intake module. It also kept the
+namespace half of load check 2 in `load.ts` rather than in `load-checks.ts`, which sits five lines
+under the 500-line per-file ceiling.
 
 The headroom is bounded correction room for the review rounds ahead (the ADR-0033 lesson), not
 growth room. Prompt 10's domain-configuration schema and prompt 16's evaluator completion will
