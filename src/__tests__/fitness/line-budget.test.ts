@@ -92,11 +92,12 @@ const CEILINGS = {
   // number nobody re-took. Tooling is REPORTED SEPARATELY, never averaged into
   // a platform layer.
   //
-  // `src/__tests__/**` is NOT in any bucket: 38,125 lines that no ceiling
+  // `src/__tests__/**` is NOT in any bucket: 38,469 lines that no ceiling
   // holds (37,529 before D-143 split the two oversized corpus fence files into
-  // per-topic modules, which costs one import header per file). That gap is
-  // recorded honestly in D-142 under follow-up key `fu-corpus-test-tree-budget`,
-  // not left implicit here.
+  // per-topic modules, which costs one import header per file; 38,125 before
+  // the non-determinism scanner was decomposed into per-concern modules under
+  // the same ceiling). That gap is recorded honestly in D-142 under follow-up
+  // key `fu-corpus-test-tree-budget`, not left implicit here.
   tooling: 8700,
 } as const;
 

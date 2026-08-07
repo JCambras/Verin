@@ -5452,3 +5452,52 @@ wrap-up; budget `src/__tests__/**` now - rejected, see D-142 and the ruling.
 **Revert path:** the split is mechanical (concatenate the per-topic files back, drop the helper modules,
 remove the 14 `charter-map.json` refs); the intake authority and the vitest projects are each a single
 file's change.
+
+### D-144 · 2026-08-06 · reversible · The non-determinism scanner is decomposed into a scanner object; the intake refusal is rendered from its rule; the corpus world is validated once; the vitest projects actually partition
+
+Ruling key `corpus11a-opus-review-19`, plus one defect found while verifying it.
+
+**The scanner object.** D-143 left `bannedNondeterminismUses` whole at 1,038 lines because the move-only
+constraint forbade the only split available: its inner helpers close over per-file mutable state
+(`origins`, `localFunctions`) and the walk is mutually recursive, so relocating text alone cannot divide
+it. This ruling authorizes the refactor for that one function. The closure state is now an explicit
+`OriginResolver` handed to each step, and the walk lives in five modules under the 500-line ceiling -
+vocabulary (which origins are banned and what they are reported as), stateless AST reads, calls, member
+reads, and the resolver itself - with the recorder and the reporting passes in `_corpus-nondeterminism-scan.ts`.
+The proof replacing move-only is equivalence, not inspection: the FULL violation set over five trees is
+byte-identical before and after in file, line, api and order (184 findings), the fence's 42 adversarial
+companions are green, and an injected `Date.now()` is still caught with `file:line`.
+
+**The refusal is rendered, not restated.** D-143 single-sourced the intake filename PREDICATE and left
+the message a literal - a smaller copy of the same drift. `canonicalIntakeFilenameRule` renders the
+sentence from `CASE_ID_PATTERN`, so a schema change moves rule and message together; an unbound pattern
+names the schema that failed to mint a rule rather than a shape nobody holds. Proof log: "the intake
+refusal is rendered from the rule it enforces".
+
+**One corpus validation per run.** `_corpus-world.ts` called `validateCorpus()` at module scope, and
+vitest isolates modules per test file, so the D-143 split raised that from 2 executions to 13 - serially,
+under the fitness worker cap. A fitness-project `globalSetup` computes it once and injects it. Global
+setup runs in vitest's MAIN process, which does NOT inherit `test.env`, so it reads the pinned zone back
+from that same config and refuses a UTC clock the way `src/__tests__/setup.ts` does: a corpus validated in
+UTC and asserted in New York is a green suite proving nothing (charter #8). No fence's assertions changed;
+each still reads the same validated corpus.
+
+**The projects did not partition (defect).** D-143 split `fitness` (serial) from `app` (parallel), but
+`extends: true` runs vite's `mergeConfig`, which CONCATENATES arrays - so the root `include` was ADDED to
+the fitness project's, never replaced by it. Every unit, integration and component file was collected by
+BOTH projects: 21 files run twice per `pnpm test`, and one of those runs serialized under the very worker
+cap D-143's comment says they are exempt from, while `pnpm test:unit` ran each file twice. The root
+`include` is removed and each project declares its own scope; collection is now 53 fitness + 21 app, each
+file in exactly one project, and `pnpm test` is 74 files / 1,497 tests in 144s.
+
+**Why:** a rule stated twice drifts even when one copy is only prose; work that runs thirteen times to
+produce one deterministic answer is wall clock nobody chose; and a project split that does not split is
+worse than none, because the comment above it certifies a partition that never happened.
+**Alternatives:** accept the 1,038-line helper with the reason recorded - rejected, the ruling authorizes
+the decomposition and equivalence is provable; disable vitest isolation for `fitness` so a module-scope
+`validateCorpus()` runs once - rejected, eight fitness files use `vi.mock`/`vi.stubEnv` and would leak
+across a shared registry; give `fitness` an exclude list instead of removing the root `include` - rejected,
+a complement list silently re-leaks the next time a test directory is added.
+**Revert path:** each part is one file's change - concatenate the five scanner modules back into
+`bannedNondeterminismUses`, inline the refusal literal, restore the module-scope `validateCorpus()` and
+drop the `globalSetup` line, or put `include` back at the root of `vitest.config.ts`.

@@ -35,7 +35,13 @@ export default defineConfig({
       LOG_LEVEL: "error",
     },
     setupFiles: ["./src/__tests__/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    // NO ROOT `include`: `extends: true` runs vite's `mergeConfig`, which
+    // CONCATENATES arrays rather than replacing them, so a root include would be
+    // added to - never overridden by - each project's own. That is how every
+    // unit and integration file ended up collected by BOTH projects, running
+    // twice per `pnpm test` and once of those serially under the fitness
+    // worker cap the comment below says they are exempt from. Each project
+    // therefore declares its own scope, and only the shared exclusions live here.
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
     // 20s is an ORDINARY-TEST budget, and it is left ordinary on purpose: no
     // fence gets a bespoke extension to survive a scheduler.
@@ -72,6 +78,11 @@ export default defineConfig({
         test: {
           name: "fitness",
           include: ["src/__tests__/fitness/**/*.{test,spec}.{ts,tsx}"],
+          // The committed corpus is validated ONCE per run and injected, rather
+          // than re-validated by every fence file that reads it - see
+          // `_corpus-world-setup.ts` for why isolation makes that the only
+          // sharing seam, and for the clock it pins before computing.
+          globalSetup: ["./src/__tests__/fitness/_corpus-world-setup.ts"],
           maxWorkers: 1,
           fileParallelism: false,
         },
@@ -80,12 +91,8 @@ export default defineConfig({
         extends: true,
         test: {
           name: "app",
-          exclude: [
-            "node_modules/**",
-            ".next/**",
-            "e2e/**",
-            "src/__tests__/fitness/**",
-          ],
+          include: ["src/**/*.{test,spec}.{ts,tsx}"],
+          exclude: ["src/__tests__/fitness/**"],
         },
       },
     ],

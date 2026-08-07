@@ -51,11 +51,11 @@ const replayJsonSchema = schemaFromSpec(REPLAY_SCHEMA_FILE);
 const INTAKE_PREFIX = "real-derived/";
 
 /** THE CANONICAL INTAKE FILENAME RULE IS THE CASE-ID RULE. A delivered case
- * lives at its own case id, so the filename is READ FROM the delivered schema's
- * `caseId` pattern rather than restated beside it, where the delivery loader and
- * the collection checker could disagree while both report green. A missing,
- * unanchored or unparseable pattern mints NO rule: no path is canonical and the
- * gap is named below, never silently widening what intake accepts. */
+ * lives at its own case id, so the filename AND the refusal that names it are
+ * READ FROM the delivered schema's `caseId` pattern, never restated beside it,
+ * where loader, collection checker and message could disagree while all report
+ * green. A missing, unanchored or unparseable pattern mints NO rule: no path is
+ * canonical and the gap is named below, never widening what intake accepts. */
 export const intakeCaseIdPattern = (schema: unknown): RegExp | null => {
   const declared = (schema as { properties?: Record<string, { pattern?: unknown }> } | null)
     ?.properties?.caseId?.pattern;
@@ -65,6 +65,8 @@ export const intakeCaseIdPattern = (schema: unknown): RegExp | null => {
 const CASE_ID_PATTERN = intakeCaseIdPattern(caseJsonSchema);
 
 export const canonicalIntakePath = (caseId: string): string => `${INTAKE_PREFIX}${caseId}.json`;
+export const canonicalIntakeFilenameRule = (pattern = CASE_ID_PATTERN): string =>
+  `filename must be ${canonicalIntakePath(pattern === null ? `<${CASE_SCHEMA_FILE} properties/caseId>` : pattern.source.slice(1, -1))}`;
 
 export const isCanonicalIntakePath = (relPath: string, pattern = CASE_ID_PATTERN): boolean =>
   pattern !== null && relPath.startsWith(INTAKE_PREFIX) && relPath.endsWith(".json") &&
@@ -457,9 +459,7 @@ export function loadRealDerivedDelivery(
   for (const [index, entry] of entries.entries()) {
     const delivery = `real-derived delivery ${index + 1}`;
     if (!isCanonicalIntakePath(entry.relPath)) {
-      problems.push(
-        `${delivery}: filename must be a top-level RD-<16 lowercase hex>.json`,
-      );
+      problems.push(`${delivery}: ${canonicalIntakeFilenameRule()}`);
       continue;
     }
     if (entry.kind !== "file" || entry.bytes === null) {

@@ -8640,3 +8640,70 @@ outcome-problem export move bound executable authorities, and no case's bytes ch
 partition remains empty, and captain signoff remains pending.
 
 **Date:** 2026-08-06 (v3 prompt 11, review round 18).
+
+## the intake refusal is rendered from the rule it enforces, and the decomposed scanner still catches a clock (ADR-0039)
+
+**Fences:** `src/__tests__/fitness/corpus-vocabulary-binding.test.ts`,
+`src/__tests__/fitness/corpus-determinism.test.ts`
+
+**Claims:** (1) the operator-facing intake refusal is DERIVED from the same bound `caseId` pattern the
+predicate tests, so message and rule cannot drift; (2) splitting `bannedNondeterminismUses` into a
+scanner object plus per-concern modules changed no verdict.
+
+Review round 18 single-sourced the intake filename PREDICATE but left the refusal a literal -
+`filename must be a top-level RD-<16 lowercase hex>.json` - restating the shape the code no longer held.
+A schema change would have moved `isCanonicalIntakePath` and left intake refusing a delivery while naming
+exactly the filename it had just rejected. `canonicalIntakeFilenameRule` now renders the sentence from
+`CASE_ID_PATTERN` through `canonicalIntakePath`, and an unbound pattern names the schema that failed to
+mint a rule instead of a stale shape.
+
+**Injection 1 - the refusal hard-coded again.** Replaced the rendered message with the old literal,
+leaving the predicate untouched.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected 'filename must be a top-level RD-<16 l…' to be 'filename must be real-derived/RD-[0-9…' // Object.is equality
+
+Expected: "filename must be real-derived/RD-[0-9a-f]{16}.json"
+Received: "filename must be a top-level RD-<16 lowercase hex>.json"
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:74:43
+```
+
+**Injection 2 - the refusal bound to a DIFFERENT pattern than the predicate.** Defaulted
+`canonicalIntakeFilenameRule` to `/^RD-[0-9a-f]{8}$/` while `isCanonicalIntakePath` kept the schema's.
+
+**Observed failure (verbatim):**
+```
+AssertionError: expected 'filename must be real-derived/RD-[0-9…' to be 'filename must be real-derived/RD-[0-9…' // Object.is equality
+
+Expected: "filename must be real-derived/RD-[0-9a-f]{16}.json"
+Received: "filename must be real-derived/RD-[0-9a-f]{8}.json"
+ ❯ src/__tests__/fitness/corpus-vocabulary-binding.test.ts:74:43
+```
+
+The message is now caught BOTH ways: restated as a literal, and derived from anything other than the
+pattern the loader actually enforces.
+
+**Injection 3 - a clock in a corpus module, read through the decomposed scanner.** Appended
+`export const injectedDrift = (): number => Date.now();` to `scripts/corpus/seed.ts`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: non-deterministic APIs in the generator:
+scripts/corpus/seed.ts:72 Date.now: expected [ { …(3) } ] to deeply equal []
+ ❯ src/__tests__/fitness/corpus-determinism.test.ts
+```
+
+**Equivalence, not inspection.** `bannedNondeterminismUses` was decomposed from one 1,038-line closure
+into a scanner object (`OriginResolver`) plus per-concern modules. The proof that no verdict moved is a
+before/after comparison of the FULL violation set on the current tree, scanned with the same projects the
+fences build: `scripts` (106), `src/infrastructure` (62), `src/domain` (1), `src/contracts` (1),
+`src/app` (14) - 184 findings, byte-identical in file, line, api AND order. The fence's own adversarial
+companions (42 tests across the three determinism files) are green, as is the whole suite.
+
+**Revert:** all three injections were reverted; `pnpm corpus:validate` regenerates byte-identical and
+`corpusDigest` is `6566b226f4d408f4c65818bb7752cb16289db5fb8c814f21342e260782dd83f6` (the rendered refusal
+moves a bound executable authority; no case's bytes changed). The real-derived partition remains empty and
+captain signoff remains `pending-captain`.
+
+**Date:** 2026-08-06 (v3 prompt 11, review round 19).

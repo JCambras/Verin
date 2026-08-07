@@ -17,6 +17,7 @@ import {
 import { realDerivedCollectionProblems } from "../../../scripts/corpus/real-derived";
 import * as corpusReportRuntime from "../../../scripts/corpus/report";
 import { renderCorpusReport } from "../../../scripts/corpus/report";
+import { canonicalIntakeFilenameRule } from "../../../scripts/corpus/scrub-contract";
 import { CORPUS_SEED } from "../../../scripts/corpus/seed";
 import {
   labelProblems,
@@ -333,7 +334,7 @@ describe("corpus-provenance-split fence", () => {
       ).toBe(true);
       expect(
         problems.some((problem) =>
-          problem.includes("filename must be a top-level RD-<16 lowercase hex>.json"),
+          problem.includes(canonicalIntakeFilenameRule()),
         ),
       ).toBe(true);
       expect(problems.join("\n")).not.toContain(".hidden");

@@ -20,6 +20,7 @@ import {
   type RealDerivedEvidenceKind,
 } from "../../../scripts/corpus/real-derived-policy";
 import {
+  canonicalIntakeFilenameRule,
   canonicalIntakePath,
   caseSchemaVocabularyProblems,
   intakeCaseIdPattern,
@@ -67,6 +68,18 @@ describe("detects (companion): an unbound vocabulary, an unbound spec input, or 
     }
     expect(intakeCaseIdPattern({})).toBeNull();
     expect(isCanonicalIntakePath("real-derived/RD-00112233445566aa.json", null)).toBe(false);
+    // The refusal an operator READS moves with the rule the predicate tests: a
+    // different bound pattern renames the file intake asks for, and an unbound
+    // one names the schema that failed to mint it rather than a stale shape.
+    expect(canonicalIntakeFilenameRule()).toBe(
+      `filename must be ${canonicalIntakePath(
+        (caseSchema().properties.caseId.pattern as string).slice(1, -1),
+      )}`,
+    );
+    expect(canonicalIntakeFilenameRule(/^RX-[0-9a-f]{8}$/)).toBe(
+      "filename must be real-derived/RX-[0-9a-f]{8}.json",
+    );
+    expect(canonicalIntakeFilenameRule(null)).toContain("real-derived-case-schema.json");
     expect(caseSchemaVocabularyProblems()).toEqual([]);
   });
 
