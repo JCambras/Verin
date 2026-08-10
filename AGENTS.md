@@ -9,62 +9,27 @@ each non-negotiable to the fence/gate/procedure that enforces it, and the charte
 **Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
 governed decision and execution layer; ADRs 0023-0029 and 0055). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
-stores activation only - pass/fail is computed, never fake green). **The registry, not the prompt-sequence
-prose, is the authoritative statement of what each gate requires**: all ten gates (0, A, B, C, D, E, F,
-G, H, I) declare `{wave, prompts, requires, entryGates, entryCondition, outcome}` with TYPED requirements
-(`invariant`/`artifact`/`fitness`/`ci-gate`, plus `evidence` for an outcome clause nothing decides yet,
-which never reads green). Activation OWNERSHIP (`invariant.gate`) is separate from gate REQUIREMENT: a
-gate must require every invariant it owns and may reference one another gate owns when it is fully proven
-by the time this gate closes. Gate B explicitly awaits prompt-10 schema validation and shared-engine
-binding for both domain YAML files; file existence alone proves nothing. Invariant 3 pins both YAML
-artifacts and `src/__tests__/fitness/domain-configuration.test.ts` as activation prerequisites, so an
-unrelated naming fence cannot activate it. One shared rule
-set (`scripts/v3-gates.lib.ts`) is enforced by BOTH the gate-ordering fence and the blocking runner - it
-rejects a gate requiring anything whose PROOF POINT (last `activationPrompts` entry, else the owning
-gate's closing prompt) falls after that gate closes, a gate with no machine-checkable requirement, and a
-`ci-gate` that does not name the command its blocking job runs (ADR-0055 - Gate A owns 1/2/4/5 and
-references prompt-5 guarantees 7/8/9;
-Gate D separately awaits prompt-17 evaluator property tests for 7/8/9 so the prompt-5 `active-pass`
-state cannot satisfy both proof contexts; invariant 3 is required at Gate B because its prerequisite is
-prompt 10). `ci-gate` evidence is a real
-YAML parse of `ci.yml` walking `jobs.<k>.steps[].run` plus a restricted shell-command parse of the
-effective workflow/job/step shell and working directory. The workflow must run on unfiltered normal
-push and pull request events, every mapped command runs from the repository root, and mapped controls
-invoke their owned entry points directly. The required
-command must be a dedicated simple command whose exit status controls its step, and the job must BLOCK:
-a command in a comment, echo argument, short-circuited expression, heredoc, step `name:`, `env:` value,
-commented-out block-scalar line, or a job/step carrying `continue-on-error` or an `if:` proves nothing.
-GitHub-invalid job and step forms invalidate the whole workflow, including mixed `run` / `uses` fields,
-`with` on a run step, and local execution fields on a reusable-workflow job.
-Unknown permission scopes, invalid job identifiers, and timeout values other than positive integers or
-explicit GitHub expressions also invalidate the workflow before any command can become evidence.
-Unsupported runners, custom shells, evidence jobs with non-empty `needs` dependencies, and evidence
-jobs using `strategy.matrix` also prove nothing. Every governed command's complete predecessor chain and
-container image are exact ratcheted evidence; unreviewed setup steps, inputs, fields, environment, or
-container execution shape prove nothing. Declared `activationPrompts` are validated for every
-status, every cross-gate invariant proof point is pinned exactly, and every shipped active
-invariant's complete mechanism tuple set is ratcheted. The active invariant ID set must exactly match
-the mechanism-ratchet keys through one shared validator invoked by both the registry fence and blocking
-runner.
-That parse (`parseCiJobs`) is the repo's one structured CI authority - charter-drift reads its enforced
-`ci-gate` mechanisms through it too. Every enforced charter CI mapping pins its exact command; malformed,
-empty, unsupported-shell, and fully skipped jobs prove nothing. The charter ratchet pins every complete
-effective enforced mechanism tuple, including mechanism-level status. Both v3 mappings pin
-`pnpm exec tsx scripts/v3-invariants.ts`, and the runner exits nonzero for every mapped fitness failure
-or missing result. Readiness computes every gate's structural `entryGates`, so a later
-gate cannot report green while a predecessor is non-green. Five ratchets in the shared gate library pin the
-30-invariant gate-assignment map, the complete cross-gate proof-point map, invariant 3's
-activation artifacts and fitness mechanism, complete gate metadata (wave, predecessor chain, entry
-condition, outcome), and every gate's COMPLETE TYPED requirement set including each non-invariant proof
-prompt: moving one, including deleting an `evidence` clause, is an ADR-0055 + ADR-0023 amendment, never a
-registry edit alone. The ratified documents registered in
-`v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
-whole directory: editing a registered document requires updating its pin in the same PR, and a new
-ratified document must be registered in the PR that adds it - but a conflict between v3's letter and this
-repo is resolved by an ADR, never by editing the ratified bytes (ADR-0024, ADR-0026, ADR-0055).
-`docs/v3/README.md` is not registered: it is
-the navigation index, and it originates nothing normative, only restating registered documents, ADRs, the
-charter, and `DECISIONS.md` entries, so a new normative statement originates in one of those instead (D-099).
+stores activation only - pass/fail is computed, never fake green). The gate model's authoritative owners
+are [ADR-0055](./docs/adr/0055-gate-a-invariant-ordering.md) (the complete rule set, its amendment log,
+and every "Revisit When" trigger), the registry itself, and the shared rule modules under
+`scripts/v3-gates/` reached through `scripts/v3-gates.lib.ts` - one implementation imported by BOTH the
+gate-ordering fence and the blocking runner, so read the rules there rather than from any prose
+restatement. What an agent needs at edit time:
+- **The registry, not prompt-sequence prose, states what each gate requires**, as TYPED requirements;
+  activation OWNERSHIP (`invariant.gate`) is separate from gate REQUIREMENT, and nothing a gate requires
+  may be proven after that gate closes. The ratchets in `scripts/v3-gates/` pin ownership, proof points,
+  metadata, complete requirement sets, and every shipped active mechanism tuple: moving one is an
+  ADR-0055 + ADR-0023 amendment, never a registry edit alone.
+- **`parseCiJobs` (`scripts/v3-gates/ci-workflow.ts`) is the repo's one structured CI authority** -
+  charter-drift and both v3 checkers read `ci.yml` through it, it is fail-closed by design (a mapped
+  command is evidence only in a dedicated blocking step of a schedulable, unfiltered, unneutralized
+  job), and mapped controls invoke their owned entry points directly. When a mapped command or job
+  changes, update `charter-map.json` / the registry and their exact-command ratchets in the same PR.
+- **The ratified documents registered in `v3-invariants.json` are SHA-256-pinned** (arch-version fence,
+  which covers the registry, not the whole directory): editing one updates its pin in the same PR, and a
+  conflict between v3's letter and this repo is resolved by an ADR, never by editing the ratified bytes
+  (ADR-0024, ADR-0026, ADR-0055). `docs/v3/README.md` is not registered: it is the navigation index and
+  originates nothing normative (D-099).
 Salesforce work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system,
 not v3 §18's visuals (ADR-0028); UI prompts read `docs/demo-design-language.md` first (now authored -
 the ADR-0028 gate is satisfied).
@@ -193,10 +158,13 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
-The test job also runs `scripts/fitness-tests.ts`, which recursively enumerates every Vitest-admitted
-fitness extension through the same matcher used by Vitest and requires a per-file result even if include
-or exclude configuration drifts. The complete-suite and v3 runners associate results only by exact
-canonical repository-relative path and reject duplicate exact results.
+`pnpm test` runs `scripts/fitness-tests.ts` - the SAME owned entry point the blocking CI test job
+invokes directly, so local and CI run one gate. It executes the complete suite and recursively
+enumerates every Vitest-admitted fitness extension through the same matcher used by Vitest (the config's
+fitness include is derived from those exported constants), requiring a per-file result even if include
+or exclude configuration drifts. `pnpm test:vitest` is the bare suite without the inventory. The
+complete-suite and v3 runners associate results only by exact canonical repository-relative path and
+reject duplicate exact results.
 
 ## Sharp edges (hard-won — read before touching these areas)
 
@@ -291,11 +259,17 @@ canonical repository-relative path and reject duplicate exact results.
   parameters and the side-effect-free `{ page }` builder configuration. Charter-drift uses symbol-aware Vitest registration analysis for computed,
   aliased, namespace, global, `suite`, x-prefixed, todo, fails, skipIf, and runIf neutralizers while
   preserving locally shadowed application callables. Registration option objects and unshadowed
-  `globalThis` and Node `global` paths are included, and `.each`/`.for` case collections must be
-  immediate literal or direct frozen and statically non-empty; registration option inputs follow the
-  same immutable rule. Fitness registrations must be reachable at module scope or directly inside an
-  enabled reachable module-scope suite callback. Every fitness entry's complete local runtime import
-  graph is inspected, and imported helpers may not import Vitest or register tests. Higher-order callable
+  `globalThis` and Node `global` paths are included. A `.each`/`.for` case collection is refused when
+  PROVABLY empty (empty literal, empty direct-frozen literal, empty tagged rows); a derived or spread
+  collection defers to its fence's own contract - the corpus fences iterate the injected corpus world's
+  classes, non-empty by construction (ruling `g8-relight-askuser` 2a). Registration option inputs keep
+  the immutable rule, and a reassigned or disagreeing identifier string fails closed everywhere the
+  analysis resolves one. A fitness callback may not reach `skip`/`todo` on its TestContext, and aliasing
+  or dynamically membering the context fails closed. Fitness registrations must be reachable at module
+  scope or directly inside an enabled reachable module-scope suite callback. Every fitness entry's
+  complete local runtime import graph is inspected, and imported helpers may not import Vitest or
+  register tests - `_corpus-world.ts` is the ONE reviewed exception, permitted exactly `{ inject }`
+  (D-175/D-176). Higher-order callable
   values are propagated through reachable imports and re-exports. Stable global intrinsic aliases stored
   in object properties are resolved, while incomplete computed property provenance fails closed. Axe route collections are non-empty declarative frozen literals;
   page coverage is credited only to the winning Next route. Hook provenance follows object-property

@@ -240,9 +240,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: corpus validation (regenerate + byte-compare; labels, timestamps, intake, signoff)
-        run: pnpm corpus:validate
+        run: pnpm exec tsx scripts/corpus-validate.ts
       - name: corpus measurement report (split by provenance; refuses to blend)
-        run: pnpm corpus:report
+        run: pnpm exec tsx scripts/corpus-report.ts
 
   load-smoke:
     name: load-smoke (p95 regression gate, charter #11)

@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, posix } from "node:path";
 import { describe, expect, it } from "vitest";
-import { getSortedRoutes } from "next/dist/shared/lib/router/utils/sorted-routes";
 import {
   Node,
   Project,
@@ -414,6 +413,171 @@ function routeCollectionFor(
   return "PUBLIC_AXE_ROUTES";
 }
 
+/**
+ * Vendored from next/dist/shared/lib/router/utils/sorted-routes (UrlNode):
+ * static segments sort before dynamic segments, dynamic segments before
+ * catch-alls, and ambiguous inventories throw.
+ */
+class RouteUrlNode {
+  private placeholder = true;
+  private readonly children = new Map<string, RouteUrlNode>();
+  private slugName: string | null = null;
+  private restSlugName: string | null = null;
+  private optionalRestSlugName: string | null = null;
+
+  insert(urlPath: string): void {
+    this.insertSegments(urlPath.split("/").filter(Boolean), [], false);
+  }
+
+  smoosh(prefix = "/"): string[] {
+    const childrenPaths = [...this.children.keys()].sort();
+    if (this.slugName !== null) {
+      childrenPaths.splice(childrenPaths.indexOf("[]"), 1);
+    }
+    if (this.restSlugName !== null) {
+      childrenPaths.splice(childrenPaths.indexOf("[...]"), 1);
+    }
+    if (this.optionalRestSlugName !== null) {
+      childrenPaths.splice(childrenPaths.indexOf("[[...]]"), 1);
+    }
+    const routes = childrenPaths.flatMap((child) =>
+      this.children.get(child)!.smoosh(`${prefix}${child}/`),
+    );
+    if (this.slugName !== null) {
+      routes.push(
+        ...this.children.get("[]")!.smoosh(`${prefix}[${this.slugName}]/`),
+      );
+    }
+    if (!this.placeholder) {
+      const route = prefix === "/" ? "/" : prefix.slice(0, -1);
+      if (this.optionalRestSlugName !== null) {
+        throw new Error(
+          `route "${route}" has the same specificity as its optional catch-all route`,
+        );
+      }
+      routes.unshift(route);
+    }
+    if (this.restSlugName !== null) {
+      routes.push(
+        ...this.children
+          .get("[...]")!
+          .smoosh(`${prefix}[...${this.restSlugName}]/`),
+      );
+    }
+    if (this.optionalRestSlugName !== null) {
+      routes.push(
+        ...this.children
+          .get("[[...]]")!
+          .smoosh(`${prefix}[[...${this.optionalRestSlugName}]]/`),
+      );
+    }
+    return routes;
+  }
+
+  private insertSegments(
+    urlPaths: readonly string[],
+    slugNames: string[],
+    isCatchAll: boolean,
+  ): void {
+    if (urlPaths.length === 0) {
+      this.placeholder = false;
+      return;
+    }
+    if (isCatchAll) {
+      throw new Error("catch-all must be the last part of the route");
+    }
+    let nextSegment = urlPaths[0]!;
+    if (nextSegment.startsWith("[") && nextSegment.endsWith("]")) {
+      let segmentName = nextSegment.slice(1, -1);
+      let isOptional = false;
+      if (segmentName.startsWith("[") && segmentName.endsWith("]")) {
+        segmentName = segmentName.slice(1, -1);
+        isOptional = true;
+      }
+      if (segmentName.startsWith("…")) {
+        throw new Error(
+          `segment '${segmentName}' uses a three-dot character instead of '...'`,
+        );
+      }
+      if (segmentName.startsWith("...")) {
+        segmentName = segmentName.substring(3);
+        isCatchAll = true;
+      }
+      if (segmentName.startsWith("[") || segmentName.endsWith("]")) {
+        throw new Error(`segment '${segmentName}' has extra brackets`);
+      }
+      if (segmentName.startsWith(".")) {
+        throw new Error(`segment '${segmentName}' has erroneous periods`);
+      }
+      const handleSlug = (
+        previousSlug: string | null,
+        nextSlug: string,
+      ): void => {
+        if (previousSlug !== null && previousSlug !== nextSlug) {
+          throw new Error(
+            `different slug names for the same dynamic path ('${previousSlug}' !== '${nextSlug}')`,
+          );
+        }
+        for (const slug of slugNames) {
+          if (slug === nextSlug) {
+            throw new Error(
+              `slug name "${nextSlug}" repeats within a single dynamic path`,
+            );
+          }
+          if (slug.replace(/\W/g, "") === nextSegment.replace(/\W/g, "")) {
+            throw new Error(
+              `slug names "${slug}" and "${nextSlug}" differ only by non-word symbols`,
+            );
+          }
+        }
+        slugNames.push(nextSlug);
+      };
+      if (isCatchAll) {
+        if (isOptional) {
+          if (this.restSlugName !== null) {
+            throw new Error(
+              `required and optional catch-all routes share a level ("[...${this.restSlugName}]" and "${urlPaths[0]}")`,
+            );
+          }
+          handleSlug(this.optionalRestSlugName, segmentName);
+          this.optionalRestSlugName = segmentName;
+          nextSegment = "[[...]]";
+        } else {
+          if (this.optionalRestSlugName !== null) {
+            throw new Error(
+              `optional and required catch-all routes share a level ("[[...${this.optionalRestSlugName}]]" and "${urlPaths[0]}")`,
+            );
+          }
+          handleSlug(this.restSlugName, segmentName);
+          this.restSlugName = segmentName;
+          nextSegment = "[...]";
+        }
+      } else {
+        if (isOptional) {
+          throw new Error(
+            `optional route parameters are not supported ("${urlPaths[0]}")`,
+          );
+        }
+        handleSlug(this.slugName, segmentName);
+        this.slugName = segmentName;
+        nextSegment = "[]";
+      }
+    }
+    let child = this.children.get(nextSegment);
+    if (child === undefined) {
+      child = new RouteUrlNode();
+      this.children.set(nextSegment, child);
+    }
+    child.insertSegments(urlPaths.slice(1), slugNames, isCatchAll);
+  }
+}
+
+function sortedRoutePatterns(patterns: readonly string[]): string[] {
+  const root = new RouteUrlNode();
+  for (const pattern of patterns) root.insert(pattern);
+  return root.smoosh();
+}
+
 function routeMatchesPattern(pattern: string, route: string): boolean {
   const patternParts = pattern.split("/").filter(Boolean);
   const routeParts = route.split("/").filter(Boolean);
@@ -471,7 +635,7 @@ export function pageRouteInventoryProblems(
     }
     let sortedPatterns: string[];
     try {
-      sortedPatterns = getSortedRoutes([...byPattern.keys()]);
+      sortedPatterns = sortedRoutePatterns([...byPattern.keys()]);
     } catch {
       problems.push(`${name}: Next page patterns cannot be precedence-sorted`);
       continue;
@@ -727,7 +891,7 @@ function precedingAssignmentValues(node: Node): Node[] {
     .filter(
       (candidate) =>
         candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
-        candidate.getStart() < node.getStart() &&
+        candidate.getRight() !== node &&
         Node.isIdentifier(candidate.getLeft()) &&
         candidate.getLeft().getSymbol() === symbol,
     )
@@ -854,8 +1018,20 @@ function isDefaultImportIdentifier(node: Node, moduleName: string): boolean {
   );
 }
 
+function calleeIdentifierChainIsStable(node: Node): boolean {
+  const normalized = unwrapExpression(node);
+  if (Node.isIdentifier(normalized)) {
+    return !identifierIsMutatedBefore(normalized);
+  }
+  const access = memberAccess(normalized);
+  return access === undefined || calleeIdentifierChainIsStable(access.receiver);
+}
+
 function isNamedImportCall(call: CallExpression, moduleName: string, imported: string): boolean {
-  return isNamedImportIdentifier(call.getExpression(), moduleName, imported);
+  return (
+    calleeIdentifierChainIsStable(call.getExpression()) &&
+    isNamedImportIdentifier(call.getExpression(), moduleName, imported)
+  );
 }
 
 function isNamedImportMemberCall(
@@ -1799,7 +1975,8 @@ function registrationScopeOf(call: CallExpression, sourceFile: SourceFile): Sour
   if (directContainer !== callback.getBody()) return undefined;
   const describeCall = callback.getParent();
   if (!Node.isCallExpression(describeCall) || !describeCall.getArguments().includes(callback)) return undefined;
-  return isNamedImportMemberCall(describeCall, "@playwright/test", "test", "describe") &&
+  return calleeIdentifierChainIsStable(describeCall.getExpression()) &&
+    isNamedImportMemberCall(describeCall, "@playwright/test", "test", "describe") &&
     directCallContainer(describeCall) === sourceFile
     ? callback
     : undefined;
@@ -2599,6 +2776,45 @@ function isStableNamedImportCall(
   );
 }
 
+function forbidOnlyIsCiEffective(node: Node | undefined): boolean {
+  if (node === undefined) return false;
+  const normalized = unwrapExpression(node);
+  if (normalized.getKind() === SyntaxKind.TrueKeyword) return true;
+  if (
+    !Node.isPrefixUnaryExpression(normalized) ||
+    normalized.getOperatorToken() !== SyntaxKind.ExclamationToken
+  ) {
+    return false;
+  }
+  const inner = unwrapExpression(normalized.getOperand());
+  if (
+    !Node.isPrefixUnaryExpression(inner) ||
+    inner.getOperatorToken() !== SyntaxKind.ExclamationToken
+  ) {
+    return false;
+  }
+  const ci = memberAccess(inner.getOperand());
+  if (ci?.name !== "CI") return false;
+  const env = memberAccess(ci.receiver);
+  return (
+    env?.name === "env" && isUnshadowedGlobal(env.receiver, "process")
+  );
+}
+
+async function ciEffectiveForbidOnly(
+  loadConfig: () => Promise<{ default: { forbidOnly?: boolean } }>,
+): Promise<boolean> {
+  const previousCi = process.env.CI;
+  process.env.CI = "1";
+  try {
+    const loaded = await loadConfig();
+    return loaded.default.forbidOnly === true;
+  } finally {
+    if (previousCi === undefined) delete process.env.CI;
+    else process.env.CI = previousCi;
+  }
+}
+
 function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
   const exported = sourceFile.getExportAssignments()[0]?.getExpression();
   if (!Node.isCallExpression(exported)) return false;
@@ -2623,7 +2839,7 @@ function playwrightConfigSelectsRequiredSpecs(sourceFile: SourceFile): boolean {
   const forbidOnly = configProperties.get("forbidOnly");
   if (
     !Node.isPropertyAssignment(forbidOnly) ||
-    forbidOnly.getInitializer()?.getKind() !== SyntaxKind.TrueKeyword
+    !forbidOnlyIsCiEffective(forbidOnly.getInitializer())
   ) {
     return false;
   }
@@ -3210,6 +3426,14 @@ describe("axe-required fence", () => {
     expect(problems, problems.join("\n")).toEqual([]);
   }, 60_000);
 
+  it("enforces: the Playwright configuration resolves forbidOnly true under CI", async () => {
+    expect(
+      await ciEffectiveForbidOnly(
+        () => import("../../../playwright.config"),
+      ),
+    ).toBe(true);
+  });
+
   it("enforces: required route groups cover every loaded public, authenticated, and demo surface", () => {
     const routeProject = new Project({
       useInMemoryFileSystem: true,
@@ -3264,6 +3488,10 @@ describe("axe-required fence", () => {
       {
         path: "/app/audit",
         readySelector: '[data-testid="audit-verdict"]',
+      },
+      {
+        path: "/app/ledger",
+        readySelector: '[data-testid="ledger-verdict"]',
       },
     ]);
     expect(DEMO_AXE_ROUTES).toEqual([
@@ -3603,6 +3831,12 @@ hooks.install(() => undefined);`,
   fn(() => undefined);
 }
 install(test.beforeEach);`,
+        `function installHook() {
+  register(() => undefined);
+}
+let register = (_fn: () => void) => undefined;
+register = test.beforeEach;
+installHook();`,
         `class Installer {
   constructor(fn) {
     fn(() => undefined);
@@ -3890,6 +4124,51 @@ test("axe", async ({ page }) => {
       );
     });
 
+    it("rejects test registrations through rebound Playwright test aliases", () => {
+      const spec = `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+const noop = ((..._args: unknown[]) => undefined) as unknown as typeof test;
+let check = test;
+check = noop;
+check("axe", async ({ page }) => {
+  for (const route of PUBLIC_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+});`;
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": spec }),
+        ),
+      ).toContain(
+        "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
+      );
+      const describeSpec = `import { expect, test } from "@playwright/test";
+import { assertNoAxeViolations } from "./axe";
+import { PUBLIC_AXE_ROUTES } from "./axe-routes";
+const decoy = { describe: (_name: string, body: () => void) => body() } as unknown as typeof test;
+let group = test;
+group = decoy;
+group.describe("group", () => {
+  test("axe", async ({ page }) => {
+    for (const route of PUBLIC_AXE_ROUTES) {
+      await page.goto(route.path);
+      await expect(page.locator(route.readySelector)).toBeVisible();
+      await assertNoAxeViolations(page, route.path);
+    }
+  });
+});`;
+      expect(
+        axeCoverageProblems(
+          completeSources({ "e2e/smoke.spec.ts": describeSpec }),
+        ),
+      ).toContain(
+        "e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe",
+      );
+    });
+
     it("rejects unreachable, disabled, expected-failure, unawaited, and caught helper calls", () => {
       const wrap = (body: string) =>
         `import { test } from "@playwright/test";\nimport { assertNoAxeViolations } from "./axe";\n${body}`;
@@ -3979,6 +4258,18 @@ test("axe", async ({ page }) => {
       expect(axeCoverageProblems(focused)).toContain(
         "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
       );
+      for (const forbidOnly of [
+        "!process.env.CI",
+        "!!process.env.VERIN_NOT_CI",
+        "!!env.CI",
+      ]) {
+        const ciIneffective = completeSources();
+        ciIneffective[PLAYWRIGHT_CONFIG_PATH] =
+          `import { defineConfig } from "@playwright/test"; const env = { CI: "1" }; export default defineConfig({ testDir: "./e2e", forbidOnly: ${forbidOnly} });`;
+        expect(axeCoverageProblems(ciIneffective), forbidOnly).toContain(
+          "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
+        );
+      }
       const merged = completeSources();
       merged[PLAYWRIGHT_CONFIG_PATH] =
         `import { defineConfig } from "@playwright/test"; export default defineConfig({ testDir: "./e2e", forbidOnly: true }, { testIgnore: ["**/smoke.spec.ts"] });`;
@@ -3991,6 +4282,24 @@ test("axe", async ({ page }) => {
       expect(axeCoverageProblems(unresolved)).toContain(
         "playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters",
       );
+    });
+
+    it("rejects a configuration that does not resolve forbidOnly true under CI", async () => {
+      expect(
+        await ciEffectiveForbidOnly(async () => ({
+          default: { forbidOnly: !process.env.CI },
+        })),
+      ).toBe(false);
+      expect(
+        await ciEffectiveForbidOnly(async () => ({ default: {} })),
+      ).toBe(false);
+      expect(
+        await ciEffectiveForbidOnly(async () => ({
+          default: {
+            forbidOnly: process.env.CI as unknown as boolean,
+          },
+        })),
+      ).toBe(false);
     });
 
     it("rejects a required specification that scans the wrong route or an unloaded state", () => {
@@ -4211,6 +4520,20 @@ disable(true, "file disabled");`,
 R.apply(test.${"skip"}, test, [true, "file disabled"]);`,
         `const R = globalThis["Ref" + "lect"];
 R.apply(test.${"skip"}, test, [true, "file disabled"]);`,
+        `const R = globalThis["R" + "eflect"];
+R.apply(test.${"skip"}, test, [true, "file disabled"]);`,
+        `function neutralize() {
+  disable(true, "file disabled");
+}
+let disable = (..._args: unknown[]) => undefined;
+disable = test.${"skip"};
+neutralize();`,
+        `function invokeNeutralizer() {
+  R.apply(test.${"skip"}, test, [true, "file disabled"]);
+}
+let R = { apply: (..._args: unknown[]) => undefined } as unknown as typeof Reflect;
+R = Reflect;
+invokeNeutralizer();`,
         `Reflect["ap" + "ply"](test.${"skip"}, test, [true, "file disabled"]);`,
         `function neutralize(fn) {
   fn(true, "file disabled");

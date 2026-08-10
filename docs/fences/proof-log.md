@@ -12419,3 +12419,45 @@ retaining both exact array orderings and the unfiltered mapping form.
 **Revert:** restored the real trigger mapping. The restored gate-ordering suite passed.
 
 **Date:** 2026-08-05.
+
+## PF-236 · consolidated wrap-up round: seam escape, exact-command corpus gate, and fail-closed registration analysis · `src/__tests__/fitness/charter-drift.test.ts`, `src/__tests__/fitness/v3-invariants.test.ts`, `src/__tests__/fitness/axe-required.test.ts`, `src/__tests__/fitness/demo-surface-completeness.test.ts`
+
+**Invariant (ADR-0055 wrap-up amendment, D-188):** the corpus-world injection seam is the ONE non-entry
+vitest importer and only as `{ inject }`; every enforced ci-gate mapping binds its exact command; the
+Vitest registration analysis fails closed on reassigned identifier strings, TestContext `skip`/`todo`,
+provably empty case collections, hoisted-alias assignment order, and reflective indirection without a
+raw-text prefilter; the demo-surface render expression is the only JSX child; and a gutted screenshot
+runner cannot stay green.
+
+**Injection 1 - a second vitest name reaches the seam.** Changed `_corpus-world.ts` to
+`import { inject, describe } from "vitest"`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/_corpus-world.ts:2 imported fitness helper must not import the Vitest runtime
+```
+
+**Injection 2 - the corpus ci-gate loses its command binding.** Removed `"command"` from
+`charter-map.json`'s `replay-corpus-substrate` ci-gate mechanism.
+
+**Observed failure (`charter-drift.test.ts` (a')):**
+```
+× (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+replay-corpus-substrate -> ci-gate:corpus does not bind an exact command
+```
+
+**Executable companions (run on every build, so these injections stay live):** the seam matrix
+(second importer, non-inject import, namespace import) and the reassigned member string, reassigned
+option key, TestContext `skip`/`todo`/aliasing, and derived-collection cases in
+`charter-drift.test.ts`; the neutralized `validateRegistry` runner guard in `v3-invariants.test.ts`;
+the rebound registration alias, widened Reflect resolution, hoisted later-assignment, vendored route
+precedence, and CI-effective `forbidOnly` companions in `axe-required.test.ts` and its helper modules;
+the sibling-element variant and the two spawned gutted/complete runner executions in
+`demo-surface-completeness.test.ts`.
+
+**Reverted:** both injections were reverted immediately; charter-drift, both v3 fences, the axe and
+demo-surface fences, `pnpm typecheck`, `pnpm lint`, `pnpm exec knip`, `pnpm exec tsx
+scripts/v3-invariants.ts`, golden and corpus validation are green on the reverted tree.
+
+**Date:** 2026-08-10 (consolidated wrap-up round, captain rulings `g8-relight-askuser`).

@@ -1,4 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -566,22 +575,25 @@ function routePageUsesResolvedStation(source: string): boolean {
   const attributeExpression = Node.isJsxExpression(attributeInitializer)
     ? attributeInitializer.getExpression()
     : undefined;
-  const childExpressions = returned
+  const jsxChildren = returned
     .getJsxChildren()
-    .filter(Node.isJsxExpression)
-    .flatMap((child) => {
-      const expression = child.getExpression();
-      return expression === undefined ? [] : [expression];
-    });
+    .filter(
+      (child) =>
+        !(Node.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces()),
+    );
+  const onlyChild = jsxChildren.length === 1 ? jsxChildren[0] : undefined;
+  const renderExpression = Node.isJsxExpression(onlyChild)
+    ? onlyChild.getExpression()
+    : undefined;
   if (
     !Node.isIdentifier(attributeExpression) ||
     attributeExpression.getSymbol() !== resolved.getSymbol() ||
-    childExpressions.length !== 1 ||
-    !Node.isCallExpression(childExpressions[0])
+    renderExpression === undefined ||
+    !Node.isCallExpression(renderExpression)
   ) {
     return false;
   }
-  const call = childExpressions[0];
+  const call = renderExpression;
   const expression = call.getExpression();
   const [stationArgument, journey, ids, approvedArgument] =
     call.getArguments();
@@ -1489,6 +1501,10 @@ describe("demo-surface-completeness fence", () => {
           "function first(",
           "const Array = { isArray: (_value: unknown) => false };\n\nfunction first(",
         ),
+        route.replace(
+          "      {renderStation(resolvedStation, journey, ids, approved)}",
+          "      <WorkspaceSurface vm={journey.workspace} {...ids} />\n      {renderStation(resolvedStation, journey, ids, approved)}",
+        ),
       ]) {
         expect(
           surfaceCompletenessProblems(
@@ -1951,5 +1967,39 @@ hooks.install!(async ({ page }) => {
         `${CI_PATH}:1 e2e must run the demo screenshot artifact validator in a dedicated blocking step`,
       );
     });
+
+    it("proves the shipped artifact runner blocks on missing canonical artifacts and verifies a complete set", () => {
+      const runnerArgs = [
+        join(REPO_ROOT, "node_modules/tsx/dist/cli.mjs"),
+        join(REPO_ROOT, "scripts/demo-screen-artifacts.ts"),
+      ];
+      const fixtureRoot = mkdtempSync(join(tmpdir(), "demo-screen-artifacts-"));
+      try {
+        const screens = join(fixtureRoot, "demo-screens");
+        mkdirSync(screens);
+        writeFileSync(join(screens, "99-noncanonical.png"), "snap");
+        const blocked = spawnSync(process.execPath, runnerArgs, {
+          cwd: fixtureRoot,
+          encoding: "utf8",
+        });
+        expect(blocked.status).toBe(1);
+        expect(blocked.stderr).toContain(
+          "missing screenshot artifact '00-launcher.png'",
+        );
+        for (const name of EXPECTED_DEMO_SCREEN_ARTIFACTS) {
+          writeFileSync(join(screens, name), "snap");
+        }
+        const verified = spawnSync(process.execPath, runnerArgs, {
+          cwd: fixtureRoot,
+          encoding: "utf8",
+        });
+        expect(verified.status).toBe(0);
+        expect(verified.stdout).toContain(
+          `demo screen artifacts: ${EXPECTED_DEMO_SCREEN_ARTIFACTS.length} verified`,
+        );
+      } finally {
+        rmSync(fixtureRoot, { recursive: true, force: true });
+      }
+    }, 120_000);
   });
 });

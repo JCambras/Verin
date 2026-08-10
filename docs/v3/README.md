@@ -1,7 +1,7 @@
 # docs/v3 - the ratified Verin v3 architecture direction
 
 **Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
-**ADR-0023 through ADR-0029 and ADR-0039** (`docs/adr/`). The ratified documents in the table below are committed
+**ADR-0023 through ADR-0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, and ADR-0055** (`docs/adr/`). The ratified documents in the table below are committed
 **verbatim** from the ratified sources; the arch-version fence
 (`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
 [`v3-invariants.json`](../../v3-invariants.json) against their SHA-256 pins, so build work can never
@@ -62,159 +62,24 @@ the ratified sequence (0, A, B, C, D, E, F, G, H, I - G closes after prompts 27-
 wave map declares) are registered with their wave, prompt range, structural predecessor-gate list, entry
 condition, outcome, and a list of TYPED requirements - `invariant`, `artifact`, `fitness`, `ci-gate`
 (machine-checkable) and `evidence` (an outcome clause with no executable proof yet, which can never read
-green). Activation OWNERSHIP (`invariant.gate`) is distinct from gate REQUIREMENT: a gate must require
-every invariant it owns, and may additionally reference an invariant another gate owns as long as that
-invariant is fully proven by the time the referencing gate closes. A requirement is set at the EARLIEST
-gate that can prove the WHOLE invariant - so Gate A requires the prompt-5 structural guarantees of
-invariants 7, 8, and 9 without moving their Gate D ownership, Gate B requires invariant 16 (closed policy AST, complete at
-prompt 9), Gate C requires invariant 11 (validation stage, complete at prompt 15), and Gate D requires
-invariants 18 and 19 (approval stages and approval invalidation, complete at prompt 18) without taking
-any of them from the gate that owns it, while invariant 6 stays a Gate D requirement because it needs both
-prompt 15's bundle and prompt 16's evaluator. Gate D also carries a distinct prompt-17 evaluator
-property-test requirement for invariants 7, 8, and 9, so their prompt-5 structural `active-pass` state
-cannot satisfy the later behavioral proof. The shared rule
-set (`scripts/v3-gates.lib.ts`) is enforced BOTH by the gate-ordering fence
-(`src/__tests__/fitness/v3-gate-ordering.test.ts`) and by the blocking runner, so they cannot drift: it
-fails the build if a gate requires anything whose PROOF POINT falls after that gate closes, if a gate
-declares no machine-checkable requirement (an empty set would read green merely by being registered), or
-if a `ci-gate` does not name the command its blocking job actually runs. That last check is a real YAML
-parse of `.github/workflows/ci.yml` plus a restricted shell-command parse of each `run` script and its
-effective workflow/job/step shell and working directory. The workflow must run on unfiltered normal
-`push` and `pull_request` events, mapped commands must execute from the repository root, and CI-backed
-requirements invoke their owned binaries or source entry points directly rather than through mutable
-package-script aliases. The trigger declaration contains only those two normal events, in mapping or
-array form; an extra, non-string, duplicate, filtered, or unsupported trigger makes the workflow
-non-evidence. The
-required command must be a dedicated simple command whose exit status controls its step, so a command
-named only in a comment, an echo argument, a short-circuited expression, a heredoc, a step `name:`, an
-`env:` value, or a failure-neutralizing expression proves nothing. Neither does one in a job or step
-neutralized by `continue-on-error` or an `if:`.
-An unsupported runner, custom shell, evidence job carrying a non-empty `needs` dependency, or evidence
-job using `strategy.matrix` is non-evidence because its execution or reachability semantics are not
-proven. Every declared `activationPrompts` array is validated regardless of activation status.
-Every invariant referenced across activation ownership is derived from the gate requirements and its
-complete proof metadata is ratcheted, so matching prose cannot fabricate an earlier proof point.
-That parse is the repo's one structured CI authority; the charter-drift fence reads its enforced
-`ci-gate` mechanisms through it too, and every enforced charter mapping is bound to its exact command.
-Malformed, empty, unsupported-shell, and fully skipped jobs are not blocking evidence.
-The supported workflow schema rejects unknown permission scopes, invalid job identifiers, and timeout
-values that are neither positive integers nor explicit GitHub expressions before accepting any command.
-Effective workflow, job, job-container, and step environments are resolved together; non-literal environment maps and
-overrides of execution-affecting shell, loader, package-manager, or runtime variables are non-evidence.
-Every predecessor of a governed command must match the exact ratcheted checkout, toolchain, install, or
-already-governed step shape. Unreviewed setup and command steps are non-evidence because they can alter
-command resolution, workflow environment files, repository files, or the governed entry point.
-Container-backed evidence uses an exact ratcheted image and rejects unapproved images or
-execution-shaping container fields.
-The charter ratchet pins the complete effective enforced mechanism set, including mechanism-level status,
-so deleting an Axe fence or marking one planned cannot hide behind an enforced parent entry.
-The blocking test job invokes a direct runner once for the complete unit, integration, and fitness suite.
-That runner recursively enumerates every fitness file through the same matcher and include glob used by
-Vitest, covering `.test.ts`, `.test.tsx`, `.spec.ts`, and `.spec.tsx`, and shares the inventory with
-charter disabled/orphan analysis and the companion meta-fence. Vitest include or exclude drift therefore
-cannot silently omit a fence or nested subtree, and no fitness file executes twice. Both the complete
-suite and v3 runner associate results only by exact canonical repository-relative path and reject
-duplicate exact results, so a passing suffix-matching shadow file is not evidence.
-The shared v3 validator pins the complete mechanism tuple set for every shipped active invariant and
-requires the active invariant ID set to exactly equal the ratchet keys, so an active guarantee cannot
-be redirected to an unrelated passing fence and a new active guarantee cannot bypass ratchet review.
-Both the registry fence and the blocking runner invoke that validator.
-Invariant 3 additionally pins both prompt-10 domain YAML artifacts and the exact future
-`domain-configuration` fitness mechanism as activation prerequisites. It cannot become active through
-an unrelated naming fence, and the pinned fitness must adversarially prove both files parse against the
-domain schema and bind through the shared engine.
-A gate's
-`awaiting:` line names every requirement holding it back, undecidable ones included. Five ratchets in
-the shared gate library pin the complete 30-invariant gate-assignment map, the complete cross-gate
-proof-point map, invariant 3's exact activation artifacts and fitness mechanism, complete gate metadata
-(wave, structural predecessor chain, entry condition, outcome), and every gate's COMPLETE TYPED
-requirement set including each non-invariant proof prompt. The ratified prompt ranges are pinned beside
-them, and the blocking runner fails immediately on any shared constitution drift. Readiness
-computes predecessor state, so a later gate cannot read green while an entry gate is non-green. None
-moves by a registry edit alone. Gate 0 now has executable section 4 surface-completeness proof: the
-typed manifest is equal to the normative demo contract, both are pinned to the exact twelve surface
-identities in the SHA-pinned ratified demo contract, every component and dynamic route exists, the
-canonical route binds each station to its manifest component, the dynamic page passes its resolved station
-to that renderer and its loaded marker through a provably reachable return, and the resolved scenario and
-firm identifiers feed the journey service unchanged. Every renderer arm also passes its station's exact
-journey view model, spreads those resolved identifiers without an override, and supplies the
-query-derived approval value only to policy authoring. Every supported scenario-by-firm outcome is checked
-exhaustively, and the renderer's approval input is bound to the exact
-`first(sp.approved) === "1"` query-derived declaration. The `first` helper is itself pinned to the exact
-identity-preserving first-value semantics. The journey clicks the exact ordered product
-controls, rejects registered Playwright hooks through the same shared provenance authority as the Axe
-graph, and restricts its complete top-level statement graph
-against DOM mutation, injected controls, screenshot replacement, and alternate navigation before
-directly awaiting all twelve screenshots in order.
-The launcher and every station capture verify their URL and loaded marker, write to `demo-screens`, and
-assert the result is non-empty. Screenshot options are exactly the sanctioned `path` and
-`fullPage: true` fields, so masking or other content-altering capture options are non-evidence. Both
-screenshot helpers must remain unreassigned, and every supported URL
-scenario and firm resolver must preserve the supplied identity. CI separately verifies that every canonical artifact exists and is
-non-empty, then configures upload-artifact to fail when the directory is missing or the upload is
-conditionally disabled or failure-neutralized. The runner fails on
-every mapped fitness failure or missing result,
-including Gate 0-only fences. Blocking E2E reaches every typed route after its loaded marker. Gate B includes prompt 10 domain-schema/shared-engine binding evidence and prompt 11's
-stable-corpus evidence, Gate F includes prompt 26's verification
-reconciler evidence, and Gate H includes seven-minute timing, measured-results, and cold-review evidence.
-The Axe-specific fence also parses Playwright selection settings, forbids focused-test exclusion, derives
-the complete Next `page.tsx` inventory, binds public, authenticated, and demo route groups to directly
-owned loaded-state scans, rejects multi-argument configuration overrides and
-side-effecting assertion messages, normalizes computed configuration keys while failing closed on
-unresolved keys, and resolves direct, computed, destructured, aliased, and
-namespace-imported neutralization calls through imported Playwright symbols. Reassigned route aliases
-and route mutations, including array-mutator calls, are rejected before a required scan; the exported
-route collections and entries are frozen. Neutralizer aliases fail closed across every preceding
-assignment source, including a later unreachable benign overwrite. Parentheses and TypeScript assertion
-wrappers are normalized, and required tests plus directly registered hooks reject TestInfo skip, fixme,
-and fail annotations from callback parameters or `test.info()` return values. Positive Axe-helper aliases
-must be stable and unreassigned; neutralizers invoked through `bind`, `call`, `apply`, or direct and bound
-`Reflect.apply` values are followed through stable aliases and nested reflective invocation, as are
-transitively invoked local neutralizer helpers. Static `Reflect.get` reads of Playwright neutralizers
-and hooks use the same shared provenance analysis, and unresolved keys rooted at the Playwright API fail
-closed. Unresolved local callable indirection also fails closed.
-Required route callbacks admit only their typed loops and stable canonical login call, and the shared
-login helper is pinned to exactly two plain required parameters and the uninstrumented browser flow;
-authenticated scans pass the stable principal explicitly. Required specifications may register no
-Playwright hooks, including reflectively registered hooks, or import the Axe runtime directly. Their
-complete runtime local import graph, including the named roots, is inspected through side-effect imports,
-re-exports, configured aliases, literal dynamic imports, and direct CommonJS imports. Every reachable
-module may not register Playwright hooks, invoke Playwright `skip`, `fixme`, or `fail` neutralizers, or
-import the Axe runtime outside the sanctioned helper, and
-unresolved, non-literal, indirect, or computed ambient CommonJS loader provenance is non-evidence.
-Ambient `process.getBuiltinModule("module")` construction is likewise non-evidence. Static computed
-Playwright members are resolved, and unresolved computed members rooted at the imported API fail closed.
-Playwright hook provenance follows callable values stored in object properties, member assignments, and
-direct or aliased `Object.assign` mutations through object aliases. Reflective property writes through
-`Object.defineProperty` and `Reflect.set`, including stable aliases and invocation wrappers, are followed,
-and unresolved reflective writes fail closed. Bare runtime dependencies
-are restricted to configured local paths and the exact Playwright/Axe allowlist. The
-sanctioned helper admits no module-scope executable statement that could replace its analysis method,
-requires exactly two plain parameters, and admits only the side-effect-free `{ page }` builder
-configuration.
-The route collections are non-empty declarative frozen literals, so Vitest and Playwright consume the
-same contents, and concrete URLs are assigned to their winning Next route before page coverage is
-credited. Conditional callback exits before a required scan are rejected as non-evidence. Charter-drift detects
-disabled or focused Vitest fences through symbol-aware AST registration analysis, including computed
-members, aliases, the `suite` registration alias, unshadowed Vitest globals, `globalThis`, and Node
-`global` paths, neutralizing registration options, `todo`, `fails`, `skipIf`, and `runIf`, while
-preserving locally shadowed application callables. Reflective registrations invoked through
-`Reflect.apply` or obtained from `Reflect.get` remain visible, with unresolved reflected members failing
-closed. Parameterized `.each` and `.for` registrations must
-carry immediate literal or direct frozen, statically non-empty case collections, and registration
-options follow the same immutable-input rule. Fitness registrations must also be direct reachable
-module-scope statements or direct statements inside an enabled reachable module-scope `describe` /
-`suite` callback; dead control flow and uncalled registration helpers are non-evidence. The complete
-local runtime import graph of every fitness entry is inspected, and imported helpers may not import
-Vitest or register tests or suites. Callable parameters in reachable imported and re-exported helpers
-inherit every caller-supplied value, so cross-module higher-order registration cannot hide from that
-ownership check. Constructor calls and parameters participate in the same invocation index. Stable
-global intrinsic aliases held in object properties or destructured through stable holders are resolved,
-and callable values read through Object or Reflect property descriptors retain their original receiver
-and member provenance. Incomplete parameter and computed-property provenance fails closed even when no
-known path was recovered.
-Per
-**ADR-0055**, `verin-prompt-sequence-v3.md:186`
+green). Activation OWNERSHIP (`invariant.gate`) is distinct from gate REQUIREMENT, a requirement is set
+at the EARLIEST gate that can prove the WHOLE invariant, and nothing a gate requires may be proven after
+that gate closes.
+
+The complete rule set - the ordering rule, the five ratchets, the CI-evidence grammar (what makes a
+`ci-gate` command blocking evidence and what neutralizes it), gate readiness, and the
+registry-structural validation - is owned by [ADR-0055](../adr/0055-gate-a-invariant-ordering.md)
+(including its amendment log and "Revisit When" triggers) and implemented ONCE in the shared modules
+under `scripts/v3-gates/`, reached through `scripts/v3-gates.lib.ts` and enforced by BOTH the
+gate-ordering fence (`src/__tests__/fitness/v3-gate-ordering.test.ts`) and the blocking runner
+(`scripts/v3-invariants.ts`), so the two cannot drift and this index does not restate them. The
+charter-drift fence reads CI through the same `parseCiJobs` authority. The Gate 0
+surface-completeness, screenshot-evidence, Playwright/Axe, and Vitest-registration enforcement
+mechanics likewise live in their fences (`src/__tests__/fitness/demo-surface-completeness.test.ts`,
+`src/__tests__/fitness/axe-required.test.ts`, `src/__tests__/fitness/charter-drift.test.ts`) and the
+ADR-0055 amendment log, not here.
+
+Per **ADR-0055**, `verin-prompt-sequence-v3.md:186`
 ("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,
 4, and 5 and also requires prompt-5 structural guarantees 7, 8, and 9 at their earliest proof point**;
 invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account

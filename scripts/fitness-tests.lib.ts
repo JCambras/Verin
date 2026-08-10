@@ -8,6 +8,13 @@ export const VITEST_TEST_INCLUDE = `src/**/*.{${VITEST_TEST_KINDS.join(
   ",",
 )}}.{${VITEST_TEST_EXTENSIONS.join(",")}}`;
 
+/** The fitness project's include, derived from the SAME kind/extension
+ * vocabulary as `isVitestTestFile`, so the config's project scope and this
+ * runner's per-file inventory matcher cannot widen apart. */
+export const VITEST_FITNESS_INCLUDE = `src/__tests__/fitness/**/*.{${VITEST_TEST_KINDS.join(
+  ",",
+)}}.{${VITEST_TEST_EXTENSIONS.join(",")}}`;
+
 export interface FitnessTestResult {
   name: string;
   status: string;
@@ -20,10 +27,11 @@ export interface FitnessTestResult {
 }
 
 export function completeTestRunArguments(outputFile: string): string[] {
+  // Execution policy (fitness-only serialism, D-172) is held by vitest.config.ts
+  // for EVERY invocation path; repeating it here as global flags serialized the
+  // parallel app project too.
   return [
     "run",
-    "--maxWorkers=1",
-    "--fileParallelism=false",
     "--reporter=json",
     `--outputFile=${outputFile}`,
   ];

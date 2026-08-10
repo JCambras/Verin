@@ -97,20 +97,17 @@ const sourceUsesDescriptorReadCache = new WeakMap<SourceFile, boolean>();
 function sourceUsesReflect(sourceFile: SourceFile): boolean {
   const cached = sourceUsesReflectCache.get(sourceFile);
   if (cached !== undefined) return cached;
-  const text = sourceFile.getFullText();
   const usesReflect =
-    (text.includes("Reflect") ||
-      (text.includes("Ref") && text.includes("lect"))) &&
-    (sourceFile
+    sourceFile
       .getDescendantsOfKind(SyntaxKind.Identifier)
       .some((identifier) => identifier.getText() === "Reflect") ||
-      sourceFile
-        .getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
-        .some(
-          (access) =>
-            staticStringValue(access.getArgumentExpression()) ===
-              "Reflect" && isGlobalObjectRoot(access.getExpression()),
-        ));
+    sourceFile
+      .getDescendantsOfKind(SyntaxKind.ElementAccessExpression)
+      .some(
+        (access) =>
+          staticStringValue(access.getArgumentExpression()) ===
+            "Reflect" && isGlobalObjectRoot(access.getExpression()),
+      );
   sourceUsesReflectCache.set(sourceFile, usesReflect);
   return usesReflect;
 }
@@ -174,7 +171,7 @@ export function precedingCallableAssignmentValues(
   const values = (
     simpleAssignments(identifier.getSourceFile()).get(symbol) ?? []
   )
-    .filter((candidate) => candidate.start < identifier.getStart())
+    .filter((candidate) => candidate.value !== identifier)
     .map((candidate) => candidate.value);
   precedingAssignmentCache.set(identifier, values);
   return [...values];

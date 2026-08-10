@@ -705,7 +705,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "corpus"
+          "ref": "corpus",
+          "command": "pnpm exec tsx scripts/corpus-validate.ts"
         }
       ]
     },

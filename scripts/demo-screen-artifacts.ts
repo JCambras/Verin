@@ -1,6 +1,9 @@
 import { readdirSync, statSync, type Dirent } from "node:fs";
 import { resolve } from "node:path";
-import { demoScreenArtifactProblems } from "./demo-screen-artifacts.lib";
+import {
+  demoScreenArtifactProblems,
+  EXPECTED_DEMO_SCREEN_ARTIFACTS,
+} from "./demo-screen-artifacts.lib";
 
 const directory = resolve("demo-screens");
 let entries: Dirent[] | undefined;
@@ -30,6 +33,8 @@ if (entries !== undefined) {
     console.error(`demo screen artifacts:\n- ${problems.join("\n- ")}`);
     process.exitCode = 1;
   } else {
-    console.log(`demo screen artifacts: ${artifacts.length} verified`);
+    console.log(
+      `demo screen artifacts: ${EXPECTED_DEMO_SCREEN_ARTIFACTS.length} verified`,
+    );
   }
 }

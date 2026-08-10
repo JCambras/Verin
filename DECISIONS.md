@@ -6610,3 +6610,34 @@ and add descriptor syntax separately to Vitest and Playwright (two security auth
 
 **Revert path:** revert this changeset to restore partial trigger acceptance and call-only callable
 provenance. Gate A and Gate B semantics remain unchanged.
+
+### D-188 · 2026-08-10 · reversible · Consolidated wrap-up round: one gate per control, one implementation per rule
+
+The captain-ruled consolidated round (`g8-relight-askuser`) landed as minimal compliant fixes. The
+shared gate constitution decomposed into `scripts/v3-gates/` modules under the 500-line per-file
+ceiling behind the unchanged `scripts/v3-gates.lib.ts` entry, registry-structural validation joined it
+so the v3-invariants fence and blocking runner consume one implementation, and the shipped-activation
+ratchets extended monotonically to the registry's facts (invariant 16, invariant 2's fourth mechanism,
+invariant 5's five-tuple set). The tooling envelope was re-measured and raised by ADR-0055 amendment.
+The corpus CI job invokes its owned entry points directly and `charter-map.json` pins the exact
+command; `pnpm test` now runs the same `scripts/fitness-tests.ts` gate the blocking test job invokes
+(`test:vitest` keeps the bare suite), and the runner no longer overrides the config-held execution
+policy (D-172 stands unamended). Charter-drift honors the D-175/D-176 corpus-world seam as the ONE
+permitted non-entry vitest importer, pinned to exactly `{ inject }`; the immediate-literal `.each`
+rule is scoped to the Playwright/Axe layer it protects while the Vitest layer refuses only provably
+empty collections; registration-string resolution, TestContext `skip`/`todo`, the Reflect raw-text
+prefilter, rebound Playwright registration aliases, and hoisted-alias assignment order all fail closed
+with adversarial companions. `/app/ledger` joined the sanctioned full-WCAG axe pipeline and its
+bespoke filtered scan retired; `forbidOnly` is CI-conditional with the CI-effective value proven
+non-vacuously; the unknown-demo-station 404 has a real e2e proof. `AGENTS.md` and `docs/v3/README.md`
+trimmed their v3 enforcement restatements to pointers at ADR-0055, the registry, and the shared
+modules (D-099).
+
+**Deferred by captain ruling, recorded here as keyed follow-ups:** `fu-ast-helpers-dedup` - the
+triplicated AST provenance helpers (`axe-required.test.ts`, `_playwright-hook-analysis.ts`,
+`_callable-indirection.ts`, ~700 consolidatable lines) consolidate in a dedicated round, not this one;
+`fu-badge-station-list` - the badge-test station list. Un-defer trigger for both: the next structural
+work in the fence helper layer.
+
+**Revert path:** revert this changeset; the ADR-0055 amendment, the tooling ceiling, and the ratchet
+extensions revert with it. Gate semantics are unchanged throughout.

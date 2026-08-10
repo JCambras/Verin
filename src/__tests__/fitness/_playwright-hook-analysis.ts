@@ -57,7 +57,7 @@ function precedingAssignmentValues(node: Node): Node[] {
       (candidate) =>
         candidate.getOperatorToken().getKind() ===
           SyntaxKind.EqualsToken &&
-        candidate.getStart() < node.getStart() &&
+        candidate.getRight() !== node &&
         Node.isIdentifier(candidate.getLeft()) &&
         candidate.getLeft().getSymbol() === symbol,
     )

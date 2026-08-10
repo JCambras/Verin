@@ -36,6 +36,7 @@ import {
   mappedFitnessProblems,
   unattributedFitnessInvocationProblem,
   parseCiJobs,
+  validateRegistry,
   type Gate,
   type Invariant as GateInvariant,
   type Registry as GateRegistry,
@@ -95,14 +96,18 @@ if (!existsSync(registryPath)) fail("v3-invariants.json is missing from the repo
 const registry = JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
 
 const structural: string[] = [];
-if (registry.invariants.length !== 30) structural.push(`expected 30 invariants, found ${registry.invariants.length}`);
-for (const inv of registry.invariants) {
-  if (inv.status !== "active" && inv.status !== "not-yet-active") {
-    structural.push(`invariant ${inv.id}: illegal status '${inv.status}' (the registry stores activation only; results are computed here)`);
-  }
-  if (inv.status === "active" && !inv.mechanisms.some((m) => m.type === "fitness")) {
-    structural.push(`invariant ${inv.id}: active but maps to no runnable fitness mechanism`);
-  }
+const ciText = existsSync(join(ROOT, ".github/workflows/ci.yml")) ? readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8") : "";
+const ciJobs = parseCiJobs(ciText);
+// Registry-structural rules are the SAME implementation the v3-invariants fence
+// runs (scripts/v3-gates/registry.ts) - one shared rule set, two callers, no drift.
+const registryProblems = validateRegistry(registry, {
+  exists: (path) => existsSync(join(ROOT, path)),
+  ciJobs,
+});
+if (registryProblems.length > 0) {
+  fail(
+    `registry problems:\n  - ${registryProblems.join("\n  - ")}`,
+  );
 }
 // The WHOLE gate rule set (ADR-0055), not a subset: ordering, activation-ownership
 // integrity, prose/structured agreement, activation-artifact honesty, and the
@@ -140,8 +145,6 @@ for (const doc of registry.documents) {
 if (structural.length > 0) fail(`registry/pin problems:\n  - ${structural.join("\n  - ")}`);
 
 // ---------- execute the mapped fitness fences (one vitest run, per-file results) ----------
-const ciText = existsSync(join(ROOT, ".github/workflows/ci.yml")) ? readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8") : "";
-const ciJobs = parseCiJobs(ciText);
 const active = registry.invariants.filter((i) => i.status === "active");
 const gateFences = Object.values(registry.gates).flatMap((g) => g.requires.filter((r) => r.kind === "fitness").map((r) => r.ref!));
 const fitnessFiles = [...new Set([...active.flatMap((i) => i.mechanisms.filter((m) => m.type === "fitness").map((m) => m.ref)), ...gateFences])];
@@ -187,7 +190,7 @@ if (fitnessFiles.length > 0) {
       reportedFitnessResults = report.testResults;
     }
   } catch {
-    const detail = run.error?.message ?? run.stderr ?? run.stdout;
+    const detail = run.error?.message || run.stderr || run.stdout;
     if (run.status !== 0 && detail) console.error(detail);
   } finally {
     rmSync(outDir, { recursive: true, force: true });

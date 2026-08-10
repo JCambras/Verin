@@ -24,6 +24,7 @@ import {
   fitnessInventoryProblems,
   fitnessTestFiles,
   isVitestTestFile,
+  VITEST_FITNESS_INCLUDE,
   VITEST_TEST_INCLUDE,
 } from "../../../scripts/fitness-tests.lib";
 import { isProvablyReachable } from "./_ast-control-flow";
@@ -124,16 +125,24 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["3", "fitness", "src/__tests__/fitness/metric-provenance.test.ts", "", "enforced"],
   ["3", "fitness", "src/__tests__/fitness/derived-provenance.test.ts", "", "enforced"],
   ["3", "adr", "docs/adr/0022-derived-compliance-artifacts-demonstration.md", "", "enforced"],
-  [
-    "3",
-    "ci-gate",
-    "provenance-trace",
-    "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts",
-    "enforced",
-  ],
+  ["3", "fitness", "src/__tests__/fitness/corpus-provenance-split.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-provenance-inventory.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-synthetic-case-semantics.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-measurement-boundary.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-executable-authority.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-replay-topology.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-replay-ownership.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-synthetic-context.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-synthetic-instructions.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-liquidity-treatments.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-replay-payload.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-intake-attestation.test.ts", "", "enforced"],
+  ["3", "fitness", "src/__tests__/fitness/corpus-vocabulary-binding.test.ts", "", "enforced"],
+  ["3", "ci-gate", "provenance-trace", "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts", "enforced"],
   ["4", "fitness", "src/__tests__/fitness/detection-not-verification.test.ts", "", "enforced"],
   ["5", "ci-gate", "knip", "pnpm exec knip", "enforced"],
   ["5", "config", "knip.json", "", "enforced"],
+  ["5", "fitness", "src/__tests__/fitness/ledger-reachability.test.ts", "", "enforced"],
   ["6", "adr", "docs/adr/0011-flowstep-suspend-resume.md", "", "enforced"],
   ["6", "fitness", "src/__tests__/fitness/flowstep-suspend-resume.test.ts", "", "enforced"],
   ["7", "fitness", "src/__tests__/fitness/no-process-env.test.ts", "", "enforced"],
@@ -142,6 +151,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["7", "fitness", "src/__tests__/fitness/decision-core-tenant-scope.test.ts", "", "enforced"],
   ["7", "fitness", "src/__tests__/fitness/no-client-role-header.test.ts", "", "enforced"],
   ["7", "fitness", "src/__tests__/fitness/tenant-context-required.test.ts", "", "enforced"],
+  ["7", "fitness", "src/__tests__/fitness/ledger-pii-vocabulary.test.ts", "", "enforced"],
   ["8", "ci-gate", "e2e", "pnpm exec playwright test", "enforced"],
   ["8", "config", "playwright.config.ts", "", "enforced"],
   ["9", "ci-gate", "e2e", "pnpm exec playwright test", "enforced"],
@@ -156,33 +166,16 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["12", "fitness", "src/__tests__/fitness/governed-actions.test.ts", "", "enforced"],
   ["13", "fitness", "src/__tests__/fitness/audited-write-required.test.ts", "", "enforced"],
   ["13", "fitness", "src/__tests__/fitness/no-pii-in-audit-store.test.ts", "", "enforced"],
+  ["13", "fitness", "src/__tests__/fitness/ledger-append-only.test.ts", "", "enforced"],
   ["13", "ci-gate", "audit-chain-verify", "pnpm exec tsx scripts/audit-chain-verify.ts", "enforced"],
   ["13", "fitness", "src/__tests__/fitness/llm-pii-boundary.test.ts", "", "enforced"],
   ["13", "fitness", "src/__tests__/fitness/tokenized-factory-only.test.ts", "", "enforced"],
   ["14", "fitness", "src/__tests__/fitness/no-console.test.ts", "", "enforced"],
   ["14", "fitness", "src/__tests__/fitness/observability-coverage.test.ts", "", "enforced"],
   ["14", "fitness", "src/__tests__/fitness/observability-vocabulary.test.ts", "", "enforced"],
-  [
-    "14",
-    "ci-gate",
-    "test",
-    "pnpm exec tsx scripts/fitness-tests.ts",
-    "enforced",
-  ],
-  [
-    "15",
-    "ci-gate",
-    "secret-scan",
-    "gitleaks git --config .gitleaks.toml --redact --no-banner --exit-code 1 .",
-    "enforced",
-  ],
-  [
-    "15",
-    "ci-gate",
-    "sast",
-    "semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error",
-    "enforced",
-  ],
+  ["14", "ci-gate", "test", "pnpm exec tsx scripts/fitness-tests.ts", "enforced"],
+  ["15", "ci-gate", "secret-scan", "gitleaks git --config .gitleaks.toml --redact --no-banner --exit-code 1 .", "enforced"],
+  ["15", "ci-gate", "sast", "semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error", "enforced"],
   ["15", "ci-gate", "dependency-audit", "pnpm audit --audit-level=high", "enforced"],
   ["15", "ci-gate", "dependency-audit", "pnpm exec tsx scripts/license-audit.ts", "enforced"],
   ["15", "config", ".gitleaks.toml", "", "enforced"],
@@ -194,13 +187,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["charter-drift-fence", "fitness", "src/__tests__/fitness/charter-drift.test.ts", "", "enforced"],
   ["charter-drift-fence", "file", "scripts/fitness-tests.lib.ts", "", "enforced"],
   ["charter-drift-fence", "file", "scripts/fitness-tests.ts", "", "enforced"],
-  [
-    "charter-drift-fence",
-    "ci-gate",
-    "test",
-    "pnpm exec tsx scripts/fitness-tests.ts",
-    "enforced",
-  ],
+  ["charter-drift-fence", "ci-gate", "test", "pnpm exec tsx scripts/fitness-tests.ts", "enforced"],
   ["non-utc-clock", "config", "vitest.config.ts", "", "enforced"],
   ["non-utc-clock", "file", "src/__tests__/setup.ts", "", "enforced"],
   ["dependency-rule", "config", "eslint.config.mjs", "", "enforced"],
@@ -210,40 +197,51 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["v3-direction-ratified", "fitness", "src/__tests__/fitness/arch-version.test.ts", "", "enforced"],
   ["v3-invariants-phase-gated", "config", "v3-invariants.json", "", "enforced"],
   ["v3-invariants-phase-gated", "fitness", "src/__tests__/fitness/v3-invariants.test.ts", "", "enforced"],
-  [
-    "v3-invariants-phase-gated",
-    "ci-gate",
-    "v3-invariants",
-    "pnpm exec tsx scripts/v3-invariants.ts",
-    "enforced",
-  ],
+  ["v3-invariants-phase-gated", "ci-gate", "v3-invariants", "pnpm exec tsx scripts/v3-invariants.ts", "enforced"],
   ["v3-gate-ordering", "adr", "docs/adr/0055-gate-a-invariant-ordering.md", "", "enforced"],
   ["v3-gate-ordering", "config", "v3-invariants.json", "", "enforced"],
   ["v3-gate-ordering", "file", "scripts/v3-gates.lib.ts", "", "enforced"],
   ["v3-gate-ordering", "fitness", "src/__tests__/fitness/v3-gate-ordering.test.ts", "", "enforced"],
-  [
-    "v3-gate-ordering",
-    "ci-gate",
-    "v3-invariants",
-    "pnpm exec tsx scripts/v3-invariants.ts",
-    "enforced",
-  ],
+  ["v3-gate-ordering", "ci-gate", "v3-invariants", "pnpm exec tsx scripts/v3-invariants.ts", "enforced"],
   ["demo-contract-as-data", "config", "config/demo/scenarios.yaml", "", "enforced"],
   ["demo-contract-as-data", "fitness", "src/__tests__/fitness/demo-scenarios-contract.test.ts", "", "enforced"],
   ["golden-cases-truth-set", "file", "docs/golden-cases.md", "", "enforced"],
   ["golden-cases-truth-set", "fitness", "src/__tests__/fitness/golden-cases.test.ts", "", "enforced"],
-  [
-    "golden-cases-truth-set",
-    "ci-gate",
-    "golden-cases",
-    "pnpm exec tsx scripts/golden-cases-validate.ts",
-    "enforced",
-  ],
+  ["golden-cases-truth-set", "ci-gate", "golden-cases", "pnpm exec tsx scripts/golden-cases-validate.ts", "enforced"],
   ["demo-skeleton-honesty", "fitness", "src/__tests__/fitness/demo-skeleton-honesty.test.ts", "", "enforced"],
   ["demo-skeleton-honesty", "fitness", "src/__tests__/fitness/demo-surface-completeness.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "adr", "docs/adr/0052-synthetic-corpus-and-provenance-split.md", "", "enforced"],
+  ["replay-corpus-substrate", "file", "docs/corpus.md", "", "enforced"],
+  ["replay-corpus-substrate", "procedure", "docs/corpus-scrub-procedure.md", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-determinism.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-determinism-repository-inputs.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-determinism-origins.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-provenance-split.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-provenance-inventory.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-synthetic-case-semantics.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-measurement-boundary.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-executable-authority.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-replay-topology.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-replay-ownership.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-synthetic-context.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-synthetic-instructions.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-liquidity-treatments.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-replay-payload.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-intake-attestation.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-vocabulary-binding.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-timestamps.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/conflict-key-families.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "fitness", "src/__tests__/fitness/corpus-world-sharing.test.ts", "", "enforced"],
+  ["replay-corpus-substrate", "ci-gate", "corpus", "pnpm exec tsx scripts/corpus-validate.ts", "enforced"],
   ["decision-core-type-system", "adr", "docs/adr/0029-decision-core-contracts.md", "", "enforced"],
   ["decision-core-type-system", "fitness", "src/__tests__/fitness/decision-core-illegal-states.test.ts", "", "enforced"],
   ["decision-core-type-system", "config", "v3-invariants.json", "", "enforced"],
+  ["primitive-vocabulary-versioned", "config", "primitive-set-version.json", "", "enforced"],
+  ["primitive-vocabulary-versioned", "fitness", "src/__tests__/fitness/primitive-catalog.test.ts", "", "enforced"],
+  ["primitive-vocabulary-versioned", "adr", "docs/adr/0039-primitive-vocabulary.md", "", "enforced"],
+  ["policy-ast-closed", "fitness", "src/__tests__/fitness/policy-ast.test.ts", "", "enforced"],
+  ["policy-ast-closed", "config", "fixtures/policy/migration-1.0.0.json", "", "enforced"],
+  ["policy-ast-closed", "adr", "docs/adr/0053-policy-ast-and-interpreter.md", "", "enforced"],
 ] as const satisfies readonly EnforcedMechanismTuple[];
 
 const RATCHETED_CI_COMMANDS = [
@@ -279,6 +277,7 @@ const RATCHETED_CI_COMMANDS = [
   { entryId: "v3-invariants-phase-gated", ref: "v3-invariants", command: "pnpm exec tsx scripts/v3-invariants.ts" },
   { entryId: "v3-gate-ordering", ref: "v3-invariants", command: "pnpm exec tsx scripts/v3-invariants.ts" },
   { entryId: "golden-cases-truth-set", ref: "golden-cases", command: "pnpm exec tsx scripts/golden-cases-validate.ts" },
+  { entryId: "replay-corpus-substrate", ref: "corpus", command: "pnpm exec tsx scripts/corpus-validate.ts" },
   {
     entryId: "charter-drift-fence",
     ref: "test",
@@ -354,18 +353,28 @@ function staticRegistrationString(
   seen.add(normalized);
   if (Node.isStringLiteral(normalized)) return normalized.getLiteralText();
   if (!Node.isIdentifier(normalized)) return undefined;
-  return normalized
-    .getSymbol()
-    ?.getDeclarations()
-    .flatMap((declaration) => {
-      if (!Node.isVariableDeclaration(declaration)) return [];
-      const initializer = declaration.getInitializer();
-      const value = staticRegistrationString(
-        initializer,
-        new Set(seen),
-      );
-      return value === undefined ? [] : [value];
-    })[0];
+  const sources = [
+    ...(normalized
+      .getSymbol()
+      ?.getDeclarations()
+      .flatMap((declaration) => {
+        if (!Node.isVariableDeclaration(declaration)) return [];
+        const initializer = declaration.getInitializer();
+        return initializer === undefined ? [] : [initializer];
+      }) ?? []),
+    ...precedingCallableAssignmentValues(normalized),
+  ];
+  const values = sources.map((source) =>
+    staticRegistrationString(source, new Set(seen)),
+  );
+  if (
+    values.length === 0 ||
+    values.some((value) => value === undefined) ||
+    new Set(values).size !== 1
+  ) {
+    return undefined;
+  }
+  return values[0];
 }
 
 function staticRegistrationBoolean(
@@ -901,8 +910,13 @@ function vitestRegistrationPathIsDisabled(
       (modifier === "skipIf" && value !== false) ||
       (modifier === "runIf" && value !== true),
   );
-  const emptyOrUnresolvedCases = path.caseCollections.some(
-    (nonEmpty) => nonEmpty !== true,
+  // A PROVABLY EMPTY case collection registers nothing; a derived or spread
+  // collection is left to the fence's own contract (for the corpus fences, the
+  // injected corpus world, whose classes are non-empty by construction - the
+  // immediate-literal rule is scoped to the Playwright/Axe required specs it
+  // protects, captain ruling g8-relight-askuser 2a).
+  const provablyEmptyCases = path.caseCollections.some(
+    (nonEmpty) => nonEmpty === false,
   );
   return (
     ["xit", "xtest", "xdescribe"].includes(path.members[0] ?? "") ||
@@ -912,7 +926,7 @@ function vitestRegistrationPathIsDisabled(
       .some((member) => NEUTRALIZING_VITEST_OPTIONS.has(member)) ||
     path.members.slice(1).includes("*") ||
     conditionallyDisabled ||
-    emptyOrUnresolvedCases ||
+    provablyEmptyCases ||
     registrationOptionsAreUnsafe(call)
   );
 }
@@ -971,29 +985,154 @@ function vitestRegistrationIsReachable(
   );
 }
 
+/**
+ * A runtime TestContext skip is invisible to BOTH enforcement layers: the
+ * registration reads enabled here, and a fully skipped file reports "passed" in
+ * Vitest's JSON report, so the per-file inventory passes too. A fitness callback
+ * therefore may not reach `skip`/`todo` on its context, and an aliased or
+ * dynamically-membered context read fails closed.
+ */
+const NEUTRALIZING_CONTEXT_MEMBERS = new Set(["skip", "todo"]);
+
+function bindingPatternContextProblems(
+  pattern: Node,
+  fileName: string,
+): string[] {
+  return pattern
+    .getDescendantsOfKind(SyntaxKind.BindingElement)
+    .flatMap((element) => {
+      const property =
+        element.getPropertyNameNode() ?? element.getNameNode();
+      const name = Node.isIdentifier(property)
+        ? property.getText()
+        : Node.isStringLiteral(property)
+          ? property.getLiteralText()
+          : undefined;
+      return name === undefined || NEUTRALIZING_CONTEXT_MEMBERS.has(name)
+        ? [
+            `${fileName}:${element.getStartLineNumber()} fitness callback must not neutralize via TestContext ${name ?? "*"}`,
+          ]
+        : [];
+    });
+}
+
+function contextParameterProblems(
+  callback: Node,
+  parameterIndex: number,
+  fileName: string,
+): string[] {
+  if (
+    !Node.isArrowFunction(callback) &&
+    !Node.isFunctionExpression(callback)
+  ) {
+    return [];
+  }
+  const parameter = callback.getParameters()[parameterIndex];
+  if (parameter === undefined) return [];
+  const nameNode = parameter.getNameNode();
+  if (!Node.isIdentifier(nameNode)) {
+    return bindingPatternContextProblems(nameNode, fileName);
+  }
+  const symbol = nameNode.getSymbol();
+  if (symbol === undefined) return [];
+  const problems: string[] = [];
+  for (const reference of callback
+    .getBody()
+    .getDescendantsOfKind(SyntaxKind.Identifier)) {
+    if (reference.getSymbol() !== symbol) continue;
+    const parent = reference.getParent();
+    if (
+      Node.isPropertyAccessExpression(parent) &&
+      parent.getExpression() === reference
+    ) {
+      if (NEUTRALIZING_CONTEXT_MEMBERS.has(parent.getName())) {
+        problems.push(
+          `${fileName}:${reference.getStartLineNumber()} fitness callback must not neutralize via TestContext ${parent.getName()}`,
+        );
+      }
+      continue;
+    }
+    if (
+      Node.isElementAccessExpression(parent) &&
+      parent.getExpression() === reference
+    ) {
+      const member = staticRegistrationString(
+        parent.getArgumentExpression(),
+      );
+      if (
+        member === undefined ||
+        NEUTRALIZING_CONTEXT_MEMBERS.has(member)
+      ) {
+        problems.push(
+          `${fileName}:${reference.getStartLineNumber()} fitness callback must not neutralize via TestContext ${member ?? "*"}`,
+        );
+      }
+      continue;
+    }
+    problems.push(
+      `${fileName}:${reference.getStartLineNumber()} fitness callback must not alias its TestContext`,
+    );
+  }
+  return problems;
+}
+
+function testContextProblems(
+  call: CallExpression,
+  paths: readonly VitestCallablePath[],
+  fileName: string,
+): string[] {
+  const contextIndexes = new Set(
+    paths
+      .filter(isVitestRegistrationPath)
+      .flatMap((path) => {
+        const base = path.members[0] ?? "";
+        if (["describe", "suite", "xdescribe"].includes(base)) return [];
+        const modifiers = path.members.slice(1);
+        if (modifiers.includes("each")) return [];
+        return [modifiers.includes("for") ? 1 : 0];
+      }),
+  );
+  const callback = call
+    .getArguments()
+    .filter(
+      (argument) =>
+        Node.isArrowFunction(argument) ||
+        Node.isFunctionExpression(argument),
+    )
+    .at(-1);
+  if (callback === undefined) return [];
+  return [...contextIndexes].flatMap((parameterIndex) =>
+    contextParameterProblems(callback, parameterIndex, fileName),
+  );
+}
+
 function disabledVitestRegistrationProblemsInFile(
   file: SourceFile,
   fileName: string,
 ): string[] {
   return file
     .getDescendantsOfKind(SyntaxKind.CallExpression)
-    .flatMap((call) =>
-      vitestCallablePathsForCall(call)
-        .filter(isVitestRegistrationPath)
-        .flatMap((path) => {
-          const members = path.members;
-          if (vitestRegistrationPathIsDisabled(call, path)) {
-            return [
-              `${fileName}:${call.getStartLineNumber()} disabled/focused Vitest registration ${members.join(".")}`,
-            ];
-          }
-          return vitestRegistrationIsReachable(call, file)
-            ? []
-            : [
-                `${fileName}:${call.getStartLineNumber()} unreachable Vitest registration ${members.join(".")}`,
+    .flatMap((call) => {
+      const paths = vitestCallablePathsForCall(call);
+      return [
+        ...paths
+          .filter(isVitestRegistrationPath)
+          .flatMap((path) => {
+            const members = path.members;
+            if (vitestRegistrationPathIsDisabled(call, path)) {
+              return [
+                `${fileName}:${call.getStartLineNumber()} disabled/focused Vitest registration ${members.join(".")}`,
               ];
-        }),
-    );
+            }
+            return vitestRegistrationIsReachable(call, file)
+              ? []
+              : [
+                  `${fileName}:${call.getStartLineNumber()} unreachable Vitest registration ${members.join(".")}`,
+                ];
+          }),
+        ...testContextProblems(call, paths, fileName),
+      ];
+    });
 }
 
 const registrationAnalysisProject = new Project({
@@ -1017,6 +1156,8 @@ type RegistrationImportSources =
 interface RegistrationRuntimeReference {
   readonly specifier?: string;
   readonly line: number;
+  /** Set ONLY for a plain named import (no default, no namespace): the runtime-imported names. */
+  readonly namedImports?: readonly string[];
 }
 
 function registrationRuntimeReferences(
@@ -1034,9 +1175,22 @@ function registrationRuntimeReferences(
           namedImports.length === 0 ||
           namedImports.some((specifier) => !specifier.isTypeOnly())))
     ) {
+      const plainNamed =
+        clause !== undefined &&
+        !declaration.isTypeOnly() &&
+        declaration.getDefaultImport() === undefined &&
+        declaration.getNamespaceImport() === undefined &&
+        namedImports.length > 0;
       references.push({
         specifier: declaration.getModuleSpecifierValue(),
         line: declaration.getStartLineNumber(),
+        ...(plainNamed
+          ? {
+              namedImports: namedImports
+                .filter((specifier) => !specifier.isTypeOnly())
+                .map((specifier) => specifier.getName()),
+            }
+          : {}),
       });
     }
   }
@@ -1225,6 +1379,27 @@ function filesystemRegistrationModuleAnalysis(
   return analysis;
 }
 
+/**
+ * Reviewed escape (captain ruling g8-relight-askuser 1a): the D-175/D-176
+ * corpus-world injection seam is the ONE non-entry module permitted to import
+ * the Vitest runtime, and only as a plain named import of exactly `inject` -
+ * the seam exists precisely so every other fence helper stays runtime-free.
+ * A second importer, or any other vitest name reaching this module, fails.
+ */
+const CORPUS_WORLD_VITEST_SEAM = "src/__tests__/fitness/_corpus-world.ts";
+
+function permittedVitestSeamImport(
+  path: string,
+  reference: RegistrationRuntimeReference,
+): boolean {
+  return (
+    path === CORPUS_WORLD_VITEST_SEAM &&
+    reference.namedImports !== undefined &&
+    reference.namedImports.length > 0 &&
+    reference.namedImports.every((name) => name === "inject")
+  );
+}
+
 function importedFilesystemVitestRegistrationProblems(
   entrySource: string,
   entryName: string,
@@ -1269,7 +1444,11 @@ function importedFilesystemVitestRegistrationProblems(
         );
         continue;
       }
-      if (path !== normalizedEntry && reference.specifier === "vitest") {
+      if (
+        path !== normalizedEntry &&
+        reference.specifier === "vitest" &&
+        !permittedVitestSeamImport(path, reference)
+      ) {
         problems.push(
           `${path}:${reference.line} imported fitness helper must not import the Vitest runtime`,
         );
@@ -1361,7 +1540,8 @@ function importedVitestRegistrationProblems(
       }
       if (
         path !== normalizedRegistrationPath(entryName) &&
-        reference.specifier === "vitest"
+        reference.specifier === "vitest" &&
+        !permittedVitestSeamImport(path, reference)
       ) {
         problems.push(
           `${path}:${reference.line} imported fitness helper must not import the Vitest runtime`,
@@ -1551,23 +1731,42 @@ root.suite.only("node global alias focused", () => {});`,
 (globalThis as any)[registration].skip("dynamic global registration", () => {});`,
       `describe.each([])("empty parameterized suite", () => {});`,
       `test.for([])("empty parameterized test", () => {});`,
-      `const cases: unknown[] = [];
-suite.each(cases)("empty aliased cases", () => {});`,
-      `const cases = [1];
-it.each([...cases])("spread cases", () => {});`,
-      `const cases = Math.random() > 0.5 ? [1] : [];
-test.for(cases)("dynamic parameterized test", () => {});`,
       `const options = { skip: false };
 options.skip = true;
 describe("mutated options", options, () => {});`,
-      `const cases = [1];
-cases.pop();
-describe.each(cases)("mutated cases", () => {});`,
       `const options = { skip: false };
 describe("mutable option alias", options, () => {});`,
-      `const cases = [1];
-describe.each(cases)("mutable case alias", () => {});`,
       "describe.each``(\"empty tagged suite\", () => {});",
+      `import { it } from "vitest";
+let member = "concurrent";
+member = "skip";
+it[member]("reassigned member string", () => {});`,
+      `import { it } from "vitest";
+let mode = "concurrent";
+mode = "todo";
+it("reassigned option key", { [mode]: true }, () => {});`,
+      `import { it } from "vitest";
+it("runtime context skip", (ctx) => {
+  ctx.skip();
+});`,
+      `import { it } from "vitest";
+it("destructured context skip", ({ skip }) => {
+  skip();
+});`,
+      `import { test } from "vitest";
+test.for([[1]])("per-case context skip", (value, ctx) => {
+  ctx.skip();
+});`,
+      `import { it } from "vitest";
+it("computed context member", (ctx) => {
+  const member = Math.random() > 0.5 ? "skip" : "task";
+  void ctx[member];
+});`,
+      `import { it } from "vitest";
+it("aliased context", (ctx) => {
+  const escape = ctx;
+  void escape;
+});`,
       `import { describe } from "vitest";
 Reflect.apply(describe.skip, describe, ["reflectively disabled", () => {}]);`,
       `import { describe } from "vitest";
@@ -1687,6 +1886,29 @@ test.for([{ value: 1 }])("enabled case", () => {});
 it.each(Object.freeze([[1]]))("frozen enabled case", () => {});`,
       ),
     ).toEqual([]);
+    // A DERIVED collection is left to its fence's own contract (ruling 2a): the
+    // corpus fences iterate the injected corpus world's classes, non-empty by
+    // construction, and this layer flags only a provably empty collection.
+    expect(
+      disabledVitestRegistrationProblems(
+        `import { it } from "vitest";
+import { classes } from "./_corpus-world";
+it.each([...classes])("derived corpus cases", (value) => {
+  void value;
+});`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `import { it } from "vitest";
+it("context-safe callback", (ctx) => {
+  void ctx.task;
+});
+it.each([[1]])("case values are not a context", (value) => {
+  void value;
+});`,
+      ),
+    ).toEqual([]);
     expect(
       disabledVitestRegistrationProblems(
         "it.each`value\n${1}`(\"enabled tagged case\", () => {});",
@@ -1797,6 +2019,58 @@ new Registrar(it.skip);`,
       "nested-fence.ts:2 imported fitness helper must not register Vitest describe.skip",
       "nested-fence.ts:1 imported fitness helper must not import the Vitest runtime",
     ]);
+  });
+
+  it("(b companion) permits ONLY the corpus-world seam to import vitest, and only as {inject}", () => {
+    const entry = "src/__tests__/fitness/example.test.ts";
+    const entrySource = (helper: string) =>
+      `import "./${helper}";\nimport { it } from "vitest";\nit("fence", () => {});`;
+    expect(
+      disabledVitestRegistrationProblems(
+        entrySource("_corpus-world"),
+        entry,
+        {
+          "src/__tests__/fitness/_corpus-world.ts":
+            `import { inject } from "vitest";\nexport const world = inject;`,
+        },
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        entrySource("_corpus-world"),
+        entry,
+        {
+          "src/__tests__/fitness/_corpus-world.ts":
+            `import { inject, describe } from "vitest";\nexport const world = inject;\nexport const suite = describe;`,
+        },
+      ),
+    ).toContain(
+      "src/__tests__/fitness/_corpus-world.ts:1 imported fitness helper must not import the Vitest runtime",
+    );
+    expect(
+      disabledVitestRegistrationProblems(
+        entrySource("_corpus-world"),
+        entry,
+        {
+          "src/__tests__/fitness/_corpus-world.ts":
+            `import * as vitest from "vitest";\nexport const world = vitest.inject;`,
+        },
+      ),
+    ).toContain(
+      "src/__tests__/fitness/_corpus-world.ts:1 imported fitness helper must not import the Vitest runtime",
+    );
+    expect(
+      disabledVitestRegistrationProblems(
+        entrySource("_second-seam"),
+        entry,
+        {
+          "src/__tests__/fitness/_second-seam.ts":
+            `import { inject } from "vitest";\nexport const world = inject;`,
+        },
+      ),
+    ).toContain(
+      "src/__tests__/fitness/_second-seam.ts:1 imported fitness helper must not import the Vitest runtime",
+    );
   });
 
   it("(b' companion) rejects a missing fitness result even when Vitest exits successfully", () => {
@@ -1919,23 +2193,43 @@ new Registrar(it.skip);`,
       expect(VITEST_TEST_INCLUDE).toBe(
         "src/**/*.{test,spec}.{ts,tsx}",
       );
+      expect(VITEST_FITNESS_INCLUDE).toBe(
+        "src/__tests__/fitness/**/*.{test,spec}.{ts,tsx}",
+      );
+      // The fitness project's include is DERIVED from the shared constants the
+      // per-file inventory matcher uses, never a second hardcoded glob a
+      // widening drift could pull apart from it.
+      const vitestConfigSource = readFileSync(p("vitest.config.ts"), "utf8");
+      expect(vitestConfigSource).toContain(
+        "include: [VITEST_FITNESS_INCLUDE]",
+      );
+      expect(vitestConfigSource).not.toContain(
+        'include: ["src/__tests__/fitness',
+      );
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
   });
 
-  it("(b' companion) runs the complete test suite without selecting fitness files twice", () => {
+  it("(b' companion) runs the complete test suite without selecting fitness files twice or overriding execution policy", () => {
     const args = completeTestRunArguments("/work/vitest.json");
     expect(args).toEqual([
       "run",
-      "--maxWorkers=1",
-      "--fileParallelism=false",
       "--reporter=json",
       "--outputFile=/work/vitest.json",
     ]);
     expect(args.some((argument) => argument.endsWith(".test.ts"))).toBe(
       false,
     );
+    // Execution policy (fitness-only serialism, D-172) lives in vitest.config.ts
+    // for every invocation path; a runner flag would serialize the app project too.
+    expect(
+      args.some(
+        (argument) =>
+          argument.includes("maxWorkers") ||
+          argument.includes("fileParallelism"),
+      ),
+    ).toBe(false);
   });
 
   it("(e) ratchet: every id that shipped as 'enforced' is still enforced", () => {

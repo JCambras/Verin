@@ -1,7 +1,10 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
-import { VITEST_TEST_INCLUDE } from "./scripts/fitness-tests.lib";
+import {
+  VITEST_FITNESS_INCLUDE,
+  VITEST_TEST_INCLUDE,
+} from "./scripts/fitness-tests.lib";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -130,7 +133,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "fitness",
-          include: ["src/__tests__/fitness/**/*.{test,spec}.{ts,tsx}"],
+          include: [VITEST_FITNESS_INCLUDE],
           // The committed corpus is validated ONCE per run and injected, rather
           // than re-validated by every fence file that reads it - see
           // `_corpus-world-setup.ts` for why isolation makes that the only
