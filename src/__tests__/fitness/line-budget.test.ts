@@ -51,9 +51,56 @@ import { join, relative } from "node:path";
 // on the recorded figure being the measured one. Any FURTHER increase remains a measured
 // ADR amendment rather than a silent fence edit, and no correction is ever paid for by
 // deleting documentation - nor, per ADR-0050, by folding readable code onto fewer lines.
+// ADR-0054 raised contracts and domain for the prompt-9 policy AST and
+// interpreter (the grammar module policy.ts plus the schema-introspection
+// helpers in primitives/values.ts; the nine-file policy module: loader, checks,
+// conflict prover, facts plane, four-phase evaluator, temporal math, trace).
+// Its first figures were taken before the tree it describes had finished
+// landing and went stale by 20/13 lines - the exact condition the paragraph
+// above calls "a ceiling with a number nobody re-took". ADR-0054 is amended
+// with figures RE-MEASURED on the tree as it lands after the prompt-9 review
+// round (atomic Phase-0 unwind, brand-tight temporal bytes, constant-scoped
+// temporal widening, single-walk key reads): contracts 6,555 against an
+// unchanged 6,600 ceiling, and domain 4,063 - which passed the 4,050 ceiling,
+// so the ceiling moved to 4,150. The SECOND review round (cascaded unwind of
+// every primitive a rejected rule configured, per-parameter rejection
+// attribution, one shared context-key precedence, the fail-closed
+// future-observation freshness read, the constant-binding assembly guard)
+// added 101 domain lines and passed 4,150 in turn: ADR-0054 is amended again to
+// 4,250 against a re-measured 4,164, contracts unmoved at 6,555. The THIRD
+// review round (discriminated predicate union, load-time structural nesting
+// bound, fail-closed rejection implication, total evidence-requirement
+// comparator, structural context-key-collision refusal) landed domain at 4,248
+// - INSIDE 4,250 by two lines, which is the ADR-0033 failure mode this header
+// exists to prevent, not a pass to bank. ADR-0054 is amended a third time to
+// 6,650/4,350 against re-measured 6,567/4,248. Those figures then went stale in
+// the very next commit: the FOURTH review round (load-time reservation of the
+// synthesized blocker-code namespaces, the fail-closed non-scalar guard on the
+// evidence and instruction fact arms, the per-version grammar-schema
+// memoization, the integer-depth nesting walk) added 80 domain and 17 contracts
+// lines without re-taking either number. ADR-0054 is amended a fourth time with
+// figures RE-MEASURED on the tree as that correction lands: contracts 6,584 and
+// domain 4,328 against UNCHANGED 6,650/4,350 ceilings - 66 and 22 lines of real
+// headroom, named rather than banked, so the next change to `src/domain/**`
+// reads as the measured ADR-0054 amendment it now is rather than as a code
+// change. The SIXTH review round is that change: making key-shaping parameters
+// non-writable added the catalog declaration in contracts and, in domain, the
+// load check plus `load-effects.ts` - the module the 500-line PER-FILE ceiling
+// forced, since `load-checks.ts` sat at 495 with all of `checkEffects` in it.
+// That is one module header and one import block bought to keep the check where
+// it belongs instead of folding code to fit (ADR-0050), and it is why the
+// domain ceiling moves. ADR-0054 is amended a fifth time to domain 4,500 against
+// a re-measured 4,400 (100 lines of correction room), contracts unmoved at 6,650
+// against 6,602. The SEVENTH review round spends part of that room - resolving a
+// context key by its DECLARED ORIGIN, so an intent entry can never stand in for a
+// fact an unevaluable primitive did not publish - and re-takes both figures
+// rather than inheriting them: domain 4,444 and contracts 6,602, against
+// UNCHANGED 4,500/6,650 ceilings, 56 and 48 lines of headroom NAMED rather than
+// banked. Re-measure in any commit that
+// changes a layer; a raise is always a measured ADR amendment.
 const CEILINGS = {
-  contracts: 6110, // ADR-0051, on the shared decision-id extractor and provenance fold
-  domain: 1650, // ADR-0041, on ADR-0038's baseline plus the pure ledger projection
+  contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
+  domain: 4500, // ADR-0054, on the prompt-9 policy interpreter module (4,444 measured)
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
@@ -106,8 +153,10 @@ const CEILINGS = {
   // number nobody re-took. Tooling is REPORTED SEPARATELY, never averaged into
   // a platform layer.
   //
-  // `src/__tests__/**` is NOT in any bucket: 45,362 lines that no ceiling
-  // holds (37,529 before D-173 split the two oversized corpus fence files into
+  // `src/__tests__/**` is NOT in any bucket: 49,365 lines that no ceiling
+  // holds (49,014 before the key-shaping load tests, property family G, and the
+  // catalog-declaration fence check; 45,362 before the prompt-9 policy suites, property families, and
+  // policy-ast fence landed beneath it; 37,529 before D-173 split the two oversized corpus fence files into
   // per-topic modules, which costs one import header per file; 38,125 before
   // the non-determinism scanner was decomposed into per-concern modules under
   // the same ceiling; 38,469 before D-175 made the shared corpus world rebuild

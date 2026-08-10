@@ -5662,3 +5662,437 @@ removed, and the shared budget stays the one measured against the machine CI act
 holding anything; a closure the fence cannot classify is the review decision it was built to force.
 **Revert path:** none - the trunk's ids are load-bearing and this branch's are the ones that moved. The
 tooling ceiling reverts to 8700 only by removing the trunk's ledger scripts from `scripts/**`.
+
+## D-178 - Prompt-9 policy AST and interpreter land as ratified, with the grammar in contracts and the interpreter in domain
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: ADR-0053, ADR-0054,
+waveb-design-ratification, ADR-0039/D-102, marriage-map C6, v3 §6.1/§6.2,
+invariant 16, charter #1/#4/#5
+
+The captain's Wave B ratification settled the design; this entry records the
+landing shape and the implementation choices it left open (all detailed in
+ADR-0053): the ratified grammar as strict versioned Zod schemas in
+`src/contracts/decision-core/policy.ts` with exactly three ratified deltas
+(constants-only `in` sets, the OQ-2 `reviewTemplateId` contract, the OQ-7
+reserved `elapsed` op at grammar 1.1.0, load-refused as grammar-only); the
+seven-check loader with its precise accumulated issue codes and the conservative
+disjointness prover (DNF cap 64, reject-when-unprovable, per the captain's
+explicit ruling); the pure four-phase evaluator with Kleene fail-closed
+semantics, commutative accumulation, and the fixed disposition lattice;
+day-or-finer integer freshness windows (calendar-granular and fractional
+windows refuse at load - richer temporal semantics are the `elapsed`
+activation's to ratify); stratification extended to `set_parameter` VALUE
+nodes (forced by the phase structure - a Phase-0 value cannot read a key no
+primitive has published); Phase 1 running the REAL catalog primitives over
+harness-assembled invocations, with content failures landing as unevaluable
+executions and only structural impossibilities refusing; and the migration
+fixture pinning version-stamp-free digests under both grammar versions.
+
+Invariant 16 activates (policy-ast fence + loader suite; the report shows 7
+active-pass, 0 active-fail). The evaluation input plane is PIIBearing-marked;
+the grammar's evidence-kind discriminators join the llm-pii-boundary reviewed
+escapes as identifiers-never-contents; the module's pure functions join the
+tenant-context port escapes with the foldDecisionProjection rationale. The
+vocabulary/purity scanners shared with the primitive-catalog fence moved
+verbatim into `_fence-utils`-style module `_module-scan.ts` so the two fences
+cannot drift. fast-check enters as a devDependency for property families A-F.
+
+**Alternatives rejected:** recorded in ADR-0053 (order-resolved conflicts,
+interim elapsed semantics, a TenantContext on the pure evaluator, loader-only
+scope).
+
+**Revert path:** ADR-0053's revert path; ADR-0054 restores the ceilings.
+
+## D-179 - Prompt-9 review round: an unevaluable rule contributes nothing, and the grammar pin reads the real schemas
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-178, ADR-0053, ADR-0054,
+firm ruling `p9-param-rejection-trace`, v3 §6.1, invariant 12/16, charter #1/#4
+
+Five corrections to the prompt-9 landing, all forward fixes:
+
+**Atomic unwind (the firm ruling).** When Phase 1 rejects a policy-resolved
+parameter, the writing rule is marked unevaluable - but Phase 0 had already
+applied ALL of its effects. The trace therefore reported a parameter resolution
+the primitive never ran with, and named an `unevaluable` rule inside
+`approvalRequirements` / `prohibitions` / `blockers` / `evidenceRequirements` /
+`strategyResolutions`. Invariant 12 makes the trace the output, so the ruling is
+FULL ATOMICITY: every Phase-0 contribution of the rejected rule is unwound
+first, an accumulator whose only contributor was that rule disappears with it,
+and the synthesized `rule-unevaluable:<id>` blocker carries the reason. The
+blocker accumulator now keys resolving evidence kinds PER CONTRIBUTING RULE, so
+a co-contributor's blocker survives with only its own resolving kinds. The
+disposition was already fail-closed and stays so.
+
+**The grammar-closure pin now reads the shipped schemas.** It compared a
+hard-coded ratified list against a second hard-coded list of vocabulary
+constants that fed no schema, so the only widening it could catch was a widening
+of the list. It now introspects `policyAstSchemaFor` - the factory `loadPolicy`
+itself parses with - down to the predicate arms, comparator enum, value-node
+discriminators, and effect discriminators, and holds BOTH the ratified pin and
+the contracts constants to that. `findReservedOps` reads
+`RESERVED_PREDICATE_OPS` instead of restating `elapsed` as a case arm, so the
+declaration is load-bearing.
+
+**Canonical temporal bytes match the brand.** `temporal.ts` validated digit
+COUNTS, so `2026-13-45T99:88:77.000Z` parsed into an epoch value instead of
+refusing, while `TimestampSchema` rejects it - and `asOf` / `observedAt` are
+plain strings, so the brand is not on that path. The byte forms now carry the
+brand's field ranges plus integer-only calendar-day validity, and `load-checks`
+consumes the same predicates rather than duplicating looser regexes.
+
+**String constants widen, string references do not.** `typesAgree` let ANY
+`string`-typed operand agree with `iso-date`/`iso-timestamp`, though its own
+rule is about string CONSTANTS; the canonical-form guard then passed
+non-constants vacuously, so an ordering comparison over an arbitrary string
+reference loaded. Agreement now takes the operands, not just their types.
+
+**One walk per rule.** `primitiveKeyReads` ran twice per rule (stratification
+check, then phase classification); it is computed once and shared, which is also
+what makes the two consumers provably one definition.
+
+ADR-0054's figures were taken before this round and went stale by 20 lines in
+contracts and 13 in domain, with domain passing its own ceiling. Re-measured on
+the tree as it lands: contracts 6,555/6,600 and domain 4,063, so ADR-0054 is
+amended to a 4,150 domain ceiling. The pinned migration-fixture digests are
+unchanged - the fixture does not exercise the rejection path.
+
+**Alternatives rejected:** recording the rejected parameter resolution with a
+"rejected" marker instead of dropping it (the ruling is atomicity, and a
+half-present rule is what the finding names); keeping the vocabulary constants
+as a second declaration list checked only against the pin (that is exactly the
+tautology).
+
+**Revert path:** D-178's revert path; each correction is independent of the
+others.
+
+## D-180 - Prompt-9 review round two: the unwind cascades, and rejection blames only the rule that wrote the refused name
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-179, ADR-0053, ADR-0054,
+firm ruling `p9-unwind-scope-and-freshness`, v3 §6.1, invariant 12/16, charter #4
+
+Five corrections to D-179's atomic unwind and its neighbourhood, all forward
+fixes:
+
+**The unwind cascades to every primitive the rejected rule configured.** D-179
+unwound a rejected rule's Phase-0 contributions, but Phase 1 had already run and
+only the REFUSING primitive was skipped. One rule may write `set_parameter` to
+two primitives (load check 7 keys on `set_parameter:<primitiveId>:<parameter>`),
+so the other could publish a result computed from a write the trace no longer
+records. Per the ruling, option (i): every primitive a rejected rule configured
+by `set_parameter` or `select_candidate` now lands `unevaluable`, publishes
+nothing, and its dependents fall out unevaluable through the ordinary
+missing-binding path - so no published value anywhere in the trace rests on a
+deleted write. No re-evaluation pass (option (ii) was rejected).
+
+**Rejection blames only the rule whose written name was refused.** The rejection
+was attributed to every rule that had written ANY parameter on that primitive,
+which under atomicity erased an innocent rule's whole Phase-0 contribution.
+Attribution now reads the parameter names the schema refusal actually names
+(issue `path[0]`, strict-object `keys`, recursing through union arm `errors`)
+and implicates exactly the rules that wrote one; when no policy-written name is
+among them the malformed harness assembly keeps the structural refusal.
+
+**One context-key precedence.** `resolveValue` read intent first and the Phase-1
+binding assembly read published facts first, so a key present in both would
+resolve two ways in one evaluation. Both now go through `resolveContextKey`:
+published facts, then intent. `deriveContextKeys` already refuses the collision
+upstream, so the order decides nothing today - naming it once is what keeps it
+that way.
+
+**A future-dated observation is unevaluable, not maximally fresh.** `is_fresh`
+computed `asOf - observedAt <= window`, and a negative age satisfies every
+window, so impossible-in-time data read as fresh and a `not(is_fresh(...))`
+staleness guard silently did not fire - the one fail-open corner in a
+fail-closed evaluator. It now returns unevaluable with an
+`is_fresh:<kind> (observation after asOf)` ref, so the rule synthesizes its
+blocker like every other content failure.
+
+**Symmetric assembly guards, deterministic rejection keys.** The constant
+binding overwrote a disagreeing harness context entry while the context binding
+refused one; both now refuse with `context-assembly-conflict`. A rejected
+invocation's execution was also filed under `<primitiveId>:<executions.size>`,
+which is invocation-LIST order - two rejections in different input orders
+produced different trace bytes. Every execution, rejected or not, is now keyed
+by its canonical `(primitive, parameter bytes)` identity, and duplicate
+detection moved onto that one key so a duplicated rejected invocation is refused
+rather than silently collapsing.
+
+ADR-0054's domain figure went stale again by this round's 101 lines and passed
+its own 4,150 ceiling. Re-measured on the tree as it lands: contracts 6,555
+(unmoved) and domain 4,164, so ADR-0054 is amended to a 4,250 domain ceiling.
+The pinned migration-fixture digests are unchanged - the fixture exercises
+neither the rejection path nor a future-dated observation.
+
+**Alternatives rejected:** re-running Phase 1 without the unwound rule's writes
+(ruled out explicitly - a second evaluation pass is a second semantics);
+unwinding an innocent co-writer's contributions too (its write resolved, nothing
+refused it, and nothing published rests on it).
+
+**Revert path:** D-179's revert path; each correction is independent of the
+others.
+
+## D-181 - Prompt-9 review round three: the predicate union discriminates, admission is depth-bounded, and rejection implicates rather than misdiagnoses
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-178, D-179, D-180, ADR-0053, ADR-0054,
+v3 §6.1, invariant 12/16, charter #4
+
+Five corrections, all forward fixes, none of them narrowing the ratified grammar:
+
+**The predicate arms discriminate on `op`.** `predicateSchemaFor` built its arm list with
+`z.union`, which tries every option in order, and a strict object does not abandon its remaining
+keys once one fails - so the `all` arm fully re-parsed the children of every `any` node before the
+right arm was reached. MEASURED: 588ms at eleven nested connectives, quadrupling every two more,
+against 0.03ms for the same document once the arms discriminate. `ValueNodeSchema` and
+`PolicyEffectSchema` already discriminated; the predicate arms now match them, which also means a
+wrong `op` reports itself instead of aggregating seven arms of noise. The arms lost their
+`.readonly()` wrapper (a wrapper carries no discriminator, and the ratified value and effect
+unions never froze their outputs either); canonical bytes are unchanged, so the pinned
+migration-fixture digests did not move.
+
+**Admission is depth-bounded, because everything below it recurses.** `all`/`any`/`not` nest
+without limit by ratification, and the Zod parse, `findReservedOps`, the closure and key-read
+walks, `predicateDnf`, and `evaluatePredicate` all recurse with them - so a deep document threw a
+RangeError out of `loadPolicy`, which is contracted to return typed errors and never throw
+(MEASURED: `safeParse` overflowed between 600 and 800 levels). `loadPolicy` now refuses a document
+nested past a 64-level structural cap, BEFORE the parse and by an ITERATIVE walk, since the parse
+is one of the recursions the bound protects. Bounding once at admission is what makes the module
+total: a `LoadedPolicy` is the only thing the evaluator consumes, so no later walk has to carry a
+depth it cannot. The cap counts raw document nesting (roughly two levels per connective), leaving
+~30 nested connectives against the three or four a real firm policy uses.
+
+**A rejection with no attributable name implicates the writers, it does not misdiagnose.** D-180
+attributed a parameter rejection to exactly the rules that wrote a NAMED refused parameter and
+kept the structural refusal otherwise. But a write can flip the arm of a discriminated parameter
+union - `set_parameter(sufficiency-check, mode, "cap-limited")` is admissible at load, and at
+runtime the newly selected strict arm refuses the `available` DEFAULT the harness supplied,
+naming a key no rule wrote. The evaluator then hard-refused `invalid-invocation-parameters` on
+legal policy content, contradicting the rule that a refusal is a STRUCTURAL impossibility. When
+the refusal names no policy-written parameter but a policy write DID reach that primitive, every
+writer on it is now implicated and the ordinary fail-closed unwind runs; the structural refusal is
+kept for the case it was written for - no policy write on the refusing primitive at all. D-180's
+named-attribution rule still wins whenever a name IS available, so an innocent co-writer's
+Phase-0 contribution is still not erased on a refusal that names someone else.
+
+**The evidence-requirement comparator is as total as its accumulation key.** Entries accumulate
+under `kind:absence:reviewTemplateId` but sorted on `(kind, absence)`, so two specialist
+requirements on one evidence kind under DIFFERENT review templates compared equal and fell back to
+Map insertion order - rule-id order leaking into bytes the migration fixture pins.
+`reviewTemplateId` is now the third term.
+
+**The context-key collision refusal is structural.** `deriveContextKeys` returned
+`{ contextKeys, collisions }` with the colliding key ADMITTED under the intent origin, so a caller
+that ignored the side channel would register a key `primitiveKeyReads` does not count as a
+primitive read - the rule classifies `configuration`, the OQ-6 stratification check never fires,
+and the same key resolves from intent in Phase 0 and from published facts in Phase 2. That is
+precisely the one-key-two-resolutions outcome D-180 said was impossible. It now returns a
+`Result`: no registry at all on a collision, so no caller can admit one.
+
+Also folded in: the Phase-0 parameter writes are keyed by their `(primitiveId, parameter)` target
+instead of re-scanned out of a list by object identity, which drops a quadratic lookup and a
+non-null assertion from a function documented never to throw. ADR-0054's domain figure passed
+inside its 4,250 ceiling by TWO lines, which is the ADR-0033 failure mode the line-budget header
+exists to prevent, so ADR-0054 is amended a third time to 6,650/4,350 against re-measured
+6,567/4,248.
+
+**Alternatives rejected:** capping depth inside the grammar (the Zod parse is itself one of the
+recursions, so a refinement runs too late); a dedicated `predicate-too-deep` issue code (the
+refusal happens before any rule is parsed, so it has no rule to name - `grammar-parse` is the code
+the other pre-parse structural refusal already uses); detecting discriminator flips specifically
+rather than falling back to all writers (the general fail-closed rule subsumes it and cannot be
+defeated by a schema shape the detector did not anticipate).
+
+**Revert path:** D-180's revert path; each correction is independent of the others.
+
+## D-182 - Prompt-9 review round four: the synthesized reason-code namespaces are reserved at load, and every fact source fails closed on a non-scalar
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-178, D-179, D-180, D-181, ADR-0053,
+v3 §6.1, invariant 12/16, charter #4, ruling p9-blocker-namespace
+
+**The evaluator owns its blocker-code namespaces, and the loader proves it.** Trace blockers key
+on the code alone, and the evaluator synthesizes two namespaces into that key space:
+`rule-unevaluable:<ruleId>` and `evidence-required:<kind>`. `ReasonCodeSchema` is
+`brandedString()` with no shape to refuse a collision, so a firm could author a `blockerCode` of
+literally `rule-unevaluable:rule-x` - and the authored entry would MERGE with the platform's, one
+trace blocker pooling firm rule ids and resolving kinds with a platform unevaluability, one
+`blockerCodes` entry standing for both. Fail-closed safety was never at stake; attribution and
+resolvability were. Per the firmmate/captain ruling, option (a) LOAD-TIME RESERVATION: the two
+prefixes are declared ONCE in `trace.ts` next to the constructors that mint them
+(`RESERVED_REASON_CODE_PREFIXES`, `ruleUnevaluableBlockerCode`, `evidenceRequiredBlockerCode`), so
+the loader's refusal and the evaluator's synthesis read the same source and cannot drift, and
+`loadPolicy` refuses an authored `block`/`prohibit` code under either prefix as
+`reserved-reason-namespace`, naming the rule, the code, and the prefix. Option (b), keying
+blockers by (source, code), was explicitly rejected: it changes the trace shape and would move
+every pinned digest for an attribution problem a load-time refusal solves outright.
+
+**A non-scalar is a miss in EVERY value source, not just the published one.** `resolveValue`
+scalar-checked only the `context` arm, where published facts are structured by declaration. But
+`PolicyEvaluationFacts` is a plain harness-assembled type with no runtime validation anywhere in
+the module, and a structured value at a declared evidence or instruction path flowed straight into
+`compareScalars` (where `eq` degrades to reference equality and every ordering comparator lands in
+its type guard) and into `memberOf` (where no member can match) - three different ways for a
+restrictive rule to read `not-fired` on malformed data, in a module whose whole posture is that an
+unresolvable read lands unevaluable and synthesizes a blocker. All three sources now apply the
+same guard.
+
+Also folded in: `policyAstSchemaFor` is memoized per grammar version over the closed
+`POLICY_GRAMMAR_VERSIONS` list (the factory is a pure function of that list, and it was rebuilding
+the lazy predicate union, its discriminator map, the six effect schemas, and two refinements on
+every load); and the pre-parse depth walk carries an integer depth instead of materializing a path
+array per node, since the path was read only by the refusal message and the walk runs over every
+node of every document. Neither moves trace bytes - the pinned migration digests are unchanged.
+
+**Alternatives rejected:** a `ReasonCode` schema-level shape refusal (the brand is deliberately
+opaque, and the reservation belongs to the evaluator that mints into it, not to the id
+vocabulary); a runtime validator over `PolicyEvaluationFacts` (assembly is prompt 14-16's, per
+D-102 - the interpreter's job is to fail closed on what arrives, which it now does uniformly).
+
+**Revert path:** D-181's revert path; each correction is independent of the others.
+
+## D-183 - Prompt-9 review round five: ADR-0054's ceilings hold, and its figures are re-taken
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-178, D-182, ADR-0018, ADR-0033, ADR-0054,
+charter #1/#14
+
+**A ceiling raised without a measurement beside it is a ceiling nobody is holding, and a
+measurement left stale is the same ceiling with a number nobody re-took.** That is the
+line-budget fence's own header, and D-182's commit broke it: 80 domain lines (trace, load, facts,
+evaluate, load-checks) and 17 contracts lines (the grammar-schema memoization) landed while the
+header and ADR-0054's table still read the round-three figures, 6,567/4,248. The build passed on
+4,328 against 4,350, so nothing failed - which is exactly why a stale figure is dangerous rather
+than loud: it reports 102 lines of correction room where 22 exist, and the next one-line fix
+anywhere under `src/domain/**` fails `pnpm test` on an unrelated ceiling. Both the fence header
+and ADR-0054's table are re-measured with the fence's own algorithm on the tree as this
+correction lands: contracts 6,584/6,650 (66), domain 4,328/4,350 (22), infrastructure
+7,786/7,840 (54). The `src/__tests__/**` figure, which no ceiling holds, is re-taken the same way
+at 49,014 (45,362 before the prompt-9 suites, property families, and fence landed).
+
+**The ceilings do NOT move.** Both layers measure inside their envelopes, and a measurement that
+stays inside its envelope is not a reason to raise one - raising on a passing measurement is how a
+ratchet turns into a rubber stamp. The 22 lines left on domain are named in both places instead of
+banked, so the next change under `src/domain/**` reads as the measured ADR-0054 amendment it now
+is. This correction touches only comment and documentation text, so it cannot move the totals it
+records: `load.ts`'s header sentence was rewritten line-for-line, and the re-measure was taken
+after the edit and confirmed against the fence's own reported totals.
+
+Also folded in: that `load.ts` header now says checks 2-4 live in `load-checks.ts` EXCEPT check
+2's reserved-namespace half, which the 500-line per-file ceiling keeps in `load.ts` -
+`load-checks.ts` sits at 495. The documentation now matches the real layout rather than the
+intended one.
+
+**Alternatives rejected:** raising the domain ceiling to buy the round-five headroom the finding
+suggested (nothing exceeded it, and ADR-0018 makes a raise a measured amendment for growth that
+happened, not for growth anticipated); moving the namespace half of check 2 into `load-checks.ts`
+to match the header (it would push that file to ~511 and fail the per-file fence - the seam to
+reunite check 2 is a reference-closure module, and that is the next edit to that file, not this
+one).
+
+**Revert path:** restore the round-three figures in `src/__tests__/fitness/line-budget.test.ts`
+and ADR-0054; the ceilings are unchanged, so there is nothing else to undo.
+
+## D-184 - Prompt-9 review round six: key-shaping parameters are configuration, not policy
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-102, D-104, D-178, D-181, D-183, ADR-0039,
+ADR-0053, ADR-0054, charter #1/#3/#4, ruling `p9-key-shaping-params`
+
+**A primitive's published context keys are DERIVED from its configured parameters, once, at load -
+so a policy write to one of those parameters silently desynchronizes the closed vocabulary from the
+runtime key space.** `candidate-selection.publishedKeys` builds every key from `subjectSlot`,
+`evidence-reconciliation` from `factKind`, `net-availability` from `claimEvidenceKinds`, and
+`restriction-screen` from `restrictionKinds`; all four are ordinary parameters, so
+`parameterSchemaKeys` yielded them and `parameterConstantAdmissible` accepted a write. The
+consequences run past a bad read: rules reading the derived key miss and land unevaluable,
+`published-key-escape` cannot see it because `producedKeys` derives from the same shifted call, and
+two invocations that differ only in that parameter collapse onto one canonical identity - a
+`duplicate-invocation` or `published-key-collision` REFUSAL driven by admissible policy content,
+which `trace.ts` reserves for structural impossibilities.
+
+**The catalog now declares it, and the declaration is the single source of truth.** Every entry
+carries `keyShapingParameters`, and `loadPolicy` refuses a `set_parameter` naming one with
+`key-shaping-parameter-not-writable` (rule, primitive, and parameter named). The check runs BEFORE
+constant admissibility, so an author is told the write is illegal rather than that the value is
+wrong. The `primitive-catalog` fence reads each `publishedKeys` body with ts-morph and requires the
+declaration to equal the parameters it actually reads - the metadata cannot go stale, and a body
+this fence cannot read statically (destructured, computed, whole-object) fails closed rather than
+scanning as "reads nothing". A new property family (G) proves the runtime consequence over EVERY
+parameter of every catalog primitive: no write the loader accepts changes the key set an invocation
+publishes.
+
+**Prompt 10 must not re-open this.** A binding chooses the key scope; a rule may not move it.
+Recorded here and in `docs/primitive-rationale.md` so the binding model inherits the constraint
+rather than rediscovering it.
+
+**Also folded in:** `fast-check` is exact-pinned to `4.9.0`. It was the only floating specifier in a
+manifest where all 37 other dependencies are exact, and its generator and shrinker behavior is what
+the property families registered against v3 invariant 16 are proven with - a silent minor bump
+changes what the invariant means.
+
+**The per-file ceiling forced a split, and the split is the one D-183 named.** `load-checks.ts` sat
+at 495 lines with all of `checkEffects` in it, so the new check had nowhere to land.
+`load-effects.ts` now holds every check that reads an effect, which reunites check 2's
+reserved-namespace half (stranded in `load.ts` by the same ceiling) with the walk it belongs to and
+drops the second iteration over `rule.effects`. That costs one module header and one import block;
+ADR-0054 is amended a fifth time to domain 4,500 against a re-measured 4,400, contracts unmoved at
+6,650 against 6,602 - the raise pays for code, not for formatting (ADR-0050).
+
+**Alternatives rejected:** detecting the desync at evaluation time (it is detectable only as the
+refusal the module contract forbids for policy content, and the trace would carry no rule to blame);
+deriving the shaping set from the AST at load instead of declaring it (the loader would depend on
+source introspection at runtime - the fence is where an AST claim belongs, and it holds the
+declaration honest instead); leaving the parameters writable and re-deriving the registry per
+resolved write (Phase 0 runs after the vocabulary must already be closed, which is what OQ-6
+stratification exists to guarantee).
+
+**Revert path:** drop `keyShapingParameters` from `CatalogPrimitive` and the six entries, delete
+`checkKeyShapingWrite` and its issue code, fold `load-effects.ts` back into `load-checks.ts` and
+`load.ts`, restore ADR-0054's round-five figures and the `^4.9.0` fast-check range.
+
+## D-185 - Prompt-9 review round seven: a context key resolves by its declared origin
+
+**Date:** 2026-08-07 · **Reversible** · Relates to: D-102, D-181, D-182, D-183, D-184, ADR-0053,
+ADR-0054, charter #3/#4
+
+**Searching two planes in order is a fail-OPEN when one of them is unvalidated harness input.**
+`resolveContextKey` read the published facts first and fell back to `facts.intent` for ANY key.
+`PolicyEvaluationFacts.intent` is a plain `ReadonlyMap<string, Scalar>` the harness assembles, and
+nothing checks its keys against `registries.contextKeys` - so a stray intent entry sitting under a
+primitive's published key SUBSTITUTED for the fact whenever that primitive landed unevaluable and
+published nothing. `net-availability` refusing its own input left `availability.net` unpublished,
+the intent entry resolved, and the Phase-2 rule reading it compared, fired, and reached its effects
+on harness data - in a module whose contract is that an unresolvable read makes the enclosing rule
+unevaluable and synthesizes its blocker. The structural collision refusal of D-181 closed the
+DERIVED vocabulary; it could not close this, because the two keys never meet in the registry.
+
+**Resolution now reads the key's DECLARED ORIGIN, not a search order.** A key the registry declares
+`{source: "primitive"}` resolves ONLY from that run's published facts; `{source: "intent"}` resolves
+ONLY from the intent slots; a key the registry never declared resolves nowhere. The registry rides
+with the published facts as one `PolicyContextPlane`, so the AST value plane and the Phase-1 binding
+assembly cannot disagree - the same object serves both, which is what keeps one key to one
+resolution per run. The substitution is now unrepresentable rather than improbable: the map the
+harness controls is never consulted for a key it does not own.
+
+**Fenced by a companion that fails on the old code.** The regression case puts an intent entry under
+`availability.net` while `net-availability` refuses its input, and pins BOTH planes - the rule lands
+unevaluable with `context:availability.net` and only its synthesized blocker, and `sufficiency-check`
+misses the same binding. Restoring the ordered search makes the rule read `fired`, which is the
+whole finding. The both-present precedence case of D-180 is unchanged: published still wins, because
+`availability.net` is primitive-origin.
+
+**Also folded in:** ADR-0054's TITLE and the `docs/adr/README.md` index row said domain 4,350 while
+the Decision section, table, and fence all said 4,500 - the two artifacts a reader consults first
+disagreeing with the enforced number, which is D-183's staleness class in the headings rather than
+the figures. Both now read 4,500, and both the fence header and the ADR table are re-measured on the
+tree as this correction lands: contracts 6,602/6,650 (48), domain 4,444/4,500 (56). The ceilings do
+NOT move - a measurement inside its envelope is not a reason to raise one. AGENTS.md's policy-AST
+paragraph gains the D-184 key-shaping constraint (prompt 10's implementer reads that file every
+session; DECISIONS.md and `docs/primitive-rationale.md` are not loaded), the corrected ten-file
+inventory with `load-effects.ts`, and this origin rule.
+
+**Alternatives rejected:** validating `facts.intent` keys against the registry at the evaluator
+boundary (it turns a harness assembly bug into a whole-evaluation refusal, which `trace.ts` reserves
+for structural impossibilities, and it would still leave the resolution order deciding the answer for
+every key that passed); keeping the ordered search and documenting the hazard (the same
+documented-not-enforced posture D-181 rejected for the collision case).
+
+**Revert path:** restore the two-line ordered lookup in `resolveContextKey`, drop
+`PolicyContextPlane` and pass `publishedFacts` again through `facts.ts`, `evaluate.ts`, and
+`evaluate-primitives.ts`, and delete the shadowing regression case.

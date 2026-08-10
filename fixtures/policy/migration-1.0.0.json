@@ -1,0 +1,150 @@
+{
+  "description": "AST migration fixture (v3 prompt 9 required test; ADR-0053; ratified design section 3.7). A policy authored at grammar 1.0.0 plus a pinned evaluation bundle. The loader must produce an identical canonical form and an identical evaluation trace when the SAME document is parsed under grammar 1.1.0 (the additive minor version that adds only the reserved 'elapsed' op) - hash-equal, proven by the pinned digests. This fixture is the template for every future grammar bump: additive minors re-prove it; anything that breaks it is a major with a re-simulation story. Regenerating the digests is a conscious re-pin, reviewed like any contract change.",
+  "policy": {
+    "schemaVersion": "1.0.0",
+    "primitiveSetVersion": "1.0.0",
+    "rules": [
+      {
+        "id": "rule-reserve-horizon",
+        "when": { "op": "all", "nodes": [] },
+        "effects": [
+          {
+            "kind": "set_parameter",
+            "primitiveId": "horizon-projection",
+            "parameter": "horizonMonths",
+            "value": { "kind": "constant", "value": 6 }
+          }
+        ]
+      },
+      {
+        "id": "rule-reserve-breach",
+        "when": {
+          "op": "all",
+          "nodes": [
+            {
+              "op": "compare",
+              "comparator": "eq",
+              "left": { "kind": "context", "key": "sufficiency.satisfied" },
+              "right": { "kind": "constant", "value": false }
+            },
+            {
+              "op": "compare",
+              "comparator": "eq",
+              "left": { "kind": "context", "key": "availability.claims.reservation" },
+              "right": { "kind": "constant", "value": 0 }
+            }
+          ]
+        },
+        "effects": [
+          {
+            "kind": "block",
+            "blockerCode": "cash-reserve-breach",
+            "resolvingEvidenceKinds": ["account-balance", "pending-activity"]
+          }
+        ]
+      },
+      {
+        "id": "rule-reserve-evidence-freshness",
+        "when": {
+          "op": "not",
+          "node": { "op": "is_fresh", "evidenceKind": "planned-withdrawals", "maxAge": "P30D" }
+        },
+        "effects": [
+          {
+            "kind": "block",
+            "blockerCode": "reserve-evidence-stale",
+            "resolvingEvidenceKinds": ["planned-withdrawals"]
+          }
+        ]
+      },
+      {
+        "id": "rule-dual-approval-over-25k",
+        "when": {
+          "op": "compare",
+          "comparator": "gt",
+          "left": { "kind": "context", "key": "intent.amount" },
+          "right": { "kind": "constant", "value": 2500000 }
+        },
+        "effects": [{ "kind": "require_approval", "templateId": "tmpl-ops-dual" }]
+      }
+    ]
+  },
+  "bundle": {
+    "asOf": "2026-08-01T12:00:00.000Z",
+    "intent": { "intent.amount": 7500000, "intent.destinationType": "external" },
+    "evidence": {
+      "account-balance": {
+        "observedAt": "2026-08-01T09:00:00.000Z",
+        "values": { "amountMinor": 20000000 }
+      },
+      "pending-activity": {
+        "observedAt": "2026-08-01T09:00:00.000Z",
+        "values": { "amountMinor": 2000000 }
+      },
+      "planned-withdrawals": {
+        "observedAt": "2026-07-20T09:00:00.000Z",
+        "values": { "monthlyAmountMinor": 800000 }
+      }
+    },
+    "invocations": [
+      {
+        "primitiveId": "net-availability",
+        "parameters": {
+          "resourceEvidenceKind": "account-balance",
+          "claimEvidenceKinds": ["pending-activity", "reservation"],
+          "subjectScope": "subject-group"
+        },
+        "evidence": {
+          "resource": {
+            "snapshotRef": { "firmId": "firm-a", "id": "snap-balance" },
+            "amountMinor": 20000000
+          },
+          "claims": [
+            {
+              "claimKind": "pending-activity",
+              "snapshotRef": { "firmId": "firm-a", "id": "snap-pending" },
+              "amountMinor": 2000000
+            }
+          ]
+        }
+      },
+      {
+        "primitiveId": "horizon-projection",
+        "parameters": {
+          "seriesEvidenceKind": "planned-withdrawals",
+          "horizonMonths": 1,
+          "direction": "forward"
+        },
+        "evidence": {
+          "series": {
+            "snapshotRef": { "firmId": "firm-a", "id": "snap-withdrawals" },
+            "flows": [
+              { "dueOn": "2026-08-01", "amountMinor": 800000 },
+              { "dueOn": "2026-09-01", "amountMinor": 800000 },
+              { "dueOn": "2026-10-01", "amountMinor": 800000 },
+              { "dueOn": "2026-11-01", "amountMinor": 800000 },
+              { "dueOn": "2026-12-01", "amountMinor": 800000 },
+              { "dueOn": "2027-01-01", "amountMinor": 800000 },
+              { "dueOn": "2027-02-01", "amountMinor": 800000 }
+            ]
+          }
+        },
+        "context": { "anchorDate": "2026-08-01" }
+      },
+      {
+        "primitiveId": "sufficiency-check",
+        "parameters": {
+          "mode": "floor-preserving",
+          "available": { "kind": "context", "key": "availability.net" },
+          "draw": { "kind": "context", "key": "intent.amount" },
+          "bound": { "kind": "context", "key": "projection.total" }
+        },
+        "evidence": {}
+      }
+    ]
+  },
+  "expectations": {
+    "loadedCanonicalDigest": "2700b8e0ed44569ba808a18df57121ea7568e16ae50e17e1542116f53b553379",
+    "traceCanonicalDigest": "1887d75c084a773dd38bc5f96e715156c7eaaee7fd6f782b37cae6713bed04d5"
+  }
+}

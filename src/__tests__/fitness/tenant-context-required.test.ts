@@ -70,6 +70,41 @@ const PORT_ESCAPES = new Set([
   "src/domain/workflow/engine.ts :: ExecutionStore.loadByToken",
   "src/domain/schema/entities.ts :: isAccountType.<call>",
   "src/domain/schema/golden-record.ts :: resolveConflict.<call>",
+  // The policy interpreter (prompt 9, ADR-0053) is PURE COMPUTATION over
+  // already-tenant-scoped inputs: the facts plane arrives pre-resolved from
+  // the immutable DecisionInputBundle (itself tenant-pinned), registries are
+  // pinned data, and the module performs no repository or port access at all
+  // (the policy-ast fence bans IO/clock/randomness across the module). A
+  // TenantContext parameter here would be ambient authority a pure function
+  // cannot honor - the same reasoning as foldDecisionProjection above.
+  "src/domain/policy/conflict.ts :: predicateDnf.<call>",
+  "src/domain/policy/conflict.ts :: proveDisjoint.<call>",
+  "src/domain/policy/evaluate.ts :: evaluatePolicy.<call>",
+  "src/domain/policy/evaluate-primitives.ts :: runPrimitivePhase.<call>",
+  "src/domain/policy/facts.ts :: evaluatePredicate.<call>",
+  "src/domain/policy/facts.ts :: resolveContextKey.<call>",
+  "src/domain/policy/facts.ts :: resolveValue.<call>",
+  "src/domain/policy/load.ts :: loadPolicy.<call>",
+  "src/domain/policy/load-checks.ts :: checkPredicate.<call>",
+  "src/domain/policy/load-checks.ts :: effectTargets.<call>",
+  "src/domain/policy/load-checks.ts :: isConfigEffect.<call>",
+  "src/domain/policy/load-checks.ts :: IssueSink.<call>",
+  "src/domain/policy/load-checks.ts :: primitiveKeyReads.<call>",
+  "src/domain/policy/load-checks.ts :: resolveValueType.<call>",
+  "src/domain/policy/load-effects.ts :: checkEffects.<call>",
+  "src/domain/policy/registries.ts :: catalogPrimitiveMap.<call>",
+  "src/domain/policy/registries.ts :: deriveContextKeys.<call>",
+  "src/domain/policy/registries.ts :: evidenceKindDescriptor.<call>",
+  "src/domain/policy/registries.ts :: instructionKindDescriptor.<call>",
+  "src/domain/policy/temporal.ts :: durationToMillis.<call>",
+  "src/domain/policy/temporal.ts :: epochMillisOf.<call>",
+  "src/domain/policy/temporal.ts :: isCanonicalDate.<call>",
+  "src/domain/policy/temporal.ts :: isCanonicalTimestamp.<call>",
+  "src/domain/policy/trace.ts :: compareCanonical.<call>",
+  "src/domain/policy/trace.ts :: compareProhibitions.<call>",
+  "src/domain/policy/trace.ts :: evidenceRequiredBlockerCode.<call>",
+  "src/domain/policy/trace.ts :: ruleUnevaluableBlockerCode.<call>",
+  "src/domain/policy/trace.ts :: sortUniqueStrings.<call>",
 ]);
 
 const SQL_ADAPTER_MODULES = ["@electric-sql/pglite"] as const;

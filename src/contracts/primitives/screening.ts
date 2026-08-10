@@ -231,6 +231,7 @@ export const restrictionScreen = {
   parameterSchema: RestrictionScreenParameterSchema,
   inputSchema: RestrictionScreenInputSchema,
   evidenceKindParameters: [],
+  keyShapingParameters: ["restrictionKinds"],
   allowedStrategies: [],
   publishedKeys: (
     parameters: z.infer<typeof RestrictionScreenParameterSchema>,
@@ -381,6 +382,7 @@ export const evidenceReconciliation = {
   parameterSchema: EvidenceReconciliationParameterSchema,
   inputSchema: EvidenceReconciliationInputSchema,
   evidenceKindParameters: [],
+  keyShapingParameters: ["factKind"],
   allowedStrategies: [],
   publishedKeys: (
     parameters: z.infer<typeof EvidenceReconciliationParameterSchema>,

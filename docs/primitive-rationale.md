@@ -49,6 +49,19 @@ A **primitive** is a named, versioned, **pure** function:
   bindings; last-write-wins is not an option. Falsification path: a real configuration that
   needs one UNSCOPED primitive twice (a reserve floor AND a per-transaction cap, both
   `sufficiency-check`) forces binding-namespaced published keys under a set version bump.
+- **Key-shaping parameters are configuration-only, never policy-writable** (ruling
+  `p9-key-shaping-params`). Each entry declares `keyShapingParameters`: the parameters its
+  `publishedKeys` body reads to construct the key space - `candidate-selection.subjectSlot`,
+  `evidence-reconciliation.factKind`, `net-availability.claimEvidenceKinds`, and
+  `restriction-screen.restrictionKinds`. The prompt-9 context-key vocabulary is derived
+  once, at load, from the CONFIGURED values, so a `set_parameter` on one of these would run
+  the primitive under a namespace the loader never closed over: readers of the derived key
+  miss, and two bindings differing only in that parameter collapse onto one invocation
+  identity. `loadPolicy` therefore refuses such a write
+  (`key-shaping-parameter-not-writable`), and the `primitive-catalog` fence proves the
+  declaration against what each `publishedKeys` body actually reads, so it cannot go stale.
+  Prompt 10's binding model must NOT re-open these to policy - a binding chooses the key
+  scope; a rule may not move it.
 
 **The razor, applied in both directions:**
 

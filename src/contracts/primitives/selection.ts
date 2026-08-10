@@ -190,6 +190,7 @@ export const candidateSelection = {
   parameterSchema: CandidateSelectionParameterSchema,
   inputSchema: CandidateSelectionInputSchema,
   evidenceKindParameters: ["candidateEvidenceKind"],
+  keyShapingParameters: ["subjectSlot"],
   allowedStrategies: SELECTION_STRATEGIES,
   publishedKeys: (
     parameters: z.infer<typeof CandidateSelectionParameterSchema>,

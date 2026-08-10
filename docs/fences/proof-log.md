@@ -8898,3 +8898,322 @@ changed `scripts/corpus/intake-filename.ts`, a bound executable authority; no ca
 changed). The real-derived partition remains empty and captain signoff remains `pending-captain`.
 
 **Date:** 2026-08-06 (v3 prompt 11, review round 21).
+
+## the policy grammar is closed, pure, domain-neutral, digest-pinned, and reachable-by-name (ADR-0053)
+
+**Fence:** `src/__tests__/fitness/policy-ast.test.ts`
+
+**Claims:** (1) the shipped grammar vocabulary equals the fence's own ratified pin exactly, so a
+quietly widened union fails the build before it fails review; (2) the policy module (contracts
+grammar + domain interpreter) never references a clock, randomness, tz/locale, or scheduling
+global; (3) no domain vocabulary in the module's identifiers or literals - "no evaluator branch
+on domain ID" made structural; (4) the grammar migration fixture matches its pinned digests under
+BOTH grammar versions, so the additive-minor discipline is bytes, not intent; (5) every module
+value export is imported as a value or carried as a NAMED deferral stating the prompt that lands
+its caller.
+
+**Injection 1 - the vocabulary widened**: added `"regex_match"` to `EVALUABLE_PREDICATE_OPS`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: predicateOps: shipped [all,any,compare,exists,in,is_fresh,not,regex_match] != ratified [all,any,compare,exists,in,is_fresh,not]: expected [ Array(1) ] to deeply equal []
+```
+(The companion asserting the closure check rejects widened vocabularies failed alongside it.)
+
+**Injection 2 - a clock read in the interpreter**: planted `const evaluationStartedAt = Date.now();`
+at module scope in `evaluate.ts`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: /Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/evaluate.ts:72: Date: expected [ { …(3) } ] to deeply equal []
+```
+
+**Injection 3 - domain vocabulary in the module**: planted
+`const wireCashReserveHint = "withdrawal";` in `trace.ts`.
+
+**Observed failure (verbatim, first lines):**
+```
+AssertionError: /Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/trace.ts:20: wire
+/Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/trace.ts:20: cash
+/Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/trace.ts:20: reserve
+/Users/joncambras/.treehouse/verin-504543/1/verin/src/domain/policy/trace.ts:20: withdrawal
+```
+(both the identifier and the string literal are tokenized - seven hits from one planted line)
+
+**Injection 4 - the migration fixture tampered on disk**: flipped the pinned policy's horizon
+constant `6 -> 7`.
+
+**Observed failure (verbatim, first line):**
+```
+AssertionError: 1.0.0: loaded canonical digest daed195b58d40c8f8bc4b01587a120b3fc21a5f0bfbe729f0e5f7b6eb116dba9 != pinned 2700b8e0ed44569ba808a18df57121ea7568e16ae50e17e1542116f53b553379
+```
+(all four digests - loaded and trace, under both grammar versions - failed; the in-memory
+tamper companion failed alongside, proving the pin binds bytes, not intent)
+
+**Injection 5 - an orphan export without a deferral**: appended `export const orphanProbe = 1;`
+to `temporal.ts`.
+
+**Observed failure (verbatim):**
+```
+AssertionError: temporal.ts:orphanProbe has no value importer and no named deferral - dead vocabulary or a missing deferral entry: expected [ { kind: 'orphan', …(1) } ] to deeply equal []
+```
+(the no-broken-baseline companion failed alongside)
+
+**Standing companions:** the parse probes prove the accepting direction (every ratified effect,
+comparator, and op parses; `elapsed` parses ONLY at 1.1.0 and never loads), so no refusal above
+can be satisfied by refusing everything; the pure-Math and codepoint-ordering cases prove the
+purity scan admits the arithmetic the interpreter actually uses.
+
+**Revert:** all five injections were reverted; the fence, the full fitness project (59 files),
+and `pnpm typecheck` are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9).
+
+---
+
+## `policy-ast` (re-proof after the prompt-9 review round) - D-179
+
+The original Injection 1 above widened `EVALUABLE_PREDICATE_OPS`, a declaration list that fed no
+schema, so it proved only that the fence noticed an edit to the list. The closure check now reads
+the vocabulary back off `policyAstSchemaFor` - the schema factory `loadPolicy` parses with - so
+the injection was re-run against the SCHEMA.
+
+**Injection 1' - the shipped SCHEMA widened, the declaration list untouched**: added a
+`z.strictObject({ op: z.literal("regex_match"), value: ValueNodeSchema }).readonly()` arm to the
+predicate union in `predicateSchemaFor`, leaving `EVALUABLE_PREDICATE_OPS` alone.
+
+**Observed failure (verbatim, first line):**
+```
+AssertionError: predicateOps: shipped [all,any,compare,exists,in,is_fresh,not,regex_match] != ratified [all,any,compare,exists,in,is_fresh,not]: expected [ Array(1) ] to deeply equal []
+```
+(three tests failed together: the ratified-pin check, the new declaration-versus-schema check, and
+the standing widened-vocabulary companion. On the pre-review fence this injection PASSED.)
+
+**Standing companions added:** a synthetic AST schema carrying an extra predicate arm, an extra
+comparator, and an extra effect kind proves the extraction reads real arms rather than returning a
+constant; a schema whose grammar is out of reach THROWS rather than extracting an empty vocabulary
+into a vacuous pass.
+
+## Prompt-9 review-round semantics - D-179
+
+Three injections against the corrections themselves, each run on the fixed tree with the fix backed
+out and reverted immediately after.
+
+**Injection A - the atomic unwind skipped**: replaced
+`for (const ruleId of rejectedRuleIds) unwindRule(ruleId);` with a no-op in `evaluate.ts`.
+
+**Observed failure:** both `evaluatePolicy - a rejected policy-resolved parameter unwinds its rule
+ATOMICALLY` cases failed (the unwound rule's parameter resolution, strategy resolution, approval,
+prohibition, blocker, and evidence requirement all reappeared in the trace beside its
+`unevaluable` outcome).
+
+**Injection B - the canonical timestamp loosened back to digit counts**: restored
+`/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})Z$/` and dropped the calendar-day check.
+
+**Observed failure:** `an impossible instant refuses rather than parsing, landing the rule
+unevaluable` failed (`2026-02-31T09:00:00.000Z` rolled over into a real epoch value), and the
+load-time `in`-set case accepted `2026-13-45T99:88:77.000Z` as canonical.
+
+**Injection C - the string/temporal widening unscoped from constants**: dropped `from.isConstant`
+from `typesAgree`.
+
+**Observed failure:** `type-checks comparisons` failed - an ordering comparison between a plain
+`string` context key and an `iso-timestamp` evidence path loaded without a `type-mismatch`.
+
+**Revert:** all four injections were reverted; `pnpm typecheck`, `pnpm lint`, `pnpm knip`, and the
+full test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round).
+
+---
+
+## Prompt-9 review-round-three semantics - D-181
+
+Five injections against the corrections themselves, each run on the fixed tree with the fix backed
+out and reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - the predicate arms un-discriminated**: restored
+`z.union(arms)` in place of `z.discriminatedUnion("op", arms)` in `predicateSchemaFor`.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:115`):**
+```
+× parses nesting in LINEAR time - the arms discriminate on op, never try each other 23645ms
+expect(elapsedMs).toBeLessThan(2_000)
+```
+(26 nested connectives took 23.6 SECONDS; the same document parses in under a millisecond once the
+arms discriminate.)
+
+**Injection B - the structural nesting bound removed**: replaced the `tooDeeplyNested(document)`
+call in `loadPolicy` with a constant `null`.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:124`):**
+```
+× REFUSES a document nested past the structural cap instead of overflowing the stack
+expected true to be false
+```
+(at 200 levels the unbounded loader accepted the document; at the deeper probes the recursive
+`safeParse` throws a RangeError out of a function contracted to return typed errors.)
+
+**Injection C - rejection blame restricted to NAMED parameters only**: replaced
+`named.length > 0 ? named : sortUniqueStrings(writtenBy.values())` with `named` in
+`evaluate-primitives.ts`.
+
+**Observed failures (`src/__tests__/unit/policy-evaluate.test.ts:647` and `:691`):**
+```
+× fails CLOSED when a write reached the primitive but the refusal names only a default
+× implicates the discriminator writer when a write flips a parameter union's arm
+```
+(both hard-refused `invalid-invocation-parameters` on legal policy content instead of unwinding.)
+
+**Injection D - the evidence-requirement comparator left partial**: dropped the
+`reviewTemplateId` term from the emit sort in `evaluate.ts`.
+
+**Observed failure (`src/__tests__/unit/policy-evaluate.test.ts:354`):**
+```
+× orders two review templates on ONE evidence kind by content, never by rule id
+```
+(the two entries came back in rule-id insertion order, not canonical template order.)
+
+**Injection E - the context-key collision admitted again**: replaced the collision `Result` with
+an unconditional `ok(contextKeys)` in `deriveContextKeys`.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:71`):**
+```
+× returns no registry at all when an intent slot and a published key claim one name
+expected true to be false
+```
+
+**Standing companions:** the disjoint-vocabulary case proves the derivation still returns both
+origins rather than refusing everything; the linear-time case asserts a SUCCESSFUL load, so the
+depth bound cannot satisfy it by refusing; the structural-refusal case (no policy write on the
+refusing primitive) proves the fail-closed implication did not swallow the malformed-assembly
+diagnosis.
+
+**Revert:** all five injections were reverted; `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
+`pnpm build`, `pnpm v3:invariants`, `pnpm golden:validate`, `pnpm corpus:validate`, and the full
+test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round three).
+
+---
+
+## Prompt-9 review-round-four semantics - D-182
+
+Four injections against the corrections themselves, each run on the fixed tree with the fix backed
+out and reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - the non-scalar guard removed from the evidence and instruction arms**: deleted both
+`if (!isScalar(value)) return missing(...)` lines from `resolveValue`, leaving the guard on the
+`context` arm only (the pre-fix asymmetry).
+
+**Observed failure (`src/__tests__/unit/policy-evaluate.test.ts:311`):**
+```
+× a STRUCTURED value at a declared path misses in EVERY source, never reading not-fired
+- "unevaluable"
++ "not-fired"
+```
+(both rules read plain `not-fired` on structured data: `eq` degraded to reference equality and the
+`in` member could not match, so a restrictive rule silently did not fire.)
+
+**Injection B - the reserved reason-code namespace check neutralized**: replaced the
+`RESERVED_REASON_CODE_PREFIXES.find(...)` lookup in `loadPolicy` with a constant `undefined`.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:761`):**
+```
+× REFUSES an authored code that shadows a namespace the evaluator synthesizes into
+expected true to be false
+```
+(a policy authoring `blockerCode: "rule-unevaluable:rule-x"` loaded cleanly, and its blocker would
+then merge with the platform's synthesized entry for that very rule.)
+
+**Injection C - the grammar-schema memoization removed**: deleted the cache read from
+`policyAstSchemaFor`, restoring a full rebuild per call.
+
+**Observed failure (`src/__tests__/unit/policy-migration.test.ts:78`):**
+```
+× the factory hands out ONE schema per version, never a rebuild per load
+expected ZodReadonly{...} to be ZodReadonly{...} // Object.is equality
+```
+
+**Injection D - the depth reporting dropped from the structural-cap refusal**: replaced the
+`nests ${overDeep} levels deep` message fragment with a depth-free one.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:131`):**
+```
+× REFUSES a document nested past the structural cap instead of overflowing the stack
+expected 'a node exceeds the 64-level structura…' to match /nests \d+ levels deep/
+```
+
+**Reverted:** all four injections reverted immediately; `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
+and the full test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round four).
+
+## Prompt-9 review-round-six semantics - D-184
+
+Two injections against the correction itself, each run on the fixed tree with the fix backed out
+and reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - the key-shaping declaration dropped**: replaced
+`keyShapingParameters: ["subjectSlot"]` on `candidateSelection` with `[]`, the pre-fix state where
+the catalog says nothing about which parameters shape published keys.
+
+**Observed failure (`src/__tests__/fitness/primitive-catalog.test.ts:344`):**
+```
+× enforces: keyShapingParameters is exactly what each publishedKeys body reads
+candidate-selection: publishedKeys reads [subjectSlot] but declares keyShapingParameters []
+```
+(the declaration is read off the real `publishedKeys` body, so a stale one cannot survive; the same
+injection also fails the runtime property at
+`src/__tests__/unit/policy-properties.test.ts:545` -
+`Counterexample: [["candidate-selection","subjectSlot"],"other-slot"]` - proving the fence and the
+property are not restating one another's assumption.)
+
+**Injection B - the load check neutralized**: made `checkKeyShapingWrite` return `false`
+unconditionally, so the loader validates the parameter name and the constant but not writability.
+
+**Observed failure (`src/__tests__/unit/policy-load.test.ts:831`):**
+```
+× REFUSES a write to every parameter the catalog declares key-shaping
+expected true to be false
+```
+(`set_parameter(candidate-selection, subjectSlot, "other-slot")` loaded cleanly; the run would then
+publish `selection.other-slot.*` while the derived registry still declared
+`selection.source-account.*`. Two further assertions fail with it:
+`policy-load.test.ts:847`, where the diagnosis degrades to `parameter-constant-invalid` and points
+an author at the constant rather than at the write, and `policy-load.test.ts:873`, the
+catalog-derived sweep that covers every declared key-shaping parameter.)
+
+**Reverted:** both injections reverted immediately; `pnpm typecheck`, `pnpm lint`, `pnpm knip`, and
+the full test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round six).
+
+---
+
+## Prompt-9 review-round-seven semantics - D-185
+
+One injection against the correction itself, run on the fixed tree with the fix backed out and
+reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - origin-keyed context resolution replaced by the ordered search**: replaced the
+`context.contextKeys.get(key)?.origin` dispatch in `resolveContextKey` with the pre-fix
+published-then-intent fallback (`if (context.published.has(key)) ...; if (facts.intent.has(key)) ...`).
+
+**Observed failure (`src/__tests__/unit/policy-evaluate.test.ts:904`):**
+```
+× never lets an intent entry stand in for a key an unevaluable primitive did not publish
+AssertionError: expected [ { …(3) } ] to deeply equal [ { …(4) } ]
+- ruleId: "reads-unpublished-key", phase: "evaluation", outcome: "unevaluable",
+-   missing: [ "context:availability.net" ]
++ ruleId: "reads-unpublished-key", phase: "evaluation", outcome: "fired"
+```
+(`net-availability` had refused its own input and published nothing, so the stray `availability.net`
+entry in `facts.intent` resolved in its place: the rule compared harness data, fired, and reached
+its `block` effect instead of landing unevaluable and synthesizing its blocker - a silent fail-OPEN
+in the plane whose contract is that an unresolvable read makes the enclosing rule unevaluable.)
+
+**Reverted:** the injection was reverted immediately; `pnpm typecheck`, `pnpm lint`, `pnpm knip`,
+and the full test suite are green on the reverted tree.
+
+**Date:** 2026-08-07 (v3 prompt 9 review round seven).

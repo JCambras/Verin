@@ -426,3 +426,14 @@ are recorded in `DECISIONS.md` by owning prompt and become fences in the PR that
   when a named deferral gains a caller, so the list cannot become a standing amnesty. The authoritative
   registry is that fence's `DEFERRED_EXPORTS` map, not this appendix. Separately, ADR-0044 defers bounded
   checkpoint-reuse verification to its authenticated-checkpoint measured-latency trigger.
+- **D-178 / D-184** - the prompt-9 policy-module deferrals and the key-shaping constraint. Prompt 9
+  deliberately ships the policy AST + interpreter with no shipped caller: `loadPolicy` belongs to
+  prompt 10 (policy references in domain config) and prompt 20 (policy lifecycle activation),
+  `evaluatePolicy` to prompt 16 (the complete evaluator over the immutable DecisionInputBundle), and
+  the four registry builders to prompt 10 (the config loader derives the closed context-key
+  vocabulary). Like the ledger deferrals these are ALREADY fenced - the `policy-ast` fence's
+  `NAMED_DEFERRALS` registry fails on an orphan export and just as loudly when a deferred entry point
+  gains its caller, and that registry, not this appendix, is authoritative. Separately, D-184 binds
+  prompt 10's binding model: a primitive's `keyShapingParameters` stay configuration-only (a binding
+  chooses the key scope; a rule may not move it), so the binding model must not re-open them to
+  policy.
