@@ -68,6 +68,7 @@ export const worldRegistries = (): PolicyRegistries => {
   const intentSlots: Record<string, PolicyValueType> = {
     "intent.amount": "integer",
     "intent.destinationType": "string",
+    "intent.requestedOn": "iso-date",
   };
   const contextKeys = unwrap(deriveContextKeys(intentSlots, boundPublishedKeys()));
   return {
@@ -85,7 +86,10 @@ export const worldRegistries = (): PolicyRegistries => {
       ["funding-candidates", evidenceKindDescriptor({})],
     ]),
     instructions: new Map([
-      ["standing-preference", instructionKindDescriptor({ rank: "integer", label: "string" })],
+      [
+        "standing-preference",
+        instructionKindDescriptor({ rank: "integer", label: "string", effectiveOn: "iso-date" }),
+      ],
     ]),
     contextKeys,
     approvalTemplates: new Map([

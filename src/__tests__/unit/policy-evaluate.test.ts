@@ -328,6 +328,98 @@ describe("evaluatePolicy - fail-closed totality", () => {
     expect(trace.prohibitions).toEqual([]);
   });
 
+  it("non-canonical temporal bytes at a temporal-typed path miss in EVERY source, never comparing (firm ruling p9-temporal-fact-bytes)", () => {
+    // Ordering over temporal strings is codepoint-lexicographic, which is
+    // chronological ONLY for canonical bytes: '2026-8-1' sorts AFTER
+    // '2026-12-31' ('8' > '1'), and an offset instant interleaves arbitrarily
+    // with Z-suffixed ones. Without the declared-type guard each rule below
+    // would FIRE on chronologically wrong data; with it the read is the same
+    // miss a non-scalar gets, and the rule synthesizes its blocker.
+    const policy = load({
+      schemaVersion: "1.0.0",
+      primitiveSetVersion: PRIMITIVE_SET_VERSION,
+      rules: [
+        {
+          id: "reads-offset-timestamp",
+          when: {
+            op: "compare",
+            comparator: "gt",
+            left: { kind: "evidence", evidenceKind: "reservation-release", path: "releasedAt" },
+            right: { kind: "constant", value: "2026-01-01T00:00:00.000Z" },
+          },
+          effects: [{ kind: "prohibit", prohibitionCode: "never-reached-evidence" }],
+        },
+        {
+          id: "reads-uncanonical-date",
+          when: {
+            op: "in",
+            value: {
+              kind: "household_instruction",
+              instructionKind: "standing-preference",
+              path: "effectiveOn",
+            },
+            set: [{ kind: "constant", value: "2026-08-01" }],
+          },
+          effects: [{ kind: "prohibit", prohibitionCode: "never-reached-instruction" }],
+        },
+        {
+          id: "reads-numeric-date",
+          when: {
+            op: "compare",
+            comparator: "lt",
+            left: { kind: "context", key: "intent.requestedOn" },
+            right: { kind: "constant", value: "2026-12-31" },
+          },
+          effects: [{ kind: "prohibit", prohibitionCode: "never-reached-context" }],
+        },
+      ],
+    });
+    const base = worldFacts();
+    const evidence = new Map(base.evidence);
+    evidence.set("reservation-release", {
+      observedAt: "2026-08-01T09:00:00.000Z",
+      values: { releasedAt: "2026-08-01T12:00:00+02:00" },
+    });
+    // The '2026-8-1' bytes the ruling names, and a number under a date type.
+    const intent = new Map(base.intent);
+    intent.set("intent.requestedOn", 20_260_801);
+    const facts: PolicyEvaluationFacts = {
+      ...base,
+      evidence,
+      instructions: new Map([["standing-preference", { effectiveOn: "2026-8-1" }]]),
+      intent,
+    };
+    const trace = unwrap(evaluatePolicy(policy, { facts, invocations: [] }, registries));
+    expect(trace.ruleOutcomes.map((outcome) => [outcome.ruleId, outcome.outcome])).toEqual([
+      ["reads-numeric-date", "unevaluable"],
+      ["reads-offset-timestamp", "unevaluable"],
+      ["reads-uncanonical-date", "unevaluable"],
+    ]);
+    expect(trace.ruleOutcomes.flatMap((outcome) => outcome.missing ?? [])).toEqual([
+      "context:intent.requestedOn (non-canonical iso-date bytes)",
+      "evidence:reservation-release:releasedAt (non-canonical iso-timestamp bytes)",
+      "instruction:standing-preference:effectiveOn (non-canonical iso-date bytes)",
+    ]);
+    expect(trace.disposition.kind).toBe("blocked");
+    expect(trace.prohibitions).toEqual([]);
+    // The guard admits what assembly SHOULD deliver: the same reads over
+    // canonical bytes resolve and the rules evaluate normally.
+    const canonicalIntent = new Map(base.intent);
+    canonicalIntent.set("intent.requestedOn", "2026-08-01");
+    const canonical: PolicyEvaluationFacts = {
+      ...base,
+      evidence: new Map(evidence).set("reservation-release", {
+        observedAt: "2026-08-01T09:00:00.000Z",
+        values: { releasedAt: "2026-08-01T10:00:00.000Z" },
+      }),
+      instructions: new Map([["standing-preference", { effectiveOn: "2026-08-01" }]]),
+      intent: canonicalIntent,
+    };
+    const fired = unwrap(evaluatePolicy(policy, { facts: canonical, invocations: [] }, registries));
+    expect(fired.ruleOutcomes.map((outcome) => outcome.outcome)).toEqual(["fired", "fired", "fired"]);
+    expect(fired.disposition.kind).toBe("prohibited");
+  });
+
   it("require_evidence(block) blocks exactly when the kind is absent", () => {
     const policy = load({
       schemaVersion: "1.0.0",

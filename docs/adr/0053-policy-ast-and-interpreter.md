@@ -84,7 +84,12 @@ unevaluable and synthesizes a `rule-unevaluable:<ruleId>` blocker, and an exists
 collapses to plain false. A context key resolves by its DECLARED ORIGIN: a primitive-origin key
 comes only from the published facts and an intent-origin key only from the intent slots, so a
 stray intent entry can never stand in for a fact an unevaluable primitive did not publish
-(D-185). Effects accumulate in commutative structures; every trace collection is
+(D-185). A value under an `iso-date`/`iso-timestamp`-typed registry path resolves only from its
+canonical byte form: the declared evidence/instruction registries ride the context plane, and
+non-canonical bytes are the same miss a non-scalar gets, landing the reading rule unevaluable
+(D-186, post-merge firm ruling `p9-temporal-fact-bytes`; assembly-time canonicalization stays a
+prompt 14-16 obligation - the guard is a backstop, not a substitute). Effects accumulate in
+commutative structures; every trace collection is
 canonically sorted; the trace round-trips the canonical serializer byte-stably. Policy content
 never refuses - it lands in the trace; only structural impossibilities (loader bypass, catalog
 contract violation, malformed assembly) return typed refusals.
@@ -123,7 +128,9 @@ policy configuration contains no arbitrary executable code") is ACTIVE, mapped t
 the loader test suite. Property families A-G (fast-check) prove order independence, conflict
 soundness with the runtime single-writer companion, totality, purity under poisoned
 Date.now/Math.random, most-restrictive monotonicity, fail-closed absence handling, and that no
-loader-accepted write reshapes a published key space (D-184).
+loader-accepted write reshapes a published key space (D-184); family H (D-186) proves every
+non-canonicalizing mutation of a temporal value synthesizes the reading rule's unevaluable
+blocker while the canonical form of the same instant never does.
 
 The evaluation input plane (`PolicyEvaluationFacts`, `PolicyPrimitiveInvocation`,
 `PolicyEvaluationInput`) is PIIBearing-marked - evidence content stays structurally unreachable

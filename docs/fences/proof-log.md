@@ -9217,3 +9217,40 @@ in the plane whose contract is that an unresolvable read makes the enclosing rul
 and the full test suite are green on the reverted tree.
 
 **Date:** 2026-08-07 (v3 prompt 9 review round seven).
+
+---
+
+## Prompt-9 post-merge temporal-canonicality semantics - D-186
+
+One injection against the correction itself, run on the fixed tree with the fix backed out and
+reverted immediately after. `file:line` is the failing assertion.
+
+**Injection A - the canonical-byte guard neutralized**: made `temporalByteMiss` in
+`src/domain/policy/facts.ts` return `null` unconditionally, so a value under an
+`iso-date`/`iso-timestamp`-typed registry path resolves whatever bytes the harness supplied.
+
+**Observed failure (`src/__tests__/unit/policy-evaluate.test.ts:393`):**
+```
+× non-canonical temporal bytes at a temporal-typed path miss in EVERY source, never comparing (firm ruling p9-temporal-fact-bytes)
+AssertionError: expected [ Array(3) ] to deeply equal [ Array(3) ]
+- ["reads-offset-timestamp", "unevaluable"]
++ ["reads-offset-timestamp", "fired"]
+- ["reads-uncanonical-date", "unevaluable"]
++ ["reads-uncanonical-date", "not-fired"]
+```
+(the offset instant under the evidence path compared lexicographically and FIRED its rule, and the
+ruling's `'2026-8-1'` under the instruction path silently not-fired - `'8' > '1'` orders it after
+every canonical date in the same year - while `reads-numeric-date` stayed unevaluable only because
+a NUMBER under a date-typed slot falls into the pre-existing unorderable branch: the two string
+forms are exactly the silent fail-OPEN pair the guard exists to close. The same injection also
+fails property family H at `src/__tests__/unit/policy-properties.test.ts:634` -
+`Counterexample: [{"year":2020,"month":1,"day":1,"hour":0,"minute":0,"second":0},"timestamp",0]`,
+which shrank to the offset-suffix mutation
+(`2020-01-01T00:00:00.000+02:00: expected [] to include 'rule-unevaluable:reads-temporal'`) -
+proving the example and the property are independent detectors of the same regression.)
+
+**Reverted:** the injection was reverted immediately (`git status` clean against the landed
+commit); `pnpm typecheck`, `pnpm lint`, `pnpm knip`, and the full test suite are green on the
+reverted tree.
+
+**Date:** 2026-08-10 (post-merge follow-up to PR #34, firm ruling `p9-temporal-fact-bytes`).

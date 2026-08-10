@@ -79,7 +79,12 @@ ones its `publishedKeys` reads) are configuration-only: the loader refuses a pol
 `key-shaping-parameter-not-writable`, and prompt 10's binding model must not re-open that (D-184).
 A context key resolves by its DECLARED ORIGIN (primitive-origin from the published facts,
 intent-origin from the intent slots), so a stray intent entry can never substitute for a fact an
-unevaluable primitive did not publish (D-185). Predicate arms are a DISCRIMINATED union on `op`
+unevaluable primitive did not publish (D-185). A fact under an `iso-date`/`iso-timestamp`-typed
+registry path resolves ONLY from canonical bytes: `PolicyContextPlane` carries the declared
+evidence/instruction registries, and `resolveValue` lands non-canonical bytes (a `'2026-8-1'`, an
+offset timestamp, a non-string) as the same miss a non-scalar gets - rule unevaluable, blocker
+synthesized. Prompts 14-16 still owe assembly-time canonicalization; the guard is a backstop, not
+a substitute (D-186). Predicate arms are a DISCRIMINATED union on `op`
 (a plain union re-parses every arm's children: measured 2^depth), and `loadPolicy` refuses a
 document nested past a structural cap BEFORE parsing - bounding admission once is what keeps the
 parse and all five recursive walks below it total, since the evaluator only ever consumes a

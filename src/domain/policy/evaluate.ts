@@ -310,8 +310,13 @@ export const evaluatePolicy = (
   // Nothing is published yet, and a primitive-origin key resolves ONLY from the
   // published plane - which is what load check 6's stratification already
   // proves no configuration rule reads.
-  const { contextKeys } = registries;
-  const configurationContext: PolicyContextPlane = { published: new Map(), contextKeys };
+  const { contextKeys, evidence, instructions } = registries;
+  const configurationContext: PolicyContextPlane = {
+    published: new Map(),
+    contextKeys,
+    evidence,
+    instructions,
+  };
   for (const rule of configurationRules) {
     const refusal = applyRule(rule, configurationContext);
     if (refusal !== null) return err(refusal);
@@ -352,7 +357,12 @@ export const evaluatePolicy = (
   }
 
   // ── Phase 2 ───────────────────────────────────────────────────────────────────
-  const evaluationContext: PolicyContextPlane = { published: publishedFacts, contextKeys };
+  const evaluationContext: PolicyContextPlane = {
+    published: publishedFacts,
+    contextKeys,
+    evidence,
+    instructions,
+  };
   for (const rule of evaluationRules) {
     const refusal = applyRule(rule, evaluationContext);
     if (refusal !== null) return err(refusal);

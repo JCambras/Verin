@@ -6096,3 +6096,59 @@ documented-not-enforced posture D-181 rejected for the collision case).
 **Revert path:** restore the two-line ordered lookup in `resolveContextKey`, drop
 `PolicyContextPlane` and pass `publishedFacts` again through `facts.ts`, `evaluate.ts`, and
 `evaluate-primitives.ts`, and delete the shadowing regression case.
+
+## D-186 - Prompt-9 follow-up: temporal-typed fact reads hold their bytes to the canonical forms
+
+**Date:** 2026-08-10 · **Reversible** · Relates to: D-102, D-182, D-185, ADR-0053, charter #4;
+firm ruling `p9-temporal-fact-bytes` (post-merge review of PR #34, applied as its own PR)
+
+**Lexicographic ordering is chronological ONLY for canonical bytes.** Load check 5 pins temporal
+byte forms for string CONSTANTS, and `is_fresh` refuses a non-canonical `observedAt`/`asOf` at
+runtime - but a harness-supplied evidence/instruction/context value under an
+`iso-date`/`iso-timestamp`-typed registry path reached `compare`/`in` positions with only the
+scalar check. `'2026-8-1'` sorts AFTER `'2026-12-31'` (`'8' > '1'`), and an offset instant like
+`'2026-08-01T12:00:00+02:00'` interleaves arbitrarily with Z-suffixed ones, so a rule read
+chronologically wrong data and silently fired or not-fired - the same silent-wrong-answer class
+D-182 closed for non-scalar facts and future-dated observations. Reachable through declared
+timestamp paths (`reservation-release.releasedAt`, `bank-instruction-change.changedAt`).
+
+**The fix plumbs the declared types into resolution rather than trusting assembly.**
+`PolicyContextPlane` now carries the evidence and instruction path registries alongside the derived
+context-key registry (the plane is the declared vocabularies resolution validates with, not just
+the published facts), and `resolveValue` holds a value under a temporal-typed path to
+`isCanonicalDate`/`isCanonicalTimestamp`: non-canonical bytes - including a non-string under a
+temporal type - are the same miss a non-scalar gets, so the enclosing rule lands unevaluable and
+synthesizes its blocker with a precise `(non-canonical iso-date/iso-timestamp bytes)` ref.
+Constants stay load-validated; `exists` stays presence-only; no new module files and no grammar
+change, so the migration fixture digests are unchanged.
+
+**Proven by example and by property.** The evaluate suite pins all three sources (offset timestamp
+under an evidence path, the ruling's `'2026-8-1'` under an instruction path, a number under a
+date-typed intent slot) landing unevaluable with their refs, and the SAME reads over canonical
+bytes firing - over-refusal cannot hide. Property family H generates instants and four
+non-canonicalizing mutations per form and asserts the mutated bytes always synthesize the
+`rule-unevaluable` blocker while the canonical form of the same instant never does.
+
+**Prompts 14-16 keep their own obligation.** Assembly-time canonicalization (evidence projection,
+tz anchoring - D-102) still owes canonical temporal bytes at the boundary; this guard is the
+fail-closed backstop for bytes that arrive wrong, not a substitute. Recorded in the `facts.ts`
+module header where the assembly contract is documented.
+
+**The guard is measured, not squeezed.** It costs 70 domain lines (the helper, the three arm
+checks, the plane fields, and their rationale), landing domain at 4,514 against the 4,500 ceiling.
+ADR-0054 is amended a SIXTH time - domain 4,550 on the 4,514 measurement, contracts unmoved -
+rather than compressing the rationale to fit (the ADR-0050 posture). The
+`llm-pii-boundary` escape set gains `PolicyContextPlane.evidence` with the same
+identifiers-never-contents justification as `PolicyRegistries.evidence`, which is the map it
+threads.
+
+**Alternatives rejected:** deferring entirely to prompts 14-16 as a named obligation (leaves the
+ratified fail-closed posture unenforced until a future prompt honors a note - the same
+documented-not-enforced posture D-181/D-185 rejected); validating the whole facts plane at the
+evaluator boundary (turns content into a structural refusal, which `trace.ts` reserves for
+impossibilities).
+
+**Revert path:** drop the two registry fields from `PolicyContextPlane` and the
+`temporalByteMiss` guard in `facts.ts`, restore the three plane constructions in `evaluate.ts` /
+`evaluate-primitives.ts`, and delete the evaluate case, property family H, and the two
+temporal-typed world paths (`standing-preference.effectiveOn`, `intent.requestedOn`).

@@ -29,7 +29,11 @@ import {
  *  G. published-key-space stability - a write the loader ACCEPTS never changes
  *     the keys an invocation publishes, so the derived context-key vocabulary
  *     and the runtime key space stay the same vocabulary (ruling
- *     p9-key-shaping-params).
+ *     p9-key-shaping-params);
+ *  H. temporal byte canonicality - a non-canonical byte form under a
+ *     temporal-typed path always lands the reading rule unevaluable, and the
+ *     canonical form of the same instant never does (ruling
+ *     p9-temporal-fact-bytes).
  */
 
 const registries = worldRegistries();
@@ -546,6 +550,99 @@ describe("property G - an accepted policy never reshapes a published key space",
         },
       ),
       { numRuns: 500 },
+    );
+  });
+});
+
+// ── H. Temporal byte canonicality (ruling p9-temporal-fact-bytes) ───────────────
+
+describe("property H - non-canonical temporal bytes are unevaluable, canonical bytes never are", () => {
+  // Month and day are kept single-digit so the de-padded mutations are
+  // non-canonical BY CONSTRUCTION; every other mutation is range-independent.
+  const components = fc.record({
+    year: fc.integer({ min: 2020, max: 2029 }),
+    month: fc.integer({ min: 1, max: 9 }),
+    day: fc.integer({ min: 1, max: 9 }),
+    hour: fc.integer({ min: 0, max: 23 }),
+    minute: fc.integer({ min: 0, max: 59 }),
+    second: fc.integer({ min: 0, max: 59 }),
+  });
+  const pad = (value: number, width: number) => String(value).padStart(width, "0");
+
+  const blockerCodes = (trace: { disposition: { kind: string } ; blockers: readonly { code: string }[] }) =>
+    trace.blockers.map((blocker) => blocker.code);
+
+  it("holds for every mutation of an iso-timestamp evidence read and an iso-date instruction read", () => {
+    fc.assert(
+      fc.property(
+        components,
+        fc.constantFrom("timestamp", "date"),
+        fc.integer({ min: 0, max: 3 }),
+        (c, form, mutation) => {
+          const date = `${pad(c.year, 4)}-${pad(c.month, 2)}-${pad(c.day, 2)}`;
+          const time = `${pad(c.hour, 2)}:${pad(c.minute, 2)}:${pad(c.second, 2)}`;
+          const canonical = form === "timestamp" ? `${date}T${time}.000Z` : date;
+          const mutated =
+            form === "timestamp"
+              ? [
+                  `${date}T${time}.000+02:00`,
+                  `${date}T${time}Z`,
+                  `${date} ${time}.000Z`,
+                  `${c.year}-${c.month}-${c.day}T${time}.000Z`,
+                ][mutation]!
+              : [
+                  `${c.year}-${c.month}-${c.day}`,
+                  `${date}T00:00:00.000Z`,
+                  `${pad(c.year, 4)}/${pad(c.month, 2)}/${pad(c.day, 2)}`,
+                  `${date} `,
+                ][mutation]!;
+          const read =
+            form === "timestamp"
+              ? { kind: "evidence", evidenceKind: "reservation-release", path: "releasedAt" }
+              : {
+                  kind: "household_instruction",
+                  instructionKind: "standing-preference",
+                  path: "effectiveOn",
+                };
+          const document = policyOf([
+            {
+              id: "reads-temporal",
+              when: {
+                op: "compare",
+                comparator: "gte",
+                left: read,
+                right: { kind: "constant", value: canonical },
+              },
+              effects: [{ kind: "prohibit", prohibitionCode: "should-not-matter" }],
+            },
+          ]);
+          const policy = loadOk(document);
+          const factsWith = (value: string): PolicyEvaluationFacts => ({
+            asOf: "2026-08-01T12:00:00.000Z",
+            evidence: new Map([
+              [
+                "reservation-release",
+                { observedAt: "2026-08-01T09:00:00.000Z", values: { releasedAt: value } },
+              ],
+            ]),
+            instructions: new Map([["standing-preference", { effectiveOn: value }]]),
+            intent: new Map(),
+          });
+          const bad = unwrap(
+            evaluatePolicy(policy, { facts: factsWith(mutated), invocations: [] }, registries),
+          );
+          expect(blockerCodes(bad), mutated).toContain("rule-unevaluable:reads-temporal");
+          expect(bad.prohibitions).toEqual([]);
+          // The canonical form of the SAME instant resolves: gte against itself
+          // fires the rule, so over-refusal cannot hide behind this property.
+          const good = unwrap(
+            evaluatePolicy(policy, { facts: factsWith(canonical), invocations: [] }, registries),
+          );
+          expect(blockerCodes(good)).not.toContain("rule-unevaluable:reads-temporal");
+          expect(good.disposition.kind).toBe("prohibited");
+        },
+      ),
+      { numRuns: 400 },
     );
   });
 });
