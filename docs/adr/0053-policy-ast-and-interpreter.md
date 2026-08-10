@@ -25,13 +25,14 @@ design landed in this repo and the implementation choices the design left open.
   variants, beside the other decision-core contracts (ADR-0029's home, per the ratified design's
   own placement note).
 - **The interpreter** is `src/domain/policy/` (marriage-map C6: v3 module paths become subsystems
-  inside the four fenced layers): `load.ts` + `load-checks.ts` (the seven-check loader),
-  `conflict.ts` (the disjointness prover), `facts.ts` (the facts plane and three-valued predicate
+  inside the four fenced layers): `load.ts` + `load-checks.ts` + `load-effects.ts` (the
+  seven-check loader; every check that reads an effect lives in `load-effects.ts`), `conflict.ts`
+  (the disjointness prover), `facts.ts` (the facts plane and three-valued predicate
   semantics), `evaluate.ts` + `evaluate-primitives.ts` (the four-phase evaluator), `temporal.ts`
   (pure integer calendar math - no Date, no Intl), `registries.ts` (the four pinned registries),
-  `trace.ts` (the typed evaluation trace). Two files exist purely because of the 500-line
-  per-file ceiling; the seams (`load-checks`, `evaluate-primitives`) are the natural check/phase
-  boundaries.
+  `trace.ts` (the typed evaluation trace). Three files exist purely because of the 500-line
+  per-file ceiling; the seams (`load-checks`, `load-effects`, `evaluate-primitives`) are the
+  natural check/phase boundaries.
 
 ### The ratified grammar, with its three ratified deltas
 
@@ -55,13 +56,18 @@ independently in every policy document, exactly as the DecisionInputBundle alrea
 ### Load-time gate (the seven checks, design §3.2)
 
 `loadPolicy(document, registries)` returns a `LoadedPolicy` or an accumulated typed issue list -
-26 precise codes, never a silent fallback. Paths, context keys, primitives, parameters,
+27 precise codes, never a silent fallback. Paths, context keys, primitives, parameters,
 strategies, and templates resolve against Map-backed pinned registries, which is what makes
 injection INERT: `__proto__` is simply an unknown path, and an executable string is data nothing
 ever interprets. Closure covers the reason-code NAMESPACE too: `ReasonCodeSchema` is an opaque
 brand, so an authored `blockerCode`/`prohibitionCode` inside a prefix the evaluator synthesizes
 its fail-closed blockers under (`RESERVED_REASON_CODE_PREFIXES`) is refused as
 `reserved-reason-namespace` rather than silently merging with a platform blocker at evaluation.
+Closure also covers the parameters a primitive's published keys are DERIVED from: each catalog
+entry declares its `keyShapingParameters`, and a `set_parameter` naming one is refused as
+`key-shaping-parameter-not-writable` - the context-key vocabulary closes over the CONFIGURED
+values, so a policy write there would desynchronize the closed vocabulary from the runtime key
+space (D-184; prompt 10's binding model must not re-open it).
 The effect-conflict rule (§6.1 normative) uses the conservative syntactic
 disjointness prover: predicates normalize to DNF (capped at 64 branches - exceeding the cap is
 itself a load error), every cross-rule conjunction pair must carry a contradiction on some shared
@@ -75,7 +81,10 @@ dependency order, evaluation rules, then the fixed lattice (prohibit > block > s
 > approval > automatic). Kleene three-valued predicate logic makes fail-closed totality honest:
 `exists`/`is_fresh` are presence-aware, an absent value in a VALUE position makes the rule
 unevaluable and synthesizes a `rule-unevaluable:<ruleId>` blocker, and an exists-guarded rule
-collapses to plain false. Effects accumulate in commutative structures; every trace collection is
+collapses to plain false. A context key resolves by its DECLARED ORIGIN: a primitive-origin key
+comes only from the published facts and an intent-origin key only from the intent slots, so a
+stray intent entry can never stand in for a fact an unevaluable primitive did not publish
+(D-185). Effects accumulate in commutative structures; every trace collection is
 canonically sorted; the trace round-trips the canonical serializer byte-stably. Policy content
 never refuses - it lands in the trace; only structural impossibilities (loader bypass, catalog
 contract violation, malformed assembly) return typed refusals.
@@ -111,9 +120,10 @@ the whole module (shared scanners with the primitive-catalog fence, now in `_mod
 the migration-fixture digests, and reachability-by-name (every module value export is consumed or
 a NAMED deferral stating its landing prompt - the D-116 precedent). v3 invariant 16 ("Firm
 policy configuration contains no arbitrary executable code") is ACTIVE, mapped to this fence and
-the loader test suite. Property families A-F (fast-check) prove order independence, conflict
+the loader test suite. Property families A-G (fast-check) prove order independence, conflict
 soundness with the runtime single-writer companion, totality, purity under poisoned
-Date.now/Math.random, most-restrictive monotonicity, and fail-closed absence handling.
+Date.now/Math.random, most-restrictive monotonicity, fail-closed absence handling, and that no
+loader-accepted write reshapes a published key space (D-184).
 
 The evaluation input plane (`PolicyEvaluationFacts`, `PolicyPrimitiveInvocation`,
 `PolicyEvaluationInput`) is PIIBearing-marked - evidence content stays structurally unreachable
