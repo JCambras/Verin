@@ -1,4 +1,4 @@
-# ADR-0054: Contracts ceiling 6,650 and domain ceiling 4,500 for the policy AST and interpreter
+# ADR-0054: Contracts ceiling 6,650 and domain ceiling 4,550 for the policy AST and interpreter
 
 **Status:** Accepted
 **Date:** 2026-08-07
@@ -19,7 +19,7 @@ never a code change.
 
 ## Decision
 
-Raise the contracts ceiling from 6,110 to 6,650 and the domain ceiling from 1,650 to 4,500.
+Raise the contracts ceiling from 6,110 to 6,650 and the domain ceiling from 1,650 to 4,550.
 Infrastructure stays 7,840 and presentation stays 6,000.
 
 Measured with the fence's own algorithm on the tree AS IT LANDS - that is, after the prompt-9
@@ -65,10 +65,18 @@ constructions in the evaluator. Both ceilings stay where they are - domain 4,444
 contracts unmoved at 6,602 against 6,650 - and the remaining 56 domain lines are NAMED here rather
 than banked, so the next change to `src/domain/**` reads as the measured amendment it will be.
 
+That change arrived as the post-merge temporal-canonicality guard (D-186, firm ruling
+`p9-temporal-fact-bytes`): the declared evidence/instruction path registries join the context
+plane, and `resolveValue` holds a value under an `iso-date`/`iso-timestamp`-typed path to the
+canonical byte forms, so `'2026-8-1'` or an offset instant lands the reading rule unevaluable
+instead of comparing chronologically wrong. That is 70 domain lines - the guard, the three arm
+checks, the plane fields, and their rationale - and the SIXTH amendment: domain 4,550 against a
+measured 4,514, contracts unmoved at 6,602 against 6,650.
+
 | Layer | Measured | Ceiling | Headroom |
 |---|---:|---:|---:|
 | contracts | 6,602 | 6,650 | 48 |
-| domain | 4,444 | 4,500 | 56 |
+| domain | 4,514 | 4,550 | 36 |
 | infrastructure | 7,786 | 7,840 | 54 |
 
 What the raises pay for: `src/contracts/decision-core/policy.ts` (449 lines - the ratified

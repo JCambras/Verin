@@ -96,11 +96,16 @@ import { join, relative } from "node:path";
 // fact an unevaluable primitive did not publish - and re-takes both figures
 // rather than inheriting them: domain 4,444 and contracts 6,602, against
 // UNCHANGED 4,500/6,650 ceilings, 56 and 48 lines of headroom NAMED rather than
-// banked. Re-measure in any commit that
+// banked. The post-merge temporal-canonicality guard (D-186, firm ruling
+// p9-temporal-fact-bytes: declared registry types plumbed into resolveValue so
+// non-canonical temporal bytes land the reading rule unevaluable) added 70
+// domain lines and passed 4,514 - ADR-0054 is amended a sixth time to domain
+// 4,550 (36 lines of headroom), contracts unmoved at 6,650 against an
+// unchanged 6,602. Re-measure in any commit that
 // changes a layer; a raise is always a measured ADR amendment.
 const CEILINGS = {
   contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
-  domain: 4500, // ADR-0054, on the prompt-9 policy interpreter module (4,444 measured)
+  domain: 4550, // ADR-0054, on the temporal-canonicality guard (D-186; 4,514 measured)
   infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until

@@ -141,6 +141,8 @@ export const runPrimitivePhase = (
   const contextPlane: PolicyContextPlane = {
     published: publishedFacts,
     contextKeys: registries.contextKeys,
+    evidence: registries.evidence,
+    instructions: registries.instructions,
   };
   const executions = new Map<string, PrimitiveExecution>();
   const parameterRejections: { primitiveId: string; ruleIds: readonly string[] }[] = [];

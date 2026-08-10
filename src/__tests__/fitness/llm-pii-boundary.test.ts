@@ -123,6 +123,7 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/domain/policy/load.ts :: LoadedPolicyRule.when.evidenceKind", why: "the predicate discriminator on the loader's narrowed rule form" },
   { ref: "src/domain/policy/load.ts :: LoadedPolicy.rules.when.evidenceKind", why: "the predicate discriminator reached through the loaded rule list" },
   { ref: "src/domain/policy/registries.ts :: PolicyRegistries.evidence", why: "the pinned evidence-kind registry: kind ids mapped to declared path NAMES and value TYPES - schema metadata the load-time closure checks against, never snapshot contents" },
+  { ref: "src/domain/policy/facts.ts :: PolicyContextPlane.evidence", why: "the SAME pinned evidence-kind registry threaded into value resolution (D-186: declared temporal types drive the canonical-byte guard) - path names and value types, never snapshot contents" },
   { ref: "src/domain/policy/registries.ts :: PolicyRegistries.primitives.evidenceKindParameters", why: "CatalogPrimitive.evidenceKindParameters (already escaped at its declaration) reached through the pinned primitive registry" },
   { ref: "src/domain/policy/trace.ts :: TraceBlocker.resolvingEvidenceKinds", why: "branded EvidenceKind list naming what would resolve a trace blocker" },
   { ref: "src/domain/policy/trace.ts :: EvidenceRequirementOutcome.evidenceKind", why: "which KIND a require_evidence effect demanded - satisfied/absent outcome, no contents" },

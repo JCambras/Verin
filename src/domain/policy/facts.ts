@@ -8,6 +8,11 @@
  * DESIGN), instruction values, and intent context. Paths are opaque
  * registry-declared keys looked up as own properties of a values record -
  * never traversal expressions - so an injected `__proto__` path reads nothing.
+ * Assembly ALSO owes canonical temporal bytes (the prompt 14-16 obligation):
+ * the declared-type guard in `resolveValue` is a fail-closed backstop for
+ * temporal values that arrive in a non-canonical byte form, not a substitute
+ * for canonicalizing them at the assembly boundary (firm ruling
+ * p9-temporal-fact-bytes).
  *
  * FAIL-CLOSED TOTALITY (the load-bearing rule): `exists` and `is_fresh` are
  * presence-aware - an absent snapshot is a legitimate `false`. But an absent
@@ -25,8 +30,18 @@ import type {
 } from "@contracts/decision-core/policy";
 import type { Scalar } from "@contracts/decision-core/decision";
 import type { PIIBearing } from "@contracts/pii";
-import type { ContextKeyDescriptor } from "./registries";
-import { durationToMillis, epochMillisOf } from "./temporal";
+import type {
+  ContextKeyDescriptor,
+  EvidenceKindDescriptor,
+  InstructionKindDescriptor,
+  PolicyValueType,
+} from "./registries";
+import {
+  durationToMillis,
+  epochMillisOf,
+  isCanonicalDate,
+  isCanonicalTimestamp,
+} from "./temporal";
 
 export type EvidenceFactSnapshot = {
   /** Canonical UTC instant the source observed the fact (drives is_fresh). */
@@ -69,13 +84,18 @@ const isScalar = (value: unknown): value is Scalar =>
   (typeof value === "number" && Number.isFinite(value));
 
 /**
- * The context plane a key resolves against: what the bound primitives have
- * published SO FAR in this run, plus the derived registry that declares where
- * each key legitimately comes from.
+ * The plane a value node resolves against: what the bound primitives have
+ * published SO FAR in this run, plus the declared vocabularies resolution
+ * validates with - the derived context-key registry that declares where each
+ * key legitimately comes from, and the evidence/instruction path registries
+ * that declare each path's value type (which is what lets `resolveValue`
+ * refuse non-canonical temporal bytes instead of comparing them).
  */
 export type PolicyContextPlane = {
   readonly published: ReadonlyMap<string, unknown>;
   readonly contextKeys: ReadonlyMap<string, ContextKeyDescriptor>;
+  readonly evidence: ReadonlyMap<string, EvidenceKindDescriptor>;
+  readonly instructions: ReadonlyMap<string, InstructionKindDescriptor>;
 };
 
 /**
@@ -111,6 +131,31 @@ export const resolveContextKey = (
 };
 
 /**
+ * Fail-closed canonical-byte guard for temporal-typed fact reads (firm ruling
+ * p9-temporal-fact-bytes). Ordering over `iso-date`/`iso-timestamp` values is
+ * codepoint-lexicographic, which is chronological ONLY for the canonical byte
+ * forms: a harness-supplied `'2026-8-1'` or `'2026-08-01T12:00:00+02:00'`
+ * under a temporal-typed path would order chronologically WRONG while `eq`/`in`
+ * silently never match - the same silent-wrong-answer class as a non-scalar.
+ * Returns the declared temporal form the bytes fail, or null when the value is
+ * admissible (or the declared type is not temporal, whose forms load check 5
+ * already pins for constants).
+ */
+const temporalByteMiss = (
+  declared: PolicyValueType | undefined,
+  value: Scalar,
+): "iso-date" | "iso-timestamp" | null => {
+  if (declared !== "iso-date" && declared !== "iso-timestamp") return null;
+  if (
+    typeof value === "string" &&
+    (declared === "iso-date" ? isCanonicalDate(value) : isCanonicalTimestamp(value))
+  ) {
+    return null;
+  }
+  return declared;
+};
+
+/**
  * Resolves a value node over the facts plane plus the accumulated context
  * (intent slots and primitive-published facts).
  *
@@ -121,7 +166,9 @@ export const resolveContextKey = (
  * fall into the unorderable branch under every ordering comparator, and never
  * match an `in` member: three different silent not-fires. A non-scalar in a
  * value position is therefore the same miss everywhere, which is what makes
- * the enclosing rule unevaluable and synthesizes its blocker.
+ * the enclosing rule unevaluable and synthesizes its blocker. Temporal-typed
+ * paths additionally hold their values to the canonical byte forms, for the
+ * same reason (`temporalByteMiss` above).
  */
 export const resolveValue = (
   node: ValueNode,
@@ -138,6 +185,11 @@ export const resolveValue = (
       if (!Object.hasOwn(snapshot.values, node.path)) return missing(ref, node.evidenceKind);
       const value = snapshot.values[node.path];
       if (!isScalar(value)) return missing(`${ref} (non-scalar)`, node.evidenceKind);
+      const declared = context.evidence.get(node.evidenceKind)?.paths.get(node.path)?.valueType;
+      const badForm = temporalByteMiss(declared, value);
+      if (badForm !== null) {
+        return missing(`${ref} (non-canonical ${badForm} bytes)`, node.evidenceKind);
+      }
       return { state: "resolved", value };
     }
     case "household_instruction": {
@@ -146,6 +198,9 @@ export const resolveValue = (
       if (values === undefined || !Object.hasOwn(values, node.path)) return missing(ref);
       const value = values[node.path];
       if (!isScalar(value)) return missing(`${ref} (non-scalar)`);
+      const declared = context.instructions.get(node.instructionKind)?.paths.get(node.path)?.valueType;
+      const badForm = temporalByteMiss(declared, value);
+      if (badForm !== null) return missing(`${ref} (non-canonical ${badForm} bytes)`);
       return { state: "resolved", value };
     }
     case "context": {
@@ -153,6 +208,9 @@ export const resolveValue = (
       const resolved = resolveContextKey(key, facts, context);
       if (!resolved.found) return missing(`context:${key}`);
       if (!isScalar(resolved.value)) return missing(`context:${key} (non-scalar)`);
+      const declared = context.contextKeys.get(key)?.valueType;
+      const badForm = temporalByteMiss(declared, resolved.value);
+      if (badForm !== null) return missing(`context:${key} (non-canonical ${badForm} bytes)`);
       return { state: "resolved", value: resolved.value };
     }
   }
