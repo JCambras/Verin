@@ -12,6 +12,7 @@ import { metric } from "@contracts/metric";
 import type { EvidenceRowVM, EvidenceVM, IntentVM, WorkspaceVM } from "./model";
 import { fact, fixtureMetric, prov } from "./provenance";
 import { buildSpine } from "./spine";
+import { actionLabel, evidenceLabel, slotLabel } from "./vocabulary";
 import {
   ACCOUNTS,
   AVAILABLE_CASH_MINOR,
@@ -62,7 +63,13 @@ export function buildWorkspace(scenario: ScenarioData): WorkspaceVM {
   };
 }
 
-export function buildIntent(scenario: ScenarioData): IntentVM {
+/**
+ * The interpreted-intent panel. Every LABEL here is read from the money-movement
+ * domain configuration (config/domains/money-movement.yaml) rather than written
+ * into this builder: the demo shows the vocabulary the engine is configured
+ * with, and the configuration is load-bearing rather than decorative.
+ */
+export function buildIntent(scenario: ScenarioData, firmId: string): IntentVM {
   return {
     spine: buildSpine("Intent"),
     household: HOUSEHOLD.name,
@@ -71,12 +78,12 @@ export function buildIntent(scenario: ScenarioData): IntentVM {
     requestFakeClass: "user-entered-demo-input",
     interpreted: {
       slots: [
-        { label: "Household", value: HOUSEHOLD.name },
-        { label: "Action", value: "Move money" },
-        { label: "Amount", metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)) },
-        { label: "Purpose", value: CANONICAL_REQUEST.purpose },
-        { label: "Needed by", value: CANONICAL_REQUEST.deadline },
-        { label: "Destination", value: destinationFor(scenario) },
+        { label: slotLabel(firmId, "household"), value: HOUSEHOLD.name },
+        { label: "Action", value: actionLabel(firmId, "distribute-cash") },
+        { label: slotLabel(firmId, "amount"), metric: metric(CANONICAL_REQUEST.amountMinor, "currency-minor", prov("user-entered-demo-input", DEMO_NOW)) },
+        { label: slotLabel(firmId, "purpose"), value: CANONICAL_REQUEST.purpose },
+        { label: slotLabel(firmId, "deadline"), value: CANONICAL_REQUEST.deadline },
+        { label: slotLabel(firmId, "destination"), value: destinationFor(scenario) },
       ],
       draftLabel: "Drafted - not yet reviewed",
       fakeClass: "llm-proposed-draft",
@@ -84,27 +91,27 @@ export function buildIntent(scenario: ScenarioData): IntentVM {
   };
 }
 
-export function buildEvidence(scenario: ScenarioData): EvidenceVM {
+export function buildEvidence(scenario: ScenarioData, firmId: string): EvidenceVM {
   const spec = scenario.spec;
   const liquidityAsOf = spec.staleLiquidity ? OBSERVED_STALE : OBSERVED_RECENT;
   const rows: EvidenceRowVM[] = [
     {
       kind: "metric",
-      label: "Available cash across household accounts",
+      label: evidenceLabel(firmId, "account-balance"),
       metric: fixtureMetric(AVAILABLE_CASH_MINOR, "currency-minor", "synthetic-fixture", liquidityAsOf),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
     },
     {
       kind: "metric",
-      label: "Planned monthly withdrawal",
+      label: evidenceLabel(firmId, "planned-withdrawals"),
       metric: fixtureMetric(PLANNED_WITHDRAWAL_MONTHLY_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
     },
     {
       kind: "metric",
-      label: "Pending approved distribution (settles Aug 1)",
+      label: evidenceLabel(firmId, "pending-actions"),
       metric: fixtureMetric(PENDING_DISTRIBUTION_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",
@@ -113,20 +120,20 @@ export function buildEvidence(scenario: ScenarioData): EvidenceVM {
     spec.bankChanged
       ? {
           kind: "fact",
-          label: "Bank instruction on file",
+          label: evidenceLabel(firmId, "bank-instruction"),
           fact: fact(BANK_INSTRUCTION.changed, "synthetic-fixture", BANK_INSTRUCTION.changedOn, RETRIEVED_AT),
           fakeClass: "synthetic-fixture",
           why: { reason: "This instruction changed within the firm's recent-change window. Each firm's configured handling for a recent bank change applies to this movement." },
         }
       : {
           kind: "fact",
-          label: "Bank instruction on file",
+          label: evidenceLabel(firmId, "bank-instruction"),
           fact: fact(BANK_INSTRUCTION.stable, "synthetic-fixture", "2026-05-20", RETRIEVED_AT),
           fakeClass: "synthetic-fixture",
         },
     {
       kind: "fact",
-      label: `Household instruction ${DESTINATION_RESTRICTION.ref}`,
+      label: `${evidenceLabel(firmId, "household-instruction")} ${DESTINATION_RESTRICTION.ref}`,
       fact: fact(DESTINATION_RESTRICTION.text, "synthetic-fixture", "2026-02-14", RETRIEVED_AT),
       fakeClass: "synthetic-fixture",
       why: { reason: "A household-specific restriction. It takes precedence over firm policy defaults when the destination of a movement is checked." },
