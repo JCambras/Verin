@@ -364,3 +364,46 @@ export type AllowedSelectionStrategy = z.infer<typeof AllowedSelectionStrategySc
 /** Evidence taxonomy id (golden truth set: "account-balance", "planned-withdrawals"). */
 export const EvidenceKindSchema = brandedString<"EvidenceKind">();
 export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
+
+// ── Domain-configuration vocabulary (v3 §5/§16; prompt 10, ADR-0056) ────────────
+
+/**
+ * A decision domain's configuration identity ("money-movement",
+ * "account-opening"). It is the ONLY place a domain name is a legal value in
+ * the decision core - invariant 3 forbids one as a module, directory, or
+ * branch, and this brand is what keeps it DATA instead.
+ */
+export const DomainConfigIdSchema = brandedString<"DomainConfigId">();
+export type DomainConfigId = z.infer<typeof DomainConfigIdSchema>;
+
+/**
+ * A domain's ACTION vocabulary ("distribute-cash", "open-account"), distinct
+ * from PrimitiveId. Intent.action used to carry PrimitiveId, which conflated
+ * the two closed vocabularies: prompt 9's loader rejects an unknown primitive
+ * against the catalog, so a domain action sharing that brand made the check
+ * ambiguous and parked a domain-named value inside a type whose name says
+ * "primitive". Both are branded `string` at runtime, so this is a compile-time
+ * separation only - no hash preimage and no stored byte changes (D-187).
+ */
+export const ActionIdSchema = brandedString<"ActionId">();
+export type ActionId = z.infer<typeof ActionIdSchema>;
+
+/** One externally-visible action a domain can execute, before a firm binds a target. */
+export const ExecutionCapabilityIdSchema = brandedString<"ExecutionCapabilityId">();
+export type ExecutionCapabilityId = z.infer<typeof ExecutionCapabilityIdSchema>;
+
+/**
+ * The closed command vocabulary an execution adapter dispatches on. The
+ * configuration names the command; infrastructure owns what running it means,
+ * so a span name or an SQL statement never comes from a configuration file.
+ */
+export const CommandTypeSchema = brandedString<"CommandType">();
+export type CommandType = z.infer<typeof CommandTypeSchema>;
+
+/** A named conflict-key TEMPLATE; its rendered output is a ConflictKey. */
+export const ConflictKeyTemplateIdSchema = brandedString<"ConflictKeyTemplateId">();
+export type ConflictKeyTemplateId = z.infer<typeof ConflictKeyTemplateIdSchema>;
+
+/** A named execution-plan template (the DAG a decision compiles into an ExecutionPlan). */
+export const PlanTemplateIdSchema = brandedString<"PlanTemplateId">();
+export type PlanTemplateId = z.infer<typeof PlanTemplateIdSchema>;
