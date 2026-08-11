@@ -1905,7 +1905,7 @@ jobs:
       ),
     );
     expect(offenders, `disabled/focused fences found:\n${offenders.join("\n")}`).toEqual([]);
-  }, 60_000);
+  });
 
   it("(b companion) detects every supported Vitest neutralizer through aliases and computed chains", () => {
     const disabled = [
