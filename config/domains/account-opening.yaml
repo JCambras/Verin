@@ -1,0 +1,435 @@
+# ACCOUNT OPENING, EXPRESSED AS DATA (v3 prompt 10; ADR-0056).
+#
+# This file IS the shipped /app/account-opening flow. It replaces the hand-coded
+# FlowDefinition ADR-0010 introduced: delete this file and the flow stops working
+# (the X-9 honesty check). Nothing here is firm-specific - tenancy enters only at
+# bindDomainConfig(document, firmRegistry).
+#
+# INERT DATA ONLY: no tags, no anchors, no aliases, no merge keys. The
+# infrastructure source refuses all four before this text becomes a value.
+#
+# HONEST LIMIT (captain ruling `account-opening-migration-depth`, 2026-07-28):
+# the EXECUTION half runs today. The DECISION half - evidence, primitive
+# bindings, policy, prohibitions - is authored and load-validated now but is NOT
+# YET EVALUATED; its evaluator lands in Wave D (prompts 16-17) and its proof
+# arrives with the replay corpus. No approval or evidence behavior was added to
+# account opening by this migration.
+formatVersion: domain-config/1.0.0
+domainConfigId: account-opening
+version: "2026.08.0"
+primitiveSetVersion: "1.0.0"
+policyGrammarVersion: "1.0.0"
+
+authorship:
+  authoredBy:
+    kind: platform-team
+    id: verin-core-domain
+  authoredAt: "2026-08-11T00:00:00.000Z"
+  basis:
+    - kind: shipped-implementation
+      ref: src/domain/workflow/flows/account-opening.ts
+      describes: >-
+        The five-step CRM and e-sign flow ADR-0010 shipped, migrated
+        behavior-preserving: same steps, same idempotency keys, same suspend
+        point, same public route payload.
+    - kind: ratified-document
+      ref: docs/v3/verin-prompt-sequence-v3.md#10
+      describes: The ratified prompt-10 section list this document must cover.
+    - kind: ratified-document
+      ref: docs/v3/verin-architecture-v3.md#16
+      describes: The module map that puts configuration in config/ and forbids importing it.
+  parentVersion: null
+  changeFromParent:
+    - { op: add, section: header, describes: "The first published version of this domain." }
+    - { op: add, section: intents, describes: "One intent (open-account) with five slots." }
+    - { op: add, section: evidence, describes: "Three evidence requirements with freshness floors; authored, not yet evaluated." }
+    - { op: add, section: primitiveBindings, describes: "Three catalog bindings; authored, not yet evaluated." }
+    - { op: add, section: policy, describes: "One optional firm policy slot for this domain." }
+    - { op: add, section: instructionKinds, describes: "One household instruction kind restricting registrations." }
+    - { op: add, section: prohibitions, describes: "One prohibition vocabulary entry." }
+    - { op: add, section: blockers, describes: "Two resolvable blocker codes with their resolving evidence." }
+    - { op: add, section: authority, describes: "No approval gate today; automatic when nothing fires." }
+    - { op: add, section: execution, describes: "Five capabilities and the five-step plan template that runs today." }
+    - { op: add, section: verification, describes: "The CRM write confirmation and the externally-gated e-signature." }
+    - { op: add, section: presentation, describes: "The intake form, the station labels, and copy for every emittable code." }
+
+intents:
+  - id: open-account
+    describes: Open a new custodial account for a household after the client signs.
+    riskClass: medium
+    reversibility: reversible
+    triggerKinds: [human_request]
+    slots:
+      - id: household-name
+        describes: The household the new account belongs to, as the advisor names it.
+        type: text
+        required: true
+        resolution: supplied-by-trigger
+        triggerField: householdName
+        maxLength: 200
+      - id: first-name
+        describes: The primary contact's given name.
+        type: text
+        required: true
+        resolution: supplied-by-trigger
+        triggerField: firstName
+        maxLength: 100
+      - id: last-name
+        describes: The primary contact's family name.
+        type: text
+        required: true
+        resolution: supplied-by-trigger
+        triggerField: lastName
+        maxLength: 100
+      - id: email
+        describes: The primary contact's email address, used to deliver the signature request.
+        type: text
+        required: false
+        resolution: supplied-by-trigger
+        triggerField: email
+        maxLength: 320
+      - id: registration-type
+        describes: The account registration the application opens.
+        type: enum
+        required: true
+        resolution: supplied-by-trigger
+        triggerField: accountType
+        values:
+          - individual
+          - joint
+          - ira-traditional
+          - ira-roth
+          - rollover-ira
+          - trust
+          - entity
+    requiresEvidence: [applicant-identity, crm-contact-record, offered-account-types]
+    primitiveBindings:
+      - registration-selection
+      - offered-type-screen
+      - identity-reconciliation
+    policySlot: account-opening-policy
+    conflictKeys: []
+    reservations: []
+    executionPlan: open-account-plan
+
+evidence:
+  - evidenceKind: applicant-identity
+    describes: A government identity document asserting the applicant's legal name.
+    schemaVersion: "1.0.0"
+    subjectSlot: first-name
+    paths:
+      legalName: { type: string, describes: The legal name printed on the document. }
+      idExpiresAt: { type: iso-date, describes: The document's expiry date. }
+    freshnessBasis: observedAt
+    maxAge: P365D
+    absence: block
+    requiredFor: [open-account]
+    suppliableBy: [client, "role:advisor"]
+  - evidenceKind: crm-contact-record
+    describes: The contact record the house CRM already holds for this applicant.
+    schemaVersion: "1.0.0"
+    subjectSlot: email
+    paths:
+      legalName: { type: string, describes: The legal name the CRM holds. }
+      contactId: { type: reference, describes: The CRM contact this record belongs to. }
+    freshnessBasis: retrievedAt
+    maxAge: PT1H
+    absence: optional
+    requiredFor: [open-account]
+    suppliableBy: [external]
+  - evidenceKind: offered-account-types
+    describes: The registrations this custodian offers in the applicant's jurisdiction.
+    schemaVersion: "1.0.0"
+    subjectSlot: registration-type
+    paths:
+      jurisdiction: { type: string, describes: The jurisdiction the offering applies to. }
+      offeredAt: { type: iso-date, describes: When the offering was last confirmed. }
+    freshnessBasis: retrievedAt
+    maxAge: P1D
+    absence: block
+    requiredFor: [open-account]
+    suppliableBy: [external]
+
+primitiveBindings:
+  - id: registration-selection
+    describes: Choose the one registration the applicant is eligible to open.
+    primitiveId: candidate-selection
+    defaultStrategy: single-eligible
+    parameters:
+      candidateEvidenceKind: offered-account-types
+      subjectSlot: registration-type
+      exclusions: []
+      ambiguityQuestionCode: which-registration
+  - id: offered-type-screen
+    describes: Screen the chosen registration against jurisdiction restrictions.
+    primitiveId: restriction-screen
+    parameters:
+      restrictionKinds:
+        - { kind: jurisdiction-restriction, polarity: allow-list }
+      subjectsInScope: [registration-type]
+  - id: identity-reconciliation
+    describes: Reconcile the legal name on the identity document with the CRM record.
+    primitiveId: evidence-reconciliation
+    parameters:
+      factKind: legal-name
+      tolerance: 0
+      sourcesToReconcile:
+        - { $ref: { kind: evidence-source, class: applicant-identity } }
+        - { $ref: { kind: evidence-source, class: house-crm } }
+
+policy:
+  slots:
+    - id: account-opening-policy
+      describes: The firm's own account-opening rules; optional because the shipped flow has none.
+      required: false
+      oneActivePerFirm: true
+      allowedEffects: [require_evidence, require_approval, block, prohibit]
+      settableParameters:
+        - binding: identity-reconciliation
+          parameter: tolerance
+          describes: How far two asserted legal names may differ before they contradict.
+      selectableBindings:
+        - binding: registration-selection
+          strategies: [single-eligible, exactly-one]
+      referenceableTemplates: [new-account-review]
+      referenceableBlockerCodes: [applicant-identity-unverified, registration-not-offered]
+      referenceableProhibitionCodes: [registration-restricted-in-jurisdiction]
+
+instructionKinds:
+  - kind: registration-restriction
+    describes: A standing household instruction limiting which registrations may be opened.
+    class: restriction
+    versioned: true
+    paths:
+      allowedRegistrations: { type: structured, describes: The registrations the household permits. }
+    appliesToSlots: [registration-type]
+    precedence: narrowing-only
+    onViolation: registration-restricted-in-jurisdiction
+    consumedBy: [offered-type-screen]
+
+prohibitions:
+  - code: registration-restricted-in-jurisdiction
+    describes: The chosen registration is not permitted for this applicant.
+    sources: [regulatory, household_instruction]
+    scopeSlot: registration-type
+
+blockers:
+  - code: which-registration
+    describes: More than one offered registration fits the request; a human must choose.
+    resolvingEvidence: [offered-account-types]
+  - code: applicant-identity-unverified
+    describes: The applicant's legal name has not been verified against an identity document.
+    resolvingEvidence: [applicant-identity, crm-contact-record]
+  - code: registration-not-offered
+    describes: The custodian does not currently offer the chosen registration.
+    resolvingEvidence: [offered-account-types]
+
+authority:
+  # Today's account opening has NO approval gate, and this migration adds none
+  # (captain ruling `account-opening-migration-depth`). The template slot is
+  # declared so a firm that wants a review has somewhere to bind it; nothing in
+  # the shipped flow references it.
+  templates:
+    - id: new-account-review
+      describes: An optional firm review of a new account application.
+      kind: approval
+      requiredRoleClasses: [operations]
+  automaticWhenNoRequirementFires: true
+
+execution:
+  capabilities:
+    - id: household-create
+      describes: Create household
+      targetCapabilityClass: house-crm
+      commandType: household.create
+      payload:
+        - { kind: value, field: name, source: { from: slot, slot: household-name }, optional: false }
+      publishes:
+        - { output: id, as: householdId }
+      idempotencyKey:
+        - { kind: literal, value: household }
+        - { kind: value, source: { from: execution-scope } }
+      conflictKeys: []
+      reservations: []
+      preconditions: [decision-proceeds]
+      verificationRule: crm-write-confirmed
+
+    - id: contact-create
+      describes: Add primary contact
+      targetCapabilityClass: house-crm
+      commandType: contact.create
+      payload:
+        - { kind: value, field: householdId, source: { from: step-output, step: household, output: id }, optional: false }
+        - { kind: value, field: firstName, source: { from: slot, slot: first-name }, optional: false }
+        - { kind: value, field: lastName, source: { from: slot, slot: last-name }, optional: false }
+        - { kind: value, field: email, source: { from: slot, slot: email }, optional: true }
+      publishes:
+        - { output: id, as: contactId }
+      idempotencyKey:
+        - { kind: literal, value: contact }
+        - { kind: value, source: { from: execution-scope } }
+      conflictKeys: []
+      reservations: []
+      preconditions: [decision-proceeds]
+      verificationRule: crm-write-confirmed
+
+    - id: application-create
+      describes: Open application
+      targetCapabilityClass: house-crm
+      commandType: application.create
+      payload:
+        - { kind: value, field: householdId, source: { from: step-output, step: household, output: id }, optional: false }
+        - { kind: value, field: contactId, source: { from: step-output, step: contact, output: id }, optional: false }
+        - { kind: value, field: accountType, source: { from: slot, slot: registration-type }, optional: false }
+      publishes:
+        - { output: id, as: applicationId }
+        - { output: idempotencyKey, as: finalizeIdempotencyKey }
+      idempotencyKey:
+        - { kind: literal, value: application }
+        - { kind: value, source: { from: execution-scope } }
+      conflictKeys: []
+      reservations: []
+      preconditions: [decision-proceeds]
+      verificationRule: crm-write-confirmed
+
+    - id: esign-request
+      describes: Send for e-signature
+      targetCapabilityClass: esign
+      commandType: esign.request
+      payload:
+        - { kind: value, field: applicationId, source: { from: step-output, step: application, output: id }, optional: false }
+      publishes:
+        - { output: token, as: esignToken }
+      idempotencyKey:
+        - { kind: literal, value: esign }
+        - { kind: value, source: { from: execution-scope } }
+      conflictKeys: []
+      reservations: []
+      preconditions: [decision-proceeds]
+      verificationRule: esign-signature
+      awaitTokenFrom: token
+
+    - id: application-finalize
+      describes: Finalize account opening
+      targetCapabilityClass: house-crm
+      commandType: application.finalize
+      payload:
+        - { kind: value, field: applicationId, source: { from: step-output, step: application, output: id }, optional: false }
+        - { kind: value, field: householdId, source: { from: step-output, step: household, output: id }, optional: false }
+        - { kind: value, field: accountType, source: { from: slot, slot: registration-type }, optional: false }
+        - { kind: value, field: actorUserId, source: { from: initiating-actor }, optional: false }
+        - { kind: value, field: signedAt, source: { from: await-observation, field: signedAt }, optional: true }
+        - { kind: copy, field: taskSubject, copy: fund-new-account }
+      publishes:
+        - { output: applicationId, as: finalizedApplicationId }
+      # The application row's own minted key, exactly as the hand-coded flow used
+      # it: the house-CRM adapter derives its per-write sub-keys from this one, so
+      # a doubly-fired signature webhook still has exactly-once effect.
+      idempotencyKey:
+        - { kind: value, source: { from: step-output, step: application, output: idempotencyKey } }
+      conflictKeys: []
+      reservations: []
+      preconditions: [esign-closed]
+      verificationRule: crm-write-confirmed
+
+  planTemplates:
+    - id: open-account-plan
+      describes: Create the household, contact and application, collect the signature, then finalize.
+      steps:
+        - { id: household, capability: household-create, dependsOn: [] }
+        - { id: contact, capability: contact-create, dependsOn: [household] }
+        - { id: application, capability: application-create, dependsOn: [contact] }
+        - { id: esign, capability: esign-request, dependsOn: [application] }
+        - { id: finalize, capability: application-finalize, dependsOn: [esign] }
+
+# NO CONFLICT KEY IS DERIVABLE FOR THIS DOMAIN, and that is a finding rather
+# than an omission (docs/domain-config-gaps.md, MR-8): a conflict key names the
+# resource two requests would contend for, and account opening's subject - the
+# household - does not exist until this plan's FIRST step creates it. Double
+# submission is instead guarded by the per-execution idempotency scope. The
+# ratified ExecutionStep requires at least one conflict key, so prompt 25 must
+# decide what an existence-creating action collides on.
+conflictKeys: []
+
+reservations: []
+
+verification:
+  - id: crm-write-confirmed
+    describes: A house-CRM write is verified by the receipt its audited-write helper returns.
+    observedStatuses: [completed, unknown]
+    closesWhen:
+      status: completed
+      proof: [crm-write-receipt]
+    lateIngest: []
+    awaitsExternal: false
+    neverInferStrongerThan: source
+  - id: esign-signature
+    describes: >-
+      The e-signature gate. The plan does not advance past the signature request
+      until an external observation closes this rule, which is what the shipped
+      suspend/resume engine already implements through the HMAC-verified webhook.
+    observedStatuses: [requested, signed, declined, unknown]
+    closesWhen:
+      status: signed
+      proof: [esign-callback-hmac]
+    lateIngest: [declined]
+    awaitsExternal: true
+    unknownTimeout: P7D
+    stuckAfter: P14D
+    neverInferStrongerThan: source
+
+presentation:
+  domainLabel: Account Opening
+  domainSummary: Open a custodial account for a household once the client has signed.
+  surfaces:
+    - { id: intake, order: 1, label: Client & account details }
+    - { id: signature, order: 2, label: Client e-signature }
+    - { id: finalize, order: 3, label: Open account & finalize }
+  form:
+    intent: open-account
+    title: Open an account
+    regulation: SEC Reg BI / FINRA 2090 (Know Your Customer)
+    fields:
+      - { slot: household-name, input: text }
+      - { slot: first-name, input: text }
+      - { slot: last-name, input: text }
+      - { slot: email, input: email, hint: "Stored in the house CRM; redacted from the audit trail automatically." }
+      - { slot: registration-type, input: select, defaultValue: ira-roth }
+  copy:
+    intents:
+      open-account: { label: Open an account }
+    slots:
+      household-name: { label: Household name, display: text }
+      first-name: { label: Primary contact first name, display: text }
+      last-name: { label: Primary contact last name, display: text }
+      email: { label: Email, display: text }
+      registration-type: { label: Account type, display: text }
+    evidenceKinds:
+      applicant-identity: { label: Government identity document, sourceLabel: Client upload }
+      crm-contact-record: { label: Existing contact record, sourceLabel: House CRM }
+      offered-account-types: { label: Registrations offered in this jurisdiction, sourceLabel: Custodian }
+    reasonCodes:
+      which-registration:
+        title: Which registration should this be?
+        body: "More than one registration is available for this applicant."
+        resolution: Choose the registration the client intends to open.
+      applicant-identity-unverified:
+        title: Applicant identity is unverified
+        body: "The legal name on file for {slot:first-name} {slot:last-name} has not been matched to an identity document."
+        resolution: Upload a current government identity document, or correct the contact record.
+      registration-not-offered:
+        title: Registration is not offered
+        body: "The custodian does not currently offer {slot:registration-type} in this jurisdiction."
+        resolution: Choose a registration the custodian offers, or wait for the offering to be confirmed.
+      registration-restricted-in-jurisdiction:
+        title: Registration is not permitted
+        body: "A standing restriction prevents opening a {slot:registration-type} account for this household."
+        resolution: This cannot be resolved by evidence; a different registration must be chosen.
+    statusLabels:
+      requested: Sent for signature
+      signed: Signed by the client
+      declined: Declined by the client
+      completed: Written to the house CRM
+      unknown: Not yet observed
+    commandText:
+      fund-new-account: "Fund the new {slot:registration-type} account"

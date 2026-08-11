@@ -1,0 +1,14 @@
+{
+  "versions": [
+    {
+      "domainConfigId": "account-opening",
+      "version": "2026.08.0",
+      "configHash": "b62c8ac31a5612175e9caead26126e1e1fa7d4d62646dd04499fe685aeda6a91"
+    },
+    {
+      "domainConfigId": "money-movement",
+      "version": "2026.07.0",
+      "configHash": "ddf302642ebcae2dadf52ff972709a7440ec21f518abb7d5c94cd9d171b2bcf4"
+    }
+  ]
+}
