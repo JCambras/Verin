@@ -184,7 +184,9 @@ gap report. Load-bearing rules an agent trips over:
   that walk exhaust its heap - the worker DIES mid-file and vitest reports a partial run, not a failure.
   Export named types and narrow ports; each section module carries a collapsed-export note.
 - Editing a published document without bumping its `version` fails the build; update `versions.json` and
-  `authorship.changeFromParent` (checked against the bytes) in the same commit.
+  `authorship.changeFromParent` (checked against the diff computed from the parent's bytes whenever the
+  loader is given them - today only the empty baseline a first version diffs against; a version declaring
+  a parent owes a non-empty record and no more until PC-4 lands) in the same commit.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,

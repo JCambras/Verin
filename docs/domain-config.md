@@ -121,6 +121,14 @@ rejection is a value, never a throw.
   domain-configuration fence binds every id the shipped tree asks for to the published copy - resolved
   by symbol, failing closed on a non-literal id - so a rename is a BUILD failure rather than a 500 on
   the demo journey (proof PF-252).
+- **An enum slot that feeds a typed store column is FENCED equal to it.** `registration-type`'s declared
+  `values` and `ACCOUNT_TYPES` (`src/domain/schema/entities.ts`, the union the house-CRM's account-type
+  column accepts) are two copies of one vocabulary, and CD-1 leaves the shipped copy unrenamed - so RULE G
+  of the domain-configuration fence proves them EQUAL in both directions, and fails closed if no single
+  enum slot supplies the shipped `accountType` transport field. Unbound, a registration added to the
+  document alone would be admitted by the request boundary and then refused by the execution adapter at
+  the third step, after the household and contact writes had committed (proof PF-253; the boundary's own
+  zero-writes refusal is proof PF-254).
 
 ## 8. Authoring workflow
 
@@ -129,7 +137,14 @@ rejection is a value, never a throw.
    bytes through the real engine and reports the computed hash when it disagrees with the pin.
 3. Update `config/domains/versions.json` with the computed hash, in the same commit, under a BUMPED
    `version` if the previous version was published.
-4. State the change in `authorship.changeFromParent`. The loader checks it against the bytes.
+4. State the change in `authorship.changeFromParent`. The loader checks that declaration against the
+   diff it COMPUTES from the parent document's bytes whenever those bytes are available to it - which
+   today is the empty baseline every first version (`parentVersion: null`) diffs against, so a first
+   version's record must match its own bytes exactly, section for section. A version that declares a
+   parent whose bytes this loader was not given is held only to stating a NON-EMPTY change; making that
+   case a real byte check needs somewhere for a superseded document's canonical bytes to live, which is
+   the persisted configuration-version registry deferred to prompts 15/19 (PC-4 in
+   [the gap report](./domain-config-gaps.md)).
 
 ## 9. A type-resolution rule this module learned the hard way
 

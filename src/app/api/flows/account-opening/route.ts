@@ -3,7 +3,7 @@ import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_se
 import { startAccountOpening, CLIENT_REQUEST_ID_RE } from "@infra/wire";
 import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
 import { appError } from "@contracts/errors";
-import { admitIntakeSubmission } from "@domain/config/intake-view";
+import { admitIntakeSubmission, optionalIntakeValue, requiredIntakeValue } from "@domain/config/intake-view";
 
 export const runtime = "nodejs";
 
@@ -35,13 +35,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return errorResponse(appError("VALIDATION", "clientRequestId is required (a UUID minted once per form session)."));
   }
 
+  // The admitted values are read back through the checked accessors, so a trigger
+  // field renamed in the document is a refusal here rather than a blank passed on
+  // for a value this boundary just declared required.
+  const householdName = requiredIntakeValue(supplied, "householdName");
+  if (!householdName.ok) return errorResponse(householdName.error);
+  const firstName = requiredIntakeValue(supplied, "firstName");
+  if (!firstName.ok) return errorResponse(firstName.error);
+  const lastName = requiredIntakeValue(supplied, "lastName");
+  if (!lastName.ok) return errorResponse(lastName.error);
+  const accountType = requiredIntakeValue(supplied, "accountType");
+  if (!accountType.ok) return errorResponse(accountType.error);
+  const email = optionalIntakeValue(supplied, "email");
+  if (!email.ok) return errorResponse(email.error);
+
   const db = await getDb();
   const result = await startAccountOpening(db, auth.value, pii.value, {
-    householdName: supplied["householdName"] ?? "",
-    firstName: supplied["firstName"] ?? "",
-    lastName: supplied["lastName"] ?? "",
-    email: supplied["email"] ?? null,
-    accountType: supplied["accountType"] ?? "",
+    householdName: householdName.value,
+    firstName: firstName.value,
+    lastName: lastName.value,
+    email: email.value,
+    accountType: accountType.value,
     clientRequestId: b.clientRequestId,
   });
   if (result.status === "failed") {

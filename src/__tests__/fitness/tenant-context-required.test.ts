@@ -126,6 +126,8 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/errors.ts :: formatDomainConfigErrors.<call>",
   "src/domain/config/evidence.ts :: durationSeconds.<call>",
   "src/domain/config/intake-view.ts :: admitIntakeSubmission.<call>",
+  "src/domain/config/intake-view.ts :: optionalIntakeValue.<call>",
+  "src/domain/config/intake-view.ts :: requiredIntakeValue.<call>",
   "src/domain/config/intake.ts :: intakeFormOf.<call>",
   "src/domain/config/labels.ts :: domainLabelsOf.<call>",
   "src/domain/config/load-closure.ts :: checkBucketSource.<call>",

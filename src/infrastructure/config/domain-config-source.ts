@@ -38,6 +38,7 @@ import type { IntakeForm } from "@domain/config/intake-view";
 import { domainLabelsOf, type DomainLabels } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
 import { formatDomainConfigErrors, type DomainConfigError } from "@domain/config/errors";
+import { KEBAB_CASE_RE } from "@domain/config/vocabulary";
 
 /** Where the published domain configurations live, relative to the project root. */
 export const DOMAIN_CONFIG_DIRECTORY = "config/domains";
@@ -119,7 +120,17 @@ export interface SourcedDomainConfig {
 
 const cache = new Map<string, SourcedDomainConfig>();
 
+/**
+ * A published configuration id is one closed-vocabulary kebab-case token, checked
+ * BEFORE it reaches `projectPath`. Every caller passes a module constant today;
+ * this is what keeps a future request-derived id from naming a file outside the
+ * configuration directory, the same guard `parseMachineRecordId` gives other
+ * externally-supplied identifiers.
+ */
 const readOnce = (domainConfigId: string): Result<SourcedDomainConfig, AppError> => {
+  if (!KEBAB_CASE_RE.test(domainConfigId)) {
+    return err(appError("INTERNAL", `"${domainConfigId}" is not a published domain-configuration id.`));
+  }
   let text: string;
   try {
     text = readFileSync(projectPath(`${domainConfigId}.yaml`), "utf8");

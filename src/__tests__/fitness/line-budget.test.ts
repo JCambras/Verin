@@ -177,6 +177,19 @@ const CEILINGS = {
   domain: 8420, // provisional (rebase reconciliation): max(main 5150, branch 8420)
   infrastructure: 8600, // provisional (rebase reconciliation): max(main 8600, branch 8290)
 } as const;
+//
+// ADR-0057 AMENDMENT (review round 3): `domain`'s 80 lines of correction headroom
+// were spent answering review findings in code - the request boundary's checked
+// intake reads, the duplicate-transport-field refusal, and the named owner of the
+// deferred change-record byte check. RE-MEASURED with this file's own algorithm:
+// contracts 6,647 / 6,700 (53), domain 8,433 / 8,520 (87), infrastructure 8,225 /
+// 8,290 (65), presentation 928 / 6,000, tooling 12,154 / 12,400. Only `domain`'s
+// ceiling moves; the other three are re-taken and still inside their ceilings, so
+// those are left where ADR-0057 set them rather than re-baselined for company.
+const CEILINGS = {
+  contracts: 6700, // ADR-0057, on the prompt-10 domain-configuration brands (6,647 measured)
+  domain: 8520, // ADR-0057 as amended, on the prompt-10 configuration schema (8,433 measured)
+  infrastructure: 8290, // ADR-0057, on the prompt-10 config source and command adapters (8,225 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

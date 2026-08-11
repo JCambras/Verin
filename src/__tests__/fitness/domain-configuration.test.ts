@@ -16,6 +16,7 @@ import {
 import { canonicalConfigJson } from "@domain/config/document";
 import { loadDomainConfig } from "@domain/config/load";
 import { bindDomainConfig, type FirmRegistry } from "@domain/config/bind";
+import { ACCOUNT_TYPES } from "@domain/schema/entities";
 
 /**
  * DOMAIN-CONFIGURATION FENCE (v3 prompt 10, ADR-0056; the PINNED activation
@@ -59,6 +60,17 @@ import { bindDomainConfig, type FirmRegistry } from "@domain/config/bind";
  *    configuration would 500 the investor-demo journey at run time; the ids are
  *    resolved by SYMBOL from every call site, so an aliased import cannot evade
  *    the check and a non-literal id fails closed rather than passing unproven.
+ *
+ *  RULE G - A CONFIGURED ENUM VOCABULARY EQUALS THE STORE VOCABULARY IT FEEDS.
+ *    `registration-type`'s declared `values` and `ACCOUNT_TYPES` (the union the
+ *    house-CRM's typed column accepts) are TWO copies of one vocabulary, and CD-1
+ *    keeps the shipped one unrenamed - so the two must be proven EQUAL rather
+ *    than merely both present. Unbound, a registration added to the document
+ *    would render a select option the request boundary admits (its admission
+ *    rules are the document's own) and the execution adapter then refuses at the
+ *    THIRD step, after the household and contact writes have committed. Both
+ *    directions are checked, and a document where no single enum slot supplies
+ *    the shipped transport field fails closed.
  *
 
  * NAMED DEFERRALS. `policyRegistriesFor` derives prompt 9's four pinned
@@ -320,6 +332,58 @@ export function unboundLabelRequests(
     .map((request) => `${request.file}:${request.line} ${request.vocabulary} ${request.id ?? "<not a literal id>"}`);
 }
 
+/**
+ * The shipped transport field the house-CRM's typed account-type column is
+ * written from. CD-1 leaves that shipped vocabulary unrenamed, so the
+ * CONFIGURATION binds to it: whichever enum slot supplies this field must declare
+ * exactly the values the store accepts (RULE G).
+ */
+const STORE_VOCABULARY_TRIGGER_FIELD = "accountType";
+
+type SlotDeclaration = {
+  readonly id: string;
+  readonly triggerField?: string | undefined;
+  readonly values?: readonly string[] | undefined;
+};
+
+type IntentDeclaration = {
+  readonly id: string;
+  readonly slots: readonly SlotDeclaration[];
+};
+
+/**
+ * Where a document's declared enum vocabulary for one transport field and the
+ * shipped vocabulary that consumes it disagree - in BOTH directions, since a
+ * value only the document declares is a mid-flow refusal after committed writes
+ * and a value only the store accepts is unreachable vocabulary. Pure, so the
+ * companion can plant either kind of drift.
+ */
+export function storeVocabularyDrift(
+  intents: readonly IntentDeclaration[],
+  triggerField: string,
+  shipped: readonly string[],
+): string[] {
+  const suppliers = intents.flatMap((intent) =>
+    intent.slots
+      .filter((slot) => slot.triggerField === triggerField && slot.values !== undefined)
+      .map((slot) => ({ slot: slot.id, values: slot.values ?? [] })),
+  );
+  if (suppliers.length !== 1) {
+    return [
+      `exactly one enum slot must supply "${triggerField}"; this document declares ${suppliers.length}`,
+    ];
+  }
+  const supplier = suppliers[0]!;
+  return [
+    ...supplier.values
+      .filter((value) => !shipped.includes(value))
+      .map((value) => `${supplier.slot} declares "${value}", which the shipped vocabulary does not accept`),
+    ...shipped
+      .filter((value) => !supplier.values.includes(value))
+      .map((value) => `the shipped vocabulary accepts "${value}", which ${supplier.slot} does not declare`),
+  ];
+}
+
 describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
   const vocabulary = domainVocabulary();
 
@@ -438,6 +502,22 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     expect(
       unbound,
       `the demo asks for a label the money-movement configuration does not declare (renaming one would 500 the demo journey):\n${unbound.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("(G) enforces: the configured registration vocabulary equals the vocabulary the store accepts", () => {
+    const loaded = loadDomainConfig(parsed("account-opening.yaml"));
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const drift = storeVocabularyDrift(
+      loaded.value.document.intents,
+      STORE_VOCABULARY_TRIGGER_FIELD,
+      ACCOUNT_TYPES,
+    );
+    expect(
+      drift,
+      "the configuration and src/domain/schema/entities.ts disagree about the registration vocabulary, so a configured option the request boundary admits would be refused at the third execution step - after the household and contact writes have committed:\n" +
+        drift.join("\n"),
     ).toEqual([]);
   });
 
@@ -587,6 +667,55 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
           `function slotLabel(firmId: string, slot: string): string { return slot; }\nexport const label = slotLabel("firm-a", "invented");`,
       });
       expect(demoLabelRequests(project, "src/app/demo/vocabulary.ts")).toEqual([]);
+    });
+
+    it("catches registration-vocabulary drift in BOTH directions, against the REAL document", () => {
+      const loaded = loadDomainConfig(parsed("account-opening.yaml"));
+      expect(loaded.ok).toBe(true);
+      if (!loaded.ok) return;
+      const intents = loaded.value.document.intents;
+      // A registration added to the configuration and not to the store: the case
+      // that would render an admitted select option and then refuse mid-flow.
+      const storeMissingOne = ACCOUNT_TYPES.filter((type) => type !== "trust");
+      expect(
+        storeVocabularyDrift(intents, STORE_VOCABULARY_TRIGGER_FIELD, storeMissingOne),
+      ).toEqual(['registration-type declares "trust", which the shipped vocabulary does not accept']);
+      // And the reverse: a registration the store accepts that no document offers.
+      const documentMissingOne = intents.map((intent) => ({
+        ...intent,
+        slots: intent.slots.map((slot) =>
+          slot.triggerField === STORE_VOCABULARY_TRIGGER_FIELD
+            ? { ...slot, values: (slot.values ?? []).filter((value) => value !== "joint") }
+            : slot,
+        ),
+      }));
+      expect(
+        storeVocabularyDrift(documentMissingOne, STORE_VOCABULARY_TRIGGER_FIELD, ACCOUNT_TYPES),
+      ).toEqual(['the shipped vocabulary accepts "joint", which registration-type does not declare']);
+      // The shipped pair still agrees, so the rule rejects the DRIFT, not everything.
+      expect(storeVocabularyDrift(intents, STORE_VOCABULARY_TRIGGER_FIELD, ACCOUNT_TYPES)).toEqual([]);
+    });
+
+    it("FAILS CLOSED when no single enum slot supplies the shipped transport field", () => {
+      const values = ["individual", "joint"] as const;
+      const supplier: SlotDeclaration = { id: "registration-type", triggerField: "accountType", values };
+      expect(storeVocabularyDrift([{ id: "open-account", slots: [supplier] }], "accountType", values)).toEqual([]);
+      // Renamed away: nothing supplies the field the store's column is written from.
+      expect(
+        storeVocabularyDrift(
+          [{ id: "open-account", slots: [{ ...supplier, triggerField: "registrationKind" }] }],
+          "accountType",
+          values,
+        ),
+      ).toEqual(['exactly one enum slot must supply "accountType"; this document declares 0']);
+      // Two suppliers make the binding ambiguous, which is equally unprovable.
+      expect(
+        storeVocabularyDrift(
+          [{ id: "open-account", slots: [supplier, { ...supplier, id: "registration-type-2" }] }],
+          "accountType",
+          values,
+        ),
+      ).toEqual(['exactly one enum slot must supply "accountType"; this document declares 2']);
     });
 
     it("catches a published document edited without a version bump", () => {

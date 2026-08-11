@@ -11,6 +11,19 @@ import type { IntakeForm } from "@domain/config/intake-view";
 type Phase = "form" | "awaiting" | "completed";
 
 /**
+ * Which configured station each phase of the shipped journey is standing on, by
+ * station ID. Binding to the id rather than to an ordinal is what lets the
+ * document REORDER its stations: an index would light whichever station happened
+ * to sit at position 1 while the flow was awaiting the client's signature.
+ * `completed` names none, because every station is behind the user by then.
+ */
+const LIVE_STATION: Readonly<Record<Phase, string | null>> = {
+  form: "intake",
+  awaiting: "signature",
+  completed: null,
+};
+
+/**
  * The client half of the shipped account-opening journey. Every field it
  * renders, and every station name on its progress rail, arrives as data from
  * `config/domains/account-opening.yaml` through the server component next door -
@@ -32,10 +45,15 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
   const [clientRequestId, setClientRequestId] = useState(() => crypto.randomUUID());
 
   // The stations are the configuration's `presentation.surfaces`, in declared
-  // order; the phase says which one is live, so a renamed or reordered station
-  // moves the rail without a code change.
+  // order; the phase names the station it is standing on by ID, so a renamed or
+  // reordered station moves the rail without a code change. A document that no
+  // longer declares the named station lights NONE of them, rather than lighting
+  // whichever one now sits at that position.
   function steps(): ProgressStep[] {
-    const live = phase === "form" ? 0 : phase === "awaiting" ? 1 : view.surfaces.length;
+    const liveId = LIVE_STATION[phase];
+    const live = liveId === null
+      ? view.surfaces.length
+      : view.surfaces.findIndex((surface) => surface.id === liveId);
     return view.surfaces.map((surface, index) => ({
       id: surface.id,
       name: surface.label,

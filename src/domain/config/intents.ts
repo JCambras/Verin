@@ -138,6 +138,15 @@ const intentSchemaImpl = z
     if (duplicate(intent.slots.map((slot) => slot.id))) {
       ctx.addIssue({ code: "custom", message: "duplicate slot name", path: ["slots"] });
     }
+    // A transport field is a KEY, not a label: two slots reading one field would
+    // render two controls sharing an id and a name, and one submitted value would
+    // overwrite the other before either slot resolved.
+    const triggerFields = intent.slots
+      .map((slot) => slot.triggerField)
+      .filter((field): field is string => field !== undefined);
+    if (duplicate(triggerFields)) {
+      ctx.addIssue({ code: "custom", message: "duplicate slot trigger field", path: ["slots"] });
+    }
     const idLists: readonly (readonly [string, readonly string[]])[] = [
       ["requiresEvidence", intent.requiresEvidence],
       ["primitiveBindings", intent.primitiveBindings],

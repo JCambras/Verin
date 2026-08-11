@@ -8624,3 +8624,55 @@ version is immutable" justifies memoizing a document, not memoizing an EMFILE.
 plan", "a published version is immutable" - and each failed open rather than closed.
 
 **Revert path.** Independent; each is local to its own module.
+
+---
+
+## D-201 - Prompt 10 review: the store's registration vocabulary is FENCED equal to the document's
+
+**What.** `registration-type.values` in `config/domains/account-opening.yaml` and `ACCOUNT_TYPES` in
+`src/domain/schema/entities.ts` are now proven EQUAL, in both directions, by RULE G of the
+domain-configuration fence: the enum slot supplying the shipped `accountType` transport field must declare
+exactly the values the house-CRM's typed column accepts, and a document where no single slot supplies that
+field fails closed. Neither name is renamed (CD-1 leaves shipped record vocabulary alone) and the request
+boundary keeps refusing an undeclared registration from the document's own admission rules.
+
+**Why.** D-198 moved the boundary's admission rules into the configuration, which was right, but it left
+the second copy of that vocabulary unbound. A registration added to the document alone would have been
+ADMITTED at the boundary and then refused by the execution adapter at the third compiled step - after
+`household.create` and `contact.create` had committed, leaving an orphan household, an orphan contact and
+a persisted failed execution where the pre-migration code refused with a clean 400 and zero writes. A
+partial write is strictly worse than the rejection it replaced. Binding the two vocabularies makes that
+state unreachable at BUILD time, which is what "the check must never be able to disagree with the
+configuration" actually requires; deleting a second check would have been the same mistake again.
+`src/__tests__/integration/account-opening-route.test.ts` asserts the record counts are zero after the
+refusal, not merely that the response is a 400 - that assertion is what stops this recurring.
+
+**Alternatives considered.** Deriving `AccountType` from the YAML (rejected: the adapter needs a
+compile-time union for a typed store column, and generating types from data at build time is a build-system
+change prompt 10 does not own). Dropping the boundary check again (rejected: it is what keeps the refusal
+free of committed writes).
+
+**Revert path.** Delete RULE G and its two companion cases; the vocabularies drift again silently.
+
+---
+
+## D-202 - Prompt 10 review: the deferred change-record byte check is stated as it IS, and owned
+
+**What.** `checkIdentity` compares `authorship.changeFromParent` against the diff it computes only when
+the parent document's bytes are available, and `shippedConfigEnvironment()` supplies them only for the
+empty baseline a FIRST version diffs against. `docs/domain-config.md` §8, `AGENTS.md` and the branch
+itself now say exactly that, and the full byte check for a PARENTED version is recorded in the gap
+report's dependency table beside PC-4, owned by prompts 15/19. Alongside it, three smaller seams closed:
+the request boundary reads admitted values through `requiredIntakeValue`/`optionalIntakeValue` instead of
+`?? ""`; the intake journey's progress rail names its live station by surface ID rather than by ordinal;
+the loader refuses two slots reading one transport field; and a configuration id is checked against the
+kebab-case vocabulary before it reaches a filesystem path.
+
+**Why.** The guarantee held today and would have vanished silently at the first parented version - the
+moment it starts to matter - while three documents asserted it unconditionally. The defect was the
+overclaiming prose, not the loader: making the check real requires deciding where a superseded document's
+canonical bytes live, and that storage question belongs to the persisted configuration-version registry,
+not to prompt 10. Each remaining seam was a place a configuration edit could make the product disagree
+with the document quietly rather than loudly.
+
+**Revert path.** Independent; each is local to its own module or document.

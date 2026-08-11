@@ -13,6 +13,11 @@
  * slot's declared `maxLength` and an enum slot's declared `values` are enforced
  * at the boundary that declares them: adding a registration to the configuration
  * can never render an option the API then refuses with a 400.
+ *
+ * The admitted values are read back through `requiredIntakeValue` /
+ * `optionalIntakeValue` rather than indexed with a default, so a caller naming a
+ * transport field the document no longer declares is refused instead of handed a
+ * blank for a value the form just required.
  */
 import { appError, type AppError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
@@ -74,3 +79,28 @@ export const admitIntakeSubmission = (
   }
   return ok(admitted);
 };
+
+/**
+ * Read one admitted value a caller REQUIRES. `admitIntakeSubmission` keys its
+ * result by the configured trigger fields, so an absent key means the document
+ * no longer declares that field at all - a typed refusal, never an empty string
+ * standing in for a value the boundary just declared required.
+ */
+export const requiredIntakeValue = (
+  admitted: Readonly<Record<string, string | null>>,
+  field: string,
+): Result<string, AppError> => {
+  const value = admitted[field];
+  return typeof value === "string" && value !== ""
+    ? ok(value)
+    : err(appError("VALIDATION", `This domain declares no required "${field}" intake field.`));
+};
+
+/** The same read for a value the configuration declares OPTIONAL: absent is `null`, undeclared is a refusal. */
+export const optionalIntakeValue = (
+  admitted: Readonly<Record<string, string | null>>,
+  field: string,
+): Result<string | null, AppError> =>
+  field in admitted
+    ? ok(admitted[field] ?? null)
+    : err(appError("VALIDATION", `This domain declares no "${field}" intake field.`));

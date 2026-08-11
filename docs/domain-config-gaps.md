@@ -66,7 +66,7 @@ arithmetic on canonical ISO forms) and copy rendering (one inert placeholder ren
 
 | Depends on | What is missing until then |
 |---|---|
-| **Prompt 15 / 19** | The persisted configuration-version registry (PC-4). Replay must load the pinned version. |
+| **Prompt 15 / 19** | The persisted configuration-version registry (PC-4). Replay must load the pinned version. **And the full change-record byte check**: `checkIdentity` compares `authorship.changeFromParent` against the diff it computes from the parent's bytes, and `shippedConfigEnvironment()` supplies those bytes only for the empty baseline a FIRST version diffs against - so a version declaring a parent is held to a non-empty record and no more. Making it real means deciding where a superseded document's canonical bytes live, and that storage question belongs to the persisted registry, not to prompt 10. Stated as written in `docs/domain-config.md` §8 and at the `checkIdentity` branch itself. |
 | **Prompt 16 / 17** | The evaluator. The decision half of both documents is VALIDATED, NOT YET EVALUATED - stated in the files themselves. |
 | **Prompt 16 (front-end lane)** | Systematic route error boundaries with recovery. `src/app/demo/vocabulary.ts` THROWS on a label id the document does not declare; RULE F of the domain-configuration fence makes that unreachable from an ordinary configuration edit (a build failure, proof PF-252), but there is no `error.tsx` under `src/app`, so a throw that escapes anyway still renders Next's default error page rather than a styled state. Owned by the front-end parity lane, not by this prompt. |
 | **Prompt 20** | The first shipped caller of `policyRegistriesFor`, carried as a named deferral in the domain-configuration fence rather than left silent. |

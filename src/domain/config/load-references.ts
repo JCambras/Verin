@@ -264,9 +264,14 @@ export const checkIdentity = (
   }
   const parent = authorship.parentVersion === null ? EMPTY_CONFIG_BASELINE : environment.parent;
   if (parent === undefined) {
-    // The parent bytes are not available to this loader; the declaration is
-    // still required to be non-empty, because a version that supersedes another
-    // and states no change is either wrong or pointless.
+    // The parent bytes are not available to this loader, so the declaration is
+    // held only to being NON-EMPTY - a version that supersedes another and states
+    // no change is either wrong or pointless, but which change it states cannot
+    // be checked from here. A first version always takes the branch below against
+    // the empty baseline; the shipped environment supplies no other parent, so the
+    // full byte check for a PARENTED version waits on the persisted
+    // configuration-version registry that decides where a superseded document's
+    // canonical bytes live (prompts 15/19, PC-4 in docs/domain-config-gaps.md).
     if (authorship.changeFromParent.length === 0) {
       sink(configError("identity", "authorship.changeFromParent", "a version declaring a parent must state its change"));
     }

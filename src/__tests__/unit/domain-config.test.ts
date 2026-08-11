@@ -5,7 +5,7 @@ import { bindDomainConfig, firmIdentityPaths, type FirmRegistry } from "@domain/
 import { canonicalConfigJson } from "@domain/config/document";
 import { diffDomainConfigs, EMPTY_CONFIG_BASELINE } from "@domain/config/diff";
 import { intakeFormOf } from "@domain/config/intake";
-import { admitIntakeSubmission } from "@domain/config/intake-view";
+import { admitIntakeSubmission, optionalIntakeValue, requiredIntakeValue } from "@domain/config/intake-view";
 import { domainLabelsOf } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
 import { compileFlowDefinition, EXECUTION_SCOPE_KEY } from "@domain/config/plan-compiler";
@@ -275,6 +275,28 @@ describe("domain configuration: the shipped documents", () => {
         expect(submit({ ...VALID, firstName: value }).ok, JSON.stringify(value)).toBe(false);
       }
     });
+
+    it("reads admitted values back by DECLARED field, refusing an undeclared one rather than defaulting", () => {
+      const admitted = submit(VALID);
+      expect(admitted.ok).toBe(true);
+      if (!admitted.ok) return;
+      const supplied = admitted.value;
+      const householdName = requiredIntakeValue(supplied, "householdName");
+      expect(householdName.ok && householdName.value).toBe("Smith Family");
+      // A trigger field the document no longer declares is a typed refusal - never
+      // the empty string the boundary's own required-field check just excluded.
+      const renamed = requiredIntakeValue(supplied, "household_name");
+      expect(renamed.ok).toBe(false);
+      if (renamed.ok) return;
+      expect(renamed.error.code).toBe("VALIDATION");
+      // An optional field is null when absent, and refused when UNDECLARED - the
+      // two cases a `?? null` default cannot tell apart.
+      const withoutEmail = submit({ ...VALID, email: "" });
+      expect(withoutEmail.ok).toBe(true);
+      if (!withoutEmail.ok) return;
+      expect(optionalIntakeValue(withoutEmail.value, "email")).toEqual({ ok: true, value: null });
+      expect(optionalIntakeValue(withoutEmail.value, "emailAddress").ok).toBe(false);
+    });
   });
 
   it.each([
@@ -430,6 +452,13 @@ describe("detects (companion): a configuration that is wrong in any of the seven
         describes: "a change this version did not make",
       });
     }, "identity");
+  });
+
+  it("flags two slots reading ONE transport field (a duplicate control id, not two values)", () => {
+    rejects((document) => {
+      const slots = section<Mutable[]>(document, "intents")[0]!["slots"] as Mutable[];
+      slots[1]!["triggerField"] = slots[0]!["triggerField"];
+    }, "grammar", "account-opening");
   });
 
   it("flags a required trigger-supplied slot the intake form cannot collect", () => {

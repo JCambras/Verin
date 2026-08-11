@@ -43,6 +43,30 @@ that cannot absorb a review finding converts findings into deleted documentation
 fewer lines, which is what those ADRs exist to end. A figure recorded here is a MEASUREMENT - re-take it
 in any commit that changes a layer.
 
+## Amendment (2026-08-11, review round 3): the `domain` ceiling, RE-MEASURED
+
+The 80 lines of correction headroom this ADR gave `domain` were spent by the two review rounds that
+followed it, and the third round spends the rest: closing the account-opening request boundary's
+fail-open reads (`requiredIntakeValue` / `optionalIntakeValue` in `src/domain/config/intake-view.ts`),
+refusing two slots that read one transport field (`src/domain/config/intents.ts`), and recording which
+prompt owns the full change-record byte check at the `checkIdentity` branch that degrades
+(`src/domain/config/load-references.ts`). That is exactly the case the paragraph above describes:
+headroom exists so a review finding is answered with code, not with deleted prose or folded lines.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,647 | 6,700 | 53 (unchanged) |
+| `domain` | 8,433 | **8,520** | 87 |
+| `infrastructure` | 8,225 | 8,290 | 65 (unchanged ceiling) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+Only `domain`'s ceiling moves, by 100 lines, and only because its measurement moved past the old one.
+The other three measurements are re-taken and still inside the ceilings this ADR set, so those ceilings
+are left alone rather than re-baselined upward for company.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

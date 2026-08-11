@@ -14467,3 +14467,79 @@ Rule D fired too, as designed: an edited published document is a hash-pin failur
 `complete test suite passed: 63 fitness files executed`.
 
 **Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-review-askuser`).
+
+---
+
+## PF-253 · domain-configuration RULE G: the store's registration vocabulary cannot drift from the document's
+
+**Invariant:** `registration-type`'s declared `values` in `config/domains/account-opening.yaml` and
+`ACCOUNT_TYPES` in `src/domain/schema/entities.ts` are two copies of ONE vocabulary, and CD-1 keeps the
+shipped copy unrenamed - so they must be proven EQUAL, in both directions. Unbound, a registration added
+to the document alone would be ADMITTED by the request boundary (whose admission rules are the document's
+own) and then refused by the execution adapter at the THIRD compiled step, after `household.create` and
+`contact.create` had already committed.
+
+**Injection A (the partial-write direction).** Deleted `"trust"` from `ACCOUNT_TYPES`, leaving the
+document declaring a registration the store's typed column does not accept. No pinned bytes touched.
+
+**Observed failure:**
+```
+× (G) enforces: the configured registration vocabulary equals the vocabulary the store accepts
+AssertionError: the configuration and src/domain/schema/entities.ts disagree about the registration
+vocabulary, so a configured option the request boundary admits would be refused at the third execution
+step - after the household and contact writes have committed:
+registration-type declares "trust", which the shipped vocabulary does not accept: expected [ Array(1) ] to deeply equal []
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:521:7
+```
+The companion `catches registration-vocabulary drift in BOTH directions, against the REAL document`
+failed alongside it, as designed: it plants its drift by removing `"trust"` from the real pair, so a
+vocabulary that has already lost that value can no longer be shown to differ - the anti-vacuity behavior.
+
+**Injection B (the unreachable-vocabulary direction).** Restored `ACCOUNT_TYPES` and instead appended
+`"custodial-utma"` to it, so the store accepts a registration no document offers.
+
+**Observed failure:**
+```
+× (G) enforces: the configured registration vocabulary equals the vocabulary the store accepts
+AssertionError: ... the shipped vocabulary accepts "custodial-utma", which registration-type does not
+declare: expected [ Array(1) ] to deeply equal []
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:521:7
+```
+
+**Reverted:** `git diff src/domain/schema/entities.ts` empty; the fence file reports `Tests 28 passed
+(28)`, and `pnpm test` reports `complete test suite passed: 63 fitness files executed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-fixreview-askuser`, finding
+`account-type-vocabulary-moved-not-bound`).
+
+---
+
+## PF-254 · account-opening request boundary: an undeclared registration must commit NOTHING
+
+**Invariant:** an unsupported registration is refused at the REQUEST boundary, as a typed `VALIDATION`
+400 with zero committed records - never mid-flow. The companion assertion is the RECORD COUNTS
+(`households`, `contacts`, `account_opening_applications`, `flow_executions`), because a status-code-only
+assertion passes while the partial write happens, which is exactly how this regression shipped.
+
+**Injection.** Removed the declared-`options` check from `admitIntakeSubmission`
+(`src/domain/config/intake-view.ts`) - the deletion that moved the refusal from the boundary into the
+execution adapter - and posted `accountType: "not-a-registration"` through the real route handler.
+
+**Observed failure:**
+```
+× refuses a registration the configuration does not declare, committing NOTHING
+AssertionError: expected { households: 1, contacts: 1, …(2) } to deeply equal { households: +0, contacts: +0, …(2) }
++   "contacts": 1,
++   "executions": 1,
++   "households": 1,
+    "applications": 0,
+ ❯ src/__tests__/integration/account-opening-route.test.ts:98:31
+```
+The injected state is the finding verbatim: an orphan household, an orphan contact and a persisted
+failed execution, with the application refused at the third step.
+
+**Reverted:** check restored; `src/__tests__/integration/account-opening-route.test.ts` reports
+`Tests 2 passed (2)`, including the positive control that a DECLARED registration still starts the flow
+and commits one household, contact and application.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-fixreview-askuser`).
