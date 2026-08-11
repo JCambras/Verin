@@ -110,16 +110,6 @@ const domainConfigDocumentSchemaImpl = z
     presentation: PresentationSchema,
   })
   .readonly();
-/**
- * NAMED, not an inferred alias. `z.infer` produces an anonymous structural type,
- * and the repo's type-resolving fences PRINT the types they meet - printing this
- * document's inferred graph expanded ~3,500 lines of composed schemas at every
- * reference and exhausted a fence worker's heap. An interface has a symbol, so
- * it prints and resolves by NAME while still deriving its members from the one
- * schema that defines them (D-193).
- */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- a named alias for the inferred document; see above
-export interface DomainConfigDocument extends z.infer<typeof domainConfigDocumentSchemaImpl> {}
 
 /** `${domainConfigId}@${version}` - the identity every golden fixture already pins. */
 export const domainConfigVersionId = (document: {
@@ -148,6 +138,13 @@ export const canonicalConfigJson = (
  * twenty-odd composed schemas that walk exhausted a fence worker's heap, and a
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
+ *
+ * The type is an INTERFACE, not an inferred alias, for the same reason: `z.infer`
+ * produces an anonymous structural type, and those fences PRINT the types they
+ * meet - printing this document's inferred graph expanded ~3,500 lines of
+ * composed schemas at every reference. An interface has a symbol, so it prints
+ * and resolves by NAME while still deriving its members from the one schema that
+ * defines them.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-193)
 export interface DomainConfigDocument extends z.infer<typeof domainConfigDocumentSchemaImpl> {}

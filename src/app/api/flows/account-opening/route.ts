@@ -1,14 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_server/context";
 import { startAccountOpening, CLIENT_REQUEST_ID_RE } from "@infra/wire";
+import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
 import { appError } from "@contracts/errors";
-import { ACCOUNT_TYPES, isAccountType } from "@domain/schema/entities";
+import { admitIntakeSubmission } from "@domain/config/intake-view";
 
 export const runtime = "nodejs";
-
-function requiredString(value: unknown, maxLength: number): value is string {
-  return typeof value === "string" && value.trim().length > 0 && value.length <= maxLength;
-}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // Starting the flow is the governed "execution.initiate" action (v3 §15.3);
@@ -22,15 +19,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return errorResponse(parsed.error);
   const b = parsed.value;
-  if (!requiredString(b.householdName, 200) || !requiredString(b.firstName, 100) || !requiredString(b.lastName, 100)) {
-    return errorResponse(appError("VALIDATION", "Household name and contact name are required (as strings of reasonable length)."));
-  }
-  if (b.email != null && b.email !== "" && !requiredString(b.email, 320)) {
-    return errorResponse(appError("VALIDATION", "Email must be a string of reasonable length."));
-  }
-  if (!isAccountType(b.accountType)) {
-    return errorResponse(appError("VALIDATION", `Account type must be one of: ${ACCOUNT_TYPES.join(", ")}.`));
-  }
+  // The intake rules this boundary enforces are the ones the published
+  // configuration DECLARES - per-slot maximum lengths and the registration
+  // vocabulary - so adding a registration to the document can never render a
+  // select option this route then refuses.
+  const form = loadIntakeForm(ACCOUNT_OPENING_DOMAIN);
+  if (!form.ok) return errorResponse(form.error);
+  const admitted = admitIntakeSubmission(form.value, b);
+  if (!admitted.ok) return errorResponse(admitted.error);
+  const supplied = admitted.value;
   // Double-submit protection (D-027): the client mints one UUID per form session;
   // it becomes the lowercase canonical executionId, so case variants and a
   // retry/second tab replay the same execution.
@@ -40,11 +37,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const db = await getDb();
   const result = await startAccountOpening(db, auth.value, pii.value, {
-    householdName: b.householdName,
-    firstName: b.firstName,
-    lastName: b.lastName,
-    email: b.email ? String(b.email) : null,
-    accountType: b.accountType,
+    householdName: supplied["householdName"] ?? "",
+    firstName: supplied["firstName"] ?? "",
+    lastName: supplied["lastName"] ?? "",
+    email: supplied["email"] ?? null,
+    accountType: supplied["accountType"] ?? "",
     clientRequestId: b.clientRequestId,
   });
   if (result.status === "failed") {

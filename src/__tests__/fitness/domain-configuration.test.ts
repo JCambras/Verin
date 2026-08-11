@@ -4,7 +4,15 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { LineCounter, parseDocument, visit } from "yaml";
 import { Project, SyntaxKind } from "ts-morph";
-import { REPO_ROOT, inMemoryProject, moduleReferences, normalizedPath, realProject, stripComments } from "./_fence-utils";
+import {
+  REPO_ROOT,
+  callResolvesToDeclaration,
+  inMemoryProject,
+  moduleReferences,
+  normalizedPath,
+  realProject,
+  stripComments,
+} from "./_fence-utils";
 import { canonicalConfigJson } from "@domain/config/document";
 import { loadDomainConfig } from "@domain/config/load";
 import { bindDomainConfig, type FirmRegistry } from "@domain/config/bind";
@@ -44,6 +52,15 @@ import { bindDomainConfig, type FirmRegistry } from "@domain/config/bind";
  *    module imports from `config/`. The single-allowed-module idiom, exactly as
  *    `no-process-env` uses it for the environment.
  *
+ *  RULE F - EVERY VOCABULARY ID THE DEMO ASKS FOR IS DECLARED BY THE DOCUMENT.
+ *    The walking skeleton reads its slot, evidence-kind and action labels from
+ *    `money-movement.yaml` through `src/app/demo/vocabulary.ts`, which THROWS on
+ *    an id the document does not declare. Left unfenced, renaming a slot in the
+ *    configuration would 500 the investor-demo journey at run time; the ids are
+ *    resolved by SYMBOL from every call site, so an aliased import cannot evade
+ *    the check and a non-literal id fails closed rather than passing unproven.
+ *
+
  * NAMED DEFERRALS. `policyRegistriesFor` derives prompt 9's four pinned
  * registries from a loaded configuration and has no SHIPPED caller yet: nothing
  * authors a firm policy until the policy lifecycle lands (prompt 20). It is
@@ -236,6 +253,73 @@ export function configDirectoryReaders(files: ReadonlyArray<{ rel: string; text:
   return out;
 }
 
+/** The module the demo reads its configured vocabulary through (RULE F). */
+const DEMO_VOCABULARY_MODULE = "src/app/demo/vocabulary.ts";
+
+/** Each demo label reader, and the configured vocabulary its id must come from. */
+const DEMO_LABEL_READERS = [
+  ["slotLabel", "slots"],
+  ["evidenceLabel", "evidenceKinds"],
+  ["actionLabel", "intents"],
+] as const;
+
+type LabelVocabulary = (typeof DEMO_LABEL_READERS)[number][1];
+
+type LabelRequest = {
+  readonly file: string;
+  readonly line: number;
+  readonly vocabulary: LabelVocabulary;
+  /** `null` when the id is not a literal - unprovable provenance fails closed. */
+  readonly id: string | null;
+};
+
+/**
+ * Every configured label id the shipped tree asks for. Resolved by SYMBOL, so an
+ * aliased import or a same-named local helper cannot pose as a reader; pure, so
+ * the companion can feed it synthetic trees.
+ */
+export function demoLabelRequests(
+  project: Project,
+  module: string = DEMO_VOCABULARY_MODULE,
+): LabelRequest[] {
+  const out: LabelRequest[] = [];
+  for (const sourceFile of project.getSourceFiles()) {
+    for (const call of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const reader = DEMO_LABEL_READERS.find(([name]) => callResolvesToDeclaration(call, module, name));
+      if (reader === undefined) continue;
+      const literal = call.getArguments()[1]?.asKind(SyntaxKind.StringLiteral);
+      out.push({
+        file: normalizedPath(sourceFile.getFilePath()),
+        line: call.getStartLineNumber(),
+        vocabulary: reader[1],
+        id: literal === undefined ? null : literal.getLiteralText(),
+      });
+    }
+  }
+  return out;
+}
+
+/** The ids each configured copy map declares, as the sets RULE F checks against. */
+const declaredVocabulary = (copy: {
+  readonly slots: Readonly<Record<string, unknown>>;
+  readonly evidenceKinds: Readonly<Record<string, unknown>>;
+  readonly intents: Readonly<Record<string, unknown>>;
+}): Record<LabelVocabulary, ReadonlySet<string>> => ({
+  slots: new Set(Object.keys(copy.slots)),
+  evidenceKinds: new Set(Object.keys(copy.evidenceKinds)),
+  intents: new Set(Object.keys(copy.intents)),
+});
+
+/** The requests the published copy does not answer, as reportable locations. */
+export function unboundLabelRequests(
+  requests: readonly LabelRequest[],
+  declared: Readonly<Record<LabelVocabulary, ReadonlySet<string>>>,
+): string[] {
+  return requests
+    .filter((request) => request.id === null || !declared[request.vocabulary].has(request.id))
+    .map((request) => `${request.file}:${request.line} ${request.vocabulary} ${request.id ?? "<not a literal id>"}`);
+}
+
 describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
   const vocabulary = domainVocabulary();
 
@@ -341,6 +425,22 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     ).toBe(true);
   });
 
+  it("(F) enforces: every label id the demo asks for is declared by money-movement.yaml", () => {
+    const requests = demoLabelRequests(realProject());
+    expect(
+      [...new Set(requests.map((request) => request.vocabulary))].sort(),
+      "the demo must read its slot, evidence-kind AND action labels from the configuration",
+    ).toEqual(["evidenceKinds", "intents", "slots"]);
+    const loaded = loadDomainConfig(parsed("money-movement.yaml"));
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const unbound = unboundLabelRequests(requests, declaredVocabulary(loaded.value.document.presentation.copy));
+    expect(
+      unbound,
+      `the demo asks for a label the money-movement configuration does not declare (renaming one would 500 the demo journey):\n${unbound.join("\n")}`,
+    ).toEqual([]);
+  });
+
   it("enforces: every named deferral still has no shipped caller", () => {
     const stale: string[] = [];
     for (const [entry, reason] of Object.entries(NAMED_DEFERRALS)) {
@@ -439,6 +539,54 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
         { rel: "src/app/page.tsx", text: `<p>Restore config/domains/account-opening.yaml and reload.</p>` },
       ])).toEqual([]);
       expect(configDirectoryReaders([{ rel: CONFIG_READERS[0], text: `join("config/domains", id)` }])).toEqual([]);
+    });
+
+    it("catches a demo label id money-movement.yaml no longer declares", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/vocabulary.ts":
+          `export function evidenceLabel(firmId: string, kind: string): string { return firmId + kind; }`,
+        // Aliased on purpose: the reader is resolved by symbol, not by call text.
+        "/src/app/demo/build-context.ts":
+          `import { evidenceLabel as row } from "./vocabulary";\nexport const label = row("firm-a", "pending-actions-renamed");`,
+      });
+      const requests = demoLabelRequests(project, "src/app/demo/vocabulary.ts");
+      expect(requests).toEqual([
+        { file: "src/app/demo/build-context.ts", line: 2, vocabulary: "evidenceKinds", id: "pending-actions-renamed" },
+      ]);
+      const loaded = loadDomainConfig(parsed("money-movement.yaml"));
+      expect(loaded.ok).toBe(true);
+      if (!loaded.ok) return;
+      const declared = declaredVocabulary(loaded.value.document.presentation.copy);
+      expect(unboundLabelRequests(requests, declared)).toHaveLength(1);
+      // The id the shipped demo actually asks for still binds, so the rule is
+      // rejecting the RENAME rather than rejecting everything.
+      expect(
+        unboundLabelRequests([{ ...requests[0]!, id: "pending-actions" }], declared),
+      ).toEqual([]);
+    });
+
+    it("FAILS CLOSED on a demo label id that is not a literal", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/vocabulary.ts":
+          `export function slotLabel(firmId: string, slot: string): string { return firmId + slot; }`,
+        "/src/app/demo/build-context.ts":
+          `import { slotLabel } from "./vocabulary";\nconst chosen = "amount";\nexport const label = slotLabel("firm-a", chosen);`,
+      });
+      const requests = demoLabelRequests(project, "src/app/demo/vocabulary.ts");
+      expect(requests.map((request) => request.id)).toEqual([null]);
+      expect(
+        unboundLabelRequests(requests, { slots: new Set(["amount"]), evidenceKinds: new Set(), intents: new Set() }),
+      ).toHaveLength(1);
+    });
+
+    it("does not credit a same-named helper from another module", () => {
+      const project = inMemoryProject({
+        "/src/app/demo/vocabulary.ts":
+          `export function slotLabel(firmId: string, slot: string): string { return firmId + slot; }`,
+        "/src/app/demo/build-context.ts":
+          `function slotLabel(firmId: string, slot: string): string { return slot; }\nexport const label = slotLabel("firm-a", "invented");`,
+      });
+      expect(demoLabelRequests(project, "src/app/demo/vocabulary.ts")).toEqual([]);
     });
 
     it("catches a published document edited without a version bump", () => {

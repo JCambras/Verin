@@ -8570,3 +8570,57 @@ tenant authority is refused AT the dependency call, before any write. Leaving it
 possible; leaving it unremarked would have been the dishonest option.
 
 **Revert path.** The test reverts with the migration.
+
+---
+
+## D-198 - Prompt 10 review: the request boundary derives its admission rules from the configuration
+
+**What.** `/api/flows/account-opening` no longer hardcodes `200/100/100/320` and `isAccountType`. It
+projects the published document through `loadIntakeForm` and judges the submission with
+`admitIntakeSubmission` (`src/domain/config/intake-view.ts`), so a text slot's declared `maxLength` and
+an enum slot's declared `values` are enforced at the boundary that declares them. The same projection
+now carries `presentation.surfaces`, so the journey's progress rail and its step-info title are the
+document's station labels rather than three literals beside them.
+
+**Why.** The reviewer's strongest finding: the configuration DECLARED those constraints and nothing
+enforced or bound them, so adding a registration to the YAML would have rendered a select option the API
+rejected with a 400, and a widened `maxLength` would have had no effect. That is the exact
+configuration-duplicated-in-code failure prompt 10 exists to eliminate, at the one boundary that matters.
+The limits and the seven registrations are byte-identical to what they replaced.
+
+**Alternatives considered.** A second projection type beside `IntakeForm` (rejected: the form IS the
+intake contract - a second one is the same duplication one layer down). Keeping the literals and fencing
+them against the YAML (rejected: a fence that pins two copies together is weaker than one copy).
+
+**Revert path.** Re-inline the literals in the route; drop `maxLength`/`surfaces` from the projection.
+
+---
+
+## D-199 - Prompt 10 review: the awaited rule comes from the step that suspended
+
+**What.** `compileFlowDefinition` returns a `CompiledFlow` - the definition PLUS `awaitingByStep`, emitted
+from the same ordered plan that produced the steps. Replay reads `awaitingByStep[cursor - 1]`, the step
+the engine advanced past when it persisted the suspension.
+
+**Why.** `wire.ts` previously scanned `execution.capabilities` in DOCUMENT order for the first
+externally-gated rule. That agrees with the suspending step only while a domain has exactly one such
+capability; a second one would report the wrong rule to a double-submitting client. Deriving both from
+one ordered plan makes disagreement unrepresentable rather than unlikely.
+
+**Revert path.** Return the bare `FlowDefinition` and re-derive `awaiting` in the composition root.
+
+---
+
+## D-200 - Prompt 10 review: totality and caching corrections in the loader seam
+
+**What.** Three fail-open corrections. (1) `bindDomainConfig` mints every tenant-scoped reference through
+`safeParse` and accumulates a typed `firm-binding` error, so a registry with a blank `firmId` or a blank
+mapped id is a value rather than a ZodError thrown out of a `Result`-returning API. (2) `orderedSteps`
+REFUSES a plan template with no runnable order instead of `break`ing out with a partial plan the engine
+would run to `completed`. (3) `loadPublishedDomainConfig` caches only successful reads: "a published
+version is immutable" justifies memoizing a document, not memoizing an EMFILE.
+
+**Why.** Each is a claim the code made and did not keep - "loading is TOTAL", "a compiled plan is the
+plan", "a published version is immutable" - and each failed open rather than closed.
+
+**Revert path.** Independent; each is local to its own module.

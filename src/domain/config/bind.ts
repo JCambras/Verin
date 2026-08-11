@@ -26,6 +26,7 @@ import {
   VerificationRuleRefSchema,
   type ApprovalTemplateRef,
   type DomainConfigVersionRef,
+  type EvidenceSourceRef,
   type ExecutionTargetRef,
   type ReservationRef,
   type RoleRef,
@@ -96,6 +97,36 @@ const requireClass = (
   return id;
 };
 
+/**
+ * The narrow view of a decision-core reference schema this module needs. Binding
+ * is TOTAL (errors.ts), so a reference is MINTED through `safeParse` and a firm
+ * that supplies an unusable identifier - a blank `firmId`, a blank mapped id -
+ * accumulates a typed `firm-binding` refusal instead of throwing a ZodError out
+ * of a Result-returning API.
+ */
+type ReferenceSchema<T> = {
+  safeParse: (value: unknown) => { readonly success: boolean; readonly data?: T };
+};
+
+const mintRef = <T>(
+  schema: ReferenceSchema<T>,
+  firmId: string,
+  id: string,
+  path: string,
+  errors: DomainConfigError[],
+): T | null => {
+  const parsed = schema.safeParse({ firmId, id });
+  if (parsed.success && parsed.data !== undefined) return parsed.data;
+  errors.push(
+    configError(
+      "firm-binding",
+      path,
+      `${JSON.stringify(firmId)} and ${JSON.stringify(id)} do not form a usable tenant-scoped reference`,
+    ),
+  );
+  return null;
+};
+
 export const bindDomainConfig = (
   config: LoadedDomainConfig,
   firm: FirmRegistry,
@@ -116,20 +147,20 @@ export const bindDomainConfig = (
       errors,
     );
     if (id === null) continue;
-    executionTargets.set(capability.id, ExecutionTargetRefSchema.parse({ firmId, id }));
+    const path = `execution.capabilities.${capability.id}.targetCapabilityClass`;
+    const ref = mintRef(ExecutionTargetRefSchema, firmId, id, path, errors);
+    if (ref !== null) executionTargets.set(capability.id, ref);
   }
-  const verificationRules = new Map(
-    config.document.verification.map((rule) => [
-      rule.id as string,
-      VerificationRuleRefSchema.parse({ firmId, id: rule.id }),
-    ]),
-  );
-  const reservations = new Map(
-    config.document.reservations.map((rule) => [
-      rule.id as string,
-      ReservationRefSchema.parse({ firmId, id: rule.id }),
-    ]),
-  );
+  const verificationRules = new Map<string, VerificationRuleRef>();
+  for (const rule of config.document.verification) {
+    const ref = mintRef(VerificationRuleRefSchema, firmId, rule.id, `verification.${rule.id}`, errors);
+    if (ref !== null) verificationRules.set(rule.id, ref);
+  }
+  const reservations = new Map<string, ReservationRef>();
+  for (const rule of config.document.reservations) {
+    const ref = mintRef(ReservationRefSchema, firmId, rule.id, `reservations.${rule.id}`, errors);
+    if (ref !== null) reservations.set(rule.id, ref);
+  }
   const approvalTemplates = new Map<string, ApprovalTemplateRef>();
   for (const template of config.document.authority.templates) {
     const id = requireClass(
@@ -143,7 +174,8 @@ export const bindDomainConfig = (
       requireClass(firm.roles, roleClass, "role", `authority.templates.${template.id}.requiredRoleClasses`, errors);
     }
     if (id === null) continue;
-    approvalTemplates.set(template.id, ApprovalTemplateRefSchema.parse({ firmId, id }));
+    const ref = mintRef(ApprovalTemplateRefSchema, firmId, id, `authority.templates.${template.id}`, errors);
+    if (ref !== null) approvalTemplates.set(template.id, ref);
   }
   const evidenceSupplierRoles = new Map<string, readonly RoleRef[]>();
   for (const requirement of config.document.evidence) {
@@ -159,7 +191,8 @@ export const bindDomainConfig = (
         errors,
       );
       if (id === null) continue;
-      roles.push(RoleRefSchema.parse({ firmId, id }));
+      const ref = mintRef(RoleRefSchema, firmId, id, `evidence.${requirement.evidenceKind}.suppliableBy`, errors);
+      if (ref !== null) roles.push(ref);
     }
     evidenceSupplierRoles.set(requirement.evidenceKind, roles);
   }
@@ -169,7 +202,10 @@ export const bindDomainConfig = (
   const firmRefResolver: RefResolver = (ref) => {
     if (ref.kind !== "evidence-source") return null;
     const id = firm.evidenceSources.get(ref.class);
-    return id === undefined ? null : EvidenceSourceRefSchema.parse({ firmId, id });
+    if (id === undefined) return null;
+    const parsed: { readonly success: boolean; readonly data?: EvidenceSourceRef } =
+      EvidenceSourceRefSchema.safeParse({ firmId, id });
+    return parsed.success && parsed.data !== undefined ? parsed.data : null;
   };
   const boundParameters = new Map<string, Readonly<Record<string, unknown>>>();
   for (const [id, loaded] of config.bindings) {
@@ -185,14 +221,18 @@ export const bindDomainConfig = (
     }
     boundParameters.set(id, resolved.value.parsed);
   }
-  if (errors.length > 0) return err(errors);
+  const domainConfigVersionRef = mintRef(
+    DomainConfigVersionRefSchema,
+    firmId,
+    config.domainConfigVersionId,
+    "version",
+    errors,
+  );
+  if (errors.length > 0 || domainConfigVersionRef === null) return err(errors);
   return ok({
     config,
     firmId,
-    domainConfigVersionRef: DomainConfigVersionRefSchema.parse({
-      firmId,
-      id: config.domainConfigVersionId,
-    }),
+    domainConfigVersionRef,
     executionTargets,
     verificationRules,
     approvalTemplates,

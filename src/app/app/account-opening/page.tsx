@@ -10,8 +10,7 @@
  * check). The same failure stops the POST route, so a half-working screen is
  * not reachable either.
  */
-import { loadIntakeForm } from "@infra/config/domain-config-source";
-import { ACCOUNT_OPENING_DOMAIN } from "@infra/wire";
+import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
 import { IntakeJourney } from "./intake-journey";
 
 export const runtime = "nodejs";

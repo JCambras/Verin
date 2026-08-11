@@ -8,28 +8,19 @@
  * domain needs - and deleting the configuration leaves the screen with nothing
  * to render, which is the point.
  *
- * Field NAMES are the slots' declared `triggerField`s, so the projection emits
- * exactly the payload the shipped route already validates.
+ * Field NAMES are the slots' declared `triggerField`s, and each field carries the
+ * slot's declared admission rule, so the projection emits exactly the payload
+ * the shipped route validates AND the limits it validates against. The stations
+ * come from `presentation.surfaces` in declared order, so the journey's progress
+ * rail cannot disagree with the document either.
+ *
+ * The projected TYPES live in `./intake-view`, the leaf module a screen and a
+ * route handler import without reaching this module's document graph (D-193).
  */
 import { err, ok, type Result } from "@contracts/result";
 import { configError, type DomainConfigError } from "./errors";
+import type { IntakeField, IntakeForm } from "./intake-view";
 import type { LoadedDomainConfig } from "./load";
-
-export type IntakeField = {
-  readonly field: string;
-  readonly label: string;
-  readonly type: "text" | "email" | "select";
-  readonly required: boolean;
-  readonly hint?: string;
-  readonly options?: readonly string[];
-  readonly defaultValue?: string;
-};
-
-export type IntakeForm = {
-  readonly title: string;
-  readonly regulation: string;
-  readonly fields: readonly IntakeField[];
-};
 
 export const intakeFormOf = (
   config: LoadedDomainConfig,
@@ -62,9 +53,13 @@ export const intakeFormOf = (
       type: field.input,
       required: slot.required,
       ...(field.hint === undefined ? {} : { hint: field.hint }),
+      ...(slot.maxLength === undefined ? {} : { maxLength: slot.maxLength }),
       ...(slot.values === undefined ? {} : { options: [...slot.values] }),
       ...(field.defaultValue === undefined ? {} : { defaultValue: field.defaultValue }),
     });
   }
-  return ok({ title: form.title, regulation: form.regulation, fields });
+  const surfaces = [...config.document.presentation.surfaces]
+    .sort((left, right) => left.order - right.order)
+    .map((surface) => ({ id: surface.id as string, label: surface.label }));
+  return ok({ title: form.title, regulation: form.regulation, surfaces, fields });
 };

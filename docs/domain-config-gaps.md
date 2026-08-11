@@ -68,6 +68,7 @@ arithmetic on canonical ISO forms) and copy rendering (one inert placeholder ren
 |---|---|
 | **Prompt 15 / 19** | The persisted configuration-version registry (PC-4). Replay must load the pinned version. |
 | **Prompt 16 / 17** | The evaluator. The decision half of both documents is VALIDATED, NOT YET EVALUATED - stated in the files themselves. |
+| **Prompt 16 (front-end lane)** | Systematic route error boundaries with recovery. `src/app/demo/vocabulary.ts` THROWS on a label id the document does not declare; RULE F of the domain-configuration fence makes that unreachable from an ordinary configuration edit (a build failure, proof PF-252), but there is no `error.tsx` under `src/app`, so a throw that escapes anyway still renders Next's default error page rather than a styled state. Owned by the front-end parity lane, not by this prompt. |
 | **Prompt 20** | The first shipped caller of `policyRegistriesFor`, carried as a named deferral in the domain-configuration fence rather than left silent. |
 | **Prompt 24 / 26** | The compiled `ObservedStatus` union (PC-6) and the reconciler that closes an awaited verification rule. Today the shipped engine's suspend/resume is the interim implementation. |
 | **Prompt 25** | Compilation to the ratified `ExecutionPlan` (PC-5), the decision-hash idempotency anchor (PC-11), the finalize fan-out split, and MR-8's conflict-key question. |

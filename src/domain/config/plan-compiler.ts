@@ -58,8 +58,14 @@ const asString = (value: unknown): string | null => {
   return null;
 };
 
-/** Deterministic topological order over `dependsOn`; ties break on step id. */
-const orderedSteps = (steps: readonly PlanStep[]): readonly PlanStep[] => {
+/**
+ * Deterministic topological order over `dependsOn`; ties break on step id. A
+ * template no order exists for is REFUSED, never truncated: the loader's
+ * acyclicity check makes that unreachable for a loaded document, but this
+ * function is reachable from any `LoadedDomainConfig`, and a partial plan would
+ * run to `completed` having skipped work.
+ */
+const orderedSteps = (steps: readonly PlanStep[]): Result<readonly PlanStep[], AppError> => {
   const remaining = new Map(steps.map((step) => [step.id as string, step]));
   const done = new Set<string>();
   const out: PlanStep[] = [];
@@ -68,12 +74,19 @@ const orderedSteps = (steps: readonly PlanStep[]): readonly PlanStep[] => {
       .filter((step) => step.dependsOn.every((dependency) => done.has(dependency)))
       .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
     const next = ready[0];
-    if (next === undefined) break; // schema + coherence already refuse a cycle
+    if (next === undefined) {
+      return err(
+        appError(
+          "INTERNAL",
+          `The plan template has no runnable order: ${[...remaining.keys()].sort().join(", ")} depend on a step that never becomes ready.`,
+        ),
+      );
+    }
     out.push(next);
     done.add(next.id);
     remaining.delete(next.id);
   }
-  return out;
+  return ok(out);
 };
 
 type StepPlan = {
@@ -235,6 +248,17 @@ const compileStep = (
   },
 });
 
+export type CompiledFlow = {
+  readonly definition: FlowDefinition<ExecutionAdapters>;
+  /**
+   * Per COMPILED step, the verification rule that step suspends on - `undefined`
+   * when it runs to completion. Emitted from the same ordered plan that produced
+   * the steps, so a replay reporting the rule of the step at `cursor - 1` can
+   * never disagree with the rule that step actually suspended on.
+   */
+  readonly awaitingByStep: readonly (string | undefined)[];
+};
+
 /**
  * Compile one intent's plan template into a runnable flow definition. Returns a
  * typed error rather than throwing, so a configuration a deployment cannot run
@@ -243,7 +267,7 @@ const compileStep = (
 export const compileFlowDefinition = (
   config: LoadedDomainConfig,
   actionId: string,
-): Result<FlowDefinition<ExecutionAdapters>, AppError> => {
+): Result<CompiledFlow, AppError> => {
   const intent = config.intents.get(actionId);
   if (intent === undefined) {
     return err(appError("INTERNAL", `The configuration declares no intent named "${actionId}".`));
@@ -257,8 +281,10 @@ export const compileFlowDefinition = (
   const awaitingRules = new Set(
     config.document.verification.filter((rule) => rule.awaitsExternal).map((rule) => rule.id as string),
   );
+  const ordered = orderedSteps(template.steps);
+  if (!ordered.ok) return ordered;
   const plans: StepPlan[] = [];
-  for (const step of orderedSteps(template.steps)) {
+  for (const step of ordered.value) {
     const capability = config.document.execution.capabilities.find((entry) => entry.id === step.capability);
     if (capability === undefined) {
       return err(appError("INTERNAL", `The plan step "${step.id}" names an undeclared capability.`));
@@ -277,8 +303,11 @@ export const compileFlowDefinition = (
     plans.push({ step, capability, awaits: awaitingRules.has(capability.verificationRule) });
   }
   return ok({
-    id: config.document.domainConfigId,
-    name: config.document.presentation.domainLabel,
-    steps: plans.map((plan) => compileStep(config, actionId, plan)),
+    definition: {
+      id: config.document.domainConfigId,
+      name: config.document.presentation.domainLabel,
+      steps: plans.map((plan) => compileStep(config, actionId, plan)),
+    },
+    awaitingByStep: plans.map((plan) => (plan.awaits ? (plan.capability.verificationRule as string) : undefined)),
   });
 };

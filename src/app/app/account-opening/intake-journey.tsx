@@ -12,9 +12,10 @@ type Phase = "form" | "awaiting" | "completed";
 
 /**
  * The client half of the shipped account-opening journey. Every field it
- * renders arrives as data from `config/domains/account-opening.yaml` through
- * the server component next door - there is no hard-coded field list left, so
- * removing the configuration removes the form.
+ * renders, and every station name on its progress rail, arrives as data from
+ * `config/domains/account-opening.yaml` through the server component next door -
+ * there is no hard-coded field list or station list left, so removing the
+ * configuration removes the form and the screen cannot drift from the document.
  */
 export function IntakeJourney({ view }: { view: IntakeForm }) {
   const hydrated = useHydrated();
@@ -30,12 +31,16 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
   // replay a used id with different input.
   const [clientRequestId, setClientRequestId] = useState(() => crypto.randomUUID());
 
+  // The stations are the configuration's `presentation.surfaces`, in declared
+  // order; the phase says which one is live, so a renamed or reordered station
+  // moves the rail without a code change.
   function steps(): ProgressStep[] {
-    return [
-      { id: "kyc", name: "Client & account details", state: phase === "form" ? "active" : "done" },
-      { id: "esign", name: "Client e-signature", state: phase === "form" ? "pending" : phase === "awaiting" ? "active" : "done" },
-      { id: "finalize", name: "Open account & finalize", state: phase === "completed" ? "done" : "pending" },
-    ];
+    const live = phase === "form" ? 0 : phase === "awaiting" ? 1 : view.surfaces.length;
+    return view.surfaces.map((surface, index) => ({
+      id: surface.id,
+      name: surface.label,
+      state: index < live ? "done" : index === live ? "active" : "pending",
+    }));
   }
 
   async function start(e: React.FormEvent<HTMLFormElement>) {
@@ -109,8 +114,8 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
             <>
               <StepInfoCard
                 stepNumber={1}
-                totalSteps={3}
-                title="Client & account details"
+                totalSteps={view.surfaces.length}
+                title={view.surfaces[0]?.label ?? view.title}
                 body={`Verin captures the household, primary contact, and account type. Required before an account can be opened (${view.regulation}).`}
               />
               {/* View-driven form: fields come from the flow's declarative view. */}

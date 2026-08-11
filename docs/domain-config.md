@@ -110,6 +110,17 @@ rejection is a value, never a throw.
 - **Command types name commands, never domains.** What a command DOES - its span, its SQL, its audit
   action - lives in `src/infrastructure/execution-adapters.ts`, as static literals the observability
   vocabulary fence can still derive from real call sites.
+- **`presentation` is load-bearing at the REQUEST boundary, not only on screen.** A text slot's
+  `maxLength` and an enum slot's `values` are exactly what `/api/flows/account-opening` admits, through
+  the same `IntakeForm` projection the page renders (`admitIntakeSubmission` in
+  `src/domain/config/intake-view.ts`), and `presentation.surfaces` is the journey's progress rail in
+  declared order. Adding a registration to a document therefore can never render a select option the
+  API refuses with a 400, and a renamed station cannot leave the screen disagreeing with the document.
+- **A label id a surface asks for must exist.** The demo reads its slot, evidence-kind and action labels
+  through `src/app/demo/vocabulary.ts`, which throws on an undeclared id. RULE F of the
+  domain-configuration fence binds every id the shipped tree asks for to the published copy - resolved
+  by symbol, failing closed on a non-literal id - so a rename is a BUILD failure rather than a 500 on
+  the demo journey (proof PF-252).
 
 ## 8. Authoring workflow
 

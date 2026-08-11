@@ -5,6 +5,7 @@ import { bindDomainConfig, firmIdentityPaths, type FirmRegistry } from "@domain/
 import { canonicalConfigJson } from "@domain/config/document";
 import { diffDomainConfigs, EMPTY_CONFIG_BASELINE } from "@domain/config/diff";
 import { intakeFormOf } from "@domain/config/intake";
+import { admitIntakeSubmission } from "@domain/config/intake-view";
 import { domainLabelsOf } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
 import { compileFlowDefinition, EXECUTION_SCOPE_KEY } from "@domain/config/plan-compiler";
@@ -150,14 +151,52 @@ describe("domain configuration: the shipped documents", () => {
     const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
-    expect(compiled.value.id).toBe("account-opening");
-    expect(compiled.value.steps.map((step) => step.id)).toEqual([
+    expect(compiled.value.definition.id).toBe("account-opening");
+    expect(compiled.value.definition.steps.map((step) => step.id)).toEqual([
       "household",
       "contact",
       "application",
       "esign",
       "finalize",
     ]);
+  });
+
+  it("enforces: the awaited rule is emitted PER compiled step, not scanned in document order", () => {
+    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    // The engine advances the cursor past the suspending step before persisting,
+    // so a replay reads `awaitingByStep[cursor - 1]`. Only the e-sign step awaits.
+    expect(compiled.value.awaitingByStep).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      "esign-signature",
+      undefined,
+    ]);
+    expect(compiled.value.awaitingByStep).toHaveLength(compiled.value.definition.steps.length);
+  });
+
+  it("REFUSES a plan template with no runnable order instead of compiling a partial plan", () => {
+    const document = documentOf("account-opening");
+    const execution = document["execution"] as Mutable;
+    const template = (execution["planTemplates"] as Mutable[])[0]!;
+    // Two steps waiting on each other: no step ever becomes ready.
+    template["steps"] = [
+      { id: "household", capability: "household-create", dependsOn: ["contact"] },
+      { id: "contact", capability: "contact-create", dependsOn: ["household"] },
+    ];
+    const loaded = loadDomainConfig(document);
+    // The loader's acyclicity check refuses this document outright, which is why
+    // the compiler's own refusal is the backstop rather than the only guard.
+    expect(loaded.ok).toBe(false);
+    const compiled = compileFlowDefinition(
+      { ...loadedOf("account-opening"), document: document as never },
+      "open-account",
+    );
+    expect(compiled.ok).toBe(false);
+    if (compiled.ok) return;
+    expect(compiled.error.message).toContain("no runnable order");
   });
 
   it("enforces: a decision-hash idempotency key is REFUSED by the interim substrate, never faked", () => {
@@ -179,6 +218,77 @@ describe("domain configuration: the shipped documents", () => {
       "accountType",
     ]);
     expect(form.value.fields.find((field) => field.field === "accountType")?.options).toContain("ira-roth");
+    // The limits the API boundary enforces are the ones the document declares.
+    expect(form.value.fields.map((field) => field.maxLength)).toEqual([200, 100, 100, 320, undefined]);
+    // The journey's progress rail is the declared stations, in declared order.
+    expect(form.value.surfaces.map((surface) => surface.label)).toEqual([
+      "Client & account details",
+      "Client e-signature",
+      "Open account & finalize",
+    ]);
+  });
+
+  describe("the intake boundary admits exactly what the configuration declares", () => {
+    const form = (): ReturnType<typeof intakeFormOf> => intakeFormOf(loadedOf("account-opening"));
+    const submit = (payload: Record<string, unknown>) => {
+      const projected = form();
+      if (!projected.ok) throw new Error("the account-opening intake form must project");
+      return admitIntakeSubmission(projected.value, payload);
+    };
+    const VALID = {
+      householdName: "Smith Family",
+      firstName: "Ada",
+      lastName: "Smith",
+      email: "ada@example.com",
+      accountType: "ira-roth",
+    };
+
+    it("admits the shipped payload and carries an absent optional field as null", () => {
+      expect(submit(VALID)).toEqual({ ok: true, value: { ...VALID } });
+      const withoutEmail = submit({ ...VALID, email: "" });
+      expect(withoutEmail.ok && withoutEmail.value["email"]).toBeNull();
+    });
+
+    it("refuses a value longer than the slot's DECLARED maximum, at that exact length", () => {
+      expect(submit({ ...VALID, householdName: "x".repeat(200) }).ok).toBe(true);
+      const tooLong = submit({ ...VALID, householdName: "x".repeat(201) });
+      expect(tooLong.ok).toBe(false);
+      if (tooLong.ok) return;
+      expect(tooLong.error.code).toBe("VALIDATION");
+      expect(tooLong.error.message).toContain("200 characters");
+    });
+
+    it("accepts EVERY registration the document declares, and nothing else", () => {
+      const projected = form();
+      expect(projected.ok).toBe(true);
+      if (!projected.ok) return;
+      const declared = projected.value.fields.find((field) => field.field === "accountType")?.options ?? [];
+      expect(declared).toHaveLength(7);
+      for (const accountType of declared) {
+        expect(submit({ ...VALID, accountType }).ok, accountType).toBe(true);
+      }
+      expect(submit({ ...VALID, accountType: "not-a-registration" }).ok).toBe(false);
+    });
+
+    it("refuses a blank or non-string value for a required slot", () => {
+      for (const value of ["", "   ", 7, null]) {
+        expect(submit({ ...VALID, firstName: value }).ok, JSON.stringify(value)).toBe(false);
+      }
+    });
+  });
+
+  it.each([
+    ["a blank firm id", { firmId: "" }],
+    ["a blank mapped execution-target id", { executionTargets: new Map([["house-crm", ""], ["esign", ""]]) }],
+    ["a blank mapped role id", { roles: new Map([["operations", ""], ["advisor", ""]]) }],
+  ])("binding stays TOTAL with %s: a typed refusal, never a throw", (_case, override) => {
+    const bound = bindDomainConfig(loadedOf("account-opening"), {
+      ...registryFor("firm-a"),
+      ...(override as Partial<FirmRegistry>),
+    });
+    expect(bound.ok).toBe(false);
+    if (bound.ok) return;
+    expect(bound.error.every((error) => error.code === "firm-binding")).toBe(true);
   });
 
   it("enforces: the label projection carries the configured demo vocabulary", () => {
@@ -391,7 +501,7 @@ describe("detects (companion): a configuration that is wrong in any of the seven
     const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
-    const step = compiled.value.steps[0]!;
+    const step = compiled.value.definition.steps[0]!;
     const result = await step.execute(
       { householdName: "Household" },
       { invoke: () => Promise.resolve({ id: "hh-1" }) },

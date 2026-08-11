@@ -14438,3 +14438,32 @@ the same reason, so a half-working screen is not reachable either.
 `account-opening.test.ts` and `wire-authority.test.ts`), and the full e2e suite passes `23 passed`.
 
 **Date:** 2026-08-11 (v3 prompt 10, ADR-0056; captain ruling `account-opening-migration-depth`).
+
+---
+
+## PF-252 · domain-configuration RULE F: a renamed vocabulary id must break the BUILD, not the demo journey
+
+**Invariant:** the walking skeleton reads its slot, evidence-kind and action labels from
+`config/domains/money-movement.yaml` through `src/app/demo/vocabulary.ts`, which THROWS on an id the
+document does not declare. Unfenced, renaming an id in the configuration would 500 the investor-demo
+journey at run time; the rule binds every id the shipped tree asks for to the published copy, resolving
+each reader by SYMBOL so an aliased import cannot evade it and failing closed on a non-literal id.
+
+**Injection.** Renamed the `pending-actions` evidence kind throughout `money-movement.yaml` (its
+`evidence` entry, the intent's `requiresEvidence`, the claim binding, the blocker's `resolvingEvidence`
+and its `presentation.copy` entry) so the document still LOADS and only the demo's id goes stale.
+
+**Observed failure:**
+```
+× (F) enforces: every label id the demo asks for is declared by money-movement.yaml
+AssertionError: the demo asks for a label the money-movement configuration does not declare
+(renaming one would 500 the demo journey):
+src/app/demo/build-context.ts:114 evidenceKinds pending-actions
+× (D) enforces: every published version's canonical bytes match its pinned hash
+```
+Rule D fired too, as designed: an edited published document is a hash-pin failure in its own right.
+
+**Reverted:** rename undone; `Tests 25 passed` for the whole fence file, and `pnpm test` reports
+`complete test suite passed: 63 fitness files executed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-review-askuser`).

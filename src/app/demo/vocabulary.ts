@@ -49,8 +49,16 @@ const labels = new Map<string, DomainLabels>();
  * The configured vocabulary for one demo firm. Throws when the configuration is
  * absent or cannot bind: the demo must not render invented labels, and a silent
  * fallback is exactly the dead-configuration failure this prompt exists to
- * prevent. (App-layer throws surface through the route's error boundary; the
- * no-bare-throw fence governs domain and infrastructure.)
+ * prevent. (The no-bare-throw fence governs domain and infrastructure, not the
+ * app layer.)
+ *
+ * The reachable cause - a label id the document no longer declares - is caught
+ * at BUILD time by the domain-configuration fence, which binds every id
+ * `build-context.ts` asks for to `config/domains/money-movement.yaml`. What is
+ * NOT covered is the rendered failure state for a throw that escapes anyway:
+ * there is no `error.tsx` under `src/app`, so today it renders Next's default
+ * error page. Systematic route error boundaries with recovery are owned by the
+ * FRONT-END LANE (verin-frontend-parity-plan, prompt 16), not by this prompt.
  */
 function vocabularyFor(firmId: string): DomainLabels {
   const cached = labels.get(firmId);
@@ -64,7 +72,7 @@ function vocabularyFor(firmId: string): DomainLabels {
   return result.value;
 }
 
-const require = (value: string | undefined, what: string, id: string): string => {
+const requireLabel = (value: string | undefined, what: string, id: string): string => {
   if (value === undefined) {
     throw new Error(`The money-movement configuration declares no label for ${what} "${id}".`);
   }
@@ -73,15 +81,15 @@ const require = (value: string | undefined, what: string, id: string): string =>
 
 /** The configured label for one intent slot. */
 export function slotLabel(firmId: string, slot: string): string {
-  return require(vocabularyFor(firmId).slots[slot], "slot", slot);
+  return requireLabel(vocabularyFor(firmId).slots[slot], "slot", slot);
 }
 
 /** The configured label for one evidence kind. */
 export function evidenceLabel(firmId: string, evidenceKind: string): string {
-  return require(vocabularyFor(firmId).evidenceKinds[evidenceKind], "evidence kind", evidenceKind);
+  return requireLabel(vocabularyFor(firmId).evidenceKinds[evidenceKind], "evidence kind", evidenceKind);
 }
 
 /** The configured label for the domain's action, as the interpreted intent shows it. */
 export function actionLabel(firmId: string, actionId: string): string {
-  return require(vocabularyFor(firmId).intents[actionId], "intent", actionId);
+  return requireLabel(vocabularyFor(firmId).intents[actionId], "intent", actionId);
 }

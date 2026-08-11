@@ -18,9 +18,12 @@
  *     ratified architecture.
  *  3. LOADING - the pure seven-stage loader judges the content.
  *
- * Results are memoized per domain id because a published version is immutable
- * by construction; a changed file is a different version, and a deployment
- * restarts to pick one up.
+ * SUCCESSFUL results are memoized per domain id because a published version is
+ * immutable by construction; a changed file is a different version, and a
+ * deployment restarts to pick one up. A FAILURE is never cached: that
+ * justification does not cover a transient read (an EMFILE under load, a
+ * momentary ENOENT while a deploy replaces the file), and caching one would
+ * disable the configured flow for the life of the process.
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -38,6 +41,14 @@ import { formatDomainConfigErrors, type DomainConfigError } from "@domain/config
 
 /** Where the published domain configurations live, relative to the project root. */
 export const DOMAIN_CONFIG_DIRECTORY = "config/domains";
+
+/**
+ * The published configuration the shipped `/app/account-opening` journey runs.
+ * It lives HERE, beside the source that resolves it, so a server component can
+ * name the document it renders without pulling the composition root (store,
+ * house-CRM, e-sign, audit, tracer) into its module graph.
+ */
+export const ACCOUNT_OPENING_DOMAIN = "account-opening";
 
 type VersionPin = {
   readonly domainConfigId: string;
@@ -106,7 +117,7 @@ export interface SourcedDomainConfig {
   readonly configHash: string;
 }
 
-const cache = new Map<string, Result<SourcedDomainConfig, AppError>>();
+const cache = new Map<string, SourcedDomainConfig>();
 
 const readOnce = (domainConfigId: string): Result<SourcedDomainConfig, AppError> => {
   let text: string;
@@ -162,9 +173,9 @@ export const loadPublishedDomainConfig = (
   domainConfigId: string,
 ): Result<SourcedDomainConfig, AppError> => {
   const cached = cache.get(domainConfigId);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined) return ok(cached);
   const result = readOnce(domainConfigId);
-  cache.set(domainConfigId, result);
+  if (result.ok) cache.set(domainConfigId, result.value);
   return result;
 };
 

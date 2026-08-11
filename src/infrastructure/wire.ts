@@ -28,14 +28,14 @@ import { type Result, ok, err } from "@contracts/result";
 import { appError, normalizeAppError, type AppError } from "@contracts/errors";
 import { MACHINE_RECORD_ID_RE, parseMachineRecordId } from "@contracts/record-id";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
-import type { FlowDefinition } from "@domain/workflow/engine";
 import {
   compileFlowDefinition,
   EXECUTION_SCOPE_KEY,
   INITIATING_ACTOR_KEY,
+  type CompiledFlow,
   type ExecutionAdapters,
 } from "@domain/config/plan-compiler";
-import { loadPublishedDomainConfig } from "@infra/config/domain-config-source";
+import { ACCOUNT_OPENING_DOMAIN, loadPublishedDomainConfig } from "@infra/config/domain-config-source";
 import { makeExecutionAdapters, SUPPORTED_COMMAND_TYPES } from "@infra/execution-adapters";
 import { makeExecutionStore } from "@infra/store/execution-store";
 import { auditedWrite } from "@infra/audit/audited-write";
@@ -53,18 +53,12 @@ import {
 } from "@domain/observability/safe-values";
 
 /**
- * The published configuration this surface runs. The route and the page carry
- * the same shipped names (CD-1 leaves shipped URLs and record vocabulary
- * unrenamed); everything the flow DOES comes from the document.
+ * The action the published configuration this surface runs declares. The route
+ * and the page carry the same shipped names (CD-1 leaves shipped URLs and record
+ * vocabulary unrenamed); everything the flow DOES comes from the document, whose
+ * id lives beside the source that resolves it.
  */
-export const ACCOUNT_OPENING_DOMAIN = "account-opening";
 const ACCOUNT_OPENING_ACTION = "open-account";
-
-type ConfiguredFlow = {
-  readonly definition: FlowDefinition<ExecutionAdapters>;
-  /** The verification rule the externally-gated step waits on, for replay reporting. */
-  readonly awaiting: string | undefined;
-};
 
 /**
  * Compile the shipped domain configuration into a runnable flow. Every failure
@@ -72,7 +66,7 @@ type ConfiguredFlow = {
  * unrunnable configuration must break the flow loudly, never degrade to a
  * hard-coded fallback (which would make the configuration dead data).
  */
-function configuredFlow(): Result<ConfiguredFlow, AppError> {
+function configuredFlow(): Result<CompiledFlow, AppError> {
   const sourced = loadPublishedDomainConfig(ACCOUNT_OPENING_DOMAIN);
   if (!sourced.ok) return sourced;
   const config = sourced.value.config;
@@ -84,15 +78,7 @@ function configuredFlow(): Result<ConfiguredFlow, AppError> {
       appError("INTERNAL", `This deployment has no execution adapter for: ${[...new Set(unsupported)].sort().join(", ")}.`),
     );
   }
-  const definition = compileFlowDefinition(config, ACCOUNT_OPENING_ACTION);
-  if (!definition.ok) return definition;
-  const awaitedRules = new Set(
-    config.document.verification.filter((rule) => rule.awaitsExternal).map((rule) => rule.id as string),
-  );
-  const awaiting = config.document.execution.capabilities
-    .map((capability) => capability.verificationRule as string)
-    .find((rule) => awaitedRules.has(rule));
-  return ok({ definition: definition.value, awaiting });
+  return compileFlowDefinition(config, ACCOUNT_OPENING_ACTION);
 }
 
 /** PIIBearing: household/contact names and email are client PII. */
@@ -114,13 +100,19 @@ type AccountOpeningStartResult =
   & FlowRunResult
   & GovernedOutput<"execution.initiate">;
 
-/** Report an already-started execution's current state (double-submit replay). */
-function replayedRunResult(state: ExecutionState, awaiting: string | undefined): FlowRunResult {
+/**
+ * Report an already-started execution's current state (double-submit replay).
+ * The awaited rule is the one the SUSPENDING step emitted - the engine advances
+ * the cursor past that step before persisting, so it is the compiled step at
+ * `cursor - 1`. Scanning the document for the first externally-gated capability
+ * would agree only while a domain has exactly one.
+ */
+function replayedRunResult(flow: CompiledFlow, state: ExecutionState): FlowRunResult {
   return {
     executionId: state.id,
     status: state.status,
     token: state.resumeToken ?? undefined,
-    awaiting: state.status === "suspended" ? awaiting : undefined,
+    awaiting: state.status === "suspended" ? flow.awaitingByStep[state.cursor - 1] : undefined,
     data: state.data,
   };
 }
@@ -181,7 +173,7 @@ function canonicalExecutionId(
 }
 
 /** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
-async function retryFailedStart(flow: ConfiguredFlow, store: ExecutionStore, deps: ExecutionAdapters, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
+async function retryFailedStart(flow: CompiledFlow, store: ExecutionStore, deps: ExecutionAdapters, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
   try {
     return await retryFlow(flow.definition, store, deps, existing, tenant);
   } catch (e) {
@@ -226,7 +218,7 @@ export async function startAccountOpening(
   if (input.clientRequestId) {
     const existing = await loadOwnExecution();
     if (existing && !inputMatchesExecution(input, existing)) return editedReplayConflict(executionId);
-    if (existing && existing.status !== "failed") return replayedRunResult(existing, flow.value.awaiting);
+    if (existing && existing.status !== "failed") return replayedRunResult(flow.value, existing);
     if (existing) {
       // A replayed id whose execution FAILED is re-driven from its saved cursor
       // (resumeFlow's Vale V7 retry, applied to the start path): the per-write
@@ -281,7 +273,7 @@ export async function startAccountOpening(
       } else if (raced) {
         result = raced.status === "failed"
           ? await retryFailedStart(flow.value, store, deps, raced, tenant)
-          : replayedRunResult(raced, flow.value.awaiting);
+          : replayedRunResult(flow.value, raced);
       } else {
         const error = metadata.appError ??
           appError("INTERNAL", "The account-opening flow could not be started.");
