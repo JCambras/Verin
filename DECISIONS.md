@@ -6641,3 +6641,25 @@ work in the fence helper layer.
 
 **Revert path:** revert this changeset; the ADR-0055 amendment, the tooling ceiling, and the ratchet
 extensions revert with it. Gate semantics are unchanged throughout.
+
+### D-190 · 2026-08-10 · reversible · Wrap-up continuation: registration analysis fail-closed closures are proven adversarially
+
+The wrap-up continuation rounds closed the remaining fail-open paths in charter-drift's Vitest
+registration analysis and proved every strengthened rule by real injection. Hook callbacks
+(`beforeEach`/`beforeAll`/`afterEach`/`afterAll`) get the same TestContext inspection as test
+callbacks; chains ending in a non-neutralizing modifier (`concurrent`/`sequential`/`shuffle`/
+`extend`) stay registration-visible; identifier-passed callbacks resolve to their declared bodies or
+fail closed; local function returns propagate through `vitestCallablePaths` so a laundered
+`describe.skip` stays visible; and Function.prototype invocation forms (`call`/`apply`/`bind`) on a
+registration or hook path are rejected as unresolvable evidence, since they shift, box, or pre-bind
+the arguments the options and callback analyses line up on. Both vitest project includes are pinned
+to the shared exported constants with exact exclude lists, so no project can silently drop a test
+tree; the demo URL resolvers are own-property guards that 404 on Object prototype keys. Each closure
+carries an executable companion in the fence and a real injection recorded as PF-240..PF-246; the
+three colliding branch proof ids were renumbered to PF-237..PF-239 preserving the log's never-reuse
+invariant. The keyed follow-ups `fu-ast-helpers-dedup` and `fu-badge-station-list` (D-189) stand,
+joined by the recorded residuals from review: cross-module return laundering via `globalThis` in an
+imported helper, and an AST-level (rather than textual) config-scope pin.
+
+**Revert path:** revert this changeset; the analysis closures, companions, and proof entries revert
+together. Gate semantics are unchanged throughout.

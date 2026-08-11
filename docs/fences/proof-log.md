@@ -12461,3 +12461,183 @@ demo-surface fences, `pnpm typecheck`, `pnpm lint`, `pnpm exec knip`, `pnpm exec
 scripts/v3-invariants.ts`, golden and corpus validation are green on the reverted tree.
 
 **Date:** 2026-08-10 (consolidated wrap-up round, captain rulings `g8-relight-askuser`).
+
+## PF-240 · charter-drift: hook TestContext skips fail closed · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** Vitest lifecycle hooks (`beforeEach`/`beforeAll`/`afterEach`/`afterAll`) get the same
+TestContext inspection as test callbacks - a `ctx.skip()` inside a hook neutralizes every test in the
+file while Vitest's JSON report still says "passed", so a hook callback reaching `skip`/`todo` on its
+context, aliasing it, or membering it dynamically is a fence failure.
+
+**Injection - a mapped fence file skips itself from a hook.** Appended
+`beforeEach((ctx) => { ctx.skip(); });` to `arch-version.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/arch-version.test.ts:94 fitness callback must not neutralize via TestContext skip
+```
+
+**Executable companions (run on every build):** the `beforeEach` context-skip, global-hook
+context-skip, and `beforeAll` context-alias cases in the (b companion) matrix.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `charter-drift-hook-skip-gap`).
+
+## PF-241 · charter-drift: non-neutralizing modifiers stay registration-visible · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** a chain ending in a non-neutralizing modifier (`concurrent`/`sequential`/`shuffle`/
+`extend`) is still a REGISTRATION subject to the disabled/options/TestContext analyses - it must not
+drop out of them entirely, or `it.concurrent("x", (ctx) => ctx.skip())` and
+`it.sequential("x", { skip: true }, fn)` skip at runtime while the file reports "passed".
+
+**Injection - a modifier chain hides a context skip.** Appended
+`it.concurrent("injected modifier skip", (ctx) => { ctx.skip(); });` to
+`audited-write-required.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/audited-write-required.test.ts:99 fitness callback must not neutralize via TestContext skip
+```
+
+**Executable companions (run on every build):** the `it.concurrent` context-skip and `it.sequential`
+options-neutralized cases in the (b companion) matrix, plus the enabled `it.concurrent` negative.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `charter-drift-modifier-invisible`).
+
+## PF-242 · charter-drift: identifier-passed callbacks resolve or fail closed · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** a callback passed by IDENTIFIER carries the same TestContext authority as an inline
+one, so it resolves to its declared bodies for the `ctx.skip`/alias rules, and a callback whose body
+cannot be statically resolved is itself a fence failure rather than credited as live.
+
+**Injection - an aliased callback hides a context skip.** Appended
+`const injectedCallback = (ctx) => { ctx.skip(); }; it("injected identifier callback",
+injectedCallback);` to `auth-enforcement.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/auth-enforcement.test.ts:310 fitness callback must not neutralize via TestContext skip
+```
+
+**Executable companions (run on every build):** the aliased-arrow context-skip, declared-function
+context-todo, and unresolvable-import callback cases in the (b companion) matrix, plus the enabled
+resolved-callback negative.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `charter-drift-identifier-callback-escape`).
+
+## PF-243 · charter-drift: neutralizers laundered through local returns stay visible · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** `vitestCallablePaths` propagates a local function's RETURN values, so a neutralizer
+laundered through a call result (`function pick() { return describe.skip; } const d = pick();
+d(...)`) resolves to its real path, and a local callable whose returns cannot be enumerated yields
+the documented fail-closed star path instead of an empty (invisible) path set.
+
+**Injection - a laundered `describe.skip` registers a suite.** Appended
+`function pickRegistrar() { return describe.skip; } const injectedSuite = pickRegistrar();
+injectedSuite("injected laundered suite", () => {});` to `bounded-request-body.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/bounded-request-body.test.ts:62 disabled/focused Vitest registration describe.skip
+```
+
+**Executable companions (run on every build):** the declared-function and arrow-return laundering
+cases in the (b companion) matrix, plus the enabled derived-helper negative proving an application
+factory's return is not flagged.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `charter-drift-return-laundering`).
+
+## PF-244 · charter-drift: both vitest project scopes are pinned · `src/__tests__/fitness/charter-drift.test.ts`, `vitest.config.ts`
+
+**Invariant:** BOTH vitest project includes derive from the shared exported constants
+(`VITEST_FITNESS_INCLUDE`, `VITEST_TEST_INCLUDE`) and every exclude list is pinned exactly - an
+unreviewed app-project exclude would silently drop a whole test tree (the per-file inventory covers
+fitness files only) while the blocking test job still reports a complete suite.
+
+**Injection - the app project silently drops the integration tree.** Changed the app project's
+exclude in `vitest.config.ts` to
+`exclude: ["src/__tests__/fitness/**", "src/__tests__/integration/**"]`.
+
+**Observed failure (`charter-drift.test.ts` (b' companion) and (b'' companion)):**
+```
+× (b'' companion) rejects a widened or hardcoded vitest project scope
+vitest exclude lists must be exactly ["exclude: [\"node_modules/**\", \".next/**\", \"e2e/**\"]",
+"exclude: [\"src/__tests__/fitness/**\"]"], found [... "src/__tests__/integration/**\"]"]
+❯ src/__tests__/fitness/charter-drift.test.ts:2580
+```
+
+**Executable companions (run on every build):** the widened-exclude, hardcoded-glob, and
+dropped-derivation cases in (b'' companion), asserted against the REAL `vitest.config.ts` in both
+(b' companion) and (b'' companion).
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `app-project-include-unpinned`).
+
+## PF-245 · demo-surface-completeness: URL resolvers refuse Object prototype keys · `src/__tests__/fitness/demo-surface-completeness.test.ts`, `src/app/demo/data.ts`
+
+**Invariant:** the demo URL resolvers (`resolveScenarioId`/`resolveFirmId`) are own-property guards:
+an unknown id - including an Object.prototype key like `toString`/`constructor`/`hasOwnProperty` -
+returns null so the route 404s, never silently rendering a different branch than the presenter asked
+for. The fence runs the REAL resolvers against the prototype keys, and the e2e suite holds a
+prototype-key 404 case.
+
+**Injection - the firm guard regresses to the `in` operator.** Changed `resolveFirmId` in
+`src/app/demo/data.ts` back to `return id in FIRMS ? id : null;`.
+
+**Observed failure (`demo-surface-completeness.test.ts`):**
+```
+× preserves every supported scenario and firm outcome through the journey service
+["firm resolver admits prototype key 'toString'", "firm resolver admits prototype key 'constructor'",
+ "firm resolver admits prototype key 'hasOwnProperty'"]
+❯ src/__tests__/fitness/demo-surface-completeness.test.ts:1882
+```
+
+**Executable companions (run on every build):** the remapping-resolver and `in`-operator resolver
+cases in the fence's companion suite, plus the prototype-key 404 variant in
+`e2e/demo-journey.spec.ts`.
+
+**Reverted:** injection removed immediately; the demo-surface fence is green on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `firm-resolver-prototype-keys`).
+
+## PF-246 · charter-drift: Function.prototype invocation forms are rejected as unresolvable evidence · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** a Vitest registration or hook reached through `call`/`apply`/`bind` shifts, boxes, or
+pre-binds its arguments, so the options, case-collection, and callback analyses cannot line their
+positions up statically - the path is rejected fail-closed (`disabled/focused Vitest registration
+it.call`, `Vitest hook invoked through Function.prototype beforeEach.call`) rather than left
+invisible, and the reachable callback still gets the TestContext inspection.
+
+**Injection - invoker forms hide context skips.** Appended
+`it.call(undefined, "injected invoker skip", (ctx) => { ctx.skip(); });` and
+`beforeEach.call(undefined, (ctx) => { ctx.skip(); });` to `conflict-key-families.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/conflict-key-families.test.ts:185 disabled/focused Vitest registration it.call
+src/__tests__/fitness/conflict-key-families.test.ts:186 fitness callback must not neutralize via TestContext skip
+src/__tests__/fitness/conflict-key-families.test.ts:188 Vitest hook invoked through Function.prototype beforeEach.call
+src/__tests__/fitness/conflict-key-families.test.ts:189 fitness callback must not neutralize via TestContext skip
+```
+
+**Executable companions (run on every build):** the `it.call`, `it.apply`, pre-bound `it.bind`,
+`beforeEach.call`, `beforeEach.apply`, and pre-bound `beforeEach.bind` cases in the (b companion)
+matrix, plus the application-object `call`/`apply`/`bind` negative proving non-Vitest receivers are
+not flagged.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `vitest-call-apply-bind-invisible`).

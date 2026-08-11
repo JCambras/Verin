@@ -859,6 +859,23 @@ const NON_NEUTRALIZING_VITEST_MODIFIERS = new Set([
   "extend",
 ]);
 
+/**
+ * Function.prototype invocation forms shift (`call`), box (`apply`), or
+ * pre-bind (`bind`) the registration arguments, so the options, case-collection,
+ * and callback analyses cannot line their positions up statically - a
+ * registration or hook reached through one is rejected as unresolvable
+ * evidence rather than left invisible.
+ */
+const FUNCTION_PROTOTYPE_INVOKERS = new Set(["call", "apply", "bind"]);
+
+function pathReachesFunctionPrototypeInvoker(
+  path: VitestCallablePath,
+): boolean {
+  return path.members
+    .slice(1)
+    .some((member) => FUNCTION_PROTOTYPE_INVOKERS.has(member));
+}
+
 function staticRegistrationCaseCollection(
   node: Node | undefined,
   seen = new Set<Node>(),
@@ -1007,7 +1024,8 @@ function isVitestRegistrationPath(path: VitestCallablePath): boolean {
         (member) =>
           member === "*" ||
           NEUTRALIZING_VITEST_OPTIONS.has(member) ||
-          NON_NEUTRALIZING_VITEST_MODIFIERS.has(member),
+          NON_NEUTRALIZING_VITEST_MODIFIERS.has(member) ||
+          FUNCTION_PROTOTYPE_INVOKERS.has(member),
       )
   );
 }
@@ -1017,7 +1035,7 @@ function isVitestHookPath(path: VitestCallablePath): boolean {
   return (
     base !== undefined &&
     VITEST_HOOK_BASES.has(base) &&
-    rest.length === 0 &&
+    rest.every((member) => FUNCTION_PROTOTYPE_INVOKERS.has(member)) &&
     path.conditions.length === 0 &&
     path.caseCollections.length === 0
   );
@@ -1047,6 +1065,7 @@ function vitestRegistrationPathIsDisabled(
       .slice(1)
       .some((member) => NEUTRALIZING_VITEST_OPTIONS.has(member)) ||
     path.members.slice(1).includes("*") ||
+    pathReachesFunctionPrototypeInvoker(path) ||
     conditionallyDisabled ||
     provablyEmptyCases ||
     registrationOptionsAreUnsafe(call)
@@ -1325,6 +1344,16 @@ function disabledVitestRegistrationProblemsInFile(
                   `${fileName}:${call.getStartLineNumber()} unreachable Vitest registration ${members.join(".")}`,
                 ];
           }),
+        ...paths
+          .filter(
+            (path) =>
+              isVitestHookPath(path) &&
+              pathReachesFunctionPrototypeInvoker(path),
+          )
+          .map(
+            (path) =>
+              `${fileName}:${call.getStartLineNumber()} Vitest hook invoked through Function.prototype ${path.members.join(".")}`,
+          ),
         ...testContextProblems(call, paths, fileName),
       ];
     });
@@ -2095,6 +2124,35 @@ laundered("laundered suite", () => {
       `import { describe } from "vitest";
 const pick = () => describe.skip;
 pick()("directly laundered suite", () => {});`,
+      `import { it } from "vitest";
+it.call(undefined, "invoker context skip", (ctx) => {
+  ctx.skip();
+});`,
+      `import { it } from "vitest";
+it.apply(undefined, ["boxed invoker skip", (ctx) => {
+  ctx.skip();
+}]);`,
+      `import { it } from "vitest";
+const bound = it.bind(undefined, "pre-bound skip", (ctx) => {
+  ctx.skip();
+});
+bound();`,
+      `import { it, beforeEach } from "vitest";
+beforeEach.call(undefined, (ctx) => {
+  ctx.skip();
+});
+it("mapped check", () => {});`,
+      `import { it, beforeEach } from "vitest";
+beforeEach.apply(undefined, [(ctx) => {
+  ctx.skip();
+}]);
+it("mapped check", () => {});`,
+      `import { it, beforeEach } from "vitest";
+const hooked = beforeEach.bind(undefined, (ctx) => {
+  ctx.skip();
+});
+hooked();
+it("mapped check", () => {});`,
     ];
     for (const source of disabled) {
       expect(
@@ -2186,6 +2244,15 @@ it("enabled derived helper", () => {
       disabledVitestRegistrationProblems(
         `const suite = { skip: (_name: string, fn: () => void) => fn() };
 suite.skip("application suite", () => {});`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `const helper = { run: (fn: () => void) => fn() };
+helper.run.call(helper, () => {});
+helper.run.apply(helper, [() => {}]);
+const rebound = helper.run.bind(helper, () => {});
+rebound();`,
       ),
     ).toEqual([]);
     expect(
