@@ -365,8 +365,8 @@ reject duplicate exact results.
 - **`scripts/**` is budgeted AND dead-export-gated now (ADR-0052, D-171).** Both budget fences used to
   walk `src/` only, so moving code to `scripts/` was an escape hatch. `line-budget` has a `tooling` bucket
   and `max-file-size` walks `scripts/**` under the same 500-line per-file ceiling. `knip.json` entries are
-  `scripts/*.ts` (top-level runners plus two library files), NOT `scripts/**/*.ts`, so a never-referenced
-  export under `scripts/corpus/` or any future subdirectory now fails the dead-export gate. Build-time
+  `scripts/*.ts` (top-level runners plus their shared library files), NOT `scripts/**/*.ts`, so a never-referenced
+  export under `scripts/corpus/`, `scripts/v3-gates/`, or any future subdirectory now fails the dead-export gate. Build-time
   tooling is a legitimate home for generators — it is not an unmeasured one. `src/__tests__/**` is still
   in no bucket: that gap is DEFERRED, not exempt (D-172, follow-up `fu-corpus-test-tree-budget`).
 
