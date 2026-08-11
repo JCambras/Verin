@@ -119,6 +119,26 @@ export const admitIntakeSubmission = (
   return ok(admitted);
 };
 
+/**
+ * The admitted fields a caller's FIXED input shape has no room for, sorted.
+ *
+ * A boundary that judges the whole configured field list and then reads back a
+ * fixed subset would silently drop the rest: the screen renders the new control,
+ * the boundary admits its value, and the value vanishes - to be missed at
+ * whatever step sources it, by which point earlier steps have committed. Naming
+ * the unmapped fields turns that into an immediate, actionable refusal for the
+ * author who added the slot.
+ */
+export const unmappedIntakeFields = (
+  admitted: Readonly<Record<string, string | null>>,
+  carried: readonly string[],
+): readonly string[] => {
+  const known = new Set<string>(carried);
+  return Object.keys(admitted)
+    .filter((field) => !known.has(field))
+    .sort();
+};
+
 /** The label the document declares for a trigger field, or `undefined` if it declares none. */
 const declaredLabel = (form: IntakeForm, field: string): string | undefined =>
   form.fields.find((declared) => declared.field === field)?.label;

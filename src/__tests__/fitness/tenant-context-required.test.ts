@@ -129,6 +129,7 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/intake-view.ts :: admitIntakeSubmission.<call>",
   "src/domain/config/intake-view.ts :: optionalIntakeValue.<call>",
   "src/domain/config/intake-view.ts :: requiredIntakeValue.<call>",
+  "src/domain/config/intake-view.ts :: unmappedIntakeFields.<call>",
   "src/domain/config/intake.ts :: intakeFormOf.<call>",
   "src/domain/config/labels.ts :: domainLabelsOf.<call>",
   "src/domain/config/load-closure.ts :: checkBucketSource.<call>",

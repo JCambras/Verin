@@ -14670,3 +14670,88 @@ assertion a rail bound to ordinals 0 and 1 would not satisfy.
 lines; the 23 e2e specs and `pnpm test` are green.
 
 **Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `live-station-surface-ids-unbound`).
+
+---
+
+## PF-259 · a rendered key must identify its segment tuple UNIQUELY
+
+**Invariant:** `renderKeySegments` (`src/domain/config/segments.ts`) escapes each resolved part before
+joining, so the rendered bytes are an injective encoding of the resolved tuple.
+
+**Injection.** Restored the bare join (`parts.join(SEGMENT_SEPARATOR)`).
+
+**Observed failure:**
+```
+× flags the segment-boundary collision a bare join admitted
+× enforces (P-4): rendering a key is INJECTIVE over the resolved segment tuple
+```
+`("h1:x", "d")` and `("h1", "x:d")` rendered ONE key. `bank-instruction-key` in
+`config/domains/money-movement.yaml` is a literal plus two subject slots read straight from the caller's
+transport, so two unrelated subjects shared a coordination identity - the exact failure a conflict key
+exists to prevent.
+
+**Companion.** `src/__tests__/unit/domain-config.test.ts` asserts the concrete collision and runs a
+fast-check property over arbitrary tuples drawn from an alphabet containing both the separator and the
+escape byte: distinct tuples never render one key, and colon-free, escape-free values render exactly as
+they did before (no shipped key is re-keyed).
+
+**Reverted:** the escaping restored; `pnpm test` green.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `key-segments-separator-ambiguous`).
+
+---
+
+## PF-260 · flow data has two writers, and a publication alias may not claim a name another owns
+
+**Invariant:** the document-level refinement in `src/domain/config/document.ts` refuses a capability
+publication alias that is a reserved platform flow-data key, collides with a declared slot
+`triggerField`, or is already published by another capability.
+
+**Injection.** Neutralised the refinement loop, then pushed `as: executionScope`, `as: householdName`
+and a second `as: applicationId` onto `config/domains/account-opening.yaml`'s first capability in turn.
+
+**Observed failure (with the refinement restored, each mutation):**
+```
+× flags a publication alias that would overwrite the platform's execution scope
+× flags a publication alias that would overwrite a slot's own submitted value
+× flags one publication alias claimed by two capabilities
+```
+Without the refinement all three loaded cleanly. An alias equal to `executionScope` silently replaces
+the per-execution idempotency scope for every LATER step, so their keys derive from an adapter's return
+value rather than from the execution - exactly-once effect on replay lost, with no diagnostic.
+
+**Companion.** The three companion cases above, in
+`src/__tests__/unit/domain-config.test.ts`'s `detects (companion)` block.
+
+**Reverted:** the refinement restored; both shipped documents load unchanged.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `publication-alias-not-reserved`).
+
+---
+
+## PF-261 · three loader checks that failed open
+
+**Invariant:** (a) `checkForm` requires a form field's slot to be `supplied-by-trigger`; (b) the
+settable-parameter existence check in `load-references.ts` is an own-property test; (c) `diff.ts`
+computes section bytes with the canonical serializer.
+
+**Injection.** (a) Flipped a rendered account-opening slot to `derived`; (b) restored the `in` operator
+and declared a policy write to `parameter: constructor`; (c) restored `JSON.stringify`.
+
+**Observed failure:**
+```
+× flags a form control over a slot the requester does not supply (stage 6)
+× flags a policy write to a parameter reached only through Object.prototype
+× enforces: the diff reads CANONICAL bytes, so authoring key order is not a change
+```
+(a) loaded clean and then rendered the "configuration could not be loaded" state on the live screen;
+(b) admitted a policy surface offering a write to a parameter the primitive never declared - a closure
+check failing OPEN; (c) reported every section as `replace` for a document whose only difference was
+authoring key order.
+
+**Companion.** The three cases named above.
+
+**Reverted:** all three restored; `pnpm test` green.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review findings `check-form-admits-non-trigger-slot`,
+`settable-parameter-uses-in-operator`, `diff-not-canonical-bytes`).

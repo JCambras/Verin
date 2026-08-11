@@ -1,17 +1,29 @@
 import { describe, it, expect } from "vitest";
+import fc from "fast-check";
 import { readFileSync } from "node:fs";
 import { parseDocument } from "yaml";
 import { bindDomainConfig, firmIdentityPaths, type FirmRegistry } from "@domain/config/bind";
 import { canonicalConfigJson } from "@domain/config/document";
 import { diffDomainConfigs, EMPTY_CONFIG_BASELINE } from "@domain/config/diff";
 import { intakeFormOf } from "@domain/config/intake";
-import { admitIntakeSubmission, optionalIntakeValue, requiredIntakeValue } from "@domain/config/intake-view";
+import {
+  admitIntakeSubmission,
+  optionalIntakeValue,
+  requiredIntakeValue,
+  unmappedIntakeFields,
+} from "@domain/config/intake-view";
 import { domainLabelsOf } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
 import { compileFlowDefinition, EXECUTION_SCOPE_KEY } from "@domain/config/plan-compiler";
 import { RESERVED_TRIGGER_FIELDS } from "@domain/config/vocabulary";
 import { policyRegistriesFor } from "@domain/config/registries";
-import { bucketOf, renderTemplate, templateIsInert } from "@domain/config/segments";
+import {
+  bucketOf,
+  renderKeySegments,
+  renderTemplate,
+  templateIsInert,
+  type KeySegment,
+} from "@domain/config/segments";
 
 /**
  * THE DOMAIN-CONFIGURATION ACCEPTANCE TESTS (v3 prompt 10; ADR-0056).
@@ -148,6 +160,30 @@ describe("domain configuration: the shipped documents", () => {
     expect([...declared].sort()).toEqual(computed.map((entry) => `${entry.op}:${entry.section}`).sort());
   });
 
+  it("enforces: the diff reads CANONICAL bytes, so authoring key order is not a change", () => {
+    const document = loadedOf("money-movement").document as unknown as Mutable;
+    // The same sections, authored in a different key order at every depth: a
+    // parent reserialized by the persisted registry and an author-ordered
+    // candidate are the SAME document, and a diff that said otherwise would force
+    // an author to declare changes that did not happen.
+    const reverseKeys = (value: unknown): unknown =>
+      Array.isArray(value)
+        ? value.map(reverseKeys)
+        : value !== null && typeof value === "object"
+          ? Object.fromEntries(
+              Object.entries(value as Record<string, unknown>)
+                .reverse()
+                .map(([key, entry]) => [key, reverseKeys(entry)]),
+            )
+          : value;
+    const reordered = reverseKeys(document) as Mutable;
+    expect(Object.keys(reordered)).not.toEqual(Object.keys(document));
+    expect(diffDomainConfigs(document, reordered)).toEqual([]);
+    expect(diffDomainConfigs(document, { ...document, blockers: [] }).map((entry) => entry.section)).toEqual([
+      "blockers",
+    ]);
+  });
+
   it("enforces: account opening compiles to the five-step plan the shipped flow runs", () => {
     const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
     expect(compiled.ok).toBe(true);
@@ -260,6 +296,19 @@ describe("domain configuration: the shipped documents", () => {
       expect(submit(VALID)).toEqual({ ok: true, value: { ...VALID } });
       const withoutEmail = submit({ ...VALID, email: "" });
       expect(withoutEmail.ok && withoutEmail.value["email"]).toBeNull();
+    });
+
+    it("names an admitted field the shipped start input cannot carry, instead of dropping it", () => {
+      const admitted = submit(VALID);
+      expect(admitted.ok).toBe(true);
+      if (!admitted.ok) return;
+      // The five shipped fields all land; a sixth configured slot would not, and
+      // the route refuses it by name rather than losing it at a later step whose
+      // predecessors have already committed (D-210).
+      expect(unmappedIntakeFields(admitted.value, Object.keys(VALID))).toEqual([]);
+      expect(
+        unmappedIntakeFields({ ...admitted.value, advisorNote: "x", branchCode: null }, Object.keys(VALID)),
+      ).toEqual(["advisorNote", "branchCode"]);
     });
 
     it("refuses a value longer than the slot's DECLARED maximum, at that exact length", () => {
@@ -459,6 +508,49 @@ describe("detects (companion): a configuration that is wrong in any of the seven
     }, "incoherent");
   });
 
+  it("flags a policy write to a parameter reached only through Object.prototype", () => {
+    rejects((document) => {
+      const slot = section<Mutable>(document, "policy")["slots"] as Mutable[];
+      (slot[0]!["settableParameters"] as Mutable[]).push({
+        binding: "liquidity",
+        parameter: "constructor",
+        describes: "a name the primitive never declared",
+      });
+    }, "unknown-reference");
+  });
+
+  /**
+   * Flow data has TWO writers. The slot side has refused a reserved name since
+   * D-205; these are the same hazard through a capability's publication alias,
+   * which the compiler merges into the very same namespace.
+   */
+  const publishesAs = (document: Mutable, alias: string): void => {
+    const capabilities = section<Mutable>(document, "execution")["capabilities"] as Mutable[];
+    (capabilities[0]!["publishes"] as Mutable[]).push({ output: "extraOutput", as: alias });
+  };
+
+  it("flags a publication alias that would overwrite the platform's execution scope", () => {
+    rejects((document) => publishesAs(document, "executionScope"), "grammar", "account-opening");
+  });
+
+  it("flags a publication alias that would overwrite a slot's own submitted value", () => {
+    rejects((document) => publishesAs(document, "householdName"), "grammar", "account-opening");
+  });
+
+  it("flags one publication alias claimed by two capabilities", () => {
+    rejects((document) => publishesAs(document, "applicationId"), "grammar", "account-opening");
+  });
+
+  it("flags a form control over a slot the requester does not supply (stage 6)", () => {
+    rejects((document) => {
+      const intents = section<Mutable[]>(document, "intents");
+      const slots = intents[0]!["slots"] as Mutable[];
+      const supplied = slots.find((slot) => slot["resolution"] === "supplied-by-trigger")!;
+      delete supplied["triggerField"];
+      supplied["resolution"] = "derived";
+    }, "incomplete", "account-opening");
+  });
+
   it("flags a text slot used inside a conflict key (a coordination identity must be stable)", () => {
     rejects((document) => {
       const keys = section<Mutable[]>(document, "conflictKeys");
@@ -634,6 +726,50 @@ describe("detects (companion): a configuration that is wrong in any of the seven
       else fuzzed[key] = { unexpected: "shape" };
       expect(() => loadDomainConfig(fuzzed)).not.toThrow();
     }
+  });
+
+  /**
+   * A conflict key is what makes two individually valid operations contend when
+   * they must, so the rendered bytes have to identify the segment tuple UNIQUELY.
+   * A bare join did not: both subject slots of `bank-instruction-key` are read
+   * straight from the caller's transport, so a colon inside one moved the segment
+   * boundary and two unrelated subjects shared one coordination identity.
+   */
+  const renderTuple = (parts: readonly string[]): string => {
+    const segments: KeySegment[] = parts.map((_, index) => ({
+      kind: "value",
+      source: { from: "context", key: `k${index}` },
+    }));
+    const rendered = renderKeySegments(
+      segments,
+      (source) =>
+        source.from === "context"
+          ? { kind: "value", value: parts[Number(source.key.slice(1))]! }
+          : { kind: "absent" },
+      "test",
+    );
+    if (!rendered.ok) throw new Error(`render failed: ${JSON.stringify(rendered.error)}`);
+    return rendered.value;
+  };
+
+  it("flags the segment-boundary collision a bare join admitted", () => {
+    expect(renderTuple(["h1:x", "d"])).not.toBe(renderTuple(["h1", "x:d"]));
+    // Every value free of the separator and the escape byte renders exactly as
+    // it did before, so no shipped key is re-keyed by the encoding.
+    expect(renderTuple(["household", "3f2b-9c11"])).toBe("household:3f2b-9c11");
+    expect(renderTuple(["liquidity", "smiths", "2026-08"])).toBe("liquidity:smiths:2026-08");
+  });
+
+  it("enforces (P-4): rendering a key is INJECTIVE over the resolved segment tuple", () => {
+    const part = fc.string({ unit: fc.constantFrom("a", "b", ":", "\\"), maxLength: 5 });
+    const tuple = fc.array(part, { minLength: 1, maxLength: 4 });
+    fc.assert(
+      fc.property(tuple, tuple, (left, right) => {
+        const same = left.length === right.length && left.every((value, index) => value === right[index]);
+        return same === (renderTuple(left) === renderTuple(right));
+      }),
+      { numRuns: 3000 },
+    );
   });
 
   it("flags a non-canonical date in a bucket segment rather than truncating it", () => {

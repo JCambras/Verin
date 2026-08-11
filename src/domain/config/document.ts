@@ -46,6 +46,7 @@ import {
   ChangeOpSchema,
   ConfigSectionSchema,
   kebabId,
+  RESERVED_TRIGGER_FIELDS,
 } from "./vocabulary";
 
 /** Pinned literal, exactly as DECISION_CORE_SCHEMA_VERSION is pinned. */
@@ -152,6 +153,58 @@ const documentShapeImpl = z
   })
   .readonly();
 
+/**
+ * THE FLOW-DATA NAMESPACE HAS TWO WRITERS, and only one of them was guarded.
+ *
+ * A slot's `triggerField` carries what the requester supplied; a capability's
+ * publication alias (`publishes[].as`) carries what an adapter returned, and the
+ * compiler merges that patch straight into the same flow data. The intent schema
+ * already refuses a trigger field that collides with a platform key (D-205), so
+ * this is the SAME hazard through the other door: an alias equal to
+ * `executionScope` silently replaces the per-execution idempotency scope for
+ * every LATER step - their keys would derive from an adapter's return value
+ * rather than from the execution, losing exactly-once effect on replay with no
+ * diagnostic anywhere. An alias equal to a declared trigger field overwrites the
+ * requester's own value, and one alias declared by two capabilities makes the
+ * compiler's alias-keyed step-output lookup return the wrong step's value.
+ *
+ * Reserved names come from the one declaration the writers consume, so the list
+ * that refuses and the code that writes cannot drift apart.
+ */
+const publicationAliasCollisions = (
+  document: z.infer<typeof documentShapeImpl>,
+): readonly string[] => {
+  const reserved = new Set<string>(RESERVED_TRIGGER_FIELDS);
+  const triggerFields = new Set<string>(
+    document.intents.flatMap((intent) =>
+      intent.slots.flatMap((slot) => (slot.triggerField === undefined ? [] : [slot.triggerField])),
+    ),
+  );
+  const claimed = new Map<string, string>();
+  const problems: string[] = [];
+  for (const capability of document.execution.capabilities) {
+    for (const publication of capability.publishes) {
+      const alias = publication.as;
+      const at = `execution.capabilities.${capability.id}.publishes.${alias}`;
+      if (reserved.has(alias)) {
+        problems.push(`${at} publishes into ${JSON.stringify(alias)}, which the platform itself writes`);
+        continue;
+      }
+      if (triggerFields.has(alias)) {
+        problems.push(`${at} publishes into ${JSON.stringify(alias)}, which a slot already reads as its trigger field`);
+        continue;
+      }
+      const owner = claimed.get(alias);
+      if (owner !== undefined) {
+        problems.push(`${at} publishes into ${JSON.stringify(alias)}, which ${owner} already publishes`);
+        continue;
+      }
+      claimed.set(alias, capability.id);
+    }
+  }
+  return problems;
+};
+
 const domainConfigDocumentSchemaImpl = documentShapeImpl.superRefine((document, ctx) => {
   for (const [path, ids] of identifiedSections(document)) {
     const duplicate = firstDuplicate(ids);
@@ -162,6 +215,9 @@ const domainConfigDocumentSchemaImpl = documentShapeImpl.superRefine((document, 
         path: [...path],
       });
     }
+  }
+  for (const problem of publicationAliasCollisions(document)) {
+    ctx.addIssue({ code: "custom", message: problem, path: ["execution", "capabilities"] });
   }
 });
 

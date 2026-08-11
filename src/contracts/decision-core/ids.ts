@@ -374,6 +374,18 @@ export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
 // had no contracts consumer, and the two disagreed at RUNTIME while agreeing at
 // compile time - `brandedString` admits any non-empty string, `kebabId` does
 // not - so a value one layer parsed the other would refuse under the same type.
+//
+// THAT DISAGREEMENT IS REMOVED FOR THE FIVE DELETED BRANDS AND REMAINS FOR THIS
+// ONE. `ActionIdSchema` below is a `brandedString`, while `src/domain/config/`
+// mints the same `"ActionId"` brand as a `kebabId`, so a non-kebab value parsed
+// here is typed `ActionId` and `compileFlowDefinition` could never resolve it
+// against the document's intents. Aligning the two is a real narrowing, not a
+// comment fix - `src/__tests__/unit/decision-core.test.ts` parses an `Intent`
+// whose action is `"primitive:distribute-cash"`, a value left over from the
+// PrimitiveId this field used to carry (D-192) - so it is recorded as the named
+// obligation PC-3a in docs/domain-config-gaps.md, owned by prompt 14, the prompt
+// that first CONSTRUCTS an Intent and therefore first has real values to narrow
+// against. Nothing constructs one today, so the disagreement is unreachable now.
 
 /**
  * A domain's ACTION vocabulary ("distribute-cash", "open-account"), distinct

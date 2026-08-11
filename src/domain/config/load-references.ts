@@ -205,7 +205,13 @@ export const checkReferences = (
       const producer = bindings.get(settable.binding);
       const settablePath = `${at}.settableParameters.${settable.binding}.${settable.parameter}`;
       if (!requireMember(settable.binding, bindingIds, settablePath, "primitive binding", sink) || producer === undefined) continue;
-      if (!(settable.parameter in producer.parameters)) {
+      // OWN property, never `in`: `parameters` is a plain object and the
+      // parameter name is an unconstrained string, so a slot naming `constructor`
+      // or `toString` would satisfy a prototype-walking check and the loader
+      // would admit a policy write to a parameter the primitive never declared -
+      // a closure check failing OPEN, in the one module whose posture is that
+      // every lookup is own-property (load-closure.ts).
+      if (!Object.hasOwn(producer.parameters, settable.parameter)) {
         sink(configError("unknown-reference", settablePath, `binding ${settable.binding} declares no parameter named ${JSON.stringify(settable.parameter)}`));
       }
       // D-184: a key-shaping parameter is CONFIGURATION. A policy write to one

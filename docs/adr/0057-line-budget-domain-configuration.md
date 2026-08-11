@@ -122,6 +122,33 @@ the band the sibling layers carry. `infrastructure` gained five lines (the own-p
 `execution-adapters.ts` and its note) and stays inside the ceiling it already had, so that ceiling is
 left alone rather than raised for company.
 
+## Amendment (2026-08-11, review round 6): `domain` re-measured
+
+The 69 lines of correction headroom the round-5 amendment left are spent, again on review findings
+answered in `domain` code. Five of the round's seven land there: the rendered key becomes an INJECTIVE
+encoding of its segment tuple (`segments.ts`), a capability's publication alias may no longer claim a
+name the platform or a slot already owns (`document.ts`), a form control over a slot the requester does
+not supply is a LOAD failure rather than a live-screen failure (`load-coherence.ts`), the section diff
+reads canonical rather than insertion-ordered bytes (`diff.ts`), the settable-parameter check stops
+walking `Object.prototype` (`load-references.ts`), and the intake leaf gains the accessor the request
+boundary refuses an uncarryable configured field with (`intake-view.ts`).
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,638 | 6,680 | 42 (unchanged ceiling) |
+| `domain` | 8,845 | **8,920** | 75 |
+| `infrastructure` | 8,263 | 8,290 | 27 (unchanged ceiling) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+Only `domain`'s ceiling moves, by 140 lines, and only as far as its own measurement plus headroom inside
+the band the sibling layers carry. `contracts` gained twelve lines (the narrowed `ActionId` claim, which
+now states the disagreement that survives rather than implying it was removed) and `infrastructure`
+eight (the exported start-input field set and why the intake boundary refuses against it); both stay
+inside the ceilings they already had, so those ceilings are left alone rather than raised for company.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

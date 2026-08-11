@@ -1,12 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_server/context";
-import { startAccountOpening, CLIENT_REQUEST_ID_RE } from "@infra/wire";
+import { startAccountOpening, CLIENT_REQUEST_ID_RE, START_INPUT_FIELDS } from "@infra/wire";
 import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
 import { appError } from "@contracts/errors";
 import {
   admitIntakeSubmission,
   optionalIntakeValue,
   requiredIntakeValue,
+  unmappedIntakeFields,
   CLIENT_REQUEST_ID_KEY,
 } from "@domain/config/intake-view";
 
@@ -33,6 +34,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const admitted = admitIntakeSubmission(form.value, b);
   if (!admitted.ok) return errorResponse(admitted.error);
   const supplied = admitted.value;
+  // The start input is a FIXED shape, so a configured field it cannot carry is
+  // refused here rather than admitted and dropped: dropping it would fail at
+  // whatever step sources the slot, after the earlier steps had committed - the
+  // partial write a clean boundary refusal exists to prevent. Deriving the input
+  // from the configured trigger fields is prompt 12's intake pipeline (D-210).
+  const unmapped = unmappedIntakeFields(supplied, START_INPUT_FIELDS);
+  if (unmapped.length > 0) {
+    return errorResponse(
+      appError(
+        "VALIDATION",
+        `This deployment cannot carry the configured intake field(s) ${unmapped.map((field) => JSON.stringify(field)).join(", ")}; the account-opening start input is a fixed shape until the generic intake pipeline lands.`,
+      ),
+    );
+  }
   // Double-submit protection (D-027): the client mints one UUID per form session;
   // it becomes the lowercase canonical executionId, so case variants and a
   // retry/second tab replay the same execution. The key is the platform's own

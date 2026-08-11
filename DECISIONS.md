@@ -8812,3 +8812,86 @@ spelled it as a literal. A client bundle may not pull the schema module's zod gr
 so the declaration lives in the leaf and the vocabulary imports it.
 
 **Revert path.** Independent; each is local to its own module.
+
+## D-209 - Prompt 10 review: the rendered key is an INJECTIVE encoding of its segments
+
+**What.** `renderKeySegments` (`src/domain/config/segments.ts`) escapes each resolved part - the escape
+byte first, then the separator - before joining. A property test over arbitrary segment tuples proves no
+two distinct tuples render one key.
+
+**Why.** A bare join is not injective, and a conflict key is the mechanism that makes two individually
+valid operations contend when they must. `bank-instruction-key` in money-movement.yaml is a literal plus
+two subject slots read straight from the caller's transport, so `("h1:x", "d")` and `("h1", "x:d")`
+rendered ONE key and two unrelated subjects shared a coordination identity - the exact failure the key
+exists to prevent, in the coordination primitive this prompt wrote. Refusing a value that carries the
+separator was the other option and is worse: the shipped `application-finalize` capability keys on the
+application step's own minted key, which already contains one, so refusal would break the live journey.
+Escaping leaves every colon-free and backslash-free value byte-identical (every kebab literal, every UUID
+execution scope, every ISO bucket), so no shipped key changes except that one deliberately nested value,
+whose bytes stay deterministic per execution and therefore keep exactly-once effect.
+
+Prompt 23 owns the conflict-key derivation RULES; the injectivity of the encoding this prompt emits is
+this prompt's own defect and does not travel.
+
+**Revert path.** Local to one function; reverting restores the ambiguous join.
+
+## D-210 - Prompt 10 review: the intake boundary REFUSES a configured field it cannot carry
+
+**What.** `src/app/api/flows/account-opening/route.ts` refuses, by name, any admitted intake field
+outside `START_INPUT_FIELDS` - now exported from `wire.ts`, where it already described exactly what
+`StartAccountOpeningInput` persists. `unmappedIntakeFields` in the intake-view leaf computes the set.
+
+**Why.** The boundary judged the WHOLE configured field list and then read back five fixed names,
+discarding the rest: adding a sixth trigger-supplied slot (the canonical prompt-10 edit) rendered a
+control, admitted its value, and dropped it - to be missed by `buildPayload` at whatever step sourced the
+slot, which for account opening is step 3, after the household and contact writes have committed. That is
+the partial write a clean refusal exists to prevent.
+
+Deriving the start input generically from the configured trigger fields is the generic intake pipeline,
+which the ratified sequence assigns to PROMPT 12; building it here would expand this prompt past its
+accepted scope. So the seam refuses loudly instead of losing a value, and the derivation is recorded as a
+named prompt-12 obligation in `docs/domain-config-gaps.md` §3.
+
+**Revert path.** Independent; the refusal is additive and unreachable for the shipped document.
+
+## D-211 - Prompt 10 review: a publication alias may not claim a name another writer owns
+
+**What.** The document-level refinement (`src/domain/config/document.ts`) refuses a capability
+publication alias that is a reserved platform flow-data key, that collides with a declared slot
+`triggerField`, or that a second capability already publishes. Reserved names come from
+`RESERVED_TRIGGER_FIELDS`, the one declaration the writers consume.
+
+**Why.** Flow data has TWO writers and only one was guarded. D-205 closed the slot side; a capability's
+`publishes[].as` writes into the same namespace through the other door, and `OutputNameSchema` admits
+`executionScope`, `initiatedBy`, `clientRequestId` and `householdName` alike. An alias equal to
+`executionScope` silently replaces the per-execution idempotency scope for every LATER step, so their
+keys derive from an adapter's return value instead of the execution - exactly-once effect on replay lost,
+with no diagnostic. An alias equal to a trigger field overwrites the requester's own value, and one alias
+published twice makes the compiler's alias-keyed step-output lookup return the wrong step's value.
+
+**Revert path.** One refinement; both shipped documents already satisfy it.
+
+## D-212 - Prompt 10 review: three loader checks that failed open, and one claim narrowed
+
+**What.** (a) `checkForm` requires a form field's slot to be `supplied-by-trigger`. (b) The
+settable-parameter existence check uses `Object.hasOwn`. (c) `diff.ts` computes section bytes through
+`canonicalJson` rather than `JSON.stringify`. (d) The `ActionId` section comment in
+`contracts/decision-core/ids.ts` no longer implies the brand agrees with its domain mint.
+
+**Why.** (a) A form field naming a `bound-by-primitive` or `derived` slot loaded clean, passed the whole
+fence suite, and then broke `/app/account-opening` at request time, because such a slot has no transport
+field for the projector to read - completeness stage 6 exists precisely to make a non-submittable form a
+LOAD failure. (b) `SettableParameterSchema.parameter` is an unconstrained string, so a slot naming
+`constructor` or `toString` satisfied a prototype-walking check and the loader admitted a policy write to
+a parameter the primitive never declared: a closure check failing OPEN, in the module whose stated
+posture is own-property lookups only. (c) `JSON.stringify` is key-order sensitive and the canonical
+serializer is not, so once PC-4 feeds real parent bytes a reserialized version and an author-ordered
+candidate would diff as `replace` for every section and force an author to declare changes that did not
+happen; a section the canonical serializer refuses renders as its own refusal rather than comparing
+equal to bytes. (d) The comment justified deleting five brands on a runtime disagreement that SURVIVES
+for the one kept. Narrowing the schema is a real change, not a comment fix - a shipped test parses an
+`Intent` whose action is `"primitive:distribute-cash"`, left over from the PrimitiveId this field used to
+carry (D-192) - so the alignment is recorded as PC-3a, owned by prompt 14, the first prompt that
+constructs an `Intent` and therefore the first with real values to narrow against.
+
+**Revert path.** Four independent edits, each local to its own module.

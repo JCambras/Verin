@@ -245,6 +245,21 @@ export const checkForm = (document: DomainConfigDocument, sink: Sink): void => {
       sink(configError("unknown-reference", path, `intent ${intent.id} has no slot named ${JSON.stringify(field.slot)}`));
       continue;
     }
+    // A control can only COLLECT a value the requester supplies. A
+    // `bound-by-primitive` or `derived` slot carries no transport field (the
+    // intent schema forbids one), so the projector refuses it at request time -
+    // which would ship a document that loads clean, passes every fence, and then
+    // renders the "configuration could not be loaded" state on the live screen.
+    if (slot.resolution !== "supplied-by-trigger") {
+      sink(
+        configError(
+          "incomplete",
+          path,
+          `slot ${JSON.stringify(field.slot)} resolves ${slot.resolution}, so it has no transport field a form control could collect`,
+        ),
+      );
+      continue;
+    }
     if (field.input === "select" && slot.type !== "enum") {
       sink(configError("type-mismatch", path, "a select control needs an enum slot to draw its options from"));
     }

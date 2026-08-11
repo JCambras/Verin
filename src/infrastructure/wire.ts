@@ -121,8 +121,16 @@ function replayedRunResult(flow: CompiledFlow, state: ExecutionState): FlowRunRe
  * The client-editable fields persisted at start (D-027): a replayed request id is
  * honored only when these match the original submission, so an edited resubmit
  * under the same id can never silently write the stale values.
+ *
+ * This is ALSO the exact set `StartAccountOpeningInput` can carry, which is why
+ * the intake route refuses an admitted field outside it rather than dropping it:
+ * a configured slot this fixed shape has no room for would otherwise be judged
+ * at the boundary and then silently discarded, failing at whatever step consumes
+ * it - after earlier steps have already committed. Deriving the start input from
+ * the configured trigger fields is the generic intake pipeline (prompt 12,
+ * D-210); until then the seam refuses instead of losing a value.
  */
-const START_INPUT_FIELDS = ["householdName", "firstName", "lastName", "email", "accountType"] as const;
+export const START_INPUT_FIELDS = ["householdName", "firstName", "lastName", "email", "accountType"] as const;
 
 function inputMatchesExecution(input: StartAccountOpeningInput, existing: ExecutionState): boolean {
   return START_INPUT_FIELDS.every((field) => existing.data[field] === input[field]);

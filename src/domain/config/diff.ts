@@ -17,6 +17,7 @@
  * it is the level at which a change is either an addition, a replacement, or a
  * removal without ambiguity.
  */
+import { canonicalJson, type JsonValue } from "@contracts/decision-core/serialization";
 import { CONFIG_SECTIONS, type ConfigSection } from "./vocabulary";
 
 /** The header fields a change record folds into the synthetic `header` section. */
@@ -34,13 +35,8 @@ export type SectionDiff = {
 
 type SectionSource = Readonly<Record<string, unknown>>;
 
-/**
- * Stable per-section bytes. `JSON.stringify` is safe here because the input is
- * an already-parsed configuration document (plain data, no cycles, no
- * non-finite numbers) and both sides go through the same function - this
- * compares two documents with each other, it never mints an identity.
- */
-const sectionBytes = (document: SectionSource, section: ConfigSection): string | null => {
+/** A section's comparable value, or `null` when the document does not carry it. */
+const sectionValue = (document: SectionSource, section: ConfigSection): unknown => {
   if (section === "header") {
     const header = Object.fromEntries(
       HEADER_FIELDS.filter((field) => document[field] !== undefined).map((field) => [
@@ -48,12 +44,32 @@ const sectionBytes = (document: SectionSource, section: ConfigSection): string |
         document[field],
       ]),
     );
-    return Object.keys(header).length === 0 ? null : JSON.stringify(header);
+    return Object.keys(header).length === 0 ? null : header;
   }
   const value = document[section];
   if (value === undefined) return null;
   if (Array.isArray(value) && value.length === 0) return null;
-  return JSON.stringify(value);
+  return value;
+};
+
+/**
+ * Stable per-section bytes, through the repo's CANONICAL serializer rather than
+ * `JSON.stringify`. The two differ on key order, and that is exactly the
+ * comparison this makes: a version reserialized by the persisted registry and a
+ * candidate parsed from author-ordered YAML are the same document, and a diff
+ * that reported every section as `replace` would force an author to declare
+ * changes that did not happen.
+ *
+ * A section the canonical serializer REFUSES cannot be compared byte for byte,
+ * so it renders as its own refusal instead: two sides that fail identically stay
+ * equal, and a serializable section never silently compares equal to one that is
+ * not. `!` can never begin canonical JSON, so a refusal cannot collide with bytes.
+ */
+const sectionBytes = (document: SectionSource, section: ConfigSection): string | null => {
+  const value = sectionValue(document, section);
+  if (value === null) return null;
+  const canonical = canonicalJson(value as JsonValue);
+  return canonical.ok ? canonical.value : `!unserializable:${canonical.error.message}`;
 };
 
 /** THE EMPTY BASELINE: what a first published version is diffed against. */

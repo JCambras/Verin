@@ -84,6 +84,23 @@ export const KeySegmentsSchema = z.array(keySegmentSchemaImpl).min(1).readonly()
 export const SEGMENT_SEPARATOR = ":";
 
 /**
+ * The escape byte that makes the join INJECTIVE. A bare join is not: a subject
+ * carrying the separator moves the boundary, so `("h1:x", "d")` and
+ * `("h1", "x:d")` render one string and two unrelated requests contend on a key
+ * whose whole purpose is to make only genuinely conflicting requests contend.
+ * Escaping the escape first and the separator second is what makes the rendered
+ * bytes decodable back to exactly one tuple - and a resolved value carrying
+ * neither byte (every kebab literal, every UUID scope, every ISO bucket) renders
+ * exactly as it did before, so the encoding is a correction, not a re-keying.
+ */
+const SEGMENT_ESCAPE = "\\";
+
+const escapeSegment = (part: string): string =>
+  part
+    .replaceAll(SEGMENT_ESCAPE, `${SEGMENT_ESCAPE}${SEGMENT_ESCAPE}`)
+    .replaceAll(SEGMENT_SEPARATOR, `${SEGMENT_ESCAPE}${SEGMENT_SEPARATOR}`);
+
+/**
  * Resolution of one `ValueSource` at render time. `absent` is a first-class
  * answer, so an optional payload field is a declared outcome rather than an
  * `undefined` leaking into a command.
@@ -129,6 +146,10 @@ export const bucketOf = (
  * Render a composite key. Every segment must resolve: a key with a hole would
  * be a DIFFERENT key for the same request, which is how two concurrent requests
  * stop colliding on the coordination key that exists to make them collide.
+ *
+ * The rendered bytes are an INJECTIVE encoding of the resolved tuple (each part
+ * escaped, then joined), so distinct subjects can never share a coordination
+ * identity no matter what bytes a caller's transport carries.
  */
 export const renderKeySegments = (
   segments: readonly KeySegment[],
@@ -167,7 +188,7 @@ export const renderKeySegments = (
     }
     parts.push(bucket);
   }
-  return errors.length > 0 ? err(errors) : ok(parts.join(SEGMENT_SEPARATOR));
+  return errors.length > 0 ? err(errors) : ok(parts.map(escapeSegment).join(SEGMENT_SEPARATOR));
 };
 
 // ── The inert copy renderer ─────────────────────────────────────────────────────
