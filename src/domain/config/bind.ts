@@ -34,7 +34,7 @@ import {
 } from "@contracts/decision-core/ids";
 import { configError, type DomainConfigError } from "./errors";
 import type { LoadedDomainConfig } from "./load";
-import { resolveParameters, type RefResolver } from "./parameters";
+import { parameterRefClasses, resolveParameters, type RefResolver } from "./parameters";
 
 /**
  * What one firm supplies for the firm-neutral CLASSES a document references.
@@ -125,6 +125,53 @@ const mintRef = <T>(
     ),
   );
   return null;
+};
+
+/**
+ * The firm-neutral CLASSES one document references, per registry. Sorted and
+ * de-duplicated, so it reads as the checklist a firm must answer.
+ */
+export type RequiredFirmClasses = {
+  readonly executionTargets: readonly string[];
+  readonly evidenceSources: readonly string[];
+  readonly approvalTemplates: readonly string[];
+  readonly roles: readonly string[];
+};
+
+/**
+ * What a firm must supply for this document to bind - derived from the document
+ * itself, in exactly the positions `bindDomainConfig` reads below.
+ *
+ * A registry HAND-WRITTEN against a document falls behind it silently: adding a
+ * capability, an approval template, a required role class or a `role:` evidence
+ * supplier makes binding refuse, and a surface that treats that refusal as
+ * unrecoverable (the demo does - it must never render invented labels) fails at
+ * REQUEST time on an ordinary configuration edit. A caller that builds its
+ * registry from this cannot fall behind, because the checklist is the document.
+ */
+export const requiredFirmClasses = (config: LoadedDomainConfig): RequiredFirmClasses => {
+  const roles = new Set<string>();
+  const evidenceSources = new Set<string>();
+  for (const template of config.document.authority.templates) {
+    for (const roleClass of template.requiredRoleClasses) roles.add(roleClass);
+  }
+  for (const requirement of config.document.evidence) {
+    for (const supplier of requirement.suppliableBy) {
+      if (supplier !== "client" && supplier !== "external") roles.add(supplier.slice("role:".length));
+    }
+  }
+  for (const loaded of config.bindings.values()) {
+    for (const className of parameterRefClasses(loaded.binding.parameters, "evidence-source")) {
+      evidenceSources.add(className);
+    }
+  }
+  const sorted = (values: Iterable<string>): readonly string[] => [...new Set(values)].sort();
+  return {
+    executionTargets: sorted(config.document.execution.capabilities.map((c) => c.targetCapabilityClass)),
+    evidenceSources: sorted(evidenceSources),
+    approvalTemplates: sorted(config.document.authority.templates.map((template) => template.id)),
+    roles: sorted(roles),
+  };
 };
 
 export const bindDomainConfig = (

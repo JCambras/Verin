@@ -31,7 +31,12 @@ import { join } from "node:path";
 import { LineCounter, parseDocument, visit } from "yaml";
 import { appError, type AppError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
-import { bindDomainConfig, type FirmRegistry } from "@domain/config/bind";
+import {
+  bindDomainConfig,
+  requiredFirmClasses,
+  type FirmRegistry,
+  type RequiredFirmClasses,
+} from "@domain/config/bind";
 import { canonicalConfigJson } from "@domain/config/document";
 import { intakeFormOf } from "@domain/config/intake";
 import type { IntakeForm } from "@domain/config/intake-view";
@@ -67,8 +72,16 @@ type VersionPin = {
 const projectPath = (file: string): string =>
   join(process.cwd(), DOMAIN_CONFIG_DIRECTORY, file);
 
-/** Tags, anchors, aliases, and merge keys - the four ways YAML stops being data. */
-const inertnessProblems = (text: string): readonly string[] => {
+/**
+ * Tags, anchors, aliases, and merge keys - the four ways YAML stops being data.
+ *
+ * EXPORTED so the domain-configuration fence proves THIS implementation refuses
+ * them, rather than proving the shipped documents are inert according to a
+ * second copy of the rule: a copy would keep reading green after `merge: false`
+ * flipped or this walk was deleted here, which is detection standing in for
+ * verification (charter #2).
+ */
+export const inertnessProblems = (text: string): readonly string[] => {
   const lineCounter = new LineCounter();
   const document = parseDocument(text, { lineCounter, merge: false });
   const problems: string[] = [];
@@ -208,6 +221,18 @@ export const loadIntakeForm = (domainConfigId: string): Result<IntakeForm, AppEr
   if (!sourced.ok) return sourced;
   const form = intakeFormOf(sourced.value.config);
   return form.ok ? ok(form.value) : err(configFailure(domainConfigId, "declares no usable intake form", form.error));
+};
+
+/**
+ * What a firm must supply for one published document to bind, READ FROM THAT
+ * DOCUMENT. A surface builds its registry from this rather than transcribing the
+ * document's classes into a literal, so adding a capability, an approval
+ * template or a supplier role is a configuration edit rather than a runtime
+ * binding refusal on a screen that has no way to recover from one.
+ */
+export const loadFirmClasses = (domainConfigId: string): Result<RequiredFirmClasses, AppError> => {
+  const sourced = loadPublishedDomainConfig(domainConfigId);
+  return sourced.ok ? ok(requiredFirmClasses(sourced.value.config)) : err(sourced.error);
 };
 
 /** The configured vocabulary for one firm, bound through the tenancy seam. */

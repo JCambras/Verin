@@ -112,6 +112,38 @@ export const neutralRefResolver: RefResolver = (ref) => ({
   id: ref.class,
 });
 
+/**
+ * Every deferred reference CLASS of one kind a value graph defers, so a caller
+ * can ask what a document needs a firm to supply without first having a firm.
+ */
+export const parameterRefClasses = (
+  value: unknown,
+  kind: (typeof PARAMETER_REF_KINDS)[number],
+  out: Set<string> = new Set(),
+): Set<string> => {
+  if (isParameterRef(value)) {
+    // `isParameterRef` recognises the placeholder SHAPE - one `$ref` key - and
+    // leaves what is under it to the primitive's own schema, so read it as
+    // unknown rather than trusting the narrowing for a malformed document.
+    const ref: unknown = value.$ref;
+    if (typeof ref === "object" && ref !== null) {
+      const { kind: refKind, class: className } = ref as { readonly kind?: unknown; readonly class?: unknown };
+      if (refKind === kind && typeof className === "string") out.add(className);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) parameterRefClasses(entry, kind, out);
+    return out;
+  }
+  if (typeof value === "object" && value !== null) {
+    for (const entry of Object.values(value as Record<string, unknown>)) {
+      parameterRefClasses(entry, kind, out);
+    }
+  }
+  return out;
+};
+
 /** Whether a value graph contains a deferred tenant-scoped reference anywhere. */
 export const containsParameterRef = (value: unknown): boolean => {
   if (isParameterRef(value)) return true;

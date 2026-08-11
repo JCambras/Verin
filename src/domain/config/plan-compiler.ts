@@ -27,12 +27,14 @@ import { configError, formatDomainConfigErrors, type DomainConfigError } from ".
 import type { LoadedDomainConfig } from "./load";
 import type { ExecutionCapability, PlanStep } from "./operations";
 import { renderKeySegments, renderTemplate, type SourceResolution, type ValueSource } from "./segments";
+import { EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY } from "./vocabulary";
 
-/** The reserved flow-data key carrying the platform's per-execution idempotency scope. */
-export const EXECUTION_SCOPE_KEY = "executionScope";
-
-/** The reserved flow-data key carrying the identity that initiated the request. */
-export const INITIATING_ACTOR_KEY = "initiatedBy";
+/**
+ * The reserved flow-data keys this compiler reads, re-exported from the closed
+ * vocabulary that also REFUSES a slot declaring one. One declaration, so the
+ * key the platform writes and the key the loader rejects cannot drift apart.
+ */
+export { EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY };
 
 export type CommandInvocation = PIIBearing & {
   readonly capabilityId: string;

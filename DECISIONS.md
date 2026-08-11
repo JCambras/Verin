@@ -8676,3 +8676,82 @@ not to prompt 10. Each remaining seam was a place a configuration edit could mak
 with the document quietly rather than loudly.
 
 **Revert path.** Independent; each is local to its own module or document.
+
+---
+
+## D-203 - Prompt 10 review: the configuration identifier vocabulary has ONE declaration
+
+**What.** `DomainConfigIdSchema`, `ExecutionCapabilityIdSchema`, `CommandTypeSchema`,
+`ConflictKeyTemplateIdSchema` and `PlanTemplateIdSchema` are DELETED from
+`src/contracts/decision-core/ids.ts`. The `kebabId<...>()` mints in `src/domain/config/` - the ones the
+schema actually parses with - are now the single declaration. `ActionIdSchema` stays: `Intent.action`
+consumes it.
+
+**Why.** Five exported schemas with zero consumers repo-wide are built-but-not-shipped (charter #5), and
+the only reason `pnpm knip` stayed green through four review rounds is that `knip.json` declares
+`src/contracts/**` an entry point (D-191) - an exemption for contracts that must exist before their
+consumers, not a licence for dead ones. Worse, the two declarations agreed at COMPILE time and disagreed
+at RUNTIME: `brandedString` is `z.string().min(1)` while `kebabId` enforces `KEBAB_CASE_RE`, so a value
+one layer parsed the other would refuse under the same nominal type. Deleting one declaration removes the
+disagreement rather than documenting it. ADR-0057's contracts ceiling RATCHETS DOWN to 6,680 against a
+re-taken 6,626, because leaving it at 6,700 would bank correction headroom on deleted code.
+
+**Alternatives considered.** Deriving the domain mints from the contracts schemas and tightening
+`brandedString` to kebab-case there (rejected: it would put prompt 10's schema vocabulary in a layer with
+no consumer for it, against the ADR-0056 §3 siting, and tightening a shared `brandedString` reaches
+every other brand in that file).
+
+**Follow-up.** `fu-contracts-dead-export-visibility` (gap report §5, FOUNDATION register): a dead export
+under `contracts/` is invisible to the dead-export gate. Recorded, not fenced - a reachability rule for
+the contract surface needs its own decision about what "shipped" means for a type awaiting its consumer.
+
+**Revert path.** Re-add the five schemas; the runtime disagreement returns with them.
+
+---
+
+## D-204 - Prompt 10 review: a surface DERIVES the firm classes it binds through
+
+**What.** `requiredFirmClasses` (`src/domain/config/bind.ts`) reads, from a loaded document, exactly the
+firm-neutral classes `bindDomainConfig` demands: capability targets, approval templates, required and
+evidence-supplier roles, and the `evidence-source` classes deferred inside primitive parameters (walked
+by the new `parameterRefClasses`). `src/app/demo/vocabulary.ts` builds its registry from that instead of
+transcribing the document's classes into a literal, through `loadFirmClasses` on the config source. RULE
+H of the domain-configuration fence proves the derivation COMPLETE - a registry built from nothing but it
+must bind each shipped document - and its companion drops each derived entry in turn to prove every one
+is load-bearing (PF-255).
+
+**Why.** The hand-written registry hardcoded the classes `money-movement.yaml` happens to declare today,
+with nothing binding the two. Adding a capability class, an approval template, a `requiredRoleClasses`
+entry or a `role:` supplier would make `bindDomainConfig` refuse, `loadDomainLabels` return that refusal,
+and `vocabularyFor` THROW - a 500 on the investor-demo journey from an ordinary configuration edit, with
+a green build. That is the failure RULE F was written for, through a different door. Deriving makes the
+drift unrepresentable rather than merely detected; the fence then guards the derivation itself, which is
+the only thing left that can be wrong.
+
+**Alternatives considered.** Fencing the literal registry against the document (rejected as the weaker of
+the two ruled options: it detects drift instead of preventing it, and leaves the demo one forgotten
+`registryFor` update away from the same 500).
+
+**Revert path.** Restore the literal maps in `src/app/demo/vocabulary.ts` and delete RULE H; the demo can
+fall behind the document again.
+
+---
+
+## D-205 - Prompt 10 review: the platform's flow-data keys are a RESERVED namespace, enforced
+
+**What.** `EXECUTION_SCOPE_KEY`, `INITIATING_ACTOR_KEY` and `clientRequestId` move into
+`RESERVED_TRIGGER_FIELDS` in `src/domain/config/vocabulary.ts` (the plan compiler re-exports the two it
+reads, so there is still one declaration), and the intent schema REFUSES a slot whose `triggerField`
+names one. Two smaller corrections ride along: `admitIntakeSubmission` gates its payload read on
+`Object.hasOwn`, matching what the accessors below it already do and what the module header already
+claimed; and RULE C of the domain-configuration fence now judges inertness with the SHIPPED
+`inertnessProblems` rather than a second copy of it (PF-256).
+
+**Why.** The platform writes its keys into flow data AFTER the caller's values, so a slot reading one
+would resolve to the execution id instead of what the requester supplied - silently, unlike every other
+slot mistake the loader catches. "Reserved" was a word in a doc comment, not an enforced namespace.
+`TriggerFieldSchema` admits `toString`/`valueOf`/`constructor`, so a document could name one; a bare
+index read then resolved an omitted optional field to a prototype function and answered "must be supplied
+as text" for a field the requester was entitled to omit.
+
+**Revert path.** Independent; each is local to its own module.

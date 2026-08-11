@@ -9,6 +9,7 @@ import { admitIntakeSubmission, optionalIntakeValue, requiredIntakeValue } from 
 import { domainLabelsOf } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
 import { compileFlowDefinition, EXECUTION_SCOPE_KEY } from "@domain/config/plan-compiler";
+import { RESERVED_TRIGGER_FIELDS } from "@domain/config/vocabulary";
 import { policyRegistriesFor } from "@domain/config/registries";
 import { bucketOf, renderTemplate, templateIsInert } from "@domain/config/segments";
 
@@ -335,6 +336,23 @@ describe("domain configuration: the shipped documents", () => {
         expect(required.ok, inherited).toBe(false);
       }
     });
+
+    it("treats an OPTIONAL field named after a prototype member as absent, not as inherited text", () => {
+      const projected = form();
+      expect(projected.ok).toBe(true);
+      if (!projected.ok) return;
+      // The submitted payload is a plain literal too, so reading it with a bare
+      // index would resolve `toString` to Object.prototype's function - which is
+      // not absent and not a string, so the boundary would answer "must be
+      // supplied as text" for a field the requester was entitled to omit.
+      const declared = {
+        ...projected.value,
+        fields: [...projected.value.fields, { field: "toString", label: "Trace", type: "text", required: false }],
+      } as const;
+      const admitted = admitIntakeSubmission(declared, VALID);
+      expect(admitted.ok, admitted.ok ? "" : admitted.error.message).toBe(true);
+      expect(admitted.ok && admitted.value["toString"]).toBeNull();
+    });
   });
 
   it.each([
@@ -497,6 +515,20 @@ describe("detects (companion): a configuration that is wrong in any of the seven
       const slots = section<Mutable[]>(document, "intents")[0]!["slots"] as Mutable[];
       slots[1]!["triggerField"] = slots[0]!["triggerField"];
     }, "grammar", "account-opening");
+  });
+
+  it("flags a slot reading a RESERVED platform key, which would fill it silently", () => {
+    // The platform writes these into flow data after the caller's own values, so
+    // this is the one slot mistake that would resolve to the wrong value rather
+    // than to no value at all.
+    for (const reserved of RESERVED_TRIGGER_FIELDS) {
+      const document = clone(documentOf("account-opening"));
+      const slots = section<Mutable[]>(document, "intents")[0]!["slots"] as Mutable[];
+      const supplied = slots.find((slot) => slot["triggerField"] !== undefined)!;
+      supplied["triggerField"] = reserved;
+      const result = loadDomainConfig(document);
+      expect(result.ok, `"${reserved}" must not load as a trigger field`).toBe(false);
+    }
   });
 
   it("flags a required trigger-supplied slot the intake form cannot collect", () => {

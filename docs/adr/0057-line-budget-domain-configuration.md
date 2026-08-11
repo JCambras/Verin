@@ -32,7 +32,8 @@ MEASURED on the composed tree, in this commit:
 `contracts` grows by ~45 lines: six branded identifiers for the configuration vocabulary
 (`DomainConfigId`, `ActionId`, `ExecutionCapabilityId`, `CommandType`, `ConflictKeyTemplateId`,
 `PlanTemplateId`). The ADR-0029 ratchet-down promise is preserved: this is a bounded, named increment,
-not a re-baseline.
+not a re-baseline. (Five of the six are deleted by the round-4 amendment below; this paragraph records
+what the figure in the table above paid for, not the shipped state.)
 
 `domain` grows by ~3,900 lines, all of it `src/domain/config/`, against the 123 deleted flow lines.
 `infrastructure` grows by ~430: the YAML source adapter and the command adapters, against the deleted
@@ -66,6 +67,34 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 Only `domain`'s ceiling moves, by 100 lines, and only because its measurement moved past the old one.
 The other three measurements are re-taken and still inside the ceilings this ADR set, so those ceilings
 are left alone rather than re-baselined upward for company.
+
+## Amendment (2026-08-11, review round 4): `contracts` RATCHETS DOWN, `domain` re-measured
+
+Five of the six brands the first table paid for - `DomainConfigId`, `ExecutionCapabilityId`,
+`CommandType`, `ConflictKeyTemplateId`, `PlanTemplateId` - are DELETED. They had no consumer anywhere in
+the repository (`src/domain/config/` re-mints the same brand strings through `kebabId`, which is the
+declaration the schema actually uses), and the two declarations disagreed at RUNTIME while agreeing at
+compile time: `brandedString` is `z.string().min(1)`, `kebabId` enforces `KEBAB_CASE_RE`. `ActionId`
+stays, because `Intent.action` consumes it.
+
+So `contracts`'s ceiling comes DOWN. Leaving it at 6,700 would bank correction headroom on the strength
+of code that no longer exists, which is the mirror image of the silent fence edit this ADR exists to
+forbid. `domain` moves up: this round answered its review findings in code there - the firm-class
+checklist a surface derives its registry from (`requiredFirmClasses`), the reserved trigger-field
+namespace the intent schema now refuses, and the deferred-reference walk that checklist reads.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,626 | **6,680** | 54 (ratcheted DOWN from 6,700) |
+| `domain` | 8,578 | **8,660** | 82 |
+| `infrastructure` | 8,250 | 8,290 | 40 (unchanged ceiling) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+`infrastructure`'s measurement moved and stayed inside its ceiling, so that ceiling is left where it was
+rather than raised for company - the rule the previous amendment applied, now applied in both directions.
 
 ## Consequences
 

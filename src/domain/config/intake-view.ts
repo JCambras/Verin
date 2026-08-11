@@ -24,8 +24,9 @@
  * submission left absent, is the ordinary VALIDATION a user can act on - and it
  * carries the same declared label the form's own required check uses.
  *
- * Declaration is read from the form and presence with `Object.hasOwn`, never
- * `in`: the admitted map is a plain object literal, so `in` would walk
+ * Declaration is read from the form, and presence - in the submitted payload as
+ * well as in the admitted map - with `Object.hasOwn`, never `in` and never a
+ * bare index: both are plain object literals, so either would walk
  * `Object.prototype` and hand back `toString` for a document that declared a
  * trigger field of that name.
  */
@@ -70,7 +71,7 @@ export const admitIntakeSubmission = (
 ): Result<Readonly<Record<string, string | null>>, AppError> => {
   const admitted: Record<string, string | null> = {};
   for (const field of form.fields) {
-    const value = submitted[field.field];
+    const value = Object.hasOwn(submitted, field.field) ? submitted[field.field] : undefined;
     if (isAbsent(value)) {
       if (field.required) return err(appError("VALIDATION", `${field.label} is required.`));
       admitted[field.field] = null;

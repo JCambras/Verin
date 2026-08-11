@@ -42,6 +42,31 @@ export const SlotNameSchema = z.string().regex(KEBAB_CASE_RE, "kebab-case slot n
  */
 export const TriggerFieldSchema = z.string().regex(/^[a-z][A-Za-z0-9]*$/, "camelCase trigger field");
 
+/** The flow-data key carrying the platform's per-execution idempotency scope. */
+export const EXECUTION_SCOPE_KEY = "executionScope";
+
+/** The flow-data key carrying the identity that initiated the request. */
+export const INITIATING_ACTOR_KEY = "initiatedBy";
+
+/** The transport key a client mints once per form session to make a submit replayable. */
+const CLIENT_REQUEST_ID_KEY = "clientRequestId";
+
+/**
+ * The RESERVED transport namespace: keys the platform itself writes into flow
+ * data, AFTER a caller's own values. A slot reading one of these would be
+ * silently filled with the platform's value instead of what the requester
+ * supplied - the only slot mistake in the grammar that would not fail closed -
+ * so the intent schema refuses it at load time. Declared here, beside the
+ * trigger-field shape, because the modules that WRITE these keys (the plan
+ * compiler, the composition root, the intake route) sit downstream of the
+ * schema that must refuse them, and a second copy of the strings could drift.
+ */
+export const RESERVED_TRIGGER_FIELDS = [
+  EXECUTION_SCOPE_KEY,
+  INITIATING_ACTOR_KEY,
+  CLIENT_REQUEST_ID_KEY,
+] as const;
+
 /**
  * A published context key: dot-separated segments, each kebab-case or
  * camelCase. This is the SAME key space prompt 8's `publishedKeys` mints and

@@ -186,10 +186,23 @@ const CEILINGS = {
 // 8,290 (65), presentation 928 / 6,000, tooling 12,154 / 12,400. Only `domain`'s
 // ceiling moves; the other three are re-taken and still inside their ceilings, so
 // those are left where ADR-0057 set them rather than re-baselined for company.
+//
+// ADR-0057 AMENDMENT (review round 4): five of the six prompt-10 brands were
+// DELETED from `contracts` - they had no consumer, and their `brandedString`
+// declaration disagreed at runtime with the `kebabId` mint in `src/domain/config/`
+// that does the same job. `contracts` therefore RATCHETS DOWN: leaving its ceiling
+// where code that no longer exists put it would bank headroom on a deletion.
+// `domain` grows past its ceiling answering this round's findings in code (the
+// derived firm-class checklist, the reserved trigger-field namespace, the
+// deferred-reference walk). RE-MEASURED with this file's own algorithm:
+// contracts 6,626 / 6,680 (54), domain 8,578 / 8,660 (82), infrastructure 8,250 /
+// 8,290 (40), presentation 928 / 6,000, tooling 12,154 / 12,400. `infrastructure`
+// moved but stayed inside, so its ceiling is left alone rather than raised for
+// company - the same rule the previous amendment applied.
 const CEILINGS = {
-  contracts: 6700, // ADR-0057, on the prompt-10 domain-configuration brands (6,647 measured)
-  domain: 8520, // ADR-0057 as amended, on the prompt-10 configuration schema (8,433 measured)
-  infrastructure: 8290, // ADR-0057, on the prompt-10 config source and command adapters (8,225 measured)
+  contracts: 6680, // ADR-0057 as amended twice, RATCHETED DOWN after the dead brands were deleted (6,626 measured)
+  domain: 8660, // ADR-0057 as amended twice, on the prompt-10 configuration schema (8,578 measured)
+  infrastructure: 8290, // ADR-0057, on the prompt-10 config source and command adapters (8,250 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

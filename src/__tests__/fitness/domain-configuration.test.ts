@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { LineCounter, parseDocument, visit } from "yaml";
+import { parseDocument } from "yaml";
 import { Project, SyntaxKind } from "ts-morph";
 import {
   REPO_ROOT,
@@ -15,8 +15,14 @@ import {
 } from "./_fence-utils";
 import { canonicalConfigJson } from "@domain/config/document";
 import { loadDomainConfig } from "@domain/config/load";
-import { bindDomainConfig, type FirmRegistry } from "@domain/config/bind";
+import {
+  bindDomainConfig,
+  requiredFirmClasses,
+  type FirmRegistry,
+  type RequiredFirmClasses,
+} from "@domain/config/bind";
 import { ACCOUNT_TYPES } from "@domain/schema/entities";
+import { inertnessProblems } from "@infra/config/domain-config-source";
 
 /**
  * DOMAIN-CONFIGURATION FENCE (v3 prompt 10, ADR-0056; the PINNED activation
@@ -42,7 +48,10 @@ import { ACCOUNT_TYPES } from "@domain/schema/entities";
  *
  *  RULE C - THE DOCUMENTS ARE INERT AND FIRM-NEUTRAL. Tags, anchors, aliases and
  *    merge keys are the four ways YAML stops being data; a `firmId` anywhere in
- *    the graph would make invariant 26 unprovable.
+ *    the graph would make invariant 26 unprovable. The judge is the SHIPPED
+ *    guard (`inertnessProblems`, imported from the config source adapter), never
+ *    a copy of it: a copy would keep passing after `merge: false` flipped or the
+ *    walk was deleted in the reader that actually runs.
  *
  *  RULE D - A PUBLISHED VERSION IS IMMUTABLE. The SHA-256 over each document's
  *    canonical bytes must equal the hash `config/domains/versions.json` pins, so
@@ -71,6 +80,13 @@ import { ACCOUNT_TYPES } from "@domain/schema/entities";
  *    THIRD step, after the household and contact writes have committed. Both
  *    directions are checked, and a document where no single enum slot supplies
  *    the shipped transport field fails closed.
+ *
+ *  RULE H - THE FIRM-CLASS CHECKLIST A SURFACE BINDS THROUGH IS COMPLETE. The
+ *    demo builds its firm registry from `requiredFirmClasses`, so a class the
+ *    derivation MISSED would be a binding refusal at request time on a screen
+ *    that cannot recover from one. Proven the only way that means anything: a
+ *    registry built from nothing but the derivation must BIND each shipped
+ *    document, and the companion proves dropping any one derived entry fails.
  *
 
  * NAMED DEFERRALS. `policyRegistriesFor` derives prompt 9's four pinned
@@ -184,33 +200,6 @@ export function domainNameUses(
   return out;
 }
 
-/** Tags, anchors, aliases and merge keys - the four ways a YAML document stops being data. */
-export function inertnessProblems(text: string): string[] {
-  const lineCounter = new LineCounter();
-  const document = parseDocument(text, { lineCounter, merge: false });
-  const problems: string[] = [];
-  for (const problem of [...document.errors, ...document.warnings]) {
-    problems.push(problem.message.split("\n")[0] ?? problem.message);
-  }
-  visit(document, {
-    Node(_key, node) {
-      const at = node.range ? lineCounter.linePos(node.range[0]).line : "?";
-      if ("tag" in node && node.tag !== undefined) problems.push(`line ${at}: tag ${node.tag}`);
-      if ("anchor" in node && node.anchor !== undefined) problems.push(`line ${at}: anchor ${node.anchor}`);
-    },
-    Alias(_key, node) {
-      problems.push(`alias *${node.source}`);
-    },
-    Pair(_key, pair) {
-      const key = pair.key;
-      if (typeof key === "object" && key !== null && "value" in key && key.value === "<<") {
-        problems.push("merge key '<<'");
-      }
-    },
-  });
-  return problems;
-}
-
 const documentText = (file: string): string => readFileSync(join(REPO_ROOT, CONFIG_DIRECTORY, file), "utf8");
 
 const parsed = (file: string): unknown =>
@@ -240,6 +229,31 @@ const registryFor = (firmId: string): FirmRegistry => ({
     ["bank-change-specialist", "bank-change-specialist"],
   ]),
 });
+
+/**
+ * A firm registry built from NOTHING but what the document itself declares -
+ * the shape every surface uses, so RULE H proves the derivation complete rather
+ * than proving one hand-written literal happens to be complete today.
+ */
+const derivedRegistry = (
+  firmId: string,
+  classes: RequiredFirmClasses,
+  drop?: { readonly registry: keyof RequiredFirmClasses; readonly className: string },
+): FirmRegistry => {
+  const supplied = (registry: keyof RequiredFirmClasses): ReadonlyMap<string, string> =>
+    new Map(
+      classes[registry]
+        .filter((className) => !(drop?.registry === registry && drop.className === className))
+        .map((className) => [className, `${firmId}-${className}`]),
+    );
+  return {
+    firmId,
+    executionTargets: supplied("executionTargets"),
+    evidenceSources: supplied("evidenceSources"),
+    approvalTemplates: supplied("approvalTemplates"),
+    roles: supplied("roles"),
+  };
+};
 
 /** Modules permitted to name the configuration directory (RULE E). */
 const CONFIG_READERS = ["src/infrastructure/config/domain-config-source.ts"] as const;
@@ -521,6 +535,24 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     ).toEqual([]);
   });
 
+  it.each(DOMAIN_FILES)("(H) enforces: %s binds through a registry DERIVED from itself", (file) => {
+    const loaded = loadDomainConfig(parsed(file));
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const classes = requiredFirmClasses(loaded.value);
+    const bound = bindDomainConfig(loaded.value, derivedRegistry("tenant-one", classes));
+    expect(
+      bound.ok,
+      bound.ok
+        ? ""
+        : "requiredFirmClasses does not report every class this document references, so a surface that builds its registry from it (the demo) refuses to bind at REQUEST time:\n" +
+          bound.error.map((error) => `${error.path}: ${error.message}`).join("\n"),
+    ).toBe(true);
+    // A derivation that reported nothing would make the assertion above vacuous.
+    expect(Object.values(classes).every((entry) => Array.isArray(entry))).toBe(true);
+    expect(Object.values(classes).flat().length).toBeGreaterThan(0);
+  });
+
   it("enforces: every named deferral still has no shipped caller", () => {
     const stale: string[] = [];
     for (const [entry, reason] of Object.entries(NAMED_DEFERRALS)) {
@@ -716,6 +748,30 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
           values,
         ),
       ).toEqual(['exactly one enum slot must supply "accountType"; this document declares 2']);
+    });
+
+    it("catches a firm-class checklist that misses ANY class the document references", () => {
+      const registries = ["executionTargets", "evidenceSources", "approvalTemplates", "roles"] as const;
+      const exercised = new Set<(typeof registries)[number]>();
+      for (const file of DOMAIN_FILES) {
+        const loaded = loadDomainConfig(parsed(file));
+        expect(loaded.ok).toBe(true);
+        if (!loaded.ok) return;
+        const classes = requiredFirmClasses(loaded.value);
+        // EVERY derived entry must be load-bearing: dropping one - the exact
+        // shape of a derivation that forgot a position `bindDomainConfig` reads
+        // - must refuse rather than bind on the remainder.
+        for (const registry of registries) {
+          for (const className of classes[registry]) {
+            exercised.add(registry);
+            const bound = bindDomainConfig(loaded.value, derivedRegistry("t", classes, { registry, className }));
+            expect(bound.ok, `${file}: dropping ${registry}.${className} still bound`).toBe(false);
+          }
+        }
+        expect(bindDomainConfig(loaded.value, derivedRegistry("t", classes)).ok).toBe(true);
+      }
+      // No registry may go unproven: an untested one is a derivation nobody checked.
+      expect([...exercised].sort()).toEqual([...registries].sort());
     });
 
     it("catches a published document edited without a version bump", () => {

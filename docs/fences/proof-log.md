@@ -14543,3 +14543,68 @@ failed execution, with the application refused at the third step.
 and commits one household, contact and application.
 
 **Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-fixreview-askuser`).
+
+---
+
+## PF-255 · the firm-class checklist a surface binds through must be COMPLETE
+
+**Invariant:** `requiredFirmClasses` reports every firm-neutral class a document references, so a
+registry built from nothing but the derivation BINDS. The demo builds its registry that way (RULE H of
+the domain-configuration fence); a class the derivation missed is a binding refusal at REQUEST time on a
+screen whose only recovery is a throw, which is the runtime 500 the review finding
+`demo-firm-registry-unbound` describes.
+
+**Injection.** Dropped one registry from the derivation - `evidenceSources: []` in
+`src/domain/config/bind.ts` - which is exactly the shape of a derivation that forgot a position
+`bindDomainConfig` reads.
+
+**Observed failure:**
+```
+× (H) enforces: account-opening.yaml binds through a registry DERIVED from itself
+AssertionError: requiredFirmClasses does not report every class this document references, so a surface
+that builds its registry from it (the demo) refuses to bind at REQUEST time:
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:550:7
+× catches a firm-class checklist that misses ANY class the document references
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:771:82
+```
+The companion fired too: it drops each derived entry in turn and requires the refusal, so an entry that
+is not load-bearing cannot sit in the checklist unnoticed.
+
+**Reverted:** `git diff src/domain/config/bind.ts` shows only the round's intended change; the fence file
+reports `Tests 32 passed (32)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-brands-askuser`, finding
+`demo-firm-registry-unbound`).
+
+---
+
+## PF-256 · inertness is proven of the SHIPPED reader, not of a second copy
+
+**Invariant:** RULE C judges the published documents with `inertnessProblems` imported from
+`src/infrastructure/config/domain-config-source.ts` - the function the running adapter calls - so
+gutting the shipped guard fails the build. The fence used to carry its own near-identical copy, which is
+detection standing in for verification: the copy would have kept reporting the documents inert while the
+reader that actually runs admitted a tagged, anchored or merged document.
+
+**Injection.** Deleted the `visit(document, {...})` walk from the SHIPPED `inertnessProblems`, leaving
+only the parser's own errors and warnings.
+
+**Observed failure:**
+```
+× catches every non-inert YAML feature
+AssertionError: expected 0 to be greater than 0
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:639:68
+```
+Before this change the same deletion left the whole suite green.
+
+**Recorded honestly:** the finding's other named mutation - flipping `merge: false` to `merge: true` in
+that parse - does NOT fail, and should not: the `Pair` visitor refuses a `<<` key structurally whether or
+not the parser would act on it, so the flag is defense in depth rather than the detection itself. What
+the flag guards is the separate `toJS()` parse below, which never sees a merged document because this
+guard refuses it first.
+
+**Reverted:** `git diff src/infrastructure/config/domain-config-source.ts` shows only the round's
+intended change; the fence file reports `Tests 32 passed (32)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-brands-askuser`, finding
+`inertness-check-duplicated-unfenced`).

@@ -16,6 +16,7 @@ import { EvidenceKindSchema } from "@contracts/decision-core/ids";
 import {
   ContextKeySchema,
   MoneyUnitSchema,
+  RESERVED_TRIGGER_FIELDS,
   SlotNameSchema,
   SlotResolutionSchema,
   SlotTypeSchema,
@@ -146,6 +147,17 @@ const intentSchemaImpl = z
       .filter((field): field is string => field !== undefined);
     if (duplicate(triggerFields)) {
       ctx.addIssue({ code: "custom", message: "duplicate slot trigger field", path: ["slots"] });
+    }
+    // The platform writes its own keys into flow data AFTER the caller's values,
+    // so a slot reading one would resolve to the execution id rather than to what
+    // the requester supplied - silently, unlike every other slot mistake here.
+    const reserved: readonly string[] = RESERVED_TRIGGER_FIELDS;
+    for (const field of triggerFields.filter((candidate) => reserved.includes(candidate))) {
+      ctx.addIssue({
+        code: "custom",
+        message: `slot trigger field ${JSON.stringify(field)} is reserved by the platform`,
+        path: ["slots"],
+      });
     }
     const idLists: readonly (readonly [string, readonly string[]])[] = [
       ["requiresEvidence", intent.requiresEvidence],

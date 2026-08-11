@@ -35,7 +35,7 @@ arithmetic on canonical ISO forms) and copy rendering (one inert placeholder ren
 |---|---|---|
 | **PC-1** | **Runtime YAML loading did not exist.** `yaml` was a devDependency with only test and script consumers. | **FIXED.** Promoted to `dependencies`; read by exactly one adapter (`src/infrastructure/config/domain-config-source.ts`) behind an inert-document guard that refuses tags, anchors, aliases and merge keys. |
 | **PC-2** | **`DomainConfigVersionRef` was a dangling reference** - pinned into `Intent` and `DecisionInputBundle` with no entity behind it. | **FIXED.** That entity is this schema. No second version identity was minted. |
-| **PC-3** | **Missing brands** for the configuration vocabulary. | **FIXED.** Six added in `contracts/decision-core/ids.ts`. `SlotName` was deliberately NOT added: `Intent.slots` keys stay `string`. |
+| **PC-3** | **Missing brands** for the configuration vocabulary. | **FIXED.** `ActionId` in `contracts/decision-core/ids.ts` (the one `contracts` consumes, through `Intent.action`); the rest are minted where the schema that uses them lives, in `src/domain/config/`. Six were added at first - five had no contracts consumer and disagreed with the domain mint at runtime (`brandedString` admits any non-empty string, `kebabId` does not), so they were deleted rather than left as a second, looser declaration. See `fu-contracts-dead-export-visibility` in §5. `SlotName` was deliberately NOT added: `Intent.slots` keys stay `string`. |
 | **PC-4** | **No persisted registry of pinned configuration versions.** Replay must load the PINNED version, not the current file (invariant 13). | **DEFERRED to prompts 15/19**, and named. This PR ships the content hash and `config/domains/versions.json`, so the immutability contract exists from day one; persistence is bundle-assembly and replay work. It must exist before Gate D. |
 | **PC-5** | **No execution-plan TEMPLATE type.** The ratified `ExecutionStep` is an INSTANCE: content-addressed payload ref, payload hash, evidence-snapshot preconditions. | **FIXED for the template half** (`src/domain/config/operations.ts`), **DEFERRED for the compile-to-`ExecutionPlan` half to prompt 25.** The interim compile target is a `FlowDefinition` for the shipped suspend/resume engine, and a `decision-hash` idempotency segment is REFUSED there rather than faked. |
 | **PC-6** | **`ExecutionReceipt` / `ExecutionHandle` / `StatusObservation` are absent from `src/`** (ratified, deferred by ADR-0029), so `observedStatuses` references a vocabulary with no compiled type. | **DEFERRED to prompts 24/26**, and named. Statuses are declared as closed kebab-case ids and are two-sided-checked against presentation copy today; when the compiled union lands, a fence must pin the configuration's vocabulary to it. |
@@ -88,7 +88,7 @@ arithmetic on canonical ISO forms) and copy rendering (one inert placeholder ren
 
 ---
 
-## 5. One finding about the repository's own tooling
+## 5. Findings about the repository's own tooling
 
 Naming a **Zod schema type, or any deeply recursive type, as a parameter of an exported `src/domain/`
 function** makes the sealed-authority fences' structural type walk explode: it expands a parameter type
@@ -100,3 +100,23 @@ Fixed on this side (named export types, narrow ports, an unexported adapter at t
 touched) and recorded in D-193 and `docs/domain-config.md` §9. The residual hazard is that a fence which
 stops running looks green in the summary line; that is worth a separate hardening item and is NOT claimed
 as fixed here.
+
+### `fu-contracts-dead-export-visibility` - charter #5's dead-export gate does not reach `contracts/`
+
+`knip.json` declares `src/contracts/**` an ENTRY POINT (D-191 records why: the layer is the published
+contract surface, and treating it as reachable is what lets a contract exist before its consumer does).
+The cost is that an export under `contracts/` with **zero consumers repo-wide is invisible** to charter
+#5's "nothing built-but-not-shipped" gate. That is not theoretical: this prompt added six branded
+identifiers there, five of which had no consumer at all - `src/domain/config/` re-minted the same brand
+strings through `kebabId` - and `pnpm knip` stayed green through four review rounds. The five were
+deleted; the exemption that hid them was not.
+
+Worse than the invisibility, the two declarations agreed at COMPILE time and disagreed at RUNTIME:
+`brandedString` is `z.string().min(1)` while `kebabId` enforces `KEBAB_CASE_RE`, so a value one layer
+parsed the other would refuse under the same nominal type.
+
+**NOT FIXED, and deliberately not fenced here** - no new invariant is being asserted by this prompt, and
+a reachability rule for the contract surface needs its own decision about what "shipped" means for a type
+that exists to be consumed later (the named-deferral idiom `ledger-reachability` uses is the likely
+shape). Recorded so the trade-off is owned rather than rediscovered: today, an unused `contracts/` export
+is caught only by review.

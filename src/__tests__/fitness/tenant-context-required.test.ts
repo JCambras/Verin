@@ -117,6 +117,7 @@ const PORT_ESCAPES = new Set([
   // interpreter above.
   "src/domain/config/bind.ts :: bindDomainConfig.<call>",
   "src/domain/config/bind.ts :: firmIdentityPaths.<call>",
+  "src/domain/config/bind.ts :: requiredFirmClasses.<call>",
   "src/domain/config/bindings.ts :: orderBindings.<call>",
   "src/domain/config/diff.ts :: changeDeclarationMismatch.<call>",
   "src/domain/config/diff.ts :: diffDomainConfigs.<call>",
@@ -147,6 +148,7 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/parameters.ts :: containsParameterRef.<call>",
   "src/domain/config/parameters.ts :: contextKeyReads.<call>",
   "src/domain/config/parameters.ts :: neutralRefResolver.<call>",
+  "src/domain/config/parameters.ts :: parameterRefClasses.<call>",
   "src/domain/config/parameters.ts :: ParameterOwner.parseParameters",
   "src/domain/config/parameters.ts :: RefResolver.<call>",
   "src/domain/config/parameters.ts :: resolveParameters.<call>",

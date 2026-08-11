@@ -18,29 +18,34 @@
  * firm-neutral CLASSES to identifiers a demo firm would supply. Binding it is
  * what proves the tenancy seam works - one document binds for both firms, and
  * the bound results differ only by firmId.
+ *
+ * It is DERIVED from the document, never transcribed from it. A hand-written
+ * registry falls behind an ordinary configuration edit - a new capability class,
+ * approval template, required role or `role:` evidence supplier - and binding
+ * then refuses at REQUEST time, on the one surface that must never render
+ * invented labels. Deriving the classes makes that drift unrepresentable rather
+ * than merely detected.
  */
-import type { FirmRegistry } from "@domain/config/bind";
+import type { FirmRegistry, RequiredFirmClasses } from "@domain/config/bind";
 import type { DomainLabels } from "@domain/config/labels";
-import { loadDomainLabels } from "@infra/config/domain-config-source";
+import { loadDomainLabels, loadFirmClasses } from "@infra/config/domain-config-source";
 import { FIRMS } from "./data";
 
 const MONEY_MOVEMENT = "money-movement";
 
-/** The classes money-movement declares, mapped to the ids a demo firm supplies. */
-const demoFirmRegistry = (firmId: string): FirmRegistry => ({
+/** One demo firm's own identifier for a class the document names. */
+const supplied = (firmId: string, classes: readonly string[]): ReadonlyMap<string, string> =>
+  new Map(classes.map((className) => [className, `${firmId}-${className}`]));
+
+/** Every class money-movement declares, mapped to the ids a demo firm supplies. */
+const demoFirmRegistry = (firmId: string, classes: RequiredFirmClasses): FirmRegistry => ({
   firmId,
-  executionTargets: new Map([["custodian-transfer", `${firmId}-custodian`]]),
-  evidenceSources: new Map([["house-crm", `${firmId}-house-crm`]]),
-  approvalTemplates: new Map([
-    ["ops-dual-approval", `${firmId}-ops-dual-approval`],
-    ["bank-change-specialist", `${firmId}-bank-change-specialist`],
-    ["elevated-approval", `${firmId}-elevated-approval`],
-  ]),
-  roles: new Map([
-    ["operations", "operations"],
-    ["advisor", "advisor"],
-    ["bank-change-specialist", "bank-change-specialist"],
-  ]),
+  executionTargets: supplied(firmId, classes.executionTargets),
+  evidenceSources: supplied(firmId, classes.evidenceSources),
+  approvalTemplates: supplied(firmId, classes.approvalTemplates),
+  // A role CLASS is already the demo firm's role name: the seeded workspace and
+  // the scenario data speak the same role vocabulary the document requires.
+  roles: new Map(classes.roles.map((roleClass) => [roleClass, roleClass])),
 });
 
 const labels = new Map<string, DomainLabels>();
@@ -52,10 +57,12 @@ const labels = new Map<string, DomainLabels>();
  * prevent. (The no-bare-throw fence governs domain and infrastructure, not the
  * app layer.)
  *
- * The reachable cause - a label id the document no longer declares - is caught
- * at BUILD time by the domain-configuration fence, which binds every id
- * `build-context.ts` asks for to `config/domains/money-movement.yaml`. What is
- * NOT covered is the rendered failure state for a throw that escapes anyway:
+ * The reachable causes are both closed ahead of it: a label id the document no
+ * longer declares fails at BUILD time in the domain-configuration fence, which
+ * binds every id `build-context.ts` asks for to
+ * `config/domains/money-movement.yaml`, and a class the registry does not supply
+ * cannot arise at all now that the registry is derived. What is NOT covered is
+ * the rendered failure state for a throw that escapes anyway:
  * there is no `error.tsx` under `src/app`, so today it renders Next's default
  * error page. Systematic route error boundaries with recovery are owned by the
  * FRONT-END LANE (verin-frontend-parity-plan, prompt 16), not by this prompt.
@@ -66,7 +73,9 @@ function vocabularyFor(firmId: string): DomainLabels {
   if (!Object.hasOwn(FIRMS, firmId)) {
     throw new Error(`The demo has no firm registry for "${firmId}".`);
   }
-  const result = loadDomainLabels(MONEY_MOVEMENT, demoFirmRegistry(firmId));
+  const classes = loadFirmClasses(MONEY_MOVEMENT);
+  if (!classes.ok) throw new Error(classes.error.message);
+  const result = loadDomainLabels(MONEY_MOVEMENT, demoFirmRegistry(firmId, classes.value));
   if (!result.ok) throw new Error(result.error.message);
   labels.set(firmId, result.value);
   return result.value;
