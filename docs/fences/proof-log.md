@@ -9255,7 +9255,7 @@ reverted tree.
 
 **Date:** 2026-08-10 (post-merge follow-up to PR #34, firm ruling `p9-temporal-fact-bytes`).
 
-## PF-030 · v3 gate-ordering fence · `src/__tests__/fitness/v3-gate-ordering.test.ts`
+## PF-237 · v3 gate-ordering fence · `src/__tests__/fitness/v3-gate-ordering.test.ts`
 
 **Invariant (ADR-0055, captain ruling `gate-a-ordering` 2026-07-28; v3 §17 "never fake green"):** no
 phase gate may require an invariant whose activation prerequisite lands in a later wave. Gate A requires
@@ -9316,7 +9316,7 @@ cannot be green by always failing).
 
 **Date:** 2026-07-28 (ADR-0055, D-187).
 
-### PF-030 (continued) · review round `gatea-opus-review-1` · complete gate model, one shared rule set
+### PF-237 (continued) · review round `gatea-opus-review-1` · complete gate model, one shared rule set
 
 **What changed (ADR-0055, amended in place).** All nine gates of the ratified sequence are registered;
 `gates.<G>.requires` became a list of TYPED requirements (`invariant` | `artifact` | `fitness` |
@@ -9416,7 +9416,7 @@ all nine gates printed and NONE green (gate 0 `not-yet-verifiable`; A-I `not yet
 
 **Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-opus-review-1`).
 
-### PF-030 (continued, 2nd review round) · ruling `gatea-fix-review-2` · proof points, structural CI evidence, two ratchets
+### PF-237 (continued, 2nd review round) · ruling `gatea-fix-review-2` · proof points, structural CI evidence, two ratchets
 
 **SUPERSESSION CROSS-REFERENCE (read this before re-running injections 1-8).** The entries above are
 preserved as the historical record of what actually ran at the time, against the implementations of the
@@ -9597,7 +9597,7 @@ every injection and verified byte-identical with `diff -q`; `git status` clean o
 
 **Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-fix-review-2`).
 
-### PF-030 (continued, 3rd review round) · ruling `gatea-review-3` · a real YAML parse, shell-comment honesty, and a complete awaiting line
+### PF-237 (continued, 3rd review round) · ruling `gatea-review-3` · a real YAML parse, shell-comment honesty, and a complete awaiting line
 
 **SUPERSESSION CROSS-REFERENCE (read before re-running injections 10, 11 and 19).** Injections 10 and 11
 above are preserved verbatim as what actually ran against the hand-rolled line scanner of that round.
@@ -9728,7 +9728,7 @@ and `scripts/v3-invariants.ts` restored the same way after injection 20.
 
 **Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-review-3`).
 
-### PF-030 (continued, 4th review round) · ruling `gatea-fix-review-3` · a complete requirement ratchet, blocking-job evidence, and one CI authority
+### PF-237 (continued, 4th review round) · ruling `gatea-fix-review-3` · a complete requirement ratchet, blocking-job evidence, and one CI authority
 
 **SUPERSESSION CROSS-REFERENCE (read before re-running injections 14, 15, 17-19).** Every injection above
 is preserved verbatim as what actually ran against the implementation of its own round; none is rewritten.
@@ -9881,7 +9881,7 @@ verified byte-identical with `diff -q` (`git status` reports the file unmodified
 
 **Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-fix-review-3`).
 
-### PF-030 (continued, 5th review round) · complete outcomes, structural entry gates, prompt ratchets, and executable CI commands
+### PF-237 (continued, 5th review round) · complete outcomes, structural entry gates, prompt ratchets, and executable CI commands
 
 **Invariant:** every declared gate outcome remains a typed requirement at its full proof point; every
 gate's structural predecessor controls readiness; every non-invariant proof prompt is ratcheted; and a
@@ -9954,7 +9954,7 @@ reports 5 active-pass, 0 active-fail, and 25 not-yet-active; every gate remains 
 
 **Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved outcome-completeness review).
 
-### PF-031 · Axe execution coverage · `src/__tests__/fitness/axe-required.test.ts`
+### PF-238 · Axe execution coverage · `src/__tests__/fitness/axe-required.test.ts`
 
 **Invariant (charter #9):** the blocking E2E gate runs `pnpm test:e2e`, and the public,
 authenticated, and demo E2E specifications each execute Axe. A surviving Playwright job name cannot
@@ -9979,7 +9979,7 @@ names `pnpm test:e2e`, so charter-drift proves the scanning specifications run i
 
 **Date:** 2026-07-28.
 
-### PF-030 (continued, 6th review round) · earliest proof points, complete metadata, shell semantics, and exact command bindings
+### PF-237 (continued, 6th review round) · earliest proof points, complete metadata, shell semantics, and exact command bindings
 
 **Invariant:** a gate requires every invariant at its earliest complete proof point without moving
 activation ownership; Gate B cannot become green without schema-valid, shared-engine-bound domain
@@ -10045,7 +10045,7 @@ bindings.
 
 **Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved earliest-proof review).
 
-### PF-031 (continued) · awaited, reachable, assertion-bearing Axe scans
+### PF-238 (continued) · awaited, reachable, assertion-bearing Axe scans
 
 **Invariant (charter #9):** each required E2E surface executes an enabled and reachable Axe analysis,
 awaits it, and makes its reported violations capable of failing the Playwright test.
@@ -10068,7 +10068,7 @@ whose violation assertions gate the calling test, while rejecting the same helpe
 
 **Date:** 2026-07-28.
 
-### PF-030 (continued, 7th review round) · active proof metadata, proof-point ratchet, and CI dependency reachability
+### PF-237 (continued, 7th review round) · active proof metadata, proof-point ratchet, and CI dependency reachability
 
 **Invariant:** every declared activation proof point is valid regardless of current activation status;
 the ruled prompt-5 proof points for invariants 7, 8, and 9 cannot be rewritten to an earlier prompt; and
@@ -10109,7 +10109,7 @@ passes 73 tests across gate ordering, invariant integrity, charter drift, and Ax
 
 **Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved enforcement-completeness review).
 
-### PF-031 (continued) · sanctioned assertions and registered Playwright tests
+### PF-238 (continued) · sanctioned assertions and registered Playwright tests
 
 **Invariant (charter #9):** every required surface specification registers an enabled Playwright test at
 module scope or directly inside an enabled module-scope `test.describe`, awaits the sanctioned Axe helper,
@@ -10145,7 +10145,7 @@ charter-drift fences pass.
 
 **Date:** 2026-07-28.
 
-### PF-030 (continued, 8th review round) · executable charter gates and invariant-3 activation proof
+### PF-237 (continued, 8th review round) · executable charter gates and invariant-3 activation proof
 
 **Invariant:** every enforced charter CI mapping binds the exact command that implements its control,
 and invariant 3 cannot activate until its two domain artifacts and exact prompt-10
@@ -10180,7 +10180,7 @@ activation ratchet pins both YAML artifacts and the exact fitness path.
 
 **Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved false-green boundary review).
 
-### PF-031 (continued) · unmaskable Axe scope and animation settlement
+### PF-238 (continued) · unmaskable Axe scope and animation settlement
 
 **Invariant (charter #9):** a required Axe test cannot be disabled by a file or describe annotation,
 marked as an expected failure, or allowed to mutate the document before analysis.
@@ -10213,7 +10213,7 @@ complete scan, and direct assertion continue to pass.
 
 **Date:** 2026-07-28.
 
-### PF-032 · Gate 0 demo surface completeness · `src/__tests__/fitness/demo-surface-completeness.test.ts`
+### PF-239 · Gate 0 demo surface completeness · `src/__tests__/fitness/demo-surface-completeness.test.ts`
 
 **Invariant (Gate 0, ADR-0055):** every required `docs/demo-contract.md` section 4 product surface is
 represented by the typed surface manifest, backed by an existing component and dynamic route case,
@@ -10238,7 +10238,7 @@ skeleton-honesty fences pass, and `pnpm v3:invariants` reports Gate 0 `green`.
 
 **Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
 
-### PF-030 (continued, 9th review round) · workflow reachability, governed root, and direct entry points
+### PF-237 (continued, 9th review round) · workflow reachability, governed root, and direct entry points
 
 **Invariant:** CI-backed requirements prove repository controls only when the workflow runs on every
 normal push and pull request, the effective working directory is the repository root, and the mapped
@@ -10284,7 +10284,7 @@ pins every enforced CI command.
 
 **Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
 
-### PF-031 (continued) · Playwright selection, required routes, and annotation aliases
+### PF-238 (continued) · Playwright selection, required routes, and annotation aliases
 
 **Invariant (charter #9):** required Axe coverage is selected by the real Playwright configuration,
 navigates every typed public, authenticated, and demo route, waits for each loaded-state marker, and
@@ -10320,7 +10320,7 @@ passes.
 
 **Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
 
-### PF-031 (continued) · effective configuration, route ownership, safe messages, and namespace symbols
+### PF-238 (continued) · effective configuration, route ownership, safe messages, and namespace symbols
 
 **Invariant (charter #9):** the effective Playwright configuration selects every required Axe
 specification, every required route loop executes directly inside an enabled registered test, assertion
@@ -10351,7 +10351,7 @@ then passed all 10 tests.
 
 **Date:** 2026-07-29 (ADR-0055 and D-187 executable-evidence review).
 
-### PF-030 (continued, 11th review round) · mapped gate fitness is blocking
+### PF-237 (continued, 11th review round) · mapped gate fitness is blocking
 
 **Invariant:** every fitness file selected by the v3 runner is blocking, including a fence required only
 by a gate and not by an active invariant.
@@ -10438,7 +10438,7 @@ blocking inventory command passed.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · bound Reflect.apply neutralizers
+### PF-238 (continued) · bound Reflect.apply neutralizers
 
 **Invariant (charter #9):** binding `Reflect.apply` cannot hide a Playwright neutralizer from required
 accessibility enforcement.
@@ -10460,7 +10460,7 @@ alias, and bound reflective callables invoked through `call` and `apply`.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · bound Reflect.apply hook registration
+### PF-239 (continued) · bound Reflect.apply hook registration
 
 **Invariant (Gate 0, ADR-0055):** binding `Reflect.apply` cannot hide a Playwright hook from canonical
 journey isolation.
@@ -10532,7 +10532,7 @@ fails the existing structural companion.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · authentic Axe runtime and compositional reflection
+### PF-238 (continued) · authentic Axe runtime and compositional reflection
 
 **Invariant (charter #9):** required accessibility scans use the authentic sanctioned Axe runtime and
 cannot be disabled through nested reflective invocation.
@@ -10560,7 +10560,7 @@ tests.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · stable screenshot helpers and URL identity
+### PF-239 (continued) · stable screenshot helpers and URL identity
 
 **Invariant (Gate 0, ADR-0055):** canonical screenshots are produced by the validated helpers that
 remain active at runtime, and every supported URL scenario and firm reaches the exact requested branch.
@@ -10589,7 +10589,7 @@ tests.
 
 **Date:** 2026-07-29.
 
-### PF-030 (continued) · shared exact gate ratchets block the runner
+### PF-237 (continued) · shared exact gate ratchets block the runner
 
 **Invariant (ADR-0055):** the blocking v3 runner must enforce the same exact gate ownership, proof-point,
 activation-prerequisite, metadata, requirement, and prompt-range ratchets as the fitness fence.
@@ -10635,7 +10635,7 @@ metadata drift proves the shared validator produces the blocking result.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · reflective neutralizers and complete page inventory
+### PF-238 (continued) · reflective neutralizers and complete page inventory
 
 **Invariant (charter #9):** required Axe scans cannot be disabled through direct or aliased
 `Reflect.apply`, and every Next `page.tsx` route must belong to an executed loaded-state scan group.
@@ -10666,7 +10666,7 @@ unscanned public page, and fail closed on an unclassified route shape.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · reflective hooks cannot alter Gate 0 evidence
+### PF-239 (continued) · reflective hooks cannot alter Gate 0 evidence
 
 **Invariant (Gate 0, ADR-0055):** a canonical journey hook cannot hide behind reflective registration
 and inject controls or replace screenshot evidence.
@@ -10710,7 +10710,7 @@ registrations remain accepted.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · executed callbacks and stable assertion provenance
+### PF-238 (continued) · executed callbacks and stable assertion provenance
 
 **Invariant (charter #9):** Playwright neutralizers inside callbacks executed by a required test cannot
 escape analysis, and the sanctioned Axe helper must assert violations through a stable, unreassigned
@@ -10743,7 +10743,7 @@ assignment.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · renderer branch identifiers preserve resolved context
+### PF-239 (continued) · renderer branch identifiers preserve resolved context
 
 **Invariant (Gate 0, ADR-0055):** every rendered demo surface receives the exact resolved scenario and
 firm identifiers, either directly from the validated query inputs or from the journey returned for
@@ -10812,7 +10812,7 @@ and asserts that exact active-ratchet membership fails.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · TestInfo and wrapped Playwright neutralizers
+### PF-238 (continued) · TestInfo and wrapped Playwright neutralizers
 
 **Invariant (charter #9):** required Axe scans cannot be skipped, marked fixme, or converted to expected
 failures through TestInfo or through parenthesized and TypeScript-asserted Playwright symbols.
@@ -10843,7 +10843,7 @@ bracket type assertion wrapper.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · exact ratified Gate 0 surface identities
+### PF-239 (continued) · exact ratified Gate 0 surface identities
 
 **Invariant (Gate 0, ADR-0055):** the mutable demo contract and typed manifest preserve the exact twelve
 surface identities ratified in the SHA-pinned `docs/v3/verin-demo-contract-v1.md` section 4 contract.
@@ -10866,7 +10866,7 @@ contract and manifest inputs and requires both ratified-identity diagnostics.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · computed Playwright configuration keys
+### PF-238 (continued) · computed Playwright configuration keys
 
 **Invariant (charter #9):** Playwright selection proof sees direct and computed configuration property
 names and fails closed when a computed name cannot be resolved.
@@ -10887,7 +10887,7 @@ AssertionError: playwright.config.ts:1 must select every required Axe specificat
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · route identity and loaded screenshot ownership
+### PF-239 (continued) · route identity and loaded screenshot ownership
 
 **Invariant (Gate 0, ADR-0055):** every manifest station returns the component imported from its exact
 manifest path, and every canonical screenshot verifies that station's URL and loaded marker before
@@ -10919,7 +10919,7 @@ generic URL assertion or body-only loaded marker.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · awaited screenshot execution and non-empty artifacts
+### PF-239 (continued) · awaited screenshot execution and non-empty artifacts
 
 **Invariant (Gate 0, ADR-0055):** each canonical screenshot call is a direct awaited statement of the
 registered journey test. The `snap` helper directly awaits `page.screenshot`, writes the manifest-derived
@@ -10948,7 +10948,7 @@ passed both tests, and the combined focused run passed all 12 tests.
 
 **Date:** 2026-07-29 (ADR-0055 and D-187 executable-evidence review).
 
-### PF-030 (continued, 12th review round) · runner schedulability is independent of shell selection
+### PF-237 (continued, 12th review round) · runner schedulability is independent of shell selection
 
 **Invariant (ADR-0055):** a mapped CI command is evidence only when its job names a supported,
 schedulable POSIX GitHub-hosted runner. An explicit shell cannot substitute for `runs-on`.
@@ -10971,7 +10971,7 @@ macOS labels still prove the command.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · Playwright aliases assigned after declaration
+### PF-238 (continued) · Playwright aliases assigned after declaration
 
 **Invariant (charter #9):** a required Axe specification cannot be neutralized through a Playwright
 annotation alias assigned after its declaration.
@@ -11021,7 +11021,7 @@ or command tuple and also rejects tuple additions or removal.
 
 **Date:** 2026-07-29.
 
-### PF-030 (continued, 13th review round) · matrix reachability is blocking evidence
+### PF-237 (continued, 13th review round) · matrix reachability is blocking evidence
 
 **Invariant (ADR-0055):** a mapped CI command is evidence only when at least one structurally proven job
 instance executes it and can fail the workflow. A matrix whose exclusions remove every combination
@@ -11046,7 +11046,7 @@ the command missing.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · stable route provenance and callback reachability
+### PF-238 (continued) · stable route provenance and callback reachability
 
 **Invariant (charter #9):** every required Axe route loop scans the complete imported route collection
 from a provably reachable callback path. An unreachable assignment cannot supply the collection, and a
@@ -11077,7 +11077,7 @@ accepted, while reassigned collection aliases and reachable callback exits befor
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · conditional screenshot exits and runtime artifacts
+### PF-239 (continued) · conditional screenshot exits and runtime artifacts
 
 **Invariant (Gate 0, ADR-0055):** the canonical screenshot calls are provably reachable, and the blocking
 E2E job verifies the produced artifact set at runtime. Every canonical PNG must exist and be non-empty;
@@ -11122,7 +11122,7 @@ runtime validator then reported `demo screen artifacts: 18 verified`.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · reassignment-safe neutralizers and immutable route collections
+### PF-238 (continued) · reassignment-safe neutralizers and immutable route collections
 
 **Invariant (charter #9):** a required Axe specification cannot be neutralized by an alias whose
 runtime value is hidden by unreachable reassignment, and its required route collection cannot be
@@ -11157,7 +11157,7 @@ both fence files and all 17 tests.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · resolved route invocation and authentic launcher capture
+### PF-239 (continued) · resolved route invocation and authentic launcher capture
 
 **Invariant (Gate 0, ADR-0055):** every dynamic station reaches the component selected by its resolved
 route value, and the canonical launcher artifact is an awaited screenshot of the loaded launcher page,
@@ -11192,7 +11192,7 @@ both fence files and all 17 tests.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · TestInfo returned by `test.info()`
+### PF-238 (continued) · TestInfo returned by `test.info()`
 
 **Invariant (charter #9):** a required Axe test or registered hook cannot skip, fixme, or expected-fail
 itself through TestInfo returned by `test.info()`.
@@ -11214,7 +11214,7 @@ parameters, and `test.info()` neutralizers in directly registered hooks.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · reachable route return, clickable transitions, and blocking upload
+### PF-239 (continued) · reachable route return, clickable transitions, and blocking upload
 
 **Invariant (Gate 0, ADR-0055):** every dynamic station reaches the validated route return, the canonical
 journey traverses the ordered product route graph through real controls, and the screenshot upload
@@ -11257,7 +11257,7 @@ fence files and all 17 tests.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · stable positive helpers and transitive neutralizers
+### PF-238 (continued) · stable positive helpers and transitive neutralizers
 
 **Invariant (charter #9):** a required Axe scan must call the sanctioned helper through stable imported
 provenance, and no bound or transitively invoked Playwright neutralizer may disable that scan. Local
@@ -11299,7 +11299,7 @@ fence files and all 20 tests; the complete fitness suite passed all 447 tests.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · resolved journey inputs and closed callback graph
+### PF-239 (continued) · resolved journey inputs and closed callback graph
 
 **Invariant (Gate 0, ADR-0055):** the dynamic page must request the exact resolved scenario and firm, and
 the canonical clickable journey must use the real product controls without manufacturing replacements
@@ -11332,7 +11332,7 @@ files and all 20 tests; the complete fitness suite passed all 447 tests.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · indirect neutralizers and uninstrumented route scans
+### PF-238 (continued) · indirect neutralizers and uninstrumented route scans
 
 **Invariant (charter #9):** required Axe scans cannot be disabled through `Function.call` or
 `Function.apply`, and the route-scan callback plus its login helper cannot instrument or replace the
@@ -11376,7 +11376,7 @@ files and all 22 tests.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · canonical hook isolation and approval binding
+### PF-239 (continued) · canonical hook isolation and approval binding
 
 **Invariant (Gate 0, ADR-0055):** no Playwright hook may inject controls or replace screenshot evidence
 for the canonical journey, and policy activation must derive only from the resolved
@@ -11438,7 +11438,7 @@ report. A synthetic report inserted before the guard and a neutralized guard are
 
 **Date:** 2026-07-29.
 
-### PF-030 (continued) · Gate D requires distinct prompt-17 evaluator proof
+### PF-237 (continued) · Gate D requires distinct prompt-17 evaluator proof
 
 **Invariant (ADR-0055 / D-187):** Gate A may use prompt-5 structural proof for invariants 7, 8, and 9,
 but Gate D cannot reuse those global `active-pass` bits as proof of prompt-17 evaluator behavior.
@@ -11485,7 +11485,7 @@ runner passed with all 33 fitness files executed inside the full suite.
 
 **Date:** 2026-07-29.
 
-### PF-030 (continued) · complete cross-gate proof-point ratchet
+### PF-237 (continued) · complete cross-gate proof-point ratchet
 
 **Invariant (ADR-0055 / D-187):** every invariant referenced by a gate other than its activation owner
 retains the ratified prompt at which its complete proof first exists.
@@ -11507,7 +11507,7 @@ ordering rules accept the matching earlier prompt while the complete cross-gate 
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · complete local Axe import graph
+### PF-238 (continued) · complete local Axe import graph
 
 **Invariant (charter #9 / ADR-0055):** a local module imported by required Axe evidence cannot patch the
 Axe runtime or register Playwright hooks before a required scan.
@@ -11564,7 +11564,7 @@ charter and Axe run passed all 37 tests.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · CommonJS provenance and graph-root enforcement
+### PF-238 (continued) · CommonJS provenance and graph-root enforcement
 
 **Invariant (charter #9 / ADR-0055):** every named root and transitive local module in the Axe evidence
 graph rejects Playwright hooks and unsanctioned Axe imports, and indirect CommonJS loader provenance
@@ -11650,7 +11650,7 @@ passed all 122 tests.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · stable routes, hook objects, and Next route ownership
+### PF-238 (continued) · stable routes, hook objects, and Next route ownership
 
 **Invariant (charter #9 / ADR-0055):** required accessibility evidence uses process-stable route
 collections, rejects Playwright hooks hidden in object properties, and credits a concrete URL only to
@@ -11692,7 +11692,7 @@ restored focused charter, dependency, and Axe run passed all 122 tests.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · mutable hook wrappers and exact Axe helper syntax
+### PF-238 (continued) · mutable hook wrappers and exact Axe helper syntax
 
 **Invariant (charter #9 / ADR-0055):** a reachable Axe evidence module cannot register a Playwright
 hook through a mutable object wrapper, and the sanctioned helper cannot execute hidden syntax before
@@ -11789,7 +11789,7 @@ inside enabled reachable module-scope suite callbacks, and rejects every unresol
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · reflective Playwright hook writes
+### PF-238 (continued) · reflective Playwright hook writes
 
 **Invariant (charter #9 / ADR-0055):** no module in the complete Axe evidence graph can install a
 Playwright hook through reflective property mutation.
@@ -11810,7 +11810,7 @@ wrappers, and unresolved reflective keys. Unresolved reflective writes fail clos
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) · exact canonical screenshot options
+### PF-239 (continued) · exact canonical screenshot options
 
 **Invariant (Gate 0 / ADR-0055):** canonical screenshot evidence captures the rendered product with
 exactly the governed output path and `fullPage: true`; masking or other content-altering options are
@@ -11832,7 +11832,7 @@ all 108 tests.
 
 **Date:** 2026-07-29.
 
-### PF-030 (continued) · inherited CI execution environment
+### PF-237 (continued) · inherited CI execution environment
 
 **Invariant (ADR-0055):** an exact command is blocking evidence only when inherited workflow, job, and
 step environment configuration cannot redirect or instrument its shell, loader, package manager, or
@@ -11880,7 +11880,7 @@ literals remain accepted.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · computed Playwright members and ambient builtin loaders
+### PF-238 (continued) · computed Playwright members and ambient builtin loaders
 
 **Invariant (charter #9 / ADR-0055):** every reachable Axe evidence module must expose statically
 decidable Playwright member access and a complete runtime local import graph. Computed hook or
@@ -11907,7 +11907,7 @@ loader remains outside this authority.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) · exact login parameters and explicit credentials
+### PF-238 (continued) · exact login parameters and explicit credentials
 
 **Invariant (charter #9 / ADR-0055):** the canonical Axe login helper has exactly two plain parameters
 with no executable defaults, and every authenticated route scan passes the stable principal explicitly.
@@ -11929,7 +11929,7 @@ passed.
 
 **Date:** 2026-07-29.
 
-### PF-030 (continued) · job-container execution environment
+### PF-237 (continued) · job-container execution environment
 
 **Invariant (ADR-0055):** an exact governed command is blocking evidence only when its complete inherited
 workflow, job, job-container, and step environment cannot redirect or instrument execution.
@@ -11950,7 +11950,7 @@ language runtimes, and package managers, while safe application variables remain
 
 **Date:** 2026-07-29.
 
-### PF-030 (continued) - governed CI predecessor and container provenance
+### PF-237 (continued) - governed CI predecessor and container provenance
 
 **Invariant (ADR-0055):** an exact governed command is evidence only when every earlier step has an
 approved immutable purpose and any job container uses the ratcheted image and execution shape.
@@ -11981,7 +11981,7 @@ focused suites passed.
 
 **Date:** 2026-07-29.
 
-### PF-031 (continued) - imported neutralizers and shared hook provenance
+### PF-238 (continued) - imported neutralizers and shared hook provenance
 
 **Invariant (charter #9 / ADR-0055):** every module in the reachable Axe graph rejects Playwright
 neutralizers, and Gate 0 uses the same complete hook-provenance authority as the Axe fence.
@@ -12033,7 +12033,7 @@ runtime ownership.
 
 **Date:** 2026-07-29.
 
-### PF-032 (continued) - identity-preserving query extraction
+### PF-239 (continued) - identity-preserving query extraction
 
 **Invariant (Gate 0 / ADR-0055):** the dynamic route must preserve scalar query values and select only
 the first member of an array before the scenario, firm, and approval resolvers consume them.
@@ -12100,7 +12100,7 @@ cache preserve the bounded audit: the real-tree red run completed its scan in 13
 
 **Date:** 2026-08-05.
 
-### PF-031 (continued) - intrinsic aliases and higher-order Playwright hooks
+### PF-238 (continued) - intrinsic aliases and higher-order Playwright hooks
 
 **Invariant (charter #9 / ADR-0055 / D-187):** a required Axe module cannot register a Playwright hook
 through a local callable parameter, a stable global `Reflect` alias, or an `Object.assign` mutation
@@ -12124,7 +12124,7 @@ provenance for both hooks and neutralizers.
 
 **Date:** 2026-08-05.
 
-### PF-030 (continued) - complete GitHub field value schemas
+### PF-237 (continued) - complete GitHub field value schemas
 
 **Invariant (ADR-0055 / D-187):** a governed command is evidence only when every supported workflow,
 job, container, and step field has a GitHub-valid value shape across the complete workflow.
@@ -12146,7 +12146,7 @@ and inherited-environment diagnostics.
 
 **Date:** 2026-08-05.
 
-### PF-031 (continued) - reflective Playwright reads
+### PF-238 (continued) - reflective Playwright reads
 
 **Invariant (charter #9 / ADR-0055 / D-187):** a required Axe module cannot obtain a Playwright
 neutralizer or hook through `Reflect.get`; an unresolved reflected key rooted at the Playwright API is
@@ -12217,7 +12217,7 @@ source fast path preserve the bounded charter audit.
 
 **Date:** 2026-08-05.
 
-### PF-031 (continued) - composite and multi-source Playwright callables
+### PF-238 (continued) - composite and multi-source Playwright callables
 
 **Invariant (charter #9 / ADR-0055 / D-187):** conditional callables and later reflective assignments
 cannot hide a Playwright hook or neutralizer from the required Axe evidence graph.
@@ -12239,7 +12239,7 @@ aliases for both hooks and neutralizers.
 
 **Date:** 2026-08-05.
 
-### PF-030 (continued) - executable GitHub job and step forms
+### PF-237 (continued) - executable GitHub job and step forms
 
 **Invariant (ADR-0055 / D-187):** a governed command is evidence only when GitHub accepts every job and
 step form in the blocking workflow.
@@ -12285,7 +12285,7 @@ suite passed.
 
 **Date:** 2026-08-05.
 
-### PF-031 (continued) - cross-module and property-held Playwright hooks
+### PF-238 (continued) - cross-module and property-held Playwright hooks
 
 **Invariant (charter #9 / ADR-0055 / D-187):** a required Axe runtime graph cannot hide a Playwright hook
 inside an imported or re-exported higher-order helper or an `Object` intrinsic held in an object
@@ -12310,7 +12310,7 @@ properties for hook and neutralizer provenance.
 
 **Date:** 2026-08-05.
 
-### PF-030 (continued) - GitHub permission, job, and timeout grammar
+### PF-237 (continued) - GitHub permission, job, and timeout grammar
 
 **Invariant (ADR-0055 / D-187):** a governed command is evidence only when the complete workflow uses
 supported permission scopes, valid job identifiers, and positive-integer or explicit-expression timeout
@@ -12332,7 +12332,7 @@ text, and malformed timeout mappings while retaining positive integers and exact
 
 **Date:** 2026-08-05.
 
-### PF-032 (continued) - exact Gate 0 renderer bindings
+### PF-239 (continued) - exact Gate 0 renderer bindings
 
 **Invariant (Gate 0 / ADR-0055 / D-187):** every dynamic demo route arm passes its station's exact
 journey view model, spreads the resolved scenario and firm identifiers without overrides, and binds the
@@ -12378,7 +12378,7 @@ Focused companions cover `new Registrar(it.skip)`, an unresolved spread argument
 
 **Date:** 2026-08-05.
 
-### PF-031 (continued) - constructor and descriptor Playwright hooks
+### PF-238 (continued) - constructor and descriptor Playwright hooks
 
 **Invariant (charter #9 / ADR-0055 / D-188):** the required Axe evidence graph cannot hide a Playwright
 hook through constructor parameters, a destructured intrinsic holder, or Object or Reflect property
@@ -12400,7 +12400,7 @@ Reflect descriptors, and the plural Object descriptor map.
 
 **Date:** 2026-08-05.
 
-### PF-030 (continued) - complete GitHub trigger ownership
+### PF-237 (continued) - complete GitHub trigger ownership
 
 **Invariant (ADR-0055 / D-188):** a governed command is evidence only when the complete workflow trigger
 declaration is valid and contains exactly the unfiltered normal `push` and `pull_request` events.

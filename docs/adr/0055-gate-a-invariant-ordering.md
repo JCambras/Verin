@@ -630,8 +630,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   including computed members, namespace imports, imported aliases, assigned aliases, unshadowed globals,
   `globalThis` and Node `global` member paths, the `suite` alias, x-prefixed registrations, and neutralizing registration
   options. String mentions and unrelated local functions are not evidence.
-- The adversarial proof for the gate-ordering fence is PF-030 in `docs/fences/proof-log.md`; the
-  Axe-specific charter proof is PF-031.
+- The adversarial proof for the gate-ordering fence is PF-237 in `docs/fences/proof-log.md`; the
+  Axe-specific charter proof is PF-238.
 - This does **not** change what invariant 3 requires, when prompt 10 runs, or the deferral of prompt 27
   (ADR-0024). It changes only which gate holds invariant 3.
 
@@ -680,7 +680,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   `outcome`, or any invariant's `gate`, is proposed for
   change: that is an amendment to this ADR, to ADR-0023's phase-gated commitment, and to all five ratchets in
   `scripts/v3-gates.lib.ts`, with fresh proof-log evidence - never a registry edit
-  alone. A registry-only edit fails CI (proved: PF-030).
+  alone. A registry-only edit fails CI (proved: PF-237).
 - A blocking job legitimately needs a condition or `continue-on-error` (a matrix leg, a fork-PR guard):
   the `ci-gate` rules read either as neutralizing, so that job stops being evidence. Point the requirement
   at a job that does block, or extend `parseCiJobs` to decide the specific expression - do NOT drop the
@@ -697,7 +697,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - A mapped command must legitimately run outside the repository root: add a typed governed-root field
   and validate its complete ownership boundary before relaxing the current root-only contract.
 - The required demo surface list changes: update the typed manifest, route, canonical screenshots,
-  loaded-state route group, runtime artifact expectation, Gate 0 requirement ratchet, and PF-032
+  loaded-state route group, runtime artifact expectation, Gate 0 requirement ratchet, and PF-239
   evidence together.
 - A `charter-map.json` `ci-gate` entry changes its command: update the mapping, its exact-command ratchet,
   and the proof evidence in the same PR. Name-only enforced mappings are invalid.

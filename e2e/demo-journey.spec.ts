@@ -217,6 +217,8 @@ test("unknown branch ids 404 instead of silently rendering a different branch", 
   expect(badScenario?.status()).toBe(404);
   const badFirm = await page.goto("/app/demo/decision?scenario=safe-proceed&firm=firm-c");
   expect(badFirm?.status()).toBe(404);
+  const prototypeFirm = await page.goto("/app/demo/decision?scenario=safe-proceed&firm=toString");
+  expect(prototypeFirm?.status()).toBe(404);
   // Absent params still land on the default branch.
   const defaulted = await page.goto("/app/demo/decision");
   expect(defaulted?.status()).toBe(200);

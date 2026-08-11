@@ -166,6 +166,12 @@ function firstValueHelperIsIdentityPreserving(
   );
 }
 
+const OBJECT_PROTOTYPE_PROBE_KEYS = [
+  "toString",
+  "constructor",
+  "hasOwnProperty",
+] as const;
+
 export function resolverIdentityProblems(
   scenarioIds: readonly string[],
   firmIds: readonly string[],
@@ -182,6 +188,16 @@ export function resolverIdentityProblems(
       resolveFirm(id) === id
         ? []
         : [`firm resolver remaps supported id '${id}'`],
+    ),
+    ...OBJECT_PROTOTYPE_PROBE_KEYS.flatMap((key) =>
+      scenarioIds.includes(key) || resolveScenario(key) === null
+        ? []
+        : [`scenario resolver admits prototype key '${key}'`],
+    ),
+    ...OBJECT_PROTOTYPE_PROBE_KEYS.flatMap((key) =>
+      firmIds.includes(key) || resolveFirm(key) === null
+        ? []
+        : [`firm resolver admits prototype key '${key}'`],
     ),
   ];
 }
@@ -1894,6 +1910,33 @@ hooks.install!(async ({ page }) => {
       ).toEqual([
         "scenario resolver remaps supported id 'approval-invalidation'",
         "firm resolver remaps supported id 'firm-b'",
+        "scenario resolver admits prototype key 'toString'",
+        "scenario resolver admits prototype key 'constructor'",
+        "scenario resolver admits prototype key 'hasOwnProperty'",
+        "firm resolver admits prototype key 'toString'",
+        "firm resolver admits prototype key 'constructor'",
+        "firm resolver admits prototype key 'hasOwnProperty'",
+      ]);
+    });
+
+    it("rejects URL resolvers that admit Object prototype keys as branches", () => {
+      const firmRecord: Record<string, string> = {
+        "firm-a": "firm-a",
+        "firm-b": "firm-b",
+      };
+      expect(
+        resolverIdentityProblems(
+          ["safe-proceed"],
+          ["firm-a", "firm-b"],
+          (id) =>
+            id === undefined || id === "safe-proceed" ? "safe-proceed" : null,
+          (id) =>
+            id === undefined ? "firm-a" : id in firmRecord ? id : null,
+        ),
+      ).toEqual([
+        "firm resolver admits prototype key 'toString'",
+        "firm resolver admits prototype key 'constructor'",
+        "firm resolver admits prototype key 'hasOwnProperty'",
       ]);
     });
 

@@ -6254,7 +6254,7 @@ echo arguments, short-circuited expressions, heredocs, compound scripts, and `||
 neutralized commands diagnosed separately; the audit seed and verifier are separate workflow steps;
 **(5)** charter rule 9 maps both the blocking `pnpm test:e2e` command and an Axe-specific fence proving
 the public, authenticated, and demo E2E specifications execute Axe; **(6)** the gate-ordering proof is
-uniquely PF-030, and the Axe proof is PF-031; **(7)** the v3 reading guide now names ADRs 0023-0029 and 0055.
+uniquely PF-237, and the Axe proof is PF-238; **(7)** the v3 reading guide now names ADRs 0023-0029 and 0055.
 All ten gates remain non-green.
 
 The captain-approved earliest-proof/completeness review (2026-07-28) amended ADR-0055 in place a sixth
@@ -6269,7 +6269,7 @@ or custom shell semantics; **(5)** both v3 charter mappings name and ratchet the
 `pnpm v3:invariants` command; **(6)** the Axe fence accepts only an enabled, reachable test that awaits
 analysis and fails on its violations, rejecting skipped, dead, unawaited, unasserted, or unawaited-helper
 scans; **(7)** the ADR index's related-governance range now includes ADR-0055. Focused companions and
-real injection evidence extend PF-030 and PF-031.
+real injection evidence extend PF-237 and PF-238.
 
 The captain-approved enforcement-completeness review (2026-07-28) amended ADR-0055 in place a seventh
 time: **(1)** every declared `activationPrompts` array is validated for active and not-yet-active
@@ -6279,7 +6279,7 @@ skipped dependency can prevent the mapped command from running; **(3)** Axe anal
 to the sanctioned `e2e/axe.ts` helper, which the fence pins to a complete WCAG-tagged scan and a direct
 assertion over unmodified violations; and **(4)** required Playwright tests must register at module scope
 or directly inside an enabled module-scope `test.describe`, then await the helper outside any caught or
-dead path. Focused companions and real injections extend PF-030 and PF-031.
+dead path. Focused companions and real injections extend PF-237 and PF-238.
 
 The captain-approved false-green boundary review (2026-07-28) amended ADR-0055 in place an eighth time:
 **(1)** every enforced charter CI mapping now binds and ratchets its exact command, while the weakest
@@ -6289,8 +6289,8 @@ module/file/describe scope skip and fixme annotations plus `test.fail`; **(3)** 
 accepts only the exact non-mutating document-animation settlement before analysis, so a DOM-clearing
 `page.evaluate` cannot mask the scan; and **(4)** invariant 3 pins both domain YAML artifacts and the
 exact future `domain-configuration` fitness mechanism as activation prerequisites, so an unrelated
-naming-only fence cannot produce `active-pass`. Focused companions and real injections extend PF-030
-and PF-031.
+naming-only fence cannot produce `active-pass`. Focused companions and real injections extend PF-237
+and PF-238.
 
 The captain-approved execution-reachability review (2026-07-28) amended ADR-0055 in place a ninth time:
 **(1)** Gate 0's unmechanized surface clause becomes the executable
@@ -6301,8 +6301,8 @@ CI evidence requires unfiltered `push` and `pull_request` triggers, repository-r
 workflow/job/step working-directory resolution, and direct owned entry points rather than mutable
 package-script aliases; **(3)** the Axe fence parses Playwright selection configuration, binds required
 public, authenticated, and demo route groups to navigation and loaded-state assertions, and resolves
-direct, computed, destructured, and aliased neutralization calls through imported symbols. PF-030,
-PF-031, and new PF-032 record focused companions and real injections.
+direct, computed, destructured, and aliased neutralization calls through imported symbols. PF-237,
+PF-238, and new PF-239 record focused companions and real injections.
 
 The captain-approved executable-evidence review (2026-07-29) amended ADR-0055 in place a tenth time:
 **(1)** Playwright configuration proof rejects multiple `defineConfig` arguments because later values
@@ -6311,7 +6311,7 @@ of an enabled registered test, outside uncalled functions and caught branches; *
 assertion messages are structurally side-effect-free; **(4)** computed, destructured, aliased, and
 namespace-imported Playwright symbols share one neutralization resolver; and **(5)** Gate 0 accepts only
 direct awaited canonical `snap` calls whose helper directly awaits `page.screenshot` into the pinned
-`demo-screens` directory and asserts a non-empty capture. PF-031 and PF-032 record the red reproductions,
+`demo-screens` directory and asserts a non-empty capture. PF-238 and PF-239 record the red reproductions,
 focused companions, and restored green proofs.
 
 The captain-approved enforcement-integrity review (2026-07-29) amended ADR-0055 in place an eleventh
@@ -6322,14 +6322,14 @@ mechanism-level status override; **(3)** Playwright configuration proof normaliz
 literal property names at root and project scope and fails closed on unresolved computed names; and
 **(4)** Gate 0 binds each station to the component imported from its manifest path, while every canonical
 capture names its station and verifies that station's URL and loaded marker before the screenshot.
-PF-001, PF-030, PF-031, and PF-032 record the red reproductions, companions, and restored proofs.
+PF-001, PF-237, PF-238, and PF-239 record the red reproductions, companions, and restored proofs.
 
 The captain-approved runner-and-alias review (2026-07-29) amended ADR-0055 in place a twelfth time:
 **(1)** CI evidence validates the effective `runs-on` value independently of shell selection, so an
 explicit `bash` or `sh` cannot make a missing, non-string, dynamic, unsupported, or unschedulable runner
 look executable; and **(2)** the Playwright neutralizer resolver follows the latest preceding simple
 assignment for named imports, namespace imports, and member aliases, including typed `let`
-declarations. PF-030 and PF-031 record the red reproductions, focused companions, and restored green
+declarations. PF-237 and PF-238 record the red reproductions, focused companions, and restored green
 proofs.
 
 The captain-approved control-flow, artifact, mechanism, and matrix review (2026-07-29) amended
@@ -6340,8 +6340,8 @@ CI runs a dedicated post-Playwright validator that requires every canonical scre
 exist and be non-empty, while upload-artifact fails when the directory is missing; **(4)** every
 shipped active invariant ratchets its complete mechanism tuple set, so status cannot remain active
 after proof is redirected to an unrelated fence; and **(5)** evidence jobs using `strategy.matrix`
-are non-evidence until complete matrix reachability semantics exist. PF-024, PF-030, PF-031, and
-PF-032 record the red reproductions, focused companions, and restored green proofs.
+are non-evidence until complete matrix reachability semantics exist. PF-024, PF-237, PF-238, and
+PF-239 record the red reproductions, focused companions, and restored green proofs.
 
 The captain-approved route-and-capture-integrity review (2026-07-29) amended ADR-0055 in place a
 fourteenth time: **(1)** the dynamic demo page binds its resolved station to both the loaded marker and
@@ -6352,7 +6352,7 @@ when unreachable control flow overwrites an alias that previously named `test.sk
 structural fence rejects direct reassignment, descendant mutation, and array-mutator calls before a
 required loop; and **(4)** the launcher capture proves its canonical URL and loaded marker before an
 awaited `page.screenshot` to `00-launcher.png`, with the same non-empty assertion as every station
-capture. PF-031 and PF-032 record the red reproductions, companions, and restored proofs.
+capture. PF-238 and PF-239 record the red reproductions, companions, and restored proofs.
 
 The captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review (2026-07-29)
 amended ADR-0055 in place a fifteenth time: **(1)** active invariant IDs must exactly equal the shipped
@@ -6361,7 +6361,7 @@ mechanism-ratchet keys, so a newly active invariant cannot point at an unreviewe
 `testInfo.fail`, including member aliases; **(3)** Playwright symbol resolution normalizes parentheses
 and TypeScript assertion wrappers before recognizing neutralizers; and **(4)** Gate 0 ratchets the
 mutable contract and typed manifest to the exact twelve surface identities from the SHA-pinned ratified
-demo contract. PF-024, PF-031, and PF-032 record the red reproductions, companions, and restored proofs.
+demo contract. PF-024, PF-238, and PF-239 record the red reproductions, companions, and restored proofs.
 
 The captain-approved reachability and delivery review (2026-07-29) amended ADR-0055 in place a
 sixteenth time: **(1)** required tests and directly registered hooks reject TestInfo skip, fixme, and
@@ -6370,7 +6370,7 @@ destructuring; **(2)** the dynamic demo page's validated return must be provably
 or conditional exit cannot hide a constant surface; **(3)** the canonical Gate 0 journey must click the
 complete ordered accessible-control graph and cannot substitute `page.goto`; and **(4)** the
 `demo-screens` upload rejects false conditions and `continue-on-error` while allowing the current
-`!cancelled()` predicate. PF-031 and PF-032 record the red reproductions, companions, and restored proofs.
+`!cancelled()` predicate. PF-238 and PF-239 record the red reproductions, companions, and restored proofs.
 
 The captain-approved callable-provenance and Gate 0 route-graph review (2026-07-29) amended ADR-0055
 in place a seventeenth time: **(1)** positive Axe-helper aliases must have stable imported provenance,
@@ -6380,7 +6380,7 @@ local callable indirection fails closed; **(3)** the dynamic demo page passes it
 and firm identifiers to `getJourney`, with every supported scenario-by-firm outcome checked exhaustively;
 and **(4)** the canonical clickable journey admits only the complete ordered product-control graph,
 read-only loaded-state assertions, and sanctioned helpers, so DOM mutation, injected controls, and
-alternate navigation are non-evidence. PF-031 and PF-032 record the red reproductions, companions, and
+alternate navigation are non-evidence. PF-238 and PF-239 record the red reproductions, companions, and
 restored proofs.
 
 The captain-approved callback, assertion, renderer-ID, and runner-ratchet review (2026-07-29) amended
@@ -6391,7 +6391,7 @@ direct call ownership; **(2)** the sanctioned helper accepts only a stable, unre
 query or returned journey identifiers; and **(4)** the complete active-ID and mechanism-tuple ratchet
 moves into the shared gate library and is invoked by both the registry fence and the blocking
 `v3:invariants` runner. Prompt 10's activation procedure now requires adding invariant 3's complete
-mechanism tuple to that shared ratchet in the same PR. PF-024, PF-031, and PF-032 record the red
+mechanism tuple to that shared ratchet in the same PR. PF-024, PF-238, and PF-239 record the red
 reproductions, companions, and restored proofs.
 
 The captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review
@@ -6401,7 +6401,7 @@ route callbacks admit only their typed loops and a stable canonical login call, 
 to the uninstrumented browser flow, and required specifications may register no Playwright hooks;
 **(3)** the canonical Gate 0 journey rejects registered Playwright hooks that could inject controls or
 replace screenshot evidence; and **(4)** the renderer's approval input is bound to the exact
-`first(sp.approved) === "1"` query-derived declaration. PF-031 and PF-032 record the red reproductions,
+`first(sp.approved) === "1"` query-derived declaration. PF-238 and PF-239 record the red reproductions,
 focused companions, and restored proofs.
 
 The captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review
@@ -6413,7 +6413,7 @@ are resolved through shared callable-indirection analysis; **(3)** charter-drift
 fence regex with symbol-aware Vitest registration analysis covering computed members, namespace imports,
 imported and assigned aliases, and x-prefixed registrations; and **(4)** the Axe fence derives the
 complete Next `page.tsx` inventory and requires every static and dynamic route to have an exact loaded-state
-scan owner. PF-001, PF-024, PF-030, PF-031, and PF-032 record the adversarial companions and restored
+scan owner. PF-001, PF-024, PF-237, PF-238, and PF-239 record the adversarial companions and restored
 green proofs.
 
 The captain-approved fitness-inventory and execution-provenance review (2026-07-29) amended ADR-0055
@@ -6425,7 +6425,7 @@ against injected ratchet drift and requires exit 1; **(4)** the Axe helper rejec
 replacement, while required specifications cannot import the Axe runtime directly; **(5)** callable
 indirection composes nested `Reflect.apply`, `call`, and `apply` forms for Playwright neutralizers and
 hooks; and **(6)** Gate 0 requires stable unreassigned screenshot helpers and identity preservation for
-every supported URL scenario and firm resolver. PF-001, PF-024, PF-031, and PF-032 record the red
+every supported URL scenario and firm resolver. PF-001, PF-024, PF-238, and PF-239 record the red
 reproductions, continuous companions, and restored green proofs.
 
 The captain-approved recursive-inventory and bound-reflection review (2026-07-29) amended ADR-0055
@@ -6435,7 +6435,7 @@ a nested subtree cannot escape execution or governance; and **(2)** shared refle
 follows direct and aliased `Reflect.apply.bind(...)` values, including bound callables invoked through
 `call` or `apply`, for both Axe neutralizers and Gate 0 hook registration. The three unchanged,
 AST-intensive enforcement checks that exceeded the global 20-second per-test limit under full-suite worker
-contention have explicit 60-second budgets; no assertion was removed. PF-001, PF-031, and PF-032 record
+contention have explicit 60-second budgets; no assertion was removed. PF-001, PF-238, and PF-239 record
 the real red reproductions, focused companions, and restored green proofs.
 
 The captain-approved gate-local evaluator proof and single-run fitness review (2026-07-29) amended
@@ -6445,7 +6445,7 @@ mechanism that supplies their global `active-pass` state; **(2)** the v3 runner 
 fitness invocation immediately after report parsing and before emitting any invariant or gate state; and
 **(3)** the blocking test job enters Vitest once through the complete fitness-inventory runner, which runs
 the full unit, integration, and fitness suite while recursively requiring one passing result from every
-fitness file. PF-001, PF-024, and PF-030 record the reproductions, companions, and restored proofs.
+fitness file. PF-001, PF-024, and PF-237 record the reproductions, companions, and restored proofs.
 
 The captain-approved cross-gate proof and imported Axe-graph review (2026-07-29) amended ADR-0055 in
 place a twenty-fourth time: **(1)** the proof-point ratchet derives every invariant referenced across
@@ -6455,8 +6455,8 @@ fabricate an earlier proof while the general ordering rule remains green; and **
 follows the complete runtime local import graph of required specifications and sanctioned helpers
 through side-effect imports, re-exports, configured TypeScript aliases, literal dynamic imports, and
 CommonJS imports. Every reachable local module rejects Playwright hook registration and Axe runtime
-access outside `e2e/axe.ts`; unresolved, unclassified, and non-literal runtime imports are non-evidence. PF-030 and
-PF-031 record the reproductions, companions, and restored proofs.
+access outside `e2e/axe.ts`; unresolved, unclassified, and non-literal runtime imports are non-evidence. PF-237 and
+PF-238 record the reproductions, companions, and restored proofs.
 
 The captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review (2026-07-29)
 amended ADR-0055 in place a twenty-fifth time: **(1)** the recursive fitness inventory and Vitest config
@@ -6466,7 +6466,7 @@ forms, fails closed in the Axe evidence graph; **(3)** Axe-runtime and Playwrigh
 to every named graph root and transitive local module, with only the exact Axe import in `e2e/axe.ts`
 allowed; and **(4)** charter-drift resolves disabled registrations through imported `suite` and the
 unshadowed `describe`, `suite`, `test`, and `it` globals enabled by Vitest while preserving locally
-shadowed application callables. PF-001 and PF-031 record the real red reproductions, non-vacuous
+shadowed application callables. PF-001 and PF-238 record the real red reproductions, non-vacuous
 companions, and restored proofs.
 
 The captain-approved registration-option, declarative-route, and precedence review (2026-07-29)
@@ -6477,7 +6477,7 @@ shadows remain application code; **(3)** unresolved computed member access on am
 non-evidence for CommonJS loading; **(4)** Playwright hook provenance follows callable values stored in
 object properties; **(5)** Axe route collections are non-empty declarative frozen literals whose runtime
 contents cannot vary by process; and **(6)** concrete Axe URLs are assigned through Next route precedence,
-so a static page cannot falsely cover an overlapping dynamic page. PF-001, PF-002, and PF-031 record the
+so a static page cannot falsely cover an overlapping dynamic page. PF-001, PF-002, and PF-238 record the
 real red reproductions, companions, and restored proofs.
 
 The captain-approved callable-member, helper-syntax, and parameterized-registration review (2026-07-29)
@@ -6487,7 +6487,7 @@ sanctioned Axe helper requires exactly two plain parameters and exactly the side
 builder configuration; **(3)** Node `global` is treated as the same unshadowed Vitest authority as
 `globalThis`; and **(4)** `.each` and `.for` registrations require statically non-empty case
 collections, including tagged tables, while empty, spread-derived, and unresolved collections are
-non-evidence. PF-001 and PF-031 record the real red injections, focused companions, and restored green
+non-evidence. PF-001 and PF-238 record the real red injections, focused companions, and restored green
 proofs.
 
 The captain-approved reachability, reflective-write, screenshot, and CI-environment review (2026-07-29)
@@ -6498,8 +6498,8 @@ Playwright hook provenance follows `Object.defineProperty` and `Reflect.set` thr
 `bind` / `call` / `apply` wrappers, while unresolved reflective property writes fail closed; **(3)**
 canonical screenshot options contain exactly the sanctioned `path` and `fullPage: true` fields, so
 content masking is non-evidence; and **(4)** governed CI commands reject non-literal inherited
-environment maps and execution-affecting workflow, job, or step overrides. PF-001, PF-030, PF-031, and
-PF-032 record the real red injections, focused companions, and restored green proofs.
+environment maps and execution-affecting workflow, job, or step overrides. PF-001, PF-237, PF-238, and
+PF-239 record the real red injections, focused companions, and restored green proofs.
 
 The captain-approved registration-input, computed-member, login, builtin-loader, and
 container-environment review (2026-07-29) amended ADR-0055 in place a twenty-ninth time: **(1)** Vitest
@@ -6510,7 +6510,7 @@ computed members rooted at the imported API are non-evidence; **(3)** the canoni
 exactly two plain required parameters and authenticated scan sites pass `PRINCIPAL` explicitly; **(4)**
 ambient `process.getBuiltinModule("module")` construction is rejected throughout the required Axe
 runtime graph, including stable aliases; and **(5)** CI execution-environment validation includes
-`job.container.env` between job and step scope. PF-001, PF-030, and PF-031 record the real red
+`job.container.env` between job and step scope. PF-001, PF-237, and PF-238 record the real red
 injections, focused companions, and restored green proofs.
 
 The captain-approved CI provenance, imported-registration, query-helper, and shared-hook review
@@ -6523,7 +6523,7 @@ additional execution-shaping container fields are non-evidence; **(3)** Playwrig
 entry's complete local runtime import graph is inspected, and imported helpers may neither import Vitest
 nor register tests or suites; **(5)** Gate 0 pins its `first` query helper to the identity-preserving
 single-value semantics used by every resolver; and **(6)** Gate 0 and Axe evidence share one hardened
-Playwright hook-provenance authority. PF-001, PF-030, PF-031, and PF-032 record the real red injections,
+Playwright hook-provenance authority. PF-001, PF-237, PF-238, and PF-239 record the real red injections,
 focused companions, and restored green proofs.
 
 The captain-approved identity, reflection, and result-ownership review (2026-08-05) amended ADR-0055
@@ -6533,7 +6533,7 @@ analysis resolves the invoked target of `Reflect.apply`; **(3)** one shared call
 supplies static `Reflect.get` provenance to Vitest and Playwright analyzers, with unresolved Playwright
 keys failing closed for neutralizers and hooks; and **(4)** the complete-suite and v3 runners
 canonicalize result names to exact repository-relative paths and reject duplicate exact results, so a
-passing suffix-matching shadow file cannot satisfy an omitted fence. PF-001, PF-024, and PF-031 record
+passing suffix-matching shadow file cannot satisfy an omitted fence. PF-001, PF-024, and PF-238 record
 the red reproductions, focused companions, and restored green proofs.
 
 The captain-approved composite-callable and executable-workflow review (2026-08-05) amended ADR-0055
@@ -6543,7 +6543,7 @@ every initializer and preceding assignment source, and incomplete resolution is 
 **(3)** CI command evidence first validates the workflow's complete local, reusable, run-step, and
 uses-step forms, so a GitHub-invalid `run` / `uses` / `with` combination invalidates the workflow rather
 than proving a command that cannot execute. The assignment index and Reflect-free source fast path keep
-the charter audit bounded while preserving exact path ownership. PF-001, PF-030, and PF-031 record the
+the charter audit bounded while preserving exact path ownership. PF-001, PF-237, and PF-238 record the
 real red reproductions, focused companions, and restored green proofs. Gate A and Gate B requirements,
 ownership, proof points, and readiness semantics are unchanged.
 
@@ -6555,7 +6555,7 @@ Vitest registration, Playwright neutralizer, or Playwright hook; **(3)** `Object
 an intrinsic alias remains visible to hook provenance; and **(4)** the structured CI authority validates
 supported workflow, job, container, and step field value schemas across the complete workflow before
 accepting command evidence. A per-source invocation index and parameter-path cache preserve the bounded
-charter audit. PF-001, PF-030, and PF-031 record focused companions, real red injections, and restored
+charter audit. PF-001, PF-237, and PF-238 record focused companions, real red injections, and restored
 green proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics are
 unchanged.
 
@@ -6567,7 +6567,7 @@ aliases are resolved, while incomplete computed property provenance fails closed
 permission scope keys, job identifier grammar, and positive-integer or explicit-expression timeout
 forms are validated before any workflow command becomes evidence; and **(4)** every Gate 0 renderer arm
 is bound to its exact journey view model, resolved identifier spread, and query-derived approval input.
-PF-001, PF-030, PF-031, and PF-032 record focused companions, real red injections, and restored green
+PF-001, PF-237, PF-238, and PF-239 record focused companions, real red injections, and restored green
 proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics are unchanged.
 
 The captain-approved trigger, constructor, and descriptor-provenance review (2026-08-05) amended
@@ -6577,7 +6577,7 @@ events before command evidence is considered; **(2)** constructor calls and para
 the shared callable invocation index; **(3)** incomplete callable-parameter provenance is unsafe even
 when no known path was recovered; **(4)** destructured intrinsic aliases resolve through stable holder
 properties; and **(5)** Object and Reflect descriptor reads retain the receiver and member provenance
-of callable values. PF-001, PF-030, and PF-031 record the focused companions, real red injections, and
+of callable values. PF-001, PF-237, and PF-238 record the focused companions, real red injections, and
 restored green proofs. Gate A and Gate B requirements, ownership, proof points, and readiness semantics
 are unchanged.
 

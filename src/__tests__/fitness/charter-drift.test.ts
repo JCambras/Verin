@@ -244,46 +244,13 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["policy-ast-closed", "adr", "docs/adr/0053-policy-ast-and-interpreter.md", "", "enforced"],
 ] as const satisfies readonly EnforcedMechanismTuple[];
 
-const RATCHETED_CI_COMMANDS = [
-  {
-    entryId: "3",
-    ref: "provenance-trace",
-    command:
-      "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts",
-  },
-  { entryId: "5", ref: "knip", command: "pnpm exec knip" },
-  { entryId: "8", ref: "e2e", command: "pnpm exec playwright test" },
-  { entryId: "9", ref: "e2e", command: "pnpm exec playwright test" },
-  { entryId: "11", ref: "load-smoke", command: "pnpm exec tsx scripts/load-smoke.ts" },
-  { entryId: "13", ref: "audit-chain-verify", command: "pnpm exec tsx scripts/audit-chain-verify.ts" },
-  {
-    entryId: "14",
-    ref: "test",
-    command: "pnpm exec tsx scripts/fitness-tests.ts",
-  },
-  {
-    entryId: "15",
-    ref: "secret-scan",
-    command: "gitleaks git --config .gitleaks.toml --redact --no-banner --exit-code 1 .",
-  },
-  {
-    entryId: "15",
-    ref: "sast",
-    command:
-      "semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error",
-  },
-  { entryId: "15", ref: "dependency-audit", command: "pnpm audit --audit-level=high" },
-  { entryId: "15", ref: "dependency-audit", command: "pnpm exec tsx scripts/license-audit.ts" },
-  { entryId: "v3-invariants-phase-gated", ref: "v3-invariants", command: "pnpm exec tsx scripts/v3-invariants.ts" },
-  { entryId: "v3-gate-ordering", ref: "v3-invariants", command: "pnpm exec tsx scripts/v3-invariants.ts" },
-  { entryId: "golden-cases-truth-set", ref: "golden-cases", command: "pnpm exec tsx scripts/golden-cases-validate.ts" },
-  { entryId: "replay-corpus-substrate", ref: "corpus", command: "pnpm exec tsx scripts/corpus-validate.ts" },
-  {
-    entryId: "charter-drift-fence",
-    ref: "test",
-    command: "pnpm exec tsx scripts/fitness-tests.ts",
-  },
-] as const;
+// The (e') inputs DERIVE from the single mechanism-tuple ratchet above: its
+// ci-gate tuples ARE the load-bearing CI command bindings, so exactly one
+// hand-maintained authority pins exact commands (captain ruling
+// ci-command-ratchet-duplicated, option a).
+const RATCHETED_CI_COMMANDS = RATCHETED_ENFORCED_MECHANISMS.filter(
+  (tuple) => tuple[1] === "ci-gate",
+).map(([entryId, , ref, command]) => ({ entryId, ref, command }));
 
 function blockingCiJobs(): Map<string, CiJob> {
   const f = p(".github/workflows/ci.yml");
@@ -298,6 +265,41 @@ function completeSuiteEntryCommands(
       command.includes("vitest") ||
       command.includes("scripts/fitness-tests.ts"),
   );
+}
+
+/**
+ * BOTH project includes derive from the shared exported constants, and every
+ * exclude list is pinned exactly: an unreviewed app-project exclude would
+ * silently drop a whole test tree (the per-file inventory covers fitness files
+ * only) while the blocking test job still reports a complete suite.
+ */
+function vitestConfigScopeProblems(source: string): string[] {
+  const problems: string[] = [];
+  if (!source.includes("include: [VITEST_FITNESS_INCLUDE]")) {
+    problems.push(
+      "fitness project include must derive from VITEST_FITNESS_INCLUDE",
+    );
+  }
+  if (!source.includes("include: [VITEST_TEST_INCLUDE]")) {
+    problems.push("app project include must derive from VITEST_TEST_INCLUDE");
+  }
+  if (source.includes('include: ["src/')) {
+    problems.push("project includes must not be hardcoded globs");
+  }
+  const excludes = source.match(/exclude:\s*\[[^\]]*\]/g) ?? [];
+  const expected = [
+    'exclude: ["node_modules/**", ".next/**", "e2e/**"]',
+    'exclude: ["src/__tests__/fitness/**"]',
+  ];
+  if (
+    excludes.length !== expected.length ||
+    excludes.some((entry, index) => entry !== expected[index])
+  ) {
+    problems.push(
+      `vitest exclude lists must be exactly ${JSON.stringify(expected)}, found ${JSON.stringify(excludes)}`,
+    );
+  }
+  return problems;
 }
 
 function mechanismRatchetProblems(entries: readonly Entry[]): string[] {
@@ -462,6 +464,19 @@ const VITEST_REGISTRATION_BASES = new Set([
   "suite",
 ]);
 
+/**
+ * Lifecycle hooks run OUTSIDE any test callback, so a `ctx.skip()` inside
+ * `beforeEach` neutralizes every test in the file while Vitest's JSON report
+ * still says "passed" - hook callbacks get the same TestContext inspection as
+ * test callbacks, and an imported helper may not register one.
+ */
+const VITEST_HOOK_BASES = new Set([
+  "beforeEach",
+  "beforeAll",
+  "afterEach",
+  "afterAll",
+]);
+
 function isVitestGlobalObject(
   node: Node,
   seen = new Set<Node>(),
@@ -580,7 +595,7 @@ function vitestCallablePaths(
       normalized.getExpression(),
       new Set(seen),
     );
-    return paths.map((path) => {
+    const chained = paths.map((path): VitestCallablePath => {
       const modifier = path.members.at(-1);
       if (modifier === "each" || modifier === "for") {
         return {
@@ -607,6 +622,23 @@ function vitestCallablePaths(
         ],
       };
     });
+    const returned = localCallableReturnValues(normalized.getExpression());
+    if (returned === undefined) return chained;
+    return [
+      ...chained,
+      ...returned.values.flatMap((value) =>
+        vitestCallablePaths(value, new Set(seen)),
+      ),
+      ...(returned.complete
+        ? []
+        : [
+            {
+              members: ["*"],
+              conditions: [],
+              caseCollections: [],
+            },
+          ]),
+    ];
   }
   const member = staticRegistrationMember(normalized);
   if (member !== undefined) {
@@ -705,7 +737,8 @@ function vitestCallablePaths(
     ...precedingCallableAssignmentValues(normalized).flatMap((source) =>
       vitestCallablePaths(source, new Set(seen)),
     ),
-    ...(VITEST_REGISTRATION_BASES.has(normalized.getText()) &&
+    ...((VITEST_REGISTRATION_BASES.has(normalized.getText()) ||
+      VITEST_HOOK_BASES.has(normalized.getText())) &&
     !declarations.some(
       (declaration) =>
         declaration.getSourceFile() === normalized.getSourceFile(),
@@ -719,6 +752,70 @@ function vitestCallablePaths(
         ]
       : []),
   ];
+}
+
+/**
+ * A Vitest callable laundered through a local function RETURN
+ * (`function pick() { return describe.skip; } const d = pick();`) must stay
+ * visible: the call's value resolves to the returned expressions, and a local
+ * callable whose returns cannot be enumerated yields the fail-closed star path.
+ */
+function localCallableReturnValues(
+  node: Node,
+  seen = new Set<Node>(),
+): { values: Node[]; complete: boolean } | undefined {
+  const normalized = unwrapRegistrationExpression(node);
+  if (seen.has(normalized)) return { values: [], complete: true };
+  seen.add(normalized);
+  if (
+    Node.isArrowFunction(normalized) ||
+    Node.isFunctionExpression(normalized) ||
+    Node.isFunctionDeclaration(normalized)
+  ) {
+    const body = normalized.getBody();
+    if (body === undefined) return undefined;
+    if (!Node.isBlock(body)) return { values: [body], complete: true };
+    return {
+      values: body
+        .getDescendantsOfKind(SyntaxKind.ReturnStatement)
+        .filter(
+          (statement) =>
+            statement.getFirstAncestor((ancestor) =>
+              Node.isFunctionLikeDeclaration(ancestor),
+            ) === normalized,
+        )
+        .flatMap((statement) => {
+          const expression = statement.getExpression();
+          return expression === undefined ? [] : [expression];
+        }),
+      complete: true,
+    };
+  }
+  if (!Node.isIdentifier(normalized)) return undefined;
+  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
+  const sources: Node[] = [
+    ...declarations.filter(Node.isFunctionDeclaration),
+    ...declarations.flatMap((declaration) => {
+      if (!Node.isVariableDeclaration(declaration)) return [];
+      const initializer = declaration.getInitializer();
+      return initializer === undefined ? [] : [initializer];
+    }),
+    ...precedingCallableAssignmentValues(normalized),
+  ];
+  const resolved = sources.map((source) =>
+    localCallableReturnValues(source, new Set(seen)),
+  );
+  const callable = resolved.filter(
+    (result): result is { values: Node[]; complete: boolean } =>
+      result !== undefined,
+  );
+  if (callable.length === 0) return undefined;
+  return {
+    values: callable.flatMap((result) => result.values),
+    complete:
+      resolved.every((result) => result !== undefined) &&
+      callable.every((result) => result.complete),
+  };
 }
 
 function vitestCallablePathsForCall(
@@ -748,6 +845,18 @@ const NEUTRALIZING_VITEST_OPTIONS = new Set([
   "only",
   "todo",
   "fails",
+]);
+
+/**
+ * Chains ending in a non-neutralizing modifier are still REGISTRATIONS: an
+ * `it.concurrent(...)` must stay subject to the disabled/options/TestContext
+ * analyses rather than dropping out of them entirely.
+ */
+const NON_NEUTRALIZING_VITEST_MODIFIERS = new Set([
+  "concurrent",
+  "sequential",
+  "shuffle",
+  "extend",
 ]);
 
 function staticRegistrationCaseCollection(
@@ -896,8 +1005,21 @@ function isVitestRegistrationPath(path: VitestCallablePath): boolean {
       .slice(1)
       .some(
         (member) =>
-          member === "*" || NEUTRALIZING_VITEST_OPTIONS.has(member),
+          member === "*" ||
+          NEUTRALIZING_VITEST_OPTIONS.has(member) ||
+          NON_NEUTRALIZING_VITEST_MODIFIERS.has(member),
       )
+  );
+}
+
+function isVitestHookPath(path: VitestCallablePath): boolean {
+  const [base, ...rest] = path.members;
+  return (
+    base !== undefined &&
+    VITEST_HOOK_BASES.has(base) &&
+    rest.length === 0 &&
+    path.conditions.length === 0 &&
+    path.caseCollections.length === 0
   );
 }
 
@@ -1023,7 +1145,8 @@ function contextParameterProblems(
 ): string[] {
   if (
     !Node.isArrowFunction(callback) &&
-    !Node.isFunctionExpression(callback)
+    !Node.isFunctionExpression(callback) &&
+    !Node.isFunctionDeclaration(callback)
   ) {
     return [];
   }
@@ -1035,10 +1158,10 @@ function contextParameterProblems(
   }
   const symbol = nameNode.getSymbol();
   if (symbol === undefined) return [];
+  const body = callback.getBody();
+  if (body === undefined) return [];
   const problems: string[] = [];
-  for (const reference of callback
-    .getBody()
-    .getDescendantsOfKind(SyntaxKind.Identifier)) {
+  for (const reference of body.getDescendantsOfKind(SyntaxKind.Identifier)) {
     if (reference.getSymbol() !== symbol) continue;
     const parent = reference.getParent();
     if (
@@ -1076,13 +1199,82 @@ function contextParameterProblems(
   return problems;
 }
 
+/**
+ * A callback passed by IDENTIFIER carries the same TestContext authority as an
+ * inline one, so it resolves to its declared bodies for inspection; a callback
+ * whose body cannot be statically resolved fails closed.
+ */
+function resolvedCallbackCallables(
+  node: Node,
+  seen = new Set<Node>(),
+): { callables: Node[]; complete: boolean } {
+  const normalized = unwrapRegistrationExpression(node);
+  if (seen.has(normalized)) return { callables: [], complete: true };
+  seen.add(normalized);
+  if (
+    Node.isArrowFunction(normalized) ||
+    Node.isFunctionExpression(normalized) ||
+    Node.isFunctionDeclaration(normalized)
+  ) {
+    return { callables: [normalized], complete: true };
+  }
+  if (!Node.isIdentifier(normalized)) {
+    return { callables: [], complete: false };
+  }
+  const declarations = normalized.getSymbol()?.getDeclarations() ?? [];
+  const sources: Node[] = [
+    ...declarations.filter(Node.isFunctionDeclaration),
+    ...declarations.flatMap((declaration) => {
+      if (!Node.isVariableDeclaration(declaration)) return [];
+      const initializer = declaration.getInitializer();
+      return initializer === undefined ? [] : [initializer];
+    }),
+    ...precedingCallableAssignmentValues(normalized),
+  ];
+  if (sources.length === 0) return { callables: [], complete: false };
+  const resolved = sources.map((source) =>
+    resolvedCallbackCallables(source, new Set(seen)),
+  );
+  return {
+    callables: resolved.flatMap((result) => result.callables),
+    complete: resolved.every((result) => result.complete),
+  };
+}
+
+function registrationCallbackCallables(call: CallExpression): {
+  callables: Node[];
+  complete: boolean;
+} {
+  const args = call.getArguments();
+  for (let index = args.length - 1; index >= 0; index -= 1) {
+    const argument = unwrapRegistrationExpression(args[index]!);
+    if (
+      Node.isArrowFunction(argument) ||
+      Node.isFunctionExpression(argument)
+    ) {
+      return { callables: [argument], complete: true };
+    }
+    if (
+      Node.isStringLiteral(argument) ||
+      Node.isNoSubstitutionTemplateLiteral(argument) ||
+      Node.isTemplateExpression(argument) ||
+      Node.isNumericLiteral(argument) ||
+      Node.isObjectLiteralExpression(argument)
+    ) {
+      continue;
+    }
+    return resolvedCallbackCallables(argument);
+  }
+  return { callables: [], complete: true };
+}
+
 function testContextProblems(
   call: CallExpression,
   paths: readonly VitestCallablePath[],
   fileName: string,
 ): string[] {
-  const contextIndexes = new Set(
-    paths
+  const contextIndexes = new Set<number>([
+    ...paths
       .filter(isVitestRegistrationPath)
       .flatMap((path) => {
         const base = path.members[0] ?? "";
@@ -1091,19 +1283,22 @@ function testContextProblems(
         if (modifiers.includes("each")) return [];
         return [modifiers.includes("for") ? 1 : 0];
       }),
-  );
-  const callback = call
-    .getArguments()
-    .filter(
-      (argument) =>
-        Node.isArrowFunction(argument) ||
-        Node.isFunctionExpression(argument),
-    )
-    .at(-1);
-  if (callback === undefined) return [];
-  return [...contextIndexes].flatMap((parameterIndex) =>
-    contextParameterProblems(callback, parameterIndex, fileName),
-  );
+    ...(paths.some(isVitestHookPath) ? [0] : []),
+  ]);
+  if (contextIndexes.size === 0) return [];
+  const resolved = registrationCallbackCallables(call);
+  return [
+    ...(resolved.complete
+      ? []
+      : [
+          `${fileName}:${call.getStartLineNumber()} fitness callback must resolve to a declared function for TestContext analysis`,
+        ]),
+    ...resolved.callables.flatMap((callable) =>
+      [...contextIndexes].flatMap((parameterIndex) =>
+        contextParameterProblems(callable, parameterIndex, fileName),
+      ),
+    ),
+  ];
 }
 
 function disabledVitestRegistrationProblemsInFile(
@@ -1477,7 +1672,11 @@ function importedFilesystemVitestRegistrationProblems(
       .getDescendantsOfKind(SyntaxKind.CallExpression)
       .flatMap((call) =>
         vitestCallablePathsForCall(call)
-          .filter(isVitestRegistrationPath)
+          .filter(
+            (registration) =>
+              isVitestRegistrationPath(registration) ||
+              isVitestHookPath(registration),
+          )
           .map(
             (registration) =>
               `${path}:${call.getStartLineNumber()} imported fitness helper must not register Vitest ${registration.members.join(".")}`,
@@ -1572,7 +1771,11 @@ function importedVitestRegistrationProblems(
       .getDescendantsOfKind(SyntaxKind.CallExpression)
       .flatMap((call) =>
         vitestCallablePathsForCall(call)
-          .filter(isVitestRegistrationPath)
+          .filter(
+            (registration) =>
+              isVitestRegistrationPath(registration) ||
+              isVitestHookPath(registration),
+          )
           .map(
             (registration) =>
               `${path}:${call.getStartLineNumber()} imported fitness helper must not register Vitest ${registration.members.join(".")}`,
@@ -1847,6 +2050,51 @@ Reflect.get(describe, member)("unresolved reflected member", () => {});`,
     it("never registers", () => {});
   });
 }`,
+      `import { it, beforeEach } from "vitest";
+beforeEach((ctx) => {
+  ctx.skip();
+});
+it("mapped check", () => {});`,
+      `beforeEach((ctx) => {
+  ctx.skip();
+});
+test("global hook context skip", () => {});`,
+      `import { it, beforeAll } from "vitest";
+beforeAll((ctx) => {
+  const escape = ctx;
+  void escape;
+});
+it("mapped check", () => {});`,
+      `import { it } from "vitest";
+it.concurrent("modifier context skip", (ctx) => {
+  ctx.skip();
+});`,
+      `import { it } from "vitest";
+it.sequential("modifier neutralized by options", { skip: true }, () => {});`,
+      `import { it } from "vitest";
+const cb = (ctx) => {
+  ctx.skip();
+};
+it("aliased callback context skip", cb);`,
+      `import { it } from "vitest";
+function cb(ctx) {
+  ctx.todo();
+}
+it("declared callback context todo", cb);`,
+      `import { it } from "vitest";
+import { cb } from "./unresolved-callbacks";
+it("unresolvable callback", cb);`,
+      `import { describe, it } from "vitest";
+function pick() {
+  return describe.skip;
+}
+const laundered = pick();
+laundered("laundered suite", () => {
+  it("never runs", () => {});
+});`,
+      `import { describe } from "vitest";
+const pick = () => describe.skip;
+pick()("directly laundered suite", () => {});`,
     ];
     for (const source of disabled) {
       expect(
@@ -1906,6 +2154,26 @@ it("context-safe callback", (ctx) => {
 });
 it.each([[1]])("case values are not a context", (value) => {
   void value;
+});`,
+      ),
+    ).toEqual([]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `import { it, afterEach } from "vitest";
+afterEach(() => {});
+it.concurrent("enabled concurrent", (ctx) => {
+  void ctx.task;
+});
+const named = (ctx) => {
+  void ctx.task;
+};
+it("enabled resolved callback", named);
+function buildCheck() {
+  return (value: number) => value > 0;
+}
+const check = buildCheck();
+it("enabled derived helper", () => {
+  void check(1);
 });`,
       ),
     ).toEqual([]);
@@ -2019,6 +2287,18 @@ new Registrar(it.skip);`,
       "nested-fence.ts:2 imported fitness helper must not register Vitest describe.skip",
       "nested-fence.ts:1 imported fitness helper must not import the Vitest runtime",
     ]);
+    expect(
+      disabledVitestRegistrationProblems(
+        `import "./nested-hook";\nimport { it } from "vitest";\nit("live companion", () => {});`,
+        "fitness.test.ts",
+        {
+          "nested-hook.ts":
+            `beforeEach((ctx) => {\n  ctx.skip();\n});`,
+        },
+      ),
+    ).toContain(
+      "nested-hook.ts:1 imported fitness helper must not register Vitest beforeEach",
+    );
   });
 
   it("(b companion) permits ONLY the corpus-world seam to import vitest, and only as {inject}", () => {
@@ -2196,16 +2476,12 @@ new Registrar(it.skip);`,
       expect(VITEST_FITNESS_INCLUDE).toBe(
         "src/__tests__/fitness/**/*.{test,spec}.{ts,tsx}",
       );
-      // The fitness project's include is DERIVED from the shared constants the
+      // BOTH project includes are DERIVED from the shared constants the
       // per-file inventory matcher uses, never a second hardcoded glob a
-      // widening drift could pull apart from it.
+      // widening drift could pull apart from them, and the exclude lists are
+      // pinned exactly so no project can silently drop a test tree.
       const vitestConfigSource = readFileSync(p("vitest.config.ts"), "utf8");
-      expect(vitestConfigSource).toContain(
-        "include: [VITEST_FITNESS_INCLUDE]",
-      );
-      expect(vitestConfigSource).not.toContain(
-        'include: ["src/__tests__/fitness',
-      );
+      expect(vitestConfigScopeProblems(vitestConfigSource)).toEqual([]);
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }
@@ -2232,6 +2508,35 @@ new Registrar(it.skip);`,
     ).toBe(false);
   });
 
+  it("(b'' companion) rejects a widened or hardcoded vitest project scope", () => {
+    const source = readFileSync(p("vitest.config.ts"), "utf8");
+    expect(vitestConfigScopeProblems(source)).toEqual([]);
+    expect(
+      vitestConfigScopeProblems(
+        source.replace(
+          'exclude: ["src/__tests__/fitness/**"]',
+          'exclude: ["src/__tests__/fitness/**", "src/__tests__/integration/**"]',
+        ),
+      ),
+    ).not.toEqual([]);
+    expect(
+      vitestConfigScopeProblems(
+        source.replace(
+          "include: [VITEST_TEST_INCLUDE]",
+          'include: ["src/__tests__/unit/**/*.test.ts"]',
+        ),
+      ),
+    ).not.toEqual([]);
+    expect(
+      vitestConfigScopeProblems(
+        source.replace(
+          "include: [VITEST_FITNESS_INCLUDE]",
+          'include: ["src/__tests__/fitness/**/*.test.ts"]',
+        ),
+      ),
+    ).not.toEqual([]);
+  });
+
   it("(e) ratchet: every id that shipped as 'enforced' is still enforced", () => {
     const byId = new Map(allEntries.map((e) => [String(e.id), e]));
     const regressions: string[] = [];
@@ -2244,6 +2549,7 @@ new Registrar(it.skip);`,
   });
 
   it("(e') ratchet: load-bearing CI mappings stay bound to their exact blocking commands", () => {
+    expect(RATCHETED_CI_COMMANDS).not.toEqual([]);
     const byId = new Map(allEntries.map((entry) => [String(entry.id), entry]));
     const regressions = RATCHETED_CI_COMMANDS.flatMap(({ entryId, ref, command }) => {
       const entry = byId.get(entryId);

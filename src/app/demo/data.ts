@@ -169,7 +169,7 @@ export function scenarioById(id: string): ScenarioData {
   return SCENARIOS.find((s) => s.id === id) ?? SCENARIOS[0]!;
 }
 export function firmById(id: string): FirmData {
-  return FIRMS[id] ?? FIRMS[DEFAULT_FIRM]!;
+  return (Object.hasOwn(FIRMS, id) ? FIRMS[id] : undefined) ?? FIRMS[DEFAULT_FIRM]!;
 }
 /** Resolve a URL branch param: an ABSENT param falls back to the default, but an
  * UNKNOWN id returns null so the route can 404 - a typo'd demo URL must never
@@ -180,7 +180,7 @@ export function resolveScenarioId(id: string | undefined): string | null {
 }
 export function resolveFirmId(id: string | undefined): string | null {
   if (id === undefined) return DEFAULT_FIRM;
-  return id in FIRMS ? id : null;
+  return Object.hasOwn(FIRMS, id) ? id : null;
 }
 /** The disposition this scenario lands on for this firm - recorded contract data. */
 export function dispositionFor(scenario: ScenarioData, firmId: string): DispositionKind {
