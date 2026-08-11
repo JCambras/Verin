@@ -38,9 +38,14 @@ function must<T>(r: Result<T>): T {
   throw r.error as AppError;
 }
 
-/** A payload field the configuration declared as required; absence is a typed refusal. */
+/**
+ * A payload field the configuration declared as required; absence is a typed
+ * refusal. Read as an OWN property: a configured field named `toString` or
+ * `constructor` would otherwise resolve to the inherited member of the plain
+ * object the compiler builds, and this refusal would never fire.
+ */
 function required(command: CommandInvocation, field: string): string {
-  const value = command.payload[field];
+  const value = Object.hasOwn(command.payload, field) ? command.payload[field] : undefined;
   if (value === undefined) {
     throw appError("INTERNAL", `The configured command "${command.commandType}" resolved no ${field}.`) as AppError;
   }

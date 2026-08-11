@@ -192,6 +192,19 @@ const buildPayload = (
   return errors.length > 0 ? err(errors) : ok(payload);
 };
 
+/**
+ * One value an adapter returned, read as an OWN property. `OutputNameSchema`
+ * admits `toString`, `valueOf` and `constructor`, so a bare index would let
+ * `Object.prototype` satisfy the very absence check that exists to fail closed -
+ * publishing an inherited function into flow data instead of reporting that the
+ * adapter returned nothing. Own-property reads are the module-wide posture
+ * (load-closure.ts); this is the one place the values come from outside it.
+ */
+const publishedOutput = (
+  outputs: Readonly<Record<string, string>>,
+  name: string,
+): string | undefined => (Object.hasOwn(outputs, name) ? outputs[name] : undefined);
+
 const compileStep = (
   config: LoadedDomainConfig,
   actionId: string,
@@ -220,7 +233,7 @@ const compileStep = (
     const patch: FlowData = {};
     const missing: DomainConfigError[] = [];
     for (const publication of plan.capability.publishes) {
-      const value = outputs[publication.output];
+      const value = publishedOutput(outputs, publication.output);
       if (value === undefined) {
         missing.push(
           configError(
@@ -236,7 +249,7 @@ const compileStep = (
     if (missing.length > 0) return failure(missing);
     if (!plan.awaits) return { kind: "continue", patch };
     const tokenOutput = plan.capability.awaitTokenFrom;
-    const token = tokenOutput === undefined ? undefined : outputs[tokenOutput];
+    const token = tokenOutput === undefined ? undefined : publishedOutput(outputs, tokenOutput);
     if (token === undefined) {
       return failure([
         configError(

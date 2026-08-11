@@ -8755,3 +8755,60 @@ index read then resolved an omitted optional field to a prototype function and a
 as text" for a field the requester was entitled to omit.
 
 **Revert path.** Independent; each is local to its own module.
+
+## D-206 - Prompt 10 review: a top-level section may not declare one id twice
+
+**What.** `src/domain/config/document.ts` collects every identified top-level section - `intents`,
+`evidence`, `primitiveBindings`, `policy.slots`, `instructionKinds`, `prohibitions`, `blockers`,
+`authority.templates`, `execution.capabilities`, `execution.planTemplates`, `conflictKeys`,
+`reservations`, `verification` - into ONE rule that refuses a repeated id and names it. The nested lists
+have refused duplicates since the schema was written; the top level had not.
+
+**Why.** Each of those sections becomes a Map keyed by id downstream, so a duplicate SHADOWS instead of
+failing: the later entry wins in the loader while `find` keeps returning the earlier one. That lets two
+consumers of one section disagree - a `verification` id declared twice loads as "awaits nothing"
+(`checkReferences` reads the FIRST match) and compiles as "awaits externally" (`compileFlowDefinition`
+builds a set over ANY match), so the step invokes its command, the write COMMITS, and only then does the
+compiler refuse for a correlation token that was never declared. Collecting the sections in one place
+rather than repeating a refinement thirteen times is what keeps the rule from drifting section to
+section.
+
+**Revert path.** One refinement in one module.
+
+## D-207 - Prompt 10 review: the journey's live station is DECLARED, not positional
+
+**What.** `presentation.form` gains `surface` and optional `awaitingSurface`; the presentation schema
+refuses either naming a station the document does not declare; `intakeFormOf` projects them as
+`IntakeForm.stations`; and `src/app/app/account-opening/intake-journey.tsx` drops its `LIVE_STATION`
+literal and reads them. `config/domains/account-opening.yaml` declares `intake` and `signature`, with the
+`versions.json` hash re-pinned in the same commit.
+
+**Why.** Rounds 3 and 4 bound the progress rail and the step card by station ID precisely so a reordered
+document could not light the wrong station - but the IDs themselves were still transcribed into the
+component, with nothing binding them. Renaming a surface in the document made `stationIndex("form")`
+return -1: the step card disappeared and the rail lit nothing while the user stood on the form, with
+every gate green, because the e2e walkthrough and the axe scans key on labels and testids. Carrying the
+station identity through the projection removes the coupling rather than reporting it: the screen now
+holds no station id at all, and a form naming an undeclared station is a LOAD refusal.
+
+**Revert path.** The schema fields are additive; reverting them reverts the projection and the component
+together, plus the pinned hash.
+
+## D-208 - Prompt 10 review: an adapter's returned outputs are read as OWN properties
+
+**What.** `compileStep` reads a declared publication and the correlation token through one
+`publishedOutput` helper gated on `Object.hasOwn`, and `required()` in
+`src/infrastructure/execution-adapters.ts` gates its payload read the same way. The client-request
+transport key moves to `src/domain/config/intake-view.ts`, the leaf both of its writers (the intake route
+and the journey component) already import, and `RESERVED_TRIGGER_FIELDS` imports it from there.
+
+**Why.** `OutputNameSchema` admits `toString`, `valueOf` and `constructor`, so a bare index let
+`Object.prototype` satisfy the very absence check that exists to fail closed - publishing an inherited
+function into flow data instead of reporting that the adapter returned nothing. That is the same
+own-property discipline rounds 3 and 4 applied in `intake-view.ts`, now applied where the values come
+from OUTSIDE the loader. The key move is the same defect in the other shape: the one reserved name whose
+purpose is preventing drift was itself the copy that could drift, because the two modules writing it
+spelled it as a literal. A client bundle may not pull the schema module's zod graph to learn one string,
+so the declaration lives in the leaf and the vocabulary imports it.
+
+**Revert path.** Independent; each is local to its own module.

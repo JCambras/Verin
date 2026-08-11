@@ -116,6 +116,19 @@ rejection is a value, never a throw.
   `src/domain/config/intake-view.ts`), and `presentation.surfaces` is the journey's progress rail in
   declared order. Adding a registration to a document therefore can never render a select option the
   API refuses with a 400, and a renamed station cannot leave the screen disagreeing with the document.
+- **The journey's LIVE station is declared, never positional.** `presentation.form.surface` names the
+  station the form stands on and `awaitingSurface` the one it stands on while the flow is suspended at
+  its external gate (absent for a domain whose plan never suspends). Both must name a declared surface
+  or the document does not load, and the shipped journey resolves them through the `IntakeForm`
+  projection - so it holds no station id of its own, and renaming or reordering `surfaces` moves the
+  rail instead of emptying it.
+- **A top-level section may not declare one id twice.** `intents`, `evidence`, `primitiveBindings`,
+  `policy.slots`, `instructionKinds`, `prohibitions`, `blockers`, `authority.templates`,
+  `execution.capabilities`, `execution.planTemplates`, `conflictKeys`, `reservations` and `verification`
+  all become maps keyed by id, so a duplicate would SHADOW rather than fail - and two consumers of one
+  section can then disagree, which is how a `verification` id declared twice loads as "awaits nothing"
+  and compiles as "awaits externally", suspending a step whose write already committed. One collected
+  rule in `src/domain/config/document.ts` refuses all thirteen, naming the offending id.
 - **A label id a surface asks for must exist.** The demo reads its slot, evidence-kind and action labels
   through `src/app/demo/vocabulary.ts`, which throws on an undeclared id. RULE F of the
   domain-configuration fence binds every id the shipped tree asks for to the published copy - resolved

@@ -78,6 +78,18 @@ const FormSchema = z
     title: z.string().min(1),
     /** The regulation the WhyBubble cites for this domain (charter #10 doctrine). */
     regulation: z.string().min(1),
+    /**
+     * Which declared station the form itself stands on, and which one the
+     * journey stands on while the flow is suspended at its external gate
+     * (absent for a domain whose plan never suspends).
+     *
+     * Declared rather than positional: the renderer must be able to light the
+     * right station without transcribing a station id into code, so renaming or
+     * reordering `surfaces` moves the rail from THIS document instead of
+     * silently lighting whichever station now sits at some ordinal.
+     */
+    surface: kebabId<"SurfaceId">(),
+    awaitingSurface: kebabId<"SurfaceId">().optional(),
     fields: z.array(FormFieldSchema).min(1).readonly(),
   })
   .readonly()
@@ -122,9 +134,26 @@ const presentationSchemaImpl = z
     if (new Set(orders).size !== orders.length) {
       ctx.addIssue({ code: "custom", message: "duplicate surface order", path: ["surfaces"] });
     }
-    const ids = presentation.surfaces.map((surface) => surface.id);
-    if (new Set(ids).size !== ids.length) {
+    const ids = new Set<string>(presentation.surfaces.map((surface) => surface.id));
+    if (ids.size !== presentation.surfaces.length) {
       ctx.addIssue({ code: "custom", message: "duplicate surface id", path: ["surfaces"] });
+    }
+    // A station the form names but the document does not declare would leave the
+    // journey with no station to light and no step number to show - the exact
+    // silent breakage that binding by id exists to prevent, so it is refused
+    // here rather than rendered as an empty rail.
+    const stations: readonly (readonly [string, string | undefined])[] = [
+      ["surface", presentation.form?.surface],
+      ["awaitingSurface", presentation.form?.awaitingSurface],
+    ];
+    for (const [field, station] of stations) {
+      if (station !== undefined && !ids.has(station)) {
+        ctx.addIssue({
+          code: "custom",
+          message: `the form names station ${JSON.stringify(station)}, which this document does not declare`,
+          path: ["form", field],
+        });
+      }
     }
   });
 

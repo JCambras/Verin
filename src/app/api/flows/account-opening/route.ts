@@ -3,7 +3,12 @@ import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_se
 import { startAccountOpening, CLIENT_REQUEST_ID_RE } from "@infra/wire";
 import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
 import { appError } from "@contracts/errors";
-import { admitIntakeSubmission, optionalIntakeValue, requiredIntakeValue } from "@domain/config/intake-view";
+import {
+  admitIntakeSubmission,
+  optionalIntakeValue,
+  requiredIntakeValue,
+  CLIENT_REQUEST_ID_KEY,
+} from "@domain/config/intake-view";
 
 export const runtime = "nodejs";
 
@@ -30,9 +35,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const supplied = admitted.value;
   // Double-submit protection (D-027): the client mints one UUID per form session;
   // it becomes the lowercase canonical executionId, so case variants and a
-  // retry/second tab replay the same execution.
-  if (typeof b.clientRequestId !== "string" || !CLIENT_REQUEST_ID_RE.test(b.clientRequestId)) {
-    return errorResponse(appError("VALIDATION", "clientRequestId is required (a UUID minted once per form session)."));
+  // retry/second tab replay the same execution. The key is the platform's own
+  // declaration, so this boundary reads exactly the name the loader reserves.
+  const clientRequestId = b[CLIENT_REQUEST_ID_KEY];
+  if (typeof clientRequestId !== "string" || !CLIENT_REQUEST_ID_RE.test(clientRequestId)) {
+    return errorResponse(
+      appError("VALIDATION", `${CLIENT_REQUEST_ID_KEY} is required (a UUID minted once per form session).`),
+    );
   }
 
   // The admitted values are read back through the checked accessors, so a trigger
@@ -56,7 +65,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     lastName: lastName.value,
     email: email.value,
     accountType: accountType.value,
-    clientRequestId: b.clientRequestId,
+    clientRequestId,
   });
   if (result.status === "failed") {
     return errorResponse(result.error ?? appError("INTERNAL", "The account-opening flow failed to start."));

@@ -389,6 +389,12 @@ presentation:
     intent: open-account
     title: Open an account
     regulation: SEC Reg BI / FINRA 2090 (Know Your Customer)
+    # Which station the journey stands on while the form is open, and which one
+    # it stands on while the flow is suspended awaiting the client's signature.
+    # Named here so the screen holds no station id of its own: rename or reorder
+    # `surfaces` and the rail follows this document.
+    surface: intake
+    awaitingSurface: signature
     fields:
       - { slot: household-name, input: text }
       - { slot: first-name, input: text }

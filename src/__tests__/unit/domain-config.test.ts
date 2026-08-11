@@ -229,6 +229,18 @@ describe("domain configuration: the shipped documents", () => {
     ]);
   });
 
+  it("enforces: the journey's live stations are the document's own, never an ordinal", () => {
+    const form = intakeFormOf(loadedOf("account-opening"));
+    expect(form.ok).toBe(true);
+    if (!form.ok) return;
+    const declared = form.value.surfaces.map((surface) => surface.id);
+    // The screen looks its stations up by these ids, so both must BE declared
+    // stations - a rail bound to position 0 and 1 would still "pass" here.
+    expect(declared).toContain(form.value.stations.form);
+    expect(declared).toContain(form.value.stations.awaiting);
+    expect(form.value.stations.form).not.toBe(form.value.stations.awaiting);
+  });
+
   describe("the intake boundary admits exactly what the configuration declares", () => {
     const form = (): ReturnType<typeof intakeFormOf> => intakeFormOf(loadedOf("account-opening"));
     const submit = (payload: Record<string, unknown>) => {
@@ -529,6 +541,53 @@ describe("detects (companion): a configuration that is wrong in any of the seven
       const result = loadDomainConfig(document);
       expect(result.ok, `"${reserved}" must not load as a trigger field`).toBe(false);
     }
+  });
+
+  it("flags a DUPLICATE id in every identified top-level section, which would silently shadow", () => {
+    // A duplicate does not fail on its own: the loader keys these sections by id,
+    // so the later entry wins there while `find` keeps returning the earlier one -
+    // which is how one `verification` id can load as "awaits nothing" and compile
+    // as "awaits externally", suspending a step whose write already committed.
+    const SECTIONS = [
+      ["intents", []],
+      ["evidence", []],
+      ["primitiveBindings", []],
+      ["policy", ["slots"]],
+      ["instructionKinds", []],
+      ["prohibitions", []],
+      ["blockers", []],
+      ["authority", ["templates"]],
+      ["execution", ["capabilities"]],
+      ["execution", ["planTemplates"]],
+      ["conflictKeys", []],
+      ["reservations", []],
+      ["verification", []],
+    ] as const;
+    for (const [top, nested] of SECTIONS) {
+      const document = clone(documentOf("money-movement"));
+      let entries = section<unknown>(document, top) as Mutable[] | Mutable;
+      for (const key of nested) entries = (entries as Mutable)[key] as Mutable[];
+      const list = entries as Mutable[];
+      expect(list.length, `money-movement must declare a ${top} entry to duplicate`).toBeGreaterThan(0);
+      list.push(clone(list[0]!));
+      const result = loadDomainConfig(document);
+      const path = [top, ...nested].join(".");
+      expect(result.ok, `a duplicate ${path} id must NOT load`).toBe(false);
+      if (result.ok) continue;
+      // Refused FOR the duplication, not incidentally by some other stage.
+      expect(result.error.some((error) => error.message.includes("twice")), path).toBe(true);
+    }
+  });
+
+  it("flags a form standing on a station the document does not declare", () => {
+    rejects((document) => {
+      const form = section<Mutable>(document, "presentation")["form"] as Mutable;
+      form["surface"] = "no-such-station";
+    }, "grammar", "account-opening");
+    rejects((document) => {
+      const form = section<Mutable>(document, "presentation")["form"] as Mutable;
+      form["awaitingSurface"] = "no-such-station";
+    }, "grammar", "account-opening");
   });
 
   it("flags a required trigger-supplied slot the intake form cannot collect", () => {

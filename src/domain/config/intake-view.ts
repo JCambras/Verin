@@ -33,6 +33,20 @@
 import { appError, type AppError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
 
+/**
+ * The transport key a client mints once per form session so a re-submit replays
+ * one execution instead of opening a second household (D-027).
+ *
+ * It is declared in THIS leaf rather than beside the other reserved flow-data
+ * keys in `vocabulary.ts` because the two modules that WRITE it - the intake
+ * route and the client journey component - are the ones that must agree with
+ * it, and a client bundle may not pull the schema module's zod graph to learn
+ * one string. `RESERVED_TRIGGER_FIELDS` imports it from here, so the name the
+ * platform writes and the name the loader refuses a slot for stay ONE
+ * declaration.
+ */
+export const CLIENT_REQUEST_ID_KEY = "clientRequestId";
+
 export type IntakeField = {
   readonly field: string;
   readonly label: string;
@@ -50,10 +64,24 @@ export type IntakeSurface = {
   readonly label: string;
 };
 
+/**
+ * Which declared station the journey stands on in each of its live phases, by
+ * station ID. The document names both, so a renderer never transcribes a station
+ * id: renaming or reordering `presentation.surfaces` moves the rail from the
+ * document, and a station the document stopped declaring is a LOAD refusal
+ * rather than a rail with nothing lit on it.
+ */
+export type IntakeStations = {
+  readonly form: string;
+  /** `null` for a domain whose plan never suspends on an external observation. */
+  readonly awaiting: string | null;
+};
+
 export type IntakeForm = {
   readonly title: string;
   readonly regulation: string;
   readonly surfaces: readonly IntakeSurface[];
+  readonly stations: IntakeStations;
   readonly fields: readonly IntakeField[];
 };
 

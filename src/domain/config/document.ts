@@ -87,7 +87,48 @@ const authorshipSchemaImpl = z
   })
   .readonly();
 
-const domainConfigDocumentSchemaImpl = z
+/** The first id a section declares twice, or `undefined` when every id is distinct. */
+const firstDuplicate = (ids: readonly string[]): string | undefined => {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) return id;
+    seen.add(id);
+  }
+  return undefined;
+};
+
+/**
+ * Every identified section of the document, as the path a reader would cite and
+ * the ids that section declares.
+ *
+ * Each section becomes a Map keyed by id downstream, so a duplicate SHADOWS
+ * rather than fails: the later entry wins in the loader while `find` keeps
+ * returning the earlier one, and two consumers reading the same section can
+ * legitimately disagree - a `verification` id declared twice can load as "awaits
+ * nothing" and compile as "awaits externally", suspending a step whose write has
+ * already committed. Nested lists have refused duplicates since the schema was
+ * written; the top-level sections are collected HERE, once, so the rule cannot
+ * drift section to section.
+ */
+const identifiedSections = (
+  document: z.infer<typeof documentShapeImpl>,
+): readonly (readonly [readonly string[], readonly string[]])[] => [
+  [["intents"], document.intents.map((entry) => entry.id)],
+  [["evidence"], document.evidence.map((entry) => entry.evidenceKind)],
+  [["primitiveBindings"], document.primitiveBindings.map((entry) => entry.id)],
+  [["policy", "slots"], document.policy.slots.map((entry) => entry.id)],
+  [["instructionKinds"], document.instructionKinds.map((entry) => entry.kind)],
+  [["prohibitions"], document.prohibitions.map((entry) => entry.code)],
+  [["blockers"], document.blockers.map((entry) => entry.code)],
+  [["authority", "templates"], document.authority.templates.map((entry) => entry.id)],
+  [["execution", "capabilities"], document.execution.capabilities.map((entry) => entry.id)],
+  [["execution", "planTemplates"], document.execution.planTemplates.map((entry) => entry.id)],
+  [["conflictKeys"], document.conflictKeys.map((entry) => entry.id)],
+  [["reservations"], document.reservations.map((entry) => entry.id)],
+  [["verification"], document.verification.map((entry) => entry.id)],
+];
+
+const documentShapeImpl = z
   .strictObject({
     formatVersion: z.enum(SUPPORTED_FORMAT_VERSIONS),
     domainConfigId: kebabId<"DomainConfigId">(),
@@ -110,6 +151,19 @@ const domainConfigDocumentSchemaImpl = z
     presentation: PresentationSchema,
   })
   .readonly();
+
+const domainConfigDocumentSchemaImpl = documentShapeImpl.superRefine((document, ctx) => {
+  for (const [path, ids] of identifiedSections(document)) {
+    const duplicate = firstDuplicate(ids);
+    if (duplicate !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${path.join(".")} declares ${JSON.stringify(duplicate)} twice; the second entry would shadow the first`,
+        path: [...path],
+      });
+    }
+  }
+});
 
 /** `${domainConfigId}@${version}` - the identity every golden fixture already pins. */
 export const domainConfigVersionId = (document: {

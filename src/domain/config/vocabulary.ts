@@ -17,6 +17,7 @@
  */
 import { z } from "zod";
 import type { PolicyValueType } from "@domain/policy/registries";
+import { CLIENT_REQUEST_ID_KEY } from "./intake-view";
 
 /** Kebab-case identifier: the byte form every configured id shares. */
 export const KEBAB_CASE_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -48,18 +49,19 @@ export const EXECUTION_SCOPE_KEY = "executionScope";
 /** The flow-data key carrying the identity that initiated the request. */
 export const INITIATING_ACTOR_KEY = "initiatedBy";
 
-/** The transport key a client mints once per form session to make a submit replayable. */
-const CLIENT_REQUEST_ID_KEY = "clientRequestId";
-
 /**
  * The RESERVED transport namespace: keys the platform itself writes into flow
  * data, AFTER a caller's own values. A slot reading one of these would be
  * silently filled with the platform's value instead of what the requester
  * supplied - the only slot mistake in the grammar that would not fail closed -
- * so the intent schema refuses it at load time. Declared here, beside the
- * trigger-field shape, because the modules that WRITE these keys (the plan
- * compiler, the composition root, the intake route) sit downstream of the
- * schema that must refuse them, and a second copy of the strings could drift.
+ * so the intent schema refuses it at load time.
+ *
+ * Every name in this list is the SAME declaration the module that writes it
+ * consumes: the plan compiler and the composition root re-export the two
+ * flow-data keys below, and the client-request key is imported from the leaf
+ * `intake-view` module the intake route and the journey component both write it
+ * through. A second copy of any of these strings would let the reserved list go
+ * on protecting a name nothing writes any more.
  */
 export const RESERVED_TRIGGER_FIELDS = [
   EXECUTION_SCOPE_KEY,

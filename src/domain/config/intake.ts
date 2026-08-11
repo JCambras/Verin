@@ -61,5 +61,12 @@ export const intakeFormOf = (
   const surfaces = [...config.document.presentation.surfaces]
     .sort((left, right) => left.order - right.order)
     .map((surface) => ({ id: surface.id as string, label: surface.label }));
-  return ok({ title: form.title, regulation: form.regulation, surfaces, fields });
+  // The stations the journey stands on are the document's own, so the screen
+  // holds no station id of its own to fall out of date. The presentation schema
+  // has already refused a form naming a station this document does not declare.
+  const stations = {
+    form: form.surface as string,
+    awaiting: form.awaitingSurface === undefined ? null : (form.awaitingSurface as string),
+  };
+  return ok({ title: form.title, regulation: form.regulation, surfaces, stations, fields });
 };

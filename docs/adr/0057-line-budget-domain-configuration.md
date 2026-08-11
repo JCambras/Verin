@@ -96,6 +96,32 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 `infrastructure`'s measurement moved and stayed inside its ceiling, so that ceiling is left where it was
 rather than raised for company - the rule the previous amendment applied, now applied in both directions.
 
+## Amendment (2026-08-11, review round 5): `domain` re-measured
+
+The 82 lines of correction headroom the round-4 amendment left are spent, and by the same kind of work:
+this round answered its review findings in `domain` code. Three of the four land there - the top-level
+sections now refuse a DUPLICATE id through one collected rule (`src/domain/config/document.ts`), the
+journey's live stations become declared data the document names and the projection carries
+(`presentation.ts`, `intake.ts`, `intake-view.ts`), and the compiled plan reads an adapter's returned
+outputs as OWN properties (`plan-compiler.ts`). The fourth moves the client-request transport key into
+the leaf module both of its writers already import, so the reserved-name list and the code that writes
+the name are one declaration.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,626 | 6,680 | 54 (unchanged) |
+| `domain` | 8,711 | **8,780** | 69 |
+| `infrastructure` | 8,255 | 8,290 | 35 (unchanged ceiling) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+Only `domain`'s ceiling moves, by 120 lines, and only as far as its own measurement plus headroom inside
+the band the sibling layers carry. `infrastructure` gained five lines (the own-property read in
+`execution-adapters.ts` and its note) and stays inside the ceiling it already had, so that ceiling is
+left alone rather than raised for company.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

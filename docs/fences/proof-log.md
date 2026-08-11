@@ -14608,3 +14608,65 @@ intended change; the fence file reports `Tests 32 passed (32)`.
 
 **Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-brands-askuser`, finding
 `inertness-check-duplicated-unfenced`).
+
+## PF-257 · a top-level section that declares one id twice must not LOAD
+
+**Invariant:** every identified top-level section - `intents`, `evidence`, `primitiveBindings`,
+`policy.slots`, `instructionKinds`, `prohibitions`, `blockers`, `authority.templates`,
+`execution.capabilities`, `execution.planTemplates`, `conflictKeys`, `reservations`, `verification` -
+refuses a repeated id and names it (`src/domain/config/document.ts`). Each becomes a Map keyed by id
+downstream, so a duplicate SHADOWS rather than fails, and two consumers of one section can then
+disagree: `checkReferences` reads the FIRST match while `compileFlowDefinition` builds its awaiting set
+over ANY match.
+
+**Injection.** Added a second `verification` entry to the SHIPPED
+`config/domains/account-opening.yaml` under the existing id `crm-write-confirmed`, flipping only
+`awaitsExternal` to `true` - the exact shape that loads as "awaits nothing" and compiles as "awaits
+externally".
+
+**Observed failure:**
+```
+Error: account-opening failed to load: [
+    "message": "verification declares \"crm-write-confirmed\" twice; the second entry would shadow the first"
+```
+Before this change the same document loaded cleanly, and the disagreement surfaced only at run time -
+after the step's write had committed - as "an externally-gated step produced no correlation token".
+
+**Companion.** `src/__tests__/unit/domain-config.test.ts` plants the same duplication in all thirteen
+sections of the shipped money-movement bytes and requires each to be refused FOR the duplication (the
+message names the id), so a refusal arriving incidentally from another stage cannot stand in for it.
+
+**Reverted:** `git diff config/domains/account-opening.yaml` shows only the round's intended six added
+lines; `pnpm test` reports `complete test suite passed: 63 fitness files executed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `no-duplicate-id-check-top-level-sections`).
+
+## PF-258 · a renamed journey station must break the LOAD, not empty the progress rail
+
+**Invariant:** `presentation.form.surface` and `awaitingSurface` name the stations the shipped journey
+stands on, both refused unless the document declares them (`src/domain/config/presentation.ts`), and
+`src/app/app/account-opening/intake-journey.tsx` resolves them through the `IntakeForm` projection
+rather than holding station ids of its own.
+
+**Injection.** Renamed the declared surface `intake` to `client-details` in the SHIPPED
+`config/domains/account-opening.yaml`, leaving the form's reference untouched - the rename a document
+author would make.
+
+**Observed failure:**
+```
+Error: account-opening failed to load: [
+    "path": "presentation.form.surface",
+```
+Before this change the same rename loaded cleanly and passed every gate: `stationIndex("form")` returned
+-1, so the step card disappeared and the rail lit no station while the user stood on the form. The e2e
+walkthrough and the axe scans key on labels and testids, and the unit projection test asserted surface
+LABELS only, so nothing caught it.
+
+**Companion.** `src/__tests__/unit/domain-config.test.ts` refuses a form naming an undeclared station
+through both fields, and asserts the projected stations are members of the declared surface list - an
+assertion a rail bound to ordinals 0 and 1 would not satisfy.
+
+**Reverted:** `git diff config/domains/account-opening.yaml` shows only the round's intended six added
+lines; the 23 e2e specs and `pnpm test` are green.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `live-station-surface-ids-unbound`).
