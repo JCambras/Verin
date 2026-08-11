@@ -1301,6 +1301,14 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
  */
 export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why: string }> = [
   {
+    callable: "src/infrastructure/config/domain-config-source.ts :: loadDomainLabels",
+    why: "returns the LABEL projection of a domain configuration bound for one firm - kind and slot ids mapped to display strings. Same reasoning as loadPublishedDomainConfig below: platform configuration, no household data, and the firm arrives as an explicit registry argument rather than as a grant.",
+  },
+  {
+    callable: "src/infrastructure/config/domain-config-source.ts :: loadPublishedDomainConfig",
+    why: "a domain configuration is PLATFORM data with zero firm identity and zero household data (prompt 10, ADR-0056): it names evidence KINDS and slot vocabulary, never an observation or a subject. It is read BEFORE any tenant exists - binding a firm to it is a separate, later call - so a tenant-scoped grant is not merely absent here, it is unavailable. The firm-neutrality claim is enforced structurally by bindDomainConfig, which refuses a document carrying a firmId anywhere in its graph.",
+  },
+  {
     callable: "src/infrastructure/pii/scrub.ts :: scrub",
     why: "PII scrub boundary returns an opaque structural clone only after recursively redacting every sensitive field and value.",
   },

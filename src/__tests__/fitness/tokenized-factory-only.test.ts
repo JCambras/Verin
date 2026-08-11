@@ -110,7 +110,11 @@ const TRUSTED_FACTORY_CALLS = [
     declaration: "src/contracts/principal.ts",
     allowed: [
       { file: "src/app/login/actions.ts", owner: "loginAction" },
-      { file: "src/infrastructure/wire.ts", owner: "makeDeps" },
+      // Prompt 10 (ADR-0056) moved the account-opening steps out of a hand-coded
+      // flow and into config/domains/account-opening.yaml; the finalize command
+      // adapter is where the initiating advisor's identity is re-established for
+      // the audited write, and it is the only place that delegation happens.
+      { file: "src/infrastructure/execution-adapters.ts", owner: "finalize" },
     ],
   },
   {

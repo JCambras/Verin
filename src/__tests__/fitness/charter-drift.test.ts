@@ -107,6 +107,7 @@ const RATCHETED_ENFORCED_IDS = [
   "decision-core-type-system",
   "primitive-vocabulary-versioned",
   "replay-corpus-substrate",
+  "domain-config-as-data",
 ];
 
 type EnforcedMechanismTuple = readonly [
@@ -250,6 +251,16 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["policy-ast-closed", "fitness", "src/__tests__/fitness/policy-ast.test.ts", "", "enforced"],
   ["policy-ast-closed", "config", "fixtures/policy/migration-1.0.0.json", "", "enforced"],
   ["policy-ast-closed", "adr", "docs/adr/0053-policy-ast-and-interpreter.md", "", "enforced"],
+  // v3 prompt 10 (ADR-0056): a decision domain is DATA. The fence, both
+  // published documents, their version pin file, and the two governing
+  // documents are all load-bearing - removing any one of them is how this
+  // capability would quietly become a document nobody reads.
+  ["domain-config-as-data", "fitness", "src/__tests__/fitness/domain-configuration.test.ts", "", "enforced"],
+  ["domain-config-as-data", "config", "config/domains/account-opening.yaml", "", "enforced"],
+  ["domain-config-as-data", "config", "config/domains/money-movement.yaml", "", "enforced"],
+  ["domain-config-as-data", "config", "config/domains/versions.json", "", "enforced"],
+  ["domain-config-as-data", "adr", "docs/adr/0056-domain-configuration-schema.md", "", "enforced"],
+  ["domain-config-as-data", "procedure", "docs/domain-config.md", "", "enforced"],
 ] as const satisfies readonly EnforcedMechanismTuple[];
 
 // The (e') inputs DERIVE from the single mechanism-tuple ratchet above: its

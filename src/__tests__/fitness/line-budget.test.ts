@@ -155,10 +155,28 @@ import { join, relative } from "node:path";
 // has 39 lines left, which is again the condition this header argues against and
 // is stated here so the next change to `scripts/**` reads it before spending it.
 // `contracts` and `presentation` are untouched by that work and do not move.
+//
+// ADR-0057 (v3 prompt 10, the domain-configuration schema): the single largest
+// domain addition of the build so far, and deliberately so - the whole point of
+// prompt 10 is that a decision DOMAIN stops being code. src/domain/config/ is
+// the schema for all thirteen ratified sections, the seven-stage loader, the
+// firm binder, the prompt-9 registry derivation, the plan compiler, and the
+// version diff; against it the hand-coded account-opening flow definition (123
+// lines) is DELETED and src/infrastructure/wire.ts shrinks to composition.
+// MEASURED on the composed tree: contracts 6,647 / 6,700 (53), domain 8,340 /
+// 8,420 (80), infrastructure 8,204 / 8,290 (86), presentation 928 / 6,000,
+// tooling 12,140. Every figure here is a MEASUREMENT taken in this commit; a
+// further raise stays a measured ADR amendment, and no correction is ever paid
+// for by deleting documentation (ADR-0048) or by folding readable code onto
+// fewer lines (ADR-0050).
+// REBASE RECONCILIATION (PR #38 onto PR #39): the merged tree contains BOTH
+// bodies of code, so NEITHER side's ceiling covers it. These are the per-bucket
+// MAX of the two sides, PROVISIONAL pending a re-measure of the merged tree.
 const CEILINGS = {
-  contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
-  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,093 re-measured, D-214)
-  infrastructure: 8600, // ADR-0057, on the fixture adapter, the CRM projection and the record-origin fact (8,489 re-measured, D-219)
+  contracts: 6700, // provisional (rebase reconciliation): max(main 6650, branch 6700)
+  domain: 8420, // provisional (rebase reconciliation): max(main 5150, branch 8420)
+  infrastructure: 8600, // provisional (rebase reconciliation): max(main 8600, branch 8290)
+} as const;
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

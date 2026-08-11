@@ -79,11 +79,7 @@ const EXPECTED_DOMAIN_FILES = [
  * lands, the entry must be removed (a stale deferral fails below).
  */
 const NAMED_DEFERRALS: Readonly<Record<string, string>> = {
-  "registries.ts:catalogPrimitiveMap": "prompt 10 - the domain-config loader assembles registries from the catalog",
-  "registries.ts:evidenceKindDescriptor": "prompt 10 - registries derive from the domain config's evidence dictionary",
-  "registries.ts:instructionKindDescriptor": "prompt 10 - registries derive from the instruction-kind taxonomy",
-  "registries.ts:deriveContextKeys": "prompt 10 - the config loader derives the closed context-key vocabulary",
-  "load.ts:loadPolicy": "prompt 10 (policy references in domain config) and prompt 20 (policy lifecycle activation)",
+  "load.ts:loadPolicy": "prompt 20 (policy lifecycle activation) - prompt 10 landed the registries this loads against (domain/config/registries.ts), but nothing authors a firm policy until the lifecycle exists",
   "evaluate.ts:evaluatePolicy": "prompt 16 - the complete evaluator over the immutable DecisionInputBundle",
 };
 

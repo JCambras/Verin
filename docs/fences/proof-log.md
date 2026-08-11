@@ -14287,3 +14287,154 @@ reopening the store applies it.
 **Reverted:** all three injections restored; `Tests 19 passed`.
 
 **Date:** 2026-08-12 (review round fourteen, ADR-0057).
+## PF-247 · domain-configuration: a decision-core module, directory, or branch named for a domain · `src/__tests__/fitness/domain-configuration.test.ts`
+
+**Invariant:** v3 invariant 3 - no core module, directory, or evaluator branch is named for a decision
+domain. The forbidden vocabulary is DERIVED from `config/domains/*.yaml`'s own ids (plus their word
+forms), scoped by the captain's `invariant-3-scope` ruling to `contracts/decision-core`,
+`contracts/primitives`, `domain/config` and `domain/policy`.
+
+**Injection A - a domain-named evaluator branch.** Appended to `src/domain/config/bind.ts`:
+`export const injected = (id: string): boolean => id === "money-movement";`
+
+**Observed failure:**
+```
+AssertionError: decision-core names a decision domain (invariant 3):
+src/domain/config/bind.ts:205 string literal contains the domain name "money-movement"
+```
+
+**Injection B - a domain-named module.** Created `src/domain/config/money-movement-defaults.ts`.
+
+**Observed failure:**
+```
+AssertionError: decision-core names a decision domain (invariant 3):
+src/domain/config/money-movement-defaults.ts:1 file or directory name contains the domain name "money-movement"
+```
+
+**Executable companions (run on every build):** the domain-named branch, module and identifier cases,
+plus the ANTI-VACUITY case - `domainVocabulary([])` is empty, `domainVocabulary()` is not, and a tree
+containing a domain-named module reads CLEAN under an emptied vocabulary and DIRTY under the real one.
+That is the false-pass this rule is most exposed to (the self-audit caught two vacuous fences in this
+repo before), so it is asserted in both directions rather than assumed.
+
+**Reverted:** both injections removed immediately; `domain-configuration.test.ts` `Tests 21 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056).
+
+---
+
+## PF-248 · domain-configuration: a published configuration version is immutable · `src/__tests__/fitness/domain-configuration.test.ts`
+
+**Invariant:** the SHA-256 over a document's canonical bytes must equal the hash
+`config/domains/versions.json` pins for that `(domainConfigId, version)`. Editing a published document
+without bumping its version fails the build - the arch-version doc-pin mechanism, applied to
+configuration, so replay can never be pinned to bytes that silently moved.
+
+**Injection.** Changed one LABEL in `config/domains/money-movement.yaml`
+(`domainLabel: Money movement` -> `Money movement (edited)`), touching nothing else.
+
+**Observed failure:**
+```
+AssertionError: money-movement@2026.07.0 changed without a version bump
+(pinned ddf302642ebcae2dadf52ff972709a7440ec21f518abb7d5c94cd9d171b2bcf4,
+ computed 5ed8e5a3fcab13df30ed4d95690f0a070d6917f1757d581196582ddfc1e6e54e)
+```
+
+**Executable companion (runs on every build):** the canonical bytes of an edited document differ from
+those of the shipped one, so the rule cannot pass by comparing a document with itself.
+
+**Reverted:** file restored; `Tests 21 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056).
+
+---
+
+## PF-249 · domain-configuration: a configuration document that is not inert data · `src/__tests__/fitness/domain-configuration.test.ts`
+
+**Invariant:** tags, anchors, aliases and merge keys are the four ways a YAML document stops being data
+and starts being a program. All four are refused - by the fence over the shipped bytes, and by the
+runtime adapter before the text ever becomes a value.
+
+**Injection.** Added a YAML anchor and an alias to `config/domains/money-movement.yaml`
+(`domainLabel: &label Money movement`, `domainSummary: *label`).
+
+**Observed failure:**
+```
+AssertionError: expected [ 'line 499: anchor label', 'alias *label' ] to deeply equal []
+AssertionError: money-movement@2026.07.0 changed without a version bump (…)
+```
+(The hash rule fires too, which is the intended belt-and-braces: a non-inert edit is also an edit.)
+
+**Executable companion (runs on every build):** `!!js/function` tags, anchor+alias pairs and merge keys
+are each detected on synthetic documents, and a plain scalar document reads clean - so the detector is
+not simply rejecting everything.
+
+**Reverted:** file restored; `Tests 21 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056).
+
+---
+
+## PF-250 · domain-configuration: only the config source adapter reads `config/domains/` · `src/__tests__/fitness/domain-configuration.test.ts`
+
+**Invariant:** v3 §16 - no module imports from `config/`. Exactly one module may reach the configuration
+directory (`src/infrastructure/config/domain-config-source.ts`), the same single-allowed-module idiom
+`no-process-env` uses for the environment. The rule keys on an ACCESS verb, not on a mention: a message
+telling an operator to restore `config/domains/account-opening.yaml` is the opposite of access.
+
+**Injection.** Appended to `src/domain/config/load.ts`:
+`export const injectedPath = (id: string): string => ["config/domains", id].join("/");`
+
+**Observed failure:**
+```
+AssertionError: only src/infrastructure/config/domain-config-source.ts may read the configuration directory:
+src/domain/config/load.ts:<line>
+```
+
+**Executable companions (run on every build):** a `readFileSync("config/domains/…")` in a domain module
+is caught; the same path inside a comment is not; the same path inside user-facing copy is not; and the
+allowed reader must EXIST, or the rule would pass vacuously the day that file is renamed.
+
+**Reverted:** injection removed; `Tests 21 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056).
+
+---
+
+## PF-251 · domain-configuration: X-9, the honesty check - deleting the configuration must break the shipped flow
+
+**Invariant:** account opening runs FROM `config/domains/account-opening.yaml`. If the shipped
+`/app/account-opening` journey still worked without it, the file would be dead data and invariant 3
+would have been flipped on a document nobody reads. This is the one check in prompt 10 that cannot be
+argued with, so it is recorded as a manual procedure rather than left to inference.
+
+**Injection A - the integration suite.** `mv config/domains/account-opening.yaml /tmp/` and re-ran the
+UNCHANGED `src/__tests__/integration/account-opening.test.ts`.
+
+**Observed failure:**
+```
+Tests  12 failed | … src/__tests__/integration/account-opening.test.ts
+× suspends at e-sign, then finalizes on resume with a verifiable audit chain
+× a doubly-fired webhook has EXACTLY-ONCE effect (charter #16)
+× a forged webhook SIGNATURE is rejected; a valid one finalizes (STRIDE T-S3)
+… every case that starts or resumes the flow
+```
+
+**Injection B - the LIVE journey, against a real production build.** Same file removed, then
+`pnpm exec playwright test e2e/walkthrough.spec.ts` (which does `next build` + `next start` + seed).
+
+**Observed failure:**
+```
+2 failed
+  [chromium] › e2e/walkthrough.spec.ts:12:1 › login → account opening → e-sign suspend/resume → finalize → audit chain verified
+  [chromium] › e2e/walkthrough.spec.ts:41:1 › key skeleton pages have no Axe violations (WCAG 2.2 AA)
+    - waiting for locator('input[name="householdName"]')
+```
+The screen renders its "this flow is configuration-driven and its published configuration could not be
+loaded" state and NO form: there is no fallback field list. The POST route returns a typed failure for
+the same reason, so a half-working screen is not reachable either.
+
+**Reverted:** file restored. The integration suite passes UNCHANGED (`Tests 21 passed` across
+`account-opening.test.ts` and `wire-authority.test.ts`), and the full e2e suite passes `23 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; captain ruling `account-opening-migration-depth`).
