@@ -38,15 +38,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // The admitted values are read back through the checked accessors, so a trigger
   // field renamed in the document is a refusal here rather than a blank passed on
   // for a value this boundary just declared required.
-  const householdName = requiredIntakeValue(supplied, "householdName");
+  const householdName = requiredIntakeValue(form.value, supplied, "householdName");
   if (!householdName.ok) return errorResponse(householdName.error);
-  const firstName = requiredIntakeValue(supplied, "firstName");
+  const firstName = requiredIntakeValue(form.value, supplied, "firstName");
   if (!firstName.ok) return errorResponse(firstName.error);
-  const lastName = requiredIntakeValue(supplied, "lastName");
+  const lastName = requiredIntakeValue(form.value, supplied, "lastName");
   if (!lastName.ok) return errorResponse(lastName.error);
-  const accountType = requiredIntakeValue(supplied, "accountType");
+  const accountType = requiredIntakeValue(form.value, supplied, "accountType");
   if (!accountType.ok) return errorResponse(accountType.error);
-  const email = optionalIntakeValue(supplied, "email");
+  const email = optionalIntakeValue(form.value, supplied, "email");
   if (!email.ok) return errorResponse(email.error);
 
   const db = await getDb();

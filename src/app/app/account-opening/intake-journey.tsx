@@ -25,10 +25,13 @@ const LIVE_STATION: Readonly<Record<Phase, string | null>> = {
 
 /**
  * The client half of the shipped account-opening journey. Every field it
- * renders, and every station name on its progress rail, arrives as data from
- * `config/domains/account-opening.yaml` through the server component next door -
- * there is no hard-coded field list or station list left, so removing the
- * configuration removes the form and the screen cannot drift from the document.
+ * renders, every key it SUBMITS, and every station name on its progress rail
+ * arrives as data from `config/domains/account-opening.yaml` through the server
+ * component next door - there is no hard-coded field list or station list left,
+ * so removing the configuration removes the form and the screen cannot drift
+ * from the document. The rendered control names and the submitted keys are the
+ * same list walked twice, so a renamed or added `triggerField` flows through
+ * without a code change instead of posting a blank for a field the user filled.
  */
 export function IntakeJourney({ view }: { view: IntakeForm }) {
   const hydrated = useHydrated();
@@ -44,16 +47,20 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
   // replay a used id with different input.
   const [clientRequestId, setClientRequestId] = useState(() => crypto.randomUUID());
 
+  // Where a phase's station sits in the declared order, or -1 when the document
+  // declares no such station. `completed` stands past the last one.
+  function stationIndex(of: Phase): number {
+    const liveId = LIVE_STATION[of];
+    return liveId === null ? view.surfaces.length : view.surfaces.findIndex((surface) => surface.id === liveId);
+  }
+
   // The stations are the configuration's `presentation.surfaces`, in declared
   // order; the phase names the station it is standing on by ID, so a renamed or
   // reordered station moves the rail without a code change. A document that no
   // longer declares the named station lights NONE of them, rather than lighting
   // whichever one now sits at that position.
   function steps(): ProgressStep[] {
-    const liveId = LIVE_STATION[phase];
-    const live = liveId === null
-      ? view.surfaces.length
-      : view.surfaces.findIndex((surface) => surface.id === liveId);
+    const live = stationIndex(phase);
     return view.surfaces.map((surface, index) => ({
       id: surface.id,
       name: surface.label,
@@ -67,13 +74,13 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
     setError(null);
     // Read from the form (uncontrolled) so values are correct even if a submit
     // races hydration — no controlled-state timing dependency.
+    // The submitted keys ARE the rendered controls: the same `view.fields` list
+    // that named every control above is walked again here, so the two cannot
+    // disagree. `clientRequestId` stays the one platform-supplied key, written
+    // last so a configured field can never displace it.
     const fd = new FormData(e.currentTarget);
     const payload = {
-      householdName: String(fd.get("householdName") ?? ""),
-      firstName: String(fd.get("firstName") ?? ""),
-      lastName: String(fd.get("lastName") ?? ""),
-      email: String(fd.get("email") ?? ""),
-      accountType: String(fd.get("accountType") ?? ""),
+      ...Object.fromEntries(view.fields.map((f) => [f.field, String(fd.get(f.field) ?? "")])),
       clientRequestId,
     };
     try {
@@ -123,6 +130,13 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
     }
   }
 
+  // The teaching card names the SAME station the rail lights for this phase,
+  // resolved by id through the same lookup. Binding it to ordinal 0 instead would
+  // let a reordered document title the intake screen "Client e-signature" while
+  // the rail correctly showed `intake` active. An undeclared station has no
+  // truthful step number, so the card stands down rather than inventing one.
+  const formStation = stationIndex("form");
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-2xl font-semibold text-slate-900">{view.title}</h1>
@@ -130,12 +144,14 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
         <div className="flex flex-col gap-5">
           {phase === "form" ? (
             <>
-              <StepInfoCard
-                stepNumber={1}
-                totalSteps={view.surfaces.length}
-                title={view.surfaces[0]?.label ?? view.title}
-                body={`Verin captures the household, primary contact, and account type. Required before an account can be opened (${view.regulation}).`}
-              />
+              {formStation >= 0 ? (
+                <StepInfoCard
+                  stepNumber={formStation + 1}
+                  totalSteps={view.surfaces.length}
+                  title={view.surfaces[formStation]!.label}
+                  body={`Verin captures the household, primary contact, and account type. Required before an account can be opened (${view.regulation}).`}
+                />
+              ) : null}
               {/* View-driven form: fields come from the flow's declarative view. */}
               <form onSubmit={start} className="flex flex-col gap-4" aria-label="Account opening">
                 {view.fields.map((f) => (

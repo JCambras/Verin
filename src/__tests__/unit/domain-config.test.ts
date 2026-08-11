@@ -277,25 +277,63 @@ describe("domain configuration: the shipped documents", () => {
     });
 
     it("reads admitted values back by DECLARED field, refusing an undeclared one rather than defaulting", () => {
+      const projected = form();
       const admitted = submit(VALID);
-      expect(admitted.ok).toBe(true);
-      if (!admitted.ok) return;
+      expect(projected.ok && admitted.ok).toBe(true);
+      if (!projected.ok || !admitted.ok) return;
+      const declared = projected.value;
       const supplied = admitted.value;
-      const householdName = requiredIntakeValue(supplied, "householdName");
+      const householdName = requiredIntakeValue(declared, supplied, "householdName");
       expect(householdName.ok && householdName.value).toBe("Smith Family");
-      // A trigger field the document no longer declares is a typed refusal - never
-      // the empty string the boundary's own required-field check just excluded.
-      const renamed = requiredIntakeValue(supplied, "household_name");
+      // A trigger field the document no longer declares is a DEPLOYMENT defect,
+      // reported as INTERNAL - never the empty string the boundary's own
+      // required-field check just excluded, and never client-error noise.
+      const renamed = requiredIntakeValue(declared, supplied, "household_name");
       expect(renamed.ok).toBe(false);
       if (renamed.ok) return;
-      expect(renamed.error.code).toBe("VALIDATION");
+      expect(renamed.error.code).toBe("INTERNAL");
       // An optional field is null when absent, and refused when UNDECLARED - the
       // two cases a `?? null` default cannot tell apart.
       const withoutEmail = submit({ ...VALID, email: "" });
       expect(withoutEmail.ok).toBe(true);
       if (!withoutEmail.ok) return;
-      expect(optionalIntakeValue(withoutEmail.value, "email")).toEqual({ ok: true, value: null });
-      expect(optionalIntakeValue(withoutEmail.value, "emailAddress").ok).toBe(false);
+      expect(optionalIntakeValue(declared, withoutEmail.value, "email")).toEqual({ ok: true, value: null });
+      const undeclared = optionalIntakeValue(declared, withoutEmail.value, "emailAddress");
+      expect(undeclared.ok).toBe(false);
+      if (undeclared.ok) return;
+      expect(undeclared.error.code).toBe("INTERNAL");
+    });
+
+    it("separates an undeclared field from a DECLARED one the submission left absent", () => {
+      const projected = form();
+      const admitted = submit({ ...VALID, email: "" });
+      expect(projected.ok && admitted.ok).toBe(true);
+      if (!projected.ok || !admitted.ok) return;
+      // `email` IS declared, just optional and omitted. A caller that requires it
+      // gets the friendly required-field 400 worded from the DECLARED label - the
+      // same message an omitted required field produces - rather than the
+      // misleading "this domain declares no ... field" a bare lookup returned.
+      const absent = requiredIntakeValue(projected.value, admitted.value, "email");
+      expect(absent.ok).toBe(false);
+      if (absent.ok) return;
+      expect(absent.error.code).toBe("VALIDATION");
+      expect(absent.error.message).toBe("Email is required.");
+    });
+
+    it("refuses an inherited property name rather than handing back a prototype member", () => {
+      const projected = form();
+      const admitted = submit(VALID);
+      expect(projected.ok && admitted.ok).toBe(true);
+      if (!projected.ok || !admitted.ok) return;
+      // `toString` is a valid camelCase trigger field, so a document could name
+      // one; the admitted map is a plain literal, so an `in` check would walk
+      // Object.prototype and return a FUNCTION through a Result<string|null>.
+      for (const inherited of ["toString", "constructor", "valueOf"]) {
+        const optional = optionalIntakeValue(projected.value, admitted.value, inherited);
+        expect(optional.ok, inherited).toBe(false);
+        const required = requiredIntakeValue(projected.value, admitted.value, inherited);
+        expect(required.ok, inherited).toBe(false);
+      }
     });
   });
 

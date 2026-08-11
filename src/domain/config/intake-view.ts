@@ -17,7 +17,17 @@
  * The admitted values are read back through `requiredIntakeValue` /
  * `optionalIntakeValue` rather than indexed with a default, so a caller naming a
  * transport field the document no longer declares is refused instead of handed a
- * blank for a value the form just required.
+ * blank for a value the form just required. That refusal is an INTERNAL: a
+ * caller asking for a field no document declares is a DEPLOYMENT defect, and
+ * reporting it as a client VALIDATION would bury a broken configuration in
+ * client-error noise. Only a value the document DOES declare, and that the
+ * submission left absent, is the ordinary VALIDATION a user can act on - and it
+ * carries the same declared label the form's own required check uses.
+ *
+ * Declaration is read from the form and presence with `Object.hasOwn`, never
+ * `in`: the admitted map is a plain object literal, so `in` would walk
+ * `Object.prototype` and hand back `toString` for a document that declared a
+ * trigger field of that name.
  */
 import { appError, type AppError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
@@ -80,27 +90,43 @@ export const admitIntakeSubmission = (
   return ok(admitted);
 };
 
+/** The label the document declares for a trigger field, or `undefined` if it declares none. */
+const declaredLabel = (form: IntakeForm, field: string): string | undefined =>
+  form.fields.find((declared) => declared.field === field)?.label;
+
+/** A caller named a transport field this document does not declare: a configuration defect, not client input. */
+const undeclared = (field: string): AppError =>
+  appError("INTERNAL", `This domain declares no "${field}" intake field.`);
+
 /**
- * Read one admitted value a caller REQUIRES. `admitIntakeSubmission` keys its
- * result by the configured trigger fields, so an absent key means the document
- * no longer declares that field at all - a typed refusal, never an empty string
- * standing in for a value the boundary just declared required.
+ * Read one admitted value a caller REQUIRES. An undeclared field is an INTERNAL
+ * refusal; a DECLARED field the submission left absent is the ordinary
+ * required-field VALIDATION, worded exactly as `admitIntakeSubmission` words it,
+ * so flipping a slot to `required: false` turns an omission into the friendly
+ * 400 the user already gets rather than a misleading configuration message.
  */
 export const requiredIntakeValue = (
+  form: IntakeForm,
   admitted: Readonly<Record<string, string | null>>,
   field: string,
 ): Result<string, AppError> => {
+  const label = declaredLabel(form, field);
+  if (label === undefined || !Object.hasOwn(admitted, field)) return err(undeclared(field));
   const value = admitted[field];
   return typeof value === "string" && value !== ""
     ? ok(value)
-    : err(appError("VALIDATION", `This domain declares no required "${field}" intake field.`));
+    : err(appError("VALIDATION", `${label} is required.`));
 };
 
 /** The same read for a value the configuration declares OPTIONAL: absent is `null`, undeclared is a refusal. */
 export const optionalIntakeValue = (
+  form: IntakeForm,
   admitted: Readonly<Record<string, string | null>>,
   field: string,
-): Result<string | null, AppError> =>
-  field in admitted
-    ? ok(admitted[field] ?? null)
-    : err(appError("VALIDATION", `This domain declares no "${field}" intake field.`));
+): Result<string | null, AppError> => {
+  if (declaredLabel(form, field) === undefined || !Object.hasOwn(admitted, field)) {
+    return err(undeclared(field));
+  }
+  const value = admitted[field];
+  return ok(typeof value === "string" && value !== "" ? value : null);
+};
