@@ -6153,7 +6153,7 @@ impossibilities).
 `evaluate-primitives.ts`, and delete the evaluate case, property family H, and the two
 temporal-typed world paths (`standing-preference.effectiveOn`, `intent.requestedOn`).
 
-### D-186 · 2026-07-28 · captain-decision · Gate A owns invariants 1, 2, 4, 5; invariant 3 is gated at B
+### D-187 · 2026-07-28 · captain-decision · Gate A owns invariants 1, 2, 4, 5; invariant 3 is gated at B
 
 Gate A (Wave A, prompts 4-7) required all five foundation invariants, but invariant 3 ("no core module,
 directory, or evaluator branch is named for a decision domain") cannot activate until prompt 10 migrates
@@ -6527,7 +6527,7 @@ Playwright hook-provenance authority. PF-001, PF-030, PF-031, and PF-032 record 
 focused companions, and restored green proofs.
 
 The captain-approved identity, reflection, and result-ownership review (2026-08-05) amended ADR-0055
-in place a thirty-first time: **(1)** the Gate A decision entry is D-186, leaving the existing prompt-6
+in place a thirty-first time: **(1)** the Gate A decision entry is D-187, leaving the existing prompt-6
 security decision as the sole D-061; only Gate A proof references moved; **(2)** Vitest registration
 analysis resolves the invoked target of `Reflect.apply`; **(3)** one shared callable-indirection helper
 supplies static `Reflect.get` provenance to Vitest and Playwright analyzers, with unresolved Playwright
@@ -6590,7 +6590,7 @@ list - of any requirement kind, including deleting an `evidence` clause - its `w
 invariant's `gate`, is an amendment to ADR-0055, ADR-0023, and all five ratchets in
 `scripts/v3-gates.lib.ts`, never a registry edit alone.
 
-### D-187 · 2026-08-05 · reversible · CI triggers and callable provenance fail closed across construction and descriptors
+### D-188 · 2026-08-05 · reversible · CI triggers and callable provenance fail closed across construction and descriptors
 
 Five review findings were legitimate symptoms of two shared ownership gaps. The structured CI authority
 validated jobs and steps but accepted partially valid trigger declarations, while callable provenance
@@ -6611,7 +6611,7 @@ and add descriptor syntax separately to Vitest and Playwright (two security auth
 **Revert path:** revert this changeset to restore partial trigger acceptance and call-only callable
 provenance. Gate A and Gate B semantics remain unchanged.
 
-### D-188 · 2026-08-10 · reversible · Consolidated wrap-up round: one gate per control, one implementation per rule
+### D-189 · 2026-08-10 · reversible · Consolidated wrap-up round: one gate per control, one implementation per rule
 
 The captain-ruled consolidated round (`g8-relight-askuser`) landed as minimal compliant fixes. The
 shared gate constitution decomposed into `scripts/v3-gates/` modules under the 500-line per-file

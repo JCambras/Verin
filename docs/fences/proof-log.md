@@ -9314,7 +9314,7 @@ cannot be green by always failing).
 `vitest run src/__tests__/fitness/v3-gate-ordering.test.ts` → `Tests 10 passed (10)`, `pnpm v3:invariants`
 → `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)`.
 
-**Date:** 2026-07-28 (ADR-0055, D-186).
+**Date:** 2026-07-28 (ADR-0055, D-187).
 
 ### PF-030 (continued) · review round `gatea-opus-review-1` · complete gate model, one shared rule set
 
@@ -9414,7 +9414,7 @@ injection (verified by string comparison);
 `548 passed`, `pnpm v3:invariants` → `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)` with
 all nine gates printed and NONE green (gate 0 `not-yet-verifiable`; A-I `not yet green`).
 
-**Date:** 2026-07-28 (ADR-0055 amended, D-186; captain review ruling `gatea-opus-review-1`).
+**Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-opus-review-1`).
 
 ### PF-030 (continued, 2nd review round) · ruling `gatea-fix-review-2` · proof points, structural CI evidence, two ratchets
 
@@ -9595,7 +9595,7 @@ every injection and verified byte-identical with `diff -q`; `git status` clean o
 `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)` with all nine gates printed and NONE green
 (gate 0 `not-yet-verifiable`; A-I `not yet green`).
 
-**Date:** 2026-07-28 (ADR-0055 amended, D-186; captain review ruling `gatea-fix-review-2`).
+**Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-fix-review-2`).
 
 ### PF-030 (continued, 3rd review round) · ruling `gatea-review-3` · a real YAML parse, shell-comment honesty, and a complete awaiting line
 
@@ -9726,7 +9726,7 @@ case asserting an unmet requirement does not hide the undecidable ones from `blo
 and verified byte-identical with `diff -q` (`git status` clean of the file); `scripts/v3-gates.lib.ts`
 and `scripts/v3-invariants.ts` restored the same way after injection 20.
 
-**Date:** 2026-07-28 (ADR-0055 amended, D-186; captain review ruling `gatea-review-3`).
+**Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-review-3`).
 
 ### PF-030 (continued, 4th review round) · ruling `gatea-fix-review-3` · a complete requirement ratchet, blocking-job evidence, and one CI authority
 
@@ -9879,7 +9879,7 @@ Ten gates, none green.
 verified byte-identical with `diff -q` (`git status` reports the file unmodified against HEAD);
 `v3-invariants.json` restored the same way after injection 21.
 
-**Date:** 2026-07-28 (ADR-0055 amended, D-186; captain review ruling `gatea-fix-review-3`).
+**Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-fix-review-3`).
 
 ### PF-030 (continued, 5th review round) · complete outcomes, structural entry gates, prompt ratchets, and executable CI commands
 
@@ -9952,7 +9952,7 @@ changing a non-invariant prompt changes the complete requirement ratchet.
 reports 5 active-pass, 0 active-fail, and 25 not-yet-active; every gate remains non-green and its
 `awaiting:` line includes structural predecessor blockers plus the new outcome evidence.
 
-**Date:** 2026-07-28 (ADR-0055 and D-186 amended by the captain-approved outcome-completeness review).
+**Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved outcome-completeness review).
 
 ### PF-031 · Axe execution coverage · `src/__tests__/fitness/axe-required.test.ts`
 
@@ -10043,7 +10043,7 @@ bindings.
 
 **Revert:** all five injections were restored immediately with `apply_patch`.
 
-**Date:** 2026-07-28 (ADR-0055 and D-186 amended by the captain-approved earliest-proof review).
+**Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved earliest-proof review).
 
 ### PF-031 (continued) · awaited, reachable, assertion-bearing Axe scans
 
@@ -10107,7 +10107,7 @@ companion gives an evidence job `needs: disabled`, where the dependency has `if:
 **Revert:** both injected files were restored immediately with `apply_patch`. The focused governance run
 passes 73 tests across gate ordering, invariant integrity, charter drift, and Axe coverage.
 
-**Date:** 2026-07-28 (ADR-0055 and D-186 amended by the captain-approved enforcement-completeness review).
+**Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved enforcement-completeness review).
 
 ### PF-031 (continued) · sanctioned assertions and registered Playwright tests
 
@@ -10178,7 +10178,7 @@ activation ratchet pins both YAML artifacts and the exact fitness path.
 
 **Revert:** both injections were restored immediately with `apply_patch`.
 
-**Date:** 2026-07-28 (ADR-0055 and D-186 amended by the captain-approved false-green boundary review).
+**Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved false-green boundary review).
 
 ### PF-031 (continued) · unmaskable Axe scope and animation settlement
 
@@ -10236,7 +10236,7 @@ problem, while the real contract and implementation produce none.
 **Revert:** the manifest value was restored immediately. The focused surface-completeness and
 skeleton-honesty fences pass, and `pnpm v3:invariants` reports Gate 0 `green`.
 
-**Date:** 2026-07-28 (ADR-0055 and D-186 execution-reachability review).
+**Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
 
 ### PF-030 (continued, 9th review round) · workflow reachability, governed root, and direct entry points
 
@@ -10282,7 +10282,7 @@ pins every enforced CI command.
 
 **Revert:** all three workflow injections were removed immediately with `apply_patch`.
 
-**Date:** 2026-07-28 (ADR-0055 and D-186 execution-reachability review).
+**Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
 
 ### PF-031 (continued) · Playwright selection, required routes, and annotation aliases
 
@@ -10318,7 +10318,7 @@ aliases while valid imported aliases remain accepted.
 **Revert:** both real injections were removed immediately with `apply_patch`; the focused Axe fence
 passes.
 
-**Date:** 2026-07-28 (ADR-0055 and D-186 execution-reachability review).
+**Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
 
 ### PF-031 (continued) · effective configuration, route ownership, safe messages, and namespace symbols
 
@@ -10349,7 +10349,7 @@ cannot satisfy the refusal cases by rejecting every namespace symbol.
 **Revert:** the injected second configuration argument was removed immediately. The focused Axe fence
 then passed all 10 tests.
 
-**Date:** 2026-07-29 (ADR-0055 and D-186 executable-evidence review).
+**Date:** 2026-07-29 (ADR-0055 and D-187 executable-evidence review).
 
 ### PF-030 (continued, 11th review round) · mapped gate fitness is blocking
 
@@ -10372,7 +10372,7 @@ then accepts a complete passing result map.
 
 **Revert:** the record screenshot call was restored immediately.
 
-**Date:** 2026-07-29 (ADR-0055 and D-186 enforcement-integrity review).
+**Date:** 2026-07-29 (ADR-0055 and D-187 enforcement-integrity review).
 
 ### PF-001 (continued) · effective charter mechanism ratchet
 
@@ -10946,7 +10946,7 @@ write.
 **Revert:** the real `await` was restored immediately. The focused surface-completeness fence then
 passed both tests, and the combined focused run passed all 12 tests.
 
-**Date:** 2026-07-29 (ADR-0055 and D-186 executable-evidence review).
+**Date:** 2026-07-29 (ADR-0055 and D-187 executable-evidence review).
 
 ### PF-030 (continued, 12th review round) · runner schedulability is independent of shell selection
 
@@ -11440,7 +11440,7 @@ report. A synthetic report inserted before the guard and a neutralized guard are
 
 ### PF-030 (continued) · Gate D requires distinct prompt-17 evaluator proof
 
-**Invariant (ADR-0055 / D-186):** Gate A may use prompt-5 structural proof for invariants 7, 8, and 9,
+**Invariant (ADR-0055 / D-187):** Gate A may use prompt-5 structural proof for invariants 7, 8, and 9,
 but Gate D cannot reuse those global `active-pass` bits as proof of prompt-17 evaluator behavior.
 
 **Injection:** removed Gate D's prompt-17 evaluator property-test evidence entry from
@@ -11487,7 +11487,7 @@ runner passed with all 33 fitness files executed inside the full suite.
 
 ### PF-030 (continued) · complete cross-gate proof-point ratchet
 
-**Invariant (ADR-0055 / D-186):** every invariant referenced by a gate other than its activation owner
+**Invariant (ADR-0055 / D-187):** every invariant referenced by a gate other than its activation owner
 retains the ratified prompt at which its complete proof first exists.
 
 **Injection:** changed invariant 16's `activationPrompts` from `[9]` to `[1]` and changed its
@@ -12055,7 +12055,7 @@ parameter symbol on both branches, and index zero.
 
 ### PF-001 (continued) - reflective Vitest registration targets
 
-**Invariant (charter operating model / ADR-0055 / D-186):** every fitness registration remains visible
+**Invariant (charter operating model / ADR-0055 / D-187):** every fitness registration remains visible
 when its Vitest callable is invoked through `Reflect.apply` or obtained through a static `Reflect.get`.
 An unresolved reflected Vitest member fails closed.
 
@@ -12078,7 +12078,7 @@ keeping ordinary enabled registrations green.
 
 ### PF-001 (continued) - intrinsic aliases and higher-order Vitest registration
 
-**Invariant (charter operating model / ADR-0055 / D-186):** a disabled Vitest registration remains
+**Invariant (charter operating model / ADR-0055 / D-187):** a disabled Vitest registration remains
 visible when a local helper invokes a caller-supplied registration function, including one reached
 through a stable or computed global `Reflect` alias.
 
@@ -12102,7 +12102,7 @@ cache preserve the bounded audit: the real-tree red run completed its scan in 13
 
 ### PF-031 (continued) - intrinsic aliases and higher-order Playwright hooks
 
-**Invariant (charter #9 / ADR-0055 / D-186):** a required Axe module cannot register a Playwright hook
+**Invariant (charter #9 / ADR-0055 / D-187):** a required Axe module cannot register a Playwright hook
 through a local callable parameter, a stable global `Reflect` alias, or an `Object.assign` mutation
 reached through a stable global `Object` alias.
 
@@ -12126,7 +12126,7 @@ provenance for both hooks and neutralizers.
 
 ### PF-030 (continued) - complete GitHub field value schemas
 
-**Invariant (ADR-0055 / D-186):** a governed command is evidence only when every supported workflow,
+**Invariant (ADR-0055 / D-187):** a governed command is evidence only when every supported workflow,
 job, container, and step field has a GitHub-valid value shape across the complete workflow.
 
 **Injection:** added `timeout-minutes: []` to the real `v3-invariants` command step in
@@ -12148,7 +12148,7 @@ and inherited-environment diagnostics.
 
 ### PF-031 (continued) - reflective Playwright reads
 
-**Invariant (charter #9 / ADR-0055 / D-186):** a required Axe module cannot obtain a Playwright
+**Invariant (charter #9 / ADR-0055 / D-187):** a required Axe module cannot obtain a Playwright
 neutralizer or hook through `Reflect.get`; an unresolved reflected key rooted at the Playwright API is
 non-evidence.
 
@@ -12171,7 +12171,7 @@ literal keys, stable aliases, and unresolved keys for neutralizers and hooks thr
 
 ### PF-001 / PF-024 (continued) - exact fitness result ownership
 
-**Invariant (charter operating model / v3 §17 / ADR-0055 / D-186):** a required fitness file is proven
+**Invariant (charter operating model / v3 §17 / ADR-0055 / D-187):** a required fitness file is proven
 only by one Vitest result whose canonical repository-relative path exactly equals that file. A passing
 shadow path with the same suffix is not evidence.
 
@@ -12195,7 +12195,7 @@ shared index before it reports invariant or gate state.
 
 ### PF-001 (continued) - composite and multi-source Vitest callables
 
-**Invariant (charter operating model / ADR-0055 / D-186):** conditional, logical, and sequence
+**Invariant (charter operating model / ADR-0055 / D-187):** conditional, logical, and sequence
 callables cannot hide a disabled Vitest registration, and a harmless initializer cannot hide a later
 reflective source.
 
@@ -12219,7 +12219,7 @@ source fast path preserve the bounded charter audit.
 
 ### PF-031 (continued) - composite and multi-source Playwright callables
 
-**Invariant (charter #9 / ADR-0055 / D-186):** conditional callables and later reflective assignments
+**Invariant (charter #9 / ADR-0055 / D-187):** conditional callables and later reflective assignments
 cannot hide a Playwright hook or neutralizer from the required Axe evidence graph.
 
 **Injection:** added a conditional `test.beforeEach` call and reassigned a harmless
@@ -12241,7 +12241,7 @@ aliases for both hooks and neutralizers.
 
 ### PF-030 (continued) - executable GitHub job and step forms
 
-**Invariant (ADR-0055 / D-186):** a governed command is evidence only when GitHub accepts every job and
+**Invariant (ADR-0055 / D-187):** a governed command is evidence only when GitHub accepts every job and
 step form in the blocking workflow.
 
 **Injection:** added `uses: actions/checkout@v7` beside the real `run` field in the
@@ -12262,7 +12262,7 @@ local jobs, and workflows containing another malformed job while retaining valid
 
 ### PF-001 (continued) - cross-module and property-held callable provenance
 
-**Invariant (charter operating model / ADR-0055 / D-186):** a disabled Vitest registration remains
+**Invariant (charter operating model / ADR-0055 / D-187):** a disabled Vitest registration remains
 visible when a reachable imported or re-exported helper invokes a caller-supplied callable, and a global
 `Reflect` alias held in an object property cannot hide reflective registration.
 
@@ -12287,7 +12287,7 @@ suite passed.
 
 ### PF-031 (continued) - cross-module and property-held Playwright hooks
 
-**Invariant (charter #9 / ADR-0055 / D-186):** a required Axe runtime graph cannot hide a Playwright hook
+**Invariant (charter #9 / ADR-0055 / D-187):** a required Axe runtime graph cannot hide a Playwright hook
 inside an imported or re-exported higher-order helper or an `Object` intrinsic held in an object
 property.
 
@@ -12312,7 +12312,7 @@ properties for hook and neutralizer provenance.
 
 ### PF-030 (continued) - GitHub permission, job, and timeout grammar
 
-**Invariant (ADR-0055 / D-186):** a governed command is evidence only when the complete workflow uses
+**Invariant (ADR-0055 / D-187):** a governed command is evidence only when the complete workflow uses
 supported permission scopes, valid job identifiers, and positive-integer or explicit-expression timeout
 values.
 
@@ -12334,7 +12334,7 @@ text, and malformed timeout mappings while retaining positive integers and exact
 
 ### PF-032 (continued) - exact Gate 0 renderer bindings
 
-**Invariant (Gate 0 / ADR-0055 / D-186):** every dynamic demo route arm passes its station's exact
+**Invariant (Gate 0 / ADR-0055 / D-187):** every dynamic demo route arm passes its station's exact
 journey view model, spreads the resolved scenario and firm identifiers without overrides, and binds the
 query-derived approval value only where required.
 
@@ -12355,7 +12355,7 @@ replace the policy-authoring approval binding with a literal.
 
 ### PF-001 (continued) - constructor, empty, destructured, and descriptor Vitest provenance
 
-**Invariant (charter operating model / ADR-0055 / D-187):** disabled Vitest registration stays visible
+**Invariant (charter operating model / ADR-0055 / D-188):** disabled Vitest registration stays visible
 through constructor parameters, incomplete parameter flow with no recovered values, destructured stable
 intrinsic holders, and Object or Reflect property descriptors.
 
@@ -12380,7 +12380,7 @@ Focused companions cover `new Registrar(it.skip)`, an unresolved spread argument
 
 ### PF-031 (continued) - constructor and descriptor Playwright hooks
 
-**Invariant (charter #9 / ADR-0055 / D-187):** the required Axe evidence graph cannot hide a Playwright
+**Invariant (charter #9 / ADR-0055 / D-188):** the required Axe evidence graph cannot hide a Playwright
 hook through constructor parameters, a destructured intrinsic holder, or Object or Reflect property
 descriptors.
 
@@ -12402,7 +12402,7 @@ Reflect descriptors, and the plural Object descriptor map.
 
 ### PF-030 (continued) - complete GitHub trigger ownership
 
-**Invariant (ADR-0055 / D-187):** a governed command is evidence only when the complete workflow trigger
+**Invariant (ADR-0055 / D-188):** a governed command is evidence only when the complete workflow trigger
 declaration is valid and contains exactly the unfiltered normal `push` and `pull_request` events.
 
 **Injection:** replaced the real trigger mapping with `on: [push, pull_request, 1]`. Before the fix, all
@@ -12422,7 +12422,7 @@ retaining both exact array orderings and the unfiltered mapping form.
 
 ## PF-236 · consolidated wrap-up round: seam escape, exact-command corpus gate, and fail-closed registration analysis · `src/__tests__/fitness/charter-drift.test.ts`, `src/__tests__/fitness/v3-invariants.test.ts`, `src/__tests__/fitness/axe-required.test.ts`, `src/__tests__/fitness/demo-surface-completeness.test.ts`
 
-**Invariant (ADR-0055 wrap-up amendment, D-188):** the corpus-world injection seam is the ONE non-entry
+**Invariant (ADR-0055 wrap-up amendment, D-189):** the corpus-world injection seam is the ONE non-entry
 vitest importer and only as `{ inject }`; every enforced ci-gate mapping binds its exact command; the
 Vitest registration analysis fails closed on reassigned identifier strings, TestContext `skip`/`todo`,
 provably empty case collections, hoisted-alias assignment order, and reflective indirection without a
