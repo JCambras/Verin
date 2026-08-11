@@ -158,6 +158,33 @@ BAND WORD and the panel's factor cards a band, a bar and a sentence, because a b
 demonstration-derived score carries no watermark (D-200). The directory's world-derived rows AND each
 household's folded origin are built once per worldDigest; only the fold over the caller's own
 authorized book is per request.
+The domain configuration schema (v3 prompt 10, ADR-0056) makes a decision DOMAIN data:
+`src/domain/config/` holds the thirteen-section grammar, the seven-stage loader (inert -> grammar ->
+reference closure -> type check -> coherence -> completeness -> identity; every failure a value, never a
+throw), the firm binder, the prompt-9 registry derivation, the plan compiler, the version diff, and the
+intake/label projections. The DATA is `config/domains/{account-opening,money-movement}.yaml` plus the
+`versions.json` content-hash pins; exactly one module reads that directory
+(`src/infrastructure/config/domain-config-source.ts`), and what a configured `commandType` DOES - its
+span, SQL and audit action - lives in `src/infrastructure/execution-adapters.ts` as static literals the
+observability fence still derives from real call sites. [`docs/domain-config.md`](./docs/domain-config.md)
+is the normative contract; [`docs/domain-config-gaps.md`](./docs/domain-config-gaps.md) is the required
+gap report. Load-bearing rules an agent trips over:
+- **THE GRAMMAR RULE:** every non-label string is an id from a closed vocabulary, and every composite
+  value (conflict/idempotency keys, command payloads, copy) comes from the closed SEGMENT GRAMMAR. The
+  ONLY interpolation in the system is `{slot:…}`/`{context:…}`; any other brace is a load error.
+- **A domain is DATA, never a module.** `src/domain/workflow/flows/account-opening.ts` is DELETED
+  (ADR-0010 amended); the shipped `/app/account-opening` flow and its form are COMPILED from the YAML, so
+  deleting that file breaks the live journey (X-9; proof log PF-251). Invariant 3 is active on the
+  `domain-configuration` fence, whose forbidden vocabulary DERIVES from the published documents' own ids.
+- **Tenancy enters once,** at `bindDomainConfig(loaded, firmRegistry)`; the document may not carry a
+  `firmId` anywhere. A parameter needing a tenant-scoped ref uses the one `{ $ref: { kind, class } }`
+  placeholder, and never in a key-shaping parameter (D-184/D-185).
+- **Never name a Zod schema type (or any deeply recursive type) in an exported `src/domain/` signature**
+  (D-193): the sealed-authority fences expand parameter types structurally and a schema generic makes
+  that walk exhaust its heap - the worker DIES mid-file and vitest reports a partial run, not a failure.
+  Export named types and narrow ports; each section module carries a collapsed-export note.
+- Editing a published document without bumping its `version` fails the build; update `versions.json` and
+  `authorship.changeFromParent` (checked against the bytes) in the same commit.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,

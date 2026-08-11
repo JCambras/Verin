@@ -8435,3 +8435,138 @@ reverted; versions 9 and 10 keep their shipped bytes and `fixtures/world` is unt
 `src/infrastructure/store/demo-tenant.ts` alone would leave the seed and the migration free to disagree
 about which org is the demonstration one, so it reverts with the seed's imports and the upgrade case
 that proves the repair.
+## D-191 - Prompt 10: a decision domain is expressed as data, and the schema lives in `src/domain/config/`
+
+**What.** v3 prompt 10's domain configuration schema lands as `src/domain/config/` (grammar, seven-stage
+loader, firm binder, prompt-9 registry derivation, plan compiler, version diff, projections), with the
+YAML adapter in `src/infrastructure/config/domain-config-source.ts` and the DATA at repo-root
+`config/domains/`. The ratified deliverable list names `src/config/domain-schema.ts`.
+
+**Why.** A fifth top-level `src/` directory has no layer in the dependency-rule fence, no line-budget
+bucket, and v3 §16's own rule is that no module imports from `config/` - a `src/config/` module everything
+imports would contradict the module map it comes from. Putting the schema in `contracts/` was also
+rejected: there is no contracts-layer consumer, and `knip.json` treats `src/contracts/**` as an entry
+point, which would silently exempt ~2,000 lines from charter #5's dead-export gate.
+
+**Alternatives considered.** `src/config/` (as written); `src/contracts/decision-core/`.
+
+**Revert path.** ADR-0056 records the deviation; moving the module later is a mechanical import rewrite,
+and the fence's `DECISION_CORE_ROOTS` would move with it.
+
+---
+
+## D-192 - Prompt 10: `Intent.action` becomes `ActionId`, not `PrimitiveId`
+
+**What.** `Intent.action` was typed `PrimitiveId`. It is now `ActionId`, a new brand.
+
+**Why.** It conflated a domain's ACTION vocabulary (`distribute-cash`, `open-account`) with the primitive
+catalog's ids (`net-availability`). Prompt 9's loader rejects an unknown `primitiveId` against the
+catalog; sharing the brand made that check ambiguous, and parked a domain-named value inside a type whose
+name says "primitive". Both are branded `string` at runtime, so this is compile-time separation only: no
+hash preimage, no stored bytes, no fixture change - verified by the full suite passing unchanged.
+
+**Alternatives considered.** Keeping `PrimitiveId` and closing action ids against the configuration's
+intent list, accepting the weaker prompt-9 check.
+
+**Revert path.** Retype the one field; delete the brand.
+
+---
+
+## D-193 - Prompt 10: a Zod schema type may not appear in an exported `src/domain/` signature
+
+**What.** No exported function under `src/domain/` names a Zod schema type (or any deeply recursive type)
+in its signature, and every composed schema in `src/domain/config/` exports a NAMED type plus a
+`z.ZodType` view rather than its inferred generic. The one place a schema is touched across a module
+boundary is an UNEXPORTED adapter beside the loader (`parameterOwnerOf`).
+
+**Why.** Discovered by bisection, not by taste. The repo's sealed-authority fences expand a parameter's
+type STRUCTURALLY - skipping callable members, recursing into non-callable ones - and a `z.ZodType`
+carries deep non-callable internals. With ~20 composed schemas in one module, `tenant-context-required`
+exhausted its worker's heap ("Ineffective mark-compacts near heap limit") and DIED mid-file. Vitest
+reports that as a partial run (`Test Files 61 passed (62)`), not a failure: **a fence that stops running
+looks greener than one that fails.** Raising the heap did not help at 8 GB, 12 GB or 20 GB, because the
+cost is structural, not capacity.
+
+Also corrected here: prompt 8's `PublishedFactValue` is a recursive union, so `CatalogPrimitive` is
+expensive for the same walk; the parameter port narrows to the three members it needs.
+
+**Alternatives considered.** Raising the fitness worker heap (rejected - not a capacity problem, and it
+would hide the next occurrence); adding a known-empty memo to the shared authority walk in
+`_fence-utils.ts` (sound and tempting, but an unrequested change to a load-bearing shared util while the
+cause was on this side - recorded in `docs/domain-config-gaps.md` §5 as a standing hardening item so the
+hazard is not lost).
+
+**Revert path.** None wanted; the rule is recorded in `docs/domain-config.md` §9 and in the
+collapsed-export comment in each section module.
+
+---
+
+## D-194 - Prompt 10: user-typed text may reach a command payload, never a coordination key
+
+**What.** A `text`-typed slot may appear in an execution command's payload projection. It may NOT appear
+in a conflict key or an idempotency key. Load-checked.
+
+**Why.** This corrects the prompt-10 design report, which forbade a `text` slot in a payload outright.
+Account opening FALSIFIES that rule: its payloads are a household name and a contact name - user-typed
+text is exactly what a CRM create is. The real hazard is narrower and sharper: unbounded, editable bytes
+inside a coordination or idempotency identity make that identity unstable, which is how two requests stop
+colliding on the key that exists to make them collide.
+
+**Alternatives considered.** Keeping the blanket rule (would have made account opening inexpressible);
+allowing text everywhere (loses the concurrency guarantee).
+
+**Revert path.** One predicate in `load-closure.ts`.
+
+---
+
+## D-195 - Prompt 10: account opening declares NO conflict key, and that is a finding
+
+**What.** `config/domains/account-opening.yaml` ships `conflictKeys: []`. Double submission is guarded by
+the per-execution idempotency scope instead.
+
+**Why.** A conflict key names the RESOURCE two requests would contend for. Account opening's subject -
+the household - does not exist until the plan's first step creates it, so no key is derivable from the
+intent alone. The ratified `ExecutionStep` requires at least one conflict key per external action, so this
+is a real constraint handed to prompt 25: an existence-CREATING action needs a decided answer for what it
+collides on. Recorded in `docs/domain-config-gaps.md` (MR-8) rather than papered over with a synthetic key
+built from the execution id, which would have looked like coordination while coordinating nothing.
+
+**Alternatives considered.** A key over the household NAME (a `text` slot - refused by D-194, and wrong:
+two advisors may legitimately open accounts for identically-named households).
+
+**Revert path.** Add the section once prompt 25 rules on it.
+
+---
+
+## D-196 - Prompt 10: the finalize fan-out stays ONE command
+
+**What.** `application.finalize` remains a single configured command whose adapter performs three writes
+(financial account, funding task, application completion), keeping the exact sub-keys the hand-coded flow
+derived from the application's own minted idempotency key.
+
+**Why.** The captain's `account-opening-migration-depth` ruling is behavior-preserving. Splitting the
+fan-out into three capabilities - which the design report recommended, and which is probably right
+eventually - changes the span shape the `observability-coverage` fence and the untouched integration test
+pin (`account-opening.finalize`), and changes the audit shape. That is prompt 25's call, and it is
+recorded as a deferral rather than taken here.
+
+**Alternatives considered.** Three capabilities with three spans (would have required editing the
+integration test the ruling says must pass unchanged).
+
+**Revert path.** Split the capability and its adapter; update the observability vocabulary in the same PR.
+
+---
+
+## D-197 - Prompt 10: `wire-authority.test.ts` is the one test the migration edits, and why
+
+**What.** `src/__tests__/integration/account-opening.test.ts`, `e2e/walkthrough.spec.ts` and
+`pnpm load:smoke` pass UNCHANGED, as the ruling requires. `src/__tests__/integration/wire-authority.test.ts`
+is edited: it drove `deps.createHousehold(...)` directly and now drives `deps.invoke({ commandType:
+"household.create", … })`.
+
+**Why.** That test is a white-box test OF THE DEPS PORT SHAPE - the exact thing the migration replaces -
+rather than a test of user-visible behavior. Its assertion is unchanged and still the point: a mismatched
+tenant authority is refused AT the dependency call, before any write. Leaving it untouched was not
+possible; leaving it unremarked would have been the dishonest option.
+
+**Revert path.** The test reverts with the migration.
