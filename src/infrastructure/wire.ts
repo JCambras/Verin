@@ -1,12 +1,18 @@
 /**
  * Composition root (ADR-0001: app-layer wiring; keeps ports and adapters apart).
- * Builds the account-opening deps from the store + principal, wraps every external
- * call in a span (charter #14), and drives the engine's suspend/resume.
+ *
+ * SINCE PROMPT 10 (ADR-0056) THIS FILE COMPOSES; IT NO LONGER DESCRIBES. The
+ * five-step account-opening flow used to be a hand-coded `FlowDefinition` in the
+ * domain layer. It is now `config/domains/account-opening.yaml`, compiled into a
+ * flow definition at request time - so deleting that file breaks the shipped
+ * `/app/account-opening` journey, which is the honesty check the migration
+ * exists to pass. What stays here is what a configuration must never contain:
+ * span names, idempotency conventions, adapter dispatch, and the double-submit
+ * semantics of the shipped route.
  */
 import { randomUUID } from "node:crypto";
 import type { SqlDb } from "@infra/store/db";
 import {
-  delegatedWriteActor,
   assertWriteActor,
   systemWriteActor,
   type WriteActor,
@@ -16,18 +22,25 @@ import {
   type ActionGrant,
   type GovernedOutput,
 } from "@contracts/authz";
-import { assertSameTenant, assertTenantContext, type TenantContext } from "@contracts/tenant";
+import { assertSameTenant, type TenantContext } from "@contracts/tenant";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, normalizeAppError, type AppError } from "@contracts/errors";
 import { MACHINE_RECORD_ID_RE, parseMachineRecordId } from "@contracts/record-id";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
-import { accountOpeningFlow, type AccountOpeningDeps } from "@domain/workflow/flows/account-opening";
+import type { FlowDefinition } from "@domain/workflow/engine";
+import {
+  compileFlowDefinition,
+  EXECUTION_SCOPE_KEY,
+  INITIATING_ACTOR_KEY,
+  type ExecutionAdapters,
+} from "@domain/config/plan-compiler";
+import { loadPublishedDomainConfig } from "@infra/config/domain-config-source";
+import { makeExecutionAdapters, SUPPORTED_COMMAND_TYPES } from "@infra/execution-adapters";
 import { makeExecutionStore } from "@infra/store/execution-store";
 import { auditedWrite } from "@infra/audit/audited-write";
-import { createHousehold, createContact, createFinancialAccount, createTask } from "@infra/crm/house-crm";
-import { createApplication, setEsignRequested, completeApplication, getApplicationByToken } from "@infra/crm/application-store";
-import { newEsignToken, signCallback, verifyCallback } from "@infra/esign/esign";
+import { getApplicationByToken } from "@infra/crm/application-store";
+import { signCallback, verifyCallback } from "@infra/esign/esign";
 import { withSpan } from "@infra/observability/tracer";
 import { keyedObservabilityId } from "@infra/observability/record-id";
 import { classifyErrorMetadata, log } from "@infra/observability/logger";
@@ -39,58 +52,47 @@ import {
   type ObservabilityEntityType,
 } from "@domain/observability/safe-values";
 
-/** Unwrap a Result inside a step; on error, throw the typed AppError (the engine catches it). */
-function must<T>(r: Result<T>): T {
-  if (r.ok) return r.value;
-  throw r.error as AppError;
-}
+/**
+ * The published configuration this surface runs. The route and the page carry
+ * the same shipped names (CD-1 leaves shipped URLs and record vocabulary
+ * unrenamed); everything the flow DOES comes from the document.
+ */
+export const ACCOUNT_OPENING_DOMAIN = "account-opening";
+const ACCOUNT_OPENING_ACTION = "open-account";
+
+type ConfiguredFlow = {
+  readonly definition: FlowDefinition<ExecutionAdapters>;
+  /** The verification rule the externally-gated step waits on, for replay reporting. */
+  readonly awaiting: string | undefined;
+};
 
 /**
- * `executionId` scopes the pre-suspend idempotency keys: a retry of the SAME
- * execution (after a transient failure mid-flow, or a double-submit replaying the
- * client-minted request id — D-027) replays the already-committed writes instead
- * of duplicating households/contacts/applications. A replayed id whose execution
- * FAILED is re-driven from its saved cursor (retryFlow, Vale V7 semantics); the
- * running-with-NULL-token crash window remains a recorded ADR-0011 deferral.
+ * Compile the shipped domain configuration into a runnable flow. Every failure
+ * here is a typed AppError the surface reports: a missing, invalid, or
+ * unrunnable configuration must break the flow loudly, never degrade to a
+ * hard-coded fallback (which would make the configuration dead data).
  */
-function makeDeps(db: SqlDb, starter: WriteActor, executionId: string): AccountOpeningDeps {
-  const actorFor = (tenant: TenantContext): WriteActor => {
-    assertTenantContext(tenant);
-    assertSameTenant(tenant, starter.tenant);
-    return starter;
-  };
-  return {
-    createHousehold: (name, tenant) =>
-      withSpan("crm.household.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createHousehold(db, actorFor(tenant), { name }, `household:${executionId}`))),
-    createContact: (input, tenant) =>
-      withSpan("crm.contact.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createContact(db, actorFor(tenant), input, `contact:${executionId}`))),
-    createApplication: (input, tenant) =>
-      withSpan("crm.application.create", { orgId: authorityObservabilityId("orgId", tenant) }, async () => must(await createApplication(db, actorFor(tenant), input, `application:${executionId}`))),
-    requestEsign: (applicationId, tenant) =>
-      withSpan("esign.request", { orgId: authorityObservabilityId("orgId", tenant) }, async () => {
-        const token = newEsignToken();
-        return must(await setEsignRequested(db, actorFor(tenant), applicationId, token, `esign:${executionId}`));
-      }),
-    finalize: (input, tenant) =>
-      withSpan("account-opening.finalize", {
-        orgId: authorityObservabilityId("orgId", tenant),
-        applicationId: keyedObservabilityId("applicationId", tenant, input.applicationId),
-      }, async () => {
-        const starterActor = actorFor(tenant);
-        const actor = starterActor.actorUserId === input.actor
-          ? starterActor
-          : delegatedWriteActor(starterActor, input.actor);
-        // Idempotent, audited: a doubly-fired webhook yields exactly-once effect.
-        // Per-write keys derive from the application's minted idempotency key
-        // (threaded through the flow context), so the key the application row
-        // records is the one that actually guards finalize.
-        // The e-signature is the event that OPENS the account: openDate = signedAt
-        // and status = 'open' (finding #2 — the store must agree with the product).
-        must(await createFinancialAccount(db, actor, { householdId: input.householdId, accountType: input.accountType, openDate: input.signedAt }, `account:${input.idempotencyKey}`));
-        must(await createTask(db, actor, { householdId: input.householdId, subject: `Fund the new ${input.accountType} account` }, `task:${input.idempotencyKey}`));
-        must(await completeApplication(db, actor, input.applicationId, `complete:${input.idempotencyKey}`));
-      }),
-  };
+function configuredFlow(): Result<ConfiguredFlow, AppError> {
+  const sourced = loadPublishedDomainConfig(ACCOUNT_OPENING_DOMAIN);
+  if (!sourced.ok) return sourced;
+  const config = sourced.value.config;
+  const unsupported = config.document.execution.capabilities
+    .map((capability) => capability.commandType)
+    .filter((commandType) => !SUPPORTED_COMMAND_TYPES.includes(commandType));
+  if (unsupported.length > 0) {
+    return err(
+      appError("INTERNAL", `This deployment has no execution adapter for: ${[...new Set(unsupported)].sort().join(", ")}.`),
+    );
+  }
+  const definition = compileFlowDefinition(config, ACCOUNT_OPENING_ACTION);
+  if (!definition.ok) return definition;
+  const awaitedRules = new Set(
+    config.document.verification.filter((rule) => rule.awaitsExternal).map((rule) => rule.id as string),
+  );
+  const awaiting = config.document.execution.capabilities
+    .map((capability) => capability.verificationRule as string)
+    .find((rule) => awaitedRules.has(rule));
+  return ok({ definition: definition.value, awaiting });
 }
 
 /** PIIBearing: household/contact names and email are client PII. */
@@ -113,12 +115,12 @@ type AccountOpeningStartResult =
   & GovernedOutput<"execution.initiate">;
 
 /** Report an already-started execution's current state (double-submit replay). */
-function replayedRunResult(state: ExecutionState): FlowRunResult {
+function replayedRunResult(state: ExecutionState, awaiting: string | undefined): FlowRunResult {
   return {
     executionId: state.id,
     status: state.status,
     token: state.resumeToken ?? undefined,
-    awaiting: state.status === "suspended" ? "esign-signature" : undefined,
+    awaiting: state.status === "suspended" ? awaiting : undefined,
     data: state.data,
   };
 }
@@ -179,9 +181,9 @@ function canonicalExecutionId(
 }
 
 /** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
-async function retryFailedStart(store: ExecutionStore, deps: AccountOpeningDeps, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
+async function retryFailedStart(flow: ConfiguredFlow, store: ExecutionStore, deps: ExecutionAdapters, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
   try {
-    return await retryFlow(accountOpeningFlow, store, deps, existing, tenant);
+    return await retryFlow(flow.definition, store, deps, existing, tenant);
   } catch (e) {
     const error = normalizeAppError(e) ??
       appError("INTERNAL", "The account-opening flow could not be retried.");
@@ -203,22 +205,28 @@ export async function startAccountOpening(
   if (!canonical.ok) {
     return { executionId: "", status: "failed", error: canonical.error, data: {} };
   }
+  // The configuration IS the flow: a missing or unrunnable document fails the
+  // request before any write, rather than silently falling back to code.
+  const flow = configuredFlow();
+  if (!flow.ok) {
+    return { executionId: canonical.value.id, status: "failed", error: flow.error, data: {} };
+  }
   const store = makeExecutionStore(db);
   const executionId = canonical.value.id;
   const observableExecutionId = canonical.value.observable;
-  const deps = makeDeps(db, grant.writeActor, executionId);
+  const deps = makeExecutionAdapters(db, grant.writeActor);
   // A client-minted id that already started is a double-submit: report the
   // existing execution's state instead of starting a duplicate. The tenant-scoped
   // loadById filters org_id in SQL, so a (guessed) foreign execution id can never
   // leak another tenant's state.
   const loadOwnExecution = async (): Promise<ExecutionState | null> => {
     const existing = await store.loadById(executionId, piiGrant);
-    return existing && existing.flowId === accountOpeningFlow.id ? existing : null;
+    return existing && existing.flowId === flow.value.definition.id ? existing : null;
   };
   if (input.clientRequestId) {
     const existing = await loadOwnExecution();
     if (existing && !inputMatchesExecution(input, existing)) return editedReplayConflict(executionId);
-    if (existing && existing.status !== "failed") return replayedRunResult(existing);
+    if (existing && existing.status !== "failed") return replayedRunResult(existing, flow.value.awaiting);
     if (existing) {
       // A replayed id whose execution FAILED is re-driven from its saved cursor
       // (resumeFlow's Vale V7 retry, applied to the start path): the per-write
@@ -228,7 +236,7 @@ export async function startAccountOpening(
         orgId: authorityObservabilityId("orgId", tenant),
         actor: authorityObservabilityId("actor", tenant),
       }, async () => {
-        const result = await retryFailedStart(store, deps, existing, tenant);
+        const result = await retryFailedStart(flow.value, store, deps, existing, tenant);
         log.info({
           orgId: authorityObservabilityId("orgId", tenant),
           flow: "account-opening",
@@ -247,10 +255,17 @@ export async function startAccountOpening(
   }, async () => {
     let result: FlowRunResult;
     try {
-      result = await startFlow(accountOpeningFlow, store, deps, {
+      result = await startFlow(flow.value.definition, store, deps, {
         executionId,
         tenant,
-        data: { ...input, initiatedBy: grant.actorId },
+        data: {
+          ...input,
+          [INITIATING_ACTOR_KEY]: grant.actorId,
+          // The per-execution idempotency scope the configuration's key segments
+          // draw on. Persisted with the execution, so a retry of the SAME
+          // execution replays the committed writes instead of duplicating them.
+          [EXECUTION_SCOPE_KEY]: executionId,
+        },
       });
     } catch (e) {
       // Two concurrent submits can both miss the pre-check; ONLY the loser's
@@ -264,7 +279,9 @@ export async function startAccountOpening(
       if (raced && !inputMatchesExecution(input, raced)) {
         result = editedReplayConflict(executionId);
       } else if (raced) {
-        result = raced.status === "failed" ? await retryFailedStart(store, deps, raced, tenant) : replayedRunResult(raced);
+        result = raced.status === "failed"
+          ? await retryFailedStart(flow.value, store, deps, raced, tenant)
+          : replayedRunResult(raced, flow.value.awaiting);
       } else {
         const error = metadata.appError ??
           appError("INTERNAL", "The account-opening flow could not be started.");
@@ -296,11 +313,15 @@ export async function resumeAccountOpeningByToken(
   // advisor's userId threaded through the flow context (ctx.initiatedBy).
   // Resume only runs post-suspend steps, so the pre-suspend key scope is inert.
   const starter = systemWriteActor("esign-webhook", app.org_id);
-  const deps = makeDeps(db, starter, `resume:${token}`);
+  const flow = configuredFlow();
+  if (!flow.ok) {
+    return { executionId: "", status: "failed", error: flow.error, data: {} };
+  }
+  const deps = makeExecutionAdapters(db, starter);
   return withSpan("flow.account-opening.resume", {
     orgId: authorityObservabilityId("orgId", starter.tenant),
   }, () =>
-    resumeFlow(accountOpeningFlow, store, deps, token, payload, starter.tenant),
+    resumeFlow(flow.value.definition, store, deps, token, payload, starter.tenant),
   );
 }
 
