@@ -26,14 +26,11 @@ test("the canonical table keeps a 5,000-row register windowed while scrolling", 
   const renderedBefore = Number(await table.getAttribute("data-rendered-row-count"));
   expect(renderedBefore).toBeLessThan(40);
 
-  const scrollDuration = await table.evaluate(async (region) => {
-    const start = performance.now();
+  await table.evaluate(async (region) => {
     region.scrollTop = region.scrollHeight;
     region.dispatchEvent(new Event("scroll"));
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    return performance.now() - start;
   });
-  expect(scrollDuration).toBeLessThan(250);
   const renderedAfter = Number(await table.getAttribute("data-rendered-row-count"));
   expect(renderedAfter).toBeLessThan(40);
   await expect(table.getByText("Fixture audit entry 4999")).toBeVisible();

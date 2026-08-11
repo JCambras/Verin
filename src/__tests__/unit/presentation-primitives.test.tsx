@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Dialog } from "@app/presentation/dialog";
 import { ErrorBoundary } from "@app/presentation/error-boundary";
+import { ExecutionTimeline } from "@app/presentation/execution-timeline";
 import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
 import { Tabs } from "@app/presentation/tabs";
 import { ToastProvider, useToast } from "@app/presentation/toast";
@@ -143,13 +144,31 @@ describe("Table", () => {
     };
   }
 
-  it("sorts columns and keeps numeric cells right aligned", async () => {
+  it("sorts columns, keeps numeric cells right aligned, and keeps the caption true", async () => {
     const user = userEvent.setup();
     render(<Table caption="Households" columns={columns} rows={[row(2), row(1)]} />);
     await user.click(screen.getByRole("button", { name: /Name/ }));
     const bodyRows = screen.getAllByRole("row").slice(1);
     expect(within(bodyRows[0]!).getByText("Household 0001")).toBeVisible();
     expect(screen.getByText("$1").closest("td")).toHaveClass("text-right", "tabular-nums");
+    expect(screen.getByText("Households (re-sorted by Name, ascending)")).toBeInTheDocument();
+  });
+
+  it("aligns each sortable header with its column, indexes the header row, and prints its labels", () => {
+    render(<Table caption="Households" columns={columns} rows={[row(1)]} />);
+    const header = screen.getAllByRole("row")[0]!;
+    expect(header).toHaveAttribute("aria-rowindex", "1");
+
+    const name = screen.getByRole("button", { name: /Name/ });
+    const amount = screen.getByRole("button", { name: /Amount/ });
+    expect(name.className).toContain("justify-start");
+    expect(amount.className).toContain("justify-end");
+    for (const control of [name, amount]) expect(control.className).not.toContain("justify-center");
+
+    const printed = Array.from(header.querySelectorAll("span[aria-hidden='true']"))
+      .filter((node) => node.className.includes("print:block"))
+      .map((node) => node.textContent);
+    expect(printed).toEqual(["Name", "Amount", "Status"]);
   });
 
   it("virtualizes a 5,000-row body and updates the window on scroll", () => {
@@ -176,6 +195,30 @@ describe("Table", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Start case" })).toBeVisible();
+  });
+});
+
+describe("ExecutionTimeline", () => {
+  it("offers no way to reorder an append-only register", () => {
+    render(
+      <ExecutionTimeline
+        caption="Execution timeline"
+        rows={[{
+          step: "Submit transfer",
+          target: "Custodian",
+          status: "submitted",
+          statusLabel: "Submitted",
+          timestamp: "2026-08-11T12:00:00.000Z",
+          identifiers: [],
+          devBadgeLabel: "Demonstration data",
+        }]}
+      />,
+    );
+    expect(screen.getByRole("columnheader", { name: "Step" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Step/ })).not.toBeInTheDocument();
+    for (const header of screen.getAllByRole("columnheader")) {
+      expect(header).not.toHaveAttribute("aria-sort");
+    }
   });
 });
 

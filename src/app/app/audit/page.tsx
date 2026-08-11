@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { buttonClassName, StatusBadge } from "@app/presentation/ui";
 import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
-import { Tooltip } from "@app/presentation/tooltip";
 
 const COLUMNS: readonly TableColumn[] = [
   { id: "sequence", header: "#", align: "right", sortable: true },
@@ -72,7 +71,7 @@ export default function AuditPage() {
       action: { content: entry.action, sortValue: entry.action, className: "font-mono text-xs text-slate-800" },
       detail: { content: entry.detail, sortValue: entry.detail },
       hash: {
-        content: <Tooltip label={entry.entryHash}>{entry.entryHash}…</Tooltip>,
+        content: `${entry.entryHash}…`,
         sortValue: entry.entryHash,
         className: "font-mono text-xs text-slate-500",
       },

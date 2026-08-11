@@ -12668,3 +12668,46 @@ layout-only composition cases live beside the fence.
 passed` on the restored tree.
 
 **Date:** 2026-08-11 (front-end parity Wave A, prompt 2).
+
+**Amendment (2026-08-11, review round D-192) - the shorthand-padding escape.** `hasSpacing` required a
+`px-*` token AND a `py-*` token, so a control recipe written with Tailwind's `p-*` shorthand or with
+per-side padding satisfied every recipe check vacuously.
+
+**Injection - a shorthand-padded button-styled link on the landing page.** Added
+`<a href="/login" className="inline-flex items-center justify-center rounded-md p-2 text-sm font-medium bg-slate-900 text-white">`
+to `src/app/page.tsx`.
+
+**Observed on the PRE-amendment fence:** the enforce test PASSED with the injection in place, and both
+new companions failed - the escape, stated as a test:
+```
+× rejects a shorthand-padded button-styled link
+× rejects a per-side padded button-styled link
+Tests  2 failed | 8 passed (10)
+```
+
+**Observed on the amended fence (same injection):**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/page.tsx:10 :: ad-hoc button class recipe bypasses buttonClassName/Button
+❯ src/__tests__/fitness/presentation-primitives.test.ts:181
+```
+
+**Second escape of the same class - the justification swap.** `BUTTON_RECIPE` required the literal
+token `justify-center`, so the identical recipe written with `justify-start` (or `justify-between`)
+was invisible. The recipe now requires ANY `justify-*` token.
+
+**Injection:**
+`<a href="/login" className="inline-flex items-center justify-start rounded-md px-4 py-2 text-sm font-medium bg-slate-900 text-white">`
+in `src/app/page.tsx`.
+
+**Observed:**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/page.tsx:10 :: ad-hoc button class recipe bypasses buttonClassName/Button
+```
+
+**Executable companions added:** shorthand `p-2`, per-side `pl-/pr-/pt-/pb-`, the justification swap,
+and a padded layout wrapper that must still pass (the fence widened, not loosened).
+
+**Reverted:** both injected links were removed immediately; the focused fence returned to `Tests 11
+passed` on the restored tree.

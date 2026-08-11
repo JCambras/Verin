@@ -403,7 +403,9 @@ the underlying source proves. Submitted is not settled. Signed is not submitted.
 The register idiom (audit-trail table lineage, §1): uppercase `text-xs tracking-wide` headers on
 `bg-surface`, `divide-y` rows, one row per execution step - step name, target, `StatusBadge`,
 timestamp, and identifiers (`font-mono text-xs`: idempotency key, conflict key, reservation id)
-in a `TapToVerify` detail (§6.6) rather than cluttering the row.
+in a `TapToVerify` detail (§6.6) rather than cluttering the row. Its columns are deliberately NOT
+sortable: recorded order is the register's claim, so the timeline inherits the register grammar
+without inheriting reordering (D-192).
 
 ### 8.2 Status vocabulary
 

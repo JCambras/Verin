@@ -18,7 +18,7 @@ const PRIMITIVE_FILES = new Set([
   "src/app/presentation/tooltip.tsx",
   "src/app/presentation/ui.tsx",
 ]);
-const BUTTON_RECIPE = ["inline-flex", "items-center", "justify-center", "rounded-md"];
+const BUTTON_RECIPE = ["inline-flex", "items-center", /^justify-/, "rounded-md"];
 const PILL_RECIPE = ["rounded-full", "border", "text-xs"];
 const BADGE_RECIPE = ["rounded", "text-xs"];
 const CONTROL_TAGS = new Set(["Button", "Badge", "Pill"]);
@@ -62,12 +62,22 @@ function tokens(text: string): Set<string> {
   return new Set(text.split(/\s+/).filter(Boolean));
 }
 
+/**
+ * A control recipe pads on both axes however it spells it: the `p-*` shorthand and
+ * the per-side pairs are the same styling path as `px-*`/`py-*`, so requiring the
+ * axis pair alone would let a fully-styled control walk through the fence.
+ */
 function hasSpacing(recipe: Set<string>): boolean {
-  return [...recipe].some((token) => /^px-/.test(token)) && [...recipe].some((token) => /^py-/.test(token));
+  const has = (pattern: RegExp) => [...recipe].some((token) => pattern.test(token));
+  const horizontal = has(/^px-/) || (has(/^pl-/) && has(/^pr-/));
+  const vertical = has(/^py-/) || (has(/^pt-/) && has(/^pb-/));
+  return has(/^p-/) || (horizontal && vertical);
 }
 
-function hasRecipe(recipe: Set<string>, required: readonly string[]): boolean {
-  return required.every((token) => recipe.has(token)) && hasSpacing(recipe);
+function hasRecipe(recipe: Set<string>, required: readonly (string | RegExp)[]): boolean {
+  const present = (token: string | RegExp) =>
+    typeof token === "string" ? recipe.has(token) : [...recipe].some((candidate) => token.test(candidate));
+  return required.every(present) && hasSpacing(recipe);
 }
 
 function stringValue(node: Node | undefined): string | null {
@@ -189,6 +199,38 @@ describe("presentation-primitives fence", () => {
         "src/app/example/page.tsx",
       );
       expect(found).toEqual([expect.stringContaining("ad-hoc button class recipe")]);
+    });
+
+    it("rejects a shorthand-padded button-styled link", () => {
+      const found = presentationPrimitiveViolations(
+        source('export function P(){ return <a className="inline-flex items-center justify-center rounded-md p-2 text-sm font-medium">Save</a>; }'),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([expect.stringContaining("ad-hoc button class recipe")]);
+    });
+
+    it("rejects a button recipe that swaps the justification", () => {
+      const found = presentationPrimitiveViolations(
+        source('export function P(){ return <a className="inline-flex items-center justify-start rounded-md px-4 py-2 text-sm font-medium">Save</a>; }'),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([expect.stringContaining("ad-hoc button class recipe")]);
+    });
+
+    it("rejects a per-side padded button-styled link", () => {
+      const found = presentationPrimitiveViolations(
+        source('export function P(){ return <a className="inline-flex items-center justify-center rounded-md pl-4 pr-4 pt-2 pb-2">Save</a>; }'),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([expect.stringContaining("ad-hoc button class recipe")]);
+    });
+
+    it("accepts a layout wrapper that pads without a control recipe", () => {
+      const found = presentationPrimitiveViolations(
+        source('export function P(){ return <div className="flex flex-col gap-2 p-4">Content</div>; }'),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([]);
     });
 
     it("rejects ad-hoc badge and pill recipes", () => {

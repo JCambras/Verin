@@ -7,7 +7,6 @@ import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { buttonClassName, Card, StatusBadge } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
 import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
-import { Tooltip } from "@app/presentation/tooltip";
 
 const COLUMNS: readonly TableColumn[] = [
   { id: "sequence", header: "#", align: "right", sortable: true },
@@ -57,7 +56,7 @@ export default function DecisionLedgerPage() {
       actor: { content: entry.actor, sortValue: entry.actor, className: "font-mono text-xs text-slate-800" },
       decision: { content: entry.decisionId ?? "-", sortValue: entry.decisionId ?? "", className: "font-mono text-xs text-slate-600" },
       hash: {
-        content: <Tooltip label={entry.entryHash}>{entry.entryHash}…</Tooltip>,
+        content: `${entry.entryHash}…`,
         sortValue: entry.entryHash,
         className: "font-mono text-xs text-slate-500",
       },

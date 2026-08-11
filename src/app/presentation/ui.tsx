@@ -118,11 +118,17 @@ const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
   ghost: "text-slate-600 hover:text-slate-900 disabled:opacity-50",
 };
 
+/**
+ * Exactly one size may contribute a `justify-*` token and the base recipe contributes
+ * none: class strings are joined, not conflict-resolved, so a base justification would
+ * silently outrank the per-call alignment a caller passes (a right-aligned register
+ * column, say) wherever Tailwind happens to order the two utilities.
+ */
 const BUTTON_SIZES: Record<ButtonSize, string> = {
-  default: "px-4 py-2 text-sm font-medium",
-  compact: "px-3 py-1.5 text-sm font-medium",
-  text: "justify-start p-0 text-sm font-normal",
-  table: "justify-start p-0 text-xs font-medium uppercase tracking-wide",
+  default: "justify-center px-4 py-2 text-sm font-medium",
+  compact: "justify-center px-3 py-1.5 text-sm font-medium",
+  text: "p-0 text-sm font-normal",
+  table: "p-0 text-xs font-medium uppercase tracking-wide",
 };
 
 export function buttonClassName({
@@ -135,7 +141,7 @@ export function buttonClassName({
   className?: string;
 } = {}): string {
   return classes(
-    "inline-flex items-center justify-center gap-2 rounded-md transition-colors disabled:cursor-not-allowed",
+    "inline-flex items-center gap-2 rounded-md transition-colors disabled:cursor-not-allowed",
     BUTTON_VARIANTS[variant],
     BUTTON_SIZES[size],
     className,

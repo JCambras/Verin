@@ -6691,3 +6691,69 @@ into unrelated current workflows (changes product behavior to manufacture usage)
 
 **Revert path:** restore the prior `ui.tsx`, the native registers and call-site recipes, remove the focused
 interactive modules and tests, and remove the app-layout wrappers and PF-247 fence together.
+
+### D-192 · 2026-08-11 · reversible · Review round: register honesty, one justification authority, and named-deferral primitives
+
+The prompt-2 review gate returned ten findings; the recorded ruling (`review-ask-user`, 2026-08-11)
+resolves all ten. Two were real regressions the primitives task exists to prevent. The `Button` base
+recipe carried `justify-center`, and joined class strings are not conflict-resolved, so the base could
+outrank the alignment a caller passes and every sortable register header risked rendering centered over
+left- or right-aligned cells. Justification now has exactly one authority: the base contributes none,
+`default`/`compact` center themselves, and `text`/`table` leave the flex default so a caller's
+`justify-start`/`justify-end` is the only such token on the element. Separately, a failed rename set
+page-level error state that renders outside the modal `<dialog>`, so a refusal ("needs ops role or
+higher") landed on an inert page behind the backdrop and Save appeared to do nothing; the dialog now
+owns its own error state, cleared on open, on close, and on each submit, and reports inside the modal.
+
+**Register honesty.** The hash tooltips are removed from the audit and decision-ledger registers. Both
+APIs truncate `entryHash` to 16 characters deliberately - the register bounds disclosure while still
+authenticating the complete chain - so a tooltip promising the complete hash while repeating the
+truncated one is a false affordance on a compliance surface, and it cost one extra tab stop per row on
+a register that can hold thousands. Neither API is widened to satisfy it: whether the register should
+disclose full identifiers at all is a disclosure question, deferred under follow-up key
+`fu-audit-full-identifier-disclosure`. **Un-defer trigger:** the next change to what the audit or
+ledger read surfaces disclose - an export path, a hash-verification affordance, or a payload widening -
+takes that decision with it. `ExecutionTimeline` columns are no longer sortable: recorded order is the
+meaning of an append-only register, and a viewer who reorders it reads a different claim than the one
+made. For registers where sorting IS legitimate, `Table` now composes its own caption from the active
+sort, so "newest first" cannot silently become false after the first click.
+
+**Named deferrals (charter #5).** `Checkbox`, `Radio`, `Tabs`, `Tooltip`, and directly-composed `Pill`
+have no product caller yet. Manufacturing one would change product behavior to satisfy a gate, and
+deleting them would discard the foundation set the prompt asked for, so each names the front-end prompt
+that lands its first honest caller, on the ledger-export precedent (D-116):
+
+| Primitive | First caller lands at |
+| --- | --- |
+| `Tooltip` | Prompt 3, application shell - icon-only chrome controls and the environment badge |
+| `Pill` (direct) | Prompt 5, role homes - summary-card status and context lines |
+| `Tabs` | Prompt 7, household context surface - sectioned dense client view |
+| `Checkbox` | Prompt 8, the table system - row selection across table-heavy registers |
+| `Radio` | Prompt 11, configuration authoring - exclusive-choice configuration fields |
+
+**Un-defer trigger:** each entry is retired by the prompt named beside it; a primitive still callerless
+after its prompt lands is deleted rather than re-deferred, so this table cannot become a standing
+amnesty.
+
+**Fence and test robustness.** `hasSpacing` in the presentation-primitives fence accepted only the
+`px-*`/`py-*` pair, so a fully-styled control written with Tailwind's `p-*` shorthand or per-side
+padding walked straight through the charter enforcement point; it now accepts every spelling of
+two-axis padding. The button recipe had the same shape of hole one token over - it demanded the
+literal `justify-center`, so the identical recipe written `justify-start` was invisible - and now
+requires any `justify-*`, which is also what lets the base recipe stop hard-coding one. Companions
+cover the shorthand, per-side, and justification-swap forms plus a layout-wrapper case that must
+still pass; both injections are recorded against PF-247. The 5,000-row e2e dropped its wall-clock
+scroll bound - a loaded runner failed a correct build, and the windowing property is already proven by
+the rendered-row assertions. The console empty-state assertion moved into its own spec served an empty
+list, because it previously created the very data that made its own retry unpassable; the rename
+refusal gained the failure-path spec charter #8 asks for, driven by the real loader refusal rather
+than a mock. `Table` header rows carry
+`aria-rowindex={1}`, required once `aria-rowcount` reports rows outside the DOM, and each sortable
+label gets a print-visible twin, since `globals.css` hides every control in print and the register
+would otherwise print headerless.
+
+The presentation tier re-measures at 1,664/6,000 lines on the tree as it lands, recorded beside the
+ceilings in `line-budget.test.ts`; no ceiling moves.
+
+**Revert path:** revert this changeset; the primitives, registers, fence, and specs return to their
+D-191 state, and the deferral table and `fu-audit-full-identifier-disclosure` revert with it.

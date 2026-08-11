@@ -33,6 +33,19 @@ export default function ConsolePage() {
   const [asOf, setAsOf] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<Household | null>(null);
+  // The dialog is modal, so the page behind it is inert: a rename failure has to
+  // report inside the dialog or the viewer sees nothing happen at all.
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  function openRename(household: Household) {
+    setRenameError(null);
+    setRenameTarget(household);
+  }
+
+  function closeRename() {
+    setRenameError(null);
+    setRenameTarget(null);
+  }
 
   function load(list: Household[]) {
     setHouseholds(list);
@@ -91,9 +104,10 @@ export default function ConsolePage() {
     if (!renameTarget) return;
     const next = String(new FormData(e.currentTarget).get("rename") ?? "").trim();
     if (!next || next === renameTarget.name) {
-      setRenameTarget(null);
+      closeRename();
       return;
     }
+    setRenameError(null);
     try {
       const res = await fetch("/api/crm/households", {
         method: "PATCH",
@@ -102,14 +116,14 @@ export default function ConsolePage() {
       });
       if (res.ok) {
         await reload();
-        setRenameTarget(null);
+        closeRename();
         showToast({ title: "Household renamed", description: `${next} is now current.` });
       } else {
         const body = await res.json().catch(() => ({}));
-        setError(body?.error?.message ?? "Could not rename (needs ops role or higher).");
+        setRenameError(body?.error?.message ?? "Could not rename (needs ops role or higher).");
       }
     } catch {
-      setError("Could not rename the household. Check your connection and try again.");
+      setRenameError("Could not rename the household. Check your connection and try again.");
     }
   }
 
@@ -161,7 +175,7 @@ export default function ConsolePage() {
                 </FreshValue>
                 <StatusBadge status={h.status} />
               </span>
-              <Button type="button" variant="secondary" aria-label={`Rename ${h.name}`} onClick={() => setRenameTarget(h)}>
+              <Button type="button" variant="secondary" aria-label={`Rename ${h.name}`} onClick={() => openRename(h)}>
                 Rename
               </Button>
             </li>
@@ -173,20 +187,25 @@ export default function ConsolePage() {
         open={renameTarget !== null}
         title="Rename household"
         description="The updated name is recorded in the tamper-evident audit trail."
-        onClose={() => setRenameTarget(null)}
+        onClose={closeRename}
         initialFocusRef={renameInputRef}
         footer={(
           <>
-            <Button type="button" variant="secondary" onClick={() => setRenameTarget(null)}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={closeRename}>Cancel</Button>
             <Button type="submit" form="rename-household-form">Save name</Button>
           </>
         )}
       >
         {renameTarget ? (
-          <form id="rename-household-form" onSubmit={rename}>
+          <form id="rename-household-form" onSubmit={rename} className="flex flex-col gap-3">
             <Field label="Household name" htmlFor="rename">
               <Input ref={renameInputRef} id="rename" name="rename" defaultValue={renameTarget.name} required />
             </Field>
+            {renameError ? (
+              <p role="alert" data-testid="rename-error" className="text-sm text-destructive">
+                {renameError}
+              </p>
+            ) : null}
           </form>
         ) : null}
       </Dialog>

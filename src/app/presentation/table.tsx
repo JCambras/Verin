@@ -128,6 +128,11 @@ export function Table({
     if (virtualized) setScrollTop(event.currentTarget.scrollTop);
   }
 
+  const sortedColumn = sort ? columns.find((column) => column.id === sort.columnId) : undefined;
+  const sortedCaption = sort && sortedColumn
+    ? `${caption} (re-sorted by ${sortedColumn.header}, ${sort.direction})`
+    : caption;
+
   return (
     <div
       ref={scrollRef}
@@ -145,9 +150,9 @@ export function Table({
       )}
     >
       <table className="w-full text-left text-sm" aria-rowcount={rows.length + 1}>
-        <caption className="sr-only">{caption}</caption>
+        <caption className="sr-only">{sortedCaption}</caption>
         <thead className="sticky top-0 z-10 bg-surface text-xs uppercase tracking-wide text-slate-600">
-          <tr>
+          <tr aria-rowindex={1}>
             {columns.map((column) => {
               const activeSort = sort?.columnId === column.id ? sort.direction : undefined;
               return (
@@ -162,16 +167,21 @@ export function Table({
                   )}
                 >
                   {column.sortable ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="table"
-                      onClick={() => changeSort(column.id)}
-                      className={joinClasses("w-full", column.align === "right" ? "justify-end" : "justify-start")}
-                    >
-                      {column.header}
-                      <span aria-hidden>{activeSort === "ascending" ? "↑" : activeSort === "descending" ? "↓" : "↕"}</span>
-                    </Button>
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="table"
+                        onClick={() => changeSort(column.id)}
+                        className={joinClasses("w-full", column.align === "right" ? "justify-end" : "justify-start")}
+                      >
+                        {column.header}
+                        <span aria-hidden>{activeSort === "ascending" ? "↑" : activeSort === "descending" ? "↓" : "↕"}</span>
+                      </Button>
+                      {/* Controls are hidden in print (globals.css §print), so the sortable
+                          label needs a printed twin or the register prints headerless. */}
+                      <span aria-hidden className="hidden print:block">{column.header}</span>
+                    </>
                   ) : column.header}
                 </th>
               );

@@ -26,11 +26,15 @@ export interface ExecutionTimelineRow {
   readonly devBadgeLabel: string;
 }
 
+/**
+ * No column is sortable: recorded order is the register's meaning here, and a viewer
+ * who could reorder it would be reading a different claim than the one made.
+ */
 const COLUMNS: readonly TableColumn[] = [
-  { id: "step", header: "Step", sortable: true },
-  { id: "target", header: "Target", sortable: true },
-  { id: "status", header: "Status", sortable: true },
-  { id: "when", header: "When", sortable: true },
+  { id: "step", header: "Step" },
+  { id: "target", header: "Target" },
+  { id: "status", header: "Status" },
+  { id: "when", header: "When" },
 ];
 
 export function ExecutionTimeline({ caption, rows }: { caption: string; rows: readonly ExecutionTimelineRow[] }) {
@@ -50,11 +54,10 @@ export function ExecutionTimeline({ caption, rows }: { caption: string; rows: re
             <TapToVerify details={row.identifiers} />
           </div>
         ),
-        sortValue: row.step,
       },
-      target: { content: row.target, sortValue: row.target },
-      status: { kind: "status", status: row.status, label: row.statusLabel, sortValue: row.statusLabel },
-      when: { content: row.timestamp, sortValue: row.timestamp, className: "whitespace-nowrap" },
+      target: { content: row.target },
+      status: { kind: "status", status: row.status, label: row.statusLabel },
+      when: { content: row.timestamp, className: "whitespace-nowrap" },
     },
   }));
   return <Table caption={caption} columns={COLUMNS} rows={tableRows} />;
