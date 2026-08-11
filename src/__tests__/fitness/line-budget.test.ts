@@ -151,8 +151,14 @@ const CEILINGS = {
   // chain-verify, restore-drill and seed edits) this bucket now measures for the
   // first time - 366 lines this branch did not write and cannot shrink. A
   // ceiling is measured on the tree AS IT LANDS, so it is re-taken here rather
-  // than inherited. Every raise above is a
-  // MEASURED ADR amendment recorded in ADR-0052, never a code
+  // than inherited. ADR-0055's consolidated wrap-up amendment (2026-08-10)
+  // raises it to 12400 against 12,139 re-measured lines: the shared gate
+  // constitution decomposed into `scripts/v3-gates/` modules under the 500-line
+  // per-file ceiling (the ADR-0055 rule set, its ratchets, and the CI-workflow
+  // authority the fences and the blocking runner both import), plus the
+  // registry-validation consolidation - 261 lines of named correction headroom.
+  // Every raise above is a
+  // MEASURED ADR amendment recorded in ADR-0052 or ADR-0055, never a code
   // change - a ceiling raised without a measurement beside it is a ceiling
   // nobody is holding, and a measurement left stale is the same ceiling with a
   // number nobody re-took. Tooling is REPORTED SEPARATELY, never averaged into
@@ -174,7 +180,7 @@ const CEILINGS = {
   // re-took is worth. That gap is recorded
   // honestly in D-172 under follow-up key `fu-corpus-test-tree-budget`, not left
   // implicit here.
-  tooling: 9300,
+  tooling: 12400,
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

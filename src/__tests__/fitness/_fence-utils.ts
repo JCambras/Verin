@@ -225,6 +225,29 @@ export interface ModuleReference {
 /** Every module reference, including non-literal dynamic import/require calls. */
 export function moduleReferences(sf: SourceFile): ModuleReference[] {
   const refs: ModuleReference[] = [];
+  const binaryExpressions = sf.getDescendantsOfKind(
+    SyntaxKind.BinaryExpression,
+  );
+  const callExpressions = sf.getDescendantsOfKind(
+    SyntaxKind.CallExpression,
+  );
+  const elementAccessExpressions = sf.getDescendantsOfKind(
+    SyntaxKind.ElementAccessExpression,
+  );
+  const identifiers = sf.getDescendantsOfKind(SyntaxKind.Identifier);
+  const importEqualsDeclarations = sf.getDescendantsOfKind(
+    SyntaxKind.ImportEqualsDeclaration,
+  );
+  const importTypes = sf.getDescendantsOfKind(SyntaxKind.ImportType);
+  const objectBindingPatterns = sf.getDescendantsOfKind(
+    SyntaxKind.ObjectBindingPattern,
+  );
+  const propertyAccessExpressions = sf.getDescendantsOfKind(
+    SyntaxKind.PropertyAccessExpression,
+  );
+  const variableDeclarations = sf.getDescendantsOfKind(
+    SyntaxKind.VariableDeclaration,
+  );
   const isDeclaredLocally = (node: Node): boolean =>
     node.getSymbol()?.getDeclarations().some(
       (declaration) => declaration.getSourceFile() === sf,
@@ -287,9 +310,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       readonly receiver: Node;
       readonly line: number;
     }> = [];
-    for (const binding of sf.getDescendantsOfKind(
-      SyntaxKind.ObjectBindingPattern,
-    )) {
+    for (const binding of objectBindingPatterns) {
       const declaration = binding.getParent();
       const receiver =
         Node.isVariableDeclaration(declaration) ||
@@ -309,9 +330,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         });
       }
     }
-    for (const assignment of sf.getDescendantsOfKind(
-      SyntaxKind.BinaryExpression,
-    )) {
+    for (const assignment of binaryExpressions) {
       if (
         assignment.getOperatorToken().getKind() !==
         SyntaxKind.EqualsToken
@@ -353,8 +372,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       .getSymbol()
       ?.getDeclarations()
       .find(Node.isVariableDeclaration);
-    const assignment = sf
-      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    const assignment = binaryExpressions
       .filter(
         (candidate) =>
           candidate.getOperatorToken().getKind() ===
@@ -453,8 +471,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         });
       });
     };
-    const assignmentSources = sf
-      .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+    const assignmentSources = binaryExpressions
       .filter((candidate) =>
         candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
         candidate.getStart() < expression.getStart()
@@ -691,9 +708,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
               );
             }
           }
-          for (const assignment of sf.getDescendantsOfKind(
-            SyntaxKind.BinaryExpression,
-          )) {
+          for (const assignment of binaryExpressions) {
             if (
               assignment.getOperatorToken().getKind() !==
                 SyntaxKind.EqualsToken ||
@@ -860,8 +875,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           ),
         });
       }
-      const simpleAssignments = sf
-        .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      const simpleAssignments = binaryExpressions
         .filter((candidate) =>
           candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
           candidate.getStart() < raw.getStart() &&
@@ -873,8 +887,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
         guaranteed: isGuaranteed(assignment),
         source: assignment.getRight(),
       })));
-      const destructuredAssignments = sf
-        .getDescendantsOfKind(SyntaxKind.BinaryExpression)
+      const destructuredAssignments = binaryExpressions
         .filter((candidate) =>
           candidate.getOperatorToken().getKind() === SyntaxKind.EqualsToken &&
           candidate.getStart() < raw.getStart() &&
@@ -998,7 +1011,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     const effective = [...callee.getArguments().slice(1), ...direct];
     return [effective[0], effective[1], false];
   };
-  for (const declaration of sf.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+  for (const declaration of variableDeclarations) {
     const initializer = declaration.getInitializer();
     const expression = unwrapExpression(initializer);
     const initializedFromNodeModule =
@@ -1033,7 +1046,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
-  for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+  for (const call of callExpressions) {
     for (const accessor of [isReflectGet, isPropertyDescriptorRead]) {
       const propertyRead = accessorArguments(call, accessor);
       if (!propertyRead) continue;
@@ -1089,7 +1102,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       kind: "implicit-jsx-runtime",
     });
   }
-  for (const imp of sf.getDescendantsOfKind(SyntaxKind.ImportEqualsDeclaration)) {
+  for (const imp of importEqualsDeclarations) {
     const moduleRef = imp.getModuleReference();
     if (!Node.isExternalModuleReference(moduleRef)) continue;
     const expression = moduleRef.getExpression();
@@ -1102,7 +1115,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       kind: "import-equals",
     });
   }
-  for (const imp of sf.getDescendantsOfKind(SyntaxKind.ImportType)) {
+  for (const imp of importTypes) {
     const argument = imp.getArgument();
     const literal = Node.isLiteralTypeNode(argument) ? argument.getLiteral() : undefined;
     refs.push({
@@ -1115,7 +1128,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
     });
   }
   const directRequireStarts = new Set<number>();
-  for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+  for (const call of callExpressions) {
     const expr = call.getExpression();
     if (expr.getKind() === SyntaxKind.ImportKeyword) {
       const arg = call.getArguments()[0];
@@ -1136,7 +1149,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
-  for (const access of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+  for (const access of propertyAccessExpressions) {
     const expression = access.getExpression();
     if (
       access.getName() === "createRequire" &&
@@ -1156,7 +1169,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
-  for (const identifier of sf.getDescendantsOfKind(SyntaxKind.Identifier)) {
+  for (const identifier of identifiers) {
     if (
       identifier.getText() === "require" &&
       !directRequireStarts.has(identifier.getStart()) &&
@@ -1170,7 +1183,7 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
       });
     }
   }
-  for (const access of sf.getDescendantsOfKind(SyntaxKind.ElementAccessExpression)) {
+  for (const access of elementAccessExpressions) {
     const argument = access.getArgumentExpression();
     if (
       isCreateRequireNamespace(access.getExpression()) &&

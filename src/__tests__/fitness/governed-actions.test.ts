@@ -4194,35 +4194,38 @@ ${body}
         `,
       });
 
-    const grantOrders = [
+    describe.each(Object.freeze([
       `executionGrant: ActionGrant<"execution.initiate">, piiGrant: ActionGrant<"pii.view">`,
       `piiGrant: ActionGrant<"pii.view">, executionGrant: ActionGrant<"execution.initiate">`,
-    ];
-
-    it.each(grantOrders)("PASSES two grants in either parameter order only when both authorities agree", (params) => {
-      expect(detectUnguardedGovernedSinks(multiGrantSink(params, `
+    ]))("two grants in either parameter order", (params) => {
+      it("PASSES only when both authorities agree", () => {
+        expect(detectUnguardedGovernedSinks(multiGrantSink(params, `
             assertActionGrant(executionGrant, "execution.initiate");
             assertActionGrant(piiGrant, "pii.view");
             assertSameTenant(executionGrant.tenant, piiGrant.tenant);
             return [];
-      `))).toEqual([]);
-    });
+        `))).toEqual([]);
+      });
 
-    it.each(grantOrders)("rejects either parameter order when the grant pair is not compared", (params) => {
-      expect(detectUnguardedGovernedSinks(multiGrantSink(params, `
+      it("rejects when the grant pair is not compared", () => {
+        expect(detectUnguardedGovernedSinks(multiGrantSink(params, `
             assertActionGrant(executionGrant, "execution.initiate");
             assertActionGrant(piiGrant, "pii.view");
             return [];
-      `))).toHaveLength(1);
+        `))).toHaveLength(1);
+      });
     });
 
     it("requires the exact action assertion for every grant, not only the first", () => {
-      expect(detectUnguardedGovernedSinks(multiGrantSink(grantOrders[0]!, `
+      expect(detectUnguardedGovernedSinks(multiGrantSink(
+        `executionGrant: ActionGrant<"execution.initiate">, piiGrant: ActionGrant<"pii.view">`,
+        `
             assertActionGrant(executionGrant, "execution.initiate");
             assertActionGrant(piiGrant, "execution.initiate");
             assertSameTenant(executionGrant.tenant, piiGrant.tenant);
             return [];
-      `))).toHaveLength(1);
+        `,
+      ))).toHaveLength(1);
     });
 
     const multiActionRoute = (

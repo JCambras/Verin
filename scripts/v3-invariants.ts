@@ -13,31 +13,56 @@
  * computed by running the mapped fences in this process. Registry integrity is
  * fenced by src/__tests__/fitness/v3-invariants.test.ts; the ratified-document
  * SHA-256 pins are re-verified here AND by the arch-version fence.
+ *
+ * Gates (ADR-0055) declare their wave, prompt range, structural predecessors,
+ * entry condition, outcome, and a list of TYPED requirements. This report is itself a document subject to
+ * the honesty ruling, so it does not merely PRINT the registry: it re-runs the
+ * whole gate rule set from the shared core (scripts/v3-gates.lib.ts) that the
+ * v3-gate-ordering fence proves rejects real violations, and refuses to print at
+ * all if the constitution is unsound. A gate reads green only when every typed
+ * requirement is met, every requirement is decidable here, and every predecessor is green.
  */
 import { readFileSync, existsSync, rmSync, mkdtempSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import {
+  activeInvariantRatchetProblems,
+  ciJobRunProblem,
+  ciJobRuns,
+  gateConstitutionProblems,
+  gateReadiness,
+  mappedFitnessProblems,
+  unattributedFitnessInvocationProblem,
+  parseCiJobs,
+  validateRegistry,
+  type Gate,
+  type Invariant as GateInvariant,
+  type Registry as GateRegistry,
+} from "./v3-gates.lib";
+import {
+  indexFitnessTestResults,
+  type FitnessTestResult,
+} from "./fitness-tests.lib";
 
 interface Mechanism {
   type: string;
   ref: string;
+  /** `ci-gate` only: the command the named blocking job must actually run. */
+  command?: string;
 }
-interface Invariant {
-  id: number;
+interface Invariant extends GateInvariant {
   group: string;
-  gate: string;
-  name: string;
   status: "active" | "not-yet-active";
   activatesWhen: string;
   mechanisms: Mechanism[];
   notes?: string;
 }
-interface Registry {
+interface Registry extends GateRegistry {
   architectureVersion: string;
   documents: Array<{ path: string; sha256: string }>;
-  gates: Record<string, string>;
+  gates: Record<string, Gate>;
   invariants: Invariant[];
 }
 
@@ -55,19 +80,54 @@ function fail(msg: string): never {
 }
 
 // ---------- load + guard the registry ----------
-const registryPath = join(ROOT, "v3-invariants.json");
+const registryFlagIndex = process.argv.indexOf("--registry");
+const registryOverride =
+  registryFlagIndex === -1
+    ? undefined
+    : process.argv[registryFlagIndex + 1];
+if (registryFlagIndex !== -1 && registryOverride === undefined) {
+  fail("--registry requires a path");
+}
+const registryPath =
+  registryOverride === undefined
+    ? join(ROOT, "v3-invariants.json")
+    : resolve(registryOverride);
 if (!existsSync(registryPath)) fail("v3-invariants.json is missing from the repo root");
 const registry = JSON.parse(readFileSync(registryPath, "utf8")) as Registry;
 
 const structural: string[] = [];
-if (registry.invariants.length !== 30) structural.push(`expected 30 invariants, found ${registry.invariants.length}`);
-for (const inv of registry.invariants) {
-  if (inv.status !== "active" && inv.status !== "not-yet-active") {
-    structural.push(`invariant ${inv.id}: illegal status '${inv.status}' (the registry stores activation only; results are computed here)`);
-  }
-  if (inv.status === "active" && !inv.mechanisms.some((m) => m.type === "fitness")) {
-    structural.push(`invariant ${inv.id}: active but maps to no runnable fitness mechanism`);
-  }
+const ciText = existsSync(join(ROOT, ".github/workflows/ci.yml")) ? readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8") : "";
+const ciJobs = parseCiJobs(ciText);
+// Registry-structural rules are the SAME implementation the v3-invariants fence
+// runs (scripts/v3-gates/registry.ts) - one shared rule set, two callers, no drift.
+const registryProblems = validateRegistry(registry, {
+  exists: (path) => existsSync(join(ROOT, path)),
+  ciJobs,
+});
+if (registryProblems.length > 0) {
+  fail(
+    `registry problems:\n  - ${registryProblems.join("\n  - ")}`,
+  );
+}
+// The WHOLE gate rule set (ADR-0055), not a subset: ordering, activation-ownership
+// integrity, prose/structured agreement, activation-artifact honesty, and the
+// no-empty-requirement-set rule. Same shared core the v3-gate-ordering fence proves
+// adversarially, so this report can never emit a claim that fence would reject.
+const gateProblems = gateConstitutionProblems(
+  registry,
+  (path) => existsSync(join(ROOT, path)),
+);
+if (gateProblems.length > 0) {
+  fail(
+    `gate constitution problems:\n  - ${gateProblems.join("\n  - ")}`,
+  );
+}
+const activeRatchetProblems =
+  activeInvariantRatchetProblems(registry);
+if (activeRatchetProblems.length > 0) {
+  fail(
+    `active invariant ratchet problems:\n  - ${activeRatchetProblems.join("\n  - ")}`,
+  );
 }
 
 // ---------- verify the ratified-document pins (arch-version, defense in depth) ----------
@@ -85,11 +145,12 @@ for (const doc of registry.documents) {
 if (structural.length > 0) fail(`registry/pin problems:\n  - ${structural.join("\n  - ")}`);
 
 // ---------- execute the mapped fitness fences (one vitest run, per-file results) ----------
-const ciText = existsSync(join(ROOT, ".github/workflows/ci.yml")) ? readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8") : "";
 const active = registry.invariants.filter((i) => i.status === "active");
-const fitnessFiles = [...new Set(active.flatMap((i) => i.mechanisms.filter((m) => m.type === "fitness").map((m) => m.ref)))];
+const gateFences = Object.values(registry.gates).flatMap((g) => g.requires.filter((r) => r.kind === "fitness").map((r) => r.ref!));
+const fitnessFiles = [...new Set([...active.flatMap((i) => i.mechanisms.filter((m) => m.type === "fitness").map((m) => m.ref)), ...gateFences])];
 
-const fileResults = new Map<string, boolean>();
+let reportedFitnessResults: FitnessTestResult[] = [];
+let fitnessRunStatus: number | null = 0;
 if (fitnessFiles.length > 0) {
   const outDir = mkdtempSync(join(tmpdir(), "v3-invariants-"));
   const outFile = join(outDir, "vitest.json");
@@ -112,25 +173,53 @@ if (fitnessFiles.length > 0) {
       cwd: ROOT,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
+      // Node's 1 MiB default kills the child with ENOBUFS, which would reach the
+      // report as a missing result rather than as the fence outcome it really is.
+      maxBuffer: Infinity,
     },
   );
+  fitnessRunStatus = run.status;
   try {
     interface VitestJson {
-      testResults: Array<{ name: string; status: string }>;
+      testResults?: FitnessTestResult[];
     }
     const report = JSON.parse(readFileSync(outFile, "utf8")) as VitestJson;
-    for (const tr of report.testResults) {
-      const name = tr.name.replace(/\\/g, "/");
-      const ref = fitnessFiles.find((f) => name.endsWith(f));
-      if (ref) fileResults.set(ref, tr.status === "passed");
+    // A report without results leaves every mapped file unproven below, which is
+    // the honest state - never an iteration crash inside the reporting path.
+    if (Array.isArray(report.testResults)) {
+      reportedFitnessResults = report.testResults;
     }
   } catch {
-    // No parseable report (vitest crashed before writing): trust the exit code, never assume green.
-    if (run.status !== 0) console.error(run.stderr || run.stdout);
-    for (const f of fitnessFiles) fileResults.set(f, run.status === 0);
+    const detail = run.error?.message || run.stderr || run.stdout;
+    if (run.status !== 0 && detail) console.error(detail);
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
+}
+
+const indexedFitnessResults = indexFitnessTestResults(
+  fitnessFiles,
+  reportedFitnessResults,
+  ROOT,
+);
+const fileResults = indexedFitnessResults.fileResults;
+if (indexedFitnessResults.problems.length > 0) {
+  fail(
+    `mapped fitness result problems:\n  - ${indexedFitnessResults.problems.join("\n  - ")}`,
+  );
+}
+// An invocation failure NO mapped file result explains cannot be attributed to
+// any invariant, so every state below would be a claim this run cannot support:
+// fail before printing one. A failure a mapped file DOES explain is reported
+// per invariant first (that attribution is the job's whole product) and fails
+// after the report, gate-only fences included.
+const unattributedFitness = unattributedFitnessInvocationProblem(
+  fitnessFiles,
+  fileResults,
+  fitnessRunStatus,
+);
+if (unattributedFitness !== undefined) {
+  fail(`mapped fitness fences failing:\n  - ${unattributedFitness}`);
 }
 
 // ---------- compute per-invariant state ----------
@@ -150,10 +239,13 @@ function stateOf(inv: Invariant): { state: State; details: string[] } {
         details.push(`fitness ${m.ref} passed`);
       }
     } else if (m.type === "ci-gate") {
-      if (ciText.includes(m.ref)) details.push(`ci-gate ${m.ref} declared in blocking ci.yml`);
+      // A job NAME can appear in a comment or a path; the blocking job must exist
+      // and actually run the mechanism's command (ruling `gatea-fix-review-2`).
+      const problem = ciJobRunProblem(ciJobs, m.ref, m.command ?? "");
+      if (problem === undefined) details.push(`ci-gate ${m.ref} runs '${m.command}' in a dedicated blocking ci.yml step`);
       else {
         ok = false;
-        details.push(`ci-gate ${m.ref} MISSING from blocking ci.yml`);
+        details.push(problem);
       }
     } else if (existsSync(join(ROOT, m.ref))) {
       details.push(`${m.type} ${m.ref} present`);
@@ -170,28 +262,69 @@ console.log(bold(`\nV3 PHASE-GATED INVARIANTS - ${registry.architectureVersion} 
 console.log(dim("states: active-pass (fences executed and green) · active-fail (blocks CI) · not-yet-active (prerequisites absent - NOT a pass)\n"));
 
 const counts: Record<State, number> = { "active-pass": 0, "active-fail": 0, "not-yet-active": 0 };
+const stateById = new Map<number, State>();
 let currentGroup = "";
 for (const inv of registry.invariants) {
   if (inv.group !== currentGroup) {
     currentGroup = inv.group;
-    console.log(bold(`  ${currentGroup}  ${dim(`[gate ${inv.gate}: ${registry.gates[inv.gate] ?? ""}]`)}`));
+    console.log(bold(`  ${currentGroup}`));
   }
   const { state, details } = stateOf(inv);
+  stateById.set(inv.id, state);
   counts[state] += 1;
   const id = `#${String(inv.id).padStart(2, " ")}`;
+  // Groups no longer imply a gate (ADR-0055 split the foundation group across gates A and B),
+  // so each line carries its own. The not-yet-active line is already dim - nesting dim() there
+  // would emit a reset mid-line and un-dim the rest.
+  const at = dim(`  [gate ${inv.gate}]`);
   if (state === "active-pass") {
-    console.log(`    ${green("✓ active-pass    ")} ${id} ${inv.name}`);
+    console.log(`    ${green("✓ active-pass    ")} ${id} ${inv.name}${at}`);
     for (const d of details) console.log(dim(`                         └ ${d}`));
   } else if (state === "active-fail") {
-    console.log(`    ${red("✗ ACTIVE-FAIL    ")} ${id} ${inv.name}`);
+    console.log(`    ${red("✗ ACTIVE-FAIL    ")} ${id} ${inv.name}${at}`);
     for (const d of details) console.log(red(`                         └ ${d}`));
     failures.push(`#${inv.id} ${inv.name}`);
   } else {
-    console.log(dim(`    ○ not-yet-active  ${id} ${inv.name}`));
+    console.log(dim(`    ○ not-yet-active  ${id} ${inv.name}  [gate ${inv.gate}]`));
     console.log(dim(`                         └ activates when: ${inv.activatesWhen}`));
   }
 }
 
+// ---------- gate readiness (ADR-0055: typed requirements; an undecidable gate is NEVER green) ----------
+console.log(bold("\n  PHASE GATES"));
+console.log(dim("  green (every typed requirement met) · not yet green (a requirement is unmet) · not-yet-verifiable (an outcome clause nothing can decide yet)\n"));
+const GATE_STATE_WIDTH = "○ not-yet-verifiable".length;
+const gateIndent = " ".repeat(4 + GATE_STATE_WIDTH + 1);
+const gateTag = (s: string) => s.padEnd(GATE_STATE_WIDTH, " ");
+for (const view of gateReadiness(registry, {
+  invariantState: (id) => stateById.get(id),
+  exists: (p) => existsSync(join(ROOT, p)),
+  ciRuns: (ref, command) => ciJobRuns(ciJobs, ref, command),
+  fitnessPassed: (ref) => fileResults.get(ref),
+})) {
+  const { key, gate } = view;
+  const label = `gate ${key} (wave ${gate.wave}, prompts ${gate.prompts.join("-")}) requires ${view.requirements.map((r) => r.label).join(" · ")}`;
+  if (view.state === "green") console.log(`    ${green(gateTag("✓ green"))} ${label}`);
+  else if (view.state === "not-yet-green") console.log(dim(`    ${gateTag("○ not yet green")} ${label}\n${gateIndent}└ awaiting: ${view.blocking.join(" · ")}`));
+  else console.log(dim(`    ${gateTag("○ not-yet-verifiable")} ${label}\n${gateIndent}└ no mechanism decides: ${view.blocking.join(" · ")}`));
+  // `awaiting` already lists these, but a reader planning the wave has to know WHICH of
+  // them no mechanism can close - they hold the gate below green after the rest go green.
+  if (view.state === "not-yet-green" && view.undecidable.length > 0) {
+    console.log(dim(`${gateIndent}└ no mechanism decides: ${view.undecidable.join(" · ")}`));
+  }
+  console.log(dim(`${gateIndent}└ wave may begin when: ${gate.entryCondition}`));
+}
+
 console.log(bold(`\n  summary: ${green(`${counts["active-pass"]} active-pass`)} · ${counts["active-fail"] > 0 ? red(`${counts["active-fail"]} active-fail`) : `${counts["active-fail"]} active-fail`} · ${dim(`${counts["not-yet-active"]} not-yet-active`)} (${registry.invariants.length} total)\n`));
 
+const fitnessFailures = mappedFitnessProblems(
+  fitnessFiles,
+  fileResults,
+  fitnessRunStatus,
+);
+if (fitnessFailures.length > 0) {
+  fail(
+    `mapped fitness fences failing:\n  - ${fitnessFailures.join("\n  - ")}${failures.length > 0 ? `\nACTIVE invariants failing:\n  - ${failures.join("\n  - ")}` : ""}`,
+  );
+}
 if (failures.length > 0) fail(`ACTIVE invariants failing:\n  - ${failures.join("\n  - ")}`);

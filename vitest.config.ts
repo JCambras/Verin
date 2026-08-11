@@ -1,6 +1,10 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
+import {
+  VITEST_FITNESS_INCLUDE,
+  VITEST_TEST_INCLUDE,
+} from "./scripts/fitness-tests.lib";
 
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -52,15 +56,20 @@ export default defineConfig({
     exclude: ["node_modules/**", ".next/**", "e2e/**"],
     // The budget is ORDINARY and shared - no fence gets a bespoke extension to
     // survive a scheduler - but it tracks the slowest HONEST check rather than
-    // the fastest machine. The heaviest fences resolve TYPES across the whole
-    // repo (dependency-rule, tokenized-factory-only, no-secret-fallback,
-    // tenant-context-required) and take ~9-10s on a fast dev machine; a GitHub
-    // runner is roughly twice that, so a 20s budget sat right at the edge and CI
-    // timed all three out in one run while every one passed locally (D-131). A
-    // timeout is a clock verdict, never a correctness one - 60s still catches a
-    // hang, and shrinking a fence to fit a stopwatch is how fences get weakened.
-    // The serial-execution note below is what makes even this budget honest.
-    testTimeout: 60000,
+    // the fastest machine. The type-resolving fences (dependency-rule,
+    // tokenized-factory-only, no-secret-fallback, tenant-context-required)
+    // take ~9-10s on a fast dev machine; a GitHub runner is roughly twice
+    // that, so a 20s budget sat right at the edge and CI timed all three out
+    // in one run while every one passed locally (D-131). The slowest honest
+    // check is now the charter-drift fence (b), whose disabled-registration
+    // analysis walks the import graph of every fitness file: measured ~46s on
+    // a fast dev machine, so on a runner the 60s budget reproduced the D-131
+    // failure shape one class up - deterministic CI timeout, green locally. A
+    // timeout is a clock verdict, never a correctness one - 180s still catches
+    // a hang, and shrinking a fence to fit a stopwatch is how fences get
+    // weakened. The serial-execution note below is what makes even this
+    // budget honest.
+    testTimeout: 180000,
     // Hooks get the SAME budget as test bodies. Spinning up a PGlite instance is
     // identical work whether it happens in a `beforeEach` or inline, and the 10s
     // hook default made the store-backed integration suites time out under
@@ -129,7 +138,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "fitness",
-          include: ["src/__tests__/fitness/**/*.{test,spec}.{ts,tsx}"],
+          include: [VITEST_FITNESS_INCLUDE],
           // The committed corpus is validated ONCE per run and injected, rather
           // than re-validated by every fence file that reads it - see
           // `_corpus-world-setup.ts` for why isolation makes that the only
@@ -144,7 +153,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "app",
-          include: ["src/**/*.{test,spec}.{ts,tsx}"],
+          include: [VITEST_TEST_INCLUDE],
           exclude: ["src/__tests__/fitness/**"],
         },
       },

@@ -105,7 +105,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "provenance-trace"
+          "ref": "provenance-trace",
+          "command": "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts"
         }
       ]
     },
@@ -129,7 +130,8 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "knip"
+          "ref": "knip",
+          "command": "pnpm exec knip"
         },
         {
           "type": "config",
@@ -201,7 +203,8 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "e2e"
+          "ref": "e2e",
+          "command": "pnpm exec playwright test"
         },
         {
           "type": "config",
@@ -217,7 +220,12 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "axe"
+          "ref": "e2e",
+          "command": "pnpm exec playwright test"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/axe-required.test.ts"
         }
       ]
     },
@@ -252,7 +260,8 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "load-smoke"
+          "ref": "load-smoke",
+          "command": "pnpm exec tsx scripts/load-smoke.ts"
         },
         {
           "type": "procedure",
@@ -300,7 +309,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "audit-chain-verify"
+          "ref": "audit-chain-verify",
+          "command": "pnpm exec tsx scripts/audit-chain-verify.ts"
         },
         {
           "type": "fitness",
@@ -335,7 +345,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "unit"
+          "ref": "test",
+          "command": "pnpm exec tsx scripts/fitness-tests.ts"
         }
       ]
     },
@@ -347,15 +358,23 @@
       "mechanisms": [
         {
           "type": "ci-gate",
-          "ref": "secret-scan"
+          "ref": "secret-scan",
+          "command": "gitleaks git --config .gitleaks.toml --redact --no-banner --exit-code 1 ."
         },
         {
           "type": "ci-gate",
-          "ref": "sast"
+          "ref": "sast",
+          "command": "semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error"
         },
         {
           "type": "ci-gate",
-          "ref": "dependency-audit"
+          "ref": "dependency-audit",
+          "command": "pnpm audit --audit-level=high"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "dependency-audit",
+          "command": "pnpm exec tsx scripts/license-audit.ts"
         },
         {
           "type": "config",
@@ -418,6 +437,19 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/charter-drift.test.ts"
+        },
+        {
+          "type": "file",
+          "ref": "scripts/fitness-tests.lib.ts"
+        },
+        {
+          "type": "file",
+          "ref": "scripts/fitness-tests.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "test",
+          "command": "pnpm exec tsx scripts/fitness-tests.ts"
         }
       ]
     },
@@ -490,7 +522,37 @@
         },
         {
           "type": "ci-gate",
-          "ref": "v3-invariants"
+          "ref": "v3-invariants",
+          "command": "pnpm exec tsx scripts/v3-invariants.ts"
+        }
+      ]
+    },
+    {
+      "id": "v3-gate-ordering",
+      "title": "Every gate of the ratified sequence is registered with typed requirements; nothing a gate requires is proven after it closes; activation ownership, complete gate metadata, and complete requirement sets are ratcheted; Gate A owns 1/2/4/5 and references prompt-5 guarantees 7/8/9, while Gate B requires 3 (ADR-0055)",
+      "status": "enforced",
+      "phase": "v3-0",
+      "mechanisms": [
+        {
+          "type": "adr",
+          "ref": "docs/adr/0055-gate-a-invariant-ordering.md"
+        },
+        {
+          "type": "config",
+          "ref": "v3-invariants.json"
+        },
+        {
+          "type": "file",
+          "ref": "scripts/v3-gates.lib.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/v3-gate-ordering.test.ts"
+        },
+        {
+          "type": "ci-gate",
+          "ref": "v3-invariants",
+          "command": "pnpm exec tsx scripts/v3-invariants.ts"
         }
       ]
     },
@@ -526,7 +588,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "golden-cases"
+          "ref": "golden-cases",
+          "command": "pnpm exec tsx scripts/golden-cases-validate.ts"
         }
       ]
     },
@@ -539,6 +602,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/demo-skeleton-honesty.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/demo-surface-completeness.test.ts"
         }
       ]
     },
@@ -638,7 +705,8 @@
         },
         {
           "type": "ci-gate",
-          "ref": "corpus"
+          "ref": "corpus",
+          "command": "pnpm exec tsx scripts/corpus-validate.ts"
         }
       ]
     },

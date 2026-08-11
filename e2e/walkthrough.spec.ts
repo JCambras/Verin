@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
 import { login, PRINCIPAL } from "./helpers";
+import { assertNoAxeViolations } from "./axe";
+import { AUTHENTICATED_AXE_ROUTES, LOGIN_AXE_ROUTES } from "./axe-routes";
 
 /**
  * HAPPY-PATH walkthrough (charter deliverable E / Part-2 proof-of-life):
@@ -37,31 +38,16 @@ test("login → account opening → e-sign suspend/resume → finalize → audit
   await expect(page.getByRole("cell", { name: "financial_account.create" })).toBeVisible();
 });
 
-test("key skeleton pages have no serious/critical axe violations (WCAG 2.2 AA)", async ({ page }) => {
-  await page.goto("/login");
-  await checkAxe(page, "/login");
-  await login(page, PRINCIPAL); // authenticate once; the session persists across navigations
-  // /app/console and /app/audit render their content from a client-side fetch, so
-  // axe must wait for the LOADED state — scanning the "Loading…" placeholder would
-  // let an inaccessible table ship while the gate stays green.
-  const readyWhen: Record<string, (p: import("@playwright/test").Page) => Promise<void>> = {
-    "/app": async (p) => expect(p.getByRole("heading", { name: "What do you want to do?" })).toBeVisible(),
-    "/app/account-opening": async (p) => expect(p.getByLabel("Household name")).toBeVisible(),
-    "/app/console": async (p) => expect(p.getByText("Loading…")).toHaveCount(0),
-    "/app/audit": async (p) => expect(p.getByTestId("audit-verdict")).toBeVisible(),
-  };
-  // Includes /app/audit (Wren axe-gate blind spot) — principal can view the trail.
-  for (const url of ["/app", "/app/account-opening", "/app/console", "/app/audit"]) {
-    await page.goto(url);
-    await readyWhen[url]!(page);
-    await checkAxe(page, url);
+test("key skeleton pages have no Axe violations (WCAG 2.2 AA)", async ({ page }) => {
+  for (const route of LOGIN_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
+  }
+  await login(page, PRINCIPAL);
+  for (const route of AUTHENTICATED_AXE_ROUTES) {
+    await page.goto(route.path);
+    await expect(page.locator(route.readySelector)).toBeVisible();
+    await assertNoAxeViolations(page, route.path);
   }
 });
-
-async function checkAxe(page: import("@playwright/test").Page, url: string) {
-  const results = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-    .analyze();
-  const serious = results.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
-  expect(serious.map((v) => `${url}:${v.id}`), JSON.stringify(serious, null, 2)).toEqual([]);
-}

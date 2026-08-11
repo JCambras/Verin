@@ -9254,3 +9254,3390 @@ commit); `pnpm typecheck`, `pnpm lint`, `pnpm knip`, and the full test suite are
 reverted tree.
 
 **Date:** 2026-08-10 (post-merge follow-up to PR #34, firm ruling `p9-temporal-fact-bytes`).
+
+## PF-237 · v3 gate-ordering fence · `src/__tests__/fitness/v3-gate-ordering.test.ts`
+
+**Invariant (ADR-0055, captain ruling `gate-a-ordering` 2026-07-28; v3 §17 "never fake green"):** no
+phase gate may require an invariant whose activation prerequisite lands in a later wave. Gate A requires
+invariants 1, 2, 4, and 5; invariant 3 is required at Gate B because its prerequisite is prompt 10. No
+document, proof, or UI may claim invariant 3 is implemented before prompt 10 exists.
+
+Three injections were applied to the real `v3-invariants.json`, each observed failing, each reverted.
+
+**Injection 1 - re-create the original circular dependency.** Moved invariant 3 back to `gate: "A"` and
+set `gates.A.requires` to `[1,2,3,4,5]`.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave
+AssertionError: v3-invariants.json gate-ordering problems:
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): gated at A (wave A, prompts 4-7) but its activation prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - move the invariant to the gate that covers prompt 10 (ADR-0055).
+ ❯ src/__tests__/fitness/v3-gate-ordering.test.ts:174:92
+```
+The runner caught it independently (defense in depth, blocking CI job `v3-invariants`):
+```
+v3-invariants: registry/pin problems:
+  - invariant 3: gated at A (prompts 4-7) but activates at prompt 10 - the gate could never go green (ADR-0055)
+```
+
+**Injection 2 - claim invariant 3 is implemented before prompt 10 exists.** Flipped invariant 3 to
+`status: "active"` with a real (unrelated) fitness mechanism, the shape that would otherwise satisfy the
+neighbouring registry fence.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave
+AssertionError: v3-invariants.json gate-ordering problems:
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/account-opening.yaml does not exist - claiming an unimplemented invariant (ADR-0055)
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/money-movement.yaml does not exist - claiming an unimplemented invariant (ADR-0055)
+```
+
+**Injection 3 - dodge the ordering rule by understating the machine-readable prerequisite.** Moved
+invariant 3 to gate A but set `activationPrompts: [7]` while `activatesWhen` still named prompt 10 - the
+evasion an ordering rule reading only structured data would miss.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave
+AssertionError: v3-invariants.json gate-ordering problems:
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activatesWhen names prompt(s) 10 that activationPrompts omits - the structured prerequisite understates the prose
+```
+
+**Companions (continuous in-CI adversarial proof, `describe("detects …")`):** the original defect
+(gate A requiring invariant 3), a `requires` set drifting from the registry's own gate assignment, a
+not-yet-active invariant with no declared activation prompt, prose naming a later prompt than the
+structured field admits, an invariant claimed active before its artifacts exist, an undeclared gate key,
+overlapping gate prompt ranges, and a positive case proving the corrected ordering passes (so the fence
+cannot be green by always failing).
+
+**Revert:** `v3-invariants.json` restored from the pre-injection copy after each injection;
+`vitest run src/__tests__/fitness/v3-gate-ordering.test.ts` → `Tests 10 passed (10)`, `pnpm v3:invariants`
+→ `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)`.
+
+**Date:** 2026-07-28 (ADR-0055, D-187).
+
+### PF-237 (continued) · review round `gatea-opus-review-1` · complete gate model, one shared rule set
+
+**What changed (ADR-0055, amended in place).** All nine gates of the ratified sequence are registered;
+`gates.<G>.requires` became a list of TYPED requirements (`invariant` | `artifact` | `fitness` |
+`ci-gate` | `evidence`); activation OWNERSHIP was separated from gate REQUIREMENT; a gate with no
+machine-checkable requirement is rejected; and the rule set moved to `scripts/v3-gates.lib.ts` so the
+BLOCKING RUNNER enforces every rule the fence does - the runner's report is itself a document bound by
+ruling clause 5, and it previously re-checked only the ordering rule. Five further injections were
+applied to the real `v3-invariants.json`, each observed failing, each reverted.
+
+**Injection 4 - a gate with nothing to decide.** Removed gate C's only machine-checkable requirement
+(its reference to invariant 1), leaving the `evidence` clause. Under the previous model this shape read
+`✓ green`.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate C: declares no machine-checkable requirement (invariant | artifact | fitness | ci-gate) - a gate with nothing to decide would read green merely by being registered (ADR-0055)
+```
+The runner refused to print the report at all (blocking CI job `v3-invariants`, exit 1):
+```
+v3-invariants: registry/pin problems:
+  - gate C: declares no machine-checkable requirement (invariant | artifact | fitness | ci-gate) - a gate with nothing to decide would read green merely by being registered (ADR-0055)
+```
+
+**Injection 5 - activation ownership drifting from the requirement list.** Removed invariant 3 from gate
+B's `requires` while leaving `invariants[3].gate = "B"` - the drift the old EQUAL check caught in one
+direction only.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate B: owns invariant 3 (its activation gate) but does not require it - activation ownership and gate requirements drifted apart (ADR-0055)
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry
+AssertionError: expected [] to deeply equal [ 3 ]
+```
+
+**Injection 6 - the circular dependency re-created BY REFERENCE.** Left invariant 3 owned by gate B and
+had gate 0 (prompts 1-3) merely *reference* it - the evasion the new reference model opens up and the
+ordering rule must still decide.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate 0 (wave 0, prompts 1-3): requires #3 (activation is owned by gate B), whose prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - require it at the gate that covers prompt 10 (ADR-0055).
+```
+Independently caught by the runner:
+```
+v3-invariants: registry/pin problems:
+  - gate 0 (wave 0, prompts 1-3): requires #3 (activation is owned by gate B), whose prerequisite is prompt 10, which lands AFTER that gate closes. The gate could never go green without faking activation - require it at the gate that covers prompt 10 (ADR-0055).
+```
+
+**Injection 7 - the reported defect: an entry condition depending on an unregistered gate.** Deleted gate
+C, leaving gate D's `entryCondition` citing "Gate C is green" - a precondition nothing can compute.
+
+**Observed failure (verbatim):**
+```
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate D: entryCondition depends on "Gate C", which is not registered - nothing can compute or report it (ADR-0055)
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: every gate of the ratified prompt sequence is registered, over its ratified prompt range
+AssertionError: expected [ '0', 'A', 'B', 'D', 'E', 'F', …(2) ] to deeply equal [ '0', 'A', 'B', 'C', 'D', 'E', …(3) ]
+```
+
+**Injection 8 - the RUNNER's own honesty (the finding this round).** Injections 2 and 3 above were
+re-applied and run through `pnpm v3:invariants` alone, because the previous runner re-checked only the
+ordering rule and would have printed a report claiming invariant 3 was implemented.
+
+**Observed failure (verbatim), invariant 3 flipped to `active` with a real fitness mechanism:**
+```
+v3-invariants: registry/pin problems:
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/account-opening.yaml does not exist - claiming an unimplemented invariant (ADR-0055)
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): marked 'active' but its activation artifact config/domains/money-movement.yaml does not exist - claiming an unimplemented invariant (ADR-0055)
+```
+**and, understating the structured prerequisite while the prose still named prompt 10:**
+```
+v3-invariants: registry/pin problems:
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activatesWhen names prompt(s) 10 that activationPrompts omits - the structured prerequisite understates the prose
+```
+
+**Companions added (continuous in-CI adversarial proof, `describe("detects …")`):** a gate referencing an
+invariant a later gate owns; an invariant its own activation gate does not require; a gate with no
+machine-checkable requirement; a requirement naming no prompt, an unknown kind, or an unregistered
+invariant; an `evidence` requirement with no note (silent deferral); an artifact produced after its own
+gate closes; an entry condition depending on an unregistered or later gate; and three readiness cases
+proving a requirement-less gate and a gate carrying an unmechanized outcome clause both render
+`not-yet-verifiable` while a fully-met gate renders `green` (so the readiness computation cannot pass by
+always failing).
+
+**Revert:** `v3-invariants.json` restored byte-identically from the pre-injection copy after each
+injection (verified by string comparison);
+`vitest run src/__tests__/fitness/v3-gate-ordering.test.ts` → `Tests 21 passed (21)`, `pnpm test` →
+`548 passed`, `pnpm v3:invariants` → `5 active-pass · 0 active-fail · 25 not-yet-active (30 total)` with
+all nine gates printed and NONE green (gate 0 `not-yet-verifiable`; A-I `not yet green`).
+
+**Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-opus-review-1`).
+
+### PF-237 (continued, 2nd review round) · ruling `gatea-fix-review-2` · proof points, structural CI evidence, two ratchets
+
+**SUPERSESSION CROSS-REFERENCE (read this before re-running injections 1-8).** The entries above are
+preserved as the historical record of what actually ran at the time, against the implementations of the
+day; they are NOT rewritten to quote strings they never emitted. Two of them no longer reproduce
+verbatim:
+
+| Historical entry | What it proved then | Where that rule lives now |
+|---|---|---|
+| Injections 1-3, test name `enforces: no phase gate requires an invariant whose activation prerequisite lands in a later wave` | the first cut of the ordering rule, computed inline in the fence | test is now `enforces: nothing a phase gate requires lands after that gate closes`; the rule is `gateOrderingProblems` in `scripts/v3-gates.lib.ts` |
+| Injections 1, 6 failure text `... but its activation prerequisite is prompt 10, which lands AFTER that gate closes ...` / `invariant 3: gated at A (prompts 4-7) but activates at prompt 10` | a gate requiring an invariant whose prerequisite is later | rule (e), now decided from PROOF POINTS and emitted by `gateOrderingProblems`; injection 1 is re-run verbatim under the current implementation as **injection 16** below |
+
+Injections 4, 5, 7 and 8 still reproduce verbatim. Everything else below is current, byte-identical
+output captured in this round; `v3-invariants.json` and `.github/workflows/ci.yml` were each restored
+from a pre-injection copy and verified identical with `diff -q` after every injection.
+
+**What changed (ADR-0055, amended in place again).** The ordering rule now decides from a requirement's
+PROOF POINT rather than from a status short-circuit, so a gate referencing an invariant a LATER gate owns
+fails whether or not that invariant is already active; both prose scanners cover every spelling the
+registry uses (ranges, comma lists, conjunctions, lower-case gate names); a `ci-gate` requirement must
+name the command its blocking job runs, checked against a structural parse of the workflow; Gate B
+requires invariant 16 and Gate C invariant 11 (each complete inside that gate's own range) while
+invariant 6 stays a Gate D requirement; and two RATCHETS pin the complete 30-invariant
+activation-ownership map and every gate's invariant requirement set in the fence file.
+
+**Injection 9 - the circular dependency by reference to an ALREADY-ACTIVE invariant.** Added
+`{"kind": "invariant", "id": 7}` to `gates.A.requires`. Invariant 7 is `active` and owned by gate D
+[16-19], so the previous rule read it as "lands at prompt 0" and passed.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate A (wave A, prompts 4-7): requires #7 (activation owned by gate D), which is not proven until prompt 19, where gate D proves its activation - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 19 (ADR-0055).: expected [ Array(1) ] to deeply equal []
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry
+AssertionError: expected [ 1, 2, 4, 5, 7 ] to deeply equal [ 1, 2, 4, 5 ]
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's invariant requirement set is the ruled one
+AssertionError: expected { '0': [], A: [ 1, 2, 4, 5, 7 ], …(7) } to deeply equal { '0': [], A: [ 1, 2, 4, 5 ], …(7) }
+```
+The runner refused to print the report at all (blocking CI job `v3-invariants`, exit 1):
+```
+v3-invariants: registry/pin problems:
+  - gate A (wave A, prompts 4-7): requires #7 (activation owned by gate D), which is not proven until prompt 19, where gate D proves its activation - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 19 (ADR-0055).
+```
+
+**Injection 10 - the reported ci-gate substring hole.** Deleted the whole `e2e:` job from
+`.github/workflows/ci.yml`, leaving only a comment naming it
+(`# the e2e job was here; e2e/demo-journey.spec.ts still names it`). Under `ciText.includes("e2e")` the
+gate-0 requirement kept reading `met` off that comment.
+
+**Observed report line (verbatim), gate 0's `e2e` requirement now unmet:**
+```
+    ○ not yet green      gate 0 (wave 0, prompts 1-3) requires docs/demo-contract.md · config/demo/scenarios.yaml · docs/golden-cases.md · golden-cases · src/__tests__/fitness/demo-skeleton-honesty.test.ts · e2e · every demo-contract §4 required surface exists and is reachable in the walking skeleton
+                         └ awaiting: e2e
+```
+
+**Injection 11 - the same hole on the INVARIANT-MECHANISM side.** Kept the `audit-chain-verify` job but
+replaced its blocking command with `echo 'audit-chain-verify temporarily disabled'`, so the job NAME
+still appears everywhere it used to.
+
+**Observed failure (verbatim), the runner (blocking CI job `v3-invariants`, exit 1):**
+```
+    ✗ ACTIVE-FAIL     # 5 Ledger records are append-only  [gate A]
+                         └ fitness src/__tests__/fitness/audited-write-required.test.ts passed
+                         └ ci-gate audit-chain-verify does not run 'pnpm audit:chain' as a blocking ci.yml job
+                         └ file src/infrastructure/store/migrations.ts present
+```
+and the registry fence, independently:
+```
+ FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+
+**Injection 12 - the prose evasion written as a COMMA LIST.** Set invariant 3's `activationPrompts` to
+`[9]` while `activatesWhen` read "the vocabulary and the migration land (Wave B prompts 9, 10) so no
+decision domain survives as a core module". The previous scanner read only `9` from that spelling, so
+rule (f) passed and the understated prerequisite stood.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activatesWhen names prompt(s) 10 that activationPrompts omits - the structured prerequisite understates the prose: expected [ Array(1) ] to deeply equal []
+```
+Independently caught by the runner:
+```
+v3-invariants: registry/pin problems:
+  - invariant 3 (No core module, directory, or evaluator branch is named for a decision domain): activatesWhen names prompt(s) 10 that activationPrompts omits - the structured prerequisite understates the prose
+```
+
+**Injection 13 - an entry condition depending on an unregistered gate, written in LOWER CASE.** Set gate
+C's `entryCondition` to "gate Z is green: money movement and account opening are expressible as data."
+The previous scanner compiled without `/i`, so a lower-case gate name skipped rule (h) entirely.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate C: entryCondition depends on "Gate Z", which is not registered - nothing can compute or report it (ADR-0055): expected [ Array(1) ] to deeply equal []
+```
+Independently caught by the runner:
+```
+v3-invariants: registry/pin problems:
+  - gate C: entryCondition depends on "Gate Z", which is not registered - nothing can compute or report it (ADR-0055)
+```
+
+**Injection 14 - the reported ratchet gap: an invariant pushed to a LATER gate with both requirement
+lists updated.** Moved invariant 6 from gate D to gate E, removed it from `gates.D.requires`, and added
+it to `gates.E.requires` - the shape that passes every rule in `gateOrderingProblems` (verified: the
+runner printed a clean report, `0` occurrences of "registry/pin problems") and silently lets Gate D go
+green earlier.
+
+**Observed failure (verbatim), caught ONLY by the ratchets, which is why they exist:**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): the ratified activation-ownership map of all 30 invariants
+AssertionError: expected { '1': 'A', '2': 'A', '3': 'B', …(27) } to deeply equal { '1': 'A', '2': 'A', '3': 'B', …(27) }
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's invariant requirement set is the ruled one
+AssertionError: expected { '0': [], A: [ 1, 2, 4, 5 ], …(7) } to deeply equal { '0': [], A: [ 1, 2, 4, 5 ], …(7) }
+```
+
+**Injection 15 - a gate quietly dropping a ruled requirement.** Removed invariant 16 from
+`gates.B.requires`, the shape in which Gate B could read green after prompt 9 with the closed policy-AST
+prohibition unproven.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's invariant requirement set is the ruled one
+AssertionError: expected { '0': [], A: [ 1, 2, 4, 5 ], …(7) } to deeply equal { '0': [], A: [ 1, 2, 4, 5 ], …(7) }
+```
+
+**Injection 16 - historical injection 1, re-run verbatim under the current implementation.** Moved
+invariant 3 back to `gate: "A"` and set `gates.A.requires` to `[1,2,3,4,5]` - the original circular Gate
+A dependency. This is the entry the supersession table above points at; the rule still rejects it, and
+now three checks catch it independently.
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+AssertionError: v3-invariants.json gate-ordering problems:
+gate A (wave A, prompts 4-7): requires #3, which is not proven until prompt 10 - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 10 (ADR-0055).: expected [ Array(1) ] to deeply equal []
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry
+AssertionError: expected [ 1, 2, 3, 4, 5 ] to deeply equal [ 1, 2, 4, 5 ]
+
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): the ratified activation-ownership map of all 30 invariants
+AssertionError: expected { '1': 'A', '2': 'A', '3': 'A', …(27) } to deeply equal { '1': 'A', '2': 'A', '3': 'B', …(27) }
+```
+Independently caught by the runner (exit 1, no report printed):
+```
+v3-invariants: registry/pin problems:
+  - gate A (wave A, prompts 4-7): requires #3, which is not proven until prompt 10 - AFTER this gate closes at prompt 7. The gate could never go green without faking activation - require it at a gate that covers prompt 10 (ADR-0055).
+```
+(The `(activation owned by gate X)` clause seen in injection 9 is absent here because this injection
+moves invariant 3's OWNERSHIP to gate A as well, so the requiring gate is the owner.)
+
+**Companions added (continuous in-CI adversarial proof, `describe("detects …")`):** a gate referencing
+an already-active invariant a later gate owns; a referenced invariant whose `activationPrompts` are
+dropped on activation, leaving only its owner gate to place it (the fail-closed direction); a `ci-gate`
+requirement naming a job but no command; the prose evasion in comma-list and conjunction form; a
+lower-case gate name in an `entryCondition`; every accepted prompt spelling and a set of evasive
+near-matches that must NOT be read as prompt references (ADR ids, `§`/section numbers, dates, bare
+counts, a trailing non-numeric clause); a structural CI parse in which a job named only in a comment and
+a job running the wrong command both fail while the real workflow satisfies all three registry
+`ci-gate`s; a readiness case holding a gate below green when its job does not run the command; and both
+ratchets, shown rejecting a moved assignment and a dropped requirement while still matching the live
+registry (so neither can pass by always failing). The registry fence gained the matching companions for
+a name-only and a wrong-command `ci-gate` mechanism, plus the honest case.
+
+**Revert:** `v3-invariants.json` and `.github/workflows/ci.yml` restored from pre-injection copies after
+every injection and verified byte-identical with `diff -q`; `git status` clean of both files.
+`vitest run src/__tests__/fitness/v3-gate-ordering.test.ts src/__tests__/fitness/v3-invariants.test.ts` →
+`Tests 42 passed (42)`, `pnpm test` → `562 passed`, `pnpm v3:invariants` →
+`5 active-pass · 0 active-fail · 25 not-yet-active (30 total)` with all nine gates printed and NONE green
+(gate 0 `not-yet-verifiable`; A-I `not yet green`).
+
+**Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-fix-review-2`).
+
+### PF-237 (continued, 3rd review round) · ruling `gatea-review-3` · a real YAML parse, shell-comment honesty, and a complete awaiting line
+
+**SUPERSESSION CROSS-REFERENCE (read before re-running injections 10, 11 and 19).** Injections 10 and 11
+above are preserved verbatim as what actually ran against the hand-rolled line scanner of that round.
+Their VERDICTS still hold under the current implementation (a job named only in a comment, and a job
+whose command was swapped out, both fail), but the mechanism they exercised is gone: `parseCiJobs` no
+longer scans lines at all. Injection 11's scenario is re-run under the current implementation as
+**injection 19** below, and injection 17 covers the case the scanner could not see.
+
+**What changed.** `parseCiJobs` now parses `.github/workflows/ci.yml` with the real YAML parser
+(`yaml`, already a declared dependency) and walks `jobs.<key>.steps[].run` structurally, instead of
+matching indented lines with regexes. Two confirmed evasions of the scanner are closed by that, and a
+third - which YAML alone does NOT close - by stripping SHELL comments from each `run` script: inside a
+`|` block scalar a `#` is literal script text, so the YAML parser correctly hands over a commented-out
+command and only the shell treats it as disabled. Separately, `GateView.blocking` now lists EVERY label
+holding a gate back rather than the unmet ones alone, with the undecidable subset exposed as
+`GateView.undecidable`, so a gate's `awaiting:` line can never understate what it is waiting on.
+
+**Injection 17 - a blocking command disabled by a SHELL comment (the reported hole).** Replaced
+`audit-chain-verify`'s step with a block scalar whose command is commented out:
+```yaml
+      - name: seed + verify org audit chains
+        run: |
+          # pnpm db:seed && pnpm audit:chain temporarily disabled while we debug
+          echo skip
+```
+Under the previous parser every non-blank line of the block was collected as run text, so
+`ciJobRuns(jobs, "audit-chain-verify", "pnpm audit:chain")` returned `true` and invariant 5 kept reading
+`active-pass` with its blocking gate switched off.
+
+**Observed failure (verbatim), the registry fence:**
+```
+ FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+and the runner, independently (blocking CI job `v3-invariants`, exit 1):
+```
+    ✗ ACTIVE-FAIL     # 5 Ledger records are append-only  [gate A]
+                         └ fitness src/__tests__/fitness/audited-write-required.test.ts passed
+                         └ ci-gate audit-chain-verify does not run 'pnpm audit:chain' as a blocking ci.yml job
+                         └ file src/infrastructure/store/migrations.ts present
+
+  summary: 4 active-pass · 1 active-fail · 25 not-yet-active (30 total)
+
+v3-invariants: ACTIVE invariants failing:
+  - #5 Ledger records are append-only
+```
+
+**Injection 18 - a column-0 comment inside the `jobs:` block (a FALSE-NEGATIVE proof, recorded as such).**
+Inserted `# ---- verification gates ----` at column 0 immediately above the `audit-chain-verify:` job
+key. This injection is the inverse of the others: the previous scanner treated any column-0 line as
+leaving the `jobs:` block, so it FAILED on a workflow that is entirely correct, blaming a job that
+plainly exists and runs its command. The proof is therefore that the check now stays green here while
+the old code did not.
+
+**Observed, the previous line scanner transcribed verbatim and run over the injected file:**
+```
+jobs: quality, test, knip, e2e, secret-scan, sast, dependency-audit, provenance-trace
+has audit-chain-verify: false
+```
+(four jobs silently lost: `audit-chain-verify`, `v3-invariants`, `golden-cases`, `load-smoke` - including
+the blocking job this very report runs in.)
+
+**Observed, the current parser over the same injected file:**
+```
+quality, test, knip, e2e, secret-scan, sast, dependency-audit, provenance-trace, audit-chain-verify, v3-invariants, golden-cases, load-smoke
+audit-chain-verify runs pnpm audit:chain: true
+```
+with `vitest run src/__tests__/fitness/v3-invariants.test.ts src/__tests__/fitness/v3-gate-ordering.test.ts`
+→ `Tests 48 passed (48)`.
+
+**Injection 19 - the command surviving only as a step `name:` and an `env:` value.** Replaced
+`audit-chain-verify`'s real step with one that mentions the command twice without running it:
+```yaml
+      - name: pnpm db:seed && pnpm audit:chain
+        env:
+          RESTORE_ME: pnpm db:seed && pnpm audit:chain
+        run: echo skip
+```
+
+**Observed failure (verbatim), the registry fence:**
+```
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+and the runner, independently:
+```
+    ✗ ACTIVE-FAIL     # 5 Ledger records are append-only  [gate A]
+                         └ fitness src/__tests__/fitness/audited-write-required.test.ts passed
+                         └ ci-gate audit-chain-verify does not run 'pnpm audit:chain' as a blocking ci.yml job
+                         └ file src/infrastructure/store/migrations.ts present
+```
+
+**Injection 20 - the under-reported `awaiting:` line.** Reverted `GateView.blocking` to
+`unmet.length > 0 ? unmet : unverifiable` and removed the runner's second line, then re-ran
+`pnpm v3:invariants`. Gate C's evidence clause vanished from the report even though it will hold the
+gate below green after #1 and #11 go green.
+
+**Observed, pre-fix (verbatim):**
+```
+    ○ not yet green      gate C (wave C, prompts 12-15) requires #1 · #11 · the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)
+                         └ awaiting: #1 · #11
+                         └ wave may begin when: Gate B is green: money movement and account opening are expressible as data (Wave B, prompts 8-11).
+```
+
+**Observed, current (verbatim) - the clause is named, and named again as undecidable:**
+```
+    ○ not yet green      gate C (wave C, prompts 12-15) requires #1 · #11 · the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)
+                         └ awaiting: #1 · #11 · the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)
+                         └ no mechanism decides: the canonical request reaches a validated immutable DecisionInputBundle (the prompts 12-15 acceptance tests)
+                         └ wave may begin when: Gate B is green: money movement and account opening are expressible as data (Wave B, prompts 8-11).
+```
+Gate I gained the same completion (`awaiting: docs/reviews/phase-1-adversarial-audit.md · no unresolved
+critical finding; …`). The state machine is unchanged: green still requires zero unmet AND zero
+undecidable requirements, and no gate reads green.
+
+**Companions added (continuous in-CI adversarial proof, `describe("detects …")`):** a command surviving
+only as a shell comment inside a `|` block scalar, paired with a quoted `#` that must still count; a
+column-0 comment between two job keys, asserting BOTH jobs survive; a command present only in a step
+`name:`, an `env:` value, and a `uses:` path; a multi-line `|` script read as separate commands (so a
+match cannot span two unrelated ones) and a folded `>-` script read as one; an unparseable workflow
+yielding no jobs, so every `ci-gate` reads unmet rather than passing on a broken file; and a readiness
+case asserting an unmet requirement does not hide the undecidable ones from `blocking`.
+
+**Revert:** `.github/workflows/ci.yml` restored from a pre-injection copy after each of injections 17-19
+and verified byte-identical with `diff -q` (`git status` clean of the file); `scripts/v3-gates.lib.ts`
+and `scripts/v3-invariants.ts` restored the same way after injection 20.
+
+**Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-review-3`).
+
+### PF-237 (continued, 4th review round) · ruling `gatea-fix-review-3` · a complete requirement ratchet, blocking-job evidence, and one CI authority
+
+**SUPERSESSION CROSS-REFERENCE (read before re-running injections 14, 15, 17-19).** Every injection above
+is preserved verbatim as what actually ran against the implementation of its own round; none is rewritten.
+Two things they exercised have since been strengthened, so a reader re-running them should expect MORE, not
+less:
+
+- Injections 14 and 15 proved the **invariant-id** ratchets. The requirement ratchet now pins each gate's
+  COMPLETE TYPED set, so `requirementsOf` returns strings like `"ci-gate:e2e runs 'pnpm test:e2e'"` rather
+  than id arrays, and the fence's test is now named *"enforces (ratchet): every gate's COMPLETE typed
+  requirement set is the ruled one"*. Injection 21 below is the case ids alone could not see.
+- Injections 17-19 proved that a `ci-gate` needs a real job running a real command. The rule now also
+  requires that job to BLOCK. Their verdicts are unchanged; injections 22 and 23 cover the disabled-but-present
+  configurations the command-level check could not see, and injection 24 extends the same authority to
+  `charter-drift.test.ts` check (a'), which until this round still used `ci.includes(ref)`.
+
+**What changed.** (1) `GATE_REQUIREMENTS_RATCHET` replaces `GATE_INVARIANT_REQUIREMENTS`, pinning every
+requirement of every gate by `kind` + id/ref (+ `command` for a `ci-gate`). (2) `parseCiJobs` returns
+`{neutralizedBy?, commands}` per job and drops the commands of a neutralized STEP, so `continue-on-error`
+(job or step) and any `if:` stop a job from proving a `ci-gate`; `ciJobBlocks` exposes the weaker
+job-exists-and-blocks claim. (3) charter-drift (a') reads the workflow through that same parser, and the
+charter map's `axe`/`unit` refs become the blocking job keys that run them (`e2e`, `test`). (4) Gate D
+additionally requires invariants 18 and 19 (complete at prompt 18, inside Wave D; ownership stays at Gate F),
+and the merged `G/H` registry label is split into the ratified Gate G (27-28) and Gate H (29).
+
+**Injection 21 - deleting the one requirement a gate cannot prove (the reported hole).** Removed gate 0's
+lone `evidence` entry from `v3-invariants.json` and changed nothing else. Every other gate-0 requirement is
+already satisfied - the three artifacts exist, `golden-cases` and `e2e` run their commands in `ci.yml`, and
+`demo-skeleton-honesty.test.ts` passes - so the deletion leaves unmet = 0 and undecidable = 0.
+
+**Observed failure (verbatim), the gate-ordering fence:**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one
+AssertionError: expected { '0': [ …(6) ], …(9) } to deeply equal { '0': [ …(7) ], …(9) }
+
+- Expected
++ Received
+
+@@ -4,11 +4,10 @@
+      "artifact:config/demo/scenarios.yaml",
+      "artifact:docs/golden-cases.md",
+      "ci-gate:golden-cases runs 'pnpm golden:validate'",
+      "fitness:src/__tests__/fitness/demo-skeleton-honesty.test.ts",
+      "ci-gate:e2e runs 'pnpm test:e2e'",
+-     "evidence:every demo-contract §4 required surface exists and is reachable in the walking skeleton",
+    ],
+```
+(and the companion `flags an invariant pushed to another gate, or a gate quietly dropping a ruled
+requirement` fails with the identical diff, so the rule is proven twice).
+
+**Observed, `pnpm v3:invariants` under the same injection - what the ratchet is preventing (verbatim):**
+```
+    ✓ green              gate 0 (wave 0, prompts 1-3) requires docs/demo-contract.md · config/demo/scenarios.yaml · docs/golden-cases.md · golden-cases · src/__tests__/fitness/demo-skeleton-honesty.test.ts · e2e
+                         └ wave may begin when: None - Wave 0 opens the build sequence.
+```
+The readiness state machine is CORRECT here - every requirement it was given is met and decidable. That is
+exactly why the requirement set itself has to be ratcheted: a gate must not be able to earn readiness by
+deleting what it cannot prove.
+
+**Injection 22 - a blocking job that runs the command and swallows its failure.** Added
+`continue-on-error: true` to the `audit-chain-verify` JOB in `.github/workflows/ci.yml`, leaving
+`run: pnpm db:seed && pnpm audit:chain` untouched:
+```yaml
+  audit-chain-verify:
+    name: audit-chain-verify (charter #13)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+```
+
+**Observed failure (verbatim), the registry fence:**
+```
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+and the runner, independently (blocking CI job `v3-invariants`, exit 1):
+```
+    ✗ ACTIVE-FAIL     # 5 Ledger records are append-only  [gate A]
+                         └ fitness src/__tests__/fitness/audited-write-required.test.ts passed
+                         └ ci-gate audit-chain-verify does not run 'pnpm audit:chain' as a blocking ci.yml job
+                         └ file src/infrastructure/store/migrations.ts present
+
+v3-invariants: ACTIVE invariants failing:
+  - #5 Ledger records are append-only
+```
+
+**Injection 23 - the same command behind a condition that excludes the normal push/PR run.** Reverted
+injection 22 and instead gated the STEP:
+```yaml
+      - name: seed + verify org audit chains
+        if: ${{ github.event_name == 'schedule' }}
+        run: pnpm db:seed && pnpm audit:chain
+```
+
+**Observed failure (verbatim):**
+```
+ FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > detects (companion): a circular, incomplete, or undecidable gate cannot pass > proves a ci-gate only by a declared job that RUNS the command, not by a mention
+AssertionError: expected false to be true // Object.is equality
+```
+```
+AssertionError: v3-invariants.json problems:
+invariant 5 (Ledger records are append-only): ci-gate 'audit-chain-verify' does not run 'pnpm audit:chain' as a job in the BLOCKING .github/workflows/ci.yml: expected [ Array(1) ] to deeply equal []
+```
+(`Tests 2 failed | 48 passed (50)` across the two registry fences.)
+
+**Injection 24 - a mapped ci-gate job deleted, its name surviving in a comment (charter-drift (a')).**
+Deleted the whole `golden-cases:` job from `ci.yml` and left `# golden-cases temporarily removed while we
+debug flakiness` in its place. The previous check was `ci.includes(m.ref)`, transcribed and run over the
+injected file:
+```
+previous check, ci.includes("golden-cases"): true
+```
+
+**Observed failure (verbatim), charter-drift:**
+```
+ FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate is a real, blocking job of the BLOCKING ci.yml
+AssertionError: enforced CI gates are not blocking jobs of .github/workflows/ci.yml:
+golden-cases-truth-set -> ci-gate:golden-cases: expected [ Array(1) ] to deeply equal []
+```
+and the gate-ordering fence, on the same injection, for gate 0's own requirement:
+```
+AssertionError: gate 0: ci job 'golden-cases' does not run 'pnpm golden:validate': expected [ Array(1) ] to deeply equal []
+```
+
+**Companions added (continuous in-CI adversarial proof, `describe("detects …")`):** deleting gate 0's
+`evidence` clause - asserting that every structural rule still passes, that readiness renders `green`, and
+that the ratchet is what rejects it - paired with a downgraded requirement kind and a swapped `ci-gate`
+command, neither of which an id-only pin could see; and a `ci-gate` matrix over job-level
+`continue-on-error`, step-level `continue-on-error`, a job `if:`, a step `if:`, the un-neutralized shape,
+an explicit `continue-on-error: false`, and `ciJobBlocks` over the real workflow's blocking jobs - so the
+check cannot pass by always failing. charter-drift is proof-log-exempt for its companion (PF-001), so
+injection 24 is its adversarial evidence.
+
+**Post-state (verbatim, `pnpm v3:invariants` PHASE GATES after the split, abbreviated to the gate lines):**
+```
+    ○ not-yet-verifiable gate 0 (wave 0, prompts 1-3) …
+    ○ not yet green      gate A (wave A, prompts 4-7) requires #1 · #2 · #4 · #5
+    ○ not yet green      gate B (wave B, prompts 8-11) requires #3 · #16 · config/domains/account-opening.yaml · config/domains/money-movement.yaml
+    ○ not yet green      gate C (wave C, prompts 12-15) requires #1 · #11 · the canonical request reaches a validated immutable DecisionInputBundle …
+    ○ not yet green      gate D (wave D, prompts 16-19) requires #6 · #7 · #8 · #9 · #10 · #11 · #12 · #13 · #18 · #19
+    ○ not yet green      gate E (wave E, prompts 20-22) requires #14 · #15 · #16 · #17
+    ○ not yet green      gate F (wave F, prompts 23-26) requires #18 · #19 · #20 · #21 · #22 · #23 · #24 · #25
+    ○ not yet green      gate G (wave G, prompts 27-28) requires #26 · #28 · #30
+    ○ not yet green      gate H (wave H, prompts 29-29) requires #27 · #29
+    ○ not yet green      gate I (wave I, prompts 30-30) requires docs/reviews/phase-1-adversarial-audit.md · no unresolved critical finding …
+```
+Ten gates, none green.
+
+**Revert:** `.github/workflows/ci.yml` restored from a pre-injection copy after each of injections 22-24 and
+verified byte-identical with `diff -q` (`git status` reports the file unmodified against HEAD);
+`v3-invariants.json` restored the same way after injection 21.
+
+**Date:** 2026-07-28 (ADR-0055 amended, D-187; captain review ruling `gatea-fix-review-3`).
+
+### PF-237 (continued, 5th review round) · complete outcomes, structural entry gates, prompt ratchets, and executable CI commands
+
+**Invariant:** every declared gate outcome remains a typed requirement at its full proof point; every
+gate's structural predecessor controls readiness; every non-invariant proof prompt is ratcheted; and a
+CI command proves a gate only from a dedicated simple command whose exit status controls a
+non-neutralized blocking step.
+
+**Injection 25 - delete Gate B's prompt-11 stable-corpus evidence.** Removed only
+`the deterministic replay corpus and signed golden fixtures are stable` from `gates.B.requires`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one
+-     "evidence:the deterministic replay corpus and signed golden fixtures are stable @ prompt 11",
+Test Files  1 failed (1)
+Tests  2 failed | 45 passed (47)
+```
+
+**Injection 26 - understate a non-invariant proof point.** Changed only the account-opening domain
+artifact's requirement prompt from 10 to 9.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one
+-     "artifact:config/domains/account-opening.yaml @ prompt 10",
++     "artifact:config/domains/account-opening.yaml @ prompt 9",
+Test Files  1 failed (1)
+Tests  2 failed | 45 passed (47)
+```
+
+**Injection 27 - sever Gate B from Gate A.** Changed `gates.B.entryGates` to `[]` and its
+`entryCondition` to `None.` while leaving every local Gate B requirement intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's structural entry predecessors are the ruled ones
+-   "B": [
+-     "A",
+-   ],
++   "B": [],
+Test Files  1 failed (1)
+Tests  2 failed | 45 passed (47)
+```
+
+The continuous readiness companion independently supplies active-pass for every Gate B local
+requirement and not-yet-active for Gate A invariant 1, then asserts Gate B remains
+`not-yet-green` with `Gate A entry condition` in `entryBlocking`.
+
+**Injection 28 - replace the audit verifier with an echo.** Changed the dedicated workflow step from
+`run: pnpm audit:chain` to `run: echo 'pnpm audit:chain'`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+invariant 5 (Ledger records are append-only): ci job 'audit-chain-verify' mentions 'pnpm audit:chain' only in a compound or multi-command run step
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > detects (companion): a circular, incomplete, or undecidable gate cannot pass > proves a ci-gate only by a declared job that RUNS the command, not by a mention
+Test Files  2 failed (2)
+Tests  2 failed | 53 passed (55)
+```
+
+**Companions added:** the gate-ordering fence rejects the four reported false proofs directly:
+`echo 'pnpm audit:chain'`, `false && pnpm audit:chain`, a heredoc containing the command, and
+`pnpm audit:chain || true`. It separately proves neutralized and missing commands produce distinct
+diagnostics, proves a non-green predecessor holds an otherwise-green successor below green, and proves
+changing a non-invariant prompt changes the complete requirement ratchet.
+
+**Post-state:** all four injections were reverted with `apply_patch`. The focused governance run passes
+64 tests across `v3-gate-ordering`, `v3-invariants`, `charter-drift`, and `axe-required`. The v3 runner
+reports 5 active-pass, 0 active-fail, and 25 not-yet-active; every gate remains non-green and its
+`awaiting:` line includes structural predecessor blockers plus the new outcome evidence.
+
+**Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved outcome-completeness review).
+
+### PF-238 · Axe execution coverage · `src/__tests__/fitness/axe-required.test.ts`
+
+**Invariant (charter #9):** the blocking E2E gate runs `pnpm test:e2e`, and the public,
+authenticated, and demo E2E specifications each execute Axe. A surviving Playwright job name cannot
+stand in for an accessibility scan.
+
+**Injection:** removed the `@axe-core/playwright` import from `e2e/smoke.spec.ts` while retaining its
+ordinary browser tests and the blocking `e2e` workflow job.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute Axe
+AssertionError: e2e/smoke.spec.ts:1 must import the Axe Playwright builder
+Test Files  1 failed (1)
+Tests  1 failed | 2 passed (3)
+```
+
+**Companion:** in-memory required-spec sources prove an ordinary Playwright test with no Axe import or
+analysis fails, while an aliased Axe builder that executes `.analyze()` passes. The charter map also
+names `pnpm test:e2e`, so charter-drift proves the scanning specifications run in the blocking workflow.
+
+**Revert:** the Axe import was restored with `apply_patch`; the focused fence passes.
+
+**Date:** 2026-07-28.
+
+### PF-237 (continued, 6th review round) · earliest proof points, complete metadata, shell semantics, and exact command bindings
+
+**Invariant:** a gate requires every invariant at its earliest complete proof point without moving
+activation ownership; Gate B cannot become green without schema-valid, shared-engine-bound domain
+configuration; the complete gate metadata is ratcheted; and CI evidence uses the effective supported
+shell and the exact mapped blocking command.
+
+**Injection 29 - remove invariant 7's prompt-5 proof point.** Removed only
+`activationPrompts: [5]` from invariant 7 while Gate A continued to require it.
+
+**Observed failure (abridged):**
+```text
+gate A (closes at prompt 7) requires #7, not proven until prompt 19, where gate D proves its activation. That is AFTER the gate closes.
+```
+
+**Injection 30 - delete Gate B's domain-schema and shared-engine evidence.** Removed only the
+prompt-10 evidence requirement while preserving both domain artifact requirements and invariants 3 and
+16.
+
+**Observed failure (abridged):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's COMPLETE typed requirement set is the ruled one
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > detects (companion): a circular, incomplete, or undecidable gate cannot pass > keeps Gate B unverifiable until both domain YAML files are schema-valid and bound to the shared engine
+expected 'green' not to be 'green'
+```
+
+**Injection 31 - narrow Gate B's declared outcome.** Replaced its outcome with
+`Both domain files exist.` without changing its typed requirements.
+
+**Observed failure (abridged):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): every gate's wave, entry condition, and outcome are the ruled ones
+-     "outcome": "Money movement and account opening are expressible as data and the golden corpus is stable; invariant 3 (no core module, directory, or evaluator branch is named for a decision domain) is active and green once prompt 10 migrates account opening into config/domains/ (...).",
++     "outcome": "Both domain files exist.",
+```
+
+**Injection 32 - print the v3 command through a custom shell.** Added `shell: echo {0}` to the
+workflow step whose run text is `pnpm v3:invariants`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate is a real blocking job, and command-bearing mappings prove the command
+v3-invariants-phase-gated -> ci job 'v3-invariants' command 'pnpm v3:invariants' uses unsupported shell 'echo {0}'
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm v3:invariants' uses unsupported shell 'echo {0}'
+```
+
+**Injection 33 - remove an exact charter command binding.** Deleted only the
+`pnpm v3:invariants` command from the `v3-invariants-phase-gated` CI mechanism.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (e') ratchet: load-bearing CI mappings stay bound to their exact blocking commands
+v3-invariants-phase-gated -> ci-gate:v3-invariants must run 'pnpm v3:invariants'
+```
+
+**Companions added:** the gate-ordering fence accepts Gate A's earliest prompt-5 references to
+invariants 7, 8, and 9, then rejects an omitted proof-point record; keeps Gate B unverifiable until its
+domain evidence is independently proven; and rejects changes to every gate's wave, entry condition,
+and outcome. The structured CI companions resolve workflow, job, and step shell precedence and reject
+custom shells and unknown implicit runners. Charter-drift independently ratchets both exact v3 command
+bindings.
+
+**Revert:** all five injections were restored immediately with `apply_patch`.
+
+**Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved earliest-proof review).
+
+### PF-238 (continued) · awaited, reachable, assertion-bearing Axe scans
+
+**Invariant (charter #9):** each required E2E surface executes an enabled and reachable Axe analysis,
+awaits it, and makes its reported violations capable of failing the Playwright test.
+
+**Injection:** removed the violations assertion from `e2e/smoke.spec.ts` while retaining the Axe import
+and awaited analysis.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute Axe
+AssertionError: e2e/smoke.spec.ts:1 must execute an enabled, reachable, awaited Axe analysis whose violations fail the Playwright test
+```
+
+**Companions added:** in-memory sources reject scans inside skipped suites and tests, literal dead
+branches, statements after an unconditional return, unawaited analyses, runtime skips, and analyses
+whose violations are never asserted. They accept both direct awaited assertions and awaited helpers
+whose violation assertions gate the calling test, while rejecting the same helper when unawaited.
+
+**Revert:** the assertion was restored immediately with `apply_patch`.
+
+**Date:** 2026-07-28.
+
+### PF-237 (continued, 7th review round) · active proof metadata, proof-point ratchet, and CI dependency reachability
+
+**Invariant:** every declared activation proof point is valid regardless of current activation status;
+the ruled prompt-5 proof points for invariants 7, 8, and 9 cannot be rewritten to an earlier prompt; and
+a CI evidence command counts only when its job is dependency-free and therefore guaranteed to run from
+its own workflow registration.
+
+**Injection 34 - give active invariant 7 an invalid prompt.** Changed only invariant 7's
+`activationPrompts` from `[5]` to `[0]`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: nothing a phase gate requires lands after that gate closes
+invariant 7 (A proceed decision cannot exist without authority and an execution plan): activationPrompts must be prompt numbers in 1-30, got [0]
+
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces (ratchet): invariants 7, 8, and 9 retain their prompt-5 proof point
+-     5,
++     0,
+```
+
+**Injection 35 - add a dependency to the mapped v3 evidence job.** Added only `needs: quality` to the
+real `v3-invariants` workflow job while leaving its dedicated `pnpm v3:invariants` step unchanged.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate is a real blocking job, and command-bearing mappings prove the command
+v3-invariants-phase-gated -> ci job 'v3-invariants' command 'pnpm v3:invariants' is neutralized by job needs: quality
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm v3:invariants' is neutralized by job needs: quality
+```
+
+**Companions added:** the shared gate-ordering core rejects invalid, empty, duplicate, and out-of-range
+declared prompt lists on active and not-yet-active invariants. The fence mutates invariant 7 to valid but
+false `[1]` and proves the prompt-5 ratchet fails even though general ordering would accept it. A CI
+companion gives an evidence job `needs: disabled`, where the dependency has `if: false`, and proves
+`ciJobRuns`, `ciJobBlocks`, and the diagnostic all reject the mapped command.
+
+**Revert:** both injected files were restored immediately with `apply_patch`. The focused governance run
+passes 73 tests across gate ordering, invariant integrity, charter drift, and Axe coverage.
+
+**Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved enforcement-completeness review).
+
+### PF-238 (continued) · sanctioned assertions and registered Playwright tests
+
+**Invariant (charter #9):** every required surface specification registers an enabled Playwright test at
+module scope or directly inside an enabled module-scope `test.describe`, awaits the sanctioned Axe helper,
+and cannot swallow or transform the helper's complete violations assertion.
+
+**Injection 1 - move the public Axe test into an uncalled function.** Wrapped the otherwise-valid
+`e2e/smoke.spec.ts` Axe test in `neverRegistersAxe()` without invoking the function.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 2 - swallow the sanctioned assertion.** Wrapped the direct
+`expect(results.violations).toEqual([])` in `e2e/axe.ts` with `try { ... } catch {}`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+e2e/axe.ts:1 must directly await the complete WCAG Axe scan and assert its unmodified violations
+```
+
+**Companions added:** in-memory sources reject tests inside uncalled functions, literal dead branches,
+skipped descriptions, runtime skips, unawaited helper calls, and helper calls inside a caught path. Helper
+companions reject a caught assertion, `filter(() => false)`, clearing the violations before assertion,
+an unawaited analysis, and an Axe exclusion inserted before the required WCAG tag set. Aliased imports
+still pass at both accepted registration sites, while shadowed test or helper aliases fail, proving the
+fence follows imported bindings rather than depending on one spelling.
+
+**Revert:** both injections were restored immediately with `apply_patch`; the focused Axe and
+charter-drift fences pass.
+
+**Date:** 2026-07-28.
+
+### PF-237 (continued, 8th review round) · executable charter gates and invariant-3 activation proof
+
+**Invariant:** every enforced charter CI mapping binds the exact command that implements its control,
+and invariant 3 cannot activate until its two domain artifacts and exact prompt-10
+domain-configuration fitness mechanism exist and are mapped.
+
+**Injection 36 - leave the load job present but remove its enforcement command.** Deleted only
+`run: pnpm load:smoke` from the real `load-smoke` job, leaving the job key and named step intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+11 -> ci job 'load-smoke' does not run 'pnpm load:smoke' in a dedicated blocking step
+```
+
+**Injection 37 - substitute an unrelated activation fence for invariant 3.** Changed only invariant
+3's pinned activation mechanism from `domain-configuration.test.ts` to `no-bare-throw.test.ts`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > enforces: the captain's Gate A/Gate B requirement sets (ADR-0055) are the ones in the registry
+-       "ref": "src/__tests__/fitness/domain-configuration.test.ts",
++       "ref": "src/__tests__/fitness/no-bare-throw.test.ts",
+```
+
+**Companions added:** the CI parser rejects malformed, empty, uses-only, unsupported-runner, and
+fully skipped jobs as blocking evidence while accepting a dedicated simple command. The invariant
+activation companion marks invariant 3 active with an unrelated fitness mapping and rejects it, then
+maps the exact future mechanism while withholding its file and rejects that missing proof too. The
+activation ratchet pins both YAML artifacts and the exact fitness path.
+
+**Revert:** both injections were restored immediately with `apply_patch`.
+
+**Date:** 2026-07-28 (ADR-0055 and D-187 amended by the captain-approved false-green boundary review).
+
+### PF-238 (continued) · unmaskable Axe scope and animation settlement
+
+**Invariant (charter #9):** a required Axe test cannot be disabled by a file or describe annotation,
+marked as an expected failure, or allowed to mutate the document before analysis.
+
+**Injection 3 - clear the DOM instead of settling animations.** Replaced the sanctioned
+`document.getAnimations()` settlement in `e2e/axe.ts` with
+`document.body.replaceChildren()`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations
+```
+
+**Injection 4 - disable the required public-surface spec at module scope.** Added
+`test.skip(() => true, "temporarily disabled")` before the registered tests in `e2e/smoke.spec.ts`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory specifications reject module/file and describe-scope `skip` or
+`fixme` annotations, hook-driven skips, and `test.fail`. Helper companions reject DOM clearing
+and an unrelated awaited `Promise.resolve()` evaluation while the exact animation-settlement,
+complete scan, and direct assertion continue to pass.
+
+**Revert:** both injections were restored immediately with `apply_patch`.
+
+**Date:** 2026-07-28.
+
+### PF-239 · Gate 0 demo surface completeness · `src/__tests__/fitness/demo-surface-completeness.test.ts`
+
+**Invariant (Gate 0, ADR-0055):** every required `docs/demo-contract.md` section 4 product surface is
+represented by the typed surface manifest, backed by an existing component and dynamic route case,
+captured in contract order by the canonical journey, and reached after a loaded-state assertion by the
+blocking E2E suite.
+
+**Injection 1 - drift the typed manifest from the normative surface contract.** Changed the manifest's
+twelfth `contractName` from `Printable examiner-grade decision artifact` to `Missing decision artifact`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: docs/demo-contract.md:1 typed demo surface manifest does not exactly match the ordered §4 surface contract
+```
+
+**Companion:** the in-memory adversarial test independently removes or corrupts the contract numbering,
+typed manifest, route case, component, and screenshot. Each incomplete form produces at least one
+problem, while the real contract and implementation produce none.
+
+**Revert:** the manifest value was restored immediately. The focused surface-completeness and
+skeleton-honesty fences pass, and `pnpm v3:invariants` reports Gate 0 `green`.
+
+**Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
+
+### PF-237 (continued, 9th review round) · workflow reachability, governed root, and direct entry points
+
+**Invariant:** CI-backed requirements prove repository controls only when the workflow runs on every
+normal push and pull request, the effective working directory is the repository root, and the mapped
+step invokes the owned entry point directly.
+
+**Injection 38 - filter normal push activation.** Added `branches: [main]` to the real workflow's
+`push` trigger.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+3 -> ci workflow does not provide normal blocking evidence: workflow 'push' trigger carries branch, path, or event filters
+```
+
+Every other enforced CI mapping reported the same workflow-level cause, and the gate-ordering fence
+reported both Gate 0 CI requirements as unproven.
+
+**Injection 39 - redirect mapped commands into an ungoverned subtree.** Added workflow
+`defaults.run.working-directory: packages/stub`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' uses working-directory 'packages/stub' is not the repository root
+```
+
+**Injection 40 - restore package-script indirection.** Replaced only the real `v3-invariants` step's
+direct entry point with `pnpm v3:invariants`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+v3-invariants-phase-gated -> ci job 'v3-invariants' does not run 'pnpm exec tsx scripts/v3-invariants.ts' in a dedicated blocking step
+v3-gate-ordering -> ci job 'v3-invariants' does not run 'pnpm exec tsx scripts/v3-invariants.ts' in a dedicated blocking step
+```
+
+**Companions added:** in-memory workflows reject manual-only activation plus branch and path filters,
+resolve workflow/job/step working-directory precedence, reject every non-root level, and accept the
+unfiltered root case. The Gate 0 requirement ratchet pins both direct commands, and the charter ratchet
+pins every enforced CI command.
+
+**Revert:** all three workflow injections were removed immediately with `apply_patch`.
+
+**Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
+
+### PF-238 (continued) · Playwright selection, required routes, and annotation aliases
+
+**Invariant (charter #9):** required Axe coverage is selected by the real Playwright configuration,
+navigates every typed public, authenticated, and demo route, waits for each loaded-state marker, and
+cannot be disabled through a direct, computed, destructured, or aliased Playwright annotation.
+
+**Injection 5 - exclude a required specification in Playwright configuration.** Added
+`testIgnore: ["**/smoke.spec.ts"]` to the real configuration.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters
+```
+
+**Injection 6 - disable through a computed alias.** Added
+`const disableAxe = test["skip"]; disableAxe(() => true, "temporarily disabled");` to the public
+surface specification.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory configurations reject top-level and project-level `testIgnore`,
+`testMatch`, `grep`, `grepInvert`, `forbidOnly: false`, alternate project `testDir`, and an empty project set. Required
+specifications fail when they scan the wrong route or omit the loaded-state assertion. Annotation
+companions cover computed member access, direct aliases, destructured aliases, and computed destructured
+aliases while valid imported aliases remain accepted.
+
+**Revert:** both real injections were removed immediately with `apply_patch`; the focused Axe fence
+passes.
+
+**Date:** 2026-07-28 (ADR-0055 and D-187 execution-reachability review).
+
+### PF-238 (continued) · effective configuration, route ownership, safe messages, and namespace symbols
+
+**Invariant (charter #9):** the effective Playwright configuration selects every required Axe
+specification, every required route loop executes directly inside an enabled registered test, assertion
+messages cannot mutate the violations being checked, and every imported Playwright symbol form remains
+subject to neutralization detection.
+
+Before the enforcement changes, five focused companions reproduced the reported bypasses. The suite
+failed on a second `defineConfig` argument, route loops inside an uncalled function and a caught branch,
+a namespace-imported `test.skip`, and an assertion message that emptied `results.violations`.
+
+**Injection 7 - override the inspected configuration.** Added a second real `defineConfig` argument:
+`{ testIgnore: ["**/smoke.spec.ts"] }`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters
+```
+
+**Companions added:** in-memory specifications reject multi-argument configuration, route loops inside
+uncalled functions or caught branches, side-effecting optional assertion messages, and direct,
+computed, aliased, destructured, or namespace-imported `skip`, `fixme`, and `fail` calls. A namespace
+import remains accepted for a valid test registration and loaded-state assertion, so the resolver
+cannot satisfy the refusal cases by rejecting every namespace symbol.
+
+**Revert:** the injected second configuration argument was removed immediately. The focused Axe fence
+then passed all 10 tests.
+
+**Date:** 2026-07-29 (ADR-0055 and D-187 executable-evidence review).
+
+### PF-237 (continued, 11th review round) · mapped gate fitness is blocking
+
+**Invariant:** every fitness file selected by the v3 runner is blocking, including a fence required only
+by a gate and not by an active invariant.
+
+**Injection 41 - fail the Gate 0-only surface fence.** Removed the canonical record screenshot call from
+`e2e/demo-journey.spec.ts`, leaving every active invariant mechanism green.
+
+**Observed failure (verbatim):**
+```text
+v3-invariants: mapped fitness fences failing:
+  - mapped fitness invocation exited 1
+  - src/__tests__/fitness/demo-surface-completeness.test.ts FAILED
+```
+
+The runner exited 1. Before the correction, the same injection printed Gate 0 non-green but exited 0.
+The pure companion separately rejects a false result, a missing result, and a nonzero shared invocation,
+then accepts a complete passing result map.
+
+**Revert:** the record screenshot call was restored immediately.
+
+**Date:** 2026-07-29 (ADR-0055 and D-187 enforcement-integrity review).
+
+### PF-001 (continued) · effective charter mechanism ratchet
+
+**Invariant (charter operating model):** a mechanism that shipped enforced cannot be deleted or
+neutralized with a mechanism-level `planned` status while its parent entry stays enforced.
+
+**Injection 2 - mark the Axe-specific mechanism planned.** Added `"status": "planned"` only to charter
+rule 9's `axe-required.test.ts` mechanism.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (e'') ratchet: complete effective enforced mechanism tuples cannot regress
+AssertionError: charter mechanism ratchet regressed:
+ratcheted enforced mechanism missing: ["9","fitness","src/__tests__/fitness/axe-required.test.ts","","enforced"]
+```
+
+**Companion added:** the in-memory ratchet rejects both a planned override and complete deletion of the
+Axe tuple. The real fence pins every current effective enforced tuple, including entry id, mechanism
+type, reference, exact command, and effective status.
+
+**Revert:** the mechanism-level override was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · recursive fitness inventory
+
+**Invariant (charter operating model and #4):** every fitness test below the fitness tree is executed,
+checked for disabled or focused registration, mapped by charter-drift, and inspected by the companion
+meta-fence regardless of directory depth.
+
+**Injection - add a nested disabled, unmapped fence without a companion.** Added
+`src/__tests__/fitness/f84-bypass/nested-disabled.test.ts` with a failing test inside
+`describe.only`, then ran the blocking inventory command and both meta-fences directly.
+
+**Observed failures (verbatim):**
+```text
+fitness inventory failed:
+  - fitness invocation exited 1
+  - src/__tests__/fitness/charter-drift.test.ts FAILED
+  - src/__tests__/fitness/detection-not-verification.test.ts FAILED
+  - src/__tests__/fitness/f84-bypass/nested-disabled.test.ts FAILED
+```
+
+```text
+AssertionError: disabled/focused fences found:
+src/__tests__/fitness/f84-bypass/nested-disabled.test.ts:3 disabled/focused Vitest registration describe.only
+
+AssertionError: fitness fences not referenced by charter-map.json (silently added?):
+src/__tests__/fitness/f84-bypass/nested-disabled.test.ts
+```
+
+```text
+AssertionError: fences without a live companion:
+src/__tests__/fitness/f84-bypass/nested-disabled.test.ts (no 'describe("detects…")' companion with a live test case)
+```
+
+**Companion added:** a temporary nested fitness tree proves the shared inventory returns top-level and
+deep test files in one stable repository-relative order while excluding non-test helpers. The runner,
+charter disabled/orphan checks, and companion meta-fence all consume that same inventory.
+
+**Revert:** the injected nested fence was removed immediately. The restored focused meta-fences and
+blocking inventory command passed.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · bound Reflect.apply neutralizers
+
+**Invariant (charter #9):** binding `Reflect.apply` cannot hide a Playwright neutralizer from required
+accessibility enforcement.
+
+**Injection - invoke `test.skip` through bound reflection.** Added
+`(Reflect.apply.bind(Reflect) as typeof Reflect.apply)(test.skip, test, [true, "disabled"])` to the
+real public Axe specification.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory required specifications cover a direct bound invocation, a stable bound
+alias, and bound reflective callables invoked through `call` and `apply`.
+
+**Revert:** the real neutralizer was removed immediately. The restored focused Axe fence passed.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · bound Reflect.apply hook registration
+
+**Invariant (Gate 0, ADR-0055):** binding `Reflect.apply` cannot hide a Playwright hook from canonical
+journey isolation.
+
+**Injection - register `test.beforeEach` through bound reflection.** Added a bound
+`Reflect.apply` invocation that registered an empty `beforeEach` hook in the real canonical journey.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Companions added:** in-memory canonical journeys cover a direct bound invocation, a stable bound alias,
+and bound reflective callables invoked through `call` and `apply`.
+
+**Revert:** the real hook was removed immediately. The restored focused Gate 0 fence passed.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · complete fitness execution and Vitest neutralizers
+
+**Invariant (charter operating model and #4):** every load-bearing fitness file produces a result in
+blocking CI, and a Vitest registration neutralizer cannot hide a broken fence.
+
+**Injection - omit charter-drift through Vitest configuration.** Added
+`src/__tests__/fitness/charter-drift.test.ts` to `vitest.config.ts` `exclude`, then ran the exact new
+blocking command `corepack pnpm exec tsx scripts/fitness-tests.ts`.
+
+**Observed failure (verbatim):**
+```text
+fitness inventory failed:
+  - src/__tests__/fitness/charter-drift.test.ts produced no result
+```
+
+**Injection - neutralize a mapped fence with `todo`.** Added
+`it.todo("disabled charter control")` to the real charter-drift fence.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (b) no fitness fence is disabled or focused (this file included)
+AssertionError: disabled/focused fences found:
+charter-drift.test.ts:540 disabled/focused Vitest registration it.todo
+```
+
+**Companions added:** in-memory Vitest sources cover `todo`, `fails`, computed and aliased
+`skipIf(true)`, `runIf(false)`, unknown conditional state, and the two statically safe cases. The
+fitness-inventory companion supplies a successful invocation report that deliberately omits
+charter-drift and requires the missing-result diagnosis.
+
+**Revert:** both real injections were removed immediately. The restored focused charter-drift fence
+passed, and the complete fitness-inventory command passed all inventoried files.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · injected ratchet drift exits the real runner nonzero
+
+**Invariant (v3 §17 and ADR-0055):** shared constitution ratchet drift reaches a real blocking process
+exit, not merely a syntactically visible `fail` call.
+
+**Continuous executable injection:** the companion writes a registry copy whose Gate B outcome violates
+the shared metadata ratchet, invokes the real `scripts/v3-invariants.ts` entry point with that copy, and
+requires exit status 1 plus both `gate constitution problems` and `gate metadata drifted` diagnostics.
+The temporary registry is removed in a `finally` block.
+
+**Observed result:** the companion passed only after the child runner exited 1 with the pinned
+diagnostics. Mutating the immediate guard to `if (false && ...)` or clearing the validator result still
+fails the existing structural companion.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · authentic Axe runtime and compositional reflection
+
+**Invariant (charter #9):** required accessibility scans use the authentic sanctioned Axe runtime and
+cannot be disabled through nested reflective invocation.
+
+**Injection - replace Axe analysis at module scope.** Assigned an empty-result implementation to
+`AxeBuilder.prototype.analyze` in the real sanctioned helper.
+
+**Injection - nest a Playwright neutralizer behind `Reflect.apply.call`.** Added
+`Reflect.apply.call(Reflect, test.skip, test, [true, "disabled"])` to the real public Axe specification.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations
+e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory sources cover module-scope helper replacement, direct Axe runtime import
+from a required specification, `Reflect.apply.call`, `Reflect.apply.apply`, and a nested
+`Reflect.apply(Reflect.apply, ...)` neutralizer. The shared callable resolver supplies the same nested
+forms to the Gate 0 hook detector.
+
+**Revert:** both real injections were removed immediately. The restored focused Axe fence passed all
+tests.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · stable screenshot helpers and URL identity
+
+**Invariant (Gate 0, ADR-0055):** canonical screenshots are produced by the validated helpers that
+remain active at runtime, and every supported URL scenario and firm reaches the exact requested branch.
+
+**Injection - reassign the canonical screenshot helper.** Replaced `snap` after its validated
+declaration with a no-op async function in the real demo journey.
+
+**Injection - remap supported scenario identifiers.** Changed `resolveScenarioId` so every known
+scenario returned the default scenario.
+
+**Observed failures (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical clickable journey must capture every typed surface in contract order
+
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > detects (companion): incomplete surface contracts cannot pass > preserves every supported scenario and firm outcome through the journey service
+AssertionError: scenario resolver remaps supported id 'recent-bank-change-block'
+```
+
+**Companions added:** in-memory journeys reassign `snap` and `snapLauncher` after their valid
+declarations. A pure resolver-identity companion remaps one supported scenario and firm and requires
+both diagnostics, while the real fence exhaustively checks every supported id.
+
+**Revert:** both real injections were removed immediately. The restored focused Gate 0 fence passed all
+tests.
+
+**Date:** 2026-07-29.
+
+### PF-237 (continued) · shared exact gate ratchets block the runner
+
+**Invariant (ADR-0055):** the blocking v3 runner must enforce the same exact gate ownership, proof-point,
+activation-prerequisite, metadata, requirement, and prompt-range ratchets as the fitness fence.
+
+**Injection 25 - narrow Gate B's outcome.** Replaced Gate B's complete outcome with
+`Both domain files exist.` while leaving every structural ordering rule valid, then ran
+`NO_COLOR=1 corepack pnpm exec tsx scripts/v3-invariants.ts`.
+
+**Observed failure (verbatim):**
+```text
+v3-invariants: gate constitution problems:
+  - gate metadata drifted from the ADR-0055 ratchet
+```
+
+**Companions added:** the shared validator rejects ratchet-only changes to ownership, prompt-5 proof
+points, invariant 3 activation prerequisites, gate metadata, complete typed requirements, and ratified
+prompt ranges. The registry fence verifies that each shared result reaches an immediate runner failure
+guard.
+
+**Revert:** the complete Gate B outcome was restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · runner ratchet results cannot be cleared
+
+**Invariant (v3 §17):** a collected shared-constitution failure must reach an unconditional nonzero runner
+path before any invariant or gate report is emitted.
+
+**Injection 7 - clear the shared result before its guard.** Inserted `gateProblems.length = 0` between
+the shared validator call and its failure guard, then ran the v3 registry fitness fence.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: expected false to be true
+```
+
+**Companions added:** symbol-aware runner analysis requires the validator result declaration to be
+immediately followed by a `length > 0` guard that invokes the runner's fatal path. An injected Gate B
+metadata drift proves the shared validator produces the blocking result.
+
+**Revert:** the result-clearing statement was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · reflective neutralizers and complete page inventory
+
+**Invariant (charter #9):** required Axe scans cannot be disabled through direct or aliased
+`Reflect.apply`, and every Next `page.tsx` route must belong to an executed loaded-state scan group.
+
+**Injection 25 - invoke `test.skip` through `Reflect.apply`.** Added
+`Reflect.apply(test.skip, test, [true, "disabled"])` before the public route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 26 - add an unscanned public page.** Added `src/app/privacy/page.tsx` without extending the
+public Axe route collection.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: required route groups cover every loaded public, authenticated, and demo surface
+AssertionError: src/app/privacy/page.tsx: route /privacy is absent from PUBLIC_AXE_ROUTES
+```
+
+**Companions added:** in-memory required specifications reject direct and aliased reflective
+neutralizers. Route-inventory fixtures accept complete static and dynamic ownership, reject a new
+unscanned public page, and fail closed on an unclassified route shape.
+
+**Revert:** the reflective neutralizer and temporary page were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · reflective hooks cannot alter Gate 0 evidence
+
+**Invariant (Gate 0, ADR-0055):** a canonical journey hook cannot hide behind reflective registration
+and inject controls or replace screenshot evidence.
+
+**Injection 19 - register a hook through `Reflect.apply`.** Added
+`Reflect.apply(test.beforeEach, test, [async () => {}])` before the canonical journey.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Companions added:** direct and aliased reflective hook registration is resolved through the shared
+callable-indirection helper and rejected before the canonical callback can count as evidence.
+
+**Revert:** the reflective hook was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · symbol-aware disabled-fence registration
+
+**Invariant (charter operating model):** every mapped Vitest fitness fence must remain enabled and
+unfocused across direct, computed, namespace, and aliased registration syntax.
+
+**Injection 2 - disable a fence with a computed member.** Replaced the real no-bare-throw suite's
+registration with `describe["skip"](...)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (b) no fitness fence is disabled or focused (this file included)
+AssertionError: disabled/focused fences found:
+no-bare-throw.test.ts:32 disabled/focused Vitest registration describe.skip
+```
+
+**Companions added:** in-memory sources reject computed members, namespace members with a static alias,
+imported x-prefixed registrations, and later assignment aliases, while ordinary aliased enabled
+registrations remain accepted.
+
+**Revert:** the no-bare-throw suite's enabled registration was restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · executed callbacks and stable assertion provenance
+
+**Invariant (charter #9):** Playwright neutralizers inside callbacks executed by a required test cannot
+escape analysis, and the sanctioned Axe helper must assert violations through a stable, unreassigned
+Playwright `expect` import.
+
+**Injection 20 - skip from an executed `test.step` callback.** Added an awaited `test.step` immediately
+before the real public route loop. Its callback called `test.info().skip(...)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 21 - disguise a no-op assertion through unreachable assignment.** Replaced the helper's
+direct Playwright `expect` import with a local no-op function and assigned the imported assertion to it
+only inside `if (false)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations
+```
+
+**Companions added:** in-memory specifications reproduce inline and locally aliased executed callback
+neutralizers, and an in-memory helper reproduces the no-op local assertion plus unreachable import
+assignment.
+
+**Revert:** both real injections were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · renderer branch identifiers preserve resolved context
+
+**Invariant (Gate 0, ADR-0055):** every rendered demo surface receives the exact resolved scenario and
+firm identifiers, either directly from the validated query inputs or from the journey returned for
+those inputs.
+
+**Injection 16 - hardcode the renderer identifiers.** Replaced the dynamic page's `ids` object with the
+canonical `safe-proceed` and `firm-a` literals while leaving the resolved service call and every route
+case unchanged.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service and pass its resolved station to the validated renderer and loaded marker
+```
+
+**Companions added:** in-memory routes reject hardcoded renderer identifiers and swapped journey
+fields while accepting identifiers derived from the resolved query or matching journey fields.
+
+**Revert:** the real route identifiers were restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · blocking runner enforces the shared active ratchet
+
+**Invariant (v3 §17, ADR-0055):** the authoritative `v3:invariants` command rejects active-ID and
+mechanism-tuple drift before it can report an unreviewed invariant as `active-pass`.
+
+**Injection 6 - activate an unratcheted invariant through a passing fence.** Changed invariant 1 from
+`not-yet-active` to `active` and pointed it at the existing passing decision-core illegal-states fence,
+then executed the blocking runner directly.
+
+**Observed failure (verbatim):**
+```text
+v3-invariants: registry/pin problems:
+  - active invariant ids must exactly match the shipped mechanism ratchet; expected [2,5,7,8,9], received [1,2,5,7,8,9]
+```
+
+**Companion added:** the registry fitness test imports the same shared validator as the runner and
+retains direct cases for unratcheted activation and complete mechanism-tuple drift. Its runner binding
+check also rejects deleting the validator call or invoking it without feeding its problems into the
+fatal structural-problem path.
+
+**Revert:** invariant 1 was restored to its recorded state and empty mechanism set immediately.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · exact active-invariant ratchet membership
+
+**Invariant (v3 §17, ADR-0055):** every active invariant has a reviewed, pinned mechanism tuple set, and
+the set of active invariant IDs exactly equals the mechanism-ratchet keys.
+
+**Injection 5 - activate an unratcheted invariant.** Changed invariant 1 from `not-yet-active` to
+`active` and pointed it at the existing passing decision-core illegal-states fence.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: v3-invariants.json problems:
+active invariant ids must exactly match the shipped mechanism ratchet; expected [2,5,7,8,9], received [1,2,5,7,8,9]
+```
+
+**Companion added:** the pure registry validator activates invariant 4 with an existing fitness file
+and asserts that exact active-ratchet membership fails.
+
+**Revert:** invariant 1 was restored to its recorded activation state and empty mechanism set.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · TestInfo and wrapped Playwright neutralizers
+
+**Invariant (charter #9):** required Axe scans cannot be skipped, marked fixme, or converted to expected
+failures through TestInfo or through parenthesized and TypeScript-asserted Playwright symbols.
+
+**Injection 14 - neutralize the public scan through TestInfo.** Added a `testInfo` parameter to the
+required public Axe test and called `testInfo.skip(true, "disabled")` before its route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 15 - wrap the imported neutralizer.** Added
+`(test.skip as typeof test.skip)(true, "disabled")` at module scope in the public Axe specification.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory specifications cover TestInfo skip, fixme, and fail calls in required
+tests and directly registered hooks, a TestInfo member alias, an `as` assertion wrapper, and an angle
+bracket type assertion wrapper.
+
+**Revert:** both real neutralizers were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · exact ratified Gate 0 surface identities
+
+**Invariant (Gate 0, ADR-0055):** the mutable demo contract and typed manifest preserve the exact twelve
+surface identities ratified in the SHA-pinned `docs/v3/verin-demo-contract-v1.md` section 4 contract.
+
+**Injection 10 - coordinate a mutable surface rename.** Renamed surface 11 from
+`Policy draft and simulation impact` to `Policy workshop` in both `docs/demo-contract.md` and the typed
+surface manifest. Before this correction the focused fence passed all three tests.
+
+**Observed failure after enforcement (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: docs/v3/verin-demo-contract-v1.md:1 mutable demo contract must preserve the exact ratified §4 surface identities
+docs/v3/verin-demo-contract-v1.md:1 typed demo surface manifest must preserve the exact ratified §4 surface identities
+```
+
+**Companion added:** the pure completeness validator applies the same coordinated rename to its mutable
+contract and manifest inputs and requires both ratified-identity diagnostics.
+
+**Revert:** both surface names were restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · computed Playwright configuration keys
+
+**Invariant (charter #9):** Playwright selection proof sees direct and computed configuration property
+names and fails closed when a computed name cannot be resolved.
+
+**Injection 8 - hide an exclusion behind a computed literal.** Added
+`["testIgnore"]: ["**/smoke.spec.ts"]` to the real Playwright configuration.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: playwright.config.ts:1 must select every required Axe specification without testIgnore, testMatch, grep, or grepInvert filters
+```
+
+**Companions added:** in-memory configurations reject computed root exclusions, computed project
+`testDir`, and a configuration-derived computed key whose value cannot be decided statically.
+
+**Revert:** the computed exclusion was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · route identity and loaded screenshot ownership
+
+**Invariant (Gate 0, ADR-0055):** every manifest station returns the component imported from its exact
+manifest path, and every canonical screenshot verifies that station's URL and loaded marker before
+capture.
+
+**Injection 3 - render the wrong component for a valid station.** Changed the `record` case to return
+`WorkspaceSurface` while leaving every case label and manifest entry intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo route must render every typed surface exactly once
+```
+
+**Injection 4 - bind the record capture to the workspace station.** Changed only the fourth argument of
+the twelfth canonical call from `"record"` to `"workspace"`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical clickable journey must capture every typed surface in contract order
+```
+
+**Companions added:** the route companion substitutes the wrong imported surface without changing the
+case label, screenshot companions reject a mismatched station argument, and helper companions reject a
+generic URL assertion or body-only loaded marker.
+
+**Revert:** both injections were restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · awaited screenshot execution and non-empty artifacts
+
+**Invariant (Gate 0, ADR-0055):** each canonical screenshot call is a direct awaited statement of the
+registered journey test. The `snap` helper directly awaits `page.screenshot`, writes the manifest-derived
+name into `demo-screens`, and proves the returned capture is non-empty.
+
+Before the enforcement change, the companion accepted an unawaited screenshot, a different receiver,
+and a screenshot hidden behind `if (false)`. Those cases failed red before the helper ownership and
+artifact contract were implemented.
+
+**Injection 2 - stop awaiting the real screenshot.** Replaced the real helper declaration with
+`const screenshot = page.screenshot(...)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical clickable journey must capture every typed surface in contract order
+```
+
+**Companions added:** in-memory journeys reject unawaited or conditionally hidden canonical `snap`
+calls; an unawaited, wrong-receiver, or dead helper capture; a changed artifact directory; and a missing
+non-empty-buffer assertion. The real helper now checks `screenshot.byteLength > 0` after the awaited
+write.
+
+**Revert:** the real `await` was restored immediately. The focused surface-completeness fence then
+passed both tests, and the combined focused run passed all 12 tests.
+
+**Date:** 2026-07-29 (ADR-0055 and D-187 executable-evidence review).
+
+### PF-237 (continued, 12th review round) · runner schedulability is independent of shell selection
+
+**Invariant (ADR-0055):** a mapped CI command is evidence only when its job names a supported,
+schedulable POSIX GitHub-hosted runner. An explicit shell cannot substitute for `runs-on`.
+
+**Injection 12 - remove the runner while keeping an explicit shell.** Removed
+`runs-on: ubuntu-latest` from the real `v3-invariants` job and added `shell: bash` to its mapped
+command step.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-gate-ordering.test.ts > v3 gate-ordering fence > detects (companion): a circular, incomplete, or undecidable gate cannot pass > refuses a job that runs the command but cannot fail the build (continue-on-error, or a condition)
+AssertionError: v3-invariants: expected false to be true
+```
+
+**Companion added:** in-memory workflows reject missing, non-string, dynamic, unsupported, and
+unschedulable runner labels even when the mapped step explicitly selects `bash`. Supported Ubuntu and
+macOS labels still prove the command.
+
+**Revert:** the real runner declaration and implicit shell were restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · Playwright aliases assigned after declaration
+
+**Invariant (charter #9):** a required Axe specification cannot be neutralized through a Playwright
+annotation alias assigned after its declaration.
+
+**Injection 9 - assign a typed neutralizer alias later.** Added the following module-scope statements
+to the real public Axe specification:
+```ts
+let disable: typeof test.skip;
+disable = test.skip;
+disable(true, "file disabled");
+```
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory required specifications reject direct, computed-member, and
+namespace-member neutralizer aliases introduced by later typed assignments.
+
+**Revert:** the three injected statements were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · complete active-invariant mechanism ratchets
+
+**Invariant (v3 §17 preamble, ADR-0023):** once an invariant is active, both its activation state and
+the complete mechanism tuple set that proves it are monotonic governance. A registry edit cannot
+redirect an active guarantee to an unrelated passing fence.
+
+**Injection 5 - redirect invariant 7.** Changed only invariant 7's fitness reference from
+`decision-core-illegal-states.test.ts` to the unrelated passing `org-id-required.test.ts`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/v3-invariants.test.ts > v3-invariant registry fence > enforces: the registry is complete, honest (activation-only), mapped to live mechanisms, and ratcheted
+AssertionError: v3-invariants.json problems:
+invariant 7: shipped mechanism set drifted; expected [["fitness","src/__tests__/fitness/decision-core-illegal-states.test.ts",null]], received [["fitness","src/__tests__/fitness/org-id-required.test.ts",null]]
+```
+
+**Companion added:** an in-memory complete registry keeps every active status unchanged while repointing
+invariant 7 to an unrelated passing fitness file. The registry fence rejects the changed type, reference,
+or command tuple and also rejects tuple additions or removal.
+
+**Revert:** invariant 7's exact decision-core illegal-states mechanism was restored immediately.
+
+**Date:** 2026-07-29.
+
+### PF-237 (continued, 13th review round) · matrix reachability is blocking evidence
+
+**Invariant (ADR-0055):** a mapped CI command is evidence only when at least one structurally proven job
+instance executes it and can fail the workflow. A matrix whose exclusions remove every combination
+proves no execution.
+
+**Injection 13 - exclude the only matrix combination.** Added a one-value `strategy.matrix` to the real
+`v3-invariants` job and excluded its sole combination while leaving the mapped command unchanged.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/charter-drift.test.ts > charter-drift fence > (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+AssertionError: enforced CI gates are not proven by .github/workflows/ci.yml:
+v3-invariants-phase-gated -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' is neutralized by job strategy.matrix is not supported as blocking evidence
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' is neutralized by job strategy.matrix is not supported as blocking evidence
+```
+
+**Companion added:** an in-memory evidence job with one matrix value and a matching exclusion is rejected
+by both `ciJobRuns` and `ciJobBlocks`, and its diagnostic names `strategy.matrix` rather than reporting
+the command missing.
+
+**Revert:** the injected matrix was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · stable route provenance and callback reachability
+
+**Invariant (charter #9):** every required Axe route loop scans the complete imported route collection
+from a provably reachable callback path. An unreachable assignment cannot supply the collection, and a
+conditional callback exit cannot skip every scan while Playwright reports success.
+
+**Injection 10 - hide route assignment in dead control flow.** Replaced the public route collection with
+an empty mutable alias and assigned `PUBLIC_AXE_ROUTES` only inside `if (false)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+**Injection 11 - return before the route loop.** Added `if (true) return;` immediately before the real
+public Axe route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory specifications reproduce both bypasses. Stable import aliases remain
+accepted, while reassigned collection aliases and reachable callback exits before a required loop fail.
+
+**Revert:** both real injections were removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · conditional screenshot exits and runtime artifacts
+
+**Invariant (Gate 0, ADR-0055):** the canonical screenshot calls are provably reachable, and the blocking
+E2E job verifies the produced artifact set at runtime. Every canonical PNG must exist and be non-empty;
+missing uploads fail instead of warning.
+
+**Injection 5 - return before the record capture.** Added `if (true) return;` immediately before the
+twelfth canonical `snap` call.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical clickable journey must capture every typed surface in contract order
+```
+
+**Injection 6 - downgrade a missing upload to a warning.** Removed only
+`if-no-files-found: error` from the real `demo-screens` upload step.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: .github/workflows/ci.yml:1 demo-screens upload must fail when the expected artifact directory is missing
+```
+
+**Injection 7 - remove one runtime artifact.** Temporarily moved `12-record.png` out of its expected
+name and executed the dedicated artifact validator.
+
+**Observed failure (verbatim):**
+```text
+demo screen artifacts:
+- missing screenshot artifact '12-record.png'
+```
+
+**Companions added:** in-memory journeys reject conditional early exits, the artifact validator rejects
+missing and zero-byte canonical files, the CI fence requires its direct blocking command, and the
+upload step must fail when the directory is absent.
+
+**Revert:** the journey, upload setting, and record artifact were restored immediately.
+
+**Restored verification:** the combined `axe-required`, `demo-surface-completeness`,
+`v3-invariants`, `v3-gate-ordering`, and `charter-drift` run passed 5 files and 96 tests. The dedicated
+runtime validator then reported `demo screen artifacts: 18 verified`.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · reassignment-safe neutralizers and immutable route collections
+
+**Invariant (charter #9):** a required Axe specification cannot be neutralized by an alias whose
+runtime value is hidden by unreachable reassignment, and its required route collection cannot be
+emptied or rewritten before the scan.
+
+**Injection 12 - hide a neutralizer behind an unreachable benign overwrite.** Added a typed alias
+assigned to `test.skip`, reassigned it to a benign function inside `if (false)`, then called the alias
+before the public Axe test.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 13 - empty the imported route collection.** Assigned zero to
+`PUBLIC_AXE_ROUTES.length` through a type cast immediately before the required public route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+**Companions added:** in-memory specifications reproduce the unreachable neutralizer overwrite and
+the descendant collection mutation. The route contract also rejects unfrozen collections and
+unfrozen entries, while assignment operators and array-mutator calls before a required loop are
+non-evidence.
+
+**Revert:** both real injections were removed immediately. The restored combined focused run passed
+both fence files and all 17 tests.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · resolved route invocation and authentic launcher capture
+
+**Invariant (Gate 0, ADR-0055):** every dynamic station reaches the component selected by its resolved
+route value, and the canonical launcher artifact is an awaited screenshot of the loaded launcher page,
+not arbitrary non-empty bytes.
+
+**Injection 8 - disconnect the dynamic page from the validated switch.** Replaced the page's
+`renderStation(resolvedStation, ...)` call with `renderStation("workspace", ...)` while leaving every
+switch case and loaded marker intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must pass its resolved station to the validated renderer and loaded marker
+```
+
+**Injection 9 - replace the launcher screenshot with arbitrary bytes.** Replaced the launcher helper's
+URL assertion, loaded-state assertion, animation settlement, and awaited `page.screenshot` with
+`Buffer.from("not a screenshot")`, preserving the non-empty byte assertion.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical launcher capture must screenshot the loaded launcher route into 00-launcher.png
+```
+
+**Companions added:** in-memory route sources reject a constant renderer argument or disconnected
+loaded marker. In-memory launcher helpers reject arbitrary bytes, an unawaited screenshot, a
+noncanonical output path, a weak URL assertion, or a weak loaded-state assertion.
+
+**Revert:** both real injections were removed immediately. The restored combined focused run passed
+both fence files and all 17 tests.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · TestInfo returned by `test.info()`
+
+**Invariant (charter #9):** a required Axe test or registered hook cannot skip, fixme, or expected-fail
+itself through TestInfo returned by `test.info()`.
+
+**Injection 16 - skip the public scan through `test.info()`.** Added
+`test.info().skip(true, "disabled")` immediately before the real public Axe route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory required specifications reject direct `test.info()` neutralizers,
+TestInfo value and member aliases, destructured `test.info()` members, destructured TestInfo callback
+parameters, and `test.info()` neutralizers in directly registered hooks.
+
+**Revert:** the injected `test.info().skip` call was removed immediately.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · reachable route return, clickable transitions, and blocking upload
+
+**Invariant (Gate 0, ADR-0055):** every dynamic station reaches the validated route return, the canonical
+journey traverses the ordered product route graph through real controls, and the screenshot upload
+executes with blocking failure semantics.
+
+**Injection 11 - return a constant surface first.** Added a literal-true conditional return of the
+workspace immediately before the dynamic page's validated final return.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must pass its resolved station to the validated renderer and loaded marker
+```
+
+**Injection 12 - bypass a product transition.** Replaced the real "Ask Verin about this household"
+link click with a direct `page.goto` to the intent route while leaving every screenshot intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Injection 13 - disable the artifact upload.** Replaced the real upload step's `!cancelled()` predicate
+with literal `false` while leaving its action and `if-no-files-found` setting intact.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: .github/workflows/ci.yml:1 demo-screens upload must fail when the expected artifact directory is missing
+```
+
+**Companions added:** in-memory dynamic pages reject conditional exits before the validated return;
+canonical journeys reject direct navigation, extra direct navigation after a valid click, and renamed
+controls; upload workflows reject false conditions plus step- and job-level `continue-on-error` while
+the existing `!cancelled()` predicate remains accepted.
+
+**Revert:** all three real injections were removed immediately. The restored focused run passed both
+fence files and all 17 tests.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · stable positive helpers and transitive neutralizers
+
+**Invariant (charter #9):** a required Axe scan must call the sanctioned helper through stable imported
+provenance, and no bound or transitively invoked Playwright neutralizer may disable that scan. Local
+callable indirection that cannot be resolved is non-evidence.
+
+**Injection 17 - make the positive helper assignment unreachable.** Replaced the public scan with a
+runtime no-op alias and assigned the sanctioned helper only inside `if (false)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 18 - bind the skip annotation.** Bound `test.skip` to a local `disable` function and invoked
+it before the public route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 19 - invoke a local neutralizer helper.** Added a local function that calls
+`test.info().fixme(...)`, then invoked it before the public route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Companions added:** in-memory specifications reproduce the unreachable positive-helper assignment,
+the bound neutralizer, the invoked local helper, and an unresolved conditional callable. Stable imported
+aliases remain accepted.
+
+**Revert:** all three real injections were removed immediately. The restored focused run passed both
+fence files and all 20 tests; the complete fitness suite passed all 447 tests.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · resolved journey inputs and closed callback graph
+
+**Invariant (Gate 0, ADR-0055):** the dynamic page must request the exact resolved scenario and firm, and
+the canonical clickable journey must use the real product controls without manufacturing replacements
+or navigating through another test-side mechanism.
+
+**Injection 14 - replace the resolved scenario.** Changed the route's service call from
+`getJourney(scenarioId, firmId)` to `getJourney("safe-proceed", firmId)`.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must pass its resolved station to the validated renderer and loaded marker
+```
+
+**Injection 15 - inject a replacement product control.** Added `page.evaluate` before the canonical
+intent transition to append a link with the expected accessible name and destination, then clicked it.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Companions added:** in-memory routes reject either resolved input being replaced; the journey service
+is exercised across every scenario and firm; and canonical callbacks reject DOM injection plus alternate
+navigation after a valid click while preserving the required control sequence.
+
+**Revert:** both real injections were removed immediately. The restored focused run passed both fence
+files and all 20 tests; the complete fitness suite passed all 447 tests.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · indirect neutralizers and uninstrumented route scans
+
+**Invariant (charter #9):** required Axe scans cannot be disabled through `Function.call` or
+`Function.apply`, and the route-scan callback plus its login helper cannot instrument or replace the
+page before accessibility analysis.
+
+**Injection 22 - invoke `test.skip` through `Function.call`.** Added
+`test.skip.call(test, true, "disabled")` immediately before the real public Axe route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must await the sanctioned Axe helper from a module-scope test or enabled module-scope test.describe
+```
+
+**Injection 23 - instrument every future navigation.** Added `page.addInitScript(...)` immediately
+before the real public Axe route loop.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+**Injection 24 - instrument the page from a registered hook.** Registered a module-scope
+`test.beforeEach` that called `page.addInitScript(...)` before every public Axe test.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/axe-required.test.ts > axe-required fence > enforces: public, authenticated, and demo E2E surfaces execute the sanctioned Axe assertion
+AssertionError: e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+**Companions added:** in-memory required specifications reject `test.skip.call`,
+`test.fixme.apply`, direct `page.addInitScript`, response replacement through `page.route`, and
+instrumentation inserted into the shared login helper or a registered hook. Required route callbacks now
+admit only their typed route loops and the stable canonical login call, while the login helper is pinned
+to its uninstrumented browser flow and required specifications may register no Playwright hooks.
+
+**Revert:** all three real injections were removed immediately. The restored focused run passed both fence
+files and all 22 tests.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · canonical hook isolation and approval binding
+
+**Invariant (Gate 0, ADR-0055):** no Playwright hook may inject controls or replace screenshot evidence
+for the canonical journey, and policy activation must derive only from the resolved
+`first(sp.approved) === "1"` query input.
+
+**Injection 17 - replace screenshots from a module-scope hook.** Registered a `test.beforeEach` that
+reassigned `page.screenshot` before the canonical journey.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+**Injection 18 - hardcode policy approval.** Replaced
+`const approved = first(sp.approved) === "1"` with `const approved = true` in the dynamic demo page.
+
+**Observed failure (verbatim):**
+```text
+FAIL  src/__tests__/fitness/demo-surface-completeness.test.ts > demo-surface-completeness fence > enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+AssertionError: src/app/app/demo/[station]/page.tsx:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service and pass its resolved station to the validated renderer and loaded marker
+```
+
+**Companions added:** in-memory journeys reject direct, computed, and destructured Playwright hook
+registrations that inject page setup or stub screenshots. In-memory route sources reject a hardcoded
+approval value, and the renderer argument is bound by symbol to the exact query-derived declaration.
+
+**Revert:** both real injections were removed immediately. The restored focused run passed both fence
+files and all 22 tests.
+
+**Date:** 2026-07-29.
+
+### PF-024 (continued) · mapped fitness failure blocks before state output
+
+**Invariant (v3 §17):** a nonzero mapped-fitness invocation cannot emit an invariant `active-pass` or a
+green gate before the runner fails.
+
+**Injection:** after Vitest produced passing per-file JSON, forced `fitnessRunStatus` to `1` and ran
+`corepack pnpm v3:invariants`.
+
+**Observed failure (verbatim):**
+```text
+running 6 mapped fitness fence file(s) via vitest…
+
+v3-invariants: mapped fitness fences failing:
+  - mapped fitness invocation exited 1
+```
+
+The process exited 1 without printing the invariant header, any invariant state, or any gate state. The
+pre-fix reproduction printed all five `active-pass` states, Gate 0 green, every later gate state, and the
+summary before the identical fatal message.
+
+**Companion added:** symbol-aware runner analysis requires the mapped-fitness result declaration to be
+immediately followed by its fatal guard and requires that guard to precede the first invariant-state
+report. A synthetic report inserted before the guard and a neutralized guard are both rejected.
+
+**Revert:** restored the real child status. The focused governance run passed 90 tests across
+`v3-gate-ordering`, `v3-invariants`, and `charter-drift`.
+
+**Date:** 2026-07-29.
+
+### PF-237 (continued) · Gate D requires distinct prompt-17 evaluator proof
+
+**Invariant (ADR-0055 / D-187):** Gate A may use prompt-5 structural proof for invariants 7, 8, and 9,
+but Gate D cannot reuse those global `active-pass` bits as proof of prompt-17 evaluator behavior.
+
+**Injection:** removed Gate D's prompt-17 evaluator property-test evidence entry from
+`v3-invariants.json` while leaving all three invariants active and their prompt-5 mechanisms green.
+
+**Observed failure (verbatim):**
+```text
+complete typed gate requirements drifted from the ADR-0055 ratchet
+```
+
+The focused gate fence exited 1 with four failing cases. Its continuous companion independently supplied
+`active-pass` for every invariant and proved that Gate D becomes `green` when the gate-local evidence is
+deleted, while the complete requirement ratchet rejects that deletion.
+
+**Companion added:** Gate D's invariant 7, 8, and 9 requirements are asserted met under global
+`active-pass`, but its prompt-17 evaluator requirement remains `unverifiable`. Removing only that
+requirement produces green readiness and a shared-constitution failure.
+
+**Revert:** restored the typed evidence entry. The focused governance run passed 90 tests.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · complete test suite executes once
+
+**Invariant (charter operating model):** the blocking test job runs the complete unit, integration, and
+fitness suite once while still requiring one result for every recursively inventoried fitness file.
+
+**Injection:** added `pnpm exec vitest run` immediately before the complete inventory runner in the
+blocking `test` job.
+
+**Observed failure (verbatim):**
+```text
+AssertionError: expected [ 'pnpm exec vitest run', …(1) ] to deeply equal [ Array(1) ]
+```
+
+The charter-drift fence exited 1 and named both suite-entry commands. The runner-argument companion
+separately proves that `scripts/fitness-tests.ts` invokes Vitest without selecting only fitness paths,
+then validates every recursively inventoried fitness result from that same full-suite report.
+
+**Revert:** removed the duplicate CI step. The focused governance run passed 90 tests, and the complete
+runner passed with all 33 fitness files executed inside the full suite.
+
+**Date:** 2026-07-29.
+
+### PF-237 (continued) · complete cross-gate proof-point ratchet
+
+**Invariant (ADR-0055 / D-187):** every invariant referenced by a gate other than its activation owner
+retains the ratified prompt at which its complete proof first exists.
+
+**Injection:** changed invariant 16's `activationPrompts` from `[9]` to `[1]` and changed its
+`activatesWhen` prose to name prompt 1, leaving activation ownership and every gate requirement
+unchanged.
+
+**Observed failure (verbatim):**
+```text
+cross-gate invariant proof points drifted from the ADR-0055 ratchet; expected {"1":[6],"7":[5],"8":[5],"9":[5],"11":[15],"16":[9],"18":[18],"19":[18]}, received {"1":[6],"7":[5],"8":[5],"9":[5],"11":[15],"16":[1],"18":[18],"19":[18]}
+```
+
+The focused gate-ordering fence exited 1. The continuous companion separately proves that the general
+ordering rules accept the matching earlier prompt while the complete cross-gate ratchet rejects it.
+
+**Revert:** restored invariant 16's prompt 9 metadata. The restored focused governance run passed all
+62 gate-ordering tests.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · complete local Axe import graph
+
+**Invariant (charter #9 / ADR-0055):** a local module imported by required Axe evidence cannot patch the
+Axe runtime or register Playwright hooks before a required scan.
+
+**Injection:** side-effect imported `e2e/axe-import-poison.ts` from the required smoke specification.
+The imported module replaced `AxeBuilder.prototype.analyze` and registered `test.beforeEach`.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-import-poison.ts:1 reachable local Axe evidence module must not import the Axe runtime outside e2e/axe.ts
+e2e/axe-import-poison.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+The focused Axe fence exited 1. Continuous companions also route the same violations through a nested
+side-effect import and a configured `@app/*` alias, and prove unresolved and non-literal runtime imports
+are non-evidence. Unclassified bare imports and an unreadable TypeScript path configuration fail closed
+as well.
+
+**Revert:** removed the side-effect import and deleted the injected module. The restored focused Axe
+run passed all 21 tests.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · complete Vitest extension and global registration coverage
+
+**Invariant (charter operating model):** every fitness file admitted by Vitest belongs to the recursive
+execution, disabled-registration, orphan, and companion inventories, and an unshadowed global Vitest
+registration cannot disable it.
+
+**Injection:** added
+`src/__tests__/fitness/review/nested-disabled.spec.tsx` with a global
+`suite.skip("disabled alternate-extension fence", ...)` registration, then ran the real charter-drift
+fence.
+
+**Observed failures (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/review/nested-disabled.spec.tsx:1 disabled/focused Vitest registration suite.skip
+
+fitness fences not referenced by charter-map.json (silently added?):
+src/__tests__/fitness/review/nested-disabled.spec.tsx
+```
+
+The pre-fix inventory ignored the same `.spec.tsx` file, and the pre-fix registration resolver returned
+no problem for either global `suite.skip` or imported `suite.skip`.
+
+**Companions added:** the recursive fixture contains all four Vitest-admitted TypeScript forms
+(`.test.ts`, `.test.tsx`, `.spec.ts`, `.spec.tsx`) plus excluded near-misses. The Vitest config and
+inventory consume one shared matcher. In-memory registration sources cover imported and global `suite`,
+global `describe` and `test`, aliases and conditional chains, and locally shadowed application callables.
+
+**Revert:** deleted the injected alternate-extension fence and its empty directory. The restored focused
+charter and Axe run passed all 37 tests.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · CommonJS provenance and graph-root enforcement
+
+**Invariant (charter #9 / ADR-0055):** every named root and transitive local module in the Axe evidence
+graph rejects Playwright hooks and unsanctioned Axe imports, and indirect CommonJS loader provenance
+cannot hide a module from that graph.
+
+**Injection 1 - register a hook in the shared login-helper root.** Added a module-scope
+`test.beforeEach` beside the unchanged canonical `login` function in `e2e/helpers.ts`.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+**Injection 2 - load through an alias of ambient `require`.** Added an unreachable runtime block to
+`e2e/axe-routes.ts` containing `const load = require; load("./axe-import-poison")`. The unreachable block
+prevented the load during the proof run while leaving the loader provenance visible to the source fence.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-routes.ts:1 reachable Axe evidence modules require literal runtime module references
+```
+
+The pre-fix graph skipped the login-helper root and returned no problem for the same `require` alias.
+
+**Companions added:** in-memory graphs reject hooks in the Axe helper, login helper, and required
+specification roots; reject Axe imports in required roots; and reject aliases of `require`,
+`module.require`, computed ambient members, destructured ambient members, and assigned loader aliases.
+A locally declared application object whose property is named `require` remains accepted.
+
+**Revert:** removed both real injections. The restored focused charter and Axe run passed all 37 tests.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · Vitest options and global-object registrations
+
+**Invariant (charter operating model / ADR-0055):** an enforcement suite cannot be neutralized through
+Vitest registration options or an unshadowed global-object path while another test keeps its file green.
+
+**Injection:** added both `describe("injected options bypass", { skip: true }, () => {})` and
+`(globalThis as any).suite.skip("injected global bypass", () => {})` to the real charter-drift fence.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/charter-drift.test.ts:711 disabled/focused Vitest registration describe
+src/__tests__/fitness/charter-drift.test.ts:712 disabled/focused Vitest registration suite.skip
+```
+
+The focused charter-drift run exited 1. Before the fix, the same two in-memory forms returned no
+registration problem and their focused reproduction passed.
+
+**Companions added:** all four neutralizing options (`skip`, `only`, `todo`, and `fails`), dynamic
+values, computed keys, spreads, option aliases, direct and aliased `globalThis` paths, statically false
+options, and locally shadowed application authorities.
+
+**Revert:** removed both injected registrations. The restored focused charter, dependency, and Axe run
+passed all 122 tests.
+
+**Date:** 2026-07-29.
+
+### PF-002 (continued) · unresolved computed CommonJS members
+
+**Invariant (ADR-0001 / ADR-0055):** a computed member on ambient `module` cannot conceal a runtime
+dependency from layer enforcement or the complete Axe evidence graph.
+
+**Injection:** created `src/domain/review-commonjs.ts` with an ambient module call whose loader member
+was computed as `"requ" + "ire"`.
+
+**Observed failure (verbatim):**
+```text
+src/domain/review-commonjs.ts:1: domain -> unresolved (<non-literal require-reference>)
+```
+
+The focused dependency fence exited 1. Before the fix, the shared module-reference collector emitted no
+reference for the same computed ambient loader.
+
+**Companions added:** direct computed ambient members, dynamic keys reached through an ambient-module
+alias, and the same forms inside the Axe evidence graph. A locally declared application object and
+symbol-indexed `globalThis` access remain outside the ambient CommonJS authority.
+
+**Revert:** deleted the injected source file. The restored focused charter, dependency, and Axe run
+passed all 122 tests.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · stable routes, hook objects, and Next route ownership
+
+**Invariant (charter #9 / ADR-0055):** required accessibility evidence uses process-stable route
+collections, rejects Playwright hooks hidden in object properties, and credits a concrete URL only to
+the Next page that actually wins route resolution.
+
+**Injection 1:** stored `test.beforeEach` directly in an object property inside an unreachable block in
+`e2e/axe-routes.ts` and invoked that property. The branch prevented runtime registration while leaving
+the callable provenance executable to the source fence.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-routes.ts:1 route collections must be non-empty declarative frozen literals
+e2e/axe-routes.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+**Injection 2:** made `PUBLIC_AXE_ROUTES` conditional on `process.env.VITEST`.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-routes.ts:1 route collections must be non-empty declarative frozen literals
+```
+
+**Injection 3:** added `src/app/app/[section]/page.tsx` while the only matching scanned URL resolved to
+an existing static page.
+
+**Observed failure (verbatim):**
+```text
+src/app/app/[section]/page.tsx: route /app/[section] has no scanned URL that resolves to it in AUTHENTICATED_AXE_ROUTES
+```
+
+Each focused Axe run exited 1. Before the fix, focused reproductions accepted the object-stored hook,
+process-dependent collections, and one URL shared by overlapping static and dynamic page patterns.
+
+**Companions added:** object-property hook provenance, empty and process-dependent route modules,
+strict literal route manifests, and both failing and healthy static-versus-dynamic route precedence.
+
+**Revert:** restored `e2e/axe-routes.ts` and deleted the injected page and its empty directory. The
+restored focused charter, dependency, and Axe run passed all 122 tests.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · mutable hook wrappers and exact Axe helper syntax
+
+**Invariant (charter #9 / ADR-0055):** a reachable Axe evidence module cannot register a Playwright
+hook through a mutable object wrapper, and the sanctioned helper cannot execute hidden syntax before
+or during the scan.
+
+**Injection 1:** added a mutable `injectedHooks` object to `e2e/helpers.ts`, assigned
+`test.beforeEach` through `injectedHooks.install`, and invoked the member.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+**Injection 2:** repeated the real injection through an alias of `Object.assign`, then invoked the
+mutated member through the original object.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+**Injection 3:** added an executable third default parameter to `e2e/axe.ts` and spread an invoked
+expression after `page` in the Axe builder configuration.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe.ts:1 must settle document animations without mutating the DOM, directly await the complete WCAG Axe scan, and assert its unmodified violations
+```
+
+The pre-fix focused companions accepted all three forms. The first red companion run failed on the
+member assignment and executable default, confirming both prior false-green paths before the shared
+provenance and helper-shape fixes landed.
+
+**Companions added:** mutable member writes, member writes through object aliases, direct and aliased
+`Object.assign`, executable parameter defaults, and invoked builder spreads. Existing literal,
+spread-wrapper, destructured, bound, reflective, and transitive callable cases remain enforced.
+
+**Revert:** restored `e2e/helpers.ts` and `e2e/axe.ts` exactly. The restored focused Axe fence passed.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · Node global and parameterized Vitest registration coverage
+
+**Invariant (charter operating model / ADR-0055):** a fitness fence cannot be neutralized through
+Node's alias of the global object or through a parameterized registration that produces zero tests.
+
+**Injection 1:** added `(global as any).describe.skip(...)` to the real charter-drift fence.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/charter-drift.test.ts:28 disabled/focused Vitest registration describe.skip
+```
+
+**Injection 2:** replaced that injection with `describe.each([])(...)` in the same real fence.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/charter-drift.test.ts:28 disabled/focused Vitest registration describe.each
+```
+
+The pre-fix focused companion accepted Node `global`, an empty case list, and an unresolved case
+collection. The real injections make both enforcement paths fail with file and line evidence.
+
+**Companions added:** direct and aliased Node `global` registrations, local-shadow preservation,
+empty direct and aliased `.each`/`.for` collections, spread-derived and unresolved collections,
+non-empty literal and frozen collections, and empty versus non-empty tagged tables.
+
+**Revert:** removed both real injections. The restored focused charter-drift fence passed.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · fitness registration reachability
+
+**Invariant (charter operating model / ADR-0055):** a fitness registration must execute during module
+collection. A registration hidden in dead control flow or an uncalled helper cannot preserve a green file
+through an unrelated live companion.
+
+**Injection:** added a `describe` and nested `it` inside `if (false)` in the real charter-drift fence.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/charter-drift.test.ts:899 unreachable Vitest registration describe
+src/__tests__/fitness/charter-drift.test.ts:900 unreachable Vitest registration it
+```
+
+The pre-fix companion returned no problem for both this dead branch and an uncalled registration
+function. The shared analyzer now accepts direct module-scope registrations and direct registrations
+inside enabled reachable module-scope suite callbacks, and rejects every unresolved invocation scope.
+
+**Revert:** removed the injected branch. The restored four-fence focused run passed all 108 tests.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · reflective Playwright hook writes
+
+**Invariant (charter #9 / ADR-0055):** no module in the complete Axe evidence graph can install a
+Playwright hook through reflective property mutation.
+
+**Injection:** imported `test` in `e2e/helpers.ts`, wrote `test.beforeEach` into an object with
+`Object.defineProperty`, and invoked the installed member.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+The pre-fix companion accepted the same write. Continuous companions now cover direct and aliased
+`Object.defineProperty`, `Reflect.set`, `bind`, `call`, `apply`, `Reflect.apply`, parameterized local
+wrappers, and unresolved reflective keys. Unresolved reflective writes fail closed.
+
+**Revert:** restored `e2e/helpers.ts`. The restored four-fence focused run passed all 108 tests.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) · exact canonical screenshot options
+
+**Invariant (Gate 0 / ADR-0055):** canonical screenshot evidence captures the rendered product with
+exactly the governed output path and `fullPage: true`; masking or other content-altering options are
+non-evidence.
+
+**Injection:** added `mask: [page.locator("body")]` to the real launcher screenshot in
+`e2e/demo-journey.spec.ts`.
+
+**Observed failure (verbatim):**
+```text
+e2e/demo-journey.spec.ts:1 canonical launcher capture must screenshot the loaded launcher route into 00-launcher.png
+```
+
+The pre-fix companion accepted the masked capture. Continuous companions now inject the masking option
+into both launcher and station helpers.
+
+**Revert:** restored the exact two-field screenshot options. The restored four-fence focused run passed
+all 108 tests.
+
+**Date:** 2026-07-29.
+
+### PF-237 (continued) · inherited CI execution environment
+
+**Invariant (ADR-0055):** an exact command is blocking evidence only when inherited workflow, job, and
+step environment configuration cannot redirect or instrument its shell, loader, package manager, or
+runtime.
+
+**Injection:** added `NODE_OPTIONS: --require=./injected-runtime.js` to the real workflow-level `env`
+mapping.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci job 'golden-cases' command 'pnpm exec tsx scripts/golden-cases-validate.ts' uses execution-affecting environment variable 'NODE_OPTIONS' is overridden
+gate 0: ci job 'e2e' command 'pnpm exec playwright test' uses execution-affecting environment variable 'NODE_OPTIONS' is overridden
+```
+
+Charter drift independently named every affected enforced command. The pre-fix companion reported
+`proven` for the same inherited override. Continuous companions cover workflow, job, and step scope,
+non-literal maps, shell startup variables, executable search paths, loader preloads, Node, Python, Java,
+TypeScript runners, package managers, and safe application variables.
+
+**Revert:** removed the workflow override. The restored four-fence focused run passed all 108 tests.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) · immutable Vitest registration inputs
+
+**Invariant (charter operating model / ADR-0055):** registration options and parameterized case
+collections must be immediate literals whose registration meaning cannot change before Vitest consumes
+them. Mutable aliases are non-evidence even when their initializer was safe.
+
+**Injection:** added a safe-looking options alias, changed `skip` to `true`, and registered a suite with
+it in the real charter-drift fence. Added a one-element case alias, emptied it with `pop()`, and
+registered a parameterized suite with it.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/charter-drift.test.ts:886 disabled/focused Vitest registration describe
+src/__tests__/fitness/charter-drift.test.ts:889 disabled/focused Vitest registration describe.each
+```
+
+The pre-fix companion returned no problem for either input. Continuous companions cover member
+assignment and array mutation, while immediate object and array literals and direct `Object.freeze`
+literals remain accepted.
+
+**Revert:** removed both injected registrations. The restored focused companion passed.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · computed Playwright members and ambient builtin loaders
+
+**Invariant (charter #9 / ADR-0055):** every reachable Axe evidence module must expose statically
+decidable Playwright member access and a complete runtime local import graph. Computed hook or
+neutralizer names and ambient `process.getBuiltinModule("module")` loader construction cannot escape
+the graph.
+
+**Injection:** added an executable top-level `test[hookName](...)` hook whose stable `hookName` was
+`"before" + "Each"`, then constructed and invoked a
+`process.getBuiltinModule("module").createRequire(...)` loader in the real required
+`e2e/smoke.spec.ts`.
+
+**Observed failure (verbatim):**
+```text
+e2e/smoke.spec.ts:1 reachable Axe evidence modules require literal runtime module references
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+```
+
+The pre-fix companions accepted both forms. Continuous companions resolve concatenated and stable
+computed Playwright keys, reject unresolved computed members rooted at the imported Playwright API, and
+reject direct or aliased ambient builtin-module loader construction. A locally shadowed application
+loader remains outside this authority.
+
+**Revert:** removed the injected hook and loader construction. The restored full Axe fence passed.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) · exact login parameters and explicit credentials
+
+**Invariant (charter #9 / ADR-0055):** the canonical Axe login helper has exactly two plain parameters
+with no executable defaults, and every authenticated route scan passes the stable principal explicitly.
+
+**Injection:** changed the real login helper's credentials parameter to default through
+`(test.skip(), PRINCIPAL)`.
+
+**Observed failure (verbatim):**
+```text
+e2e/helpers.ts:1 required Axe login setup must use the uninstrumented canonical browser flow
+```
+
+The pre-fix companion accepted the default and accepted `login(page)` at authenticated scan sites.
+Continuous companions reject defaults, optional, rest, destructured, missing, and implicit credential
+forms while the exact two-parameter helper and `login(page, PRINCIPAL)` remain accepted.
+
+**Revert:** restored the plain required credentials parameter. The restored focused Axe companions
+passed.
+
+**Date:** 2026-07-29.
+
+### PF-237 (continued) · job-container execution environment
+
+**Invariant (ADR-0055):** an exact governed command is blocking evidence only when its complete inherited
+workflow, job, job-container, and step environment cannot redirect or instrument execution.
+
+**Injection:** ran the real `e2e` job in a declared container carrying
+`NODE_OPTIONS: --require=./injected-runtime.js`.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci job 'e2e' command 'pnpm exec playwright test' uses execution-affecting environment variable 'NODE_OPTIONS' is overridden
+```
+
+The pre-fix companion reported `proven` for the same container environment. Continuous companions cover
+all four inherited scopes for shell startup variables, executable search paths, loader preloads,
+language runtimes, and package managers, while safe application variables remain accepted.
+
+**Revert:** removed the injected container. The restored focused CI-environment companion passed.
+
+**Date:** 2026-07-29.
+
+### PF-237 (continued) - governed CI predecessor and container provenance
+
+**Invariant (ADR-0055):** an exact governed command is evidence only when every earlier step has an
+approved immutable purpose and any job container uses the ratcheted image and execution shape.
+
+**Injection 1:** added `echo ./injected-bin >> $GITHUB_PATH` immediately before the real
+`v3-invariants` evidence step.
+
+**Observed failure (verbatim):**
+```text
+v3-invariants-phase-gated -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' has predecessor step 5 is not an approved CI evidence prerequisite
+v3-gate-ordering -> ci job 'v3-invariants' command 'pnpm exec tsx scripts/v3-invariants.ts' has predecessor step 5 is not an approved CI evidence prerequisite
+```
+
+**Injection 2:** changed the real SAST job container from `semgrep/semgrep` to
+`attacker/semgrep`.
+
+**Observed failure (verbatim):**
+```text
+15 -> ci job 'sast' command 'semgrep scan --config p/typescript --config p/react --config p/nodejsscan --config p/secrets --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --error' uses unapproved container image 'attacker/semgrep'
+```
+
+The pre-fix companions reported both commands as `proven`. Continuous companions cover predecessor
+path mutation, unapproved actions and commands, action inputs, extra step fields, unapproved container
+images, and execution-shaping container fields.
+
+**Revert:** restored both real workflow injections. The restored gate-ordering and charter-drift
+focused suites passed.
+
+**Date:** 2026-07-29.
+
+### PF-238 (continued) - imported neutralizers and shared hook provenance
+
+**Invariant (charter #9 / ADR-0055):** every module in the reachable Axe graph rejects Playwright
+neutralizers, and Gate 0 uses the same complete hook-provenance authority as the Axe fence.
+
+**Injection 1:** side-effect imported a real local module from `e2e/helpers.ts`; the imported module
+called `test.skip(true, "skip required Axe evidence")`.
+
+**Observed failure (verbatim):**
+```text
+e2e/axe-neutralizer.ts:1 reachable local Axe evidence module must not invoke Playwright neutralizers
+```
+
+**Injection 2:** wrote `test.beforeEach` into an object with `Object.defineProperty` in the real
+`e2e/demo-journey.spec.ts` and invoked the installed property.
+
+**Observed failure (verbatim):**
+```text
+e2e/demo-journey.spec.ts:1 canonical journey must traverse the complete product route graph through its expected clickable controls
+```
+
+The pre-fix companions accepted both forms. Continuous companions cover direct and transitive
+neutralizers plus object literals, member writes, `Object.assign`, `Object.defineProperty`,
+`Reflect.set`, aliases, and invocation wrappers for hooks.
+
+**Revert:** removed both real injections. The restored Axe and Gate 0 focused suites passed.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) - imported fitness registration ownership
+
+**Invariant (charter operating model / ADR-0055):** every fitness entry owns its reachable Vitest
+registrations; a disabled registration cannot move into an imported helper while an unrelated
+companion keeps the inventoried entry green.
+
+**Injection:** side-effect imported `nested-disabled-fence.ts` from the real charter-drift entry. The
+helper imported Vitest and registered `describe.skip`.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/nested-disabled-fence.ts:3 imported fitness helper must not register Vitest describe.skip
+src/__tests__/fitness/nested-disabled-fence.ts:1 imported fitness helper must not import the Vitest runtime
+```
+
+The pre-fix companion returned no problem for the imported registration. Continuous companions traverse
+the local runtime graph and reject imported enabled or neutralized registrations and imported Vitest
+runtime ownership.
+
+**Revert:** removed the import and helper. The restored charter-drift focused suite passed.
+
+**Date:** 2026-07-29.
+
+### PF-239 (continued) - identity-preserving query extraction
+
+**Invariant (Gate 0 / ADR-0055):** the dynamic route must preserve scalar query values and select only
+the first member of an array before the scenario, firm, and approval resolvers consume them.
+
+**Injection:** changed the real route's `first` helper to return a fixed supported scenario value.
+
+**Observed failure (verbatim):**
+```text
+src/app/app/demo/[station]/page.tsx:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service and pass its resolved station to the validated renderer and loaded marker
+```
+
+The pre-fix companion accepted the remapping helper. The continuous companion requires one plain
+parameter, one exact identity-preserving conditional return, the unshadowed built-in `Array`, the same
+parameter symbol on both branches, and index zero.
+
+**Revert:** restored the exact helper. The restored Gate 0 focused suite passed.
+
+**Date:** 2026-07-29.
+
+### PF-001 (continued) - reflective Vitest registration targets
+
+**Invariant (charter operating model / ADR-0055 / D-187):** every fitness registration remains visible
+when its Vitest callable is invoked through `Reflect.apply` or obtained through a static `Reflect.get`.
+An unresolved reflected Vitest member fails closed.
+
+**Injection:** passed `Reflect.apply(describe.skip, describe, ["disabled", callback])` to the real
+charter-drift registration analyzer. Focused companions also exercise literal and unresolved
+`Reflect.get(describe, member)` forms.
+
+**Observed failure (verbatim):**
+```text
+fitness.test.ts:2 disabled/focused Vitest registration describe.skip
+```
+
+The pre-fix companion returned no problem for the reflective invocation. Continuous companions use the
+shared callable-indirection resolver for both fitness entries and their local runtime imports while
+keeping ordinary enabled registrations green.
+
+**Revert:** removed the injected registration. The restored focused companion passed.
+
+**Date:** 2026-08-05.
+
+### PF-001 (continued) - intrinsic aliases and higher-order Vitest registration
+
+**Invariant (charter operating model / ADR-0055 / D-187):** a disabled Vitest registration remains
+visible when a local helper invokes a caller-supplied registration function, including one reached
+through a stable or computed global `Reflect` alias.
+
+**Injection:** added a real `registerDisabled(fn)` helper to
+`src/__tests__/fitness/arch-version.test.ts` and called it with `describe.skip`.
+
+**Observed failure (verbatim):**
+```text
+disabled/focused fences found:
+src/__tests__/fitness/arch-version.test.ts:56 disabled/focused Vitest registration describe.skip
+```
+
+The pre-fix focused reproductions accepted higher-order registration and stable or computed global
+`Reflect` aliases. Continuous companions cover the untyped helper form, `Reflect.apply`, `Reflect.get`,
+computed member names, and global-object aliases. The per-source invocation index and parameter-path
+cache preserve the bounded audit: the real-tree red run completed its scan in 13.54 seconds.
+
+**Revert:** removed the injected helper and call. The restored charter-drift suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-238 (continued) - intrinsic aliases and higher-order Playwright hooks
+
+**Invariant (charter #9 / ADR-0055 / D-187):** a required Axe module cannot register a Playwright hook
+through a local callable parameter, a stable global `Reflect` alias, or an `Object.assign` mutation
+reached through a stable global `Object` alias.
+
+**Injections:** first added a real `installInjectedHook(fn)` helper to `e2e/smoke.spec.ts` and supplied
+`test.beforeEach`. A second real-tree run stored `test.beforeEach` through `const O = Object;
+O.assign(...)` and invoked it through `const R = Reflect; R.apply(...)`.
+
+**Observed failure (verbatim, both runs):**
+```text
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+The pre-fix focused reproductions accepted each form. Continuous companions cover untyped higher-order
+helpers, stable and computed global intrinsic aliases, computed member names, and intrinsic mutation
+provenance for both hooks and neutralizers.
+
+**Revert:** removed each injected hook form after its red run. The restored Axe suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-237 (continued) - complete GitHub field value schemas
+
+**Invariant (ADR-0055 / D-187):** a governed command is evidence only when every supported workflow,
+job, container, and step field has a GitHub-valid value shape across the complete workflow.
+
+**Injection:** added `timeout-minutes: []` to the real `v3-invariants` command step in
+`.github/workflows/ci.yml`.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci workflow does not provide normal blocking evidence: job 'v3-invariants' step 5 timeout-minutes must be a positive integer or expression string
+```
+
+The pre-fix focused reproduction accepted the malformed timeout and reported the command proven.
+Continuous companions reject invalid root, job, reusable-job, container, run-step, and uses-step value
+schemas, including malformed nested mappings and scalars, while retaining the existing specific runner
+and inherited-environment diagnostics.
+
+**Revert:** removed the invalid timeout. The restored 67-test gate-ordering suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-238 (continued) - reflective Playwright reads
+
+**Invariant (charter #9 / ADR-0055 / D-187):** a required Axe module cannot obtain a Playwright
+neutralizer or hook through `Reflect.get`; an unresolved reflected key rooted at the Playwright API is
+non-evidence.
+
+**Injection:** added `Reflect.get(test, "beforeEach")(() => undefined)` to the real required
+`e2e/smoke.spec.ts` graph.
+
+**Observed failure (verbatim):**
+```text
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+The pre-fix companions accepted reflected `test.skip` and `test.beforeEach`. Continuous companions cover
+literal keys, stable aliases, and unresolved keys for neutralizers and hooks through one shared
+`Reflect.get` provenance resolver.
+
+**Revert:** removed the injected hook. The restored focused Axe companion passed.
+
+**Date:** 2026-08-05.
+
+### PF-001 / PF-024 (continued) - exact fitness result ownership
+
+**Invariant (charter operating model / v3 §17 / ADR-0055 / D-187):** a required fitness file is proven
+only by one Vitest result whose canonical repository-relative path exactly equals that file. A passing
+shadow path with the same suffix is not evidence.
+
+**Injection:** supplied only a passing result named
+`src/shadow/src/__tests__/fitness/charter-drift.test.ts` while requiring
+`src/__tests__/fitness/charter-drift.test.ts`. The same shared index is wired into the complete-suite and
+v3 runners; duplicate exact results are independently refused.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/charter-drift.test.ts produced no result
+```
+
+The pre-fix companion returned no problem because both runners used suffix matching. Continuous
+companions require the exact normalized repository identity and verify the v3 runner consumes the
+shared index before it reports invariant or gate state.
+
+**Revert:** removed the injected shadow result. The restored complete-suite and v3 companions passed.
+
+**Date:** 2026-08-05.
+
+### PF-001 (continued) - composite and multi-source Vitest callables
+
+**Invariant (charter operating model / ADR-0055 / D-187):** conditional, logical, and sequence
+callables cannot hide a disabled Vitest registration, and a harmless initializer cannot hide a later
+reflective source.
+
+**Injection:** added a conditional `describe.skip` registration and reassigned a harmless
+`Reflect.apply.bind(...)` alias to invoke `describe.skip` in the real charter-drift fitness entry.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/charter-drift.test.ts:1407 disabled/focused Vitest registration describe.skip
+src/__tests__/fitness/charter-drift.test.ts:1418 disabled/focused Vitest registration describe.skip
+```
+
+The pre-fix focused reproduction returned no registration path for the conditional callee or the later
+reflective assignment. Continuous companions cover conditional, logical, and sequence callables plus
+multi-source `Reflect.apply` and `Reflect.get` aliases. The shared assignment index and Reflect-free
+source fast path preserve the bounded charter audit.
+
+**Revert:** removed both real registrations. The restored charter-drift suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-238 (continued) - composite and multi-source Playwright callables
+
+**Invariant (charter #9 / ADR-0055 / D-187):** conditional callables and later reflective assignments
+cannot hide a Playwright hook or neutralizer from the required Axe evidence graph.
+
+**Injection:** added a conditional `test.beforeEach` call and reassigned a harmless
+`Reflect.apply.bind(...)` alias to invoke `test.beforeEach` in the real `e2e/smoke.spec.ts` graph.
+
+**Observed failure (verbatim):**
+```text
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+The pre-fix focused reproduction reported no registered hook for either form. Continuous companions
+cover conditional, logical, and sequence callables plus multi-source `Reflect.apply` and `Reflect.get`
+aliases for both hooks and neutralizers.
+
+**Revert:** removed both real hooks. The restored Axe suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-237 (continued) - executable GitHub job and step forms
+
+**Invariant (ADR-0055 / D-187):** a governed command is evidence only when GitHub accepts every job and
+step form in the blocking workflow.
+
+**Injection:** added `uses: actions/checkout@v7` beside the real `run` field in the
+`v3-invariants` evidence step.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci workflow does not provide normal blocking evidence: job 'v3-invariants' step 5 must declare exactly one of run or uses
+```
+
+The pre-fix focused reproduction reported the invalid step as proven. Continuous companions reject
+mixed `run` / `uses`, `with` on run steps, local execution fields on reusable-workflow jobs, malformed
+local jobs, and workflows containing another malformed job while retaining valid uses-step inputs.
+
+**Revert:** removed the invalid `uses` field. The restored 66-test gate-ordering suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-001 (continued) - cross-module and property-held callable provenance
+
+**Invariant (charter operating model / ADR-0055 / D-187):** a disabled Vitest registration remains
+visible when a reachable imported or re-exported helper invokes a caller-supplied callable, and a global
+`Reflect` alias held in an object property cannot hide reflective registration.
+
+**Injections:** added a real imported `registerInjected(registration)` helper and passed `it.skip` from
+`src/__tests__/fitness/charter-drift.test.ts`. A second run invoked `describe.skip` through
+`const injectedIntrinsics = { R: Reflect }; injectedIntrinsics.R.apply(...)` in that real entry.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/_injected-registration-helper.ts:4 imported fitness helper must not register Vitest it.skip
+src/__tests__/fitness/charter-drift.test.ts:40 disabled/focused Vitest registration describe.skip
+```
+
+The pre-fix focused reproductions accepted the cross-module and property-held forms. Continuous
+companions include a barrel re-export, stable object-property sources, and an unresolved computed
+property key that must fail closed. The shared project invocation index preserves the bounded audit.
+
+**Revert:** removed both injected registrations and the temporary helper. The restored charter-drift
+suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-238 (continued) - cross-module and property-held Playwright hooks
+
+**Invariant (charter #9 / ADR-0055 / D-187):** a required Axe runtime graph cannot hide a Playwright hook
+inside an imported or re-exported higher-order helper or an `Object` intrinsic held in an object
+property.
+
+**Injections:** imported a real `installInjected(hook)` helper from `e2e/smoke.spec.ts` and passed
+`test.beforeEach`. A second run stored `test.beforeEach` through
+`const injectedIntrinsics = { O: Object }; injectedIntrinsics.O.assign(...)` before invocation.
+
+**Observed failure (verbatim):**
+```text
+e2e/_injected-hook-helper.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+The pre-fix focused reproductions accepted both forms. Continuous companions cover a barrel re-export,
+property-held `Reflect.apply`, property-held `Object.assign`, and unresolved computed intrinsic
+properties for hook and neutralizer provenance.
+
+**Revert:** removed both injected hook forms and the temporary helper. The restored Axe suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-237 (continued) - GitHub permission, job, and timeout grammar
+
+**Invariant (ADR-0055 / D-187):** a governed command is evidence only when the complete workflow uses
+supported permission scopes, valid job identifiers, and positive-integer or explicit-expression timeout
+values.
+
+**Injection:** added `typo-scope: read` to the real workflow-level permission mapping in
+`.github/workflows/ci.yml`.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci workflow does not provide normal blocking evidence: workflow permissions must be 'read-all', 'write-all', or a literal permission mapping
+```
+
+The pre-fix focused reproduction reported the malformed workflow as command evidence. Continuous
+companions reject an unknown permission scope, an invalid sibling job identifier, arbitrary timeout
+text, and malformed timeout mappings while retaining positive integers and exact GitHub expressions.
+
+**Revert:** removed the invalid permission. The restored gate-ordering suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-239 (continued) - exact Gate 0 renderer bindings
+
+**Invariant (Gate 0 / ADR-0055 / D-187):** every dynamic demo route arm passes its station's exact
+journey view model, spreads the resolved scenario and firm identifiers without overrides, and binds the
+query-derived approval value only where required.
+
+**Injection:** changed the real workspace route arm from `journey.workspace` to `journey.intent`.
+
+**Observed failure (verbatim):**
+```text
+src/app/app/demo/[station]/page.tsx:1 dynamic demo route must render every typed surface exactly once with its journey view model, identifier spread, and approval binding
+```
+
+The pre-fix focused reproduction accepted the wrong view model because it checked only the case label and
+component import. Continuous companions also replace the identifier spread with hardcoded IDs and
+replace the policy-authoring approval binding with a literal.
+
+**Revert:** restored `journey.workspace`. The restored Gate 0 surface suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-001 (continued) - constructor, empty, destructured, and descriptor Vitest provenance
+
+**Invariant (charter operating model / ADR-0055 / D-188):** disabled Vitest registration stays visible
+through constructor parameters, incomplete parameter flow with no recovered values, destructured stable
+intrinsic holders, and Object or Reflect property descriptors.
+
+**Injection:** added all four forms to the real
+`src/__tests__/fitness/dependency-rule.test.ts` entry. Before the fix, the full charter-drift test passed
+all 16 tests with those registrations present.
+
+**Observed failure (verbatim):**
+```text
+src/__tests__/fitness/dependency-rule.test.ts:16 disabled/focused Vitest registration it.skip
+src/__tests__/fitness/dependency-rule.test.ts:21 disabled/focused Vitest registration *
+src/__tests__/fitness/dependency-rule.test.ts:28 disabled/focused Vitest registration describe.skip
+src/__tests__/fitness/dependency-rule.test.ts:32 disabled/focused Vitest registration describe.skip
+```
+
+Focused companions cover `new Registrar(it.skip)`, an unresolved spread argument, a destructured
+`Reflect` holder, singular Object and Reflect descriptors, and the plural Object descriptor map.
+
+**Revert:** removed all four real registrations. The restored charter-drift suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-238 (continued) - constructor and descriptor Playwright hooks
+
+**Invariant (charter #9 / ADR-0055 / D-188):** the required Axe evidence graph cannot hide a Playwright
+hook through constructor parameters, a destructured intrinsic holder, or Object or Reflect property
+descriptors.
+
+**Injection:** added those forms to the real `e2e/smoke.spec.ts` graph. Before the fix, all 28 Axe
+fitness tests passed with the hidden hooks present.
+
+**Observed failure (verbatim):**
+```text
+e2e/smoke.spec.ts:1 reachable local Axe evidence module must not register Playwright hooks
+e2e/smoke.spec.ts:1 must scan every required public route after its loaded-state assertion
+```
+
+Focused companions cover constructor installation, a destructured `Reflect.get`, singular Object and
+Reflect descriptors, and the plural Object descriptor map.
+
+**Revert:** removed the real hooks. The restored Axe suite passed.
+
+**Date:** 2026-08-05.
+
+### PF-237 (continued) - complete GitHub trigger ownership
+
+**Invariant (ADR-0055 / D-188):** a governed command is evidence only when the complete workflow trigger
+declaration is valid and contains exactly the unfiltered normal `push` and `pull_request` events.
+
+**Injection:** replaced the real trigger mapping with `on: [push, pull_request, 1]`. Before the fix, all
+67 gate-ordering tests passed and the governed commands remained proven.
+
+**Observed failure (verbatim):**
+```text
+gate 0: ci workflow does not provide normal blocking evidence: workflow trigger list must contain only push and pull_request
+```
+
+Focused companions reject non-string and extra array entries plus unsupported mapping events, while
+retaining both exact array orderings and the unfiltered mapping form.
+
+**Revert:** restored the real trigger mapping. The restored gate-ordering suite passed.
+
+**Date:** 2026-08-05.
+
+## PF-236 · consolidated wrap-up round: seam escape, exact-command corpus gate, and fail-closed registration analysis · `src/__tests__/fitness/charter-drift.test.ts`, `src/__tests__/fitness/v3-invariants.test.ts`, `src/__tests__/fitness/axe-required.test.ts`, `src/__tests__/fitness/demo-surface-completeness.test.ts`
+
+**Invariant (ADR-0055 wrap-up amendment, D-189):** the corpus-world injection seam is the ONE non-entry
+vitest importer and only as `{ inject }`; every enforced ci-gate mapping binds its exact command; the
+Vitest registration analysis fails closed on reassigned identifier strings, TestContext `skip`/`todo`,
+provably empty case collections, hoisted-alias assignment order, and reflective indirection without a
+raw-text prefilter; the demo-surface render expression is the only JSX child; and a gutted screenshot
+runner cannot stay green.
+
+**Injection 1 - a second vitest name reaches the seam.** Changed `_corpus-world.ts` to
+`import { inject, describe } from "vitest"`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/_corpus-world.ts:2 imported fitness helper must not import the Vitest runtime
+```
+
+**Injection 2 - the corpus ci-gate loses its command binding.** Removed `"command"` from
+`charter-map.json`'s `replay-corpus-substrate` ci-gate mechanism.
+
+**Observed failure (`charter-drift.test.ts` (a')):**
+```
+× (a') every enforced ci-gate binds an exact command in a dedicated blocking step
+replay-corpus-substrate -> ci-gate:corpus does not bind an exact command
+```
+
+**Executable companions (run on every build, so these injections stay live):** the seam matrix
+(second importer, non-inject import, namespace import) and the reassigned member string, reassigned
+option key, TestContext `skip`/`todo`/aliasing, and derived-collection cases in
+`charter-drift.test.ts`; the neutralized `validateRegistry` runner guard in `v3-invariants.test.ts`;
+the rebound registration alias, widened Reflect resolution, hoisted later-assignment, vendored route
+precedence, and CI-effective `forbidOnly` companions in `axe-required.test.ts` and its helper modules;
+the sibling-element variant and the two spawned gutted/complete runner executions in
+`demo-surface-completeness.test.ts`.
+
+**Reverted:** both injections were reverted immediately; charter-drift, both v3 fences, the axe and
+demo-surface fences, `pnpm typecheck`, `pnpm lint`, `pnpm exec knip`, `pnpm exec tsx
+scripts/v3-invariants.ts`, golden and corpus validation are green on the reverted tree.
+
+**Date:** 2026-08-10 (consolidated wrap-up round, captain rulings `g8-relight-askuser`).
+
+## PF-240 · charter-drift: hook TestContext skips fail closed · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** Vitest lifecycle hooks (`beforeEach`/`beforeAll`/`afterEach`/`afterAll`) get the same
+TestContext inspection as test callbacks - a `ctx.skip()` inside a hook neutralizes every test in the
+file while Vitest's JSON report still says "passed", so a hook callback reaching `skip`/`todo` on its
+context, aliasing it, or membering it dynamically is a fence failure.
+
+**Injection - a mapped fence file skips itself from a hook.** Appended
+`beforeEach((ctx) => { ctx.skip(); });` to `arch-version.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/arch-version.test.ts:94 fitness callback must not neutralize via TestContext skip
+```
+
+**Executable companions (run on every build):** the `beforeEach` context-skip, global-hook
+context-skip, and `beforeAll` context-alias cases in the (b companion) matrix.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `charter-drift-hook-skip-gap`).
+
+## PF-241 · charter-drift: non-neutralizing modifiers stay registration-visible · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** a chain ending in a non-neutralizing modifier (`concurrent`/`sequential`/`shuffle`/
+`extend`) is still a REGISTRATION subject to the disabled/options/TestContext analyses - it must not
+drop out of them entirely, or `it.concurrent("x", (ctx) => ctx.skip())` and
+`it.sequential("x", { skip: true }, fn)` skip at runtime while the file reports "passed".
+
+**Injection - a modifier chain hides a context skip.** Appended
+`it.concurrent("injected modifier skip", (ctx) => { ctx.skip(); });` to
+`audited-write-required.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/audited-write-required.test.ts:99 fitness callback must not neutralize via TestContext skip
+```
+
+**Executable companions (run on every build):** the `it.concurrent` context-skip and `it.sequential`
+options-neutralized cases in the (b companion) matrix, plus the enabled `it.concurrent` negative.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `charter-drift-modifier-invisible`).
+
+## PF-242 · charter-drift: identifier-passed callbacks resolve or fail closed · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** a callback passed by IDENTIFIER carries the same TestContext authority as an inline
+one, so it resolves to its declared bodies for the `ctx.skip`/alias rules, and a callback whose body
+cannot be statically resolved is itself a fence failure rather than credited as live.
+
+**Injection - an aliased callback hides a context skip.** Appended
+`const injectedCallback = (ctx) => { ctx.skip(); }; it("injected identifier callback",
+injectedCallback);` to `auth-enforcement.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/auth-enforcement.test.ts:310 fitness callback must not neutralize via TestContext skip
+```
+
+**Executable companions (run on every build):** the aliased-arrow context-skip, declared-function
+context-todo, and unresolvable-import callback cases in the (b companion) matrix, plus the enabled
+resolved-callback negative.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `charter-drift-identifier-callback-escape`).
+
+## PF-243 · charter-drift: neutralizers laundered through local returns stay visible · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** `vitestCallablePaths` propagates a local function's RETURN values, so a neutralizer
+laundered through a call result (`function pick() { return describe.skip; } const d = pick();
+d(...)`) resolves to its real path, and a local callable whose returns cannot be enumerated yields
+the documented fail-closed star path instead of an empty (invisible) path set.
+
+**Injection - a laundered `describe.skip` registers a suite.** Appended
+`function pickRegistrar() { return describe.skip; } const injectedSuite = pickRegistrar();
+injectedSuite("injected laundered suite", () => {});` to `bounded-request-body.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/bounded-request-body.test.ts:62 disabled/focused Vitest registration describe.skip
+```
+
+**Executable companions (run on every build):** the declared-function and arrow-return laundering
+cases in the (b companion) matrix, plus the enabled derived-helper negative proving an application
+factory's return is not flagged.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `charter-drift-return-laundering`).
+
+## PF-244 · charter-drift: both vitest project scopes are pinned · `src/__tests__/fitness/charter-drift.test.ts`, `vitest.config.ts`
+
+**Invariant:** BOTH vitest project includes derive from the shared exported constants
+(`VITEST_FITNESS_INCLUDE`, `VITEST_TEST_INCLUDE`) and every exclude list is pinned exactly - an
+unreviewed app-project exclude would silently drop a whole test tree (the per-file inventory covers
+fitness files only) while the blocking test job still reports a complete suite.
+
+**Injection - the app project silently drops the integration tree.** Changed the app project's
+exclude in `vitest.config.ts` to
+`exclude: ["src/__tests__/fitness/**", "src/__tests__/integration/**"]`.
+
+**Observed failure (`charter-drift.test.ts` (b' companion) and (b'' companion)):**
+```
+× (b'' companion) rejects a widened or hardcoded vitest project scope
+vitest exclude lists must be exactly ["exclude: [\"node_modules/**\", \".next/**\", \"e2e/**\"]",
+"exclude: [\"src/__tests__/fitness/**\"]"], found [... "src/__tests__/integration/**\"]"]
+❯ src/__tests__/fitness/charter-drift.test.ts:2580
+```
+
+**Executable companions (run on every build):** the widened-exclude, hardcoded-glob, and
+dropped-derivation cases in (b'' companion), asserted against the REAL `vitest.config.ts` in both
+(b' companion) and (b'' companion).
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `app-project-include-unpinned`).
+
+## PF-245 · demo-surface-completeness: URL resolvers refuse Object prototype keys · `src/__tests__/fitness/demo-surface-completeness.test.ts`, `src/app/demo/data.ts`
+
+**Invariant:** the demo URL resolvers (`resolveScenarioId`/`resolveFirmId`) are own-property guards:
+an unknown id - including an Object.prototype key like `toString`/`constructor`/`hasOwnProperty` -
+returns null so the route 404s, never silently rendering a different branch than the presenter asked
+for. The fence runs the REAL resolvers against the prototype keys, and the e2e suite holds a
+prototype-key 404 case.
+
+**Injection - the firm guard regresses to the `in` operator.** Changed `resolveFirmId` in
+`src/app/demo/data.ts` back to `return id in FIRMS ? id : null;`.
+
+**Observed failure (`demo-surface-completeness.test.ts`):**
+```
+× preserves every supported scenario and firm outcome through the journey service
+["firm resolver admits prototype key 'toString'", "firm resolver admits prototype key 'constructor'",
+ "firm resolver admits prototype key 'hasOwnProperty'"]
+❯ src/__tests__/fitness/demo-surface-completeness.test.ts:1882
+```
+
+**Executable companions (run on every build):** the remapping-resolver and `in`-operator resolver
+cases in the fence's companion suite, plus the prototype-key 404 variant in
+`e2e/demo-journey.spec.ts`.
+
+**Reverted:** injection removed immediately; the demo-surface fence is green on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `firm-resolver-prototype-keys`).
+
+## PF-246 · charter-drift: Function.prototype invocation forms are rejected as unresolvable evidence · `src/__tests__/fitness/charter-drift.test.ts`
+
+**Invariant:** a Vitest registration or hook reached through `call`/`apply`/`bind` shifts, boxes, or
+pre-binds its arguments, so the options, case-collection, and callback analyses cannot line their
+positions up statically - the path is rejected fail-closed (`disabled/focused Vitest registration
+it.call`, `Vitest hook invoked through Function.prototype beforeEach.call`) rather than left
+invisible, and the reachable callback still gets the TestContext inspection.
+
+**Injection - invoker forms hide context skips.** Appended
+`it.call(undefined, "injected invoker skip", (ctx) => { ctx.skip(); });` and
+`beforeEach.call(undefined, (ctx) => { ctx.skip(); });` to `conflict-key-families.test.ts`.
+
+**Observed failure (`charter-drift.test.ts` (b)):**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+src/__tests__/fitness/conflict-key-families.test.ts:185 disabled/focused Vitest registration it.call
+src/__tests__/fitness/conflict-key-families.test.ts:186 fitness callback must not neutralize via TestContext skip
+src/__tests__/fitness/conflict-key-families.test.ts:188 Vitest hook invoked through Function.prototype beforeEach.call
+src/__tests__/fitness/conflict-key-families.test.ts:189 fitness callback must not neutralize via TestContext skip
+```
+
+**Executable companions (run on every build):** the `it.call`, `it.apply`, pre-bound `it.bind`,
+`beforeEach.call`, `beforeEach.apply`, and pre-bound `beforeEach.bind` cases in the (b companion)
+matrix, plus the application-object `call`/`apply`/`bind` negative proving non-Vitest receivers are
+not flagged.
+
+**Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
+
+**Date:** 2026-08-10 (wrap-up fix round, findings `vitest-call-apply-bind-invisible`).

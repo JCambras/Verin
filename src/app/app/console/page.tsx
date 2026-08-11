@@ -107,7 +107,7 @@ export default function ConsolePage() {
           console is the first live demo of the tamper-evident audit trail.
         </p>
         {households !== null && asOf !== null ? (
-          <p className="mt-3 text-sm text-slate-700">
+          <p className="mt-3 text-sm text-slate-700" data-testid="household-count">
             Households in your book:{" "}
             <Metric metric={metric(households.length, "count", deriveArtifactProvenance(households.map((h) => h.provenance), asOf))} />
           </p>

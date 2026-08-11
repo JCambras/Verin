@@ -70,8 +70,9 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0052](./0052-synthetic-corpus-and-provenance-split.md) | Replay corpus: deterministic synthetic substrate, fenced provenance split, honestly empty real-derived partition, digest-bound signoff; `scripts/**` becomes a measured `tooling` budget | Accepted (amends ADR-0018) |
 | [0053](./0053-policy-ast-and-interpreter.md) | The constrained policy AST and deterministic four-phase interpreter (v3 prompt 9): closed grammar, seven-check loader, conservative effect-conflict prover, fail-closed evaluation; invariant 16 activates | Accepted |
 | [0054](./0054-line-budget-policy-ast.md) | Contracts ceiling 6,650 and domain ceiling 4,550 for the policy AST and interpreter | Accepted (amends ADR-0041 and ADR-0051) |
+| [0055](./0055-gate-a-invariant-ordering.md) | Gate A owns invariants 1, 2, 4, 5 and requires prompt-5 guarantees 7, 8, 9; invariant 3 is gated at B | Accepted (amends ADR-0023) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),
 [`../sacrificial-components.md`](../sacrificial-components.md),
-[`../v3/README.md`](../v3/README.md) (the ratified v3 architecture direction, ADR-0023..0028).
+[`../v3/README.md`](../v3/README.md) (the ratified v3 architecture direction, ADR-0023..0029 and ADR-0055).

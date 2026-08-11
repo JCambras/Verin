@@ -7,14 +7,29 @@ each non-negotiable to the fence/gate/procedure that enforces it, and the charte
 (`src/__tests__/fitness/charter-drift.test.ts`) fails the build if any enforced mapping goes stale.
 
 **Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
-governed decision and execution layer; ADRs 0023-0028). The 30 v3 invariants are phase-gated in
+governed decision and execution layer; ADRs 0023-0029 and 0055). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
-stores activation only - pass/fail is computed, never fake green). The ratified documents registered in
-`v3-invariants.json` are SHA-256-pinned by the arch-version fence, which covers that registry and not the
-whole directory: editing a registered document requires updating its pin in the same PR, and a new
-ratified document must be registered in the PR that adds it. `docs/v3/README.md` is not registered: it is
-the navigation index, and it originates nothing normative, only restating registered documents, ADRs, the
-charter, and `DECISIONS.md` entries, so a new normative statement originates in one of those instead (D-099).
+stores activation only - pass/fail is computed, never fake green). The gate model's authoritative owners
+are [ADR-0055](./docs/adr/0055-gate-a-invariant-ordering.md) (the complete rule set, its amendment log,
+and every "Revisit When" trigger), the registry itself, and the shared rule modules under
+`scripts/v3-gates/` reached through `scripts/v3-gates.lib.ts` - one implementation imported by BOTH the
+gate-ordering fence and the blocking runner, so read the rules there rather than from any prose
+restatement. What an agent needs at edit time:
+- **The registry, not prompt-sequence prose, states what each gate requires**, as TYPED requirements;
+  activation OWNERSHIP (`invariant.gate`) is separate from gate REQUIREMENT, and nothing a gate requires
+  may be proven after that gate closes. The ratchets in `scripts/v3-gates/` pin ownership, proof points,
+  metadata, complete requirement sets, and every shipped active mechanism tuple: moving one is an
+  ADR-0055 + ADR-0023 amendment, never a registry edit alone.
+- **`parseCiJobs` (`scripts/v3-gates/ci-workflow.ts`) is the repo's one structured CI authority** -
+  charter-drift and both v3 checkers read `ci.yml` through it, it is fail-closed by design (a mapped
+  command is evidence only in a dedicated blocking step of a schedulable, unfiltered, unneutralized
+  job), and mapped controls invoke their owned entry points directly. When a mapped command or job
+  changes, update `charter-map.json` / the registry and their exact-command ratchets in the same PR.
+- **The ratified documents registered in `v3-invariants.json` are SHA-256-pinned** (arch-version fence,
+  which covers the registry, not the whole directory): editing one updates its pin in the same PR, and a
+  conflict between v3's letter and this repo is resolved by an ADR, never by editing the ratified bytes
+  (ADR-0024, ADR-0026, ADR-0055). `docs/v3/README.md` is not registered: it is the navigation index and
+  originates nothing normative (D-099).
 Salesforce work is DEFERRED until sandbox access (ADR-0024); demo UI uses the established design system,
 not v3 §18's visuals (ADR-0028); UI prompts read `docs/demo-design-language.md` first (now authored -
 the ADR-0028 gate is satisfied).
@@ -58,8 +73,17 @@ The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
 branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces under
 `src/app/demo/surfaces/` fenced to import only view models + presentation (both rules:
-`src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Landing a real path = replace the
-corresponding builder and remove its `DevProvenanceBadge` in the SAME PR (design §11.3).
+`src/__tests__/fitness/demo-skeleton-honesty.test.ts`). Gate 0 surface completeness is fenced by
+`src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
+the exact twelve surface identities in the SHA-pinned ratified demo contract, the typed manifest, each
+route case's imported component and exact journey view model, its resolved identifier spread without
+overrides, the dynamic page's reachable return, and policy authoring's query-derived approval input,
+the exact ordered clickable journey controls without registered Playwright hooks, and screenshots that
+verify the corresponding URL and loaded marker. CI then runs
+`scripts/demo-screen-artifacts.ts` to require every canonical artifact to exist and be non-empty, and
+upload-artifact fails when missing, conditionally disabled, or failure-neutralized.
+Landing a real path = replace the corresponding builder and remove
+its `DevProvenanceBadge` in the SAME PR (design §11.3).
 
 The decision-primitive vocabulary (v3 prompt 8, ADR-0039) lives at `src/contracts/primitives/`
 (six primitives, set 1.0.0, provisional), mirrored by root `primitive-set-version.json` and
@@ -134,6 +158,13 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
+`pnpm test` runs `scripts/fitness-tests.ts` - the SAME owned entry point the blocking CI test job
+invokes directly, so local and CI run one gate. It executes the complete suite and recursively
+enumerates every Vitest-admitted fitness extension through the same matcher used by Vitest (the config's
+fitness include is derived from those exported constants), requiring a per-file result even if include
+or exclude configuration drifts. `pnpm test:vitest` is the bare suite without the inventory. The
+complete-suite and v3 runners associate results only by exact canonical repository-relative path and
+reject duplicate exact results.
 
 ## Sharp edges (hard-won — read before touching these areas)
 
@@ -204,7 +235,49 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
   amber badge lands ~4.1:1 and fails), and secondary text inside a faded block must be slate-800+
   (slate-600 at 0.7 is ~3.5:1). E2E axe scans settle animations first
   (`document.getAnimations().map(a => a.finished)`) or the 0.4s container fade reads as false
-  contrast failures.
+  contrast failures. Required E2E specs await the sanctioned `e2e/axe.ts` helper; the Axe fence pins the
+  exact non-mutating animation settlement, complete WCAG scan, and direct unmodified-violations
+  assertion, rejects scope skips and expected failures through normalized direct, wrapped, or aliased
+  Playwright symbols, rejects TestInfo neutralizers from callback parameters or `test.info()` values in
+  required tests and their registered hooks, requires stable positive helper provenance, follows
+  neutralizers invoked through `bind`, `call`, `apply`, or direct and bound `Reflect.apply` values and
+  transitively invoked local helpers, follows static `Reflect.get` reads of neutralizers and hooks, and
+  fails closed on unresolved local callable indirection and unresolved computed Playwright members,
+  proves Playwright forbids focused exclusion and
+  selects the required specs, derives the complete Next `page.tsx` inventory, and binds every public,
+  authenticated, and demo route to its loaded-state
+  scan. Required callbacks admit only their typed loops and canonical uninstrumented login call with
+  explicit `PRINCIPAL`; the login helper has exactly two plain required parameters.
+  Required specifications may register no Playwright hooks or invoke Playwright neutralizers. The same
+  hook, neutralizer, and Axe-runtime prohibitions
+  cover every named root and their complete runtime local import graph, including side-effect imports and
+  TypeScript path aliases; unresolved, unclassified, non-literal, and indirect CommonJS runtime imports
+  are non-evidence, as is ambient `process.getBuiltinModule("module")` loader construction. Required route collections cannot be supplied
+  through reassigned aliases, and conditional callback exits before a scan make the proof non-evidence.
+  Required specs cannot import the Axe runtime, and the sanctioned helper cannot carry module-scope
+  executable instrumentation, executable parameter defaults, or anything but exactly two plain
+  parameters and the side-effect-free `{ page }` builder configuration. Charter-drift uses symbol-aware Vitest registration analysis for computed,
+  aliased, namespace, global, `suite`, x-prefixed, todo, fails, skipIf, and runIf neutralizers while
+  preserving locally shadowed application callables. Registration option objects and unshadowed
+  `globalThis` and Node `global` paths are included. A `.each`/`.for` case collection is refused when
+  PROVABLY empty (empty literal, empty direct-frozen literal, empty tagged rows); a derived or spread
+  collection defers to its fence's own contract - the corpus fences iterate the injected corpus world's
+  classes, non-empty by construction (ruling `g8-relight-askuser` 2a). Registration option inputs keep
+  the immutable rule, and a reassigned or disagreeing identifier string fails closed everywhere the
+  analysis resolves one. A fitness callback may not reach `skip`/`todo` on its TestContext, and aliasing
+  or dynamically membering the context fails closed. Fitness registrations must be reachable at module
+  scope or directly inside an enabled reachable module-scope suite callback. Every fitness entry's
+  complete local runtime import graph is inspected, and imported helpers may not import Vitest or
+  register tests - `_corpus-world.ts` is the ONE reviewed exception, permitted exactly `{ inject }`
+  (D-175/D-176). Higher-order callable
+  values are propagated through reachable imports and re-exports. Stable global intrinsic aliases stored
+  in object properties are resolved, while incomplete computed property provenance fails closed. Axe route collections are non-empty declarative frozen literals;
+  page coverage is credited only to the winning Next route. Hook provenance follows object-property
+  callables, member writes, direct or aliased `Object.assign`, `Object.defineProperty`, and `Reflect.set`
+  mutations, and unresolved reflective or computed
+  ambient CommonJS loaders are non-evidence. Vitest registrations invoked through `Reflect.apply` or
+  obtained through `Reflect.get` remain visible across conditional, logical, and sequence callables and
+  every initializer or preceding assignment source; unresolved reflected members and sources fail closed.
 - **Displayed metrics (balances, health scores, counts) go through `<Metric>` / `DisplayMetric`**
   (`src/contracts/metric.ts`, `src/app/presentation/metric.tsx`) — the `metric-provenance` fence fails the
   build on a naked metric-field render (a field marked `display:"metric"` in the data dictionary rendered
@@ -292,8 +365,8 @@ the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interfa
 - **`scripts/**` is budgeted AND dead-export-gated now (ADR-0052, D-171).** Both budget fences used to
   walk `src/` only, so moving code to `scripts/` was an escape hatch. `line-budget` has a `tooling` bucket
   and `max-file-size` walks `scripts/**` under the same 500-line per-file ceiling. `knip.json` entries are
-  `scripts/*.ts` (top-level runners plus two library files), NOT `scripts/**/*.ts`, so a never-referenced
-  export under `scripts/corpus/` or any future subdirectory now fails the dead-export gate. Build-time
+  `scripts/*.ts` (top-level runners plus their shared library files), NOT `scripts/**/*.ts`, so a never-referenced
+  export under `scripts/corpus/`, `scripts/v3-gates/`, or any future subdirectory now fails the dead-export gate. Build-time
   tooling is a legitimate home for generators — it is not an unmeasured one. `src/__tests__/**` is still
   in no bucket: that gap is DEFERRED, not exempt (D-172, follow-up `fu-corpus-test-tree-budget`).
 

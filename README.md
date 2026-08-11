@@ -8,7 +8,7 @@ Practice intelligence for registered investment advisers. The third and final bu
    by an ADR, and its enforcement is self-checked by the charter-drift fence.
 2. **[`AGENTS.md`](./AGENTS.md)** — how to work in this repo (every session).
 3. **[`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 architecture direction (ADRs
-   0023-0028; the ratified documents registered in [`v3-invariants.json`](./v3-invariants.json) are
+   0023-0029 and 0055; the ratified documents registered in [`v3-invariants.json`](./v3-invariants.json) are
    SHA-256-pinned by the arch-version fence, which covers that registry rather than the whole directory -
    the index page is not registered, and originates nothing normative, only restating registered
    documents, ADRs, the charter, and `DECISIONS.md` entries, D-099).
@@ -45,7 +45,7 @@ corepack pnpm install
 corepack pnpm dev             # http://localhost:3000
 corepack pnpm typecheck
 corepack pnpm lint
-corepack pnpm test            # unit + integration + fitness fences (non-UTC clock)
+corepack pnpm test            # unit + integration + complete fitness inventory (non-UTC clock)
 corepack pnpm test:e2e        # Playwright + axe
 corepack pnpm knip            # dead exports / unused dependencies
 corepack pnpm v3:invariants   # 30 v3 invariants: active-pass / active-fail / not-yet-active

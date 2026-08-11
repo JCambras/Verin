@@ -1,7 +1,7 @@
 # docs/v3 - the ratified Verin v3 architecture direction
 
 **Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
-**ADR-0023 through ADR-0028** (`docs/adr/`). The ratified documents in the table below are committed
+**ADR-0023 through ADR-0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, and ADR-0055** (`docs/adr/`). The ratified documents in the table below are committed
 **verbatim** from the ratified sources; the arch-version fence
 (`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
 [`v3-invariants.json`](../../v3-invariants.json) against their SHA-256 pins, so build work can never
@@ -47,6 +47,7 @@ on its own and is subordinate to the ratified documents below.
 | [0041](../adr/0041-sibling-decision-ledger.md) | Prompt 7 landed: the append-only `decision_ledger` as a SIBLING of the operational `audit_log` (never an extension of it), with immutable replay sources, the vocabulary frozen at 16 event types (v3's 14 plus `ApprovalStageExpired`/`ApprovalStageEscalated`), deterministic projections, and the read-only register at `/app/ledger`; amends ADR-0007, ADR-0018, and ADR-0019, and is itself amended by ADR-0042, ADR-0044, ADR-0046, and ADR-0047 (with the rest of the ADR-0042..0051 series carrying the line budgets); invariant 5's mechanisms and invariant 2's tenancy notes extended, while invariants 4 and 23 gain substrate mechanisms and stay not-yet-active |
 | [0052](../adr/0052-synthetic-corpus-and-provenance-split.md) | Prompt 11 landed: the §2.4 replay corpus as a deterministic synthetic substrate in `fixtures/corpus/` + `scripts/corpus/`, with a fenced provenance split, an honestly empty real-derived partition (deferred, no `detectionRate`), and digest-bound per-version captain signoff; `scripts/**` becomes a measured `tooling` budget (amends ADR-0018); no invariant is activated |
 | [0053](../adr/0053-policy-ast-and-interpreter.md) | Prompt 9 landed: the §6.1 constrained policy AST as a CLOSED grammar in `src/contracts/decision-core/policy.ts` (grammar 1.0.0 active; 1.1.0 adds only the reserved `elapsed` op, refused by the loader as grammar-only) plus the pure deterministic interpreter `src/domain/policy/` (seven-check loader, conservative effect-conflict rejection, four-phase fail-closed evaluator); invariant 16 activates; contracts and domain ceilings re-baselined by [ADR-0054](../adr/0054-line-budget-policy-ast.md) (amends ADR-0041 and ADR-0051) |
+| [0055](../adr/0055-gate-a-invariant-ordering.md) | Gate A owns invariants 1, 2, 4, and 5 and requires prompt-5 guarantees 7, 8, and 9; invariant 3 is gated at **B** (its prerequisite is prompt 10) |
 
 ## The 30 invariants, phase-gated
 
@@ -55,6 +56,35 @@ activation state, and (for active ones) the live enforcing mechanism. `pnpm v3:i
 three-state report - **active-pass / active-fail / not-yet-active** - and is a blocking CI job
 (`v3-invariants` in `.github/workflows/ci.yml`) that fails on any active-fail. A not-yet-active invariant
 is rendered visibly distinct from a passing one; CI never fakes green (v3 §17 preamble).
+
+**Gate requirements are read from the registry, not from the prompt-sequence prose.** All ten gates of
+the ratified sequence (0, A, B, C, D, E, F, G, H, I - G closes after prompts 27-28 and H after 29, as the
+wave map declares) are registered with their wave, prompt range, structural predecessor-gate list, entry
+condition, outcome, and a list of TYPED requirements - `invariant`, `artifact`, `fitness`, `ci-gate`
+(machine-checkable) and `evidence` (an outcome clause with no executable proof yet, which can never read
+green). Activation OWNERSHIP (`invariant.gate`) is distinct from gate REQUIREMENT, a requirement is set
+at the EARLIEST gate that can prove the WHOLE invariant, and nothing a gate requires may be proven after
+that gate closes.
+
+The complete rule set - the ordering rule, the five ratchets, the CI-evidence grammar (what makes a
+`ci-gate` command blocking evidence and what neutralizes it), gate readiness, and the
+registry-structural validation - is owned by [ADR-0055](../adr/0055-gate-a-invariant-ordering.md)
+(including its amendment log and "Revisit When" triggers) and implemented ONCE in the shared modules
+under `scripts/v3-gates/`, reached through `scripts/v3-gates.lib.ts` and enforced by BOTH the
+gate-ordering fence (`src/__tests__/fitness/v3-gate-ordering.test.ts`) and the blocking runner
+(`scripts/v3-invariants.ts`), so the two cannot drift and this index does not restate them. The
+charter-drift fence reads CI through the same `parseCiJobs` authority. The Gate 0
+surface-completeness, screenshot-evidence, Playwright/Axe, and Vitest-registration enforcement
+mechanics likewise live in their fences (`src/__tests__/fitness/demo-surface-completeness.test.ts`,
+`src/__tests__/fitness/axe-required.test.ts`, `src/__tests__/fitness/charter-drift.test.ts`) and the
+ADR-0055 amendment log, not here.
+
+Per **ADR-0055**, `verin-prompt-sequence-v3.md:186`
+("Gate A: Foundation invariants 1–5 are active and green") is read as **Gate A owns invariants 1, 2,
+4, and 5 and also requires prompt-5 structural guarantees 7, 8, and 9 at their earliest proof point**;
+invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account
+opening becomes domain configuration - is in Wave B. Invariant 3 is not weakened or waived: until prompt
+10 exists, no document, proof, or UI may claim it is implemented.
 
 ## What a build session must do
 

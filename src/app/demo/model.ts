@@ -15,6 +15,22 @@
 import type { DisplayMetric } from "@contracts/metric";
 import type { RecordProvenance, DerivedProvenance, SourceSystem, FakeClass } from "@contracts/provenance";
 
+export const DEMO_SEQUENCE = [
+  "workspace",
+  "intent",
+  "evidence",
+  "decision",
+  "policy-trace",
+  "authority",
+  "safety",
+  "execution",
+  "verification",
+  "comparison",
+  "policy-authoring",
+  "record",
+] as const;
+export type DemoStation = (typeof DEMO_SEQUENCE)[number];
+
 // ── Fake-class taxonomy (demo contract §6 / design §11.1) ───────────────────────────
 // Every visible element in the skeleton is backed by a fake (no engine, adapter, or LLM
 // has landed yet), so every element carries one of these classes and a DevProvenanceBadge
