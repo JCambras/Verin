@@ -111,5 +111,6 @@ export function simpleShellCommand(script: string): { text: string; tokens: stri
 }
 
 export function commandMatches(actual: readonly string[] | undefined, required: readonly string[]): boolean {
+  // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack -- both sides are shell tokens parsed from the public workflow YAML and the repo's own governed-command literals, not credential material; timing is irrelevant to gate evidence.
   return actual !== undefined && actual.length === required.length && required.every((token, index) => actual[index] === token);
 }
