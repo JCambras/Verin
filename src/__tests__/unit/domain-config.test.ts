@@ -541,6 +541,86 @@ describe("detects (companion): a configuration that is wrong in any of the seven
     rejects((document) => publishesAs(document, "applicationId"), "grammar", "account-opening");
   });
 
+  /**
+   * The THIRD writer into flow data: the fields of the observation that closes an
+   * awaited rule. The engine merges the webhook payload UNDER the stored flow
+   * data, so a stored key of the same name wins silently - and the shipped
+   * `signedAt` read is `optional`, so nothing would report the substitution. The
+   * finalized account would take its open date from what the advisor typed.
+   */
+  it("flags a publication alias that would shadow an awaited observation's field", () => {
+    rejects((document) => publishesAs(document, "signedAt"), "grammar", "account-opening");
+  });
+
+  it("flags a trigger field that would shadow an awaited observation's field", () => {
+    rejects((document) => {
+      const slots = section<Mutable[]>(document, "intents")[0]!["slots"] as Mutable[];
+      slots.find((slot) => slot["id"] === "email")!["triggerField"] = "signedAt";
+    }, "grammar", "account-opening");
+  });
+
+  const capabilityNamed = (document: Mutable, id: string): Mutable =>
+    (section<Mutable>(document, "execution")["capabilities"] as Mutable[]).find(
+      (entry) => entry["id"] === id,
+    )!;
+
+  /**
+   * A source that EXISTS is not a source that is AVAILABLE. `contact-create` runs
+   * second, so the `application` step has published nothing when its payload
+   * resolves - and the household write has ALREADY committed by then, which is
+   * the partial write a load-time refusal exists to prevent.
+   */
+  it("flags a payload sourcing a step the consuming step does not depend on", () => {
+    rejects((document) => {
+      (capabilityNamed(document, "contact-create")["payload"] as Mutable[]).push({
+        kind: "value",
+        field: "applicationId",
+        source: { from: "step-output", step: "application", output: "id" },
+        optional: false,
+      });
+    }, "unknown-reference", "account-opening");
+  });
+
+  it("admits a step output the consuming step TRANSITIVELY depends on", () => {
+    // The same edit one direction the other way: `finalize` runs after `contact`,
+    // so the rule is rejecting the unavailable reference rather than the arm.
+    const document = clone(documentOf("account-opening"));
+    (capabilityNamed(document, "application-finalize")["payload"] as Mutable[]).push({
+      kind: "value",
+      field: "contactId",
+      source: { from: "step-output", step: "contact", output: "id" },
+      optional: false,
+    });
+    const result = loadDomainConfig(document);
+    expect(result.ok, result.ok ? "" : JSON.stringify(result.error)).toBe(true);
+  });
+
+  it("flags an observation read by a step no externally-gated step precedes", () => {
+    rejects((document) => {
+      (capabilityNamed(document, "household-create")["payload"] as Mutable[]).push({
+        kind: "value",
+        field: "signedAt",
+        source: { from: "await-observation", field: "signedAt" },
+        optional: true,
+      });
+    }, "unknown-reference", "account-opening");
+  });
+
+  it("flags a conflict key reading a step output, which resolves before the plan runs", () => {
+    rejects((document) => {
+      const intents = section<Mutable[]>(document, "intents");
+      (intents[0]!["conflictKeys"] as string[]).push("post-hoc-key");
+      section<Mutable[]>(document, "conflictKeys").push({
+        id: "post-hoc-key",
+        describes: "would key coordination on a value no decision can have yet",
+        segments: [
+          { kind: "literal", value: "transfer" },
+          { kind: "value", source: { from: "step-output", step: "instruct", output: "handleId" } },
+        ],
+      });
+    }, "unknown-reference");
+  });
+
   it("flags a form control over a slot the requester does not supply (stage 6)", () => {
     rejects((document) => {
       const intents = section<Mutable[]>(document, "intents");

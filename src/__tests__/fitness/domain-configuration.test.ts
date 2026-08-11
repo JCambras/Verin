@@ -60,7 +60,10 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *
  *  RULE E - ONLY THE CONFIG SOURCE ADAPTER READS `config/domains/`. v3 §16: no
  *    module imports from `config/`. The single-allowed-module idiom, exactly as
- *    `no-process-env` uses it for the environment.
+ *    `no-process-env` uses it for the environment. Access is recognised by the
+ *    path literal OR by a RESOLVED reference to a binding holding it, so a
+ *    module that imports the directory constant - under any alias, with the path
+ *    appearing nowhere in its own text - is caught rather than read green.
  *
  *  RULE F - EVERY VOCABULARY ID THE DEMO ASKS FOR IS DECLARED BY THE DOCUMENT.
  *    The walking skeleton reads its slot, evidence-kind and action labels from
@@ -267,16 +270,46 @@ const CONFIG_READERS = ["src/infrastructure/config/domain-config-source.ts"] as 
  */
 const ACCESS_VERBS = /\b(?:readFileSync|readdirSync|readFile|createReadStream|import|require|join|resolve)\b/;
 
-export function configDirectoryReaders(files: ReadonlyArray<{ rel: string; text: string }>): string[] {
-  const out: string[] = [];
-  for (const { rel, text } of files) {
+/**
+ * Every line that REFERENCES a binding whose value is the configuration
+ * directory, resolved by SYMBOL. The literal is not the only way to name the
+ * path: a `const` holding it can be imported - under any local alias - and the
+ * directory is then read from a module whose own text never contains it, which
+ * is exactly the access a per-line text scan reads green over.
+ */
+function directoryBindingReferences(project: Project): Map<string, Set<number>> {
+  const lines = new Map<string, Set<number>>();
+  for (const sourceFile of project.getSourceFiles()) {
+    for (const declaration of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+      const literal = declaration.getInitializer()?.asKind(SyntaxKind.StringLiteral);
+      if (literal === undefined || !literal.getLiteralText().includes(CONFIG_DIRECTORY)) continue;
+      const name = declaration.getNameNode().asKind(SyntaxKind.Identifier);
+      if (name === undefined) continue;
+      for (const reference of name.findReferencesAsNodes()) {
+        const rel = normalizedPath(reference.getSourceFile().getFilePath());
+        const seen = lines.get(rel) ?? new Set<number>();
+        seen.add(reference.getStartLineNumber());
+        lines.set(rel, seen);
+      }
+    }
+  }
+  return lines;
+}
+
+export function configDirectoryReaders(project: Project): string[] {
+  const referenced = directoryBindingReferences(project);
+  const out = new Set<string>();
+  for (const sourceFile of project.getSourceFiles()) {
+    const rel = normalizedPath(sourceFile.getFilePath());
     if (CONFIG_READERS.includes(rel as (typeof CONFIG_READERS)[number])) continue;
-    text.split("\n").forEach((line, index) => {
+    const resolved = referenced.get(rel) ?? new Set<number>();
+    sourceFile.getFullText().split("\n").forEach((line, index) => {
       const code = stripComments(line);
-      if (code.includes(CONFIG_DIRECTORY) && ACCESS_VERBS.test(code)) out.push(`${rel}:${index + 1}`);
+      if (!ACCESS_VERBS.test(code)) return;
+      if (code.includes(CONFIG_DIRECTORY) || resolved.has(index + 1)) out.add(`${rel}:${index + 1}`);
     });
   }
-  return out;
+  return [...out].sort();
 }
 
 /** The module the demo reads its configured vocabulary through (RULE F). */
@@ -489,16 +522,13 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
   });
 
   it("(E) enforces: only the config source adapter names config/domains/", () => {
-    const files = realProject()
-      .getSourceFiles()
-      .map((sourceFile) => ({
-        rel: normalizedPath(sourceFile.getFilePath()),
-        text: sourceFile.getFullText(),
-      }));
-    const offenders = configDirectoryReaders(files);
+    const project = realProject();
+    const offenders = configDirectoryReaders(project);
     expect(offenders, `only ${CONFIG_READERS.join(", ")} may read the configuration directory:\n${offenders.join("\n")}`).toEqual([]);
     expect(
-      files.some((file) => CONFIG_READERS.includes(file.rel as (typeof CONFIG_READERS)[number])),
+      project
+        .getSourceFiles()
+        .some((file) => CONFIG_READERS.includes(normalizedPath(file.getFilePath()) as (typeof CONFIG_READERS)[number])),
       "the allowed reader must exist, or this rule passes vacuously",
     ).toBe(true);
   });
@@ -642,15 +672,40 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     });
 
     it("catches a module other than the config source naming the configuration directory", () => {
-      expect(configDirectoryReaders([{ rel: "src/domain/config/load.ts", text: `readFileSync("config/domains/x.yaml")` }]))
-        .toEqual(["src/domain/config/load.ts:1"]);
-      expect(configDirectoryReaders([{ rel: "src/domain/config/load.ts", text: `// reads config/domains/ elsewhere` }]))
-        .toEqual([]);
+      expect(configDirectoryReaders(inMemoryProject({
+        "/src/domain/config/load.ts": `export const t = readFileSync("config/domains/x.yaml");`,
+      }))).toEqual(["src/domain/config/load.ts:1"]);
+      expect(configDirectoryReaders(inMemoryProject({
+        "/src/domain/config/load.ts": `// reads config/domains/ elsewhere\nexport const t = 1;`,
+      }))).toEqual([]);
       // A user-facing message naming the file is an INSTRUCTION, not access.
-      expect(configDirectoryReaders([
-        { rel: "src/app/page.tsx", text: `<p>Restore config/domains/account-opening.yaml and reload.</p>` },
-      ])).toEqual([]);
-      expect(configDirectoryReaders([{ rel: CONFIG_READERS[0], text: `join("config/domains", id)` }])).toEqual([]);
+      expect(configDirectoryReaders(inMemoryProject({
+        "/src/app/page.ts": `export const help = "Restore config/domains/account-opening.yaml and reload.";`,
+      }))).toEqual([]);
+      expect(configDirectoryReaders(inMemoryProject({
+        [`/${CONFIG_READERS[0]}`]: `export const p = join("config/domains", "x");`,
+      }))).toEqual([]);
+    });
+
+    it("catches the directory reached through an IMPORTED constant, whose text names no path", () => {
+      // The evasion the literal scan cannot see: the path lives in a `const` in
+      // the allowed module, and the offender imports it under another name, so
+      // "config/domains" appears nowhere in the offender's own bytes.
+      const project = inMemoryProject({
+        [`/${CONFIG_READERS[0]}`]: `export const DIR = "config/domains";\nexport const own = join(DIR, "a.yaml");`,
+        "/src/domain/config/sneaky.ts":
+          `import { DIR as anywhere } from "@infra/config/domain-config-source";\n` +
+          `export const text = readFileSync(join(anywhere, "account-opening.yaml"), "utf8");`,
+      });
+      expect(configDirectoryReaders(project)).toEqual([
+        "src/domain/config/sneaky.ts:1",
+        "src/domain/config/sneaky.ts:2",
+      ]);
+      // The allowed module's own use of the same constant is still permitted, so
+      // the rule is rejecting the ESCAPE rather than the constant.
+      expect(configDirectoryReaders(inMemoryProject({
+        [`/${CONFIG_READERS[0]}`]: `const DIR = "config/domains";\nexport const own = join(DIR, "a.yaml");`,
+      }))).toEqual([]);
     });
 
     it("catches a demo label id money-movement.yaml no longer declares", () => {

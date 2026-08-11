@@ -154,24 +154,55 @@ const documentShapeImpl = z
   .readonly();
 
 /**
- * THE FLOW-DATA NAMESPACE HAS TWO WRITERS, and only one of them was guarded.
+ * Every field of an awaited external observation the plan compiler reads, with
+ * the site that declares the read. Derived from the same capability declarations
+ * `resolverFor` resolves against, so this list and the code that reads it cannot
+ * name different fields.
+ */
+const observationReads = (
+  document: z.infer<typeof documentShapeImpl>,
+): readonly (readonly [string, string])[] => {
+  const reads: (readonly [string, string])[] = [];
+  for (const capability of document.execution.capabilities) {
+    const at = `execution.capabilities.${capability.id}`;
+    for (const field of capability.payload) {
+      if (field.kind === "value" && field.source.from === "await-observation") {
+        reads.push([field.source.field, `${at}.payload.${field.field}`]);
+      }
+    }
+    capability.idempotencyKey.forEach((segment, index) => {
+      if (segment.kind !== "literal" && segment.source.from === "await-observation") {
+        reads.push([segment.source.field, `${at}.idempotencyKey[${index}]`]);
+      }
+    });
+  }
+  return reads;
+};
+
+/**
+ * THE FLOW-DATA NAMESPACE HAS THREE WRITERS, and they share one camelCase space.
  *
  * A slot's `triggerField` carries what the requester supplied; a capability's
  * publication alias (`publishes[].as`) carries what an adapter returned, and the
- * compiler merges that patch straight into the same flow data. The intent schema
- * already refuses a trigger field that collides with a platform key (D-205), so
- * this is the SAME hazard through the other door: an alias equal to
- * `executionScope` silently replaces the per-execution idempotency scope for
- * every LATER step - their keys would derive from an adapter's return value
- * rather than from the execution, losing exactly-once effect on replay with no
- * diagnostic anywhere. An alias equal to a declared trigger field overwrites the
- * requester's own value, and one alias declared by two capabilities makes the
- * compiler's alias-keyed step-output lookup return the wrong step's value.
+ * compiler merges that patch straight into the same flow data; the third is the
+ * external observation that closes an awaited rule, whose fields the engine
+ * merges UNDER the stored flow data - so a stored key of the same name silently
+ * wins. The intent schema already refuses a trigger field that collides with a
+ * platform key (D-205), and these are the SAME hazard through the other two
+ * doors: an alias equal to `executionScope` silently replaces the per-execution
+ * idempotency scope for every LATER step - their keys would derive from an
+ * adapter's return value rather than from the execution, losing exactly-once
+ * effect on replay with no diagnostic anywhere; an alias equal to a declared
+ * trigger field overwrites the requester's own value; one alias declared by two
+ * capabilities makes the compiler's alias-keyed step-output lookup return the
+ * wrong step's value; and an alias or a trigger field equal to an observation
+ * field shadows the observation with an OPTIONAL source's silence, which is how
+ * a finalized account would take its open date from what the advisor typed.
  *
  * Reserved names come from the one declaration the writers consume, so the list
  * that refuses and the code that writes cannot drift apart.
  */
-const publicationAliasCollisions = (
+const flowDataCollisions = (
   document: z.infer<typeof documentShapeImpl>,
 ): readonly string[] => {
   const reserved = new Set<string>(RESERVED_TRIGGER_FIELDS);
@@ -180,8 +211,17 @@ const publicationAliasCollisions = (
       intent.slots.flatMap((slot) => (slot.triggerField === undefined ? [] : [slot.triggerField])),
     ),
   );
+  const reads = observationReads(document);
+  const observed = new Set(reads.map(([field]) => field));
   const claimed = new Map<string, string>();
   const problems: string[] = [];
+  for (const [field, at] of reads) {
+    if (reserved.has(field)) {
+      problems.push(`${at} reads observation field ${JSON.stringify(field)}, which the platform itself writes`);
+    } else if (triggerFields.has(field)) {
+      problems.push(`${at} reads observation field ${JSON.stringify(field)}, which a slot already writes as its trigger field`);
+    }
+  }
   for (const capability of document.execution.capabilities) {
     for (const publication of capability.publishes) {
       const alias = publication.as;
@@ -192,6 +232,10 @@ const publicationAliasCollisions = (
       }
       if (triggerFields.has(alias)) {
         problems.push(`${at} publishes into ${JSON.stringify(alias)}, which a slot already reads as its trigger field`);
+        continue;
+      }
+      if (observed.has(alias)) {
+        problems.push(`${at} publishes into ${JSON.stringify(alias)}, which an awaited observation supplies`);
         continue;
       }
       const owner = claimed.get(alias);
@@ -216,7 +260,7 @@ const domainConfigDocumentSchemaImpl = documentShapeImpl.superRefine((document, 
       });
     }
   }
-  for (const problem of publicationAliasCollisions(document)) {
+  for (const problem of flowDataCollisions(document)) {
     ctx.addIssue({ code: "custom", message: problem, path: ["execution", "capabilities"] });
   }
 });

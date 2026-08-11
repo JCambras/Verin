@@ -12,12 +12,43 @@ import {
 import type { DomainConfigDocument } from "./document";
 import { configError, type DomainConfigError } from "./errors";
 import {
+  BEFORE_ANY_STEP,
   checkBucketSource,
   checkSource,
   requireMember,
   type ClosureWorld,
+  type SourceAvailability,
 } from "./load-closure";
 import type { DomainConfigEnvironment, LoadedBinding, LoadedIntent } from "./load";
+
+/**
+ * Each plan step's transitive `dependsOn` closure - the steps that have run, and
+ * therefore published, by the time that step executes. Computed as a fixpoint
+ * rather than by recursion so a cyclic template, which stage 5 refuses on its
+ * own, still terminates here instead of overflowing before the cycle is
+ * reported.
+ */
+const transitiveDependencies = (
+  steps: readonly { readonly id: string; readonly dependsOn: readonly string[] }[],
+): ReadonlyMap<string, ReadonlySet<string>> => {
+  const closure = new Map<string, Set<string>>(
+    steps.map((step) => [step.id, new Set<string>(step.dependsOn)]),
+  );
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [id, reached] of closure) {
+      for (const dependency of [...reached]) {
+        for (const inherited of closure.get(dependency) ?? []) {
+          if (inherited === id || reached.has(inherited)) continue;
+          reached.add(inherited);
+          grew = true;
+        }
+      }
+    }
+  }
+  return closure;
+};
 
 /** Stage 3-4 over every section that references a name or a typed value source. */
 export const checkReferences = (
@@ -76,15 +107,27 @@ export const checkReferences = (
     const awaitingRules = new Set(
       document.verification.filter((rule) => rule.awaitsExternal).map((rule) => rule.id as string),
     );
+    const steps = document.execution.planTemplates.find((entry) => entry.id === loaded.intent.executionPlan)?.steps ?? [];
+    const dependencies = transitiveDependencies(steps);
+    const gatedSteps = new Set(
+      steps
+        .filter((step) => {
+          const capability = document.execution.capabilities.find((entry) => entry.id === step.capability);
+          return capability !== undefined && awaitingRules.has(capability.verificationRule);
+        })
+        .map((step) => step.id as string),
+    );
+    /** What a source may read at the point the CONSUMING step runs, never plan-wide. */
+    const availabilityAt = (stepId: string): SourceAvailability => {
+      const published = dependencies.get(stepId) ?? new Set<string>();
+      return { step: stepId, published, observed: [...published].some((id) => gatedSteps.has(id)) };
+    };
     const world: ClosureWorld = {
       document,
       slots: loaded.slots,
       contextKeys: loaded.contextKeys,
       stepCapability: loaded.stepCapability,
-      hasAwaitedStep: [...loaded.stepCapability.values()].some((capabilityId) => {
-        const capability = document.execution.capabilities.find((entry) => entry.id === capabilityId);
-        return capability !== undefined && awaitingRules.has(capability.verificationRule);
-      }),
+      availability: BEFORE_ANY_STEP,
     };
     for (const template of document.conflictKeys) {
       if (!loaded.intent.conflictKeys.includes(template.id)) continue;
@@ -104,9 +147,10 @@ export const checkReferences = (
         requireMember(reservation.visibleAsClaimTo, bindingIds, `${at}.visibleAsClaimTo`, "primitive binding", sink);
       }
     }
-    for (const step of document.execution.planTemplates.find((entry) => entry.id === loaded.intent.executionPlan)?.steps ?? []) {
+    for (const step of steps) {
       const capability = document.execution.capabilities.find((entry) => entry.id === step.capability);
       const at = `execution.capabilities.${step.capability}`;
+      const stepWorld: ClosureWorld = { ...world, availability: availabilityAt(step.id) };
       if (!requireMember(step.capability, capabilityIds, `execution.planTemplates.${loaded.intent.executionPlan}.steps.${step.id}`, "capability", sink)) {
         continue;
       }
@@ -134,7 +178,7 @@ export const checkReferences = (
       capability.idempotencyKey.forEach((segment, index) => {
         if (segment.kind === "literal") return;
         const keyPath = `${at}.idempotencyKey[${index}]`;
-        const resolved = checkSource(segment.source, "key", keyPath, world, sink);
+        const resolved = checkSource(segment.source, "key", keyPath, stepWorld, sink);
         if (segment.kind === "bucket") checkBucketSource(resolved, keyPath, sink);
       });
       for (const field of capability.payload) {
@@ -143,7 +187,7 @@ export const checkReferences = (
           requireMember(field.copy, commandTextKeys, fieldPath, "command text key", sink);
           continue;
         }
-        checkSource(field.source, "payload", fieldPath, world, sink);
+        checkSource(field.source, "payload", fieldPath, stepWorld, sink);
       }
     }
   }

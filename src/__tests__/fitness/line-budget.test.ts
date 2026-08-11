@@ -199,10 +199,24 @@ const CEILINGS = {
 // 8,290 (40), presentation 928 / 6,000, tooling 12,154 / 12,400. `infrastructure`
 // moved but stayed inside, so its ceiling is left alone rather than raised for
 // company - the same rule the previous amendment applied.
+//
+// ADR-0057 AMENDMENT (review round 7): `domain` grows past its ceiling answering
+// this round's findings in code - a value source is checked for AVAILABILITY at
+// the CONSUMING step rather than against the plan as a whole (so a forward or
+// sibling `step-output` reference is a load error, not a mid-plan failure after
+// earlier writes have committed), and the flow-data namespace check gains its
+// third writer, the awaited observation's own fields. RE-MEASURED with this
+// file's own algorithm: contracts 6,638 / 6,680 (42), domain 8,973 / 9,050 (77),
+// infrastructure 8,270 / 8,290 (20), presentation 928 / 6,000, tooling 12,154 /
+// 12,400. Only `domain`'s ceiling moves; `contracts` and `infrastructure` are
+// RE-TAKEN here rather than carried forward - the round-4 and round-6 figures
+// had gone stale by twelve and eight lines, which is exactly what this header
+// says a number nobody re-took is worth - and both stay inside the ceilings they
+// already had, so those are left alone rather than raised for company.
 const CEILINGS = {
-  contracts: 6680, // ADR-0057 as amended twice, RATCHETED DOWN after the dead brands were deleted (6,626 measured)
-  domain: 8920, // ADR-0057 as amended four times, on the prompt-10 configuration schema (8,845 measured)
-  infrastructure: 8290, // ADR-0057, on the prompt-10 config source and command adapters (8,255 measured)
+  contracts: 6680, // ADR-0057 as amended twice, RATCHETED DOWN after the dead brands were deleted (6,638 measured)
+  domain: 9050, // ADR-0057 as amended five times, on the prompt-10 configuration schema (8,973 measured)
+  infrastructure: 8290, // ADR-0057, on the prompt-10 config source and command adapters (8,270 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

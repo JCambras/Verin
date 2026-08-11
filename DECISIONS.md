@@ -8895,3 +8895,53 @@ carry (D-192) - so the alignment is recorded as PC-3a, owned by prompt 14, the f
 constructs an `Intent` and therefore the first with real values to narrow against.
 
 **Revert path.** Four independent edits, each local to its own module.
+
+## D-213 - Prompt 10 review: a value source must be AVAILABLE where it is read, not merely declared
+
+**What.** `resolveSourceType` (`src/domain/config/load-closure.ts`) now resolves a `step-output` source
+against the CONSUMING step's transitive `dependsOn` closure and an `await-observation` source against
+whether an externally-gated step sits inside that closure. `load-references.ts` builds one availability
+per step from the plan DAG; conflict keys and reservation quantities, which resolve to coordinate a
+decision before any step runs, carry the empty availability.
+
+**Why.** Closure checked that a source EXISTED, never that its value would exist where it is read, and
+the whole-plan view answered both arms. A payload field of the SECOND step naming the THIRD step's
+output therefore loaded clean, passed the fence suite, and failed at run time - after the first step's
+write had committed. That is the orphan-record partial write the round-2 ruling called strictly worse
+than the refusal it replaced, reachable from an ordinary authoring mistake. The check is per consuming
+step because two steps may legitimately read different ancestors.
+
+**Revert path.** One field on `ClosureWorld`, one derivation in its caller; both shipped documents
+satisfy the rule unchanged.
+
+## D-214 - Prompt 10 review: flow data has THREE writers, and the third is the awaited observation
+
+**What.** The document-level refinement D-211 introduced now also covers the fields of the external
+observation that closes an awaited verification rule: a read of one is refused when the name is a
+reserved platform key or a declared `triggerField`, and a publication alias is refused when it names an
+observation field. The field names are derived from the same capability declarations the plan compiler
+resolves against.
+
+**Why.** `resumeFlow` merges the observation UNDER the stored flow data by design, so a stored key of
+the same name wins silently - and `OutputNameSchema` and the observation field share one camelCase
+space. The shipped `application-finalize` step reads `signedAt` as an OPTIONAL source, so a capability
+publishing `as: signedAt`, or a slot whose trigger field is `signedAt`, would shadow the signing instant
+with no diagnostic at all and open the account with the advisor's typed value as its open date.
+
+**Revert path.** One derivation and two arms inside the existing refinement.
+
+## D-215 - Prompt 10 review: RULE E resolves the configuration directory by SYMBOL
+
+**What.** The domain-configuration fence's RULE E recognises access to `config/domains/` by the path
+literal OR by a resolved reference to a binding holding it, and `DOMAIN_CONFIG_DIRECTORY` is no longer
+exported from `src/infrastructure/config/domain-config-source.ts`.
+
+**Why.** RULE E was a per-line text scan, and the constant was exported while having exactly one
+consumer - itself. A second module could import it and read the directory with the path appearing
+nowhere in its own text, leaving the only enforcement of v3 §16's no-module-imports-config rule reading
+green over the exact access it exists to refuse. `knip.json`'s `ignoreExportsUsedInFile` is why the
+unused export itself was invisible. Un-exporting alone makes the evasion inconvenient; resolving by
+symbol is what makes it fail the build, the same way the test-only injection seams are keyed.
+
+**Revert path.** One helper in the fence plus one companion case; the constant's single consumer is
+unaffected.

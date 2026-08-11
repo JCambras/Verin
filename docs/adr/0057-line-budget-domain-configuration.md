@@ -149,6 +149,34 @@ now states the disagreement that survives rather than implying it was removed) a
 eight (the exported start-input field set and why the intake boundary refuses against it); both stay
 inside the ceilings they already had, so those ceilings are left alone rather than raised for company.
 
+## Amendment (2026-08-11, review round 7): `domain` re-measured
+
+The 75 lines of correction headroom the round-6 amendment left are spent, again on review findings
+answered in `domain` code. All three of the round's findings touch the load gate or the fence that
+guards it, and two land in `domain`: a value source is now checked for AVAILABILITY at the CONSUMING
+step rather than against the plan as a whole, so a forward or sibling `step-output` reference - and an
+`await-observation` read no gated step precedes - is a load error instead of a mid-plan failure after
+earlier writes have committed (`load-closure.ts`, `load-references.ts`); and the flow-data namespace
+check gains its third writer, the fields of the observation that closes an awaited rule, which a
+publication alias or a trigger field would otherwise shadow in silence (`document.ts`).
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,638 | 6,680 | 42 (unchanged ceiling) |
+| `domain` | 8,973 | **9,050** | 77 |
+| `infrastructure` | 8,270 | 8,290 | 20 (unchanged ceiling) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+Only `domain`'s ceiling moves, by 130 lines, and only as far as its own measurement plus headroom
+inside the band the sibling layers carry. `infrastructure` gained seven lines (the configuration
+directory constant is no longer exported, and the note says why a second way to name that path is the
+thing being removed) and stays inside the ceiling it already had, so that ceiling is left alone rather
+than raised for company. The round-6 `infrastructure` figure is re-taken here rather than carried
+forward: a measurement left stale is the condition the fence header argues against.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

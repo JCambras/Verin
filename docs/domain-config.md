@@ -129,6 +129,20 @@ rejection is a value, never a throw.
   section can then disagree, which is how a `verification` id declared twice loads as "awaits nothing"
   and compiles as "awaits externally", suspending a step whose write already committed. One collected
   rule in `src/domain/config/document.ts` refuses all thirteen, naming the offending id.
+- **A value source must be AVAILABLE where it is read, not merely declared.** A `step-output` source
+  resolves only against the CONSUMING step's transitive `dependsOn` closure, and an `await-observation`
+  source only where an externally-gated step sits inside that closure; a conflict key and a reservation
+  quantity resolve to coordinate a decision BEFORE the plan runs, so neither is available there. Checked
+  against the whole plan instead, a payload field of the second step naming the third step's output
+  loads clean and then fails mid-plan - after the first step's write has committed (proof PF-262).
+- **Flow data has three writers, and they share one camelCase namespace.** A slot's `triggerField`, a
+  capability's `publishes[].as`, and the fields of the observation that closes an awaited rule all land
+  in the same record, so the loader refuses a collision between any two of them and a collision with the
+  reserved platform keys (`executionScope`, `initiatedBy`, `clientRequestId`). None of these fails
+  closed on its own: an alias equal to `executionScope` replaces the per-execution idempotency scope for
+  every later step, and an alias or trigger field equal to an awaited observation's field shadows it
+  under the engine's merge order - which is how a finalized account would take its open date from what
+  the advisor typed (proofs PF-260, PF-263).
 - **A label id a surface asks for must exist.** The demo reads its slot, evidence-kind and action labels
   through `src/app/demo/vocabulary.ts`, which throws on an undeclared id. RULE F of the
   domain-configuration fence binds every id the shipped tree asks for to the published copy - resolved

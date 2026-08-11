@@ -14755,3 +14755,83 @@ authoring key order.
 
 **Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review findings `check-form-admits-non-trigger-slot`,
 `settable-parameter-uses-in-operator`, `diff-not-canonical-bytes`).
+
+---
+
+## PF-262 · a value source that exists but is not available where it is read
+
+**Invariant:** a `step-output` source resolves only against the CONSUMING step's transitive `dependsOn`
+closure, and an `await-observation` source only where an externally-gated step sits inside it.
+
+**Injection.** Removed the availability arms from `resolveSourceType`
+(`src/domain/config/load-closure.ts`), restoring the whole-plan view.
+
+**Observed failure:**
+```
+× flags a payload sourcing a step the consuming step does not depend on
+× flags an observation read by a step no externally-gated step precedes
+× flags a conflict key reading a step output, which resolves before the plan runs
+```
+Without the arms, giving `contact-create` a payload field sourcing the `application` step loaded
+cleanly and passed the whole fence suite - then failed at run time with "a required payload field did
+not resolve", after `household.create` had already committed: an orphan household, an orphan execution,
+from a document every gate called valid.
+
+**Companion.** The three cases above, plus "admits a step output the consuming step TRANSITIVELY
+depends on", which proves the rule rejects the unavailable reference rather than the arm, in
+`src/__tests__/unit/domain-config.test.ts`.
+
+**Reverted:** the arms restored; both shipped documents load unchanged.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `source-not-checked-against-step-dependencies`).
+
+---
+
+## PF-263 · the awaited observation's own fields are part of the flow-data namespace
+
+**Invariant:** a publication alias may not name a field an awaited observation supplies, and an
+observation field may not be a reserved platform key or a declared `triggerField`.
+
+**Injection.** Emptied the observation-read derivation in `src/domain/config/document.ts`, leaving the
+alias check with the two writers it had.
+
+**Observed failure:**
+```
+× flags a publication alias that would shadow an awaited observation's field
+× flags a trigger field that would shadow an awaited observation's field
+```
+Both loaded cleanly. `resumeFlow` merges the observation UNDER stored flow data, and the shipped
+`signedAt` read is `optional`, so the substitution is reported nowhere: the finalized account takes its
+open date from whatever the shadowing writer put there.
+
+**Companion.** The two cases above, in `src/__tests__/unit/domain-config.test.ts`.
+
+**Reverted:** the derivation restored; both shipped documents load unchanged.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `await-observation-field-not-reserved`).
+
+---
+
+## PF-264 · RULE E read green over an imported directory constant
+
+**Invariant:** only `src/infrastructure/config/domain-config-source.ts` may reach `config/domains/`,
+whether it names the path as a literal or through a binding that holds it.
+
+**Injection.** Removed the resolved-reference arm from `configDirectoryReaders`
+(`src/__tests__/fitness/domain-configuration.test.ts`), leaving the per-line literal scan.
+
+**Observed failure:**
+```
+× catches the directory reached through an IMPORTED constant, whose text names no path
+AssertionError: expected [] to deeply equal [ …(2) ]
+```
+A module importing the directory constant under any local alias and reading the directory through it
+was reported CLEAN - the only enforcement of v3 §16 passing over the exact access it exists to refuse,
+because "config/domains" appears nowhere in the offender's bytes.
+
+**Companion.** "catches the directory reached through an IMPORTED constant, whose text names no path",
+whose second half proves the allowed module's own use of the same constant is still permitted.
+
+**Reverted:** the arm restored; `DOMAIN_CONFIG_DIRECTORY` is now unexported as well.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `config-directory-fence-evadable`).

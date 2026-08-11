@@ -45,8 +45,15 @@ import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
 import { formatDomainConfigErrors, type DomainConfigError } from "@domain/config/errors";
 import { KEBAB_CASE_RE } from "@domain/config/vocabulary";
 
-/** Where the published domain configurations live, relative to the project root. */
-export const DOMAIN_CONFIG_DIRECTORY = "config/domains";
+/**
+ * Where the published domain configurations live, relative to the project root.
+ * UNEXPORTED: an exported constant holding this path is a second way to name the
+ * directory, and a module importing it would read `config/domains/` with the path
+ * appearing nowhere in its own text. The fence resolves the binding by SYMBOL so
+ * that evasion fails the build, but the export had exactly one consumer - this
+ * module - so the smaller surface is the honest one.
+ */
+const DOMAIN_CONFIG_DIRECTORY = "config/domains";
 
 /**
  * The published configuration the shipped `/app/account-opening` journey runs.
