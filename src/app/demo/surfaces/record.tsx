@@ -8,7 +8,7 @@
  * There is no suppression path - a demonstration artifact cannot print clean.
  */
 import { Wordmark } from "@app/presentation/brand";
-import { StatusBadge } from "@app/presentation/ui";
+import { Badge, Card, StatusBadge } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import { EvidenceConflict, EvidenceMetricRow, EvidenceMissing, EvidenceRow } from "@app/presentation/evidence-row";
@@ -95,13 +95,13 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
         <tr>
           <td>
             <SurfaceShell title="Decision record" description="Examiner-grade: every section expanded, every identifier complete.">
-              <header className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4 print-avoid-break">
+              <Card as="header" className="flex flex-col gap-2 print-avoid-break">
                 <p className="flex flex-wrap items-center gap-2">
                   <Wordmark className="text-lg" />
                   {vm.header.watermark ? (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900" data-testid="record-watermark">
+                    <Badge tone="warning" data-testid="record-watermark">
                       {vm.header.watermark}
-                    </span>
+                    </Badge>
                   ) : null}
                 </p>
                 <dl className="grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
@@ -135,7 +135,7 @@ export function RecordSurface({ vm, scenarioId, firmId }: { vm: RecordVM; scenar
                   </div>
                 </dl>
                 <PrintButton />
-              </header>
+              </Card>
 
               <DocSection n={1} title="Intent">
                 <p className="text-sm text-slate-800">

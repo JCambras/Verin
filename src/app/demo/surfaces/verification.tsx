@@ -7,6 +7,7 @@
 import { FreshValue } from "@app/presentation/fresh-value";
 import { ExecutionTimeline } from "@app/presentation/execution-timeline";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
+import { Card } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type VerificationVM } from "../model";
 import { JourneyNav, NotReached, SurfaceShell, demoHref, toTimelineRow } from "./shared";
 
@@ -35,7 +36,7 @@ export function VerificationSurface({
       description="What the returned status actually proves, and what remains open. Green is earned, never assumed."
     >
       <div className="grid gap-4 sm:grid-cols-2">
-        <section aria-label="What this status proves" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+        <Card as="section" aria-label="What this status proves" className="flex flex-col gap-2">
           <h2 className="text-base font-semibold text-slate-900">What this status proves</h2>
           <ul className="flex flex-col gap-2">
             {vm.proves.map((p) => (
@@ -48,8 +49,8 @@ export function VerificationSurface({
           <p className="flex items-center gap-2 text-xs text-slate-600">
             <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
           </p>
-        </section>
-        <section aria-label="What it does not prove yet" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+        </Card>
+        <Card as="section" aria-label="What it does not prove yet" className="flex flex-col gap-2">
           <h2 className="text-base font-semibold text-slate-900">What it does not prove yet</h2>
           <ul className="flex list-disc flex-col gap-1 pl-4 text-sm text-slate-700">
             {vm.notProvenYet.map((n) => (
@@ -57,7 +58,7 @@ export function VerificationSurface({
             ))}
           </ul>
           <p className="text-xs text-slate-600">{vm.nextPoll}</p>
-        </section>
+        </Card>
       </div>
 
       {vm.appended.length > 0 ? (

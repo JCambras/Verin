@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { StatusBadge } from "@app/presentation/ui";
+import Link from "next/link";
+import { buttonClassName, StatusBadge } from "@app/presentation/ui";
+import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
+import { Tooltip } from "@app/presentation/tooltip";
+
+const COLUMNS: readonly TableColumn[] = [
+  { id: "sequence", header: "#", align: "right", sortable: true },
+  { id: "when", header: "When", sortable: true },
+  { id: "actor", header: "Actor", sortable: true },
+  { id: "action", header: "Action", sortable: true },
+  { id: "detail", header: "Detail", sortable: true },
+  { id: "hash", header: "Hash", sortable: true },
+];
 
 interface Verdict {
   ok: boolean;
@@ -47,6 +59,26 @@ export default function AuditPage() {
     })();
   }, []);
 
+  const rows: readonly TableRow[] = entries.map((entry) => ({
+    id: String(entry.sequence),
+    cells: {
+      sequence: { content: entry.sequence, sortValue: entry.sequence, className: "text-slate-600" },
+      when: {
+        content: <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time>,
+        sortValue: entry.createdAt,
+        className: "whitespace-nowrap",
+      },
+      actor: { content: entry.actor, sortValue: entry.actor, className: "text-slate-800" },
+      action: { content: entry.action, sortValue: entry.action, className: "font-mono text-xs text-slate-800" },
+      detail: { content: entry.detail, sortValue: entry.detail },
+      hash: {
+        content: <Tooltip label={entry.entryHash}>{entry.entryHash}…</Tooltip>,
+        sortValue: entry.entryHash,
+        className: "font-mono text-xs text-slate-500",
+      },
+    },
+  }));
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -57,7 +89,6 @@ export default function AuditPage() {
         </p>
       </div>
 
-      {loading ? <p className="text-sm text-slate-600">Loading…</p> : null}
       {error ? (
         <p role="alert" className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {error}
@@ -73,49 +104,24 @@ export default function AuditPage() {
         </div>
       ) : null}
 
-      {entries.length > 0 ? (
+      {!error ? (
         <div className="flex flex-col gap-2">
           {total > entries.length ? (
             <p className="text-sm text-slate-600">
               Showing the latest {entries.length} of {total} entries (the integrity verdict covers all {total}).
             </p>
           ) : null}
-          {/* Scrollable region (the When column can overflow): keyboard-focusable
-              with an accessible name, per axe scrollable-region-focusable. */}
-          <div
-            role="region"
-            aria-label="Audit log entries"
-            tabIndex={0}
-            className="overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600"
-          >
-            <table className="w-full text-left text-sm">
-              <caption className="sr-only">Audit log entries, newest first</caption>
-              <thead className="bg-surface text-xs uppercase tracking-wide text-slate-600">
-                <tr>
-                  <th scope="col" className="px-3 py-2">#</th>
-                  <th scope="col" className="px-3 py-2">When</th>
-                  <th scope="col" className="px-3 py-2">Actor</th>
-                  <th scope="col" className="px-3 py-2">Action</th>
-                  <th scope="col" className="px-3 py-2">Detail</th>
-                  <th scope="col" className="px-3 py-2">Hash</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {entries.map((e) => (
-                  <tr key={e.sequence}>
-                    <td className="px-3 py-2 text-slate-600">{e.sequence}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-slate-700">
-                      <time dateTime={e.createdAt}>{new Date(e.createdAt).toLocaleString()}</time>
-                    </td>
-                    <td className="px-3 py-2 text-slate-800">{e.actor}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-800">{e.action}</td>
-                    <td className="px-3 py-2 text-slate-700">{e.detail}</td>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-500">{e.entryHash}…</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Table
+            caption="Audit log entries, newest first"
+            columns={COLUMNS}
+            rows={rows}
+            loading={loading}
+            emptyState={{
+              title: "No audit events yet",
+              description: "Run a governed action to create the first tamper-evident entry.",
+              action: <Link href="/app/account-opening" className={buttonClassName()}>Open an account</Link>,
+            }}
+          />
         </div>
       ) : null}
     </div>

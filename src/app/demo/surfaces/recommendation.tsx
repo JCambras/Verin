@@ -8,6 +8,7 @@
 import { FreshValue } from "@app/presentation/fresh-value";
 import { Metric } from "@app/presentation/metric";
 import { WhyBubble } from "@app/presentation/why-bubble";
+import { Card } from "@app/presentation/ui";
 import { DispositionNotice, InspectiveLinks } from "@app/presentation/disposition-notice";
 import { DEV_BADGE_TEXT, DISPOSITION_LABELS, type RecommendationVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
@@ -45,7 +46,7 @@ export function RecommendationSurface({ vm, scenarioId, firmId }: { vm: Recommen
       />
 
       {vm.recommendation ? (
-        <section aria-label="Recommended source" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+        <Card as="section" aria-label="Recommended source" className="flex flex-col gap-2">
           <h2 className="text-base font-semibold text-slate-900">Recommended source</h2>
           <p className="flex flex-wrap items-baseline gap-2 text-sm text-slate-800">
             <FreshValue provenance={vm.recommendation.source.provenance}>{vm.recommendation.source.display}</FreshValue>
@@ -54,7 +55,7 @@ export function RecommendationSurface({ vm, scenarioId, firmId }: { vm: Recommen
           <p className="text-sm">
             <Metric metric={vm.recommendation.amount} />
           </p>
-        </section>
+        </Card>
       ) : null}
 
       {vm.alternatives.length > 0 ? (
@@ -62,11 +63,11 @@ export function RecommendationSurface({ vm, scenarioId, firmId }: { vm: Recommen
           <h2 className="text-base font-semibold text-slate-900">Alternatives considered</h2>
           <ul className="flex flex-col gap-3">
             {vm.alternatives.map((a) => (
-              <li key={a.title} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-surface p-4">
+              <Card as="li" key={a.title} className="flex flex-col gap-1">
                 <p className="text-sm font-medium text-slate-800">{a.title}</p>
                 <p className="text-sm text-slate-600">Rejected: {a.rejectedReason}</p>
                 {a.why ? <WhyBubble reason={a.why.reason} {...(a.why.regulation ? { regulation: a.why.regulation } : {})} /> : null}
-              </li>
+              </Card>
             ))}
           </ul>
         </section>

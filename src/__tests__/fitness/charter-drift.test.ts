@@ -159,6 +159,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["10", "adr", "docs/adr/0012-presentation-tier-and-budgets.md", "", "enforced"],
   ["10", "fitness", "src/__tests__/fitness/line-budget.test.ts", "", "enforced"],
   ["10", "fitness", "src/__tests__/fitness/max-file-size.test.ts", "", "enforced"],
+  ["10", "fitness", "src/__tests__/fitness/presentation-primitives.test.ts", "", "enforced"],
   ["11", "ci-gate", "load-smoke", "pnpm exec tsx scripts/load-smoke.ts", "enforced"],
   ["11", "procedure", "docs/runbooks/backup-and-restore.md", "", "enforced"],
   ["11", "fitness", "src/__tests__/fitness/bounded-request-body.test.ts", "", "enforced"],

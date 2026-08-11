@@ -7,7 +7,7 @@
 import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
-import { EmptyState } from "@app/presentation/ui";
+import { Card, EmptyState } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type WorkspaceVM } from "../model";
 import { PrimaryLink, SurfaceShell, demoHref } from "./shared";
 
@@ -26,7 +26,7 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
         <h2 className="text-base font-semibold text-slate-900">Accounts</h2>
         <ul className="grid gap-3 sm:grid-cols-2">
           {vm.accounts.map((a) => (
-            <li key={a.id} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-surface p-4">
+            <Card as="li" key={a.id} className="flex flex-col gap-1">
               <p className="text-sm font-medium text-slate-800">{a.name}</p>
               <p className="text-xs text-slate-600">{a.kind}</p>
               <p className="text-sm">
@@ -36,12 +36,12 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
                 Custodian: <FreshValue provenance={a.custodian.provenance}>{a.custodian.display}</FreshValue>
                 <DevProvenanceBadge label={DEV_BADGE_TEXT[a.fakeClass]} />
               </p>
-            </li>
+            </Card>
           ))}
         </ul>
       </section>
 
-      <section aria-label="Liquidity" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+      <Card as="section" aria-label="Liquidity" className="flex flex-col gap-2">
         <h2 className="text-base font-semibold text-slate-900">Liquidity</h2>
         <dl className="flex flex-wrap gap-x-8 gap-y-2">
           <div className="flex flex-col gap-0.5">
@@ -60,7 +60,7 @@ export function WorkspaceSurface({ vm, scenarioId, firmId }: { vm: WorkspaceVM; 
         <p className="text-sm text-slate-700">
           <FreshValue provenance={vm.pendingActivity.provenance}>{vm.pendingActivity.display}</FreshValue>
         </p>
-      </section>
+      </Card>
 
       <EmptyState
         title={vm.onRamp.title}

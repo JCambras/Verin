@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cardClassName } from "@app/presentation/ui";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export default function AppHome() {
           <li key={c.href}>
             <Link
               href={c.href}
-              className="block rounded-lg border border-slate-200 bg-white p-5 transition-colors hover:border-slate-400 focus-visible:border-slate-500"
+              className={cardClassName({ variant: "white", padding: "none", interactive: true, className: "block p-5" })}
             >
               <p className="text-base font-semibold text-slate-900">{c.title}</p>
               <p className="mt-1 text-sm text-slate-600">{c.desc}</p>

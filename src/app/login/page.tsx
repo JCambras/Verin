@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import { Wordmark } from "@app/presentation/brand";
-import { Field, TextInput, Button } from "@app/presentation/ui";
+import { Button, Field, Input } from "@app/presentation/ui";
 import { loginAction, type LoginState } from "./actions";
 
 export default function LoginPage() {
@@ -18,10 +18,10 @@ export default function LoginPage() {
       </div>
       <form action={formAction} className="flex flex-col gap-4" aria-label="Sign in">
         <Field label="Email" htmlFor="email">
-          <TextInput id="email" name="email" type="email" autoComplete="username" required />
+          <Input id="email" name="email" type="email" autoComplete="username" required />
         </Field>
         <Field label="Password" htmlFor="password">
-          <TextInput id="password" name="password" type="password" autoComplete="current-password" required />
+          <Input id="password" name="password" type="password" autoComplete="current-password" required />
         </Field>
         {state.error ? (
           <p role="alert" className="text-sm text-destructive">

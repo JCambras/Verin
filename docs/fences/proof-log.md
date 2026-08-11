@@ -12641,3 +12641,30 @@ not flagged.
 **Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
 
 **Date:** 2026-08-10 (wrap-up fix round, findings `vitest-call-apply-bind-invisible`).
+
+## PF-247 · presentation primitives: feature code cannot recreate button, badge, or pill styling · `src/__tests__/fitness/presentation-primitives.test.ts`
+
+**Invariant:** every product surface routes button, badge, and pill visuals through the canonical
+presentation primitives. A feature-level native button, a button-styled link, a repeated chip recipe,
+or a visual override on a canonical control is a second styling path and fails with its exact file and
+line.
+
+**Injection - a landing-page button bypasses the primitive.** Added a native `<button>` with the
+complete button class recipe to `src/app/page.tsx`.
+
+**Observed failure (`presentation-primitives.test.ts`):**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/page.tsx:13 :: native <button> bypasses the canonical <Button> primitive
+src/app/page.tsx:13 :: ad-hoc button class recipe bypasses buttonClassName/Button
+❯ src/__tests__/fitness/presentation-primitives.test.ts:100
+```
+
+**Executable companions (run on every build):** native-button, button-styled-link, badge-recipe,
+pill-recipe, aliased and dynamic canonical-control overrides, `buttonClassName` visual overrides, and
+layout-only composition cases live beside the fence.
+
+**Reverted:** the injected button was removed immediately; the focused fence returned to `Tests 6
+passed` on the restored tree.
+
+**Date:** 2026-08-11 (front-end parity Wave A, prompt 2).

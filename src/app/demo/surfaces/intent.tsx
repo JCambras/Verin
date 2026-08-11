@@ -9,6 +9,7 @@
 import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
+import { Card } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type IntentVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 
@@ -19,13 +20,13 @@ export function IntentSurface({ vm, scenarioId, firmId }: { vm: IntentVM; scenar
       title="What does this household need?"
       description={`${vm.household} · the request below controls the software without replacing it.`}
     >
-      <section aria-label="Advisor request" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+      <Card as="section" aria-label="Advisor request" className="flex flex-col gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Advisor request</p>
         <p className="flex flex-wrap items-baseline gap-2 text-base text-slate-900">
           <FreshValue provenance={vm.requestProvenance}>“{vm.requestText}”</FreshValue>
           <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.requestFakeClass]} />
         </p>
-      </section>
+      </Card>
 
       <section aria-label="Interpreted intent" className="flex flex-col gap-2">
         <h2 className="text-base font-semibold text-slate-900">Interpreted intent</h2>

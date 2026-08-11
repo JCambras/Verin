@@ -9,6 +9,7 @@ import { ProgressSteps } from "@app/presentation/progress-steps";
 import { ApprovalStagePanel } from "@app/presentation/approval-stage-panel";
 import { Metric } from "@app/presentation/metric";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
+import { Card } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type ApprovalVM } from "../model";
 import { JourneyNav, NotReached, PrimaryLink, SurfaceShell, demoHref } from "./shared";
 
@@ -63,7 +64,7 @@ export function AuthoritySurface({
       </p>
 
       {journeyContinues ? (
-        <section aria-label="Approve" className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-surface p-4">
+        <Card as="section" aria-label="Approve" className="flex flex-col gap-3">
           <p className="text-sm text-slate-800">{vm.gate.restatement}</p>
           <dl className="flex flex-wrap gap-x-6 gap-y-2">
             {vm.gate.figures.map((f) => (
@@ -76,7 +77,7 @@ export function AuthoritySurface({
             ))}
           </dl>
           <PrimaryLink href={demoHref("safety", scenarioId, firmId)}>{vm.gate.primaryLabel}</PrimaryLink>
-        </section>
+        </Card>
       ) : (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">{stopNote}</p>
       )}

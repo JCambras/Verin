@@ -284,6 +284,11 @@ reject duplicate exact results.
   in JSX without provenance). A value computed from any synthetic input auto-becomes a watermarked
   "demonstration" via `deriveArtifactProvenance` and is refused by `canFeedComplianceDecision`
   (charter #3 extension, ADR-0022). Seeding the populated world / building compliance-scan must use these.
+- **Product UI composes the canonical presentation primitives, never feature-local recipes.** Core
+  controls, cards, badges, pills, and empty states live in `src/app/presentation/ui.tsx`; compact sorted
+  and virtualized registers live in `src/app/presentation/table.tsx`; interactive leaves stay in their
+  focused siblings under `src/app/presentation/`. The `presentation-primitives` fence rejects native
+  feature buttons and repeated button, badge, or pill recipes with `file:line`.
 - **Sealed security types (v3 §15, D-061) construct ONLY via their factories** - all SEVEN of
   `Tokenized<T>`, `TenantContext`, `ActionGrant`, `ActorRef`, `Principal`, `WriteActor`, `ObservabilityId`
   (`tenantOf`/`tenantFromIdentity`/`systemTenant` in `contracts/tenant.ts`;

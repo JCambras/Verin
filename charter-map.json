@@ -249,6 +249,11 @@
           "type": "fitness",
           "ref": "src/__tests__/fitness/max-file-size.test.ts",
           "status": "enforced"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/presentation-primitives.test.ts",
+          "status": "enforced"
         }
       ]
     },

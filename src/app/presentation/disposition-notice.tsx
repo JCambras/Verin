@@ -20,7 +20,7 @@ import type { RecordProvenance } from "@contracts/provenance";
 import Link from "next/link";
 import { FreshValue } from "./fresh-value";
 import { Metric } from "./metric";
-import { StatusBadge } from "./ui";
+import { Button, Card, StatusBadge } from "./ui";
 import { WhyBubble } from "./why-bubble";
 import { DevProvenanceBadge } from "./dev-provenance-badge";
 
@@ -64,12 +64,8 @@ function Figures({ figures }: { figures: readonly DispositionFigure[] }) {
 }
 
 export function DispositionNotice(p: DispositionProps) {
-  const cardClass =
-    p.kind === "blocked"
-      ? "rounded-lg border border-amber-200 bg-amber-50 p-4"
-      : "rounded-lg border border-slate-200 bg-surface p-4";
   return (
-    <section className={`flex flex-col gap-3 ${cardClass}`} data-testid={`disposition-${p.kind}`} aria-label={`Disposition: ${p.badgeLabel}`}>
+    <Card as="section" variant={p.kind === "blocked" ? "attention" : "surface"} className="flex flex-col gap-3" data-testid={`disposition-${p.kind}`} aria-label={`Disposition: ${p.badgeLabel}`}>
       <p className="flex flex-wrap items-center gap-2">
         <StatusBadge status={p.kind} label={p.badgeLabel} />
         <DevProvenanceBadge label={p.devBadgeLabel} />
@@ -90,9 +86,9 @@ export function DispositionNotice(p: DispositionProps) {
               <span className="text-sm text-amber-900">{b.condition}</span>
               {/* The resolving affordance: derived from the blocker itself. Wired to a
                   real resolution path when that path lands (walking skeleton). */}
-              <button type="button" className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50">
+              <Button type="button" variant="secondary">
                 {b.affordanceLabel}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -123,7 +119,7 @@ export function DispositionNotice(p: DispositionProps) {
           {p.inspective}
         </>
       ) : null}
-    </section>
+    </Card>
   );
 }
 

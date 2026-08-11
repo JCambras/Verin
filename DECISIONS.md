@@ -6663,3 +6663,31 @@ imported helper, and an AST-level (rather than textual) config-scope pin.
 
 **Revert path:** revert this changeset; the analysis closures, companions, and proof entries revert
 together. Gate semantics are unchanged throughout.
+
+### D-191 · 2026-08-11 · reversible · Product surfaces share one primitive grammar with isolated interactive leaves
+
+Wave A prompt 2 consolidates the canonical Button, Input, Select, Checkbox, Radio, Card, Badge, Pill,
+and EmptyState recipes in `src/app/presentation/ui.tsx`, the file already named as their authority by
+the ratified demo design language. Legacy control names were removed after every caller migrated, leaving
+no duplicate exports or alternate style path. Table, Tabs, Toast, Tooltip, Dialog, and ErrorBoundary
+live in focused presentation modules; only the leaves that hold interaction state carry `"use client"`.
+The authenticated app layout mounts the toast host and error boundary without converting the server
+layout into a client component.
+
+Table consumes typed column and row view models, owns compact headers and cells, status-pill rendering,
+sorting, loading and actionable empty states, and switches to a fixed-row virtual window above 100 rows.
+Small existing registers render in full, preserving their established layout; the 5,000-row path renders
+only the visible window plus bounded overscan. No runtime dependency or new design token was added.
+The presentation tier re-measures at 1,645/6,000 lines; its ceiling is unchanged.
+
+**Why:** visual recipes repeated in features drift, and a client-first component tree would discard the
+repository's server-default boundary. The explicit prompt asks for the complete foundation set, including
+controls whose feature-level first use arrives in later front-end waves; focused component tests make
+those requested contracts executable now without inventing product behavior merely to showcase them.
+
+**Alternatives rejected:** a third-party component library (new runtime dependency and token fork), one
+large client-side primitive module (needlessly widens hydration), and forcing Checkbox, Radio, or Tabs
+into unrelated current workflows (changes product behavior to manufacture usage).
+
+**Revert path:** restore the prior `ui.tsx`, the native registers and call-site recipes, remove the focused
+interactive modules and tests, and remove the app-layout wrappers and PF-247 fence together.

@@ -7,11 +7,18 @@
  * decoration. A number is never LLM-drafted: every figure renders through Metric.
  */
 import { Metric } from "@app/presentation/metric";
-import { StatusBadge } from "@app/presentation/ui";
+import { Card, StatusBadge } from "@app/presentation/ui";
+import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import type { ComparisonCellVM, PolicyAuthoringVM } from "../model";
 import { DEV_BADGE_TEXT } from "../model";
 import { JourneyNav, PrimaryLink, SurfaceShell, demoHref } from "./shared";
+
+const SIMULATION_COLUMNS: readonly TableColumn[] = [
+  { id: "dimension", header: "Dimension", sortable: true },
+  { id: "today", header: "Today", sortable: true },
+  { id: "draft", header: "Under the draft", sortable: true },
+];
 
 function Cell({ cell }: { cell: ComparisonCellVM }) {
   return (
@@ -34,16 +41,24 @@ export function PolicyAuthoringSurface({
   firmId: string;
   approved: boolean;
 }) {
+  const simulationRows: readonly TableRow[] = vm.simulationDelta.map((row) => ({
+    id: row.label,
+    cells: {
+      dimension: { content: row.label, sortValue: row.label },
+      today: { content: <Cell cell={row.before} />, sortValue: row.before.display },
+      draft: { content: <Cell cell={row.after} />, sortValue: row.after.display },
+    },
+  }));
   return (
     <SurfaceShell
       spine={vm.spine}
       title="Policy authoring"
       description="A policy sentence becomes structured, simulated, and humanly approved before it governs anything."
     >
-      <section aria-label="Policy sentence" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+      <Card as="section" aria-label="Policy sentence" className="flex flex-col gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Proposed policy</p>
         <p className="text-base text-slate-900">“{vm.sentence}”</p>
-      </section>
+      </Card>
 
       <section aria-label="Structured draft" className="flex flex-col gap-2">
         <h2 className="text-base font-semibold text-slate-900">Structured draft</h2>
@@ -69,36 +84,11 @@ export function PolicyAuthoringSurface({
           Simulation impact
           <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
         </h2>
-        <div
-          role="region"
-          aria-label="Simulation delta"
-          tabIndex={0}
-          className="overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600"
-        >
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">Simulated impact of the drafted policy</caption>
-            <thead className="bg-surface text-xs uppercase tracking-wide text-slate-600">
-              <tr>
-                <th scope="col" className="px-3 py-2">Dimension</th>
-                <th scope="col" className="px-3 py-2">Today</th>
-                <th scope="col" className="px-3 py-2">Under the draft</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {vm.simulationDelta.map((r) => (
-                <tr key={r.label}>
-                  <td className="px-3 py-2 align-top text-slate-700">{r.label}</td>
-                  <td className="px-3 py-2 align-top"><Cell cell={r.before} /></td>
-                  <td className="px-3 py-2 align-top"><Cell cell={r.after} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table caption="Simulated impact of the drafted policy" columns={SIMULATION_COLUMNS} rows={simulationRows} />
       </section>
 
       {approved ? (
-        <section aria-label="Activation" role="status" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 animate-fade-in" data-testid="policy-activated">
+        <Card as="section" variant="white" aria-label="Activation" role="status" className="flex flex-col gap-2 animate-fade-in" data-testid="policy-activated">
           <p className="flex flex-wrap items-center gap-2 text-sm text-slate-800">
             <StatusBadge status="done" label="Approved and activated" />
             <span className="font-mono text-xs text-slate-800">
@@ -107,12 +97,12 @@ export function PolicyAuthoringSurface({
           </p>
           <p className="text-sm text-slate-700">{vm.changedRerunResult}</p>
           <PrimaryLink href={demoHref("record", scenarioId, firmId)}>View the printable decision record</PrimaryLink>
-        </section>
+        </Card>
       ) : (
-        <section aria-label="Approval gate" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+        <Card as="section" aria-label="Approval gate" className="flex flex-col gap-2">
           <p className="text-sm text-slate-600">Activation requires attributed human approval. Nothing governs until a person says go.</p>
           <PrimaryLink href={demoHref("policy-authoring", scenarioId, firmId, "&approved=1")}>{vm.gateLabel}</PrimaryLink>
-        </section>
+        </Card>
       )}
 
       <JourneyNav back={{ href: demoHref("comparison", scenarioId, firmId), label: "Back to the comparison" }} />

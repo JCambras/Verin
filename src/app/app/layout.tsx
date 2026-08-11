@@ -2,6 +2,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getDb } from "@infra/store/db";
 import { resolveSession, SESSION_COOKIE } from "@infra/identity/session";
+import { ErrorBoundary } from "@app/presentation/error-boundary";
+import { ToastProvider } from "@app/presentation/toast";
 import { AppNav } from "./nav";
 
 export const runtime = "nodejs";
@@ -19,9 +21,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!principal.ok) redirect("/login");
 
   return (
-    <div>
-      <AppNav actor={principal.value.actor} role={principal.value.role} />
-      <main className="mx-auto max-w-3xl px-6 py-8">{children}</main>
-    </div>
+    <ToastProvider>
+      <div>
+        <AppNav actor={principal.value.actor} role={principal.value.role} />
+        <main className="mx-auto max-w-3xl px-6 py-8">
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </main>
+      </div>
+    </ToastProvider>
   );
 }
