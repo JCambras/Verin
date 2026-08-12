@@ -78,6 +78,56 @@ test("failure path: an unknown household key is refused as a sentence, with a wa
   await expect(page.getByTestId("household-directory")).toBeVisible();
 });
 
+/** The counterparty a firm's book does not contain: the route withholds it the
+ * same way it withholds a household in another org, so the browser sees the 404
+ * a real cross-firm link produces. */
+const WITHHELD_COUNTERPARTY = "**/api/households/whitfield-nathaniel";
+const NOT_FOUND_BODY = JSON.stringify({
+  error: { code: "NOT_FOUND", message: "That household is not in this firm's book." },
+});
+
+test("failure path: a refused counterparty does not follow you back to the household that works", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.route(WITHHELD_COUNTERPARTY, (route) =>
+    route.fulfill({ status: 404, contentType: "application/json", body: NOT_FOUND_BODY }));
+
+  await page.goto("/app/households/whitfield-cordelia");
+  await expect(page.getByRole("heading", { name: "Cordelia Whitfield" })).toBeVisible();
+  await page.getByRole("link", { name: /Open Nathaniel & Perrine Whitfield/ }).click();
+  await expect(page.getByText("That household is not in this firm's book.")).toBeVisible();
+
+  // Back is a CLIENT-SIDE navigation inside the same dynamic segment. What a
+  // reader must never meet is a household that loads perfectly well rendered as
+  // "Household unavailable" because the previous key's failure outlived it.
+  // (The component's own contract is asserted where it can be: the unit test
+  // re-renders one instance across the key change.)
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Cordelia Whitfield" })).toBeVisible();
+  await expect(page.getByText("Household unavailable")).toHaveCount(0);
+});
+
+test("a cross-household navigation shows the new household loading, never the previous one's figures", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route(WITHHELD_COUNTERPARTY, async (route) => {
+    await held;
+    await route.continue();
+  });
+
+  await page.goto("/app/households/whitfield-cordelia");
+  await expect(page.getByRole("heading", { name: "Cordelia Whitfield" })).toBeVisible();
+  await page.getByRole("link", { name: /Open Nathaniel & Perrine Whitfield/ }).click();
+
+  // The URL is the counterparty's while its response is still in flight; one
+  // household's balances and health under another household's name is a
+  // statement the page cannot support.
+  await expect(page.locator('[aria-busy="true"]')).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cordelia Whitfield" })).toHaveCount(0);
+  release();
+  await expect(page.getByRole("heading", { name: "Nathaniel & Perrine Whitfield" })).toBeVisible();
+});
+
 test("failure path: a search that matches nothing offers a way forward, never a dead end", async ({ page }) => {
   await login(page, PRINCIPAL);
   await page.goto("/app/households");

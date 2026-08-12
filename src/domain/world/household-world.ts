@@ -51,6 +51,22 @@ export const REGISTRATION_TYPES = [
 ] as const;
 export type RegistrationType = (typeof REGISTRATION_TYPES)[number];
 
+/**
+ * The registrations on which a beneficiary designation is MATERIAL - the ones
+ * where the designation is how the asset actually passes. Everywhere else it
+ * passes by survivorship, by the trust's or entity's own documents, or through
+ * the estate, so an account with no designation is not a gap and nothing may
+ * report one.
+ *
+ * ONE source of truth, deliberately: the health factor scores this set and the
+ * detail surface words its note from it, so a reader can never be told an
+ * account is missing a designation beside a health panel that says the same
+ * household is complete.
+ */
+export const BENEFICIARY_BEARING_REGISTRATIONS: ReadonlySet<RegistrationType> = new Set<RegistrationType>([
+  "ira-traditional", "ira-roth", "rollover-ira", "sep-ira", "education-529",
+]);
+
 export const TAX_CLASSES = ["taxable", "retirement", "trust", "entity", "education"] as const;
 export type TaxClass = (typeof TAX_CLASSES)[number];
 

@@ -14,7 +14,7 @@
  * `deriveArtifactProvenance`, which watermarks it and bars it from feeding a
  * compliance decision - this module returns the arithmetic, never the licence.
  */
-import type { WorldHousehold } from "./household-world";
+import { BENEFICIARY_BEARING_REGISTRATIONS, type WorldHousehold } from "./household-world";
 
 export const HEALTH_FACTOR_IDS = [
   "liquidity", "evidence-freshness", "instruction-integrity",
@@ -60,9 +60,6 @@ const clamp = (value: number): number => (value < 0 ? 0 : value > 100 ? 100 : Ma
 const daysBetween = (fromIso: string, toIso: string): number =>
   Math.trunc((Date.parse(toIso) - Date.parse(fromIso)) / MS_PER_DAY);
 const plural = (count: number, one: string, many: string): string => (count === 1 ? one : many);
-
-/** Accounts whose registration makes a beneficiary designation material. */
-const BENEFICIARY_BEARING = new Set(["ira-traditional", "ira-roth", "rollover-ira", "sep-ira", "education-529"]);
 
 function liquidityFactor(household: WorldHousehold): Omit<HealthFactor, "weightBps"> {
   const cashMinor = household.accounts.reduce(
@@ -148,7 +145,7 @@ function instructionFactor(household: WorldHousehold): Omit<HealthFactor, "weigh
 }
 
 function beneficiaryFactor(household: WorldHousehold): Omit<HealthFactor, "weightBps"> {
-  const bearing = household.accounts.filter((account) => BENEFICIARY_BEARING.has(account.registration));
+  const bearing = household.accounts.filter((account) => BENEFICIARY_BEARING_REGISTRATIONS.has(account.registration));
   const complete = bearing.filter((account) => {
     const primaryBps = account.beneficiaries
       .filter((beneficiary) => beneficiary.tier === "primary")

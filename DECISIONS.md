@@ -7626,3 +7626,46 @@ so forcing it would also be a poor trade. It needs a governance decision, not an
 **Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the featured-spec
 correction, the fences, the budget amendment and the four proof-log entries revert together. No gate
 semantics change.
+
+### D-208 · 2026-08-12 · reversible · Populated-world review round three: one materiality set, a page that answers for its own key, and a catalog reading of real tables
+
+**An absence is not a gap, and the copy reads the same set the score does.** `beneficiaryNote`
+stated "No beneficiary is designated on this account." for every account carrying none, while the
+beneficiary health factor scored only IRAs, rollovers, SEPs and 529s. The two disagreed on 137 of
+362 accounts before the round-two regeneration and on every one of the hundred household pages: a
+joint account passes by survivorship and an LLC account by its own documents, so the surface invented
+a deficiency that cannot exist and put it beside a panel correctly reporting the household complete.
+`BENEFICIARY_BEARING_REGISTRATIONS` now lives in the shared world vocabulary
+(`src/domain/world/household-world.ts`, where the other registration vocabularies already are) and
+BOTH read it. Where a registration takes no designation the panel says so plainly rather than
+reporting an absence. PF-264.
+
+**A household page answers for the key in its URL, and for no other.** The route is one component
+serving every household, and it held the loaded household and the failure as two independent values,
+so they could describe different keys: open a household, follow a cross-household link this firm's
+book does not contain, come back, and the refetch that succeeds still rendered "Household
+unavailable". The outcome is now TAGGED with the key it answers for and an outcome whose key is not
+the key on screen is not shown, which also removes the window where one family's balances and health
+render under another family's URL. Reported honestly: on Next 16.3.0 the App Router REMOUNTS this
+page across a dynamic-param change, so the browser never exhibited it - proven by a probe showing
+the navigation is client-side (a `window` marker survives it) while the page still gets fresh state.
+The defect is the component's, not the framework's, and a framework detail is not a guarantee, so it
+is asserted where it can be: `src/__tests__/unit/household-detail-page.test.tsx` re-renders ONE
+instance across the key change and fails on the shipped code. The two browser specs added beside it
+pin the reader-facing contract and pass either way today - said here rather than left to be
+discovered. PF-265.
+
+**The clean-slate catalog reading reads TABLES, in this application's schema.** The third reading
+selected from `information_schema.columns` excluding only the two system schemas, so a reporting view
+over a provenance-bearing table, or another application's table in a shared managed-Postgres
+database, would have been reported as a table the derivation missed - a false alarm on the one check
+that has to be unambiguous, and as corrosive as a false pass because it teaches a reader to discount
+the verdict. It now joins `information_schema.tables` for `table_type = 'BASE TABLE'` and pins
+`current_schema()` - the schema the shipped DDL's unqualified `CREATE TABLE` writes into and the
+sweep's unqualified `SELECT` reads back from, so a deployment on a non-public schema keeps the
+reading rather than silently losing it to a hardcoded `'public'`. The rogue-table case still fails.
+PF-266.
+
+**Revert path:** revert this changeset. `fixtures/world` is unchanged (the shared set is read by the
+surface and the health factor, not by the generator; `pnpm world:validate` regenerates
+byte-identical). No gate semantics change.

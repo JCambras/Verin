@@ -143,9 +143,23 @@ export function provenanceDerivationProblems(ddl: string = MIGRATION_SQL): strin
   ];
 }
 
+/**
+ * BASE TABLES IN THIS APPLICATION'S OWN SCHEMA, and nothing else.
+ * `information_schema.columns` also lists views and every schema the connection
+ * can see, and neither is a table this sweep could count rows in: a reporting
+ * view over a provenance-bearing table, or another application's table in a
+ * shared managed database, would be reported as a table the derivation missed.
+ * A false alarm on the clean-slate check is as corrosive as a false pass - it is
+ * the one check that has to be unambiguous - so the reading is pinned to
+ * `current_schema()`, the schema the shipped DDL's unqualified `CREATE TABLE`
+ * writes into and the sweep's unqualified `SELECT` reads back from.
+ */
 const CATALOG_SQL =
-  "SELECT DISTINCT table_name FROM information_schema.columns "
-  + "WHERE column_name = 'prov_source' AND table_schema NOT IN ('pg_catalog', 'information_schema')";
+  "SELECT DISTINCT c.table_name FROM information_schema.columns c "
+  + "JOIN information_schema.tables t "
+  + "ON t.table_schema = c.table_schema AND t.table_name = c.table_name "
+  + "WHERE c.column_name = 'prov_source' AND t.table_type = 'BASE TABLE' "
+  + "AND c.table_schema = current_schema()";
 
 /**
  * The THIRD reading, and the only one that is not a reading of the DDL: the

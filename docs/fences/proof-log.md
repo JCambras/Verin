@@ -13318,3 +13318,95 @@ is corrected in the spec by this change.
 **Reverted:** `scripts/world/derived.ts` restored; `pnpm world:validate` byte-identical, `Tests 27 passed`.
 
 **Date:** 2026-08-12 (review round two, ADR-0057 / D-207).
+
+## PF-264 · households: one materiality set decides the beneficiary note AND the health factor · `src/domain/world/{household-world,health}.ts` + `src/app/households/build-detail.ts` + `src/__tests__/unit/household-beneficiary-copy.test.ts`
+
+**Invariant:** the surface never reports a beneficiary designation as missing on a registration that
+takes none, and never disagrees with the health panel rendered beside it. Which registrations bear a
+designation is ONE set, read by both.
+
+**Injection - let the note speak for every registration.** Removed the materiality guard from
+`beneficiaryNote` (`if (!BENEFICIARY_BEARING_REGISTRATIONS.has(account.registration)) return null;`),
+which is exactly the shipped behaviour before this change.
+
+**Observed failure (`pnpm exec vitest run --project app household-beneficiary-copy`):**
+```
+× states no gap on a registration that takes no designation, anywhere in the world
+× the surface and the score cannot disagree: a note appears only where health scores a shortfall
+× the same empty account on a joint registration says nothing about a gap
+AssertionError: smith-robert-elaine/joint (joint-wros) must not be reported as a gap:
+  expected 'No beneficiary is designated on this …' to be null
+AssertionError: smith-robert-elaine: health says 100 while 2 account(s) are flagged
+Tests  3 failed | 3 passed (6)
+```
+
+**Executable companions (run on every build):** the same suite proves the check is not a licence to
+say nothing - an IRA with no designation is still stated as the gap it is, and a primary designation
+totalling 60% still asks for a restatement - and it counts the immaterial registrations it walked
+(>50 required), so a world that stopped containing the case would fail rather than pass by describing
+nothing (charter #4).
+
+**Reverted:** `build-detail.ts` restored; `Tests 6 passed`.
+
+**Date:** 2026-08-12 (review round three, ADR-0057 / D-208).
+
+## PF-265 · households: a household page answers for the key in its URL, and for no other · `src/app/app/households/[key]/page.tsx` + `src/__tests__/unit/household-detail-page.test.tsx`
+
+**Invariant:** one component serves every household, so a result must never outlive the key it
+answered. A refusal from a counterparty outside this firm's book cannot render a household that
+loads perfectly well as "Household unavailable", and no household's figures may appear under another
+household's URL.
+
+**Injection - the shipped two-value state.** Restored `const [household, setHousehold]` and
+`const [error, setError]` as independent values with no reset (`git checkout HEAD -- page.tsx`).
+
+**Observed failure (`pnpm exec vitest run --project app household-detail-page`):**
+```
+× drops a refusal when the key changes, instead of failing a household that loads
+× never renders the previous household under the new key
+TestingLibraryElementError: Unable to find role="heading" and name "Robert & Elaine Smith"
+AssertionError: expected <h1 …(1)></h1> to be null
+Tests  2 failed | 1 passed (3)
+```
+
+**Where it is asserted, and why there.** On Next 16.3.0 the App Router REMOUNTS this page across a
+dynamic-param change, so the browser does not exhibit the defect today - a probe confirmed the
+navigation is client-side (a `window` marker survives it) while the page still gets fresh state. The
+contract is the component's, not the framework's, so the proof re-renders ONE instance across the key
+change. The two browser specs added beside it (`e2e/households.spec.ts`) pin the reader-facing
+promise - a refused counterparty does not follow you back, and a cross-household navigation shows the
+new household loading rather than the previous one's figures - and pass either way today; that is
+stated rather than left to be discovered.
+
+**Reverted:** `page.tsx` restored; `Tests 3 passed`, `31 passed` in Playwright.
+
+**Date:** 2026-08-12 (review round three, ADR-0057 / D-208).
+
+## PF-266 · clean slate: the catalog reading reads real TABLES in this application's schema · `scripts/fixture-purge.ts` + `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** the third reading must disagree with the DDL derivation only when there is really a
+table outside the sweep. A false alarm on the clean-slate check is as damaging as a false pass: it is
+the one check that has to be unambiguous.
+
+**Injection - the un-joined catalog query.** Restored
+`SELECT DISTINCT table_name FROM information_schema.columns WHERE column_name = 'prov_source' AND
+table_schema NOT IN ('pg_catalog', 'information_schema')`, against a migrated store carrying a
+reporting VIEW over `households` and another application's table in its own schema.
+
+**Observed failure (`pnpm exec vitest run --project app fixture-purge`):**
+```
+× a VIEW over a provenance-bearing table is not mistaken for an unswept table
+× another application's table in another schema is not this application's problem
+AssertionError: expected [ Array(1) ] to deeply equal []
+Tests  2 failed | 7 passed (9)
+```
+
+**Executable companions (run on every build):** PF-261's case still proves a rogue BASE TABLE created
+outside `MIGRATION_SQL` reaches `cleanSlateViolations`, so narrowing the reading did not buy quiet by
+seeing less; the migrated-unseeded case still sweeps clean, and a table the sweep cannot READ is still
+a problem. The schema is `current_schema()` rather than a literal `'public'` precisely so a deployment
+on another schema keeps the reading instead of silently losing it.
+
+**Reverted:** `scripts/fixture-purge.ts` restored; `Tests 9 passed`.
+
+**Date:** 2026-08-12 (review round three, ADR-0057 / D-208).

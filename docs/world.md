@@ -85,6 +85,15 @@ The generator is **forbidden** from emitting a health field at all - the `world-
 fails on one. A stored score is a typed number wearing a computation's clothes; the whole point is
 that the figure is earned.
 
+**Materiality is ONE set, not two.** `BENEFICIARY_BEARING_REGISTRATIONS`
+(`src/domain/world/household-world.ts`) names the registrations on which a designation is how the
+asset actually passes - traditional, Roth, rollover and SEP IRAs, and 529s. The beneficiary factor
+scores that set and the detail surface words its note from the same set. Everywhere else the asset
+passes by survivorship or by the entity's own documents, so the surface says the registration takes
+no designation and reports no gap: an absence on a joint or an LLC account is not a deficiency, and
+stating one on a third of the accounts contradicted the health panel sitting beside it on every one
+of the hundred household pages.
+
 ## How it reaches a surface
 
 ```

@@ -85,6 +85,28 @@ describe("clean-slate guarantee", () => {
     expect(cleanSlateViolations(sweep).some((violation) => violation.startsWith("rogue_evidence:"))).toBe(true);
   });
 
+  it("a VIEW over a provenance-bearing table is not mistaken for an unswept table", async () => {
+    // The catalog reading must stay a reading of TABLES. A reporting view
+    // exposing prov_source holds no rows of its own, and reporting it as a table
+    // the derivation missed is a false alarm on the one check that has to be
+    // unambiguous - as damaging as a false pass, because it teaches a reader to
+    // discount the verdict.
+    await db.exec("CREATE VIEW household_provenance AS SELECT id, prov_source FROM households");
+    const sweep = await sweepFixtureRows(db);
+    expect(sweep.problems).toEqual([]);
+    expect(cleanSlateViolations(sweep)).toEqual([]);
+  });
+
+  it("another application's table in another schema is not this application's problem", async () => {
+    // A shared managed-Postgres database is a supported deployment. A table this
+    // app's unqualified DDL never created and its unqualified sweep can never
+    // read is outside the guarantee, not a hole in it.
+    await db.exec("CREATE SCHEMA other_app");
+    await db.exec("CREATE TABLE other_app.their_rows (id text PRIMARY KEY, prov_source text NOT NULL)");
+    const sweep = await sweepFixtureRows(db);
+    expect(sweep.problems).toEqual([]);
+  });
+
   it("the sweep FAILS rather than reporting clean when it cannot read a table (charter #4)", async () => {
     const sweep = await sweepFixtureRows(db, ["households", "table_that_does_not_exist"]);
     expect(sweep.problems.length).toBe(1);

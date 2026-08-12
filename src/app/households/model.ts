@@ -119,6 +119,7 @@ export interface AccountVM {
     readonly provenance: RecordProvenance;
   }[];
   readonly beneficiaryNote: string | null;
+  readonly beneficiaryEmptyLabel: string;
   readonly signers: readonly {
     readonly displayName: string;
     readonly authorityLabel: string;

@@ -82,14 +82,18 @@ only what it owns (households, people, open items) at `prov_source='fixture'` - 
 accounts, which the account-opening flow mints. HEALTH IS COMPUTED, NEVER STORED
 (`src/domain/world/health.ts`, six weighted factors); the generator emitting a health field fails the
 `world-provenance` fence. Vocabularies live in `src/domain/world/household-world.ts` and the generator
-IMPORTS them, so a fixture cannot carry a value the product cannot render. Clean slate is COUNTED:
+IMPORTS them, so a fixture cannot carry a value the product cannot render;
+`BENEFICIARY_BEARING_REGISTRATIONS` lives there too and is read by BOTH the health factor and the
+detail copy, so a registration that takes no designation is never reported as missing one, and the
+note and the score beside it cannot disagree (D-195). Clean slate is COUNTED:
 `pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`) and
 fails on the first fixture-marked row; a sweep over zero tables is a problem, never a pass. That
 derivation is read THREE ways that share no code - a structural parse of each table's balanced body
 and its top-level column items, a plain count of every `prov_source` the DDL names, and the STORE's
-own column catalog - because two readings that resolve a declaration the same way agree by
+own column catalog (base TABLES in `current_schema()`, so a view or another app's schema is not a
+false alarm) - because two readings that resolve a declaration the same way agree by
 construction and cross-check nothing; any disagreement is a sweep problem, so a table one reading
-misses fails rather than reporting clean unread (D-206, D-207). The
+misses fails rather than reporting clean unread (D-206, D-207, D-208). The
 `--report` path exits 0 for a developer but takes `--expect-rows=<n>` where a caller needs an
 assertion (CI uses it after the seed). `seedWorldIntoCrm` counts rows WRITTEN (`RETURNING id`), never
 rows offered: world ids are seed-derived and identical across orgs, so a second firm's load conflicts

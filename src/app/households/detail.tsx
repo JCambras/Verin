@@ -124,7 +124,7 @@ function AccountCard({ account }: { account: AccountVM }) {
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Beneficiaries</p>
             {account.beneficiaries.length === 0 ? (
-              <p className="mt-2 text-xs text-slate-800">None designated.</p>
+              <p className="mt-2 text-xs text-slate-800">{account.beneficiaryEmptyLabel}</p>
             ) : (
               <ul className="mt-2 flex flex-col gap-2">
                 {account.beneficiaries.map((beneficiary) => (

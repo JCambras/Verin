@@ -13,8 +13,9 @@
  */
 import { metric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
-import type {
-  WorldAccount, WorldBankInstruction, WorldHousehold,
+import {
+  BENEFICIARY_BEARING_REGISTRATIONS,
+  type WorldAccount, type WorldBankInstruction, type WorldHousehold,
 } from "@domain/world/household-world";
 import { REGISTRATION_LABELS, STATE_LABELS, buildHealthVM, formatDay, groupDigits, titleize } from "./build";
 import type {
@@ -87,15 +88,34 @@ function entitiesOf(household: WorldHousehold): EntityVM[] {
   }));
 }
 
-/** A beneficiary set that does not total 100% is the finding, so the surface
- * states it rather than leaving a reader to add four percentages. */
+/**
+ * A beneficiary set that does not total 100% is the finding, so the surface
+ * states it rather than leaving a reader to add four percentages.
+ *
+ * MATERIALITY IS THE SAME SET THE HEALTH FACTOR SCORES
+ * (`BENEFICIARY_BEARING_REGISTRATIONS`), so the note and the score beside it
+ * cannot disagree. On a registration that takes no designation - a joint account
+ * passing by survivorship, a trust or an LLC passing by its own documents -
+ * there is nothing to designate, and reporting that absence as a gap invents a
+ * deficiency that cannot exist.
+ */
 function beneficiaryNote(account: WorldAccount): string | null {
+  if (!BENEFICIARY_BEARING_REGISTRATIONS.has(account.registration)) return null;
   const primaryBps = account.beneficiaries
     .filter((beneficiary) => beneficiary.tier === "primary")
     .reduce((sum, beneficiary) => sum + beneficiary.shareBps, 0);
   if (account.beneficiaries.length === 0) return "No beneficiary is designated on this account.";
   if (primaryBps === 10_000) return null;
   return `Primary designations total ${primaryBps / 100}%, not 100% - this account needs a restatement.`;
+}
+
+/** What the beneficiary panel says when the account carries none: on a
+ * beneficiary-bearing registration that is a real absence, and everywhere else
+ * it is the registration doing what it does. */
+function beneficiaryEmptyLabel(account: WorldAccount): string {
+  return BENEFICIARY_BEARING_REGISTRATIONS.has(account.registration)
+    ? "None designated."
+    : "This registration does not take a beneficiary designation.";
 }
 
 function accountsOf(household: WorldHousehold, asOf: string): AccountVM[] {
@@ -134,6 +154,7 @@ function accountsOf(household: WorldHousehold, asOf: string): AccountVM[] {
       provenance: beneficiary.provenance,
     })),
     beneficiaryNote: beneficiaryNote(account),
+    beneficiaryEmptyLabel: beneficiaryEmptyLabel(account),
     signers: account.signers.map((signer) => {
       const lapsed = signer.effectiveTo !== null && Date.parse(signer.effectiveTo) <= asOfMs;
       return {
