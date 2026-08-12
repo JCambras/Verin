@@ -5,9 +5,14 @@
  * discipline the replay corpus uses, so `pnpm world:validate` can regenerate
  * and byte-compare rather than "spot-check a few fields".
  *
- * The manifest carries the DIRECTORY rows. A hundred-row list must not have to
- * open a hundred deep files to render, and a summary that is recomputed at read
- * time is a summary that can disagree with the file it summarizes.
+ * The manifest carries the DIRECTORY rows, computed HERE from the households
+ * themselves and frozen into the bytes the `world` gate byte-compares, so a
+ * summary can never disagree with the file it summarizes. What they buy the
+ * directory today is the AUTHORIZATION intersection: the route matches manifest
+ * rows against the tenant's own CRM ids, so a household this tenant may not list
+ * is never opened. They do not keep the deep files closed - each AUTHORIZED
+ * household is still read whole for its six-factor health band, its search
+ * haystack, and the provenance fold (follow-up `fu-directory-summary-only-reads`).
  */
 import { canonicalJson, type JsonValue } from "../../src/contracts/decision-core/serialization";
 import type { WorldHousehold, WorldHouseholdSummary } from "../../src/domain/world/household-world";
