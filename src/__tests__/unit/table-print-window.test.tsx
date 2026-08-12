@@ -88,3 +88,64 @@ describe("a windowed register across a print pass", () => {
     expect(register.firstRenderedIndex()).toBe(Math.floor(DEEP_OFFSET / ROW_HEIGHT) - OVERSCAN);
   });
 });
+
+/**
+ * Printing is not the only way out of windowing, and the disagreement it caused was never
+ * about printing: the scroll handler is gated on windowing being ON, so ANY suspension
+ * leaves React holding an offset the element has since dropped. A row count falling to the
+ * threshold, a refetch flipping `loading`, a caller widening `virtualizeAbove` - each drops
+ * the height cap, each lets the browser clamp the box, and resuming from the held offset
+ * puts the rendered slice below a box that is scrolled to the top. So the reconciliation
+ * is keyed on the WINDOWING TRANSITION rather than on the print pass that first exposed it.
+ */
+describe("a register that leaves and re-enters windowing", () => {
+  const HELD_OFFSET = 4000;
+  const WINDOWED = { virtualizeAbove: 100 } as const;
+
+  /** Every way windowing can be suspended, and the prop change that resumes it. */
+  const SUSPENSIONS = [
+    { name: "the row count falls to the threshold", suspended: { virtualizeAbove: ROWS } },
+    { name: "a refetch flips loading", suspended: { ...WINDOWED, loading: true } },
+  ] as const;
+
+  for (const suspension of SUSPENSIONS) {
+    it(`resumes at the element's offset when ${suspension.name}`, () => {
+      const view = render(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} />);
+      const box = view.container.querySelector<HTMLDivElement>("[data-table-scroll]")!;
+      const firstRenderedIndex = () =>
+        Number(view.container.querySelector("tr[data-table-row]")!.getAttribute("aria-rowindex")) - 2;
+
+      act(() => {
+        box.scrollTop = HELD_OFFSET;
+        box.dispatchEvent(new Event("scroll", { bubbles: true }));
+      });
+      expect(firstRenderedIndex()).toBe(Math.floor(HELD_OFFSET / ROW_HEIGHT) - OVERSCAN);
+
+      view.rerender(<Table caption="Register" columns={COLUMNS} rows={rows} {...suspension.suspended} />);
+      // The uncapped box no longer overflows, so the browser pins it at the top.
+      act(() => {
+        box.scrollTop = 0;
+      });
+      view.rerender(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} />);
+
+      expect(box.scrollTop).toBe(0);
+      expect(firstRenderedIndex()).toBe(0);
+    });
+  }
+
+  it("keeps the reader's place across a suspension the element survives", () => {
+    const view = render(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} />);
+    const box = view.container.querySelector<HTMLDivElement>("[data-table-scroll]")!;
+    act(() => {
+      box.scrollTop = HELD_OFFSET;
+      box.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+
+    view.rerender(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} loading />);
+    view.rerender(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} />);
+
+    expect(box.scrollTop).toBe(HELD_OFFSET);
+    const first = Number(view.container.querySelector("tr[data-table-row]")!.getAttribute("aria-rowindex")) - 2;
+    expect(first).toBe(Math.floor(HELD_OFFSET / ROW_HEIGHT) - OVERSCAN);
+  });
+});

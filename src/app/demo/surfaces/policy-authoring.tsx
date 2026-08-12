@@ -23,9 +23,13 @@ const DISPOSITION_RANKS = new Map<string, number>(Object.entries(DISPOSITION_RES
  * from a number read as text. It names the bands `compareSortValues` actually applies, in
  * the order it applies them; a note that describes a different ordering is the same false
  * claim as a caption that describes a sort that never happened.
+ *
+ * ONE sentence for both directions, which is only honest because the comparator reverses
+ * the values inside a kind and nothing else: the grouping and the blanks hold still, so
+ * the sentence says so rather than enumerating an order that inverts underneath it.
  */
 const SIMULATION_SORT_NOTE =
-  "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order, blanks last";
+  "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order; that grouping is fixed, the direction reverses the values inside each group, and blanks stay last";
 
 function comparisonText(cell: ComparisonCellVM): string {
   return [cell.badge?.label, cell.metric ? formatMetricValue(cell.metric) : null, cell.display]

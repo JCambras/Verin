@@ -43,6 +43,10 @@ const COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "bas
  * booleans. A column that mixes kinds gets ONE total order out of them rather than
  * whatever coercing everything to a string happens to produce, and every band is
  * explicit - a disposition never falls into the text band and orders by its label.
+ *
+ * The band order is SCAFFOLDING, not subject matter: it is how unlike kinds are laid
+ * beside each other, and the reader never asked for it. So it is fixed, and reversing
+ * the sort does not reverse it.
  */
 function sortBand(value: PresentSortValue): number {
   if (typeof value === "object") return 0;
@@ -50,28 +54,50 @@ function sortBand(value: PresentSortValue): number {
   return typeof value === "string" ? 2 : 3;
 }
 
-/** Nothing to order by. Never a `""` standing in for one - that ties every row silently. */
+/**
+ * Nothing to order by. Never a `""` standing in for one - that ties every row silently -
+ * and never a `NaN`, which is the absence of a number wearing a number's type: left in
+ * the numeric band it makes every comparison against it return `NaN`, which `sort` reads
+ * as non-negative, so the rows land in an implementation-defined order under a caption
+ * announcing the one that was asked for.
+ */
 function presentSortValue(value: TableSortValue): PresentSortValue | null {
   if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isNaN(value) ? null : value;
+  if (typeof value === "object") return Number.isNaN(value.rank) ? null : value;
   return typeof value === "string" && value.trim() === "" ? null : value;
 }
 
+/** Never `left - right`: `Infinity - Infinity` is the same `NaN` comparator poison. */
+function compareScalars(left: number, right: number): number {
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
+}
+
 function compareWithinBand(left: PresentSortValue, right: PresentSortValue): number {
-  if (typeof left === "object" && typeof right === "object") return left.rank - right.rank;
-  if (typeof left === "number" && typeof right === "number") return left - right;
-  if (typeof left === "boolean" && typeof right === "boolean") return Number(left) - Number(right);
+  if (typeof left === "object" && typeof right === "object") return compareScalars(left.rank, right.rank);
+  if (typeof left === "number" && typeof right === "number") return compareScalars(left, right);
+  if (typeof left === "boolean" && typeof right === "boolean") return compareScalars(Number(left), Number(right));
   return COLLATOR.compare(String(left), String(right));
 }
 
 /**
- * The tier's one ordering, direction included - because one of its rules is not
- * symmetric and cannot be expressed by negating an ascending result.
+ * The tier's one ordering, direction included - because the direction applies to the
+ * SUBJECT of the sort and to nothing else, which cannot be expressed by negating an
+ * ascending result.
  *
- * Absent, null and empty values group at the END in BOTH directions: a blank is not a
- * value that is smaller than the others, it is the absence of one, and flipping the
- * direction to bring the blanks to the top buries the rows the reader asked to see.
+ * The subject is the values within a kind: dispositions reverse against their lattice,
+ * numbers against their value, text against the collation, booleans against false-then-
+ * true. Everything else is scaffolding and holds still. The BAND ORDER holds still,
+ * because a reader who flips the direction asked for the amounts largest-first, not for
+ * the dispositions to move from the top of the register to the bottom of it - and a
+ * register that stated the band order out loud would be lying in one of the two
+ * directions. Absent, null, empty and NaN values hold still at the END, because a blank
+ * is not a value that is smaller than the others, it is the absence of one, and floating
+ * the blanks to the top buries the rows the reader asked to see.
+ *
  * Ties return exactly zero, so the caller's recorded order survives every sort and stays
- * one action from being restored (D-194).
+ * one action from being restored (D-194). The result is never `NaN`.
  */
 export function compareSortValues(
   left: TableSortValue,
@@ -84,8 +110,9 @@ export function compareSortValues(
     if (leftValue === rightValue) return 0;
     return leftValue === null ? 1 : -1;
   }
-  const bands = sortBand(leftValue) - sortBand(rightValue);
-  const result = bands !== 0 ? bands : compareWithinBand(leftValue, rightValue);
-  if (result === 0) return 0;
-  return direction === "ascending" ? result : -result;
+  const bands = compareScalars(sortBand(leftValue), sortBand(rightValue));
+  if (bands !== 0) return bands;
+  const within = compareWithinBand(leftValue, rightValue);
+  if (within === 0) return 0;
+  return direction === "ascending" ? within : -within;
 }

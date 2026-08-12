@@ -7171,3 +7171,68 @@ dependency was added, and nothing under `domain/`, `contracts/`, or `infrastruct
 
 **Revert path:** revert this changeset; the misstated ordering note, the string-sorted money, the
 spread-blind fence, and the stale post-print window return to their D-197 state.
+
+### D-199 · 2026-08-12 · reversible · Eighth review round: the direction sorts the subject, not the scaffolding
+
+The prompt-2 review gate returned three findings; all three are resolved here. The first is D-198's
+own ordering read back one layer further down: the comparator was right about what to compare and
+wrong about what the direction is allowed to touch.
+
+**A sort direction reverses the SUBJECT of the sort and nothing else.** `compareSortValues` negated
+its whole result for a descending sort, band comparison included, so flipping the direction did not
+just put the largest amount first - it moved the kinds. Ascending laid the register out
+dispositions, numbers, text, booleans; descending laid it out booleans, text, numbers,
+dispositions. The visible note beneath the simulation delta went on saying "dispositions by
+restrictiveness, then numbers by value, ...", an enumeration true in exactly one of the two
+directions, and it was reachable on the shipped firm-A rows rather than in theory: the four
+`simulationDelta` rows give "Today" the values `36000`, `124000`, a disposition rank and `0`, so
+two clicks on that header put the disposition LAST, directly above a line telling the reader
+dispositions come first. That is D-197's false claim in the disclosure the round added to prevent
+it.
+
+The distinction the comparator now draws is between the sort's subject and its scaffolding. The
+SUBJECT is the values inside a kind, and the direction reverses them: dispositions against the
+ratified §5 restrictiveness lattice, numbers against their value, text against the one hoisted
+collator, booleans against false-then-true. Everything else is SCAFFOLDING - the arrangement that
+lets unlike kinds sit in one column at all - and it holds still. The band layout holds still,
+because a reader who flipped the direction asked for the amounts largest-first and not for the
+dispositions to change ends of the register; blanks hold still at the end, because a missing value
+is not a small one. So there is ONE note for both directions, and the direction is stated beside it
+rather than written into it: the visible line now reads `Sorted by <column>, <direction>: <note>`,
+the same bytes the caption and the landmark label carry, and the simulation's note names the fixed
+grouping and says outright that the direction reverses the values inside each group and that blanks
+stay last. A disclosure that needs a different sentence per direction is a disclosure that will be
+wrong in one of them.
+
+**A `NaN` is an absence wearing a number's type.** The comparator routed `null`, `undefined`, `""`
+and whitespace-only strings to the blanks band and left `NaN` in the numeric one, where
+`left - right` is `NaN`, which `Array.prototype.sort` reads as non-negative: the rows land in an
+implementation-defined order while the caption announces the one the reader asked for - the same
+false claim by a quieter route than the one above. `NaN` now groups with the blanks, in both
+directions and for a `{ rank: NaN }` as much as a bare one, and every numeric comparison is a
+`<`/`>` test rather than a subtraction, so `Infinity` against `Infinity` cannot reintroduce it. No
+shipped caller can produce either today; the module is the tier's single ordering and its spec
+enumerates every other absence, so the gap was in the rule rather than in a caller. The spec now
+proves the comparator is total over every value shape it accepts: never `NaN`, and antisymmetric in
+both directions.
+
+**Reconciliation belongs on the windowing transition, not on the print pass that exposed it.**
+D-198 read the scroll offset back off the element on both print transitions, which fixed printing
+and nothing else: the scroll handler is gated on windowing being ON, so ANY suspension leaves React
+holding an offset the element has since dropped. A row count falling to the threshold, a refetch
+flipping `loading`, a caller widening `virtualizeAbove` - each drops the height cap, each lets the
+browser clamp the box, and each resumes a window from an offset that no longer exists, which is the
+blank register D-198 describes. There is now ONE reconciliation keyed on `virtualized` itself; the
+print handler calls that same function inside its `flushSync` because `window.print()` blocks the
+main thread and a passive effect scheduled behind it would land after the page was captured. Unit
+coverage forces the disagreement on both non-print suspensions and asserts the resumed window
+index, with a companion proving the reconciliation is not a rewind - a suspension the element
+survives keeps the reader's place.
+
+The presentation tier re-measures at 2,119/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (2,064 at D-198); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the direction-negated band layout, the unguarded `NaN`, and
+the print-only window reconciliation return to their D-198 state.

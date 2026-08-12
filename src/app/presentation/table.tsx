@@ -18,6 +18,11 @@ export interface TableColumn {
    * a severity order from an alphabet, nor an amount ordered by value from one ordered as
    * text. Carried in the caption and the landmark label, and shown as visible text beside
    * the restore control for as long as that sort is active.
+   *
+   * ONE note, true in both directions - the direction is stated alongside it rather than
+   * written into it. `compareSortValues` reverses only the values inside a kind, never the
+   * order the kinds are laid out in and never the blanks at the end, so a note that names
+   * that layout holds whichever way the sort is running.
    */
   readonly sortNote?: string;
   readonly className?: string;
@@ -117,6 +122,22 @@ export function Table({
   const [printing, setPrinting] = useState(false);
 
   /**
+   * The window index and the element's scroll offset must agree, and the scroll handler
+   * alone cannot keep them agreeing: it is gated on windowing being ON, so every scroll
+   * that happens while windowing is suspended is refused and React keeps whatever offset
+   * it held before. Suspending windowing drops the height cap, the box stops overflowing,
+   * and the browser clamps the offset to 0; restoring the cap lets the browser put an
+   * offset back. Resuming a window from an offset the element no longer has places the
+   * rendered slice hundreds of pixels away from the visible band and the register reads as
+   * blank. Whatever the element settles on IS the offset; the only thing owed is that state
+   * agrees with it.
+   */
+  function reconcileScrollOffset() {
+    const box = scrollRef.current;
+    setScrollTop(box ? box.scrollTop : 0);
+  }
+
+  /**
    * A windowed register holds only its current window in the DOM behind a capped
    * scroll box, so printing one emits a cropped box with blank spacer bands where the
    * rest of the record should be - and both compliance registers exceed the threshold
@@ -125,26 +146,17 @@ export function Table({
    * spacers with it and prints the complete sorted register.
    *
    * The commit is synchronous because `window.print()` blocks the main thread: a
-   * batched update would land after the page had already been captured. What drives it
-   * is the TRANSITION into print media, which is what both `window.print()` and a print
-   * preview perform; the `print:` height-cap escape below is the backstop for a context
-   * that was already printing before this mounted.
-   *
-   * Both transitions READ THE OFFSET BACK off the element, because the scroll handler
-   * cannot: it is gated on windowing being ON, so every scroll the print pass causes is
-   * refused and React keeps whatever offset it held before. Dropping the cap stops the box
-   * overflowing and the browser clamps it to 0, and restoring the cap lets the browser put
-   * it back - neither of which React hears about. Resuming a window from an offset the
-   * element no longer has places the rendered slice hundreds of pixels away from the
-   * visible band, and the register reads as blank. Whatever the element settles on IS the
-   * offset, in both directions; the only thing this has to guarantee is that state agrees
-   * with it.
+   * batched update would land after the page had already been captured, and so would the
+   * passive effect below. This runs the SAME reconciliation, only forced into the same
+   * synchronous commit - it closes over nothing but a ref and a setter, both stable. What
+   * drives it is the TRANSITION into print media, which is what both `window.print()` and a
+   * print preview perform; the `print:` height-cap escape below is the backstop for a
+   * context that was already printing before this mounted.
    */
   useEffect(() => {
     const apply = (next: boolean) => {
       flushSync(() => setPrinting(next));
-      const box = scrollRef.current;
-      flushSync(() => setScrollTop(box ? box.scrollTop : 0));
+      flushSync(reconcileScrollOffset);
     };
     const onBeforePrint = () => apply(true);
     const onAfterPrint = () => apply(false);
@@ -184,6 +196,16 @@ export function Table({
   const visibleRows = loading ? [] : sortedRows.slice(start, end);
   const topSpace = virtualized ? start * rowHeight : 0;
   const bottomSpace = virtualized ? Math.max(0, (sortedRows.length - end) * rowHeight) : 0;
+
+  /**
+   * Reconciliation is keyed on WINDOWING ITSELF, in either direction and whatever moved
+   * it - the print pass above, a row count crossing the threshold, a refetch flipping
+   * `loading`, a caller changing `virtualizeAbove`. Keying it on the print pass alone left
+   * every other transition holding an offset the element no longer had.
+   */
+  useEffect(() => {
+    reconcileScrollOffset();
+  }, [virtualized]);
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -243,6 +265,14 @@ export function Table({
   const sortedCaption = sort && sortedColumn
     ? `${caption} (re-sorted by ${sortedColumn.header}, ${sort.direction}${activeSortNote ? `, ${activeSortNote}` : ""})`
     : caption;
+  /**
+   * The same words as the caption, and the DIRECTION with them: a note is one rule, not an
+   * ascending rule and a descending one, but a reader cannot check a rule against the rows
+   * without knowing which way the sort is running.
+   */
+  const sortDisclosure = sort && sortedColumn && activeSortNote
+    ? `Sorted by ${sortedColumn.header}, ${sort.direction}: ${activeSortNote}.`
+    : null;
 
   const register = (
     <div
@@ -373,11 +403,9 @@ export function Table({
       className="flex flex-col gap-2"
     >
       {register}
-      {reordered || activeSortNote ? (
+      {reordered || sortDisclosure ? (
         <div className="flex flex-wrap items-center gap-2">
-          {activeSortNote && sortedColumn ? (
-            <p className="text-xs text-slate-600">{`Sorted by ${sortedColumn.header}: ${activeSortNote}.`}</p>
-          ) : null}
+          {sortDisclosure ? <p className="text-xs text-slate-600">{sortDisclosure}</p> : null}
           {reordered ? (
             <Button
               type="button"

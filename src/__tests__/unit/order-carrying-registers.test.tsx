@@ -90,7 +90,7 @@ describe("the policy simulation delta as a set of cases", () => {
   const PROVENANCE = { source: "verin-crm", asOf: "2026-08-05T12:00:00.000Z", confidence: "high" } as const;
   const CAPTION = "Simulated impact of the drafted policy";
   const SORT_NOTE =
-    "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order, blanks last";
+    "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order; that grouping is fixed, the direction reverses the values inside each group, and blanks stay last";
 
   function renderSimulation() {
     const journey = getJourney("dual-approval", "firm-a");
@@ -151,7 +151,12 @@ describe("the policy simulation delta as a set of cases", () => {
     expect(register()).not.toHaveTextContent(SORT_NOTE);
 
     await user.click(within(register()).getByRole("button", { name: /^Today/ }));
-    expect(register(/re-sorted by Today/)).toHaveTextContent(`Sorted by Today: ${SORT_NOTE}.`);
+    expect(register(/re-sorted by Today/)).toHaveTextContent(`Sorted by Today, ascending: ${SORT_NOTE}.`);
+
+    // ONE note for both directions, with the direction stated beside it - a reader cannot
+    // check a rule against the rows without knowing which way the sort is running.
+    await user.click(within(register(/re-sorted by/)).getByRole("button", { name: /^Today/ }));
+    expect(register(/re-sorted by Today/)).toHaveTextContent(`Sorted by Today, descending: ${SORT_NOTE}.`);
 
     // A column with no declared ordering rule claims none.
     await user.click(within(register(/re-sorted by/)).getByRole("button", { name: /Dimension/ }));
@@ -169,6 +174,7 @@ describe("the policy simulation delta as a set of cases", () => {
     const user = userEvent.setup();
     const vm = renderSimulation();
     expect(vm.simulationDelta.length).toBeGreaterThan(2);
+    const authored = vm.simulationDelta.map((_, index) => String(index + 1));
 
     for (const label of ["#", "Dimension", "Today", "Under the draft"]) {
       const name = new RegExp(`^${label}`);
@@ -176,7 +182,37 @@ describe("the policy simulation delta as a set of cases", () => {
       const ascending = cases(/re-sorted by/);
       await user.click(within(register(/re-sorted by/)).getByRole("button", { name }));
       const descending = cases(/re-sorted by/);
-      expect(descending, `${label} sorts identically in both directions`).toEqual([...ascending].reverse());
+      expect(descending, `${label} sorts identically in both directions`).not.toEqual(ascending);
+      expect(descending, `${label} descending leaves the authored order`).not.toEqual(authored);
+      expect([...descending].sort()).toEqual([...authored].sort());
+      await user.click(screen.getByRole("button", { name: `Restore recorded order: ${CAPTION}` }));
+    }
+  });
+
+  /**
+   * What the direction may and may not touch. The value columns mix a disposition with
+   * money and counts, so they are the two that prove it on shipped data: the disposition
+   * band leads in BOTH directions, exactly as the visible note says, while the amounts
+   * inside the numeric band reverse. Negating the band comparison along with the values
+   * sent the disposition to the BOTTOM under a note still promising it came first.
+   */
+  it("reverses the values inside a group without moving the groups", async () => {
+    const user = userEvent.setup();
+    const vm = renderSimulation();
+    const disposition = String(vm.simulationDelta.findIndex((row) => row.before.badge) + 1);
+    expect(disposition).not.toBe("0");
+
+    for (const label of ["Today", "Under the draft"]) {
+      const name = new RegExp(`^${label}`);
+      await user.click(within(register(/^Simulated impact/)).getByRole("button", { name }));
+      const ascending = cases(/re-sorted by/);
+      await user.click(within(register(/re-sorted by/)).getByRole("button", { name }));
+      const descending = cases(/re-sorted by/);
+
+      expect(ascending[0], `${label} ascending buries the disposition`).toBe(disposition);
+      expect(descending[0], `${label} descending buries the disposition`).toBe(disposition);
+      // Everything below it is the numeric band, and THAT is what the direction reverses.
+      expect(descending.slice(1)).toEqual([...ascending.slice(1)].reverse());
       await user.click(screen.getByRole("button", { name: `Restore recorded order: ${CAPTION}` }));
     }
   });
