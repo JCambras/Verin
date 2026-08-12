@@ -9787,3 +9787,22 @@ the type cannot close, since a step's path is a perfectly carriable string. Proo
 
 **Revert path.** Restore the limit argument and let a builder hand over `.path`; the third rule then fails
 with `file:line`, and the grammar sweep fails on a truncated location reporting no limit.
+## D-270 - Line-budget ceilings re-measured on the merged tree, not maxed across two branches
+
+**Date:** 2026-08-16 · **Reversible** · Relates to: ADR-0059, ADR-0057, PR #39, `fu-domain-ceiling-headroom`
+
+**What.** Rebasing this branch onto PR #39 produced a tree containing both bodies of code, which no
+ceiling on either side covered. The ceilings are re-measured on the merged tree and set to measurement
+plus named headroom: contracts 6,771/6,900, domain 10,447/10,600, infrastructure 9,505/9,650,
+presentation 2,240/6,000 (unchanged), tooling 14,330/14,500.
+
+**Why not the per-bucket max.** That was the first resolution and it is refused. A ceiling set to the
+larger of two numbers, NEITHER of which was measured on the tree it governs, is a number asserting a
+measurement nobody took - indistinguishable from a stale figure, and it would have passed the fence
+while holding nothing.
+
+**What it costs.** Before the raise the merged tree left tooling 20 lines and contracts 39 - the
+condition where the next one-line correction fails an unrelated ceiling. Neither branch caused it
+alone; it emerged from their sum, which means no author could see it before the merge. Recorded rather
+than rounded away.
+

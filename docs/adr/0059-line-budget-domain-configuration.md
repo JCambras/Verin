@@ -626,3 +626,37 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 | `infrastructure` | 8,802 | 8,850 | 48 (unchanged ceiling) |
 | `presentation` | 2,240 | 6,000 | (ADR-0012 envelope, unchanged; re-taken) |
 | `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+## Amendment - rebase re-measure onto PR #39 (the populated world), D-270
+
+This branch and PR #39 were developed in parallel, and #39 landed first. The merged tree therefore
+carries BOTH bodies of code, and neither side's ceilings covered it: `domain` measured **10,447**
+against a 9,880 ceiling and `infrastructure` **9,505** against 8,850.
+
+The conflict was initially resolved by taking the per-bucket MAX of the two sides. That resolution is
+**rejected and does not ship**: a ceiling set to the larger of two numbers, neither of which was
+measured on the merged tree, asserts a measurement nobody took. That is the same defect as a stale
+figure wearing a different hat, and this repository has paid for it repeatedly.
+
+Every ceiling is instead RE-MEASURED on the merged tree with the fence's own algorithm and set to the
+measurement plus named headroom:
+
+| bucket | measured (merged tree) | ceiling | named headroom |
+| --- | --- | --- | --- |
+| contracts | 6,771 | 6,900 | 129 |
+| domain | 10,447 | 10,600 | 153 |
+| infrastructure | 9,505 | 9,650 | 145 |
+| presentation | 2,240 | 6,000 | unchanged (ADR-0012) |
+| tooling | 14,330 | 14,500 | 170 |
+
+**Why this headroom.** Each is ~1.5% of its bucket, which is a review round's worth of correction on a
+layer this size. The figures this branch replaced ran at 12 to 39 lines, and every one of them reached
+that state the same way: a ceiling raised once, then left to be eaten by the review rounds beneath it.
+Headroom exists so a one-line correction is a one-line correction rather than an ADR amendment.
+
+**Stated rather than rounded away.** BEFORE this raise the merged tree left `tooling` **20** lines of
+headroom (14,330 against 14,350) and `contracts` **39** (6,771 against 6,810). Both are the
+"next one-line change breaks an unrelated ceiling" condition, and neither came from either branch's
+work - they arrived from the SUM of two branches that each measured comfortably on its own. That is a
+failure mode with no owner, because neither author can see it before the merge.
+`fu-domain-ceiling-headroom` already tracks the same condition for the domain layer.
