@@ -1,5 +1,5 @@
 /**
- * THE INTAKE VIEW (v3 prompt 10; ADR-0057) - a LEAF module by design.
+ * THE INTAKE VIEW (v3 prompt 10; ADR-0058) - a LEAF module by design.
  *
  * These types are what a screen renders AND what the domain's own request
  * boundary admits; `admitIntakeSubmission` is the total function that judges one
@@ -7,7 +7,7 @@
  * client component and a route handler can import the shape - and the check -
  * without pulling the configuration document's inferred type graph into the app
  * layer, which is what kept a full-repository semantic analysis inside its heap
- * (D-206).
+ * (D-222).
  *
  * The check reads the SAME projected field list the form renders, so a text
  * slot's declared `maxLength` and an enum slot's declared `values` are enforced
@@ -18,7 +18,7 @@
  * `optionalIntakeValue` rather than indexed with a default, so a caller naming a
  * transport field the document no longer declares is refused instead of handed a
  * blank for a value the form just required. That refusal is a CONFIGURATION
- * refusal, minted through the injected port every other one goes through (D-244)
+ * refusal, minted through the injected port every other one goes through (D-260)
  * rather than spelled here: a caller asking for a field no document declares is a
  * DEPLOYMENT defect, so it owes the same generic sentence plus correlation
  * reference on the wire and the same registered diagnosis on the operator's line.
@@ -160,7 +160,7 @@ const declaredSlot = (form: IntakeForm, field: string): string | null =>
  * the boundary admits its value, and the value vanishes - to be missed at
  * whatever step sources it, by which point earlier steps have committed. The
  * field that caused it reaches the operator as the fault's own path rather than
- * the wire as prose (D-242) - and because every admitted key came from the
+ * the wire as prose (D-258) - and because every admitted key came from the
  * projected form, that path is always the slot-keyed node the document really has.
  */
 export const unmappedIntakeFault = (
@@ -189,7 +189,7 @@ const declaredLabel = (form: IntakeForm, field: string): string | undefined =>
 
 /**
  * A caller named a transport field this document does not declare: a configuration
- * defect, not client input. OPERATOR-RECOVERABLE by cause (D-241) - a rolled-back
+ * defect, not client input. OPERATOR-RECOVERABLE by cause (D-257) - a rolled-back
  * document restores the trigger field and the next submit works - so the surface
  * inherits "come back" rather than answering a bare server error to a submitter
  * who did nothing wrong and can do nothing about it. The instruction is inherited

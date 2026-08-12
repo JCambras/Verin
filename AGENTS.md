@@ -160,6 +160,7 @@ household's folded origin are built once per worldDigest; only the fold over the
 authorized book is per request.
 The domain configuration schema (v3 prompt 10, ADR-0056) makes a decision DOMAIN data:
 The domain configuration schema (v3 prompt 10, ADR-0057) makes a decision DOMAIN data:
+The domain configuration schema (v3 prompt 10, ADR-0058) makes a decision DOMAIN data:
 `src/domain/config/` holds the thirteen-section grammar, the seven-stage loader (inert -> grammar ->
 reference closure -> type check -> coherence -> completeness -> identity; every failure a value, never a
 throw), the firm binder, the prompt-9 registry derivation, the plan compiler, the version diff, and the
@@ -175,7 +176,7 @@ gap report. Load-bearing rules an agent trips over:
   ONLY interpolation in the system is `{slot:…}`/`{context:…}`; any other brace is a load error.
 - **A domain is DATA, never a module.** `src/domain/workflow/flows/account-opening.ts` is DELETED
   (ADR-0010 amended); the shipped `/app/account-opening` flow and its form are COMPILED from the YAML, so
-  deleting that file breaks the live journey (X-9; proof log PF-257). Invariant 3 is active on the
+  deleting that file breaks the live journey (X-9; proof log PF-295). Invariant 3 is active on the
   `domain-configuration` fence, whose forbidden vocabulary DERIVES from the published documents' own ids.
 - **Tenancy enters once,** at `bindDomainConfig(loaded, firmRegistry)`; the document may not carry a
   `firmId` anywhere. A parameter needing a tenant-scoped ref uses the one `{ $ref: { kind, class } }`
@@ -186,26 +187,26 @@ gap report. Load-bearing rules an agent trips over:
   therefore `retry-later` wherever it arises, and a surface READS that instruction
   (`clientRetryFor`, `src/contracts/client-retry.ts`) instead of choosing one or pattern-matching a
   status (a surface whose other arm carries no instruction asks `causeRetryFor` rather than inventing a
-  fallback it can never send, D-249). No deployment internal - document path, file name, env var, hash,
+  fallback it can never send, D-265). No deployment internal - document path, file name, env var, hash,
   version id - reaches user-facing copy (static literals included) or the external provider: the wire
   gets a generic sentence plus the correlation reference, and the diagnosis goes to the operator as the
-  REGISTERED fields `configStage`/`configCode`/`configPath` (D-240..D-247). A fault LOCATION is BUILT
+  REGISTERED fields `configStage`/`configCode`/`configPath` (D-256..D-263). A fault LOCATION is BUILT
   from segments, never interpolated: `src/domain/config/errors.ts` states the channel's segment grammar
   and length ceiling once, `configError` carries only the deepest prefix that statement can express, and
   an author-chosen key it cannot name is refused at admission - so a fault reports the deepest nameable
-  ancestor instead of `[REDACTED]` or a node the document does not have (D-250). A location and the
+  ancestor instead of `[REDACTED]` or a node the document does not have (D-266). A location and the
   limit that ended it are ONE value, `ConfigPath`: build it with `configPathFrom`/`configPathOfText`,
   step it with `childConfigPath` (a key) or `childConfigSubscript` (a list position, under the SAME
   ceiling), and hand `configError` the STEP - it takes no limit argument, and passing the step's `.path`
   instead drops the limit and reports a truncated location as an exact one, which the fence rejects with
   `file:line`. The two limits reach the operator as the registered `configPathLimit`
   (`unnameable-segment` means RENAME THE KEY, `path-too-long` means FLATTEN THE GRAPH); no limit at all
-  means the path IS the location (D-252/D-253). A surface that renders
+  means the path IS the location (D-268/D-269). A surface that renders
   configured copy resolves it up front and renders the refusal when it cannot: the demo station page is
   server-rendered, so deleting the published document must break that journey visibly, never as a stack
-  trace (D-251).
+  trace (D-267).
 - **Never name a Zod schema type (or any deeply recursive type) in an exported `src/domain/` signature**
-  (D-206): the sealed-authority fences expand parameter types structurally and a schema generic makes
+  (D-222): the sealed-authority fences expand parameter types structurally and a schema generic makes
   that walk exhaust its heap - the worker DIES mid-file and vitest reports a partial run, not a failure.
   Export named types and narrow ports; each section module carries a collapsed-export note.
 - Editing a published document without bumping its `version` fails the build; update `versions.json` and
@@ -223,7 +224,7 @@ the exact twelve surface identities in the SHA-pinned ratified demo contract, th
 route case's imported component and exact journey view model, its resolved identifier spread without
 overrides, the dynamic page's reachable return, its resolution of `demoVocabulary` for the SAME firm the
 URL resolved with the rendered refusal as the ONLY admitted early exit and the resolved value driving
-`getJourney` (D-251), and policy authoring's query-derived approval input,
+`getJourney` (D-267), and policy authoring's query-derived approval input,
 the exact ordered clickable journey controls without registered Playwright hooks, and screenshots that
 verify the corresponding URL and loaded marker. CI then runs
 `scripts/demo-screen-artifacts.ts` to require every canonical artifact to exist and be non-empty, and
@@ -288,7 +289,7 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
   (`contracts/decision-core/`, ADR-0029; zod is the layer's ONLY permitted external import - a
   second one needs its own ADR).
 - `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine (`workflow/engine.ts`;
-  flow definitions are COMPILED from domain configuration, never authored here - ADR-0057).
+  flow definitions are COMPILED from domain configuration, never authored here - ADR-0058).
 - `src/infrastructure/` — adapters/port implementations. `process.env` is read ONLY in
   `src/infrastructure/config` (fence: `no-process-env`).
 - `src/app/` — Next.js App Router + the presentation tier (`app/presentation/`). Any demo/UI

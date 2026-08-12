@@ -1,6 +1,6 @@
 /**
  * POLICY REFERENCES, HOUSEHOLD INSTRUCTION KINDS, PROHIBITIONS, AND APPROVAL
- * TEMPLATES (v3 prompt 10 deliverables 5-8; ADR-0057).
+ * TEMPLATES (v3 prompt 10 deliverables 5-8; ADR-0058).
  *
  * The line this section holds is the firm/domain boundary:
  *
@@ -170,7 +170,7 @@ const authoritySectionSchemaImpl = z
   .readonly();
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -179,12 +179,12 @@ const authoritySectionSchemaImpl = z
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-222)
 export interface PolicySlot extends z.infer<typeof policySlotSchemaImpl> {}
 export const PolicySlotSchema: z.ZodType<PolicySlot> = policySlotSchemaImpl;
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -193,12 +193,12 @@ export const PolicySlotSchema: z.ZodType<PolicySlot> = policySlotSchemaImpl;
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-222)
 export interface InstructionKindDeclaration extends z.infer<typeof instructionKindDeclarationSchemaImpl> {}
 export const InstructionKindDeclarationSchema: z.ZodType<InstructionKindDeclaration> = instructionKindDeclarationSchemaImpl;
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -207,12 +207,12 @@ export const InstructionKindDeclarationSchema: z.ZodType<InstructionKindDeclarat
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-222)
 export interface Prohibition extends z.infer<typeof prohibitionSchemaImpl> {}
 export const ProhibitionSchema: z.ZodType<Prohibition> = prohibitionSchemaImpl;
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -221,12 +221,12 @@ export const ProhibitionSchema: z.ZodType<Prohibition> = prohibitionSchemaImpl;
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-222)
 export interface Blocker extends z.infer<typeof blockerSchemaImpl> {}
 export const BlockerSchema: z.ZodType<Blocker> = blockerSchemaImpl;
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -235,6 +235,6 @@ export const BlockerSchema: z.ZodType<Blocker> = blockerSchemaImpl;
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-222)
 export interface AuthoritySection extends z.infer<typeof authoritySectionSchemaImpl> {}
 export const AuthoritySectionSchema: z.ZodType<AuthoritySection> = authoritySectionSchemaImpl;

@@ -1,7 +1,7 @@
 /**
  * Composition root (ADR-0001: app-layer wiring; keeps ports and adapters apart).
  *
- * SINCE PROMPT 10 (ADR-0057) THIS FILE COMPOSES; IT NO LONGER DESCRIBES. The
+ * SINCE PROMPT 10 (ADR-0058) THIS FILE COMPOSES; IT NO LONGER DESCRIBES. The
  * five-step account-opening flow used to be a hand-coded `FlowDefinition` in the
  * domain layer. It is now `config/domains/account-opening.yaml`, compiled into a
  * flow definition at request time - so deleting that file breaks the shipped
@@ -70,7 +70,7 @@ export interface StartAccountOpeningInput extends PIIBearing {
 }
 
 /**
- * The start outcome, plus WHAT THE SUBMITTER SHOULD DO NEXT on a failure (D-237).
+ * The start outcome, plus WHAT THE SUBMITTER SHOULD DO NEXT on a failure (D-253).
  * Every refusal below names its own instruction where the reason is still known;
  * by the time a surface holds the result, the code that produced it no longer
  * answers the question - two CONFLICTs from this function have opposite remedies.
@@ -82,7 +82,7 @@ type AccountOpeningStartResult =
 
 /**
  * A refusal that carries its own instruction. The instruction is ASKED OF THE
- * CAUSE, never stated by the call site (D-241): the caller supplies what it knows
+ * CAUSE, never stated by the call site (D-257): the caller supplies what it knows
  * when the cause says nothing, and a configuration this deployment cannot resolve
  * or compile overrides it with `later` wherever it arises. Choosing per call site
  * is what left the start path telling an advisor "resubmitting will not help;
@@ -114,7 +114,7 @@ function drivenOutcome(outcome: FlowRunResult): AccountOpeningStartResult {
  * `cursor - 1`. Scanning the document for the first externally-gated capability
  * would agree only while a domain has exactly one.
  *
- * REFUSING TO DRIVE IS NOT REFUSING TO REPORT (D-237). That cursor is POSITIONAL,
+ * REFUSING TO DRIVE IS NOT REFUSING TO REPORT (D-253). That cursor is POSITIONAL,
  * so the awaited rule is only this execution's under the plan it started with:
  * read out of a DIFFERENT version's plan it names a step the execution never
  * took. But this path runs no step - it states what an execution that already
@@ -151,7 +151,7 @@ function replayedRunResult(flow: CompiledFlow, state: ExecutionState): FlowRunRe
  * at the boundary and then silently discarded, failing at whatever step consumes
  * it - after earlier steps have already committed. Deriving the start input from
  * the configured trigger fields is the generic intake pipeline (prompt 12,
- * D-223); until then the seam refuses instead of losing a value.
+ * D-239); until then the seam refuses instead of losing a value.
  */
 export const START_INPUT_FIELDS = ["householdName", "firstName", "lastName", "email", "accountType"] as const;
 
@@ -212,7 +212,7 @@ async function retryFailedStart(flow: CompiledFlow, store: ExecutionStore, deps:
   // positional hazard a webhook resume does. No resubmission clears it - only a
   // configuration change an operator makes - so the submitter keeps this
   // execution's identity and is told to come back once that repair has landed,
-  // never to give up on work that is still completable (D-239).
+  // never to give up on work that is still completable (D-255).
   const stale = versionMismatch(flow, existing, tenant);
   if (stale) return refused(existing.id, stale, CLIENT_RETRY.sameIdentity);
   try {
@@ -342,7 +342,7 @@ export async function startAccountOpening(
 
 /**
  * The resume outcome plus WHAT THE SENDER SHOULD DO NEXT, in the same closed
- * vocabulary the browser reads (D-239). The e-sign provider is a different
+ * vocabulary the browser reads (D-255). The e-sign provider is a different
  * audience, so the webhook route turns the instruction into a status - but the
  * instruction itself is decided HERE, where the reason is still known.
  */
@@ -365,7 +365,7 @@ export async function resumeAccountOpeningByToken(
   const flow = configuredFlow();
   if (!flow.ok) {
     // The same operator-recoverable cause the start path answers, answered the
-    // same way (D-241): without this the webhook fell through to an unpaced 500,
+    // same way (D-257): without this the webhook fell through to an unpaced 500,
     // which is the unbounded redelivery the do-not-redeliver status exists to stop.
     return {
       executionId: "",

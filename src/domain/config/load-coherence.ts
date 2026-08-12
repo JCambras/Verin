@@ -1,6 +1,6 @@
 /**
  * COHERENCE AND COMPLETENESS - stages 5 and 6 of the seven-stage load (v3
- * prompt 10; ADR-0057).
+ * prompt 10; ADR-0058).
  *
  * COHERENCE asks whether a document that parses and closes CONTRADICTS itself:
  * a declared evidence requirement no intent needs, a capability no plan runs, a

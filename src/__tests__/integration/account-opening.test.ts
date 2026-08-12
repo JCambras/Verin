@@ -264,7 +264,7 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
   });
 
   /**
-   * THE REPLAY PATH REPORTS; IT DOES NOT DRIVE (D-237). A double-submit reports
+   * THE REPLAY PATH REPORTS; IT DOES NOT DRIVE (D-253). A double-submit reports
    * the awaited rule at `awaitingByStep[cursor - 1]`, and that cursor is
    * positional: read out of a bumped plan it names a step the execution never
    * took. So the one PLAN-DERIVED field goes undetermined while the persisted

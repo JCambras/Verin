@@ -1314,7 +1314,7 @@ export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why:
   },
   {
     callable: "src/infrastructure/config/domain-config-source.ts :: loadPublishedDomainConfig",
-    why: "a domain configuration is PLATFORM data with zero firm identity and zero household data (prompt 10, ADR-0057): it names evidence KINDS and slot vocabulary, never an observation or a subject. It is read BEFORE any tenant exists - binding a firm to it is a separate, later call - so a tenant-scoped grant is not merely absent here, it is unavailable. The firm-neutrality claim is enforced structurally by bindDomainConfig, which refuses a document carrying a firmId anywhere in its graph.",
+    why: "a domain configuration is PLATFORM data with zero firm identity and zero household data (prompt 10, ADR-0058): it names evidence KINDS and slot vocabulary, never an observation or a subject. It is read BEFORE any tenant exists - binding a firm to it is a separate, later call - so a tenant-scoped grant is not merely absent here, it is unavailable. The firm-neutrality claim is enforced structurally by bindDomainConfig, which refuses a document carrying a firmId anywhere in its graph.",
   },
   {
     callable: "src/infrastructure/pii/scrub.ts :: scrub",

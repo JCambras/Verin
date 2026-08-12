@@ -1,5 +1,5 @@
 /**
- * `bindDomainConfig` - THE ONLY PLACE A FIRM ENTERS (v3 prompt 10; ADR-0057).
+ * `bindDomainConfig` - THE ONLY PLACE A FIRM ENTERS (v3 prompt 10; ADR-0058).
  *
  * The document is firm-neutral. Binding mints every tenant-scoped reference the
  * merged decision contracts already require - `DomainConfigVersionRef`,

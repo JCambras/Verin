@@ -21,7 +21,7 @@ export const OBSERVABILITY_ID_FIELDS = [
   "actor",
   "applicationId",
   /**
-   * THE CONFIGURATION DIAGNOSIS (D-242), as STRUCTURE rather than prose. This
+   * THE CONFIGURATION DIAGNOSIS (D-258), as STRUCTURE rather than prose. This
    * repository has no prose channel by design - the formatter admits registered
    * enums and sealed ids precisely so an unregistered value degrades to
    * "[REDACTED]" - so a diagnosis routed at a free-form `detail` string went
@@ -37,7 +37,7 @@ export const OBSERVABILITY_ID_FIELDS = [
   /**
    * The reference a refused request carries on the WIRE and the operator's log
    * line carries beside the diagnosis, so narrowing a client-facing message to a
-   * generic sentence never costs the ability to diagnose it (D-240).
+   * generic sentence never costs the ability to diagnose it (D-256).
    */
   "correlationId",
   "domainConfigId",
@@ -79,7 +79,7 @@ const ACTION_NAMES = [
 export type ObservabilityAction = (typeof ACTION_NAMES)[number];
 /**
  * WHICH stage of resolving a published domain configuration refused (v3 prompt 10,
- * ADR-0057). The client is told a generic sentence and a reference, because a
+ * ADR-0058). The client is told a generic sentence and a reference, because a
  * dotted document path and a pair of SHA-256 hashes are deployment internals; this
  * is the half that reaches the OPERATOR, in the log line the reference joins to.
  * Exported as a TYPE for the same reason as the audit vocabularies above: a
@@ -142,7 +142,7 @@ const ENUMS = new Map<string, ReadonlySet<string>>([
   // WHY the location is an ANCESTOR rather than the exact node, when it is - read
   // off the emitter's own closed vocabulary for the reason above. Without it a key
   // the channel cannot name and a path that outgrew it are the same log line, and
-  // the two ask an operator for opposite repairs (D-252).
+  // the two ask an operator for opposite repairs (D-268).
   ["configPathLimit", new Set<string>(CONFIG_PATH_LIMITS)],
   ["configStage", new Set<string>(CONFIGURATION_STAGE_NAMES)],
   ["code", new Set([
@@ -153,7 +153,7 @@ const ENUMS = new Map<string, ReadonlySet<string>>([
   ])],
   ["entityType", new Set<string>(ENTITY_TYPE_NAMES)],
   ["flow", new Set(["account-opening"])],
-  // What a surface TOLD its client to do next (D-237/D-238). Read off the closed
+  // What a surface TOLD its client to do next (D-253/D-254). Read off the closed
   // contract rather than spelled again, so widening the vocabulary can never leave
   // the instruction an operator needs degraded to "[REDACTED]" in the log line
   // that explains why a submission was refused.
@@ -292,7 +292,7 @@ export function authorityObservabilityId(
 }
 
 /**
- * WHICH facts a configuration refusal states to the operator (D-242). Each is a
+ * WHICH facts a configuration refusal states to the operator (D-258). Each is a
  * value the DEPLOYMENT'S OWN published document (or its version pin file) carries,
  * never a request value, so the provenance rule is a declared SHAPE per field
  * rather than a mint ceremony: an alphabet with no whitespace plus a length cap is
@@ -326,7 +326,7 @@ const CONFIG_VERSION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*@[0-9A-Za-z][0-9A-Za-z._-]{0
  * constructor of every fault path - carries only the deepest prefix that statement
  * can express. This shape is the same statement read from the other end, which is
  * what makes it a CONSEQUENCE of the emitter rather than a third guess at it
- * (D-246/D-250).
+ * (D-262/D-266).
  */
 const CONFIGURATION_DIAGNOSIS_SHAPES: Readonly<Record<ConfigurationDiagnosisField, RegExp>> = {
   configHashPinned: /^[0-9a-f]{64}$/,

@@ -114,7 +114,7 @@ const PORT_ESCAPES = new Set([
   "src/domain/policy/load-checks.ts :: resolveValueType.<call>",
   "src/domain/policy/load-effects.ts :: checkEffects.<call>",
   "src/domain/policy/registries.ts :: catalogPrimitiveMap.<call>",
-  // The DOMAIN CONFIGURATION module (prompt 10, ADR-0057) is PURE COMPUTATION
+  // The DOMAIN CONFIGURATION module (prompt 10, ADR-0058) is PURE COMPUTATION
   // over a FIRM-NEUTRAL document. A configuration carries no firm identity by
   // construction - `bindDomainConfig` refuses one found anywhere in the graph -
   // and the module performs no repository or port access at all: it parses,
@@ -138,7 +138,7 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/errors.ts :: configError.<call>",
   "src/domain/config/errors.ts :: configPathFrom.<call>",
   "src/domain/config/errors.ts :: configPathOfText.<call>",
-  // The port EVERY configuration refusal is minted through (D-244): each arm
+  // The port EVERY configuration refusal is minted through (D-260): each arm
   // carries one typed loader fault out of pure domain code so the composition
   // root can state it to an operator, and reaches no repository. The shipped
   // implementation mints and logs; the tenant scoping that matters there is on

@@ -1,5 +1,5 @@
 /**
- * WHAT THE DEMO SHOWS WHEN THE CONFIGURED VOCABULARY CANNOT BE RESOLVED (D-251).
+ * WHAT THE DEMO SHOWS WHEN THE CONFIGURED VOCABULARY CANNOT BE RESOLVED (D-267).
  *
  * The station page renders on the SERVER, and the labels it shows are read from a
  * published domain configuration at request time. Removing that document must
@@ -7,7 +7,7 @@
  * be the dead-configuration failure prompt 10 exists to prevent - but it must
  * break it VISIBLY, as a rendered state, never as a stack trace.
  *
- * The copy carries NO deployment internals (D-243): no document path, file name,
+ * The copy carries NO deployment internals (D-259): no document path, file name,
  * version or hash. What it does carry is the refusal's own correlation reference,
  * which the operator's log line carries too - the one thing a person staring at
  * this screen can hand over so the diagnosis can be found under it. A refusal that

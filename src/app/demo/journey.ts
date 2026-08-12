@@ -46,7 +46,7 @@ function stopNoteOf(scenarioId: string, firmId: string): string | null {
  * because resolving it can REFUSE - the published document may be absent, drifted
  * from its pin, unbindable, or missing a label this journey renders - and a
  * server-rendered page must answer that with a rendered refusal rather than a
- * stack trace (D-251). Taking it here keeps every builder below total.
+ * stack trace (D-267). Taking it here keeps every builder below total.
  */
 export function getJourney(
   scenarioId: string,

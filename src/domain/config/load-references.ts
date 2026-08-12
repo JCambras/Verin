@@ -1,6 +1,6 @@
 /**
  * REFERENCE CLOSURE ACROSS SECTIONS, AND VERSION IDENTITY - the parts of the
- * load that read the WHOLE document (v3 prompt 10; ADR-0057). Split from
+ * load that read the WHOLE document (v3 prompt 10; ADR-0058). Split from
  * `load.ts` for the per-file ceiling; the pipeline order is unchanged and
  * `load.ts` remains the only caller.
  */

@@ -1,6 +1,6 @@
 /**
  * SUPPORTED INTENTS AND SLOT REQUIREMENTS (v3 prompt 10 deliverable 1-2;
- * ADR-0057).
+ * ADR-0058).
  *
  * An intent is what a domain can be ASKED for; slots are what must be bound
  * before anyone may decide. Two facts live here that nothing else in the repo
@@ -173,7 +173,7 @@ const intentSchemaImpl = z
   });
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -182,11 +182,11 @@ const intentSchemaImpl = z
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-222)
 export interface ConfiguredSlot extends z.infer<typeof slotSchemaImpl> {}
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -195,6 +195,6 @@ export interface ConfiguredSlot extends z.infer<typeof slotSchemaImpl> {}
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-222)
 export interface ConfiguredIntent extends z.infer<typeof intentSchemaImpl> {}
 export const IntentSchema: z.ZodType<ConfiguredIntent> = intentSchemaImpl;

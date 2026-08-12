@@ -79,7 +79,7 @@ export default async function DemoStationPage({
   if (!scenarioId || !firmId) notFound();
   const approved = first(sp.approved) === "1";
   // THE CONFIGURED VOCABULARY IS RESOLVED BEFORE THE JOURNEY IS BUILT, and a
-  // deployment that cannot supply it renders the refusal instead (D-251). This is
+  // deployment that cannot supply it renders the refusal instead (D-267). This is
   // the X-9 honesty check on the demo side: removing the published document breaks
   // this journey visibly, with the quotable reference its own operator line
   // carries, rather than with a server stack trace.

@@ -1,6 +1,6 @@
 /**
  * Typed load/bind failures for the domain-configuration system (v3 prompt 10,
- * ADR-0057). Loading is TOTAL: every rejection is a value, never a throw, so a
+ * ADR-0058). Loading is TOTAL: every rejection is a value, never a throw, so a
  * malformed configuration file cannot become an unenveloped 500 (charter #2,
  * the no-bare-throw fence).
  *
@@ -8,7 +8,7 @@
  * caller can tell "this document is not inert" from "this firm does not supply
  * that approval template" without parsing prose.
  *
- * AND NO PROSE RENDERING LIVES HERE (D-244). The accumulator is a list of typed
+ * AND NO PROSE RENDERING LIVES HERE (D-260). The accumulator is a list of typed
  * faults; the one consumer that flattened it into a sentence put dotted document
  * paths into an `AppError` message the e-sign webhook returns verbatim to the
  * EXTERNAL provider. A fault reaches an operator as REGISTERED STRUCTURED VALUES
@@ -50,7 +50,7 @@ export type DomainConfigErrorCode = (typeof DOMAIN_CONFIG_ERROR_CODES)[number];
  * travels admits a declared SHAPE (`configPath` in `domain/observability`), so a
  * path the emitter can build and the shape cannot express degrades to
  * "[REDACTED]" - a stage reported with its location censored, which is the dead
- * diagnosis channel D-242 exists to prevent.
+ * diagnosis channel D-258 exists to prevent.
  *
  * Every other emitted path is bounded by the SCHEMA: the document's own sections
  * nest a fixed number of levels. One is not. A primitive's `parameters` value is
@@ -64,7 +64,7 @@ export type DomainConfigErrorCode = (typeof DOMAIN_CONFIG_ERROR_CODES)[number];
  * and the diagnosis shape derives its per-segment subscript cap from this same
  * constant. Bounding admission once is what keeps the two from being two
  * opinions - the shape is a CONSEQUENCE of the bound rather than a second guess
- * at it, which is the mistake that shipped twice (D-246).
+ * at it, which is the mistake that shipped twice (D-262).
  *
  * Raising it is a deliberate edit here; the shape follows automatically.
  */
@@ -84,11 +84,11 @@ export const MAX_CONFIGURED_VALUE_DEPTH = 8;
  * emitter is REFUSED at - so the shape cannot be narrower than its emitter without
  * the loader having admitted a graph it declared inadmissible.
  *
- * IT LIVES BESIDE `configError` BECAUSE THE EMITTER READS IT (D-250). Twice this
+ * IT LIVES BESIDE `configError` BECAUSE THE EMITTER READS IT (D-266). Twice this
  * shape was widened by GUESSING at what the emitters produce, and both guesses were
  * wrong in the same direction: a path the emitter builds and the shape cannot
  * express degrades to "[REDACTED]" - a stage reported with its location censored,
- * which is the dead diagnosis channel D-242 exists to prevent - and NOTHING fails.
+ * which is the dead diagnosis channel D-258 exists to prevent - and NOTHING fails.
  * The last guess still missed a whole class, because two emitters interpolate
  * document keys the schema does not shape at all: a primitive's `parameters` names
  * and every own key of the OPAQUE value graph under one (`z.record(z.string()…)`,
@@ -119,14 +119,14 @@ const isCarriableConfigSegment = (segment: string): boolean =>
  * ceiling is a GRAPH TO FLATTEN. Ending both by returning the parent left every
  * caller discriminating on `at === path`, which is one sentinel meaning two things -
  * so a length truncation was reported as a naming problem, and an operator sent to
- * rename an ordinary camelCase key at the ALLOWED depth (D-252).
+ * rename an ordinary camelCase key at the ALLOWED depth (D-268).
  */
 export const CONFIG_PATH_LIMITS = ["unnameable-segment", "path-too-long"] as const;
 export type ConfigPathLimit = (typeof CONFIG_PATH_LIMITS)[number];
 
 /**
  * A LOCATION AND WHY IT STOPS WHERE IT DOES, AS ONE VALUE THAT CANNOT BE SEPARATED
- * (D-253).
+ * (D-269).
  *
  * `path` is always a location the channel can carry, because the only ways to build
  * one are the steps below and they start at the root. `carried: false` is the whole
@@ -173,7 +173,7 @@ export const childConfigPath = (parent: ConfigPath, key: string): ConfigPath => 
 };
 
 /**
- * One LIST POSITION deeper, under the SAME ceiling as a key (D-253). A subscript
+ * One LIST POSITION deeper, under the SAME ceiling as a key (D-269). A subscript
  * EXTENDS the last segment rather than adding one, so it is admitted by re-reading
  * that segment - which is what keeps the subscript cap and the length ceiling one
  * rule for both container kinds. Enforcing the ceiling for keys and not for
@@ -201,7 +201,7 @@ export const configPathFrom = (
  * The deepest prefix of an already-joined dotted path the channel can carry, and the
  * limit that ended it. A root-level fault has no path at all and keeps the empty
  * string, which the source adapter omits rather than reporting - an absent location
- * and a censored one are different facts (D-242).
+ * and a censored one are different facts (D-258).
  */
 export const configPathOfText = (path: string): ConfigPath =>
   path === "" ? CONFIG_PATH_ROOT : configPathFrom(path.split("."));
@@ -225,7 +225,7 @@ export type DomainConfigError = {
  * THE ONE CONSTRUCTOR OF EVERY FAULT. It carries only what the channel can express,
  * and when that is less than it was asked to report it says so.
  *
- * THERE IS NO LIMIT ARGUMENT (D-253). An emitter that descended states where it
+ * THERE IS NO LIMIT ARGUMENT (D-269). An emitter that descended states where it
  * stopped by handing over the `ConfigPath` it stopped at - path and limit together,
  * so neither can be dropped, re-derived, or overridden by the other. One handing
  * over a raw dotted path knows no limit, so this truncation owns the one it hits.
@@ -242,9 +242,9 @@ export const configError = (
 };
 
 /**
- * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-244).
+ * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-260).
  *
- * Classifying a refusal by its CAUSE (D-241) only holds if the classification is a
+ * Classifying a refusal by its CAUSE (D-257) only holds if the classification is a
  * MECHANISM. Marking each mint `operatorRecoverable` by hand was a convention:
  * nine refusals across the plan compiler, the intake view and the composition root
  * each said the same thing in their own words, so the wire got a server error with

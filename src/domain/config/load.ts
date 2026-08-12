@@ -1,6 +1,6 @@
 /**
  * `loadDomainConfig` - the deterministic load-time gate for a domain
- * configuration (v3 prompt 10; ADR-0057). Seven ordered stages, every failure a
+ * configuration (v3 prompt 10; ADR-0058). Seven ordered stages, every failure a
  * VALUE, and a document loads only when the error list is EMPTY:
  *
  *  1. inert document   - a plain data record (the YAML adapter refuses tags,
@@ -102,7 +102,7 @@ export const shippedConfigEnvironment = (): DomainConfigEnvironment => ({
  * Adapt a catalog primitive to the narrow shape parameter resolution needs.
  * UNEXPORTED on purpose: it is the one place a Zod schema type is touched, and
  * keeping it out of every exported signature is what keeps the repo's
- * type-resolving fences able to walk this module at all (D-206).
+ * type-resolving fences able to walk this module at all (D-222).
  */
 const parameterOwnerOf = (primitive: CatalogPrimitive): ParameterOwner => ({
   id: primitive.id as string,
@@ -249,12 +249,12 @@ export const loadDomainConfig = (
   }
   const parsed = DomainConfigDocumentSchema.safeParse(input);
   if (!parsed.success) {
-    // BUILT FROM SEGMENTS, never joined (D-250): a record key the schema rejects is
+    // BUILT FROM SEGMENTS, never joined (D-266): a record key the schema rejects is
     // reported THROUGH by Zod's own issue path, and an author's key may be anything
     // - `{ "Household.Name": … }` joined would name a node this document does not
     // have, while a key the channel cannot carry at all would censor the whole
     // location. Either way the honest answer is the deepest node that CAN be named.
-    // The step is handed to `configError` WHOLE (D-253): this is the loader's most
+    // The step is handed to `configError` WHOLE (D-269): this is the loader's most
     // common failure, and passing only its path let the constructor re-walk an
     // already-carriable string and call a truncated location complete.
     return err(

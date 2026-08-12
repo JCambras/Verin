@@ -40,7 +40,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (result.status === "not-found") return errorResponse(appError("NOT_FOUND", "Unknown signing token."));
   if (result.status === "invalid-signature") return errorResponse(appError("INTERNAL", "signature mismatch"));
   if (result.status === "failed") {
-    // The SAME instruction shape the start path answers with (D-241). This
+    // The SAME instruction shape the start path answers with (D-257). This
     // affordance drives the same flow, so forwarding the raw AppError answered a
     // superseded configuration version with 409 and the internal message on the
     // one surface the shipped journey actually clicks - no typed instruction, and

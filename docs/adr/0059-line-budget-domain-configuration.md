@@ -1,15 +1,15 @@
-# ADR-0058: Line-budget amendment for the domain configuration schema
+# ADR-0059: Line-budget amendment for the domain configuration schema
 
 **Status:** Accepted
 **Date:** 2026-08-11
 **Deciders:** Founding architect
 **Relates to:** ADR-0018 (per-layer line budgets), ADR-0029, ADR-0033, ADR-0048, ADR-0049, ADR-0050,
-ADR-0051, ADR-0052, ADR-0054; charter non-negotiables #1 and #10; v3 prompt 10 (ADR-0057)
+ADR-0051, ADR-0052, ADR-0054; charter non-negotiables #1 and #10; v3 prompt 10 (ADR-0058)
 **Amends:** ADR-0054's ceilings for `contracts`, `domain`, and `infrastructure`
 
 ## Context
 
-v3 prompt 10 (ADR-0057) lands the domain-configuration schema: the whole thirteen-section grammar, a
+v3 prompt 10 (ADR-0058) lands the domain-configuration schema: the whole thirteen-section grammar, a
 seven-stage loader, the firm binder, the prompt-9 registry derivation, the plan compiler, the version
 diff, and the label and intake projections. It is the largest single addition to the `domain` layer of
 this build, and deliberately so - the point of the prompt is that a decision DOMAIN stops being code.
@@ -290,7 +290,7 @@ version-disagreeing report - real persisted status and resume token, awaited rul
 than answering `failed`, which corrects the round-9 refusal on that same path. Refusing to DRIVE a stale
 positional cursor and refusing to REPORT an execution that plainly exists are different acts, and the
 `failed` answer told a browser its submission never happened, whose client then minted a fresh request
-id and opened a duplicate execution (D-237). The two paths that drive steps still refuse, unchanged.
+id and opened a duplicate execution (D-253). The two paths that drive steps still refuse, unchanged.
 
 `contracts`, `domain` and `presentation` are re-taken and unchanged. The round's other two corrections
 are app code in no measured bucket: the intake route reports a configured field this deployment cannot
@@ -441,7 +441,7 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 ## Amendment (2026-08-12, review round 15): `domain` and `infrastructure` raised for the derived refusal class
 
 `infrastructure` grows past its ceiling and `domain` reaches its own exactly, answering this round's
-findings in code (D-244).
+findings in code (D-260).
 
 `infrastructure` gains `config/configured-flow.ts` - the compile of the published document, moved out of
 the composition root because everything it refuses is a fact about the DOCUMENT, and because holding it
@@ -538,7 +538,7 @@ Two layers grow past their ceilings answering this round's findings in code.
 instruction at all - the intake accessor answers a submitter's own omission with a plain VALIDATION, which
 has no `retry` field - had nothing to fall back TO, so the fallback it passed was unsendable by
 construction, and the one it named would have told a browser to burn the form session's request id over a
-blank required field. Asking the cause directly removes the false branch instead of renaming it (D-249).
+blank required field. Asking the cause directly removes the false branch instead of renaming it (D-265).
 
 `domain` gains the statement of the diagnosis channel's capacity - the segment grammar and the length
 ceiling - beside the emitter that must respect it, the carry inside `configError` (the ONE constructor of
@@ -547,14 +547,14 @@ key the channel cannot name as one segment, and the refusal port's fourth arm wi
 `undeclared-copy` stage. The defect being closed is the third form of one already fixed twice: the shape
 could not express a document KEY, which is author-chosen and may carry whitespace (censoring the location
 whole) or a `.` (shaping perfectly while naming a node the document does not have). A location is now
-BUILT from segments rather than interpolated (D-250), and the demo station page resolves its configured
+BUILT from segments rather than interpolated (D-266), and the demo station page resolves its configured
 vocabulary and renders that refusal rather than throwing inside a builder on a server-rendered route
-(D-251).
+(D-267).
 
 `contracts` had ELEVEN lines of headroom and `domain` was eighty lines over - both the zero-headroom
 condition this ADR's header argues against, where the next one-line correction fails an unrelated ceiling.
 `infrastructure` moved by two lines and stays well inside, so it is RE-TAKEN rather than raised for
-company. `presentation` is re-taken too: the 928 carried forward since ADR-0058 had gone several rounds
+company. `presentation` is re-taken too: the 928 carried forward since ADR-0059 had gone several rounds
 stale, which is exactly what this ADR says a number nobody re-took is worth. The demo surfaces and route
 live under `src/app/demo/` and `src/app/app/`, which no bucket measures - that gap is the pre-existing one
 this ADR does not change.
@@ -586,7 +586,7 @@ message per cause in the parameter walks, and the limit on `DomainConfigError` s
 the one its own truncation hit; the two truncation walks that had drifted apart collapse into ONE step
 rule, which is the deleted half. `infrastructure` gains the limit on the diagnosis the shared mint carries
 and the registered `configPathLimit` field on the operator's line, so the cause reaches the person who acts
-on it rather than living in a message the wire never sees (D-252).
+on it rather than living in a message the wire never sees (D-268).
 
 Both layers had TWELVE and THIRTEEN lines of headroom after the change - the zero-headroom condition this
 ADR's header argues against, where the next one-line correction fails an unrelated ceiling and the only
@@ -605,7 +605,7 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 
 ## Re-measure (2026-08-12, review round 20): NO ceiling moves
 
-Carrying a fault location and the limit that ended it as ONE value (`ConfigPath`, D-253) spent 50 of the
+Carrying a fault location and the limit that ended it as ONE value (`ConfigPath`, D-269) spent 50 of the
 62 lines of correction headroom the round-19 amendment had just named: the typed step both container
 kinds now take, the subscript step that puts a list POSITION under the same ceiling as a key, and a
 constructor with no limit argument left for an emitter to overrule. That is exactly what correction

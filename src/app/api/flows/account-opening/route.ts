@@ -21,7 +21,7 @@ import {
 export const runtime = "nodejs";
 
 /**
- * A CHECKED INTAKE READ THAT FAILED, answered by its CAUSE (D-241). The same
+ * A CHECKED INTAKE READ THAT FAILED, answered by its CAUSE (D-257). The same
  * accessor raises two different things: a submitter's omission of a declared
  * field, which is theirs to fix and keeps its own VALIDATION, and a document that
  * declares no such trigger field at all, which no submission reaches and an
@@ -29,7 +29,7 @@ export const runtime = "nodejs";
  * "come back" instruction rather than a bare server error.
  *
  * The VALIDATION arm carries no instruction on the wire at all, so this asks the
- * cause DIRECTLY (D-249): a fallback here would be an instruction this surface can
+ * cause DIRECTLY (D-265): a fallback here would be an instruction this surface can
  * never send, and the unsendable one it held named the identity-burning arm.
  */
 function intakeReadRefusal(error: AppError): NextResponse {
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!parsed.ok) return errorResponse(parsed.error);
   const b = parsed.value;
   // EVERY refusal below whose cause is the published document is minted HERE, so
-  // this boundary carries no second opinion about what one means (D-245).
+  // this boundary carries no second opinion about what one means (D-261).
   const refuse = configuredRefusal(ACCOUNT_OPENING_DOMAIN);
   // The intake rules this boundary enforces are the ones the published
   // configuration DECLARES - per-slot maximum lengths and the registration
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // select option this route then refuses.
   const form = loadIntakeForm(ACCOUNT_OPENING_DOMAIN);
   // A configuration this deployment cannot resolve is an OPERATOR-RECOVERABLE
-  // refusal, so it takes the third instruction (D-240/D-242) - read off the
+  // refusal, so it takes the third instruction (D-256/D-258) - read off the
   // refusal's own cause rather than named here. The message is the generic
   // sentence the source minted, carrying the correlation id its own log line
   // carries; the document path, version and hashes are on that line as registered
@@ -80,9 +80,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // refused here rather than admitted and dropped: dropping it would fail at
   // whatever step sources the slot, after the earlier steps had committed - the
   // partial write a clean boundary refusal exists to prevent. Deriving the input
-  // from the configured trigger fields is prompt 12's intake pipeline (D-223).
+  // from the configured trigger fields is prompt 12's intake pipeline (D-239).
   //
-  // CLASSIFIED BY CAUSE, NOT BY CALL SITE (D-241). This fires only when the
+  // CLASSIFIED BY CAUSE, NOT BY CALL SITE (D-257). This fires only when the
   // PUBLISHED DOCUMENT declares a field this deployment has no room for: a
   // configuration defect an operator rollback clears and no submitter can, which
   // is the same cause every other configuration refusal carries and therefore the
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // shared mint and the instruction is INHERITED here, rather than this boundary
   // deciding for itself that a bare server error with no retry arm would do - and
   // the field the document declares reaches the operator's log line as a
-  // registered path instead of the browser as prose (D-242).
+  // registered path instead of the browser as prose (D-258).
   const unmapped = unmappedIntakeFault(form.value, supplied, START_INPUT_FIELDS, refuse);
   if (unmapped !== null) {
     return refusalResponse(clientRetryFor(unmapped, CLIENT_RETRY.sameIdentity), unmapped);
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // the fallback is the conservative one (stay attached to an execution that may
     // already exist) and is here only so this mapping is total. The cause is asked
     // again HERE rather than trusted, so a refusal that reaches this surface from a
-    // path that forgot still inherits the classification (D-241).
+    // path that forgot still inherits the classification (D-257).
     const error = result.error ?? appError("INTERNAL", "The account-opening flow failed to start.");
     const retry = clientRetryFor(error, result.retry ?? CLIENT_RETRY.sameIdentity);
     log[logLevelFor(error.code)]({ code: error.code, retry }, "account-opening flow start failed");

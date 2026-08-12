@@ -1,5 +1,5 @@
 /**
- * THE PLAN COMPILER (v3 prompt 10; ADR-0057) - where a configured domain stops
+ * THE PLAN COMPILER (v3 prompt 10; ADR-0058) - where a configured domain stops
  * being a document and starts being the thing that runs.
  *
  * `compileFlowDefinition` turns a plan TEMPLATE (a DAG of capabilities with
@@ -414,7 +414,7 @@ export type CompiledFlow = {
  * typed error rather than throwing, so a configuration a deployment cannot run
  * surfaces at the surface that asked for it.
  *
- * EVERY refusal here is OPERATOR-RECOVERABLE by cause (D-241): it says this
+ * EVERY refusal here is OPERATOR-RECOVERABLE by cause (D-257): it says this
  * deployment cannot compile the document it publishes, which an operator clears
  * by rolling that document back and no submitter clears by any means. All of them
  * go through the SAME injected mint the compiled steps use, so the classification

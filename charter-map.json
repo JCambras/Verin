@@ -798,7 +798,7 @@
     },
     {
       "id": "domain-config-as-data",
-      "title": "A decision domain is DATA, not code: both ratified domains are published as inert, firm-neutral, hash-pinned configuration that loads and binds through one versioned engine schema, and no decision-core module, directory, identifier, or literal is named for a domain (v3 prompt 10, invariant 3, ADR-0057)",
+      "title": "A decision domain is DATA, not code: both ratified domains are published as inert, firm-neutral, hash-pinned configuration that loads and binds through one versioned engine schema, and no decision-core module, directory, identifier, or literal is named for a domain (v3 prompt 10, invariant 3, ADR-0058)",
       "status": "enforced",
       "phase": "v3-p10",
       "mechanisms": [
@@ -820,7 +820,7 @@
         },
         {
           "type": "adr",
-          "ref": "docs/adr/0057-domain-configuration-schema.md"
+          "ref": "docs/adr/0058-domain-configuration-schema.md"
         },
         {
           "type": "procedure",

@@ -124,6 +124,9 @@ and ADR-0053 policy rounds interleaved among them; every PF id names exactly one
 [`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001 through PF-301, with the titled ADR-0052
 corpus and ADR-0053 policy rounds interleaved after PF-235, and the prompt-10 rounds running PF-253 to
 PF-301; every PF id names exactly one proof — the prompt-6 and prompt-11 entries were
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001 through PF-339, with the titled ADR-0052
+corpus and ADR-0053 policy rounds interleaved after PF-235, and the prompt-10 rounds running PF-291 to
+PF-339; every PF id names exactly one proof — the prompt-6 and prompt-11 entries were
 renumbered on rebase, see the numbering notes in the log; the prompt-7 entries carry a separate
 `(D-1xx)` citation drift the log records at its own tail).
 
@@ -178,6 +181,7 @@ renumbered on rebase, see the numbering notes in the log; the prompt-7 entries c
 | `world-provenance` (every world record labeled `source: "fixture"` and refused by `canFeedComplianceDecision`; no generated health field; holdings reconcile; the account, instrument-reach and cross-household-prose rules `validateWorld` holds BOTH authors to) | the largest body of synthetic data in the repo is labeled mechanically, and its health figure is computed rather than typed (#3/#4, ADR-0022, ADR-0057) | PF-254, PF-263, PF-269, PF-274 + companions |
 | `clean-slate` (the swept table list DERIVED from the shipped DDL and read three ways that share no code, plus the store's own catalog; fail-closed on an empty sweep or a provenance-bearing table with no origin column) | a production instance carries zero demonstration-origin rows, counted on the ROW's origin rather than its value provenance, and a check that verifies nothing never reports clean (#3/#4/#7, ADR-0057, D-201/D-217/D-218/D-219) | PF-255 through PF-257, PF-260/261, PF-266 through PF-268, PF-273, PF-281, PF-284, PF-288 through PF-290 |
 | `domain-configuration` (AST + the REAL loader over both shipped documents: a forbidden decision-core vocabulary DERIVED from the published documents' own ids, immutable version pins, one inert reader of `config/domains/`, the surface-to-copy and store-to-document vocabulary bindings, and the refusal rules I-M - one mint, cause-classified retry, no deployment internal on the wire, and a fault location built from segments that names the limit that ended it) | a decision DOMAIN is data: no core module, directory or evaluator branch is named for one, a published version's bytes never change, and a configuration refusal is minted once and located honestly (#1/#2/#4/#5, v3 invariant 3, ADR-0057) | PF-253 onward - the prompt-10 rounds, most recently PF-301 - + companions |
+| `domain-configuration` (AST + the REAL loader over both shipped documents: a forbidden decision-core vocabulary DERIVED from the published documents' own ids, immutable version pins, one inert reader of `config/domains/`, the surface-to-copy and store-to-document vocabulary bindings, and the refusal rules I-M - one mint, cause-classified retry, no deployment internal on the wire, and a fault location built from segments that names the limit that ended it) | a decision DOMAIN is data: no core module, directory or evaluator branch is named for one, a published version's bytes never change, and a configuration refusal is minted once and located honestly (#1/#2/#4/#5, v3 invariant 3, ADR-0058) | PF-291 onward - the prompt-10 rounds, most recently PF-339 - + companions |
 
 **Current prompt-11 line-budget PR evidence:** contracts 6,064/6,110 (46
 headroom), domain 1,581/1,650 (69), infrastructure 7,786/7,840 (54), and
@@ -195,13 +199,13 @@ quoted here - as has the infrastructure figure recorded in
 `line-budget.test.ts`'s own header, and each is named for re-measurement against
 its authoritative current ceiling under follow-up key
 `fu-platform-budget-remeasure` (D-203, §4), to be taken in the platform-budget
-work that next changes that layer. **That work is v3 prompt 10** (ADR-0057),
+work that next changes that layer. **That work is v3 prompt 10** (ADR-0058),
 which changes all three, so all three are RE-TAKEN here with the same algorithm
-against ADR-0058's ceilings - the authority that superseded ADR-0054's:
+against ADR-0059's ceilings - the authority that superseded ADR-0054's:
 contracts 6,771/6,810 (39 headroom), domain 9,868/9,880 (12), infrastructure
 8,802/8,850 (48), presentation unchanged at 2,240/6,000. `domain`'s twelve lines
 are the narrowest any layer has run, and are named here rather than banked,
-exactly as ADR-0058's own round-20 re-measure records them. Two files
+exactly as ADR-0059's own round-20 re-measure records them. Two files
 carry a `max-file-size` pin instead of the 500-line default:
 `migrations.ts` (510/560, ADR-0049) and the ledger's sole write
 chokepoint `ledger-store.ts` (502/550, ADR-0050). ADR-0052 adds the `tooling`
@@ -291,10 +295,10 @@ date/trigger), never omitted:
 | Managed-Postgres (`node-postgres`) store adapter | — | founder | production deploy (D-006; PGlite is dev/CI) |
 | Mutation-testing harness for fence efficacy (Vale V9) | CC5 | founder | add a check that a gutted fence fails |
 | `src/__tests__/**` sits in no line-budget bucket while `scripts/**` now does (ADR-0052 amendment; D-172/D-173, follow-up `fu-corpus-test-tree-budget`) | CC5 | founder | the next structural test-tree work (a fence-file split, a shared-fixture extraction, any move of fence code between trees) |
-| Recorded platform line-budget figures go stale between platform changes, and nothing FENCES a figure against its own tree: §2's prompt-11 snapshot (contracts 6,064/6,110, domain 1,581/1,650) sat two ceiling ADRs behind until v3 prompt 10 re-took all three against ADR-0058's (D-203, follow-up `fu-platform-budget-remeasure`; the standing obligation is unchanged) | CC5 | founder | the next commit that changes `src/contracts/**`, `src/domain/**`, or `src/infrastructure/**` re-measures that layer and re-takes its figure in both places |
+| Recorded platform line-budget figures go stale between platform changes, and nothing FENCES a figure against its own tree: §2's prompt-11 snapshot (contracts 6,064/6,110, domain 1,581/1,650) sat two ceiling ADRs behind until v3 prompt 10 re-took all three against ADR-0059's (D-203, follow-up `fu-platform-budget-remeasure`; the standing obligation is unchanged) | CC5 | founder | the next commit that changes `src/contracts/**`, `src/domain/**`, or `src/infrastructure/**` re-measures that layer and re-takes its figure in both places |
 | A presentation primitive's named deferral expires by REVIEW, not by a fence - nothing fails the build if a named prompt lands without retiring its row (ADR-0056; D-203, follow-up `fu-primitive-deferral-expiry-fence`) | CC5 | founder | the first expiry (prompt 3, `Tooltip`) - the first retirement a fence can be proven against |
 | Dead-export exemption for `domain/schema` vocabulary (Vale V11 / D-013) | CC5 | founder | remove when entities gain runtime consumers / a 2nd source lands |
-| `src/contracts/**` is a knip ENTRY POINT (D-204), so a contracts export with no consumer repo-wide is invisible to charter #5's dead-export gate - five unused prompt-10 brands survived four review rounds green (follow-up `fu-contracts-dead-export-visibility`, `docs/domain-config-gaps.md` §5) | CC5 | founder | the next prompt that adds a contracts type ahead of its consumer, or the first named-deferral idiom for `contracts/` |
+| `src/contracts/**` is a knip ENTRY POINT (D-220), so a contracts export with no consumer repo-wide is invisible to charter #5's dead-export gate - five unused prompt-10 brands survived four review rounds green (follow-up `fu-contracts-dead-export-visibility`, `docs/domain-config-gaps.md` §5) | CC5 | founder | the next prompt that adds a contracts type ahead of its consumer, or the first named-deferral idiom for `contracts/` |
 | Displayed-metric→source provenance trace (Vale V12) — **CLOSED** (Wave-1 prereq: ADR-0022, `metric-provenance` + `derived-provenance` fences in the `provenance-trace` gate; D-025/D-026) | #3 | — | done |
 | Scheduled outbox drainer (Vale V14; dead-letter parking landed, D-024) | CC7.1 | founder | deploy-target selection |
 | Org-qualified login (Sable F3) | CC6.1 | red-team | self-registration / multi-org email collision |

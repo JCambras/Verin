@@ -32,7 +32,7 @@ import {
 } from "@domain/config/segments";
 
 /**
- * THE DOMAIN-CONFIGURATION ACCEPTANCE TESTS (v3 prompt 10; ADR-0057).
+ * THE DOMAIN-CONFIGURATION ACCEPTANCE TESTS (v3 prompt 10; ADR-0058).
  *
  * The ratified acceptance criterion is "both domains parse and bind against the
  * same engine contracts". These tests prove that against the SHIPPED files, and
@@ -51,7 +51,7 @@ function documentOf(domain: string): Mutable {
 }
 
 /**
- * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-244), in test form: it
+ * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-260), in test form: it
  * RECORDS the typed fault rather than rendering it, which is exactly what the port
  * exists for. The compiler used to flatten the loader's dotted document paths into
  * an `AppError` message the e-sign webhook returns verbatim to the external
@@ -456,7 +456,7 @@ describe("domain configuration: the shipped documents", () => {
       refusedStages.length = 0;
       // The five shipped fields all land; a sixth configured slot would not, and
       // the route refuses it rather than losing it at a later step whose
-      // predecessors have already committed (D-223).
+      // predecessors have already committed (D-239).
       const projected = form();
       expect(projected.ok).toBe(true);
       if (!projected.ok) return;
@@ -744,7 +744,7 @@ describe("detects (companion): a configuration that is wrong in any of the seven
 
   /**
    * Flow data has TWO writers. The slot side has refused a reserved name since
-   * D-218; these are the same hazard through a capability's publication alias,
+   * D-234; these are the same hazard through a capability's publication alias,
    * which the compiler merges into the very same namespace.
    */
   const publishesAs = (document: Mutable, alias: string): void => {
@@ -1220,7 +1220,7 @@ describe("detects (companion): a configuration that is wrong in any of the seven
       { orgId: "org" } as never,
     );
     expect(result.kind).toBe("fail");
-    // THE FAULT IS STATED, NOT RENDERED (D-244). What the step hands its refusal
+    // THE FAULT IS STATED, NOT RENDERED (D-260). What the step hands its refusal
     // port is the loader's own typed fault - a code and a dotted DOCUMENT path -
     // so the composition root can put those on the operator's line as registered
     // values instead of flattening them into a message the e-sign provider reads.

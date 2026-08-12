@@ -51,7 +51,7 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/domain/schema/entities.ts :: Org.name", why: "the firm's own identity, not client PII (audit scrubbing still redacts it belt-and-braces)" },
   { ref: "src/domain/workflow/engine.ts :: FlowDefinition.name", why: "machine-readable flow id" },
   { ref: "src/domain/workflow/engine.ts :: FlowDefinition.steps.name", why: "machine-readable step id, reached as a nested path through FlowDefinition.steps" },
-  // PROMPT 10 (ADR-0057) domain-configuration vocabulary. The PII field rule
+  // PROMPT 10 (ADR-0058) domain-configuration vocabulary. The PII field rule
   // reads `evidence` as sensitive because a projection's `evidence` really is
   // client payload; these are the other thing that word names - taxonomy ids,
   // requirements and display labels inside a firm-neutral document that carries
@@ -73,7 +73,7 @@ const NON_PII_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/config/domain-config-source.ts :: SourcedDomainConfig.config.bindings.primitive.evidenceKindParameters", why: "prompt 8's declaration of WHICH PARAMETER NAMES of a primitive carry evidence kinds - parameter names, never evidence" },
   { ref: "src/infrastructure/config/domain-config-source.ts :: SourcedDomainConfig.config.document.evidence", why: "the domain's evidence REQUIREMENTS section: kinds, declared paths, freshness floors and who may supply them; a configuration never holds an observation" },
   { ref: "src/infrastructure/config/domain-config-source.ts :: SourcedDomainConfig.config.intents.intent.requiresEvidence", why: "branded EvidenceKind taxonomy ids naming WHICH KINDS an intent needs - a requirement, never evidence contents" },
-  { ref: "src/domain/config/load.ts :: LoadedDomainConfig.document.intents.requiresEvidence", why: "branded EvidenceKind taxonomy ids naming WHICH KINDS an intent needs - a requirement, never evidence contents; a domain configuration holds no observation by construction (prompt 10, ADR-0057)" },
+  { ref: "src/domain/config/load.ts :: LoadedDomainConfig.document.intents.requiresEvidence", why: "branded EvidenceKind taxonomy ids naming WHICH KINDS an intent needs - a requirement, never evidence contents; a domain configuration holds no observation by construction (prompt 10, ADR-0058)" },
   { ref: "src/domain/config/load.ts :: LoadedDomainConfig.document.blockers.resolvingEvidence", why: "EvidenceKind ids naming what would unblock a decision - a request FOR evidence, never evidence itself" },
   { ref: "src/domain/config/load.ts :: LoadedDomainConfig.document.presentation.copy.evidenceKinds", why: "the LABELS an evidence kind renders under, keyed by kind - display copy, never evidence" },
   { ref: "src/domain/config/bind.ts :: BoundDomainConfig.config.document.intents.requiresEvidence", why: "branded EvidenceKind taxonomy ids, reached as a nested path through the bound configuration" },

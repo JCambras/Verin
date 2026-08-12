@@ -1,5 +1,5 @@
 /**
- * THE CLOSED SEGMENT GRAMMAR (v3 prompt 10, ADR-0057) - the only way a domain
+ * THE CLOSED SEGMENT GRAMMAR (v3 prompt 10, ADR-0058) - the only way a domain
  * configuration builds a composite value.
  *
  * Conflict keys, idempotency keys, command payload fields and rendered copy all
@@ -249,7 +249,7 @@ export const renderTemplate = (
 };
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -262,7 +262,7 @@ export type ValueSource = z.infer<typeof valueSourceSchemaImpl>;
 export const ValueSourceSchema: z.ZodType<ValueSource> = valueSourceSchemaImpl;
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole

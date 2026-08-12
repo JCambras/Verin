@@ -1,5 +1,5 @@
 /**
- * THE PROMPT-9 SEAM (v3 prompt 10; ADR-0053 + ADR-0057).
+ * THE PROMPT-9 SEAM (v3 prompt 10; ADR-0053 + ADR-0058).
  *
  * A firm policy loads against four pinned registries: evidence paths,
  * instruction paths, context keys, and approval templates. Every one of them is

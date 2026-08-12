@@ -1,6 +1,6 @@
 /**
  * THE DEMO'S DOMAIN VOCABULARY, READ FROM CONFIGURATION (v3 prompt 10;
- * ADR-0057).
+ * ADR-0058).
  *
  * The walking skeleton used to carry money-movement's slot labels and evidence
  * row labels as literals inside its builders. They now come from the published
@@ -26,13 +26,13 @@
  * invented labels. Deriving the classes makes that drift unrepresentable rather
  * than merely detected.
  *
- * RESOLUTION IS A VALUE, NEVER A THROW (D-251). This module used to throw when
+ * RESOLUTION IS A VALUE, NEVER A THROW (D-267). This module used to throw when
  * the configuration could not be resolved or bound, on a path the demo station
  * page renders on the SERVER: deleting the published document broke the journey
  * with a stack trace, when the whole point of prompt 10 is that it breaks the
  * journey HONESTLY. Every failure is now a typed refusal the page renders - the
  * generic sentence and quotable reference the shared mint attaches, never a
- * document path, file name or hash (D-227/D-230/D-231/D-243).
+ * document path, file name or hash (D-243/D-246/D-247/D-259).
  */
 import { appError, type AppError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
@@ -144,7 +144,7 @@ export function demoVocabulary(firmId: string): Result<DemoVocabulary, AppError>
   const missing: string[] = [];
   const resolved = vocabularyOf(labels.value, missing);
   if (missing.length > 0) {
-    // STATED as a typed fault and minted by the shared port (D-244/D-245), so
+    // STATED as a typed fault and minted by the shared port (D-260/D-261), so
     // this surface carries no second opinion about what a broken document means:
     // the wire gets the one generic sentence plus the reference, and the location
     // goes to the operator's line as a registered path.

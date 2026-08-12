@@ -1,5 +1,5 @@
 /**
- * THE DOMAIN-CONFIGURATION DOCUMENT (v3 prompt 10; ADR-0057).
+ * THE DOMAIN-CONFIGURATION DOCUMENT (v3 prompt 10; ADR-0058).
  *
  * One immutable document per (domain, version), authored by Verin, carrying no
  * firm identity, no household data, and no judgment. Its identity is the
@@ -188,7 +188,7 @@ const observationReads = (
  * external observation that closes an awaited rule, whose fields the engine
  * merges UNDER the stored flow data - so a stored key of the same name silently
  * wins. The intent schema already refuses a trigger field that collides with a
- * platform key (D-218), and these are the SAME hazard through the other two
+ * platform key (D-234), and these are the SAME hazard through the other two
  * doors: an alias equal to `executionScope` silently replaces the per-execution
  * idempotency scope for every LATER step - their keys would derive from an
  * adapter's return value rather than from the execution, losing exactly-once
@@ -284,7 +284,7 @@ export const canonicalConfigJson = (
 
 
 /**
- * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-222). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -300,6 +300,6 @@ export const canonicalConfigJson = (
  * and resolves by NAME while still deriving its members from the one schema that
  * defines them.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-222)
 export interface DomainConfigDocument extends z.infer<typeof domainConfigDocumentSchemaImpl> {}
 export const DomainConfigDocumentSchema: z.ZodType<DomainConfigDocument> = domainConfigDocumentSchemaImpl;

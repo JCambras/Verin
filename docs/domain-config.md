@@ -1,6 +1,6 @@
 # The domain configuration contract
 
-**Normative for v3 prompt 10.** Governed by [ADR-0057](./adr/0057-domain-configuration-schema.md).
+**Normative for v3 prompt 10.** Governed by [ADR-0058](./adr/0058-domain-configuration-schema.md).
 The SCHEMA is the source of truth (`src/domain/config/`); this document states the contract the schema
 enforces, so a reviewer can tell an intended rule from an accident. Where this prose and the schema
 disagree, the schema wins and this file is the defect.
@@ -34,7 +34,7 @@ not one of those two forms is a load error, in copy and in command text alike.
 Until the evaluator assembles a context plane (prompt 16), a `{context:…}` read is refused wherever the
 INTERIM substrate would have to resolve it: `{from: context}` value sources and `{context:…}` inside
 command text. Reason-code copy still admits it - the evaluator is what renders that copy, and it will
-have the plane. The refusal names the key and says why (D-231): admitting the read would let a document
+have the plane. The refusal names the key and says why (D-247): admitting the read would let a document
 load clean and then fail at the step that consumed it, after earlier steps had committed real records.
 
 ## 3. The thirteen sections
@@ -110,12 +110,12 @@ rejection is a value, never a throw.
   and what makes the arity recoverable from those bytes, so no one-segment key can ever collide with a
   multi-segment one. The corollary bites: a lone segment whose VALUE already carries the separator gets
   escaped, so a key like account opening's `finalize:<applicationId>` must be authored as the two
-  segments it is. It is (D-229), and the bytes it renders are asserted against the column the
+  segments it is. It is (D-245), and the bytes it renders are asserted against the column the
   application row records - the exactly-once guard the finalize adapter derives its per-write sub-keys
   from (charter #16).
 - **A reachable template is a CHECKED template.** Reference closure and the no-dead-configuration rule
   share one scope: a conflict-key template or a reservation reachable through a CAPABILITY is
-  type-checked exactly like one the intent lists directly (D-232). The two scopes disagreeing is how a
+  type-checked exactly like one the intent lists directly (D-248). The two scopes disagreeing is how a
   text slot inside a coordination key, or a bucket over a non-date source, used to load clean.
 - **`$ref.kind` is a closed vocabulary, enforced at LOAD.** A deferred tenant-scoped reference names one
   of `PARAMETER_REF_KINDS` and a non-empty class. Checked at bind instead, a typo substituted cleanly,
@@ -123,15 +123,15 @@ rejection is a value, never a throw.
   failure on a screen that cannot recover from one.
 - **A suspended execution is bound to the version it started under.** The engine's cursor is POSITIONAL
   and the plan is versioned data, so `startFlow` persists `domainConfigVersionId` and the composition
-  root refuses to drive a stored cursor under a different one (D-230). It states that precondition as a
+  root refuses to drive a stored cursor under a different one (D-246). It states that precondition as a
   `ResumeGuard` the ENGINE calls against the state IT loaded, rather than loading the row itself first:
-  one round trip instead of two, and the version checked is provably the version driven (D-239,
-  ADR-0011 as amended by ADR-0057). A MISSING version is LEGACY and resumes - it predates the pinning,
+  one round trip instead of two, and the version checked is provably the version driven (D-255,
+  ADR-0011 as amended by ADR-0058). A MISSING version is LEGACY and resumes - it predates the pinning,
   and refusing it would make the guard's first act on deployment the stranding of every in-flight
   execution. A KNOWN and DIFFERENT one refuses as `superseded-version`, and a recorded value that is not
   a version string is neither, so it fails closed as `unreadable-version` - separate registered stages
   because an absent `configVersionStarted` is also what a shape violation produces, and one stage could
-  not tell the operator which it was (D-244). Both refusals are operator-recoverable, so they reach the
+  not tell the operator which it was (D-260). Both refusals are operator-recoverable, so they reach the
   provider as `retry-later` (§10) rather than as a discarded signature. Resuming against the PINNED
   document is the end state and stays owned by PC-4 (prompts 15/19); until then the refusal is loud
   rather than silently resuming at the wrong step.
@@ -148,20 +148,20 @@ rejection is a value, never a throw.
   whose fault path grows with the DOCUMENT rather than with the schema. `MAX_CONFIGURED_VALUE_DEPTH`
   (`src/domain/config/errors.ts`) is refused at admission, and the operator channel's `configPath` shape
   reads its per-segment subscript cap from that same constant - so a graph the loader admits always has
-  a location the channel can carry, and neither side is an opinion about the other (D-246). The channel's
+  a location the channel can carry, and neither side is an opinion about the other (D-262). The channel's
   `MAX_CONFIG_DIAGNOSIS_LENGTH` ceiling is the SECOND bound on the same graph, and it binds independently:
   a graph inside the depth bound whose accumulated path outgrows 128 characters is refused too, and the
   refusal says so - `path-too-long`, meaning FLATTEN THE GRAPH, never the `unnameable-segment` cause,
-  which means RENAME THE KEY (D-252). BOTH bounds apply to BOTH container kinds: a list POSITION is
+  which means RENAME THE KEY (D-268). BOTH bounds apply to BOTH container kinds: a list POSITION is
   admitted through the same step as an object key (`childConfigSubscript`), so an object graph and a list
-  graph whose accumulated paths are the same length get the same verdict (D-253).
+  graph whose accumulated paths are the same length get the same verdict (D-269).
 - **Command types name commands, never domains.** What a command DOES - its span, its SQL, its audit
   action - lives in `src/infrastructure/execution-adapters.ts`, as static literals the observability
   vocabulary fence can still derive from real call sites. What it REFUSES is a fact about the document,
   not about the adapter: a payload field the compiled command did not carry, a registration outside the
   vocabulary the store accepts, and a command type with no runner are all stated through the
   `ConfiguredRefusal` port the compiled plan carries, so they inherit one classification, one wire
-  sentence and one operator line with every other configuration refusal (D-247).
+  sentence and one operator line with every other configuration refusal (D-263).
 - **`presentation` is load-bearing at the REQUEST boundary, not only on screen.** A text slot's
   `maxLength` and an enum slot's `values` are exactly what `/api/flows/account-opening` admits, through
   the same `IntakeForm` projection the page renders (`admitIntakeSubmission` in
@@ -186,7 +186,7 @@ rejection is a value, never a throw.
   source only where an externally-gated step sits inside that closure; a conflict key and a reservation
   quantity resolve to coordinate a decision BEFORE the plan runs, so neither is available there. Checked
   against the whole plan instead, a payload field of the second step naming the third step's output
-  loads clean and then fails mid-plan - after the first step's write has committed (proof PF-268).
+  loads clean and then fails mid-plan - after the first step's write has committed (proof PF-306).
 - **A slot a capability reads must have a TRANSPORT, and a command text is checked against the intent
   that renders it.** The interim resolver reads a slot only through its declared `triggerField`, which
   the grammar forbids on any slot that is not `supplied-by-trigger`, so a capability sourcing a
@@ -197,7 +197,7 @@ rejection is a value, never a throw.
   is what supplies them (`docs/domain-config-gaps.md` §3). Separately, a `{slot:…}` placeholder in
   `commandText` resolves through ONE intent's resolver while the completeness stage holds copy to the
   union of every intent's slots, so the closure stage checks each command text against the slots of the
-  intent whose plan reaches it (proofs PF-275, PF-276).
+  intent whose plan reaches it (proofs PF-313, PF-314).
 - **Flow data has three writers, and they share one camelCase namespace.** A slot's `triggerField`, a
   capability's `publishes[].as`, and the fields of the observation that closes an awaited rule all land
   in the same record, so the loader refuses a collision between any two of them and a collision with the
@@ -205,22 +205,22 @@ rejection is a value, never a throw.
   closed on its own: an alias equal to `executionScope` replaces the per-execution idempotency scope for
   every later step, and an alias or trigger field equal to an awaited observation's field shadows it
   under the engine's merge order - which is how a finalized account would take its open date from what
-  the advisor typed (proofs PF-266, PF-269).
+  the advisor typed (proofs PF-304, PF-307).
 - **A label id a surface asks for must exist.** The demo reads its slot, evidence-kind and action labels
   through `src/app/demo/vocabulary.ts`, which resolves every id it renders ONCE as a `Result` and states
   an undeclared one as a typed fault the shared mint turns into the `undeclaredCopy` refusal (§10) -
-  never a throw, because that path is server-rendered (D-251). RULE F of the
+  never a throw, because that path is server-rendered (D-267). RULE F of the
   domain-configuration fence binds every id the shipped tree asks for to the published copy - resolved
   by symbol, failing closed on a non-literal id - so a rename is a BUILD failure rather than a refusal
-  screen on the demo journey (proof PF-258).
+  screen on the demo journey (proof PF-296).
 - **An enum slot that feeds a typed store column is FENCED equal to it.** `registration-type`'s declared
   `values` and `ACCOUNT_TYPES` (`src/domain/schema/entities.ts`, the union the house-CRM's account-type
   column accepts) are two copies of one vocabulary, and CD-1 leaves the shipped copy unrenamed - so RULE G
   of the domain-configuration fence proves them EQUAL in both directions, and fails closed if no single
   enum slot supplies the shipped `accountType` transport field. Unbound, a registration added to the
   document alone would be admitted by the request boundary and then refused by the execution adapter at
-  the third step, after the household and contact writes had committed (proof PF-259; the boundary's own
-  zero-writes refusal is proof PF-260).
+  the third step, after the household and contact writes had committed (proof PF-297; the boundary's own
+  zero-writes refusal is proof PF-298).
 
 ## 8. Authoring workflow
 
@@ -249,7 +249,7 @@ Do not name a Zod schema type, or any deeply recursive type, in the signature of
 under `src/domain/`. The repo's sealed-authority fences expand a parameter's type structurally; a schema
 generic drags its whole nested shape through dozens of method signatures, and across this module's
 twenty-odd composed schemas that walk exhausted a fence worker's heap - which vitest reports as a
-partial run, not a failure. Export named types and narrow ports instead (D-206, and the collapsed-export
+partial run, not a failure. Export named types and narrow ports instead (D-222, and the collapsed-export
 comments in each section module).
 
 ## 10. What a configuration refusal says, and to whom
@@ -265,10 +265,10 @@ rather than from a hand-kept list.
   that fault into the one refusal shape through the stage arm it belongs to - `uncompilable`,
   `unrunnableStep`, `intakeMismatch`, `undeclaredCopy` (a surface renders a label the document declares
   no copy for; kept apart from `unbindable` because the firm supplied everything the document asked of
-  it, so an operator sent to the firm registry would be looking in the wrong place - D-251). Nine
+  it, so an operator sent to the firm registry would be looking in the wrong place - D-267). Nine
   hand-written mints saying the same thing in their own words
   is what produced a server error with nothing to quote, an external provider holding our internal ids,
-  and no operator line at all (D-244/D-245). Pure domain code reaches no logger, which is why the
+  and no operator line at all (D-260/D-261). Pure domain code reaches no logger, which is why the
   conversion is a port rather than a function in the module that found the fault.
 - **A retry category belongs to a CAUSE, never to a call site.** Every refusal whose cause is "this
   deployment cannot resolve or compile its published configuration" is operator-recoverable and
@@ -276,32 +276,32 @@ rather than from a hand-kept list.
   type this build has no adapter for included. The mint marks it (`operatorRecoverable`,
   `src/contracts/client-retry.ts`) and every surface READS the instruction (`clientRetryFor`) instead of
   choosing one, so a refusal added later inherits the classification without anyone remembering to
-  (D-241). A surface whose OTHER arm carries no instruction at all - the intake accessor answers a
+  (D-257). A surface whose OTHER arm carries no instruction at all - the intake accessor answers a
   submitter's own omission with a plain VALIDATION, which has no `retry` field - asks `causeRetryFor`,
   which answers what the cause dictates or `null`. `clientRetryFor` is defined in terms of it, so the two
-  can never disagree and no call site invents a fallback it could never send (D-249).
+  can never disagree and no call site invents a fallback it could never send (D-265).
 - **The client is TOLD what to do next; it never infers it from a status.** The instruction is a closed
   vocabulary - `retry-with-new-identity`, `retry-with-same-identity`, `retry-later`, `do-not-retry` -
   and permanent-versus-transient was a false binary: a superseded version or a broken document clears on
   an OPERATOR action, so answering it "do not retry" throws away completable work while "retry now"
-  spends a sender's budget against a condition no retry changes (D-237/D-238/D-239). The status is a
+  spends a sender's budget against a condition no retry changes (D-253/D-254/D-255). The status is a
   message to that audience about what to do: 409 / 500 / 503 with `Retry-After` / 422 to the browser
   (`src/app/_server/refusal.ts`), one do-not-redeliver 422 or the same paced 503 to the e-sign provider
-  (`src/app/api/esign/webhook/route.ts`, D-235). It matters at the intake boundary because the journey
+  (`src/app/api/esign/webhook/route.ts`, D-251). It matters at the intake boundary because the journey
   mints one request identity per form session and a fresh identity is a fresh EXECUTION: burning one on
   a refusal the submitter cannot fix opens duplicate household, contact and application rows.
 - **No deployment internal crosses the boundary.** Dotted document paths, file names, environment
   variable names, hashes and version ids reach neither a user-facing surface - static copy included -
   nor the external provider. The wire carries this repo's own generic sentence plus the refusal's
   correlation reference, which is the only thing the person staring at the failure can hand to
-  operations (D-240/D-242/D-243).
+  operations (D-256/D-258/D-259).
 - **The diagnosis goes to the operator, as REGISTERED STRUCTURED VALUES.** The stage and code
   (`configStage`, `configCode`) and the document location (`configPath`) travel as registered fields on
   the log line the same correlation id joins, never as prose, because the observability vocabulary
   admits only registered enums and ids and degrades anything else to `[REDACTED]`. That safety property
   is also why the admitted `configPath` shape is derived from what the emitters actually produce and
   bounded by `MAX_CONFIGURED_VALUE_DEPTH` (§7): a path the emitter can build and the shape cannot
-  express would censor the very location the operator needs (D-246).
+  express would censor the very location the operator needs (D-262).
 - **A LOCATION is built from segments, and the one constructor carries only what the channel can
   express.** `src/domain/config/errors.ts` states the channel's capacity once - the segment grammar and
   the length ceiling - and `configError`, `configPathFrom` (the grammar stage's builder) and the
@@ -310,21 +310,21 @@ rather than from a hand-kept list.
   censored, since joining it SHAPES perfectly while naming a node the document does not have. So a
   parameter name or graph key the channel cannot name as one segment is refused at ADMISSION beside the
   depth bound, and every fault reports the deepest NAMEABLE ancestor rather than a fabricated node
-  (D-250).
+  (D-266).
 - **A location that could not go deeper says WHICH limit stopped it.** `childConfigPath` answers with a
   typed step rather than the parent, so the two limits are distinguishable by construction instead of by
   a sentinel each caller re-interprets: `unnameable-segment` and `path-too-long` reach the operator as
   the registered enum `configPathLimit`, beside `configStage`/`configCode`/`configPath`, and a fault whose
   `path` IS its exact location carries no limit at all. Reporting a length truncation as a naming problem
-  sent an operator to rename ordinary camelCase keys that were fine (D-252).
+  sent an operator to rename ordinary camelCase keys that were fine (D-268).
 - **A location and its limit are ONE value.** `ConfigPath` is the only way to build a location, it is
   carriable by construction, and it carries the limit that ended it - so `configError` takes no limit
   argument, no emitter can drop one, and `limit: undefined` can only ever mean COMPLETE. An emitter that
   descended hands over the STEP; one handing over a raw dotted path knows no limit, so the constructor's
   own truncation owns the one it hits. Extracting `.path` from a step and passing the string is the one
-  hole the type cannot close, and the fence rejects it with `file:line` (D-253).
+  hole the type cannot close, and the fence rejects it with `file:line` (D-269).
 - **A surface that reads configured copy fails as a VALUE.** The demo station page renders on the
   server from the published document, so it resolves its vocabulary before building anything and renders
   the refusal - generic sentence, correlation reference, no internals - when this deployment cannot
   supply it. Removing the published document must break that journey visibly and honestly, never as a
-  stack trace (X-9, D-251).
+  stack trace (X-9, D-267).

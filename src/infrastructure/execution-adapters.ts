@@ -1,5 +1,5 @@
 /**
- * THE COMMAND ADAPTERS (v3 prompt 10; ADR-0057) - what a configured command
+ * THE COMMAND ADAPTERS (v3 prompt 10; ADR-0058) - what a configured command
  * TYPE actually does.
  *
  * A domain configuration names a command (`household.create`) and the closed
@@ -14,7 +14,7 @@
  * adapter - never a flow definition, and never a branch in the engine.
  *
  * EVERYTHING AN ADAPTER CAN REFUSE IS A FACT ABOUT THE PUBLISHED DOCUMENT
- * (D-245). A payload field the compiled command did not carry, a registration
+ * (D-261). A payload field the compiled command did not carry, a registration
  * outside the vocabulary the store accepts, a command type this build has no
  * runner for: each says the deployment cannot run the configuration it publishes,
  * which an operator rollback clears and no submitter can. So none of them is
@@ -111,7 +111,7 @@ type CommandContext = PIIBearing & {
   readonly actor: WriteActor;
   readonly command: CommandInvocation;
   readonly tenant: TenantContext;
-  /** The ONE mint every refusal about the published document comes through (D-244). */
+  /** The ONE mint every refusal about the published document comes through (D-260). */
   readonly refuse: ConfiguredRefusal;
 };
 

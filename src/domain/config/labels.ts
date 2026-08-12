@@ -1,5 +1,5 @@
 /**
- * THE LABEL PROJECTION (v3 prompt 10; ADR-0057).
+ * THE LABEL PROJECTION (v3 prompt 10; ADR-0058).
  *
  * A surface needs a domain's WORDS, not its document. This module projects a
  * bound configuration onto small, explicitly-typed label maps so a screen can
@@ -11,7 +11,7 @@
  * type; the repo's type-resolving fences materialize the types they meet, so
  * carrying `LoadedDomainConfig` into the app layer made a full-repository
  * semantic analysis exhaust its heap. Projecting at the boundary keeps the
- * inferred graph inside the layers that own it (D-206).
+ * inferred graph inside the layers that own it (D-222).
  */
 import type { BoundDomainConfig } from "./bind";
 

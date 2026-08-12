@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 
 /**
  * REDELIVER LATER - the third category, and the reason the first two were not
- * enough (D-239).
+ * enough (D-255).
  *
  * A configuration-version mismatch is NEITHER permanent NOR a transient fault:
  * it stands until an operator rolls the published document back (or PC-4 lands)
@@ -39,7 +39,7 @@ const RETRY_LATER_STATUS = 503;
  * `code` and in the log line beside it, where an operator actually looks.
  *
  * The general rule this is one instance of - a status is an instruction to a
- * NAMED audience about what to do next, never a view of our taxonomy - is D-237.
+ * NAMED audience about what to do next, never a view of our taxonomy - is D-253.
  */
 const PERMANENT_REFUSAL_STATUS = 422;
 

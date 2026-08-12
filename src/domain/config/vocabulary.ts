@@ -1,6 +1,6 @@
 /**
  * THE CLOSED VOCABULARIES of the domain-configuration schema (v3 prompt 10,
- * ADR-0057).
+ * ADR-0058).
  *
  * THE ONE GRAMMAR RULE this module exists to hold: every string in a domain
  * configuration that is not a human LABEL is an identifier drawn from a closed,

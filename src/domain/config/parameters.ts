@@ -1,6 +1,6 @@
 /**
  * PRIMITIVE PARAMETER VALUES, AND THE ONE PLACE TENANCY IS DEFERRED (v3 prompt
- * 10; ADR-0057).
+ * 10; ADR-0058).
  *
  * A domain configuration is firm-NEUTRAL: it contains no firmId, which is what
  * makes invariant 26 ("Firm B differs only through configuration") a property
@@ -122,9 +122,9 @@ export type RefResolver = (ref: ParameterRef["$ref"]) => unknown | null;
  * its length ceiling, naming the deepest ADMITTED path rather than the offending
  * one, and the limit it hit. Reporting a path the channel cannot carry censors the very location
  * the refusal exists to state; reporting one that JOINS a dotted key into it invents
- * a node the document does not have, which is worse (D-246/D-250).
+ * a node the document does not have, which is worse (D-262/D-266).
  *
- * BOTH CONTAINER KINDS TAKE THE SAME STEP (D-253). A list position used to be
+ * BOTH CONTAINER KINDS TAKE THE SAME STEP (D-269). A list position used to be
  * appended raw, so the ceiling was enforced for keys and not for positions: two
  * identical overruns, opposite verdicts, and a `substitute` leaning on an admission
  * that never covered half of what it appends. `childConfigSubscript` is that half.
@@ -135,7 +135,7 @@ export type RefResolver = (ref: ParameterRef["$ref"]) => unknown | null;
  * lets `substitute` descend without re-judging, since every step it can take has
  * already been proven carriable.
  *
- * WHICH limit stopped it is reported as itself (D-252): renaming a key and
+ * WHICH limit stopped it is reported as itself (D-268): renaming a key and
  * flattening a graph are opposite repairs, and telling an operator to do the first
  * about ordinary camelCase keys at the ALLOWED depth is a confidently wrong answer.
  */
@@ -285,7 +285,7 @@ export type ParameterParse =
  * walk expands a parameter's type structurally, skipping members that are
  * callable and recursing into members that are not; a `z.ZodType` carries deep
  * non-callable internals, so naming one in an exported `src/domain/` signature
- * made that walk exponential and killed a fence worker outright (D-206). The
+ * made that walk exponential and killed a fence worker outright (D-222). The
  * adapter that turns a catalog primitive into this shape therefore lives beside
  * the loader, unexported, where no signature exposes it.
  */

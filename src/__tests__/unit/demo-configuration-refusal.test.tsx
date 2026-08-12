@@ -7,7 +7,7 @@ import { demoVocabulary, slotLabel } from "@app/demo/vocabulary";
 import { DemoUnavailable } from "@app/demo/surfaces/unavailable";
 
 /**
- * THE DEMO STATION PAGE FAILS AS A VALUE, NOT AS A STACK TRACE (D-251).
+ * THE DEMO STATION PAGE FAILS AS A VALUE, NOT AS A STACK TRACE (D-267).
  *
  * `/app/demo/[station]` renders on the SERVER and reads its labels from a
  * published domain configuration at request time. Removing that document must

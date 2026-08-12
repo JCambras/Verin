@@ -25,7 +25,7 @@ import type { LedgerRegisterViewModel } from "@app/ledger/model";
  */
 /** The journey is built from the REAL configured vocabulary, which the shipped
  * document resolves; a deployment that could not is a rendered refusal rather than
- * a journey, so there is nothing to order-check in that case (D-251). */
+ * a journey, so there is nothing to order-check in that case (D-267). */
 function resolvedVocabulary() {
   const vocabulary = demoVocabulary("firm-a");
   if (!vocabulary.ok) throw new Error("the published money-movement configuration must resolve");

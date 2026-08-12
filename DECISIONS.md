@@ -3382,10 +3382,10 @@ v3 invariant set and these are implementation obligations under ADR-0039.
    requirement is derived from (docs/primitive-rationale.md,
    `evidence-reconciliation`).
 
-**Status correction, 2026-08-12 (prompt 10 shipped; see D-248).** Obligations 1 and
+**Status correction, 2026-08-12 (prompt 10 shipped; see D-264).** Obligations 1 and
 2 were owed by prompt 10 and DID NOT LAND. Prompt 10 built their subject - the
 config loader is `src/domain/config/` - so neither is an unfenceable obligation
-any more; both are unmet ones. They are re-owned by name in D-248
+any more; both are unmet ones. They are re-owned by name in D-264
 (`fu-restriction-evidence-required` to prompt 15,
 `fu-binding-multiplicity-check` to prompt 16), and the documents that asserted
 them as binding and fail-closed have been corrected to say what is true today.
@@ -8449,6 +8449,7 @@ about which org is the demonstration one, so it reverts with the seed's imports 
 that proves the repair.
 ## D-191 - Prompt 10: a decision domain is expressed as data, and the schema lives in `src/domain/config/`
 ## D-204 - Prompt 10: a decision domain is expressed as data, and the schema lives in `src/domain/config/`
+## D-220 - Prompt 10: a decision domain is expressed as data, and the schema lives in `src/domain/config/`
 
 **What.** v3 prompt 10's domain configuration schema lands as `src/domain/config/` (grammar, seven-stage
 loader, firm binder, prompt-9 registry derivation, plan compiler, version diff, projections), with the
@@ -8463,12 +8464,12 @@ point, which would silently exempt ~2,000 lines from charter #5's dead-export ga
 
 **Alternatives considered.** `src/config/` (as written); `src/contracts/decision-core/`.
 
-**Revert path.** ADR-0057 records the deviation; moving the module later is a mechanical import rewrite,
+**Revert path.** ADR-0058 records the deviation; moving the module later is a mechanical import rewrite,
 and the fence's `DECISION_CORE_ROOTS` would move with it.
 
 ---
 
-## D-205 - Prompt 10: `Intent.action` becomes `ActionId`, not `PrimitiveId`
+## D-221 - Prompt 10: `Intent.action` becomes `ActionId`, not `PrimitiveId`
 
 **What.** `Intent.action` was typed `PrimitiveId`. It is now `ActionId`, a new brand.
 
@@ -8485,7 +8486,7 @@ intent list, accepting the weaker prompt-9 check.
 
 ---
 
-## D-206 - Prompt 10: a Zod schema type may not appear in an exported `src/domain/` signature
+## D-222 - Prompt 10: a Zod schema type may not appear in an exported `src/domain/` signature
 
 **What.** No exported function under `src/domain/` names a Zod schema type (or any deeply recursive type)
 in its signature, and every composed schema in `src/domain/config/` exports a NAMED type plus a
@@ -8514,7 +8515,7 @@ collapsed-export comment in each section module.
 
 ---
 
-## D-207 - Prompt 10: user-typed text may reach a command payload, never a coordination key
+## D-223 - Prompt 10: user-typed text may reach a command payload, never a coordination key
 
 **What.** A `text`-typed slot may appear in an execution command's payload projection. It may NOT appear
 in a conflict key or an idempotency key. Load-checked.
@@ -8532,7 +8533,7 @@ allowing text everywhere (loses the concurrency guarantee).
 
 ---
 
-## D-208 - Prompt 10: account opening declares NO conflict key, and that is a finding
+## D-224 - Prompt 10: account opening declares NO conflict key, and that is a finding
 
 **What.** `config/domains/account-opening.yaml` ships `conflictKeys: []`. Double submission is guarded by
 the per-execution idempotency scope instead.
@@ -8544,14 +8545,14 @@ is a real constraint handed to prompt 25: an existence-CREATING action needs a d
 collides on. Recorded in `docs/domain-config-gaps.md` (MR-8) rather than papered over with a synthetic key
 built from the execution id, which would have looked like coordination while coordinating nothing.
 
-**Alternatives considered.** A key over the household NAME (a `text` slot - refused by D-207, and wrong:
+**Alternatives considered.** A key over the household NAME (a `text` slot - refused by D-223, and wrong:
 two advisors may legitimately open accounts for identically-named households).
 
 **Revert path.** Add the section once prompt 25 rules on it.
 
 ---
 
-## D-209 - Prompt 10: the finalize fan-out stays ONE command
+## D-225 - Prompt 10: the finalize fan-out stays ONE command
 
 **What.** `application.finalize` remains a single configured command whose adapter performs three writes
 (financial account, funding task, application completion), keeping the exact sub-keys the hand-coded flow
@@ -8570,7 +8571,7 @@ integration test the ruling says must pass unchanged).
 
 ---
 
-## D-210 - Prompt 10: `wire-authority.test.ts` is the one test the migration edits, and why
+## D-226 - Prompt 10: `wire-authority.test.ts` is the one test the migration edits, and why
 
 **What.** `src/__tests__/integration/account-opening.test.ts`, `e2e/walkthrough.spec.ts` and
 `pnpm load:smoke` pass UNCHANGED, as the ruling requires. `src/__tests__/integration/wire-authority.test.ts`
@@ -8586,7 +8587,7 @@ possible; leaving it unremarked would have been the dishonest option.
 
 ---
 
-## D-211 - Prompt 10 review: the request boundary derives its admission rules from the configuration
+## D-227 - Prompt 10 review: the request boundary derives its admission rules from the configuration
 
 **What.** `/api/flows/account-opening` no longer hardcodes `200/100/100/320` and `isAccountType`. It
 projects the published document through `loadIntakeForm` and judges the submission with
@@ -8609,7 +8610,7 @@ them against the YAML (rejected: a fence that pins two copies together is weaker
 
 ---
 
-## D-212 - Prompt 10 review: the awaited rule comes from the step that suspended
+## D-228 - Prompt 10 review: the awaited rule comes from the step that suspended
 
 **What.** `compileFlowDefinition` returns a `CompiledFlow` - the definition PLUS `awaitingByStep`, emitted
 from the same ordered plan that produced the steps. Replay reads `awaitingByStep[cursor - 1]`, the step
@@ -8624,7 +8625,7 @@ one ordered plan makes disagreement unrepresentable rather than unlikely.
 
 ---
 
-## D-213 - Prompt 10 review: totality and caching corrections in the loader seam
+## D-229 - Prompt 10 review: totality and caching corrections in the loader seam
 
 **What.** Three fail-open corrections. (1) `bindDomainConfig` mints every tenant-scoped reference through
 `safeParse` and accumulates a typed `firm-binding` error, so a registry with a blank `firmId` or a blank
@@ -8640,7 +8641,7 @@ plan", "a published version is immutable" - and each failed open rather than clo
 
 ---
 
-## D-214 - Prompt 10 review: the store's registration vocabulary is FENCED equal to the document's
+## D-230 - Prompt 10 review: the store's registration vocabulary is FENCED equal to the document's
 
 **What.** `registration-type.values` in `config/domains/account-opening.yaml` and `ACCOUNT_TYPES` in
 `src/domain/schema/entities.ts` are now proven EQUAL, in both directions, by RULE G of the
@@ -8649,7 +8650,7 @@ exactly the values the house-CRM's typed column accepts, and a document where no
 field fails closed. Neither name is renamed (CD-1 leaves shipped record vocabulary alone) and the request
 boundary keeps refusing an undeclared registration from the document's own admission rules.
 
-**Why.** D-211 moved the boundary's admission rules into the configuration, which was right, but it left
+**Why.** D-227 moved the boundary's admission rules into the configuration, which was right, but it left
 the second copy of that vocabulary unbound. A registration added to the document alone would have been
 ADMITTED at the boundary and then refused by the execution adapter at the third compiled step - after
 `household.create` and `contact.create` had committed, leaving an orphan household, an orphan contact and
@@ -8669,7 +8670,7 @@ free of committed writes).
 
 ---
 
-## D-215 - Prompt 10 review: the deferred change-record byte check is stated as it IS, and owned
+## D-231 - Prompt 10 review: the deferred change-record byte check is stated as it IS, and owned
 
 **What.** `checkIdentity` compares `authorship.changeFromParent` against the diff it computes only when
 the parent document's bytes are available, and `shippedConfigEnvironment()` supplies them only for the
@@ -8692,7 +8693,7 @@ with the document quietly rather than loudly.
 
 ---
 
-## D-216 - Prompt 10 review: the configuration identifier vocabulary has ONE declaration
+## D-232 - Prompt 10 review: the configuration identifier vocabulary has ONE declaration
 
 **What.** `DomainConfigIdSchema`, `ExecutionCapabilityIdSchema`, `CommandTypeSchema`,
 `ConflictKeyTemplateIdSchema` and `PlanTemplateIdSchema` are DELETED from
@@ -8702,16 +8703,16 @@ consumes it.
 
 **Why.** Five exported schemas with zero consumers repo-wide are built-but-not-shipped (charter #5), and
 the only reason `pnpm knip` stayed green through four review rounds is that `knip.json` declares
-`src/contracts/**` an entry point (D-204) - an exemption for contracts that must exist before their
+`src/contracts/**` an entry point (D-220) - an exemption for contracts that must exist before their
 consumers, not a licence for dead ones. Worse, the two declarations agreed at COMPILE time and disagreed
 at RUNTIME: `brandedString` is `z.string().min(1)` while `kebabId` enforces `KEBAB_CASE_RE`, so a value
 one layer parsed the other would refuse under the same nominal type. Deleting one declaration removes the
-disagreement rather than documenting it. ADR-0058's contracts ceiling RATCHETS DOWN to 6,680 against a
+disagreement rather than documenting it. ADR-0059's contracts ceiling RATCHETS DOWN to 6,680 against a
 re-taken 6,626, because leaving it at 6,700 would bank correction headroom on deleted code.
 
 **Alternatives considered.** Deriving the domain mints from the contracts schemas and tightening
 `brandedString` to kebab-case there (rejected: it would put prompt 10's schema vocabulary in a layer with
-no consumer for it, against the ADR-0057 §3 siting, and tightening a shared `brandedString` reaches
+no consumer for it, against the ADR-0058 §3 siting, and tightening a shared `brandedString` reaches
 every other brand in that file).
 
 **Follow-up.** `fu-contracts-dead-export-visibility` (gap report §5, FOUNDATION register): a dead export
@@ -8722,7 +8723,7 @@ the contract surface needs its own decision about what "shipped" means for a typ
 
 ---
 
-## D-217 - Prompt 10 review: a surface DERIVES the firm classes it binds through
+## D-233 - Prompt 10 review: a surface DERIVES the firm classes it binds through
 
 **What.** `requiredFirmClasses` (`src/domain/config/bind.ts`) reads, from a loaded document, exactly the
 firm-neutral classes `bindDomainConfig` demands: capability targets, approval templates, required and
@@ -8731,7 +8732,7 @@ by the new `parameterRefClasses`). `src/app/demo/vocabulary.ts` builds its regis
 transcribing the document's classes into a literal, through `loadFirmClasses` on the config source. RULE
 H of the domain-configuration fence proves the derivation COMPLETE - a registry built from nothing but it
 must bind each shipped document - and its companion drops each derived entry in turn to prove every one
-is load-bearing (PF-261).
+is load-bearing (PF-299).
 
 **Why.** The hand-written registry hardcoded the classes `money-movement.yaml` happens to declare today,
 with nothing binding the two. Adding a capability class, an approval template, a `requiredRoleClasses`
@@ -8750,12 +8751,12 @@ fall behind the document again.
 
 **Amendment (review round 18).** The consequence named above - "`vocabularyFor` THROW ... a 500 on the
 investor-demo journey" - is no longer what happens: resolution is a typed `Result` and the station page
-renders the refusal (D-251). The argument is unchanged, since a rendered refusal on the demo is still the
+renders the refusal (D-267). The argument is unchanged, since a rendered refusal on the demo is still the
 failure deriving the registry exists to make unrepresentable; only the crash it used to be is gone.
 
 ---
 
-## D-218 - Prompt 10 review: the platform's flow-data keys are a RESERVED namespace, enforced
+## D-234 - Prompt 10 review: the platform's flow-data keys are a RESERVED namespace, enforced
 
 **What.** `EXECUTION_SCOPE_KEY`, `INITIATING_ACTOR_KEY` and `clientRequestId` move into
 `RESERVED_TRIGGER_FIELDS` in `src/domain/config/vocabulary.ts` (the plan compiler re-exports the two it
@@ -8763,7 +8764,7 @@ reads, so there is still one declaration), and the intent schema REFUSES a slot 
 names one. Two smaller corrections ride along: `admitIntakeSubmission` gates its payload read on
 `Object.hasOwn`, matching what the accessors below it already do and what the module header already
 claimed; and RULE C of the domain-configuration fence now judges inertness with the SHIPPED
-`inertnessProblems` rather than a second copy of it (PF-262).
+`inertnessProblems` rather than a second copy of it (PF-300).
 
 **Why.** The platform writes its keys into flow data AFTER the caller's values, so a slot reading one
 would resolve to the execution id instead of what the requester supplied - silently, unlike every other
@@ -8774,7 +8775,7 @@ as text" for a field the requester was entitled to omit.
 
 **Revert path.** Independent; each is local to its own module.
 
-## D-219 - Prompt 10 review: a top-level section may not declare one id twice
+## D-235 - Prompt 10 review: a top-level section may not declare one id twice
 
 **What.** `src/domain/config/document.ts` collects every identified top-level section - `intents`,
 `evidence`, `primitiveBindings`, `policy.slots`, `instructionKinds`, `prohibitions`, `blockers`,
@@ -8793,7 +8794,7 @@ section.
 
 **Revert path.** One refinement in one module.
 
-## D-220 - Prompt 10 review: the journey's live station is DECLARED, not positional
+## D-236 - Prompt 10 review: the journey's live station is DECLARED, not positional
 
 **What.** `presentation.form` gains `surface` and optional `awaitingSurface`; the presentation schema
 refuses either naming a station the document does not declare; `intakeFormOf` projects them as
@@ -8812,7 +8813,7 @@ holds no station id at all, and a form naming an undeclared station is a LOAD re
 **Revert path.** The schema fields are additive; reverting them reverts the projection and the component
 together, plus the pinned hash.
 
-## D-221 - Prompt 10 review: an adapter's returned outputs are read as OWN properties
+## D-237 - Prompt 10 review: an adapter's returned outputs are read as OWN properties
 
 **What.** `compileStep` reads a declared publication and the correlation token through one
 `publishedOutput` helper gated on `Object.hasOwn`, and `required()` in
@@ -8831,7 +8832,7 @@ so the declaration lives in the leaf and the vocabulary imports it.
 
 **Revert path.** Independent; each is local to its own module.
 
-## D-222 - Prompt 10 review: the rendered key is an INJECTIVE encoding of its segments
+## D-238 - Prompt 10 review: the rendered key is an INJECTIVE encoding of its segments
 
 **What.** `renderKeySegments` (`src/domain/config/segments.ts`) escapes each resolved part - the escape
 byte first, then the separator - before joining. A property test over arbitrary segment tuples proves no
@@ -8853,7 +8854,7 @@ this prompt's own defect and does not travel.
 
 **Revert path.** Local to one function; reverting restores the ambiguous join.
 
-## D-223 - Prompt 10 review: the intake boundary REFUSES a configured field it cannot carry
+## D-239 - Prompt 10 review: the intake boundary REFUSES a configured field it cannot carry
 
 **What.** `src/app/api/flows/account-opening/route.ts` refuses, by name, any admitted intake field
 outside `START_INPUT_FIELDS` - now exported from `wire.ts`, where it already described exactly what
@@ -8872,14 +8873,14 @@ named prompt-12 obligation in `docs/domain-config-gaps.md` §3.
 
 **Revert path.** Independent; the refusal is additive and unreachable for the shipped document.
 
-## D-224 - Prompt 10 review: a publication alias may not claim a name another writer owns
+## D-240 - Prompt 10 review: a publication alias may not claim a name another writer owns
 
 **What.** The document-level refinement (`src/domain/config/document.ts`) refuses a capability
 publication alias that is a reserved platform flow-data key, that collides with a declared slot
 `triggerField`, or that a second capability already publishes. Reserved names come from
 `RESERVED_TRIGGER_FIELDS`, the one declaration the writers consume.
 
-**Why.** Flow data has TWO writers and only one was guarded. D-218 closed the slot side; a capability's
+**Why.** Flow data has TWO writers and only one was guarded. D-234 closed the slot side; a capability's
 `publishes[].as` writes into the same namespace through the other door, and `OutputNameSchema` admits
 `executionScope`, `initiatedBy`, `clientRequestId` and `householdName` alike. An alias equal to
 `executionScope` silently replaces the per-execution idempotency scope for every LATER step, so their
@@ -8889,7 +8890,7 @@ published twice makes the compiler's alias-keyed step-output lookup return the w
 
 **Revert path.** One refinement; both shipped documents already satisfy it.
 
-## D-225 - Prompt 10 review: three loader checks that failed open, and one claim narrowed
+## D-241 - Prompt 10 review: three loader checks that failed open, and one claim narrowed
 
 **What.** (a) `checkForm` requires a form field's slot to be `supplied-by-trigger`. (b) The
 settable-parameter existence check uses `Object.hasOwn`. (c) `diff.ts` computes section bytes through
@@ -8909,12 +8910,12 @@ happen; a section the canonical serializer refuses renders as its own refusal ra
 equal to bytes. (d) The comment justified deleting five brands on a runtime disagreement that SURVIVES
 for the one kept. Narrowing the schema is a real change, not a comment fix - a shipped test parses an
 `Intent` whose action is `"primitive:distribute-cash"`, left over from the PrimitiveId this field used to
-carry (D-205) - so the alignment is recorded as PC-3a, owned by prompt 14, the first prompt that
+carry (D-221) - so the alignment is recorded as PC-3a, owned by prompt 14, the first prompt that
 constructs an `Intent` and therefore the first with real values to narrow against.
 
 **Revert path.** Four independent edits, each local to its own module.
 
-## D-226 - Prompt 10 review: a value source must be AVAILABLE where it is read, not merely declared
+## D-242 - Prompt 10 review: a value source must be AVAILABLE where it is read, not merely declared
 
 **What.** `resolveSourceType` (`src/domain/config/load-closure.ts`) now resolves a `step-output` source
 against the CONSUMING step's transitive `dependsOn` closure and an `await-observation` source against
@@ -8932,9 +8933,9 @@ step because two steps may legitimately read different ancestors.
 **Revert path.** One field on `ClosureWorld`, one derivation in its caller; both shipped documents
 satisfy the rule unchanged.
 
-## D-227 - Prompt 10 review: flow data has THREE writers, and the third is the awaited observation
+## D-243 - Prompt 10 review: flow data has THREE writers, and the third is the awaited observation
 
-**What.** The document-level refinement D-224 introduced now also covers the fields of the external
+**What.** The document-level refinement D-240 introduced now also covers the fields of the external
 observation that closes an awaited verification rule: a read of one is refused when the name is a
 reserved platform key or a declared `triggerField`, and a publication alias is refused when it names an
 observation field. The field names are derived from the same capability declarations the plan compiler
@@ -8948,7 +8949,7 @@ with no diagnostic at all and open the account with the advisor's typed value as
 
 **Revert path.** One derivation and two arms inside the existing refinement.
 
-## D-228 - Prompt 10 review: RULE E resolves the configuration directory by SYMBOL
+## D-244 - Prompt 10 review: RULE E resolves the configuration directory by SYMBOL
 
 **What.** The domain-configuration fence's RULE E recognises access to `config/domains/` by the path
 literal OR by a resolved reference to a binding holding it, and `DOMAIN_CONFIG_DIRECTORY` is no longer
@@ -8964,7 +8965,7 @@ symbol is what makes it fail the build, the same way the test-only injection sea
 **Revert path.** One helper in the fence plus one companion case; the constant's single consumer is
 unaffected.
 
-## D-229 - Prompt 10 review: the finalize key is COMPOSED by the grammar, not carried as one value
+## D-245 - Prompt 10 review: the finalize key is COMPOSED by the grammar, not carried as one value
 
 **What.** `application-finalize`'s idempotency key is now two segments - the literal `finalize` and the
 application step's published `id` - and `application-create` no longer publishes the pre-joined key it
@@ -8987,7 +8988,7 @@ rendered bytes for every tuple. The equality with the row's recorded column is n
 
 **Revert path.** Two lines of `config/domains/account-opening.yaml` plus its hash pin.
 
-## D-230 - Prompt 10 review: a suspended execution is bound to the configuration version it started under
+## D-246 - Prompt 10 review: a suspended execution is bound to the configuration version it started under
 
 **What.** `startFlow` persists `domainConfigVersionId` into flow data under a reserved platform key, and
 the composition root REFUSES with a typed `CONFLICT` to drive a stored cursor - on the webhook resume or
@@ -9003,7 +9004,7 @@ interim guard, and a partial guarantee that reads like a complete one would be w
 
 **Revert path.** One reserved key, one predicate in `wire.ts`, two call sites.
 
-## D-231 - Prompt 10 review: the context plane is refused at LOAD, not discovered mid-plan
+## D-247 - Prompt 10 review: the context plane is refused at LOAD, not discovered mid-plan
 
 **What.** A `{from: context}` value source and a `{context:…}` placeholder in COMMAND TEXT are refused by
 the loader, naming the key and why it cannot resolve. Reason-code copy still admits `{context:…}`: the
@@ -9018,7 +9019,7 @@ close. The plane arrives with the evaluator (prompt 16), which is where the refu
 
 **Revert path.** One branch in `resolveSourceType` and one in `checkCopyTemplates`.
 
-## D-232 - Prompt 10 review: closure scope now equals reachability scope
+## D-248 - Prompt 10 review: closure scope now equals reachability scope
 
 **What.** `checkReferences` type-checks every conflict-key template and reservation reachable by ANY
 route the reachability check counts - the intent's own lists, a capability's, and a reservation's
@@ -9037,7 +9038,7 @@ while proving nothing about that file, which the charter treats as worse than no
 **Revert path.** One derived set in the closure stage, one predicate in `parameters.ts`, one extracted
 helper plus its companion in the fence.
 
-## D-233 - Prompt 10 review: a demonstration fixture date leaves the published document
+## D-249 - Prompt 10 review: a demonstration fixture date leaves the published document
 
 **What.** `config/domains/money-movement.yaml`'s `pending-actions` evidence-kind label is generic again;
 the demo builder appends the `(settles Aug 1)` qualifier. Visible demo copy is unchanged byte-for-byte.
@@ -9049,9 +9050,9 @@ row. Appending it on the demo side serves the original intent better than the or
 
 **Revert path.** One label and one template literal.
 
-## D-234 - Prompt 10 review: the version guard's own fallout, in three places
+## D-250 - Prompt 10 review: the version guard's own fallout, in three places
 
-**What.** Three corrections to the D-230 guard, all one root cause - a positional cursor read against a
+**What.** Three corrections to the D-246 guard, all one root cause - a positional cursor read against a
 plan that may no longer be the one it was recorded under. (a) The e-sign webhook reads the taxonomy's
 retryability instead of flattening every failed callback to 5xx: a PERMANENT refusal answers its own
 4xx, a retryable failure still answers 5xx. (b) A MISSING recorded configuration version is LEGACY and
@@ -9073,7 +9074,7 @@ silent wrong answer, which this build refuses everywhere else.
 
 ---
 
-## D-235 - Prompt 10 review: the webhook's status is a REDELIVERY instruction, not a taxonomy view
+## D-251 - Prompt 10 review: the webhook's status is a REDELIVERY instruction, not a taxonomy view
 
 **What.** The e-sign webhook maps EVERY downstream refusal to one dedicated status, 422, whatever
 internal code produced it, and keeps 5xx for server-side failures. The refusal predicate is
@@ -9082,21 +9083,21 @@ taxonomy but is an operational fault a redelivery after repair completes, so it 
 code and its message stay in the response body, and a log line at the severity the taxonomy assigns the
 code carries the diagnosis the narrowed status no longer does.
 
-**Why.** D-234(a) fixed half of this by passing the internal code's own status through - which let
+**Why.** D-250(a) fixed half of this by passing the internal code's own status through - which let
 `NOT_FOUND` (404) and `AUTH_FAILED` (401) out of the failed-callback branch, onto the two statuses this
 same handler already uses for "unknown signing token" and "invalid webhook signature". A finalize-time
 `NOT_FOUND` is reachable (`completeApplication` and the finalize adapter throw it on a zero-row UPDATE),
 so a provider and its dashboards would read "that token does not exist" for "the token was fine and a
 downstream write failed". Narrowing the same expression twice is the signal that the expression was the
 wrong shape: the status answers ONE question - redeliver or do not - and the diagnosis belongs in the
-body and the log, where an operator looks. Proof PF-274.
+body and the log, where an operator looks. Proof PF-312.
 
 **Revert path.** One constant, one predicate, and one log call in `src/app/api/esign/webhook/route.ts`,
 plus the message's registration in the observability vocabulary.
 
 ---
 
-## D-236 - Prompt 10 review: a slot a plan READS must have a transport, refused at COMPILE
+## D-252 - Prompt 10 review: a slot a plan READS must have a transport, refused at COMPILE
 
 **What.** `compileFlowDefinition` refuses a plan whose capability sources a slot that is not
 `supplied-by-trigger` - in a payload field, an idempotency-key segment, or a `{slot:…}` placeholder of
@@ -9115,14 +9116,14 @@ throw away prompt 10's two-domain deliverable to close a runtime hole - so the d
 while a plan carrying an unresolvable source stays unrunnable, exactly the line the `decision-hash`
 deferral already draws. The command-text half is the same scope mismatch one stage over: copy is
 authored per domain, but `buildPayload` renders it through one intent's resolver. Recorded against the
-prompt-16 context plane in `docs/domain-config-gaps.md` §3. Proofs PF-275, PF-276.
+prompt-16 context plane in `docs/domain-config-gaps.md` §3. Proofs PF-313, PF-314.
 
 **Revert path.** One helper pair and one guard in `plan-compiler.ts`; one placeholder loop in the copy
 branch of `checkReferences`.
 
 ---
 
-## D-237 - Prompt 10 review: a status code is an instruction to an audience, never a taxonomy view
+## D-253 - Prompt 10 review: a status code is an instruction to an audience, never a taxonomy view
 
 **What.** The general rule, recorded once because the same conflation has now caused three defects at two
 boundaries: THE STATUS A SURFACE RETURNS IS A MESSAGE TO A NAMED AUDIENCE ABOUT WHAT TO DO NEXT - an
@@ -9133,8 +9134,8 @@ the audience should take; put WHICH failure it was in the body and the log. Thre
 can cause it and no submission can fix it; (b) the account-opening journey burns its per-session client
 request id ONLY on a VALIDATION, keeping it for every permanent server-side refusal; (c) the replay path
 in `wire.ts` DEGRADES a version-disagreeing report - real persisted status and token, awaited rule
-undetermined - instead of answering `failed`, which corrects D-234(c). The paths that DRIVE steps
-(`resumeAccountOpeningByToken`, `retryFailedStart`) still refuse, unchanged. D-235 is the same rule at
+undetermined - instead of answering `failed`, which corrects D-250(c). The paths that DRIVE steps
+(`resumeAccountOpeningByToken`, `retryFailedStart`) still refuse, unchanged. D-251 is the same rule at
 the webhook and now cites this entry.
 
 **Why.** (b) is the root defect and holds independently of the version guard: a fresh request id is a
@@ -9155,7 +9156,7 @@ server knows the identity is spent and the client should be told structurally, n
 **Revert path.** One code literal in the intake route, one condition in `intake-journey.tsx`, and one
 branch in `replayedRunResult`.
 
-## D-238 - Prompt 10 review: the browser is TOLD what to do next, it never infers it
+## D-254 - Prompt 10 review: the browser is TOLD what to do next, it never infers it
 
 **What.** The account-opening start response carries an explicit typed instruction - `retry`, from the
 closed `CLIENT_RETRY` vocabulary in `src/contracts/client-retry.ts`: mint a NEW request identity, resubmit
@@ -9165,7 +9166,7 @@ version, a step that failed after its writes committed). The route answers the i
 sentence, with a status chosen for what the submitter should DO (409 / 500 / 422), and stops forwarding
 the flow's own `AppError` code to the browser; the internal code goes to the log line beside it at the
 level the taxonomy assigns. `intake-journey.tsx` burns its per-session request id if and only if it is
-told to, and reads nothing else. This is D-237 at its third call site - provider, operator, browser - and
+told to, and reads nothing else. This is D-253 at its third call site - provider, operator, browser - and
 it CLOSES `fu-intake-spent-id-recovery`.
 
 **Why.** The previous rule keyed on the error CODE, which is a different axis from the question that
@@ -9190,7 +9191,7 @@ instruction mapping; the client falls back to a code-keyed rule with the dead en
 
 ---
 
-## D-239 - Prompt 10 review: permanent versus transient was a FALSE BINARY; the third arm is RETRY-LATER
+## D-255 - Prompt 10 review: permanent versus transient was a FALSE BINARY; the third arm is RETRY-LATER
 
 **What.** `CLIENT_RETRY` gains a fourth member, `retry-later`, plus `RETRY_LATER_AFTER_SECONDS` - the
 pacing every surface answering it puts on the wire. A refusal that WILL CLEAR ON OPERATOR ACTION is
@@ -9203,7 +9204,7 @@ the flow's own typed instruction rather than re-deriving redeliverability from t
 takes an optional `ResumeGuard`, so the version check happens against the state the ENGINE loaded: one
 round trip instead of three on the webhook path, and one snapshot instead of two.
 
-**Why.** D-235 fixed one half and D-237 named the rule, but both were still asking a two-valued question.
+**Why.** D-251 fixed one half and D-253 named the rule, but both were still asking a two-valued question.
 A superseded configuration version answered "never redeliver" DISCARDS A SIGNATURE THE CLIENT ALREADY
 GAVE: the execution stays suspended forever with no external event left to complete it, which is strictly
 worse than the unbounded redelivery 422 was introduced to stop. It is also not transient - redelivering
@@ -9214,7 +9215,7 @@ so fixing one side alone would have reopened the hole on the other at the next r
 part of the arm, not an afterthought: an unpaced 503 is the old blanket 5xx wearing a new number. The
 single-snapshot guard is the same finding one layer down - the composition root loaded the row to check
 the version and `resumeFlow` loaded it again to drive it, so the version checked was not provably the
-version driven. Proofs PF-278, PF-280.
+version driven. Proofs PF-316, PF-318.
 
 **Fenced by.** `src/__tests__/integration/esign-webhook-route.test.ts` asserts all three categories at
 once (later/paced/still-suspended, permanent-on-one-status, transient-on-5xx);
@@ -9226,7 +9227,7 @@ binary and the signature-discard returns.
 
 ---
 
-## D-240 - Prompt 10 review: a configuration diagnosis goes to the operator, joined by a correlation id
+## D-256 - Prompt 10 review: a configuration diagnosis goes to the operator, joined by a correlation id
 
 **What.** Every refusal `src/infrastructure/config/domain-config-source.ts` can produce is minted in ONE
 place. The wire gets a generic sentence carrying a correlation id; `AppError.context` gets the full
@@ -9235,19 +9236,19 @@ diagnosis (dotted document paths, per-stage loader messages, the pinned and read
 closed `configStage` code. The reference is minted through `generatedObservabilityId`, so it survives the
 log formatter instead of degrading to `[REDACTED]`; `correlationId` and `configStage` are registered
 observability vocabulary, derived from the real call sites both ways. The intake route answers a
-configuration refusal with the `retry-later` instruction (D-239) rather than the taxonomy's code. The YAML
+configuration refusal with the `retry-later` instruction (D-255) rather than the taxonomy's code. The YAML
 is also parsed ONCE now: the same `Document` the inertness walk judges is the one converted to data, so an
 inert verdict can never stand for a document other than the one loaded.
 
-**Why.** D-237 said the diagnosis belongs in the logs and the previous round left it riding the response:
+**Why.** D-253 said the diagnosis belongs in the logs and the previous round left it riding the response:
 `toResponse` returns `AppError.message` verbatim, so the detail reached a BROWSER through the intake route
 and an EXTERNAL e-sign provider through the webhook's JSON body. Nothing in it is PII, but deployment
-internals crossing a trust boundary is exactly the class D-237 exists to close. Narrowing the message
+internals crossing a trust boundary is exactly the class D-253 exists to close. Narrowing the message
 alone would have cost the diagnosis, which was the explicit constraint the first time the rule was
 applied - so the correlation id is what makes the narrowing safe, and it is minted where the failure is
 known rather than at each of the three surfaces that report one. The two-parse issue is smaller but the
 same shape: the bytes judged inert were not PROVABLY the bytes converted, and a future divergence in
-`parseDocument` options is all it would take to separate them. Proof PF-279.
+`parseDocument` options is all it would take to separate them. Proof PF-317.
 
 **Fenced by.** `src/__tests__/unit/domain-config-source.test.ts` asserts the wire message carries the
 reference and neither a hex digest nor a dotted document path, that the same message is what `toResponse`
@@ -9260,7 +9261,7 @@ all three surfaces at once, which is the property that made the single mint the 
 
 ---
 
-## D-241 - Prompt 10 review: a retry category belongs to a CAUSE, never to a call site
+## D-257 - Prompt 10 review: a retry category belongs to a CAUSE, never to a call site
 
 **What.** `src/contracts/client-retry.ts` now states the classification rule beside the vocabulary it
 classifies, and carries the two functions that apply it: `operatorRecoverable(error)` marks a refusal at
@@ -9274,7 +9275,7 @@ all read the instruction rather than choosing one, and `src/app/_server/refusal.
 surfaces ONE refusal shape (typed instruction, human sentence, `Retry-After` on the arm that says come
 back).
 
-**Why.** D-239 added the third arm and applied it at two sites, which left one broken document producing
+**Why.** D-255 added the third arm and applied it at two sites, which left one broken document producing
 three different instructions: the version guard said "come back", the start path said "Resubmitting will
 not help; contact your operations team" (422, `do-not-retry`) for the SAME document one layer in, and the
 resume path said nothing and fell through to an unpaced 500 - the unbounded redelivery the
@@ -9284,7 +9285,7 @@ Assigning the category per call site is what produced that inconsistency and wou
 so the classification travels with the refusal instead. The simulate-sign affordance mattered
 disproportionately: it forwarded the raw `AppError`, so a superseded version answered 409 with the
 internal message and no typed instruction on the one surface the shipped demo journey actually clicks.
-Proofs PF-281, PF-282.
+Proofs PF-319, PF-320.
 
 **Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I (every registered
 configuration-refusal mint carries `operatorRecoverable`, with an anti-vacuity arm that reports a site
@@ -9297,7 +9298,7 @@ is what names each site that reopened it.
 
 ---
 
-## D-242 - Prompt 10 review: verify the destination can carry it before redirecting a diagnosis there
+## D-258 - Prompt 10 review: verify the destination can carry it before redirecting a diagnosis there
 
 **Durable lesson, verbatim from the ruling:** *"when a ruling says 'send it somewhere else', verify the
 destination can actually carry it - a redirect to a channel that silently drops the payload is worse than
@@ -9314,7 +9315,7 @@ pair goes on the operator's line as `configVersion`/`configVersionStarted`, and 
 line on every path that can raise it - so a parked signature is operator-visible on the start path too,
 not only the webhook's.
 
-**Why.** D-240 said "narrow the wire message, keep the full diagnosis in the logs" and never checked that
+**Why.** D-256 said "narrow the wire message, keep the full diagnosis in the logs" and never checked that
 this repository HAS a prose channel. It deliberately does not: the observability vocabulary admits only
 registered enums and sealed ids precisely so an unregistered value degrades to `[REDACTED]`, which is a
 safety property rather than an obstacle. So the diagnosis went nowhere while a unit test asserted it was
@@ -9324,7 +9325,7 @@ putting the detail back on the wire re-opens the trust boundary. Structured is n
 improvement: STRUCTURED VALUES ARE QUERYABLE, so an operator can ask for every configuration refusal at a
 given stage for a given document, which free prose could never answer. The values are the deployment's own
 published document, never a request, so the provenance rule is a declared SHAPE per field rather than a
-mint ceremony. Proof PF-284 - which this decision originally mis-cited as PF-283, another decision's
+mint ceremony. Proof PF-322 - which this decision originally mis-cited as PF-321, another decision's
 evidence, and a record pointing at the wrong proof is the same defect class as a diagnosis pointing at a
 channel that drops it.
 
@@ -9340,7 +9341,7 @@ formatter proof above fails first.
 
 ---
 
-## D-243 - Prompt 10 review: user-facing copy names no deployment internal, literal or generated
+## D-259 - Prompt 10 review: user-facing copy names no deployment internal, literal or generated
 
 **What.** The account-opening configuration-failure screen no longer tells an advisor to restore
 `config/domains/account-opening.yaml`. It states plainly that the deployment cannot start account openings
@@ -9348,7 +9349,7 @@ and that operations must restore it, and shows the refusal's own correlation id 
 The rule is stated about USER-FACING COPY GENERALLY - static literals in surfaces included - not only
 about generated `AppError` messages.
 
-**Why.** The screen survived D-240 only because it was a static literal rather than a generated message,
+**Why.** The screen survived D-256 only because it was a static literal rather than a generated message,
 which is the whole argument for stating the rule about copy rather than about error objects. An advisor
 staring at a failure cannot act on a repository path, and needs a reference they can quote to operations
 far more than a filename they have no access to - so narrowing the copy without adding the reference would
@@ -9358,15 +9359,15 @@ have swapped one useless answer for another.
 bearing JSX attribute, or string in a registered client-message module may name a repository path or a
 configuration/module file. A module specifier is resolution rather than copy and is exempt, which is what
 keeps the demo surface manifest's own `componentPath` entries (structure, correctly spelled) out of scope.
-Proof PF-283. (D-244 widens that rule from this pattern to the whole condition.)
+Proof PF-321. (D-260 widens that rule from this pattern to the whole condition.)
 
 **Revert path.** Put the path back in the copy; RULE K names the file and line.
 
 ---
 
-## D-244 - Prompt 10 review: a fence whose registry is hand-maintained is a fence that will pass vacuously
+## D-260 - Prompt 10 review: a fence whose registry is hand-maintained is a fence that will pass vacuously
 
-**What.** The three rules D-241/D-242/D-243 introduced are re-founded on DERIVATIONS, and the one
+**What.** The three rules D-257/D-258/D-259 introduced are re-founded on DERIVATIONS, and the one
 configuration refusal they could not see is closed.
 
 - **RULE I is derived from the configuration MODULES** (`src/domain/config/`,
@@ -9380,7 +9381,7 @@ configuration refusal they could not see is closed.
   EXTERNAL provider. It now states a typed FAULT through a `ConfiguredStepRefusal` port; the composition
   root's configuration source turns that into the one refusal shape - generic sentence plus correlation id
   on the wire, `configStage`/`configCode`/`configPath` on the operator's line. The port is REQUIRED, never
-  defaulted: a default that dropped the fault is the dead channel D-242 is about.
+  defaulted: a default that dropped the fault is the dead channel D-258 is about.
   `formatDomainConfigErrors` is deleted with its only consumer.
 - **`configuredFlow` moved from the composition root into `src/infrastructure/config/configured-flow.ts`.**
   Everything it refuses is a fact about the document, and holding it in `wire.ts` was what forced RULE I to
@@ -9413,12 +9414,12 @@ J and K, with (K') holding every reviewed escape to the same non-staleness rule 
 `src/__tests__/unit/domain-config-source.test.ts` covers the loader code and the two reachable root-level
 failures against the real logger's bytes; `src/__tests__/integration/account-opening-route.test.ts` and the
 new `simulate-sign-route.test.ts` assert the reference actually reaches the response body at both layers a
-broken document is noticed at. Proofs PF-285, PF-286, PF-287, PF-288.
+broken document is noticed at. Proofs PF-323, PF-324, PF-325, PF-326.
 
 **Revert path.** Re-list the sites and narrow the patterns; the four proofs above each name the file and
 line the derivation caught and the list could not.
 
-## D-245 - Prompt 10 review: a classification nine authors apply by hand is a convention, not a mechanism
+## D-261 - Prompt 10 review: a classification nine authors apply by hand is a convention, not a mechanism
 
 **Decision.** Every configuration refusal is MINTED IN ONE PLACE, and the modules that find a fault state
 it as data instead. `ConfiguredRefusal` (`src/domain/config/errors.ts`, beside the fault type it converts)
@@ -9434,14 +9435,14 @@ that already mints every load-stage refusal.
 - **The intake view mints nothing.** Its undeclared-trigger-field refusal takes the same route, and the
   route's unmapped-configured-field check becomes `unmappedIntakeFault`, so a field the deployment cannot
   carry is refused through the mint rather than named on the wire in a bare 500. That refusal INHERITS
-  retry-later from its cause (D-241) instead of the boundary deciding locally: it answers 503 with a
+  retry-later from its cause (D-257) instead of the boundary deciding locally: it answers 503 with a
   pacing header, the shared sentence and a quotable reference.
 - **The composition root mints nothing of its own.** `configuredFlow`'s unsupported-command-type refusal -
   the last one outside the minter, which emitted no log line at all and sent the document's command types
   verbatim to the EXTERNAL e-sign provider - states a fault at
   `execution.capabilities.<id>.commandType`.
 
-**Why.** D-244 made the CLASSIFICATION derivable and left the SHAPE conventional. Nine refusals marked
+**Why.** D-260 made the CLASSIFICATION derivable and left the SHAPE conventional. Nine refusals marked
 themselves `operatorRecoverable` and then each wrote its own sentence, so the browser got a server error
 with nothing to quote, the provider got the ids, and the operator got no line - and the tenth author would
 have written a tenth variant. Marking is now necessary but not sufficient: a mint owes a `correlationId`
@@ -9449,12 +9450,12 @@ in its own context and an operator log line in the same function, which is a pro
 than of anyone's memory.
 
 **Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, extended with both halves of
-the D-242 channel and re-anchored on the port's own declared arms (a root that neither mints nor refuses
-through the port is reported). Proof PF-289.
+the D-258 channel and re-anchored on the port's own declared arms (a root that neither mints nor refuses
+through the port is reported). Proof PF-327.
 
-**Revert path.** Re-mint in place; PF-289 names the two files and lines the extended rule caught.
+**Revert path.** Re-mint in place; PF-327 names the two files and lines the extended rule caught.
 
-## D-246 - Prompt 10 review: a shape is validated against what the emitters produce, never against examples
+## D-262 - Prompt 10 review: a shape is validated against what the emitters produce, never against examples
 
 **Decision.** `CONFIGURATION_DIAGNOSIS_SHAPES` is proven against REAL EMITTER OUTPUT. `configPath` admits a
 subscripted segment (`…idempotencyKey[1]`, `…segments[2]`, `…sourcesToReconcile[0]`), bounded like every
@@ -9468,7 +9469,7 @@ shipped adapter really computes.
 **Why.** The diagnosis channel degrades an unregistered value to `[REDACTED]` silently, on purpose. A shape
 narrower than its emitters therefore reports the stage and CENSORS the location, and nothing anywhere
 fails - so `unrunnable-step`, the most likely run-time configuration fault, logged a stage with no place to
-look. That is D-242's dead channel one level down, and it survived four review rounds because the regex was
+look. That is D-258's dead channel one level down, and it survived four review rounds because the regex was
 checked against strings someone wrote next to it. The same reasoning fixed an unguarded member-chain
 recursion in the shared fence util, where an ordinary `node = node[segment]` cursor walk killed the
 charter-drift fence with a `RangeError` - a detection channel dying in a way that reads as a fence bug.
@@ -9476,9 +9477,9 @@ charter-drift fence with a `RangeError` - a detection channel dying in a way tha
 **Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, with anti-vacuity on the sweep
 size, on reaching the subscripting emitters in at least three modules, on the compiled-step run producing a
 subscripted path, and on the field map equalling `CONFIGURATION_DIAGNOSIS_FIELDS` exactly.
-`src/__tests__/fitness/charter-drift.test.ts` carries the cursor-walk companion. Proofs PF-290, PF-291.
+`src/__tests__/fitness/charter-drift.test.ts` carries the cursor-walk companion. Proofs PF-328, PF-329.
 
-**Revert path.** Narrow the shape; PF-290 lists the exact emitted paths the dot-only form sealed.
+**Revert path.** Narrow the shape; PF-328 lists the exact emitted paths the dot-only form sealed.
 
 **Amendment (review round 17): a bound is stated ONCE, where the emitter is refused at it.** The widened
 shape capped subscripts at three per segment - a number chosen beside the regex, against `substitute`,
@@ -9492,7 +9493,7 @@ per-segment subscript cap is read from that same constant - so the shape is a CO
 rather than a second opinion about it, the way the policy loader already bounds document nesting before
 parsing (D-181). The segment COUNT carries no cap of its own for the same reason; the channel's
 128-character ceiling and the closed alphabet are what bound it. RULE L drives the real
-`resolveParameters` at the bound and one level past it. Proof PF-294.
+`resolveParameters` at the bound and one level past it. Proof PF-332.
 
 **Amendment (review round 17): a path that MATCHES the shape and addresses nothing.** The intake view
 emitted `presentation.form.fields.<trigger field>` while the document - and `intakeFormOf`, the other
@@ -9500,9 +9501,9 @@ emitter for that same node - keys that list by SLOT. It satisfied the shape perf
 the document does not contain, so nothing sealed and nothing failed: a confidently wrong location in the
 channel built to be authoritative, which is worse than a censored one because an operator cannot tell. A
 shape is necessary and not sufficient, so RULE L now RESOLVES every emitted intake path against the
-shipped document. Proof PF-295.
+shipped document. Proof PF-333.
 
-## D-247 - Prompt 10 review: the command adapters answer for the published document too
+## D-263 - Prompt 10 review: the command adapters answer for the published document too
 
 **Decision.** Every refusal the command adapters raise - a payload field the compiled command did not
 carry, a registration outside the vocabulary the store accepts, a command type this build has no runner
@@ -9513,7 +9514,7 @@ parameter so the adapter module still names no domain. RULE I's candidate set is
 derives from the two configuration directories PLUS every module that HOLDS a compiled command, keyed on
 the type the port's own `invoke` declares.
 
-**Why.** D-241 classifies by CAUSE, and an adapter fault whose cause is the published document is
+**Why.** D-257 classifies by CAUSE, and an adapter fault whose cause is the published document is
 operator-recoverable wherever it arises. These three were the last sites outside the mint, and being
 outside it cost all three halves of the channel: the configured command type and payload field id reached
 the EXTERNAL e-sign provider verbatim through `toResponse`, the unmarked error made the webhook answer an
@@ -9521,21 +9522,21 @@ unpaced 500 - redeliver forever against a fault only an operator clears, and the
 422 do-not-redeliver, discarding a signature event outright - and no `configStage`/`configPath` line was
 emitted at all. They shipped through the fence because a rule derived from two DIRECTORIES cannot see a
 third; widening to "any module that imports the configuration layer" would have swept in the composition
-root's storage failures and needed an exemption list, which is the drifting registry D-244 replaced.
+root's storage failures and needed an exemption list, which is the drifting registry D-260 replaced.
 
 **Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I (derived roots, with
 anti-vacuity requiring the derivation to reach a module beyond the declared directories, and an emptied
-port proven to derive none) and RULE K (a wire message built from a `CommandInvocation`). Proofs PF-292,
-PF-293.
+port proven to derive none) and RULE K (a wire message built from a `CommandInvocation`). Proofs PF-330,
+PF-331.
 
-**Revert path.** Mint in the adapter again; PF-292 records the exact three violations the derivation
+**Revert path.** Mint in the adapter again; PF-330 records the exact three violations the derivation
 reports.
 
 ---
 
-## D-248 - Two D-104 obligations prompt 10 owed did not land, and are re-owned as NAMED deferrals
+## D-264 - Two D-104 obligations prompt 10 owed did not land, and are re-owned as NAMED deferrals
 
-**Date:** 2026-08-12 · **Reversible** · Relates to: ADR-0039, ADR-0057, D-104, charter #2/#4, v3
+**Date:** 2026-08-12 · **Reversible** · Relates to: ADR-0039, ADR-0058, D-104, charter #2/#4, v3
 prompts 15 and 16
 
 **What.** D-104 obligations 1 and 2 were owed by prompt 10 and are NOT implemented. They are recorded
@@ -9596,7 +9597,7 @@ replacement is the honesty: no document goes back to asserting a fail-closed che
 **Revert path.** Delete this entry and restore the four documents' previous wording; the obligations
 then read as shipped guarantees again, which is the state this entry exists to end.
 
-## D-249 - Prompt 10 review: a surface with one instruction-carrying arm asks the cause, it does not invent a fallback
+## D-265 - Prompt 10 review: a surface with one instruction-carrying arm asks the cause, it does not invent a fallback
 
 **Decision.** `@contracts/client-retry` exports a second reader, `causeRetryFor(error)`, which answers the
 instruction the CAUSE dictates or `null` when the cause says nothing; `clientRetryFor` is defined in terms
@@ -9611,19 +9612,19 @@ can happen. It was also the WRONG instruction for the case it named: `retry-with
 browser to burn the form session's request id, and `intake-journey.tsx` re-mints it on that word, so the
 first edit that started forwarding `retry` (the natural direction, since every sibling path already does)
 would open a SECOND execution over a blank required field and duplicate the household, contact and
-application rows - the exact harm D-238 exists to prevent. Choosing a different unsendable fallback would
+application rows - the exact harm D-254 exists to prevent. Choosing a different unsendable fallback would
 have left the same false branch; asking the cause removes it.
 
 **Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J, whose admissible READERS are now
 derived from the contract's own exported surface (an exported function in `src/contracts/client-retry.ts`
 returning that vocabulary) rather than from a remembered name - a hardcoded name would have read the new
 reader as a STATED category. A project with no contract admits no reader, so the derivation fails closed.
-Proof PF-299.
+Proof PF-337.
 
 **Revert path.** Delete `causeRetryFor`, restore the fallback argument, and the reader derivation collapses
 to a single name.
 
-## D-250 - Prompt 10 review: a fault LOCATION is built from segments, and the one constructor carries only what the channel can express
+## D-266 - Prompt 10 review: a fault LOCATION is built from segments, and the one constructor carries only what the channel can express
 
 **Decision.** `src/domain/config/errors.ts` states the diagnosis channel's capacity ONCE - the segment
 grammar (`CONFIG_PATH_SEGMENT_SOURCE`, whose subscript cap is `MAX_CONFIGURED_VALUE_DEPTH`) and the
@@ -9634,7 +9635,7 @@ system, which carries the deepest prefix of the path it is handed that the chann
 parameter walks refuse an unnameable key at ADMISSION, beside the depth bound, and report at the deepest
 admitted node.
 
-**Why.** The shape had now been widened by guesswork twice (D-246 and its round-17 amendment), and even
+**Why.** The shape had now been widened by guesswork twice (D-262 and its round-17 amendment), and even
 bounded it could not express a whole class its own emitters produce: a document KEY. `ParameterMapSchema`
 is `z.record(z.string().min(1), z.unknown())` by design - the primitive's own schema is the judge of a
 parameter graph - so `resolveParameters` and `substitute` append author-chosen names verbatim, and a Zod
@@ -9643,7 +9644,7 @@ parameter graph - so `resolveParameters` and `substitute` append author-chosen n
 `configCode=unknown-reference`, `configPath=[REDACTED]`, with the browser holding only the generic
 sentence. A key carrying a `.` was worse than censored - `presentation.copy.slots` plus `"Household.Name"`
 JOINED shapes perfectly and names a node the document does not have, which is the confidently-wrong
-location D-246's second amendment already ruled out. Building the location from segments answers both, and
+location D-262's second amendment already ruled out. Building the location from segments answers both, and
 putting the carry in the constructor makes it a property of every emitter, including the ones not written
 yet, rather than a rule each author must remember.
 
@@ -9656,11 +9657,11 @@ renames one document key at a time to a name the channel cannot carry (whitespac
 the per-segment ceiling), drives the REAL loader over both shipped documents, and requires every emitted
 path to survive the channel AND to carry no hostile key; and a property check that no string whatever can
 make `configError` emit an uncarriable path, with what it carries always a prefix of what it was asked to
-report. Proofs PF-296, PF-297.
+report. Proofs PF-334, PF-335.
 
-**Revert path.** Drop the carry from `configError`; PF-296 lists the paths that then seal.
+**Revert path.** Drop the carry from `configError`; PF-334 lists the paths that then seal.
 
-## D-251 - Prompt 10 review: the demo station page fails as a rendered value, never as a stack trace
+## D-267 - Prompt 10 review: the demo station page fails as a rendered value, never as a stack trace
 
 **Decision.** `src/app/demo/vocabulary.ts` resolves the demo's configured vocabulary as a `Result`, and
 throws nowhere. The exact label ids the journey renders are declared in that module, so every reader
@@ -9676,7 +9677,7 @@ cannot, and passes the resolved vocabulary to `getJourney`.
 breaks the flow HONESTLY (X-9). A raw `Error` from a builder is an unhandled crash: the reviewer reads a
 stack trace instead of a statement, and the person on the screen gets nothing to quote. The rendered copy
 carries the generic sentence plus the refusal's correlation reference and NO deployment internals - no
-path, file name, env var or hash (D-227/D-230/D-231/D-243) - while the diagnosis goes to the operator's
+path, file name, env var or hash (D-243/D-246/D-247/D-259) - while the diagnosis goes to the operator's
 line as the registered `configStage`/`configCode`/`configPath` values. A firm the demo does not record is
 NOT a configuration refusal and does not pretend to be one: it answers `NOT_FOUND` with no reference,
 because there is no operator diagnosis to join to.
@@ -9689,7 +9690,7 @@ what it renders receives the error); every other statement before the surface re
 incapable of returning, so a page cannot short-circuit to a hardcoded surface. `isProvablyReachable` grew
 an explicit `exempt` list for that purpose rather than being loosened. Unit coverage:
 `src/__tests__/unit/demo-configuration-refusal.test.tsx` and the `undeclared-copy` case in
-`src/__tests__/unit/domain-config-source.test.ts`. Proof PF-298.
+`src/__tests__/unit/domain-config-source.test.ts`. Proof PF-336.
 
 **Verified end to end.** With `config/domains/money-movement.yaml` moved aside, the station renders "This
 journey cannot be shown ... Nothing was lost. Your operations team must restore this deployment; quote
@@ -9699,7 +9700,7 @@ reference <id>." while the operator's line carries `configStage=unpublished`,
 **Revert path.** Restore the throws and the two-argument `getJourney`; the fence's route rule then fails
 until its vocabulary clauses are deleted too.
 
-## D-252 - Prompt 10 review: one sentinel meaning two causes is a confidently wrong diagnosis
+## D-268 - Prompt 10 review: one sentinel meaning two causes is a confidently wrong diagnosis
 
 **Decision.** `childConfigPath` returns a TYPED step - `{ carried: true, path }` or
 `{ carried: false, path, limit }` - naming which of the two limits ended the location: `unnameable-segment`
@@ -9710,7 +9711,7 @@ own truncation hit when the emitter states none, `DomainConfigError` carries it,
 logs it as the registered enum `configPathLimit` beside `configStage`/`configCode`/`configPath`. The two
 truncation walks that had drifted apart (`configPathOf` and `childConfigPath`) are now ONE step rule.
 
-**Why.** D-250 ended a location by returning the parent for BOTH limits, and both callers discriminated
+**Why.** D-266 ended a location by returning the parent for BOTH limits, and both callers discriminated
 with the same `at === path` test - one sentinel meaning two things. So a LENGTH truncation was reported as
 a NAMING problem, and it is reachable with ordinary camelCase keys inside the ALLOWED
 `MAX_CONFIGURED_VALUE_DEPTH`: `primitiveBindings.identity-reconciliation.parameters` is already 52
@@ -9719,7 +9720,7 @@ refused it with "a configured parameter value may only carry keys the operator's
 one segment", while `resolveParameters` told the author the primitive "declares no parameter of that name"
 about a parameter it declares perfectly well. Both are hard refusals, so `/app/account-opening` shows the
 cannot-start screen and `/app/demo/[station]` renders `DemoUnavailable` - and the operator is sent to
-rename keys that are fine. This is the same class D-246/D-250 exist to close (an operator sent to a cause
+rename keys that are fine. This is the same class D-262/D-266 exist to close (an operator sent to a cause
 the document does not have), reintroduced by the helper that closed it.
 
 **What it costs, stated plainly.** A length overrun is still a REFUSAL, not a silent degradation: the
@@ -9732,12 +9733,12 @@ into BOTH causes under a binding path read from a shipped document, the length p
 nameable and inside the depth bound, each cause must be reported as itself, the two probes must disagree,
 every limit must survive `isSafeObservabilityPrimitive("configPathLimit", …)`, and the constructor must
 never report a truncated location as an exact one. `src/__tests__/unit/domain-config-source.test.ts` proves
-the operator's REAL log line carries it. Proof PF-300.
+the operator's REAL log line carries it. Proof PF-338.
 
 **Revert path.** Collapse the step back to a bare string; RULE M's companion then fails on the two probes
 agreeing.
 
-## D-253 - Prompt 10 review: a fault location and the limit that ended it are ONE value
+## D-269 - Prompt 10 review: a fault location and the limit that ended it are ONE value
 
 **Decision.** `ConfigPath` (`src/domain/config/errors.ts`) is the ONLY way to name a location, and it
 carries the limit that ended it. It is built exclusively by `configPathFrom`/`configPathOfText` and stepped
@@ -9754,12 +9755,12 @@ each closing one of the three findings this decision answers:
   through `childConfigSubscript`, so `substitute` appends subscripts on an admission that really covers
   them.
 
-**Why.** The limit/truncation contract D-252 introduced lived in convention, and convention lost three
+**Why.** The limit/truncation contract D-268 introduced lived in convention, and convention lost three
 times in one change. The grammar stage - the loader's MOST COMMON failure - built its location with
 `configPathOf`, which discarded the limit the step had just computed; `configError`, re-walking an
-already-carriable string, found nothing to truncate and emitted `limit: undefined`, which under D-252's own
+already-carriable string, found nothing to truncate and emitted `limit: undefined`, which under D-268's own
 contract means THE PATH IS THE EXACT LOCATION. An author writing
-`presentation: { copy: { slots: { "Household Name": … } } }` - the very example D-250/D-252 were written
+`presentation: { copy: { slots: { "Household Name": … } } }` - the very example D-266/D-268 were written
 about, and a key Zod reports THROUGH `issue.path` - therefore sent the operator to
 `configPath=presentation.copy.slots` with no `configPathLimit` at all: a node the document really has,
 presented as the exact one. Separately, `depthOverruns` appended `[index]` raw while every object key went
@@ -9782,7 +9783,7 @@ loader is driven into a truncated GRAMMAR-stage location on every copy record bo
 declare, and each must name the limit that ended it; a LIST graph and an OBJECT graph of the same
 accumulated length under the longest shipped binding path must reach the same verdict, at the ceiling and
 one level short of it; and no `configError` call site anywhere may read `.path` off a step - the one hole
-the type cannot close, since a step's path is a perfectly carriable string. Proof PF-301.
+the type cannot close, since a step's path is a perfectly carriable string. Proof PF-339.
 
 **Revert path.** Restore the limit argument and let a builder hand over `.path`; the third rule then fails
 with `file:line`, and the grammar sweep fails on a truncated location reporting no limit.

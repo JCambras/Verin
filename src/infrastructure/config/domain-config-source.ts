@@ -1,5 +1,5 @@
 /**
- * THE DOMAIN-CONFIGURATION SOURCE (v3 prompt 10; ADR-0057) - the one adapter
+ * THE DOMAIN-CONFIGURATION SOURCE (v3 prompt 10; ADR-0058) - the one adapter
  * that reads `config/domains/*.yaml`.
  *
  * v3 §16 says no module imports `config/`. Nothing does: this adapter READS the
@@ -92,7 +92,7 @@ const projectPath = (file: string): string =>
   join(process.cwd(), DOMAIN_CONFIG_DIRECTORY, file);
 
 /**
- * ONE parse, judged and converted (D-240).
+ * ONE parse, judged and converted (D-256).
  *
  * `problems` is empty exactly when the bytes are inert; `data` is what those SAME
  * bytes convert to. Judging the text and converting it through two independent
@@ -155,7 +155,7 @@ export const inertnessProblems = (text: string): readonly string[] =>
 
 /**
  * WHAT A REFUSAL STATES TO THE OPERATOR - as STRUCTURE, because this repository
- * has no prose channel (D-242). Every field is optional: a stage that never reads
+ * has no prose channel (D-258). Every field is optional: a stage that never reads
  * the pin file has no hashes to report, and reporting an absent one as an empty
  * string would be a fact it does not have.
  */
@@ -182,7 +182,7 @@ interface ConfigurationDiagnosis {
 }
 
 /**
- * EVERY refusal this adapter can produce, minted in ONE place (D-240/D-242).
+ * EVERY refusal this adapter can produce, minted in ONE place (D-256/D-258).
  *
  * The DIAGNOSIS - which document, which stage, which dotted path, the pinned and
  * read SHA-256 hashes, the version id - is deployment internals, and `toResponse`
@@ -345,7 +345,7 @@ const firstFault = (errors: readonly DomainConfigError[]): ConfigurationDiagnosi
 
 /**
  * THE MINT EVERY REFUSAL OUTSIDE THIS FILE'S OWN LOAD STAGES COMES THROUGH
- * (v3 prompt 10, D-244).
+ * (v3 prompt 10, D-260).
  *
  * The plan compiler and the intake view are domain code and cannot reach a
  * logger, and the composition root's own compile checks had no reason to say it
@@ -372,7 +372,7 @@ export const configuredRefusal = (domainConfigId: string): ConfiguredRefusal => 
  * PROJECTIONS FOR SURFACES. A screen asks for the shape it renders, never for
  * the configuration document: `IntakeForm` and `DomainLabels` are small,
  * hand-written types, so the app layer neither names nor type-resolves the
- * schema's very large inferred graph (D-206).
+ * schema's very large inferred graph (D-222).
  */
 export const loadIntakeForm = (domainConfigId: string): Result<IntakeForm, AppError> => {
   const sourced = loadPublishedDomainConfig(domainConfigId);

@@ -4,7 +4,7 @@ import { CLIENT_RETRY, clientRetryFor } from "@contracts/client-retry";
 import { MACHINE_RECORD_ID_RE } from "@contracts/record-id";
 
 /**
- * WHAT A CONFIGURATION REFUSAL SAYS, AND TO WHOM (D-240/D-242).
+ * WHAT A CONFIGURATION REFUSAL SAYS, AND TO WHOM (D-256/D-258).
  *
  * `toResponse` returns an `AppError`'s message verbatim, and these refusals used
  * to build it from `formatDomainConfigErrors` output - dotted document paths and
@@ -112,7 +112,7 @@ describe("the domain-configuration source refuses without leaking its diagnosis"
     expect(toResponse(error).body.error.message).toBe(error.message);
     expect(error.context?.["stage"]).toBe(stage);
     // The refusal states its own instruction through its CAUSE, so no surface has
-    // to know which failures are operator-recoverable (D-241).
+    // to know which failures are operator-recoverable (D-257).
     expect(clientRetryFor(error, CLIENT_RETRY.none)).toBe(CLIENT_RETRY.later);
   });
 
@@ -197,7 +197,7 @@ describe("the domain-configuration source refuses without leaking its diagnosis"
 
   it("answers a surface asking for copy the document does not declare, through the same mint", () => {
     // The stage a demo station page raises when the document loaded and BOUND and
-    // then said none of the words it renders (D-251). It is kept apart from
+    // then said none of the words it renders (D-267). It is kept apart from
     // `unbindable` because the firm supplied everything the document asked of it -
     // an operator sent to the firm registry would be looking in the wrong place.
     const error = configuredRefusal(UNMEMOIZED_DOMAIN).undeclaredCopy({
@@ -218,7 +218,7 @@ describe("the domain-configuration source refuses without leaking its diagnosis"
 });
 
 /**
- * THE COMMAND ADAPTERS, WHICH ANSWER FOR THE PUBLISHED DOCUMENT TOO (D-247).
+ * THE COMMAND ADAPTERS, WHICH ANSWER FOR THE PUBLISHED DOCUMENT TOO (D-263).
  *
  * They were the last site outside the mint, and being outside it cost all three
  * halves of the channel at once: the configured command type and payload field id

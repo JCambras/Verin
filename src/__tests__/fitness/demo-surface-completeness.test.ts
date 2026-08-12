@@ -386,7 +386,7 @@ function canonicalJourneyCallback(file: SourceFile): Callback | undefined {
 /**
  * THE ONE EXIT A DEMO STATION PAGE MAY TAKE BEFORE RENDERING ITS SURFACE: the
  * refusal it owes when this deployment cannot supply the configured vocabulary
- * (D-251).
+ * (D-267).
  *
  * The page renders on the SERVER and its labels come from a published document at
  * request time, so "the document is gone" must be a RENDERED state - and one that
@@ -576,7 +576,7 @@ function routePageUsesResolvedStation(source: string): boolean {
     );
   };
   // THE CONFIGURED VOCABULARY, resolved from the SAME firm the URL resolved and
-  // refused as a rendered value before any journey exists (D-251).
+  // refused as a rendered value before any journey exists (D-267).
   const vocabularyDeclaration = directConst("vocabulary");
   const vocabularyInitializer = vocabularyDeclaration?.getInitializer();
   if (
@@ -1586,7 +1586,7 @@ describe("demo-surface-completeness fence", () => {
           "getJourney(scenarioId, firmId, vocabulary.value)",
           'getJourney(scenarioId, "firm-a", vocabulary.value)',
         ),
-        // THE CONFIGURATION REFUSAL, removed four ways (D-251): the page that never
+        // THE CONFIGURATION REFUSAL, removed four ways (D-267): the page that never
         // resolves the vocabulary at all and lets a builder discover the failure,
         // the one that resolves but renders on regardless, the one that refuses and
         // throws the refusal away - leaving the person on the screen with nothing to

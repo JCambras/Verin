@@ -156,7 +156,7 @@ import { join, relative } from "node:path";
 // is stated here so the next change to `scripts/**` reads it before spending it.
 // `contracts` and `presentation` are untouched by that work and do not move.
 //
-// ADR-0058 (v3 prompt 10, the domain-configuration schema): the single largest
+// ADR-0059 (v3 prompt 10, the domain-configuration schema): the single largest
 // domain addition of the build so far, and deliberately so - the whole point of
 // prompt 10 is that a decision DOMAIN stops being code. src/domain/config/ is
 // the schema for all thirteen ratified sections, the seven-stage loader, the
@@ -178,16 +178,16 @@ const CEILINGS = {
   infrastructure: 8600, // provisional (rebase reconciliation): max(main 8600, branch 8290)
 } as const;
 //
-// ADR-0058 AMENDMENT (review round 3): `domain`'s 80 lines of correction headroom
+// ADR-0059 AMENDMENT (review round 3): `domain`'s 80 lines of correction headroom
 // were spent answering review findings in code - the request boundary's checked
 // intake reads, the duplicate-transport-field refusal, and the named owner of the
 // deferred change-record byte check. RE-MEASURED with this file's own algorithm:
 // contracts 6,647 / 6,700 (53), domain 8,433 / 8,520 (87), infrastructure 8,225 /
 // 8,290 (65), presentation 928 / 6,000, tooling 12,154 / 12,400. Only `domain`'s
 // ceiling moves; the other three are re-taken and still inside their ceilings, so
-// those are left where ADR-0058 set them rather than re-baselined for company.
+// those are left where ADR-0059 set them rather than re-baselined for company.
 //
-// ADR-0058 AMENDMENT (review round 4): five of the six prompt-10 brands were
+// ADR-0059 AMENDMENT (review round 4): five of the six prompt-10 brands were
 // DELETED from `contracts` - they had no consumer, and their `brandedString`
 // declaration disagreed at runtime with the `kebabId` mint in `src/domain/config/`
 // that does the same job. `contracts` therefore RATCHETS DOWN: leaving its ceiling
@@ -200,7 +200,7 @@ const CEILINGS = {
 // moved but stayed inside, so its ceiling is left alone rather than raised for
 // company - the same rule the previous amendment applied.
 //
-// ADR-0058 AMENDMENT (review round 7): `domain` grows past its ceiling answering
+// ADR-0059 AMENDMENT (review round 7): `domain` grows past its ceiling answering
 // this round's findings in code - a value source is checked for AVAILABILITY at
 // the CONSUMING step rather than against the plan as a whole (so a forward or
 // sibling `step-output` reference is a load error, not a mid-plan failure after
@@ -214,7 +214,7 @@ const CEILINGS = {
 // says a number nobody re-took is worth - and both stay inside the ceilings they
 // already had, so those are left alone rather than raised for company.
 //
-// ADR-0058 AMENDMENT (review round 8): BOTH `domain` and `infrastructure` grow
+// ADR-0059 AMENDMENT (review round 8): BOTH `domain` and `infrastructure` grow
 // past their ceilings answering this round's findings in code. In `domain`: the
 // context plane is refused at LOAD in both places it would have failed mid-plan,
 // `$ref.kind` is checked against its closed vocabulary, the closure stage's scope
@@ -230,7 +230,7 @@ const CEILINGS = {
 // infrastructure 8,341 / 8,360 (19), presentation 928 / 6,000, tooling 12,154 /
 // 12,400.
 //
-// ADR-0058 AMENDMENT (review round 12): `contracts` and `infrastructure` grow
+// ADR-0059 AMENDMENT (review round 12): `contracts` and `infrastructure` grow
 // past their ceilings answering this round's finding in code. In `contracts`: the
 // closed client-retry vocabulary, which exists because no error CODE can carry
 // what a submitter should do next - this endpoint answers two CONFLICTs whose
@@ -244,7 +244,7 @@ const CEILINGS = {
 // domain 9,183 / 9,240 (57), infrastructure 8,380 / 8,400 (20), presentation
 // 928 / 6,000, tooling 12,154 / 12,400.
 //
-// ADR-0058 amendment (review round 13) raises all three for the THIRD refusal
+// ADR-0059 amendment (review round 13) raises all three for the THIRD refusal
 // category and the correlation-id-joined configuration diagnosis: `contracts`
 // carries the `retry-later` arm and its pacing constant, `domain` the
 // correlationId/configStage observability vocabulary, the exhaustive value-source
@@ -255,7 +255,7 @@ const CEILINGS = {
 // RE-MEASURED: contracts 6,710 / 6,740 (30), domain 9,271 / 9,330 (59),
 // infrastructure 8,485 / 8,515 (30).
 //
-// ADR-0058 amendment (review round 14) raises all three for CLASSIFICATION BY
+// ADR-0059 amendment (review round 14) raises all three for CLASSIFICATION BY
 // CAUSE and a diagnosis channel that actually carries the diagnosis: `contracts`
 // carries the operator-recoverable marker and the `clientRetryFor` rule stated
 // where the categories are defined, `domain` the configuration-diagnosis id
@@ -267,8 +267,8 @@ const CEILINGS = {
 // RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,333 / 9,393 (60),
 // infrastructure 8,589 / 8,619 (30).
 //
-// ADR-0058 amendment (review round 15) raises `domain` and `infrastructure` for the
-// DERIVED refusal class (D-244): `infrastructure` gains the compile of the published
+// ADR-0059 amendment (review round 15) raises `domain` and `infrastructure` for the
+// DERIVED refusal class (D-260): `infrastructure` gains the compile of the published
 // document, moved out of the composition root so every configuration refusal lives in
 // the configuration modules a fence can derive, plus the step-refusal minter, the
 // loader's fault code, the absent-versus-censored path, and a version guard that states
@@ -280,7 +280,7 @@ const CEILINGS = {
 // RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,388 / 9,450 (62),
 // infrastructure 8,683 / 8,745 (62).
 //
-// ADR-0058 amendment (review round 16) raises `domain` for making the refusal port
+// ADR-0059 amendment (review round 16) raises `domain` for making the refusal port
 // the ONE mint rather than a mark nine authors applied nine ways: the port grows a
 // third arm and a home beside the fault type it converts, the plan compiler's six
 // hand-written refusals become typed faults with real document paths, the intake
@@ -293,15 +293,15 @@ const CEILINGS = {
 // RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,492 / 9,555 (63),
 // infrastructure 8,701 / 8,745 (44).
 //
-// ADR-0058 amendment (review round 18) raises `contracts` and `domain` for a fault
+// ADR-0059 amendment (review round 18) raises `contracts` and `domain` for a fault
 // LOCATION that is built rather than interpolated, and for a demo surface that fails
 // as a value. In `contracts`: the cause reader a surface with ONE
 // instruction-carrying arm needs, so no call site invents a fallback it can never
-// send (D-249). In `domain`: the diagnosis channel's capacity stated once beside the
+// send (D-265). In `domain`: the diagnosis channel's capacity stated once beside the
 // emitter that must respect it, the fault constructor that carries only what it can
 // express, the grammar stage's segment-built location, the parameter walks' refusal
 // of a key the channel cannot name, and the refusal port's fourth arm with its
-// registered stage (D-250/D-251). `contracts` had 11 lines of headroom and `domain`
+// registered stage (D-266/D-267). `contracts` had 11 lines of headroom and `domain`
 // was 80 over - both the zero-headroom condition the header above exists to prevent.
 // `infrastructure` moved by two lines and stays well inside, so it is RE-TAKEN
 // rather than raised for company; `presentation` is re-taken too, since the 928 this
@@ -310,7 +310,7 @@ const CEILINGS = {
 // infrastructure 8,792 / 8,815 (23), presentation 2,240 / 6,000, tooling 12,154 /
 // 12,400.
 //
-// ADR-0058 amendment (review round 19) raises `domain` and `infrastructure` for a
+// ADR-0059 amendment (review round 19) raises `domain` and `infrastructure` for a
 // fault location that NAMES the limit that ended it: `domain` carries the two-limit
 // vocabulary, the typed step both parameter walks now discriminate on, one message
 // per cause, and the limit `configError` inherits from its own truncation (the two
@@ -318,15 +318,15 @@ const CEILINGS = {
 // `infrastructure` carries that limit on the shared mint's diagnosis and the
 // registered `configPathLimit` on the operator's line. Ending a location for two
 // reasons with one answer reported a LENGTH truncation as a NAMING problem, at the
-// ALLOWED depth, with ordinary camelCase keys (D-252). Both layers were left with
+// ALLOWED depth, with ordinary camelCase keys (D-268). Both layers were left with
 // twelve and thirteen lines - the zero-headroom condition this header exists to
 // prevent - so both move; the other three did not move and are RE-TAKEN.
 // RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,818 / 9,880 (62),
 // infrastructure 8,802 / 8,850 (48), presentation 2,240 / 6,000, tooling 12,154 /
 // 12,400.
 //
-// ADR-0058 re-measure (review round 20): carrying a fault location and its limit as
-// ONE value (`ConfigPath`, D-253) spent 50 of `domain`'s 62 lines of correction
+// ADR-0059 re-measure (review round 20): carrying a fault location and its limit as
+// ONE value (`ConfigPath`, D-269) spent 50 of `domain`'s 62 lines of correction
 // headroom - the typed step both container kinds now take, the subscript step that
 // puts a list POSITION under the same ceiling as a key, and a constructor with no
 // limit argument left to overrule. NO ceiling moves: every layer is inside the one
@@ -339,9 +339,9 @@ const CEILINGS = {
 // infrastructure 8,802 / 8,850 (48), presentation 2,240 / 6,000, tooling 12,154 /
 // 12,400.
 const CEILINGS = {
-  contracts: 6810, // ADR-0058 as amended six times, on the cause reader (6,771 measured)
-  domain: 9880, // ADR-0058 as amended fourteen times, on the named path limit (9,868 measured)
-  infrastructure: 8850, // ADR-0058 as amended seven times, on the named path limit (8,802 measured)
+  contracts: 6810, // ADR-0059 as amended six times, on the cause reader (6,771 measured)
+  domain: 9880, // ADR-0059 as amended fourteen times, on the named path limit (9,868 measured)
+  infrastructure: 8850, // ADR-0059 as amended seven times, on the named path limit (8,802 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
