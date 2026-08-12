@@ -44,8 +44,10 @@ import { join, relative } from "node:path";
 // for the scoped rebuild preview, the whole-chain counted provenance, and the shared
 // decision-id extractor the dedup moved INTO contracts. MEASURED on the composed tree that
 // also carries ADR-0040's prompt-8 primitive catalog: contracts 6064/6110 (46), domain
-// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 1884/6000 (re-measured in the
-// D-195 review round; 1840 at D-194, 1664 at D-192, 1645 as the primitives landed). D-193
+// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 1915/6000 (re-measured in the
+// D-196 review round, which moved the recorded-order control inside the register landmark and
+// gave it a focus target that outlives it; 1884 at D-195, 1840 at D-194, 1664 at D-192, 1645
+// as the primitives landed). D-193
 // recorded
 // 1782 for a tree that measured 1804 - the figure was taken before that round finished
 // landing, which is the exact staleness the paragraph below names, so D-194 re-took it

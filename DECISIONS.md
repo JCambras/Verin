@@ -6957,3 +6957,68 @@ touched.
 **Revert path:** revert this changeset; the section-wide error fallback, the two-or-more-action return
 to recorded order, the contradictory sortability rule, the server-capable Tooltip claim, the unguarded
 escape list, and the stale port-ledger rows return to their D-194 state.
+
+### D-196 · 2026-08-12 · reversible · Fifth review round: a set is not a sequence, and a control that lets go of focus
+
+The prompt-2 review gate returned three findings; all three are resolved here. Two are the same
+defect in the control D-195 introduced - a restore action that was correct about ORDER and careless
+about the reader using it - and the third is the sortability rule meeting a register the rule had not
+been asked about yet.
+
+**The set-versus-sequence test, and why the simulation delta passes it.** D-195 shipped the
+policy-authoring simulation delta as a fully sortable register with Dimension / Today / Under the
+draft, which satisfies none of D-194's condition (1): nothing visible reconstructed the authored
+order. The resolution is not to drop the sort. A simulation delta is a SET of affected cases - no row
+is a consequence of the one above it, and a reviewer legitimately asks to see the changed dimensions
+together - whereas a precedence trace and an execution timeline are causal SEQUENCES, where position
+is the only carrier of "this happened because that did". That distinction is the test a future author
+applies BEFORE reaching for D-194's three conditions:
+
+> Is the register a SET of cases, or a SEQUENCE of causes? A sequence keeps its recorded order and
+> stays unsortable. A set may be sortable - and then owes D-194 in full: a VISIBLE sortable column
+> carrying its recorded order, a caption and landmark stating the ACTIVE sort, and recorded order ONE
+> action away.
+
+The delta accordingly gains a visible, sortable case number, so the authored order now lives in data
+the reader can see rather than in the position a row holds; the surface's typed view model carries no
+per-row causal rule to promote, since the whole table is the impact of the ONE drafted policy shown
+above it. D-194 is unchanged and unqualified - this entry supplies the question that precedes it, not
+an exemption from it.
+
+**A rule with no fence is a rule that governs only the surfaces it was written against.** D-194 was
+enforced by per-surface unit tests, so it could not see the NEXT caller - which is exactly how the
+simulation delta acquired sortable headers in the round that generalised the rule. The
+`register-sortability` fence closes that: every `src/app` file declaring a sortable column must be
+registered against D-194 with the visible column that carries its recorded order, and that column
+must itself be declared and sortable in the same collection. A computed `sortable`, a spread column
+collection, and a non-literal column `id` all fail closed rather than passing as reviewed. What the
+fence cannot decide - whether the named column TRULY reconstructs recorded order - stays a reviewer's
+judgement, asserted on the rendered surfaces in `order-carrying-registers.test.tsx`; the fence's job
+is to make that judgement unskippable. Proven adversarially twice against the real tree (PF-248), and
+mapped under non-negotiable #10 in `charter-map.json` with its enforced-mechanism ratchet entry, so
+the fence itself cannot go quiet without the charter-drift fence saying so.
+
+**The control that restores order may not strand the reader who used it.** "Restore recorded order"
+removes itself by succeeding, so a keyboard user who tabbed to it and pressed Enter was dropped on
+`<body>` - the same focus-stranding this branch already fixed for the auto-dismissing toast, and one
+`toHaveCount(0)` assertion could not catch. Focus is now placed BEFORE the state change lands: on the
+header of the caller's declared recorded order where there is one, else on the header whose sort was
+just undone, else on the register itself. Each outlives the control.
+
+**And it belongs inside the landmark it acts on.** The control was a sibling of the `region`, so a
+reader who navigated by landmark into the register never met the one action D-194 owes them, and two
+sorted registers on one page would have exposed two identically-named buttons. The landmark now wraps
+the scrolled box AND the control, the control renders AFTER the register (above it, its appearance
+pushed the header the viewer had just clicked out from under their pointer), and its accessible name
+carries the caption - "Restore recorded order: Audit log entries, newest first" - with the visible
+text as the name's prefix (WCAG 2.5.3). The scrolled box keeps `tabIndex` and is marked
+`data-table-scroll`, which is what the windowing tests drive.
+
+The presentation tier re-measures at 1,915/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (1,884 at D-195); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the positionally-ordered simulation delta, the unfenced
+sortability rule, the focus-stranding restore control, and its placement outside the landmark return
+to their D-195 state.

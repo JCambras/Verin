@@ -27,9 +27,11 @@ test("the canonical table keeps a 5,000-row register windowed while scrolling", 
   const renderedBefore = Number(await table.getAttribute("data-rendered-row-count"));
   expect(renderedBefore).toBeLessThan(40);
 
-  await table.evaluate(async (region) => {
-    region.scrollTop = region.scrollHeight;
-    region.dispatchEvent(new Event("scroll"));
+  // The landmark holds the register AND the control that restores its order; the
+  // bordered box inside it is what scrolls.
+  await table.locator("[data-table-scroll]").evaluate(async (box) => {
+    box.scrollTop = box.scrollHeight;
+    box.dispatchEvent(new Event("scroll"));
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   });
   const renderedAfter = Number(await table.getAttribute("data-rendered-row-count"));
@@ -37,15 +39,19 @@ test("the canonical table keeps a 5,000-row register windowed while scrolling", 
   await expect(table.getByText("Fixture audit entry 4999")).toBeVisible();
 
   await table.getByRole("button", { name: /^#/ }).click();
-  await expect(
-    page.getByRole("region", { name: "Audit log entries, newest first (re-sorted by #, ascending)" }),
-  ).toBeVisible();
+  const sorted = page.getByRole("region", { name: "Audit log entries, newest first (re-sorted by #, ascending)" });
+  await expect(sorted).toBeVisible();
 
   // A sortable register owes its recorded order back in ONE action (D-194); repeat
-  // header clicks are not a restoration a compliance reader can rely on.
-  await page.getByRole("button", { name: "Restore recorded order" }).click();
+  // header clicks are not a restoration a compliance reader can rely on. The control
+  // is named after its own register, sits inside that landmark, and hands focus to a
+  // header that outlives it rather than dropping the keyboard user on <body>.
+  const restore = sorted.getByRole("button", { name: "Restore recorded order: Audit log entries, newest first" });
+  await restore.focus();
+  await restore.press("Enter");
   await expect(page.getByRole("region", { name: "Audit log entries, newest first" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Restore recorded order" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Restore recorded order/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^#/ })).toBeFocused();
 });
 
 /**
@@ -110,14 +116,16 @@ test("a register of tall rows still renders its tail at the bottom of the scroll
   // The spacers must be sized from the height the rows ACTUALLY render at: a scroll
   // extent built on a shorter assumption is the whole defect, and it is what puts the
   // window start past the last row at the bottom of the range.
-  const scrollHeight = await register.evaluate((region) => region.scrollHeight);
+  const box = register.locator("[data-table-scroll]");
+  const scrollHeight = await box.evaluate((element) => element.scrollHeight);
   expect(scrollHeight).toBeGreaterThan(rowHeight * 200 * 0.9);
 
   // The blank window self-corrects once the browser re-clamps scrollTop, so a settled
   // read would pass over it. Sample every frame across the bounce instead.
-  const leastRendered = await register.evaluate(async (region) => {
-    region.scrollTop = region.scrollHeight;
-    region.dispatchEvent(new Event("scroll"));
+  const leastRendered = await box.evaluate(async (element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event("scroll"));
+    const region = element.closest("[data-row-count]")!;
     let least = Number.POSITIVE_INFINITY;
     for (let frame = 0; frame < 12; frame += 1) {
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));

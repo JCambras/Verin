@@ -254,6 +254,11 @@
           "type": "fitness",
           "ref": "src/__tests__/fitness/presentation-primitives.test.ts",
           "status": "enforced"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/register-sortability.test.ts",
+          "status": "enforced"
         }
       ]
     },

@@ -254,6 +254,14 @@ describe("Table", () => {
     };
   }
 
+  /** The landmark holds the register AND the control that restores its order; the
+   *  scrolled box is the bordered element inside it. */
+  function scrollBox(region: HTMLElement): HTMLElement {
+    const box = region.querySelector<HTMLElement>("[data-table-scroll]");
+    if (!box) throw new Error("the register landmark has no scroll container");
+    return box;
+  }
+
   it("sorts columns, keeps numeric cells right aligned, and keeps the caption true", async () => {
     const user = userEvent.setup();
     render(<Table caption="Households" columns={columns} rows={[row(2), row(1)]} />);
@@ -329,7 +337,7 @@ describe("Table", () => {
     expect(region).toHaveAttribute("data-row-count", "5000");
     expect(Number(region.getAttribute("data-rendered-row-count"))).toBeLessThan(40);
     expect(screen.getByText("Household 0000")).toBeVisible();
-    fireEvent.scroll(region, { target: { scrollTop: 120_000 } });
+    fireEvent.scroll(scrollBox(region), { target: { scrollTop: 120_000 } });
     expect(screen.queryByText("Household 0000")).not.toBeInTheDocument();
     expect(Number(region.getAttribute("data-rendered-row-count"))).toBeLessThan(40);
   });
@@ -344,11 +352,67 @@ describe("Table", () => {
     const rows = Array.from({ length: 200 }, (_, index) => row(index));
     render(<Table caption="Ledger fixture" columns={columns} rows={rows} />);
     const region = screen.getByRole("region", { name: "Ledger fixture" });
-    fireEvent.scroll(region, { target: { scrollTop: 1_000_000 } });
+    fireEvent.scroll(scrollBox(region), { target: { scrollTop: 1_000_000 } });
     const rendered = Number(region.getAttribute("data-rendered-row-count"));
     expect(rendered).toBeGreaterThan(0);
     expect(rendered).toBeLessThan(40);
     expect(screen.getByText("Household 0199")).toBeVisible();
+  });
+
+  /**
+   * The control that restores recorded order removes itself by succeeding, so it is the
+   * exact shape of focus-stranding the toast timer already had to solve: activate it
+   * from the keyboard and the focused element unmounts. Focus must land on something
+   * that outlives it, never on <body>.
+   */
+  it("keeps focus inside the register when the restore control removes itself", async () => {
+    const user = userEvent.setup();
+    render(<Table caption="Households" columns={columns} rows={[row(2), row(1)]} />);
+    await user.click(screen.getByRole("button", { name: /Name/ }));
+
+    const restore = screen.getByRole("button", { name: "Restore recorded order: Households" });
+    restore.focus();
+    expect(document.activeElement).toBe(restore);
+    await user.keyboard("{Enter}");
+
+    expect(screen.queryByRole("button", { name: /Restore recorded order/ })).not.toBeInTheDocument();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Name/ }));
+  });
+
+  it("returns focus to the header of the caller's declared recorded order", async () => {
+    const user = userEvent.setup();
+    render(
+      <Table
+        caption="Households"
+        columns={columns}
+        rows={[row(2), row(1)]}
+        initialSort={{ columnId: "amount", direction: "descending" }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Name/ }));
+    screen.getByRole("button", { name: /Restore recorded order/ }).focus();
+    await user.keyboard("{Enter}");
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /Amount/ }));
+    expect(screen.getByRole("columnheader", { name: /Amount/ })).toHaveAttribute("aria-sort", "descending");
+  });
+
+  it("puts the restore control inside the landmark and names it after its own register", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <Table caption="Households" columns={columns} rows={[row(2), row(1)]} />
+        <Table caption="Transfers" columns={columns} rows={[row(4), row(3)]} />
+      </>,
+    );
+    const [households, transfers] = screen.getAllByRole("region");
+    await user.click(within(households!).getByRole("button", { name: /Name/ }));
+    await user.click(within(transfers!).getByRole("button", { name: /Amount/ }));
+
+    expect(within(households!).getByRole("button", { name: "Restore recorded order: Households" })).toBeVisible();
+    expect(within(transfers!).getByRole("button", { name: "Restore recorded order: Transfers" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: /^Restore recorded order/ })).toHaveLength(2);
   });
 
   it("owns its loading and actionable empty states", () => {

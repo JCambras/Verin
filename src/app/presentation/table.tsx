@@ -112,6 +112,7 @@ export function Table({
 }: TableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLTableSectionElement>(null);
+  const headerRefs = useRef(new Map<string, HTMLButtonElement>());
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const [scrollTop, setScrollTop] = useState(0);
   const [rowHeight, setRowHeight] = useState(ESTIMATED_ROW_HEIGHT);
@@ -173,8 +174,17 @@ export function Table({
    * BACK, and getting it back may not be a puzzle of repeat header clicks: from any
    * sorted state this is the single action that returns the rows exactly as the caller
    * supplied them (D-194).
+   *
+   * The control REMOVES ITSELF by succeeding, so focus is placed before the state
+   * change lands: a keyboard user who activates it would otherwise be dropped on
+   * <body> and lose their place entirely. Focus goes to the header of the restored
+   * recorded order where the caller declared one, else to the header whose sort was
+   * just undone, else to the register itself - each of which outlives the control.
    */
   function restoreRecordedOrder() {
+    const recordedColumn = initialSort?.columnId ?? sort?.columnId;
+    const header = recordedColumn ? headerRefs.current.get(recordedColumn) : undefined;
+    (header ?? scrollRef.current)?.focus();
     setSort(initialSort ?? null);
     rewind();
   }
@@ -193,13 +203,9 @@ export function Table({
   const register = (
     <div
       ref={scrollRef}
-      role="region"
-      aria-label={sortedCaption}
-      aria-busy={loading || undefined}
+      data-table-scroll=""
       tabIndex={0}
       onScroll={handleScroll}
-      data-row-count={rows.length}
-      data-rendered-row-count={visibleRows.length}
       className={joinClasses(
         "overflow-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600",
         virtualized && "max-h-96",
@@ -229,6 +235,10 @@ export function Table({
                         type="button"
                         variant="ghost"
                         size="table"
+                        ref={(node) => {
+                          if (node) headerRefs.current.set(column.id, node);
+                          else headerRefs.current.delete(column.id);
+                        }}
                         onClick={() => changeSort(column.id)}
                         className={joinClasses("w-full", column.align === "right" ? "justify-end" : "justify-start")}
                       >
@@ -294,16 +304,37 @@ export function Table({
     </div>
   );
 
+  /**
+   * The restore control lives INSIDE the landmark and AFTER the register. Inside,
+   * because a reader who navigates by landmark into the register must meet the control
+   * that owes them their recorded order back; after, because a control that appears
+   * above the table pushes the header the viewer just clicked out from under their
+   * pointer. Its accessible name carries the caption, so two registers on one page name
+   * different controls (the visible text is the name's prefix - WCAG 2.5.3).
+   */
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      role="region"
+      aria-label={sortedCaption}
+      aria-busy={loading || undefined}
+      data-row-count={rows.length}
+      data-rendered-row-count={visibleRows.length}
+      className="flex flex-col gap-2"
+    >
+      {register}
       {reordered ? (
         <div className="flex justify-end print-hide">
-          <Button type="button" variant="secondary" size="compact" onClick={restoreRecordedOrder}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="compact"
+            aria-label={`Restore recorded order: ${caption}`}
+            onClick={restoreRecordedOrder}
+          >
             Restore recorded order
           </Button>
         </div>
       ) : null}
-      {register}
     </div>
   );
 }

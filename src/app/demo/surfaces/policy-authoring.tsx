@@ -14,7 +14,15 @@ import type { ComparisonCellVM, PolicyAuthoringVM } from "../model";
 import { DEV_BADGE_TEXT } from "../model";
 import { JourneyNav, PrimaryLink, SurfaceShell, demoHref } from "./shared";
 
+/**
+ * The simulation delta is a SET of affected cases, not a causal sequence: no row is a
+ * consequence of the one above it, and a reviewer legitimately asks to see the changed
+ * dimensions together. It is therefore sortable under D-194 - but only because the case
+ * number below is visible and sortable, so the authored order is reconstructible from
+ * data the reader can see rather than from the position a row happens to hold.
+ */
 const SIMULATION_COLUMNS: readonly TableColumn[] = [
+  { id: "case", header: "#", align: "right", sortable: true },
   { id: "dimension", header: "Dimension", sortable: true },
   { id: "today", header: "Today", sortable: true },
   { id: "draft", header: "Under the draft", sortable: true },
@@ -41,9 +49,10 @@ export function PolicyAuthoringSurface({
   firmId: string;
   approved: boolean;
 }) {
-  const simulationRows: readonly TableRow[] = vm.simulationDelta.map((row) => ({
+  const simulationRows: readonly TableRow[] = vm.simulationDelta.map((row, index) => ({
     id: row.label,
     cells: {
+      case: { content: index + 1, sortValue: index + 1 },
       dimension: { content: row.label, sortValue: row.label },
       today: { content: <Cell cell={row.before} />, sortValue: row.before.display },
       draft: { content: <Cell cell={row.after} />, sortValue: row.after.display },

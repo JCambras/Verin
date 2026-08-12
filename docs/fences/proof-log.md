@@ -12794,3 +12794,46 @@ every escape (an empty tree reports all seven), so the guard cannot pass vacuous
 
 **Reverted:** the rename was undone immediately; the focused fence returned to `Tests 19 passed` on
 the restored tree.
+
+## PF-248 · register-sortability: a sortable register cannot land unreviewed against D-194 · `src/__tests__/fitness/register-sortability.test.ts`
+
+**Invariant:** every file under `src/app` that declares a sortable table column is registered against
+D-194 with the VISIBLE column that carries its recorded order, and that column is itself declared and
+sortable in the same collection. D-194 had only per-surface unit tests, which cannot see the next
+caller - the round that generalised the rule shipped a fully sortable simulation delta one file over,
+with nothing visible reconstructing its authored order.
+
+**Injection 1 - an unreviewed register acquires a sortable column.** Added `sortable: true` to the
+`status` column of `src/app/presentation/execution-timeline.tsx`, the register whose recorded order
+D-192 says is its whole claim.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/presentation/execution-timeline.tsx:33 :: sortable register is not reviewed against D-194 - register it with the visible column that carries recorded order
+❯ src/__tests__/fitness/register-sortability.test.ts:173
+```
+The vacuity companion failed alongside it, since the scanned set no longer matched the registry.
+
+**Injection 2 - a reviewed register loses its order carrier.** Removed the `{ id: "case", … }` column
+from `SIMULATION_COLUMNS` in `src/app/demo/surfaces/policy-authoring.tsx` - the exact defect the
+review found, now expressed against the fence:
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/demo/surfaces/policy-authoring.tsx:24 :: recorded order is not reconstructible: no visible sortable 'case' column (D-194 condition 1)
+❯ src/__tests__/fitness/register-sortability.test.ts:173
+```
+
+**Executable companions (run on every build):** the unreviewed register, the reviewed register whose
+order column is missing or declared unsortable, the accepted register whose order column is visible
+and sortable, an unsortable register with no review at all, a computed `sortable` flag, a spread
+column collection, a non-literal column `id`, a staleness guard that reports a registry entry which
+stopped sorting (and cannot pass against an empty tree), and a vacuity check binding the scanned tree
+to the registry.
+
+**Reverted:** both injections were undone immediately; the focused fence returned to `Tests 10 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - fifth review round, D-196).
