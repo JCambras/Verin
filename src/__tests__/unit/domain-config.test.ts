@@ -14,7 +14,7 @@ import {
 } from "@domain/config/intake-view";
 import { domainLabelsOf } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
-import { compileFlowDefinition, EXECUTION_SCOPE_KEY } from "@domain/config/plan-compiler";
+import { compileFlowDefinition, EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY } from "@domain/config/plan-compiler";
 import { RESERVED_TRIGGER_FIELDS } from "@domain/config/vocabulary";
 import { policyRegistriesFor } from "@domain/config/registries";
 import {
@@ -234,6 +234,54 @@ describe("domain configuration: the shipped documents", () => {
     expect(compiled.ok).toBe(false);
     if (compiled.ok) return;
     expect(compiled.error.message).toContain("no runnable order");
+  });
+
+  /**
+   * THE EXACTLY-ONCE REGRESSION (charter #16). The finalize step's idempotency
+   * key is the ONLY guard against a doubly-fired e-sign webhook opening a second
+   * financial account and a second funding task: the house-CRM adapter derives
+   * `account:`, `task:` and `complete:` sub-keys from it and persists those in
+   * `crm_write_cache`. Its bytes are therefore pinned by something outside the
+   * configuration - `createApplication` records `finalize:<applicationId>` in
+   * `account_opening_applications.idempotency_key` - so a rendering that merely
+   * "looks reasonable" is not good enough. This assertion is the one that would
+   * have caught the escape-everywhere round silently re-keying finalize.
+   */
+  it("PINS the shipped finalize idempotency key to the bytes the application row records", async () => {
+    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    const finalize = compiled.value.definition.steps.at(-1)!;
+    expect(finalize.id).toBe("finalize");
+    const applicationId = "8b0f2a44-1c3e-4d55-9a77-2f1c9b0e4d21";
+    const invoked: { key?: string } = {};
+    await finalize.execute(
+      {
+        applicationId,
+        householdId: "hh-1",
+        accountType: "individual",
+        [INITIATING_ACTOR_KEY]: "u1",
+        signedAt: "2026-08-11T00:00:00.000Z",
+      },
+      {
+        invoke: (command) => {
+          invoked.key = command.idempotencyKey;
+          return Promise.resolve({ applicationId });
+        },
+      },
+      { orgId: "org" } as never,
+    );
+    // The pre-branch hand-coded flow passed `createApplication`'s minted key
+    // through verbatim; these are those exact bytes.
+    expect(invoked.key).toBe(`finalize:${applicationId}`);
+    // ...and the sub-keys the finalize adapter derives from it. The integration
+    // suite proves the same bytes against the ROW's recorded column and the
+    // `crm_write_cache` entries, so this pin cannot drift from the store's mint.
+    expect([`account:${invoked.key}`, `task:${invoked.key}`, `complete:${invoked.key}`]).toEqual([
+      `account:finalize:${applicationId}`,
+      `task:finalize:${applicationId}`,
+      `complete:finalize:${applicationId}`,
+    ]);
   });
 
   it("enforces: a decision-hash idempotency key is REFUSED by the interim substrate, never faked", () => {
@@ -650,6 +698,95 @@ describe("detects (companion): a configuration that is wrong in any of the seven
     }, "type-mismatch");
   });
 
+  /**
+   * THE LOAD-CLEAN-THEN-FAIL-MID-PLAN CLASS, closed for the last arm that had
+   * it. A `{from: context}` source names a key the DECISION's context plane
+   * publishes; the interim substrate resolves sources out of flow data, which
+   * carries only transport fields, the platform's reserved keys and publication
+   * aliases. Admitted, it would close cleanly here and fail at the step that
+   * consumes it - after earlier steps have committed real records.
+   */
+  it("flags a value source reading the context plane the interim substrate has no way to resolve", () => {
+    rejects((document) => {
+      const keys = section<Mutable[]>(document, "conflictKeys");
+      (keys[0]!["segments"] as Mutable[]).push({
+        kind: "value",
+        source: { from: "context", key: "availability.net" },
+      });
+    }, "unknown-reference");
+  });
+
+  it("flags COMMAND TEXT reading the context plane, which is rendered mid-plan the same way", () => {
+    rejects((document) => {
+      const copy = section<Mutable>(document, "presentation")["copy"] as Mutable & { commandText: Mutable };
+      const key = Object.keys(copy.commandText)[0]!;
+      copy.commandText[key] = "Fund the {context:amount} movement";
+    }, "unknown-reference", "account-opening");
+  });
+
+  /**
+   * A closed vocabulary nothing enforces is not closed. `$ref.kind` is checked
+   * at LOAD, where the message names the offending kind - not at bind, where the
+   * class silently drops out of the checklist a surface builds its registry from
+   * and the failure lands on a live screen.
+   */
+  it("flags a deferred parameter reference whose kind is not in the closed vocabulary", () => {
+    const badRefs = [
+      { kind: "evidence-sources", class: "house-crm" },
+      { kind: "evidenceSource", class: "house-crm" },
+      { kind: "evidence-source" },
+      "house-crm",
+    ];
+    for (const badRef of badRefs) {
+      rejects((document) => {
+        const bindings = section<Mutable[]>(document, "primitiveBindings");
+        const owner = bindings.find((entry) => entry["id"] === "identity-reconciliation")!;
+        (owner["parameters"] as Mutable)["sourcesToReconcile"] = [
+          { $ref: badRef },
+          { $ref: { kind: "evidence-source", class: "house-crm" } },
+        ];
+      }, "unknown-reference", "account-opening");
+    }
+    // The unmutated document still loads, so the four refusals above are the
+    // check biting rather than the document being broken another way.
+    expect(loadDomainConfig(clone(documentOf("account-opening"))).ok).toBe(true);
+  });
+
+  /**
+   * REACHABILITY AND TYPE CHECKING MUST HAVE THE SAME SCOPE. A conflict key a
+   * CAPABILITY names is live configuration (the no-dead-configuration rule says
+   * so), so it owes the same segment type check a key the intent lists owes.
+   * Scoping the check to the intent's own lists left the difference reachable
+   * and unchecked.
+   */
+  it("flags a text slot inside a conflict key reachable only through a CAPABILITY", () => {
+    rejects((document) => {
+      const keys = section<Mutable[]>(document, "conflictKeys");
+      keys.push({
+        id: "capability-only-key",
+        describes: "reachable from a capability, never listed on the intent",
+        segments: [
+          { kind: "literal", value: "movement" },
+          { kind: "value", source: { from: "slot", slot: "purpose" } },
+        ],
+      });
+      (capabilityNamed(document, "funds-transfer")["conflictKeys"] as string[]).push("capability-only-key");
+    }, "type-mismatch");
+  });
+
+  it("flags a reservation reachable only through a CAPABILITY whose quantity is not integer-typed", () => {
+    rejects((document) => {
+      const reservations = section<Mutable[]>(document, "reservations");
+      const model = clone(reservations[0]!);
+      model["id"] = "capability-only-reservation";
+      model["quantity"] = { from: "slot", slot: "purpose" };
+      reservations.push(model);
+      (capabilityNamed(document, "funds-transfer")["reservations"] as string[]).push(
+        "capability-only-reservation",
+      );
+    }, "type-mismatch");
+  });
+
   it("flags an emittable code with no presentation copy (stage 6, forward direction)", () => {
     rejects((document) => {
       delete (section<Mutable>(document, "presentation")["copy"] as Mutable & { reasonCodes: Mutable })
@@ -850,6 +987,31 @@ describe("detects (companion): a configuration that is wrong in any of the seven
       }),
       { numRuns: 3000 },
     );
+  });
+
+  /**
+   * CROSS-ARITY, stated on its own because it is the case a "pass the lone
+   * segment through raw" encoding cannot satisfy: a one-segment value carrying
+   * the separator would render exactly what the two-segment tuple around that
+   * separator renders, and two capabilities whose keys share a namespace would
+   * silently dedupe against each other. Escaping EVERY segment is what keeps the
+   * arity recoverable from the bytes, which is why the shipped finalize key
+   * composes `finalize` and the application id as two SEGMENTS rather than
+   * carrying one pre-joined value.
+   */
+  it("enforces (P-4): no ONE-segment rendering can equal any MULTI-segment rendering", () => {
+    const part = fc.string({ unit: fc.constantFrom("a", "b", ":", "\\"), maxLength: 6 });
+    fc.assert(
+      fc.property(part, fc.array(part, { minLength: 2, maxLength: 4 }), (single, many) =>
+        renderTuple([single]) !== renderTuple(many),
+      ),
+      { numRuns: 3000 },
+    );
+    // The exact collision a raw pass-through would admit, spelled out.
+    expect(renderTuple(["finalize:abc"])).not.toBe(renderTuple(["finalize", "abc"]));
+    expect(renderTuple(["household:exec-1"])).not.toBe(renderTuple(["household", "exec-1"]));
+    // A lone segment free of both bytes still renders exactly as it did before.
+    expect(renderTuple(["3f2b-9c11"])).toBe("3f2b-9c11");
   });
 
   it("flags a non-canonical date in a bucket segment rather than truncating it", () => {

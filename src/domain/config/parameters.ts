@@ -63,6 +63,32 @@ const isParameterRef = (value: unknown): value is ParameterRef =>
   Object.keys(value).length === 1;
 
 /**
+ * WHY THE PLACEHOLDER'S OWN CONTENTS ARE LOAD-CHECKED. `isParameterRef`
+ * recognises the placeholder SHAPE - one `$ref` key - because a placeholder may
+ * appear anywhere inside a parameter graph the primitive's own schema judges.
+ * The shape is not the vocabulary: `PARAMETER_REF_KINDS` is declared CLOSED, and
+ * a closed vocabulary nothing enforces is not closed. Left unchecked, a typo
+ * (`evidence-sources`) substitutes cleanly here, parses against the primitive's
+ * schema, and only diverges at BIND, where `parameterRefClasses` filters on the
+ * exact kind - so the class silently drops out of the checklist a surface builds
+ * its firm registry from and the failure lands at request time.
+ */
+const parameterRefProblem = (ref: unknown): string | null => {
+  if (typeof ref !== "object" || ref === null || Array.isArray(ref)) {
+    return "a deferred reference must be an object naming a kind and a class";
+  }
+  const { kind, class: className } = ref as { readonly kind?: unknown; readonly class?: unknown };
+  const kinds: readonly string[] = PARAMETER_REF_KINDS;
+  if (typeof kind !== "string" || !kinds.includes(kind)) {
+    return `unknown deferred reference kind ${JSON.stringify(kind)}; admissible kinds are ${kinds.join(", ")}`;
+  }
+  if (typeof className !== "string" || className.length === 0) {
+    return "a deferred reference must name a non-empty firm-neutral class";
+  }
+  return null;
+};
+
+/**
  * The reserved firm id load-time validation substitutes. It is not a legal firm
  * id anywhere else, so a document that somehow reached production carrying it
  * would fail firm binding rather than quietly act as a tenant.
@@ -79,6 +105,11 @@ const substitute = (
   errors: DomainConfigError[],
 ): unknown => {
   if (isParameterRef(value)) {
+    const problem = parameterRefProblem(value.$ref);
+    if (problem !== null) {
+      errors.push(configError("unknown-reference", path, problem));
+      return null;
+    }
     const resolved = resolve(value.$ref);
     if (resolved === null) {
       errors.push(

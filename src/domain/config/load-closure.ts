@@ -101,7 +101,19 @@ export const resolveSourceType = (source: ValueSource, world: ClosureWorld): Sou
       if (descriptor === undefined) {
         return { ok: false, message: `context key ${JSON.stringify(source.key)} is published by nothing this intent binds` };
       }
-      return { ok: true, valueType: descriptor.valueType, fromTextSlot: false };
+      // NAMED DEFERRAL, refused at LOAD rather than mid-plan. A context key
+      // resolves from the DECISION's context plane, which the evaluator assembles
+      // (prompts 16/17). The interim execution substrate has only flow data - the
+      // caller's transport fields, the platform's reserved keys, and each
+      // capability's publication aliases - so this source would close cleanly here
+      // and then fail at the step that consumes it, AFTER earlier steps committed.
+      // The arm stays in the grammar because the plane is coming; admitting a use
+      // of it before then is what this refusal exists to stop
+      // (docs/domain-config-gaps.md §3, prompt 16).
+      return {
+        ok: false,
+        message: `context key ${JSON.stringify(source.key)} is published by this intent's ${descriptor.origin.source}, but no value source may read the context plane until the evaluator assembles one (prompt 16): the interim execution substrate carries flow data only, so this source would resolve to nothing at run time`,
+      };
     }
     case "step-output": {
       const capabilityId = world.stepCapability.get(source.step);

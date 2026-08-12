@@ -283,7 +283,6 @@ execution:
         - { kind: value, field: accountType, source: { from: slot, slot: registration-type }, optional: false }
       publishes:
         - { output: id, as: applicationId }
-        - { output: idempotencyKey, as: finalizeIdempotencyKey }
       idempotencyKey:
         - { kind: literal, value: application }
         - { kind: value, source: { from: execution-scope } }
@@ -322,11 +321,20 @@ execution:
         - { kind: copy, field: taskSubject, copy: fund-new-account }
       publishes:
         - { output: applicationId, as: finalizedApplicationId }
-      # The application row's own minted key, exactly as the hand-coded flow used
-      # it: the house-CRM adapter derives its per-write sub-keys from this one, so
-      # a doubly-fired signature webhook still has exactly-once effect.
+      # THE EXACTLY-ONCE GUARD, and the one key whose bytes are pinned by
+      # something outside this document: `account_opening_applications.idempotency_key`
+      # records `finalize:<applicationId>`, and the house-CRM adapter derives its
+      # `account:` / `task:` / `complete:` per-write sub-keys from what this
+      # template renders. So this template must render exactly those bytes, which
+      # it does by composing the SAME two parts the application row composes -
+      # through the segment grammar, never as one pre-joined value. A single
+      # segment carrying the separator inside its value would have to be escaped
+      # to keep the join injective, and escaping it would silently re-key
+      # finalize (charter #16). `src/__tests__/unit/domain-config.test.ts` pins
+      # the rendered bytes and the derived sub-keys against the store's mint.
       idempotencyKey:
-        - { kind: value, source: { from: step-output, step: application, output: idempotencyKey } }
+        - { kind: literal, value: finalize }
+        - { kind: value, source: { from: step-output, step: application, output: id } }
       conflictKeys: []
       reservations: []
       preconditions: [esign-closed]

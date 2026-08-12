@@ -30,6 +30,16 @@ import {
   type ScenarioData,
 } from "./data";
 
+/**
+ * The demo fixture's settlement qualifier, appended HERE rather than authored
+ * into the configuration. `config/domains/money-movement.yaml` is the document a
+ * real firm would deploy: its evidence-kind labels state what a kind IS, and a
+ * fixture's settlement date is a property of this branch's fake row, not of the
+ * kind. Keeping it on this side leaves the versioned, hash-pinned artifact free
+ * of demonstration state while the visible copy is unchanged.
+ */
+const PENDING_DISTRIBUTION_QUALIFIER = "(settles Aug 1)";
+
 /** The destination the interpreted intent binds to for this branch. */
 export function destinationFor(scenario: ScenarioData): string {
   if (scenario.spec.thirdPartyDestination) return THIRD_PARTY_DESTINATION;
@@ -111,7 +121,7 @@ export function buildEvidence(scenario: ScenarioData, firmId: string): EvidenceV
     },
     {
       kind: "metric",
-      label: evidenceLabel(firmId, "pending-actions"),
+      label: `${evidenceLabel(firmId, "pending-actions")} ${PENDING_DISTRIBUTION_QUALIFIER}`,
       metric: fixtureMetric(PENDING_DISTRIBUTION_MINOR, "currency-minor", "synthetic-fixture", OBSERVED_RECENT),
       retrievedAt: RETRIEVED_AT,
       fakeClass: "synthetic-fixture",

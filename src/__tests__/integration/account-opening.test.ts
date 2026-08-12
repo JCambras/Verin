@@ -165,6 +165,73 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect((await verifyOrgChain(db, advisor.tenant)).ok).toBe(true);
   });
 
+  /**
+   * THE EXACTLY-ONCE GUARD'S BYTES. The finalize step's per-write sub-keys are
+   * derived from the idempotency key the CONFIGURATION renders, and the guarantee
+   * the shipped flow has always made is that this key is the one the application
+   * row records. Since prompt 10 the key is composed by the segment grammar, so
+   * the two are only equal if the composition is right - assert it against the
+   * real bytes on both sides rather than trusting either in isolation.
+   */
+  it("the key guarding finalize IS the key the application row records (charter #16)", async () => {
+    const started = await startAccountOpening(db, advisor, advisorPii, {
+      householdName: "Keyed Household", firstName: "Kay", lastName: "Ed", email: null, accountType: "individual",
+    });
+    const application = await db.query<{ id: string; idempotency_key: string }>(
+      "SELECT id, idempotency_key FROM account_opening_applications WHERE org_id = $1",
+      [ORG],
+    );
+    const row = application.rows[0]!;
+    expect(row.idempotency_key).toBe(`finalize:${row.id}`);
+
+    await resumeAccountOpeningByToken(db, started.token!, { signedAt: "2026-07-19T10:00:00.000Z" });
+    const cached = await db.query<{ idempotency_key: string }>(
+      "SELECT idempotency_key FROM crm_write_cache WHERE org_id = $1",
+      [ORG],
+    );
+    const keys = cached.rows.map((entry) => entry.idempotency_key);
+    // The three writes the finalize adapter derives from the rendered key. An
+    // encoding that escaped the rendered key would put `finalize\:<id>` here and
+    // a webhook fired after the deploy would not dedupe against these rows.
+    expect(keys).toContain(`account:${row.idempotency_key}`);
+    expect(keys).toContain(`task:${row.idempotency_key}`);
+    expect(keys).toContain(`complete:${row.idempotency_key}`);
+  });
+
+  /**
+   * A SUSPENDED EXECUTION IS BOUND TO THE PLAN IT STARTED UNDER. The cursor is
+   * positional and the plan is now versioned DATA, so a version bump between the
+   * e-sign suspend and the signature webhook could resume at the wrong step -
+   * skipping finalize, or re-running a committed one. The refusal must be LOUD.
+   * Bumping the published file mid-test is not possible (the source memoizes an
+   * immutable version by construction), so this moves the version the EXECUTION
+   * recorded, which is the same disagreement the webhook would meet.
+   */
+  it("REFUSES to resume an execution started under a different configuration version", async () => {
+    const started = await startAccountOpening(db, advisor, advisorPii, {
+      householdName: "Bumped Household", firstName: "Bea", lastName: "Bump", email: null, accountType: "individual",
+    });
+    expect(started.status).toBe("suspended");
+    expect(started.data["domainConfigVersionId"]).toBe("account-opening@2026.08.0");
+    const persisted = await db.query<{ context_json: string }>(
+      "SELECT context_json FROM flow_executions WHERE id = $1",
+      [started.executionId],
+    );
+    const context = JSON.parse(persisted.rows[0]!.context_json) as { cursor: number; data: Record<string, unknown> };
+    await db.query("UPDATE flow_executions SET context_json = $2 WHERE id = $1", [
+      started.executionId,
+      JSON.stringify({ ...context, data: { ...context.data, domainConfigVersionId: "account-opening@2026.09.0" } }),
+    ]);
+
+    const resumed = await resumeAccountOpeningByToken(db, started.token!, { signedAt: "2026-07-19T10:00:00.000Z" });
+    expect("status" in resumed && resumed.status).toBe("failed");
+    expect("error" in resumed && resumed.error?.code).toBe("CONFLICT");
+    // Nothing was driven: no account, no task, no half-finalized application.
+    expect(await accountCount(db)).toBe(0);
+    const tasks = await db.query<{ n: string }>("SELECT count(*) AS n FROM tasks WHERE org_id=$1", [ORG]);
+    expect(Number(tasks.rows[0]!.n)).toBe(0);
+  });
+
   it("a MIXED-case client request id (the route's regex is case-insensitive) completes instead of throwing after its writes commit", async () => {
     // Regression: the observability id predicate refuses a `Lu`-then-`Ll` pair as
     // a person-name shape, which mixed-case hex carries ("...3Ab5..."), while the

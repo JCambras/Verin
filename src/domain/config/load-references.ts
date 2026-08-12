@@ -129,8 +129,33 @@ export const checkReferences = (
       stepCapability: loaded.stepCapability,
       availability: BEFORE_ANY_STEP,
     };
+    /**
+     * WHAT THIS INTENT REACHES, by EVERY route the reachability check counts.
+     * `checkReachability` calls a conflict key live when an intent, a CAPABILITY
+     * or a RESERVATION names it, and a reservation live when an intent or a
+     * capability names it. Scoping the type check to the intent's own lists left
+     * the difference reachable-and-therefore-not-dead while never type-checked -
+     * an unknown slot, a text slot inside a coordination key (MR-7), or a bucket
+     * over a non-date source would load clean and fail mid-plan, in the very
+     * stage that exists to prevent that.
+     */
+    const planCapabilities = steps.flatMap((step) => {
+      const capability = document.execution.capabilities.find((entry) => entry.id === step.capability);
+      return capability === undefined ? [] : [capability];
+    });
+    const reachedReservations = new Set<string>([
+      ...loaded.intent.reservations,
+      ...planCapabilities.flatMap((capability) => [...capability.reservations]),
+    ]);
+    const reachedConflictKeys = new Set<string>([
+      ...loaded.intent.conflictKeys,
+      ...planCapabilities.flatMap((capability) => [...capability.conflictKeys]),
+      ...document.reservations
+        .filter((reservation) => reachedReservations.has(reservation.id))
+        .map((reservation) => reservation.conflictKey as string),
+    ]);
     for (const template of document.conflictKeys) {
-      if (!loaded.intent.conflictKeys.includes(template.id)) continue;
+      if (!reachedConflictKeys.has(template.id)) continue;
       template.segments.forEach((segment, index) => {
         if (segment.kind === "literal") return;
         const at = `conflictKeys.${template.id}.segments[${index}]`;
@@ -139,7 +164,7 @@ export const checkReferences = (
       });
     }
     for (const reservation of document.reservations) {
-      if (!loaded.intent.reservations.includes(reservation.id)) continue;
+      if (!reachedReservations.has(reservation.id)) continue;
       const at = `reservations.${reservation.id}`;
       checkSource(reservation.quantity, "quantity", `${at}.quantity`, world, sink);
       requireMember(reservation.conflictKey, conflictKeyIds, `${at}.conflictKey`, "conflict key template", sink);

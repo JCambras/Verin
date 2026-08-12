@@ -3,12 +3,12 @@
     {
       "domainConfigId": "account-opening",
       "version": "2026.08.0",
-      "configHash": "338493bf385993f3d1771d16b3b62ac7374800e14b6257c8b35052dee48edec2"
+      "configHash": "b248f97fcc380851160096f0037a15e71953559684ede6a878d349ec75f7968a"
     },
     {
       "domainConfigId": "money-movement",
       "version": "2026.07.0",
-      "configHash": "1d9c3cfbbaa44e79bc8ffb760dfdcb3717265eae7bb1e1026d3fc9a6395f4bcd"
+      "configHash": "ddf302642ebcae2dadf52ff972709a7440ec21f518abb7d5c94cd9d171b2bcf4"
     }
   ]
 }

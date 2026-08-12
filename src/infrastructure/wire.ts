@@ -30,6 +30,7 @@ import { MACHINE_RECORD_ID_RE, parseMachineRecordId } from "@contracts/record-id
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
 import {
   compileFlowDefinition,
+  CONFIG_VERSION_KEY,
   EXECUTION_SCOPE_KEY,
   INITIATING_ACTOR_KEY,
   type CompiledFlow,
@@ -136,6 +137,34 @@ function inputMatchesExecution(input: StartAccountOpeningInput, existing: Execut
   return START_INPUT_FIELDS.every((field) => existing.data[field] === input[field]);
 }
 
+/**
+ * The two states a resume actually RUNS steps from. A completed execution is
+ * reported idempotently without re-running anything, so it is not held to the
+ * check below - refusing a doubly-fired webhook its "already finalized" answer
+ * would trade one silent wrong outcome for a loud one nothing can act on.
+ */
+const driveable = (state: ExecutionState): boolean =>
+  state.status === "suspended" || state.status === "failed";
+
+/**
+ * A persisted execution may only be DRIVEN by the configuration version it
+ * started under. The cursor is POSITIONAL and the plan is now versioned data, so
+ * a legitimate version bump between the e-sign suspend and the signature webhook
+ * would otherwise resume at the wrong step - skipping finalize, or re-running a
+ * committed one, either of which means missing or duplicated real records. The
+ * flowId cannot carry this: it is the domainConfigId and is stable across
+ * versions. Resuming against the PINNED document rather than refusing is the end
+ * state and stays owned by PC-4 (prompts 15/19, docs/domain-config-gaps.md).
+ */
+function versionMismatch(flow: CompiledFlow, state: ExecutionState): AppError | null {
+  const started = state.data[CONFIG_VERSION_KEY];
+  if (started === flow.domainConfigVersionId) return null;
+  return appError(
+    "CONFLICT",
+    "This execution was started under a different version of the account-opening configuration and cannot be continued against the current one.",
+  );
+}
+
 /** Typed refusal of an edited replay: the client must mint a new request id (D-027). */
 function editedReplayConflict(executionId: string): FlowRunResult {
   return {
@@ -182,6 +211,10 @@ function canonicalExecutionId(
 
 /** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
 async function retryFailedStart(flow: CompiledFlow, store: ExecutionStore, deps: ExecutionAdapters, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
+  // The re-drive resumes from the SAVED cursor, so it carries the same
+  // positional hazard a webhook resume does.
+  const stale = versionMismatch(flow, existing);
+  if (stale) return { executionId: existing.id, status: "failed", error: stale, data: {} };
   try {
     return await retryFlow(flow.definition, store, deps, existing, tenant);
   } catch (e) {
@@ -265,6 +298,9 @@ export async function startAccountOpening(
           // draw on. Persisted with the execution, so a retry of the SAME
           // execution replays the committed writes instead of duplicating them.
           [EXECUTION_SCOPE_KEY]: executionId,
+          // The plan this execution is bound to, persisted so a later drive of
+          // its stored cursor can prove it is still the same plan.
+          [CONFIG_VERSION_KEY]: flow.value.domainConfigVersionId,
         },
       });
     } catch (e) {
@@ -318,6 +354,15 @@ export async function resumeAccountOpeningByToken(
     return { executionId: "", status: "failed", error: flow.error, data: {} };
   }
   const deps = makeExecutionAdapters(db, starter);
+  // The cursor this resume would drive is POSITIONAL, so it is only meaningful
+  // against the plan the execution started under. A mid-flight configuration
+  // version bump fails LOUDLY here rather than silently resuming at the wrong
+  // step. The token already scopes the row; ownership is re-checked by resumeFlow.
+  const suspended = await store.loadByToken(token);
+  if (suspended !== null && suspended.orgId === starter.tenant.orgId && driveable(suspended)) {
+    const stale = versionMismatch(flow.value, suspended);
+    if (stale) return { executionId: suspended.id, status: "failed", error: stale, data: {} };
+  }
   return withSpan("flow.account-opening.resume", {
     orgId: authorityObservabilityId("orgId", starter.tenant),
   }, () =>

@@ -27,14 +27,14 @@ import { configError, formatDomainConfigErrors, type DomainConfigError } from ".
 import type { LoadedDomainConfig } from "./load";
 import type { ExecutionCapability, PlanStep } from "./operations";
 import { renderKeySegments, renderTemplate, type SourceResolution, type ValueSource } from "./segments";
-import { EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY } from "./vocabulary";
+import { CONFIG_VERSION_KEY, EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY } from "./vocabulary";
 
 /**
  * The reserved flow-data keys this compiler reads, re-exported from the closed
  * vocabulary that also REFUSES a slot declaring one. One declaration, so the
  * key the platform writes and the key the loader rejects cannot drift apart.
  */
-export { EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY };
+export { CONFIG_VERSION_KEY, EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY };
 
 export type CommandInvocation = PIIBearing & {
   readonly capabilityId: string;
@@ -266,6 +266,14 @@ const compileStep = (
 export type CompiledFlow = {
   readonly definition: FlowDefinition<ExecutionAdapters>;
   /**
+   * The configuration version this plan was compiled FROM. `definition.id` is the
+   * domainConfigId and is stable across versions, so it cannot tell a persisted
+   * execution which plan it was started against; this can. The composition root
+   * pins it into flow data at start and refuses to drive a stored cursor under a
+   * different one.
+   */
+  readonly domainConfigVersionId: string;
+  /**
    * Per COMPILED step, the verification rule that step suspends on - `undefined`
    * when it runs to completion. Emitted from the same ordered plan that produced
    * the steps, so a replay reporting the rule of the step at `cursor - 1` can
@@ -323,6 +331,7 @@ export const compileFlowDefinition = (
       name: config.document.presentation.domainLabel,
       steps: plans.map((plan) => compileStep(config, actionId, plan)),
     },
+    domainConfigVersionId: config.domainConfigVersionId,
     awaitingByStep: plans.map((plan) => (plan.awaits ? (plan.capability.verificationRule as string) : undefined)),
   });
 };

@@ -213,10 +213,22 @@ const CEILINGS = {
 // had gone stale by twelve and eight lines, which is exactly what this header
 // says a number nobody re-took is worth - and both stay inside the ceilings they
 // already had, so those are left alone rather than raised for company.
+//
+// ADR-0057 AMENDMENT (review round 8): BOTH `domain` and `infrastructure` grow
+// past their ceilings answering this round's findings in code. In `domain`: the
+// context plane is refused at LOAD in both places it would have failed mid-plan,
+// `$ref.kind` is checked against its closed vocabulary, the closure stage's scope
+// is widened to match the reachability stage's, and a compiled plan carries the
+// configuration version it was compiled from. In `infrastructure`: the
+// composition root pins that version into flow data at start and refuses to drive
+// a stored positional cursor under a different one. RE-MEASURED with this file's
+// own algorithm: contracts 6,638 / 6,680 (42), domain 9,085 / 9,150 (65),
+// infrastructure 8,315 / 8,360 (45), presentation 928 / 6,000, tooling 12,154 /
+// 12,400. `contracts` is re-taken and unchanged, so its ceiling is left alone.
 const CEILINGS = {
   contracts: 6680, // ADR-0057 as amended twice, RATCHETED DOWN after the dead brands were deleted (6,638 measured)
-  domain: 9050, // ADR-0057 as amended five times, on the prompt-10 configuration schema (8,973 measured)
-  infrastructure: 8290, // ADR-0057, on the prompt-10 config source and command adapters (8,270 measured)
+  domain: 9150, // ADR-0057 as amended six times, on the prompt-10 configuration schema (9,085 measured)
+  infrastructure: 8360, // ADR-0057 as amended once, on the version-bound resume guard (8,315 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

@@ -529,7 +529,7 @@ presentation:
       household-directory: { label: Households matching the request, sourceLabel: House CRM }
       household-disambiguation: { label: Which household was meant, sourceLabel: Advisor }
       household-instruction: { label: Household instruction, sourceLabel: House CRM }
-      pending-actions: { label: "Pending approved distribution (settles Aug 1)", sourceLabel: House CRM }
+      pending-actions: { label: Pending approved distribution, sourceLabel: House CRM }
       planned-withdrawals: { label: Planned monthly withdrawal, sourceLabel: House CRM }
     reasonCodes:
       cash-reserve-breach:

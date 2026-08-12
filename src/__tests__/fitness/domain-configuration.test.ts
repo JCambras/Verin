@@ -13,7 +13,7 @@ import {
   realProject,
   stripComments,
 } from "./_fence-utils";
-import { canonicalConfigJson } from "@domain/config/document";
+import { canonicalConfigJson, type DomainConfigDocument } from "@domain/config/document";
 import { loadDomainConfig } from "@domain/config/load";
 import {
   bindDomainConfig,
@@ -204,6 +204,53 @@ export function domainNameUses(
 }
 
 const documentText = (file: string): string => readFileSync(join(REPO_ROOT, CONFIG_DIRECTORY, file), "utf8");
+
+type VersionPin = { readonly domainConfigId: string; readonly version: string; readonly configHash: string };
+
+/**
+ * RULE D's judgement, as a callable so the companion can prove it FAILS CLOSED.
+ *
+ * This is the only check that binds shipped configuration bytes to the pinned
+ * hashes, and it used to `continue` past a document it could not load or
+ * canonicalize - passing with an empty drift list while proving nothing about
+ * that file. Counting pins does not tie a pin to bytes, so a false proof is
+ * exactly what the charter calls worse than no fence. Every document now owes an
+ * ANSWER: an unprovable one is drift, naming the file and the reason.
+ *
+ * `canonicalize` is a parameter only so the companion can exercise the
+ * canonicalization branch; every shipped call uses the real one.
+ */
+export function versionPinDrift(
+  documents: readonly { readonly file: string; readonly document: unknown }[],
+  pins: readonly VersionPin[],
+  canonicalize: (document: DomainConfigDocument) => { readonly ok: boolean; readonly value?: string } =
+    canonicalConfigJson,
+): string[] {
+  const drift: string[] = [];
+  for (const { file, document } of documents) {
+    const loaded = loadDomainConfig(document);
+    if (!loaded.ok) {
+      drift.push(`${file} cannot be loaded, so its pinned hash proves nothing: ${JSON.stringify(loaded.error)}`);
+      continue;
+    }
+    const canonical = canonicalize(loaded.value.document);
+    if (!canonical.ok || canonical.value === undefined) {
+      drift.push(`${file} has no canonical bytes, so its pinned hash proves nothing`);
+      continue;
+    }
+    const hash = createHash("sha256").update(canonical.value, "utf8").digest("hex");
+    const pin = pins.find(
+      (entry) =>
+        entry.domainConfigId === loaded.value.document.domainConfigId &&
+        entry.version === loaded.value.document.version,
+    );
+    if (!pin) drift.push(`${loaded.value.domainConfigVersionId} is not a published version`);
+    else if (pin.configHash !== hash) {
+      drift.push(`${loaded.value.domainConfigVersionId} changed without a version bump (pinned ${pin.configHash}, computed ${hash})`);
+    }
+  }
+  return drift;
+}
 
 const parsed = (file: string): unknown =>
   parseDocument(documentText(file), { merge: false }).toJS() as unknown;
@@ -498,25 +545,12 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
 
   it("(D) enforces: every published version's canonical bytes match its pinned hash", () => {
     const pins = JSON.parse(readFileSync(join(REPO_ROOT, CONFIG_DIRECTORY, "versions.json"), "utf8")) as {
-      versions: Array<{ domainConfigId: string; version: string; configHash: string }>;
+      versions: VersionPin[];
     };
-    const drift: string[] = [];
-    for (const file of DOMAIN_FILES) {
-      const loaded = loadDomainConfig(parsed(file));
-      if (!loaded.ok) continue;
-      const canonical = canonicalConfigJson(loaded.value.document);
-      if (!canonical.ok) continue;
-      const hash = createHash("sha256").update(canonical.value, "utf8").digest("hex");
-      const pin = pins.versions.find(
-        (entry) =>
-          entry.domainConfigId === loaded.value.document.domainConfigId &&
-          entry.version === loaded.value.document.version,
-      );
-      if (!pin) drift.push(`${loaded.value.domainConfigVersionId} is not a published version`);
-      else if (pin.configHash !== hash) {
-        drift.push(`${loaded.value.domainConfigVersionId} changed without a version bump (pinned ${pin.configHash}, computed ${hash})`);
-      }
-    }
+    const drift = versionPinDrift(
+      DOMAIN_FILES.map((file) => ({ file, document: parsed(file) })),
+      pins.versions,
+    );
     expect(drift, drift.join("\n")).toEqual([]);
     expect(pins.versions.length).toBe(DOMAIN_FILES.length);
   });
@@ -843,6 +877,36 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
       const before = canonicalConfigJson(loaded.value.document);
       const after = canonicalConfigJson(edited);
       expect(before.ok && after.ok && before.value !== after.value).toBe(true);
+      // The edited bytes must FAIL rule D against the shipped pins, not merely
+      // hash differently: proving the bytes moved is not proving the rule bites.
+      const pins = JSON.parse(readFileSync(join(REPO_ROOT, CONFIG_DIRECTORY, "versions.json"), "utf8")) as {
+        versions: VersionPin[];
+      };
+      expect(
+        versionPinDrift([{ file: DOMAIN_FILES[0]!, document: edited }], pins.versions),
+      ).toHaveLength(1);
+    });
+
+    it("catches a document RULE D cannot PROVE: an unloadable or uncanonicalizable one fails, never skips", () => {
+      const pins = JSON.parse(readFileSync(join(REPO_ROOT, CONFIG_DIRECTORY, "versions.json"), "utf8")) as {
+        versions: VersionPin[];
+      };
+      const shipped = DOMAIN_FILES.map((file) => ({ file, document: parsed(file) }));
+      // Baseline: the shipped documents pass, so the two refusals below are the
+      // rule biting rather than the rule being broken.
+      expect(versionPinDrift(shipped, pins.versions)).toEqual([]);
+      // A document the loader refuses has no proven bytes behind its pin.
+      const unloadable = versionPinDrift([{ file: "unloadable.yaml", document: { not: "a document" } }], pins.versions);
+      expect(unloadable).toHaveLength(1);
+      expect(unloadable[0]).toContain("unloadable.yaml");
+      // A document whose canonical bytes cannot be produced is the branch that
+      // used to `continue`: rule D passed with an empty drift list while proving
+      // nothing at all about that file.
+      const uncanonicalizable = versionPinDrift(shipped, pins.versions, () => ({ ok: false }));
+      expect(uncanonicalizable).toHaveLength(DOMAIN_FILES.length);
+      for (const file of DOMAIN_FILES) {
+        expect(uncanonicalizable.some((entry) => entry.includes(file))).toBe(true);
+      }
     });
   });
 });

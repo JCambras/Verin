@@ -191,17 +191,25 @@ export const checkCopyTemplates = (
   sink: Sink,
 ): void => {
   const copy = document.presentation.copy;
-  const templates: readonly (readonly [string, string])[] = [
-    ...Object.entries(copy.commandText).map(([key, text]) => [`presentation.copy.commandText.${key}`, text] as const),
+  /**
+   * The third element is whether the PLAN COMPILER renders this template. Command
+   * text is rendered mid-plan, against flow data; reason-code copy is rendered by
+   * the evaluator against the decision's context plane (prompts 16/17). Only the
+   * first has to be held to what the interim substrate can actually resolve.
+   */
+  const templates: readonly (readonly [string, string, boolean])[] = [
+    ...Object.entries(copy.commandText).map(
+      ([key, text]) => [`presentation.copy.commandText.${key}`, text, true] as const,
+    ),
     ...Object.entries(copy.reasonCodes).flatMap(([key, entry]) =>
       [
-        [`presentation.copy.reasonCodes.${key}.title`, entry.title] as const,
-        [`presentation.copy.reasonCodes.${key}.body`, entry.body] as const,
-        [`presentation.copy.reasonCodes.${key}.resolution`, entry.resolution] as const,
+        [`presentation.copy.reasonCodes.${key}.title`, entry.title, false] as const,
+        [`presentation.copy.reasonCodes.${key}.body`, entry.body, false] as const,
+        [`presentation.copy.reasonCodes.${key}.resolution`, entry.resolution, false] as const,
       ],
     ),
   ];
-  for (const [path, template] of templates) {
+  for (const [path, template, renderedByPlan] of templates) {
     if (!templateIsInert(template)) {
       sink(
         configError("not-inert", path, "a copy template may contain only {slot:…} and {context:…} placeholders"),
@@ -216,6 +224,20 @@ export const checkCopyTemplates = (
             "unknown-reference",
             path,
             `placeholder {${placeholder.kind}:${placeholder.token}} names nothing this domain publishes`,
+          ),
+        );
+        continue;
+      }
+      // The same refusal `resolveSourceType` gives a `{from: context}` value
+      // source, for the same reason: command text is rendered mid-plan through
+      // the flow-data resolver, so a context placeholder there loads clean and
+      // then fails at the step that consumes it, after earlier steps committed.
+      if (placeholder.kind === "context" && renderedByPlan) {
+        sink(
+          configError(
+            "unknown-reference",
+            path,
+            `placeholder {context:${placeholder.token}} reads the context plane, which the evaluator assembles (prompt 16); command text is rendered mid-plan against flow data, so it may reference only {slot:…} until then`,
           ),
         );
       }

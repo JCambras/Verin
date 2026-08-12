@@ -177,6 +177,41 @@ thing being removed) and stays inside the ceiling it already had, so that ceilin
 than raised for company. The round-6 `infrastructure` figure is re-taken here rather than carried
 forward: a measurement left stale is the condition the fence header argues against.
 
+## Amendment (2026-08-11, review round 8): `domain` AND `infrastructure` re-measured
+
+The 77 lines of correction headroom the round-7 amendment left are spent, and for the first time on
+this branch a second layer moves past its ceiling too.
+
+`domain` answers four of this round's findings in code. Two close the last of the
+load-clean-then-fail-mid-plan class: a `{from: context}` value source and a `{context:…}` placeholder in
+COMMAND TEXT are refused at LOAD, naming the key and the prompt that makes it resolvable, because the
+interim substrate resolves sources out of flow data and would only discover the miss at the step that
+consumed it (`load-closure.ts`, `load-coherence.ts`). The third makes the closure stage's scope equal
+the reachability stage's, so a conflict-key template or a reservation reachable only through a
+CAPABILITY is type-checked exactly like one an intent lists (`load-references.ts`). The fourth checks
+`$ref.kind` against its declared-closed vocabulary at load rather than letting a typo diverge at bind
+(`parameters.ts`). A compiled plan also now carries the configuration version it was compiled from
+(`plan-compiler.ts`, `vocabulary.ts`).
+
+`infrastructure` grows because the composition root pins that version into flow data at start and
+REFUSES, with a typed `CONFLICT`, to drive a stored positional cursor under a different one - on the
+webhook resume and on the failed-start re-drive alike (`wire.ts`). That is the interim guard for PC-4;
+resuming against the pinned document stays owned by prompts 15/19.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,638 | 6,680 | 42 (unchanged ceiling) |
+| `domain` | 9,085 | **9,150** | 65 |
+| `infrastructure` | 8,315 | **8,360** | 45 |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+Two ceilings move, each only as far as its own measurement plus headroom inside the band the sibling
+layers carry. `contracts` is re-taken here and is unchanged, so its ceiling is left alone rather than
+re-baselined for company.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

@@ -50,6 +50,18 @@ export const EXECUTION_SCOPE_KEY = "executionScope";
 export const INITIATING_ACTOR_KEY = "initiatedBy";
 
 /**
+ * The flow-data key carrying the configuration VERSION an execution started
+ * under. A suspended execution is driven from a stored POSITIONAL cursor, and
+ * since prompt 10 the plan it is driven against is versioned DATA: a legitimate
+ * version bump that inserts, removes or reorders a step between the e-sign
+ * suspend and the signature webhook would silently resume at the wrong step -
+ * skipping finalize, or re-running a committed one. Pinning the version at start
+ * lets the composition root refuse such a resume LOUDLY. Resuming against the
+ * pinned DOCUMENT is the end state and stays owned by PC-4 (prompts 15/19).
+ */
+export const CONFIG_VERSION_KEY = "domainConfigVersionId";
+
+/**
  * The RESERVED transport namespace: keys the platform itself writes into flow
  * data, AFTER a caller's own values. A slot reading one of these would be
  * silently filled with the platform's value instead of what the requester
@@ -66,6 +78,7 @@ export const INITIATING_ACTOR_KEY = "initiatedBy";
 export const RESERVED_TRIGGER_FIELDS = [
   EXECUTION_SCOPE_KEY,
   INITIATING_ACTOR_KEY,
+  CONFIG_VERSION_KEY,
   CLIENT_REQUEST_ID_KEY,
 ] as const;
 

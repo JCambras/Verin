@@ -8945,3 +8945,88 @@ symbol is what makes it fail the build, the same way the test-only injection sea
 
 **Revert path.** One helper in the fence plus one companion case; the constant's single consumer is
 unaffected.
+
+## D-216 - Prompt 10 review: the finalize key is COMPOSED by the grammar, not carried as one value
+
+**What.** `application-finalize`'s idempotency key is now two segments - the literal `finalize` and the
+application step's published `id` - and `application-create` no longer publishes the pre-joined key it
+minted. Every segment is still escaped before joining, so the rendered bytes stay an injective encoding
+of the resolved tuple, and they are exactly the pre-branch bytes: `finalize:<applicationId>`.
+
+**Why.** The round-6 injectivity fix escapes every segment, which silently re-keyed the ONE shipped key
+whose single segment's VALUE already contained the separator. That key is the exactly-once guard: the
+house-CRM adapter derives `account:` / `task:` / `complete:` sub-keys from it into `crm_write_cache`, so
+a changed byte form means a doubly-fired e-sign webhook opens a duplicate financial account and a
+duplicate funding task (charter #16). The ruled remedy - pass a LONE segment through raw - restores those
+bytes but cannot be made injective: a raw branch emits arbitrary strings, so a one-segment value carrying
+the separator renders exactly what the two-segment tuple around it renders, and no marker on the other
+branch can prevent that (the raw branch can emit the marked form too). Carrying a segment count on the
+multi-segment branch instead would have re-keyed the four pre-suspend keys - the same defect, four more
+times. Composing the finalize key from the same two parts the application row composes satisfies both
+goals at once: the bytes are restored, the encoding keeps ONE rule, and the arity is recoverable from the
+rendered bytes for every tuple. The equality with the row's recorded column is now ASSERTED
+(`src/__tests__/integration/account-opening.test.ts`) rather than true by construction and untested.
+
+**Revert path.** Two lines of `config/domains/account-opening.yaml` plus its hash pin.
+
+## D-217 - Prompt 10 review: a suspended execution is bound to the configuration version it started under
+
+**What.** `startFlow` persists `domainConfigVersionId` into flow data under a reserved platform key, and
+the composition root REFUSES with a typed `CONFLICT` to drive a stored cursor - on the webhook resume or
+on the failed-start re-drive - when the published version disagrees.
+
+**Why.** The cursor is POSITIONAL and, since this prompt, the plan it indexes into is versioned DATA.
+`loadOwnExecution` compares only `flowId`, which is the domainConfigId and stable across versions, so a
+legitimate bump that inserts, removes or reorders a step between the e-sign suspend and the signature
+webhook resumed at the WRONG step - skipping finalize, or re-running a committed one. A YAML edit is a
+far lower bar than a code deploy, which is what made a latent hazard live. Resuming against the PINNED
+document is the correct end state and stays owned by PC-4 (prompts 15/19); an honest refusal is the
+interim guard, and a partial guarantee that reads like a complete one would be worse.
+
+**Revert path.** One reserved key, one predicate in `wire.ts`, two call sites.
+
+## D-218 - Prompt 10 review: the context plane is refused at LOAD, not discovered mid-plan
+
+**What.** A `{from: context}` value source and a `{context:…}` placeholder in COMMAND TEXT are refused by
+the loader, naming the key and why it cannot resolve. Reason-code copy still admits `{context:…}`: the
+evaluator renders it against a real context plane. The grammar arm stays; only its use before the plane
+exists is refused.
+
+**Why.** The loader validated context keys against the derived vocabulary while the plan compiler
+resolves them out of FLOW DATA, which carries only transport fields, the platform's reserved keys and
+publication aliases. Such a source loaded clean and then failed at the step that consumed it, after
+earlier steps had committed real records - the load-clean-then-fail-mid-plan class this stage exists to
+close. The plane arrives with the evaluator (prompt 16), which is where the refusal points.
+
+**Revert path.** One branch in `resolveSourceType` and one in `checkCopyTemplates`.
+
+## D-219 - Prompt 10 review: closure scope now equals reachability scope
+
+**What.** `checkReferences` type-checks every conflict-key template and reservation reachable by ANY
+route the reachability check counts - the intent's own lists, a capability's, and a reservation's
+`conflictKey` - rather than only those the intent lists directly. `$ref.kind` is validated against
+`PARAMETER_REF_KINDS` at load, and RULE D of the domain-configuration fence now treats a document it
+cannot load or canonicalize as DRIFT rather than skipping it.
+
+**Why.** Three fail-opens of one shape. A template named only by a capability was reachable-and-therefore-
+not-dead while escaping segment type-checking entirely, so an unknown slot, a text slot inside a
+coordination key (MR-7) or a bucket over a non-date source loaded clean. A closed vocabulary nothing
+enforces is not closed: a `$ref.kind` typo substituted cleanly and only diverged at bind, where the class
+silently dropped out of the checklist a surface builds its firm registry from. And RULE D is the only
+check binding shipped bytes to pinned hashes - skipping a document it could not process left it passing
+while proving nothing about that file, which the charter treats as worse than no fence.
+
+**Revert path.** One derived set in the closure stage, one predicate in `parameters.ts`, one extracted
+helper plus its companion in the fence.
+
+## D-220 - Prompt 10 review: a demonstration fixture date leaves the published document
+
+**What.** `config/domains/money-movement.yaml`'s `pending-actions` evidence-kind label is generic again;
+the demo builder appends the `(settles Aug 1)` qualifier. Visible demo copy is unchanged byte-for-byte.
+
+**Why.** This reverses the earlier ruling that restored the parenthetical into the document to preserve
+user-visible copy. The document is what a real firm would deploy, and it is hash-pinned and versioned: an
+evidence-kind label states what a KIND is, while a settlement date is a property of this branch's fake
+row. Appending it on the demo side serves the original intent better than the original instruction did.
+
+**Revert path.** One label and one template literal.

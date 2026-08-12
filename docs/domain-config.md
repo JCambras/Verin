@@ -31,6 +31,12 @@ There is exactly one interpolation mechanism in the whole system: the placeholde
 `{context:<published-key>}`, rendered deterministically against already-published values. A brace that is
 not one of those two forms is a load error, in copy and in command text alike.
 
+Until the evaluator assembles a context plane (prompt 16), a `{context:…}` read is refused wherever the
+INTERIM substrate would have to resolve it: `{from: context}` value sources and `{context:…}` inside
+command text. Reason-code copy still admits it - the evaluator is what renders that copy, and it will
+have the plane. The refusal names the key and says why (D-218): admitting the read would let a document
+load clean and then fail at the step that consumed it, after earlier steps had committed real records.
+
 ## 3. The thirteen sections
 
 | Section | Declares | Never declares |
@@ -99,6 +105,27 @@ rejection is a value, never a throw.
 - **A `text` slot may reach a command payload but never a key.** A household name is what a CRM create
   IS; unbounded, editable bytes inside a conflict or idempotency key would make a coordination identity
   unstable. Load-checked.
+- **A composite key is composed of SEGMENTS, never of one pre-joined value.** Every segment is escaped
+  before the join, which is what makes the rendered bytes an injective encoding of the resolved tuple -
+  and what makes the arity recoverable from those bytes, so no one-segment key can ever collide with a
+  multi-segment one. The corollary bites: a lone segment whose VALUE already carries the separator gets
+  escaped, so a key like account opening's `finalize:<applicationId>` must be authored as the two
+  segments it is. It is (D-216), and the bytes it renders are asserted against the column the
+  application row records - the exactly-once guard the finalize adapter derives its per-write sub-keys
+  from (charter #16).
+- **A reachable template is a CHECKED template.** Reference closure and the no-dead-configuration rule
+  share one scope: a conflict-key template or a reservation reachable through a CAPABILITY is
+  type-checked exactly like one the intent lists directly (D-219). The two scopes disagreeing is how a
+  text slot inside a coordination key, or a bucket over a non-date source, used to load clean.
+- **`$ref.kind` is a closed vocabulary, enforced at LOAD.** A deferred tenant-scoped reference names one
+  of `PARAMETER_REF_KINDS` and a non-empty class. Checked at bind instead, a typo substituted cleanly,
+  then dropped the class out of the checklist a surface builds its firm registry from - a request-time
+  failure on a screen that cannot recover from one.
+- **A suspended execution is bound to the version it started under.** The engine's cursor is POSITIONAL
+  and the plan is versioned data, so `startFlow` persists `domainConfigVersionId` and the composition
+  root refuses to drive a stored cursor under a different one (D-217). Resuming against the PINNED
+  document is the end state and stays owned by PC-4 (prompts 15/19); until then the refusal is loud
+  rather than silently resuming at the wrong step.
 - **Evaluation order is derived, not authored.** Prompt 8's parameters bind context keys directly, so the
   dataflow edges are already in the parameters. The loader topologically orders the bindings and rejects
   a cycle. Shuffling the YAML changes nothing.
