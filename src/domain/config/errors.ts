@@ -123,29 +123,67 @@ const isCarriableConfigSegment = (segment: string): boolean =>
  */
 export const CONFIG_PATH_LIMITS = ["unnameable-segment", "path-too-long"] as const;
 export type ConfigPathLimit = (typeof CONFIG_PATH_LIMITS)[number];
-type ConfigPathStep =
+
+/**
+ * A LOCATION AND WHY IT STOPS WHERE IT DOES, AS ONE VALUE THAT CANNOT BE SEPARATED
+ * (D-253).
+ *
+ * `path` is always a location the channel can carry, because the only ways to build
+ * one are the steps below and they start at the root. `carried: false` is the whole
+ * statement that it is an ANCESTOR of the node the emitter meant, and it names the
+ * limit that ended it; `carried: true` means the path IS the node.
+ *
+ * The invariant lives in the type because it kept escaping convention. A builder that
+ * returned a bare string dropped the limit it had just computed, and the constructor
+ * re-walking that already-carriable string concluded "complete" - so the loader's most
+ * common failure, the grammar stage, reported a TRUNCATED location as an exact one.
+ * Travelling together is what makes `limit: undefined` mean complete and nothing else.
+ */
+export type ConfigPath =
   | { readonly carried: true; readonly path: string }
   | { readonly carried: false; readonly path: string; readonly limit: ConfigPathLimit };
+
+const CONFIG_PATH_ROOT: ConfigPath = { carried: true, path: "" };
+
+/** Whichever limit a joined location hit, or the location itself. */
+const admitConfigPath = (parent: ConfigPath, joined: string, segment: string): ConfigPath => {
+  if (!isCarriableConfigSegment(segment)) {
+    return { carried: false, path: parent.path, limit: "unnameable-segment" };
+  }
+  return joined.length <= MAX_CONFIG_DIAGNOSIS_LENGTH
+    ? { carried: true, path: joined }
+    : { carried: false, path: parent.path, limit: "path-too-long" };
+};
 
 /**
  * One step deeper into a location, or the deepest carriable prefix and the limit
  * that ended it. The caller that appends an author-chosen key uses this and REFUSES
  * rather than descending past it, so a fault below an unreportable key is reported
- * at the deepest node that can be named instead of at a fabricated one.
+ * at the deepest node that can be named instead of at a fabricated one. A location
+ * that already stopped stays stopped: there is nothing below an ancestor to name.
  *
  * A key carrying a `.` is not one segment: reporting `presentation.copy.slots` +
  * `"Household.Name"` joined would SHAPE perfectly and address a node the document
  * does not contain, and an operator cannot tell a confidently wrong location from a
  * right one (the same failure `presentation.form.fields.<trigger field>` was).
  */
-export const childConfigPath = (parent: string, key: string): ConfigPathStep => {
-  if (!isCarriableConfigSegment(key)) {
-    return { carried: false, path: parent, limit: "unnameable-segment" };
-  }
-  const joined = parent === "" ? key : `${parent}.${key}`;
-  return joined.length <= MAX_CONFIG_DIAGNOSIS_LENGTH
-    ? { carried: true, path: joined }
-    : { carried: false, path: parent, limit: "path-too-long" };
+export const childConfigPath = (parent: ConfigPath, key: string): ConfigPath => {
+  if (!parent.carried) return parent;
+  return admitConfigPath(parent, parent.path === "" ? key : `${parent.path}.${key}`, key);
+};
+
+/**
+ * One LIST POSITION deeper, under the SAME ceiling as a key (D-253). A subscript
+ * EXTENDS the last segment rather than adding one, so it is admitted by re-reading
+ * that segment - which is what keeps the subscript cap and the length ceiling one
+ * rule for both container kinds. Enforcing the ceiling for keys and not for
+ * positions gave two identical overruns opposite verdicts, and left the walk that
+ * appends subscripts leaning on an admission that never covered them.
+ */
+export const childConfigSubscript = (parent: ConfigPath, index: number): ConfigPath => {
+  if (!parent.carried) return parent;
+  const joined = `${parent.path}[${index}]`;
+  return admitConfigPath(parent, joined, joined.slice(joined.lastIndexOf(".") + 1));
 };
 
 /**
@@ -154,26 +192,21 @@ export const childConfigPath = (parent: string, key: string): ConfigPathStep => 
  * the limit that ended it. ONE step rule, applied here and at every emitter that
  * descends, so a second copy cannot come to a different verdict.
  */
-const carriedConfigPath = (segments: readonly string[]): ConfigPathStep => {
-  let at: ConfigPathStep = { carried: true, path: "" };
-  for (const segment of segments) {
-    const step = childConfigPath(at.path, segment);
-    if (!step.carried) return step;
-    at = step;
-  }
-  return at;
-};
-
-export const configPathOf = (segments: readonly string[]): string =>
-  carriedConfigPath(segments).path;
+export const configPathFrom = (
+  segments: readonly string[],
+  under: ConfigPath = CONFIG_PATH_ROOT,
+): ConfigPath => segments.reduce<ConfigPath>((at, segment) => childConfigPath(at, segment), under);
 
 /**
- * The deepest prefix of an already-joined dotted path the channel can carry. A
- * root-level fault has no path at all and keeps the empty string, which the source
- * adapter omits rather than reporting - an absent location and a censored one are
- * different facts (D-242).
+ * The deepest prefix of an already-joined dotted path the channel can carry, and the
+ * limit that ended it. A root-level fault has no path at all and keeps the empty
+ * string, which the source adapter omits rather than reporting - an absent location
+ * and a censored one are different facts (D-242).
  */
-export const carriableConfigPath = (path: string): string => configPathOf(path.split("."));
+export const configPathOfText = (path: string): ConfigPath =>
+  path === "" ? CONFIG_PATH_ROOT : configPathFrom(path.split("."));
+
+export const carriableConfigPath = (path: string): string => configPathOfText(path).path;
 
 export type DomainConfigError = {
   readonly code: DomainConfigErrorCode;
@@ -190,18 +223,22 @@ export type DomainConfigError = {
 
 /**
  * THE ONE CONSTRUCTOR OF EVERY FAULT. It carries only what the channel can express,
- * and when that is less than it was asked to report it says so: an emitter that
- * already knows why it stopped states its own limit, and one handing over a raw
- * dotted path inherits the limit this truncation hit.
+ * and when that is less than it was asked to report it says so.
+ *
+ * THERE IS NO LIMIT ARGUMENT (D-253). An emitter that descended states where it
+ * stopped by handing over the `ConfigPath` it stopped at - path and limit together,
+ * so neither can be dropped, re-derived, or overridden by the other. One handing
+ * over a raw dotted path knows no limit, so this truncation owns the one it hits.
  */
 export const configError = (
   code: DomainConfigErrorCode,
-  path: string,
+  at: string | ConfigPath,
   message: string,
-  limit?: ConfigPathLimit,
 ): DomainConfigError => {
-  const at = path === "" ? { carried: true as const, path: "" } : carriedConfigPath(path.split("."));
-  return { code, path: at.path, message, limit: limit ?? (at.carried ? undefined : at.limit) };
+  const located = typeof at === "string" ? configPathOfText(at) : at;
+  return located.carried
+    ? { code, path: located.path, message }
+    : { code, path: located.path, message, limit: located.limit };
 };
 
 /**

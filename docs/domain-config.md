@@ -152,7 +152,9 @@ rejection is a value, never a throw.
   `MAX_CONFIG_DIAGNOSIS_LENGTH` ceiling is the SECOND bound on the same graph, and it binds independently:
   a graph inside the depth bound whose accumulated path outgrows 128 characters is refused too, and the
   refusal says so - `path-too-long`, meaning FLATTEN THE GRAPH, never the `unnameable-segment` cause,
-  which means RENAME THE KEY (D-252).
+  which means RENAME THE KEY (D-252). BOTH bounds apply to BOTH container kinds: a list POSITION is
+  admitted through the same step as an object key (`childConfigSubscript`), so an object graph and a list
+  graph whose accumulated paths are the same length get the same verdict (D-253).
 - **Command types name commands, never domains.** What a command DOES - its span, its SQL, its audit
   action - lives in `src/infrastructure/execution-adapters.ts`, as static literals the observability
   vocabulary fence can still derive from real call sites. What it REFUSES is a fact about the document,
@@ -297,7 +299,7 @@ rather than from a hand-kept list.
   express would censor the very location the operator needs (D-246).
 - **A LOCATION is built from segments, and the one constructor carries only what the channel can
   express.** `src/domain/config/errors.ts` states the channel's capacity once - the segment grammar and
-  the length ceiling - and `configError`, `configPathOf` (the grammar stage's builder) and the
+  the length ceiling - and `configError`, `configPathFrom` (the grammar stage's builder) and the
   observability shape all read it. A document KEY is author-chosen and may be anything: one carrying
   whitespace or non-ASCII would censor the whole location, and one carrying a `.` is worse than
   censored, since joining it SHAPES perfectly while naming a node the document does not have. So a
@@ -310,6 +312,12 @@ rather than from a hand-kept list.
   the registered enum `configPathLimit`, beside `configStage`/`configCode`/`configPath`, and a fault whose
   `path` IS its exact location carries no limit at all. Reporting a length truncation as a naming problem
   sent an operator to rename ordinary camelCase keys that were fine (D-252).
+- **A location and its limit are ONE value.** `ConfigPath` is the only way to build a location, it is
+  carriable by construction, and it carries the limit that ended it - so `configError` takes no limit
+  argument, no emitter can drop one, and `limit: undefined` can only ever mean COMPLETE. An emitter that
+  descended hands over the STEP; one handing over a raw dotted path knows no limit, so the constructor's
+  own truncation owns the one it hits. Extracting `.path` from a step and passing the string is the one
+  hole the type cannot close, and the fence rejects it with `file:line` (D-253).
 - **A surface that reads configured copy fails as a VALUE.** The demo station page renders on the
   server from the published document, so it resolves its vocabulary before building anything and renders
   the refusal - generic sentence, correlation reference, no internals - when this deployment cannot

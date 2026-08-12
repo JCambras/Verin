@@ -134,8 +134,10 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/document.ts :: domainConfigVersionId.<call>",
   "src/domain/config/errors.ts :: carriableConfigPath.<call>",
   "src/domain/config/errors.ts :: childConfigPath.<call>",
+  "src/domain/config/errors.ts :: childConfigSubscript.<call>",
   "src/domain/config/errors.ts :: configError.<call>",
-  "src/domain/config/errors.ts :: configPathOf.<call>",
+  "src/domain/config/errors.ts :: configPathFrom.<call>",
+  "src/domain/config/errors.ts :: configPathOfText.<call>",
   // The port EVERY configuration refusal is minted through (D-244): each arm
   // carries one typed loader fault out of pure domain code so the composition
   // root can state it to an operator, and reaches no repository. The shipped

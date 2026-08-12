@@ -9736,3 +9736,53 @@ the operator's REAL log line carries it. Proof PF-300.
 
 **Revert path.** Collapse the step back to a bare string; RULE M's companion then fails on the two probes
 agreeing.
+
+## D-253 - Prompt 10 review: a fault location and the limit that ended it are ONE value
+
+**Decision.** `ConfigPath` (`src/domain/config/errors.ts`) is the ONLY way to name a location, and it
+carries the limit that ended it. It is built exclusively by `configPathFrom`/`configPathOfText` and stepped
+by `childConfigPath` (an object key) or `childConfigSubscript` (a LIST POSITION), all of which start at the
+root - so its `path` is carriable by construction and a stopped location stays stopped. Three consequences,
+each closing one of the three findings this decision answers:
+
+- `configError` has NO limit argument. An emitter that descended hands over the STEP; one handing over a
+  raw dotted path knows no limit, so the constructor's own truncation owns the one it hits. There is no
+  precedence question left, because there is no second opinion to have one.
+- The grammar stage passes `configPathFrom(issue.path.map(String))` WHOLE. `configPathOf`, which returned
+  the step's `path` alone, is deleted.
+- Admission bounds BOTH container kinds from the same constant: `depthOverruns` routes list positions
+  through `childConfigSubscript`, so `substitute` appends subscripts on an admission that really covers
+  them.
+
+**Why.** The limit/truncation contract D-252 introduced lived in convention, and convention lost three
+times in one change. The grammar stage - the loader's MOST COMMON failure - built its location with
+`configPathOf`, which discarded the limit the step had just computed; `configError`, re-walking an
+already-carriable string, found nothing to truncate and emitted `limit: undefined`, which under D-252's own
+contract means THE PATH IS THE EXACT LOCATION. An author writing
+`presentation: { copy: { slots: { "Household Name": … } } }` - the very example D-250/D-252 were written
+about, and a key Zod reports THROUGH `issue.path` - therefore sent the operator to
+`configPath=presentation.copy.slots` with no `configPathLimit` at all: a node the document really has,
+presented as the exact one. Separately, `depthOverruns` appended `[index]` raw while every object key went
+through the step, so the channel's length ceiling was enforced for one container kind and not the other:
+under a 52-character shipped binding path, a 64-character parameter name and four nested LISTS loaded at
+129 characters while the identical nesting in OBJECTS was a hard refusal that renders the cannot-start
+screen and `DemoUnavailable`. Two identical overruns, opposite verdicts, and the module header and
+`docs/domain-config.md` §7 both claimed otherwise. And `limit ?? (at.carried ? undefined : at.limit)` let
+an emitter's limit outrank the constructor's own further truncation, so the reported limit could describe
+a location the constructor no longer reported.
+
+**What it costs, stated plainly.** A list graph whose accumulated path crosses 128 characters is now
+REFUSED where it previously loaded. That is the point - the alternative is a fault below it with no
+location the operator's channel can carry - but it is a refusal that did not exist before, reachable only
+with a parameter name at the segment grammar's own 64-character maximum under the longest shipped binding
+path. No shipped document is anywhere near it.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE M, extended three ways: the REAL
+loader is driven into a truncated GRAMMAR-stage location on every copy record both shipped documents
+declare, and each must name the limit that ended it; a LIST graph and an OBJECT graph of the same
+accumulated length under the longest shipped binding path must reach the same verdict, at the ceiling and
+one level short of it; and no `configError` call site anywhere may read `.path` off a step - the one hole
+the type cannot close, since a step's path is a perfectly carriable string. Proof PF-301.
+
+**Revert path.** Restore the limit argument and let a builder hand over `.path`; the third rule then fails
+with `file:line`, and the grammar sweep fails on a truncated location reporting no limit.

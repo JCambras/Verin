@@ -15840,3 +15840,76 @@ constructor sample must contain both truncated and exact outcomes.
 **Reverted:** the ceiling arm restored; `Tests 69 passed (69)`.
 
 **Date:** 2026-08-12 (v3 prompt 10, ADR-0057; review ruling `config-path-cause-conflation`).
+
+## PF-301 - a location handed over without the limit that ended it
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE M, extended three ways for D-253.
+(1) The REAL loader is driven into a truncated GRAMMAR-stage location - the loader's most common failure -
+on every `presentation.copy.*` record BOTH shipped documents declare, with each of the hostile keys the
+channel cannot carry as one segment; every fault reported at the ancestor must name the limit
+`childConfigPath` says ended it, and a grammar fault the channel carried whole must name none.
+(2) A LIST graph and an OBJECT graph of the SAME accumulated length, under the longest binding path a
+shipped document really declares and a parameter name at the segment grammar's own 64-character maximum,
+must reach the SAME verdict - at the ceiling and one level short of it - with the crossing depth computed
+from `MAX_CONFIG_DIAGNOSIS_LENGTH` rather than hand-picked.
+(3) No `configError` call site anywhere in the repository may read `.path` off a step: that is the one hole
+the type cannot close, since a step's path is a perfectly carriable string.
+
+**Injection A** - the grammar builder drops the limit it just computed. `src/domain/config/load.ts`:
+`configError("grammar", configPathFrom(issue.path.map(String)).path, issue.message)`.
+
+**Observed failure:**
+```
+× (M) enforces: the GRAMMAR stage names the limit that ended its location
+AssertionError: account-opening.yaml intents."tolerance level" reports an ancestor as an exact
+location: expected undefined to be 'unnameable-segment'
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:2052:15
+× (M) enforces: no fault location is handed over without the limit that ended it
+AssertionError: a truncated location would report itself as an exact one:
+src/domain/config/load.ts:262 configPathFrom(issue.path.map(String)).path drops the limit that ended it
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:2105:7
+```
+
+**Injection B** - the ceiling enforced for one container kind and not the other.
+`src/domain/config/errors.ts`: `childConfigSubscript` returns `{ carried: true, path: joined }` without
+admitting the joined location, which is the raw `${path}[${index}]` append it replaced.
+
+**Observed failure:**
+```
+× (M) enforces: a LIST POSITION is admitted under the same ceiling as a KEY
+AssertionError: a list position past the ceiling must be refused at admission: expected 0 to be
+greater than 0
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:2088:90
+× (M) catches a ceiling enforced for one container kind and not the other
+AssertionError: a list position past the ceiling was admitted: expected [ undefined ] to deeply
+equal [ 'path-too-long' ]
+```
+
+**Injection C** - the constructor re-derives the limit from a step's path instead of reading the step.
+`src/domain/config/errors.ts`: `const located = configPathOfText(typeof at === "string" ? at : at.path)`.
+This is the precedence bug in its residual form: every step's path is carriable, so the re-walk finds
+nothing to truncate and reports every truncated location as exact.
+
+**Observed failure:** 7 rules, headed by
+```
+× (M) enforces: a location the CEILING ended is reported as a length cause, not a naming one
+AssertionError: reported as no cause at all: this location has reached the 128 characters the
+operator's fault channel carries...: expected undefined to be 'path-too-long'
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:1964:10
+```
+
+**Companion.** The `detects` block replays all three shipped shapes: a location handed over as a bare
+string (the in-memory fixture proves the AST rule reports the direct `.path` read AND the interpolated
+one, at `file:line`, while a Zod issue's own `path` - a raw segment list, not a step - is correctly not
+mistaken for one); a ceiling enforced for lists and not keys, with anti-vacuity proving the list probe
+really crossed through SUBSCRIPTS and that one level short really loaded; and a constructor handed a
+stopped step, which must report that step's own limit because there is no limit argument left to overrule
+it. The enforcing rules carry their own anti-vacuity: the grammar sweep must truncate a location in every
+copy record it exercises, must cover at least as many records as the document declares kinds of, and must
+show a whole location reporting no limit; the ceiling probe must stay inside `MAX_CONFIGURED_VALUE_DEPTH`,
+so nothing there is the depth refusal wearing another name.
+
+**Reverted:** all three restored; `Tests 74 passed (74)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0057; review rulings `grammar-path-drops-its-limit`,
+`list-positions-bypass-step-rule`, `configerror-limit-precedence`).

@@ -25,9 +25,13 @@ import { z } from "zod";
 import { err, ok, type Result } from "@contracts/result";
 import {
   childConfigPath,
+  childConfigSubscript,
   configError,
+  configPathFrom,
+  configPathOfText,
   MAX_CONFIG_DIAGNOSIS_LENGTH,
   MAX_CONFIGURED_VALUE_DEPTH,
+  type ConfigPath,
   type ConfigPathLimit,
   type DomainConfigError,
 } from "./errors";
@@ -114,17 +118,22 @@ export type RefResolver = (ref: ParameterRef["$ref"]) => unknown | null;
  * value graph this schema deliberately does not shape (the primitive's own schema
  * is the judge). Both are therefore author-chosen, and both are refused HERE: this
  * walk MIRRORS that descent - same containers, same placeholder short-circuit - and
- * refuses at the depth bound, at an unnameable key, or at the channel's length
- * ceiling, naming the deepest ADMITTED path rather than the offending one, and the
- * limit it hit. Reporting a path the channel cannot carry censors the very location
+ * refuses at the depth bound, at a key or position the channel cannot name, or at
+ * its length ceiling, naming the deepest ADMITTED path rather than the offending
+ * one, and the limit it hit. Reporting a path the channel cannot carry censors the very location
  * the refusal exists to state; reporting one that JOINS a dotted key into it invents
  * a node the document does not have, which is worse (D-246/D-250).
+ *
+ * BOTH CONTAINER KINDS TAKE THE SAME STEP (D-253). A list position used to be
+ * appended raw, so the ceiling was enforced for keys and not for positions: two
+ * identical overruns, opposite verdicts, and a `substitute` leaning on an admission
+ * that never covered half of what it appends. `childConfigSubscript` is that half.
  *
  * Refusing at admission is what makes the diagnosis shape a consequence of these
  * constants instead of a second opinion about them, the same way the policy loader
  * bounds document nesting before parsing rather than after (D-181) - and it is what
- * lets `substitute` append keys unconditionally, since every key it can reach has
- * already been proven nameable.
+ * lets `substitute` descend without re-judging, since every step it can take has
+ * already been proven carriable.
  *
  * WHICH limit stopped it is reported as itself (D-252): renaming a key and
  * flattening a graph are opposite repairs, and telling an operator to do the first
@@ -132,57 +141,58 @@ export type RefResolver = (ref: ParameterRef["$ref"]) => unknown | null;
  */
 const unreportableNames = (limit: ConfigPathLimit, count: number): string =>
   limit === "unnameable-segment"
-    ? `${count} name(s) here are not ones the operator's fault channel can carry as one segment, so a fault below them would have no location to report`
-    : `this location has reached the ${MAX_CONFIG_DIAGNOSIS_LENGTH} characters the operator's fault channel carries, so a fault below ${count} otherwise-nameable name(s) here would have no location to report`;
+    ? `${count} name(s) or list position(s) here are not ones the operator's fault channel can carry as one segment, so a fault below them would have no location to report`
+    : `this location has reached the ${MAX_CONFIG_DIAGNOSIS_LENGTH} characters the operator's fault channel carries, so a fault below ${count} otherwise-nameable name(s) or list position(s) here would have no location to report`;
 
 const depthOverruns = (
   value: unknown,
-  path: string,
+  at: ConfigPath,
   remaining: number,
   errors: DomainConfigError[],
 ): void => {
   if (isParameterRef(value)) return;
-  const stopped = new Map<ConfigPathLimit, number>();
-  const entries: (readonly [string, unknown])[] = Array.isArray(value)
-    ? value.map((entry, index) => [`${path}[${index}]`, entry] as const)
+  const stopped = new Map<ConfigPathLimit, { readonly step: ConfigPath; count: number }>();
+  const admit = (step: ConfigPath, entry: unknown): (readonly [ConfigPath, unknown])[] => {
+    if (step.carried) return [[step, entry] as const];
+    const seen = stopped.get(step.limit);
+    if (seen === undefined) stopped.set(step.limit, { step, count: 1 });
+    else seen.count += 1;
+    return [];
+  };
+  const entries: (readonly [ConfigPath, unknown])[] = Array.isArray(value)
+    ? value.flatMap((entry, index) => admit(childConfigSubscript(at, index), entry))
     : typeof value === "object" && value !== null
-    ? Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
-        const step = childConfigPath(path, key);
-        if (!step.carried) {
-          stopped.set(step.limit, (stopped.get(step.limit) ?? 0) + 1);
-          return [];
-        }
-        return [[step.path, entry] as const];
-      })
+    ? Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) =>
+        admit(childConfigPath(at, key), entry))
     : [];
-  for (const [limit, count] of stopped) {
-    errors.push(configError("type-mismatch", path, unreportableNames(limit, count), limit));
+  for (const [limit, seen] of stopped) {
+    errors.push(configError("type-mismatch", seen.step, unreportableNames(limit, seen.count)));
   }
   if (entries.length === 0) return;
   if (remaining === 0) {
     errors.push(
       configError(
         "type-mismatch",
-        path,
+        at,
         `a configured parameter value may nest at most ${MAX_CONFIGURED_VALUE_DEPTH} levels, so a fault below this point has no location the operator's channel can carry`,
       ),
     );
     return;
   }
-  for (const [at, entry] of entries) depthOverruns(entry, at, remaining - 1, errors);
+  for (const [step, entry] of entries) depthOverruns(entry, step, remaining - 1, errors);
 };
 
 /** Substitute every placeholder through `resolve`; a `null` answer is an error. */
 const substitute = (
   value: unknown,
   resolve: RefResolver,
-  path: string,
+  at: ConfigPath,
   errors: DomainConfigError[],
 ): unknown => {
   if (isParameterRef(value)) {
     const problem = parameterRefProblem(value.$ref);
     if (problem !== null) {
-      errors.push(configError("unknown-reference", path, problem));
+      errors.push(configError("unknown-reference", at, problem));
       return null;
     }
     const resolved = resolve(value.$ref);
@@ -190,7 +200,7 @@ const substitute = (
       errors.push(
         configError(
           "firm-binding",
-          path,
+          at,
           `no ${value.$ref.kind} is registered for class ${JSON.stringify(value.$ref.class)}`,
         ),
       );
@@ -199,13 +209,13 @@ const substitute = (
     return resolved;
   }
   if (Array.isArray(value)) {
-    return value.map((entry, index) => substitute(entry, resolve, `${path}[${index}]`, errors));
+    return value.map((entry, index) => substitute(entry, resolve, childConfigSubscript(at, index), errors));
   }
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
         key,
-        substitute(entry, resolve, `${path}.${key}`, errors),
+        substitute(entry, resolve, childConfigPath(at, key), errors),
       ]),
     );
   }
@@ -303,20 +313,20 @@ export const resolveParameters = (
   path: string,
 ): Result<ResolvedParameters, readonly DomainConfigError[]> => {
   const errors: DomainConfigError[] = [];
+  const at = configPathOfText(path);
   // A parameter NAME is author-chosen too, so the location it is reported at is
   // built rather than interpolated: a name the channel cannot report is refused AT
   // the parameters node, which is a location the document has, and the refusal names
   // the limit it hit rather than asserting the name is undeclared - at the ceiling
   // the name is usually one the primitive declares perfectly well.
   for (const name of Object.keys(parameters)) {
-    const step = childConfigPath(path, name);
+    const step = childConfigPath(at, name);
     if (!step.carried) {
       errors.push(
         configError(
           step.limit === "unnameable-segment" ? "unknown-reference" : "type-mismatch",
-          step.path,
+          step,
           unreportableNames(step.limit, 1),
-          step.limit,
         ),
       );
       continue;
@@ -325,19 +335,19 @@ export const resolveParameters = (
       errors.push(
         configError(
           "unknown-reference",
-          step.path,
+          step,
           `primitive ${primitive.id} declares no parameter named ${JSON.stringify(name)}`,
         ),
       );
     }
   }
   // BEFORE any walk that recurses on document structure, so a graph deeper than
-  // the fault channel can express - or carrying a key it cannot name - is refused
-  // rather than walked, and so every recursion below is bounded by an admission
-  // this call has already proven.
+  // the fault channel can express - or carrying a key or list position it cannot
+  // name - is refused rather than walked, and so every recursion below is bounded
+  // by an admission this call has already proven.
   for (const [name, value] of Object.entries(parameters)) {
-    const step = childConfigPath(path, name);
-    if (step.carried) depthOverruns(value, step.path, MAX_CONFIGURED_VALUE_DEPTH, errors);
+    const step = childConfigPath(at, name);
+    if (step.carried) depthOverruns(value, step, MAX_CONFIGURED_VALUE_DEPTH, errors);
   }
   if (errors.length > 0) return err(errors);
   for (const shaping of primitive.keyShapingParameters) {
@@ -346,20 +356,20 @@ export const resolveParameters = (
       errors.push(
         configError(
           "type-mismatch",
-          `${path}.${shaping}`,
+          childConfigPath(at, shaping),
           "a key-shaping parameter may not defer a tenant-scoped reference: the published key space must be identical for every firm (D-184/D-185)",
         ),
       );
     }
   }
   if (errors.length > 0) return err(errors);
-  const substituted = substitute(parameters, resolve, path, errors) as Record<string, unknown>;
+  const substituted = substitute(parameters, resolve, at, errors) as Record<string, unknown>;
   if (errors.length > 0) return err(errors);
   const parsed = primitive.parseParameters(substituted);
   if (!parsed.ok) {
     return err(
       parsed.issues.map((issue) =>
-        configError("type-mismatch", [path, ...issue.path].join("."), issue.message),
+        configError("type-mismatch", configPathFrom([...issue.path], at), issue.message),
       ),
     );
   }

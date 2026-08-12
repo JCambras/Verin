@@ -29,6 +29,7 @@ import {
   carriableConfigPath,
   childConfigPath,
   configError,
+  configPathFrom,
   CONFIG_PATH_LIMITS,
   MAX_CONFIG_DIAGNOSIS_LENGTH,
   MAX_CONFIGURED_VALUE_DEPTH,
@@ -1342,6 +1343,116 @@ export function parameterLimitFaults(limit: ConfigPathLimit): readonly DomainCon
 }
 
 /**
+ * THE OTHER CONTAINER KIND, AT THE SAME CEILING (D-253).
+ *
+ * A list position used to be appended to the fault path RAW while every object key
+ * went through the step rule, so the channel's length ceiling was enforced for one
+ * container kind and not the other: two identical overruns, opposite verdicts, and a
+ * substitution walk appending subscripts on the strength of an admission that never
+ * covered them.
+ *
+ * The probe is arithmetic on the SHIPPED binding path rather than a hand-picked
+ * graph: the parameter name is the segment grammar's own 64-character maximum, and
+ * `levels` is the SMALLEST number of nested containers whose accumulated path crosses
+ * `MAX_CONFIG_DIAGNOSIS_LENGTH`. Each level costs three characters either way -
+ * `[0]` or `.ab` - so the list graph and the key graph reach the ceiling at the same
+ * depth, and their verdicts must agree.
+ */
+const CEILING_PARAMETER_NAME = "p".repeat(64);
+const CEILING_NESTED_KEY = "ab";
+export function listCeilingProbe(): {
+  readonly levels: number;
+  readonly under: readonly DomainConfigError[];
+  readonly over: readonly DomainConfigError[];
+  readonly listLimits: readonly (ConfigPathLimit | undefined)[];
+  readonly keyLimits: readonly (ConfigPathLimit | undefined)[];
+} {
+  const base = shippedBindingParametersPath();
+  const head = base.length + 1 + CEILING_PARAMETER_NAME.length;
+  const levels = Math.floor((MAX_CONFIG_DIAGNOSIS_LENGTH - head) / 3) + 1;
+  const owner: ParameterOwner = {
+    ...PROBE_PRIMITIVE,
+    declaredParameters: new Set([CEILING_PARAMETER_NAME]),
+  };
+  const inLists = (depth: number): unknown => (depth === 0 ? UNRESOLVABLE_REF : [inLists(depth - 1)]);
+  const inKeys = (depth: number): unknown =>
+    depth === 0 ? UNRESOLVABLE_REF : { [CEILING_NESTED_KEY]: inKeys(depth - 1) };
+  const drive = (value: unknown): readonly DomainConfigError[] => {
+    const resolved = resolveParameters(owner, { [CEILING_PARAMETER_NAME]: value }, () => null, base);
+    return resolved.ok ? [] : resolved.error;
+  };
+  const over = drive(inLists(levels));
+  return {
+    levels,
+    under: drive(inLists(levels - 1)),
+    over,
+    listLimits: [...new Set(over.map((fault) => fault.limit))],
+    keyLimits: [...new Set(drive(inKeys(levels)).map((fault) => fault.limit))],
+  };
+}
+
+/**
+ * THE GRAMMAR STAGE'S OWN TRUNCATION, DRIVEN THROUGH THE REAL LOADER.
+ *
+ * `presentation.copy.*` are `z.record`s, and Zod reports an inadmissible record key
+ * THROUGH its own `issue.path` - so the loader's most common failure is also the one
+ * that most easily reports an ANCESTOR. It used to hand `configError` the step's
+ * `path` alone, and the constructor, re-walking an already-carriable string,
+ * concluded the location was exact.
+ */
+const COPY_RECORD_SECTIONS = [
+  "intents", "slots", "evidenceKinds", "reasonCodes", "statusLabels", "commandText",
+] as const;
+/** The first key of one copy record, or `null` when the document declares none. */
+export function copyRecordKey(document: JsonNode, section: string): string | null {
+  const copy = ((document["presentation"] as JsonNode)["copy"] as JsonNode)[section] as JsonNode;
+  return Object.keys(copy)[0] ?? null;
+}
+export function grammarKeyFaults(
+  document: JsonNode,
+  section: string,
+  hostile: string,
+): readonly DomainConfigError[] {
+  const first = copyRecordKey(document, section);
+  if (first === null) return [];
+  const loaded = loadDomainConfig(withKeyRenamed(document, ["presentation", "copy", section, first], hostile));
+  return loaded.ok ? [] : loaded.error.filter((fault) => fault.code === "grammar");
+}
+
+/**
+ * A `configError` LOCATION argument that reads `.path` off a carried step, which is
+ * the exact hole the type cannot close: the step knows why it stopped, the string
+ * does not, and a truncated location handed over as a string reports itself as an
+ * exact one. Keyed on the OBJECT'S TYPE (a value carrying both `carried` and `path`),
+ * so a Zod issue's own `.path` - which is a raw segment list and not a step - is not
+ * mistaken for one, and on the RESOLVED constructor, so an aliased import cannot
+ * evade it.
+ */
+export function droppedConfigPathLimits(project: Project): string[] {
+  const dropped: string[] = [];
+  for (const file of project.getSourceFiles()) {
+    const at = normalizedPath(file.getFilePath());
+    for (const call of file.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      if (!callResolvesToDeclaration(call, "src/domain/config/errors.ts", "configError")) continue;
+      const location = call.getArguments()[1];
+      if (location === undefined) continue;
+      const reads = [
+        ...(Node.isPropertyAccessExpression(location) ? [location] : []),
+        ...location.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression),
+      ].filter((read) => {
+        if (read.getName() !== "path") return false;
+        const carrier = read.getExpression().getType();
+        return carrier.getProperty("carried") !== undefined && carrier.getProperty("path") !== undefined;
+      });
+      for (const read of reads) {
+        dropped.push(`${at}:${read.getStartLineNumber()} ${read.getText()} drops the limit that ended it`);
+      }
+    }
+  }
+  return dropped.sort();
+}
+
+/**
  * DOES THIS PATH ADDRESS A NODE THE DOCUMENT REALLY HAS?
  *
  * Shape-matching is what let `presentation.form.fields.householdName` ship: it
@@ -1846,7 +1957,7 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     expect(bindingId.length, "no shipped document declares a binding to build the probe path from").toBeGreaterThan(8);
     expect(DOMAIN_FILES.some((file) => readFileSync(join(REPO_ROOT, CONFIG_DIRECTORY, file), "utf8")
       .includes(`id: ${bindingId}`)), "the probe path must name a REAL shipped binding").toBe(true);
-    expect(childConfigPath("", NAMEABLE_NESTED_KEY).carried, "the probe's keys must be perfectly nameable").toBe(true);
+    expect(configPathFrom([NAMEABLE_NESTED_KEY]).carried, "the probe's keys must be perfectly nameable").toBe(true);
     const faults = parameterLimitFaults("path-too-long");
     expect(faults.length, "the ceiling must be reachable at the ALLOWED depth at all").toBeGreaterThan(0);
     for (const fault of faults) {
@@ -1908,6 +2019,91 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     // ANTI-VACUITY: the sample really contains BOTH outcomes, or this asserts nothing.
     expect(truncated.length).toBeGreaterThan(2);
     expect(configError("grammar", `x.${"y".repeat(200)}`, "probe").limit).toBe("unnameable-segment");
+  });
+
+  it("(M) enforces: the GRAMMAR stage names the limit that ended its location", () => {
+    // The loader's MOST COMMON failure, driven through the REAL loader on the REAL
+    // documents. `presentation.copy.*` are records, so Zod reports an inadmissible
+    // key THROUGH its own issue path and the location the constructor can carry is
+    // an ANCESTOR - which used to arrive with no limit at all, and `limit:
+    // undefined` means "this path IS the location".
+    let total = 0;
+    let exercised = 0;
+    for (const file of DOMAIN_FILES) {
+      const document = parsed(file) as JsonNode;
+      for (const section of COPY_RECORD_SECTIONS) {
+        const under = configPathFrom(["presentation", "copy", section]);
+        expect(under.carried, `${section} must itself be a location the channel carries`).toBe(true);
+        // A record this document declares nothing in has no key to make hostile, and
+        // is SKIPPED rather than counted as clean - the covered count is asserted below.
+        if (copyRecordKey(document, section) === null) continue;
+        exercised += 1;
+        let truncated = 0;
+        for (const hostile of HOSTILE_KEYS) {
+          const intended = childConfigPath(under, hostile);
+          expect(intended.carried, `${JSON.stringify(hostile)} must be a key the channel cannot carry`)
+            .toBe(false);
+          const faults = grammarKeyFaults(document, section, hostile);
+          for (const fault of faults) {
+            if (fault.path !== under.path) continue;
+            truncated += 1;
+            expect(
+              fault.limit,
+              `${file} ${section}.${JSON.stringify(hostile)} reports an ancestor as an exact location`,
+            ).toBe(intended.carried ? undefined : intended.limit);
+          }
+          expect(sealedDiagnosisValues("configPath", faults.map((fault) => fault.path))).toEqual([]);
+        }
+        // ANTI-VACUITY, per section: a record whose keys no hostile name can reach
+        // proves nothing about the stage that reports them.
+        expect(truncated, `${file} ${section}: no grammar location was truncated`).toBeGreaterThan(0);
+        total += truncated;
+      }
+    }
+    expect(exercised, "the sweep must reach most of the copy records both documents declare")
+      .toBeGreaterThanOrEqual(COPY_RECORD_SECTIONS.length);
+    expect(total).toBeGreaterThan(10);
+    // ...and a grammar fault the channel carried WHOLE names no limit, so the limit
+    // is a statement about the location rather than a constant this stage emits.
+    const badLeaf = JSON.parse(JSON.stringify(parsed("account-opening.yaml"))) as Record<string, unknown>;
+    badLeaf["version"] = 7;
+    const leaf = loadDomainConfig(badLeaf);
+    expect(leaf.ok).toBe(false);
+    expect(leaf.ok ? [] : leaf.error.filter((fault) => fault.path === "version" && fault.limit === undefined))
+      .toHaveLength(1);
+  });
+
+  it("(M) enforces: a LIST POSITION is admitted under the same ceiling as a KEY", () => {
+    const probe = listCeilingProbe();
+    // The overrun is a LENGTH one inside the ALLOWED depth, so nothing here is the
+    // depth refusal wearing another name.
+    expect(probe.levels).toBeGreaterThan(0);
+    expect(probe.levels).toBeLessThanOrEqual(MAX_CONFIGURED_VALUE_DEPTH);
+    // One level short: admitted, and every location it reports is exact.
+    expect(probe.under.length, "the probe must reach the substitution emitter at all").toBeGreaterThan(0);
+    expect(probe.under.every((fault) => fault.limit === undefined)).toBe(true);
+    expect(sealedDiagnosisValues("configPath", probe.under.map((fault) => fault.path))).toEqual([]);
+    // At the ceiling: refused at ADMISSION, as a LENGTH cause, at the deepest
+    // admitted ancestor - exactly what the object-key branch already did.
+    const over = probe.over.filter((fault) => fault.limit === "path-too-long");
+    expect(over.length, "a list position past the ceiling must be refused at admission").toBeGreaterThan(0);
+    for (const fault of over) {
+      expect(fault.path.length).toBeLessThanOrEqual(MAX_CONFIG_DIAGNOSIS_LENGTH);
+      expect(fault.path).toBe(carriableConfigPath(fault.path));
+      expect(fault.message).not.toMatch(/as one segment/);
+      expect(fault.message).not.toMatch(/levels/);
+    }
+    expect(sealedDiagnosisValues("configPath", probe.over.map((fault) => fault.path))).toEqual([]);
+    // ...and the two container kinds reach the SAME verdict at the SAME length.
+    expect(probe.listLimits).toEqual(probe.keyLimits);
+  });
+
+  it("(M) enforces: no fault location is handed over without the limit that ended it", () => {
+    const dropped = droppedConfigPathLimits(realProject());
+    expect(
+      dropped,
+      `a truncated location would report itself as an exact one:\n${dropped.join("\n")}`,
+    ).toEqual([]);
   });
 
   it("enforces: every named deferral still has no shipped caller", () => {
@@ -2357,9 +2553,62 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
       expect(configError("grammar", long, "probe").limit).toBe("path-too-long");
       expect(configError("grammar", "presentation.copy.slots.household", "probe").limit).toBeUndefined();
       expect(configError("grammar", "", "probe").limit).toBeUndefined();
-      // An emitter that DOES know states its own, and the constructor keeps it.
-      expect(configError("type-mismatch", "presentation.copy", "probe", "path-too-long").limit)
-        .toBe("path-too-long");
+      // An emitter that DESCENDED hands over the STEP, and the constructor reports
+      // that step's own limit - there is no second opinion to overrule it, because
+      // there is no limit argument to supply one (D-253).
+      const stopped = childConfigPath(configPathFrom(["presentation", "copy"]), "Household Name");
+      expect(configError("type-mismatch", stopped, "probe")).toEqual({
+        code: "type-mismatch",
+        path: "presentation.copy",
+        message: "probe",
+        limit: "unnameable-segment",
+      });
+    });
+
+    it("(M) catches a ceiling enforced for one container kind and not the other", () => {
+      // THE SHIPPED BUG, replayed against the REAL emitters: positions were appended
+      // raw, so the LIST graph loaded while the identical KEY graph was a hard
+      // refusal that renders the cannot-start screen and `DemoUnavailable`.
+      const probe = listCeilingProbe();
+      expect(probe.keyLimits, "the key branch must refuse at the ceiling").toEqual(["path-too-long"]);
+      expect(probe.listLimits, "a list position past the ceiling was admitted").toEqual(["path-too-long"]);
+      // ANTI-VACUITY: the list probe really crossed the ceiling THROUGH subscripts,
+      // and one level short really loaded, or neither verdict means anything.
+      expect(probe.over.some((fault) => fault.path.endsWith("]"))).toBe(true);
+      expect(probe.under.some((fault) => fault.path.endsWith("]"))).toBe(true);
+      expect(probe.under.every((fault) => fault.limit === undefined)).toBe(true);
+    });
+
+    it("(M) catches a location handed over as a bare string, which reports as exact", () => {
+      // The hole the type cannot close: `.path` off a step is a perfectly carriable
+      // string, so the constructor re-walks it, finds nothing to truncate, and calls
+      // a location that STOPPED an exact one. That is how the grammar stage shipped.
+      const project = inMemoryProject({
+        "/src/domain/config/errors.ts": [
+          `export type ConfigPath =`,
+          `  | { readonly carried: true; readonly path: string }`,
+          `  | { readonly carried: false; readonly path: string; readonly limit: "path-too-long" };`,
+          `export const configError = (code: string, at: string | ConfigPath, message: string) =>`,
+          `  ({ code, at, message });`,
+          `export const step = (): ConfigPath => ({ carried: true, path: "presentation" });`,
+        ].join("\n"),
+        "/src/domain/config/emitter.ts": [
+          `import { configError as mint, step } from "./errors";`,
+          `export const whole = () => mint("grammar", step(), "probe");`,
+          `export const dropped = () => mint("grammar", step().path, "probe");`,
+          `export const interpolated = () => mint("grammar", \`\${step().path}.slots\`, "probe");`,
+          `export const zodIssue = (issue: { path: string[] }) => mint("grammar", issue.path.join("."), "x");`,
+        ].join("\n"),
+      });
+      const dropped = droppedConfigPathLimits(project);
+      // Both spellings, at `file:line`, THROUGH an aliased import.
+      expect(dropped.map((entry) => entry.split(" ")[0])).toEqual([
+        "src/domain/config/emitter.ts:3",
+        "src/domain/config/emitter.ts:4",
+      ]);
+      // ANTI-VACUITY: a Zod issue's own `path` is a raw segment list, not a step, and
+      // the whole step handed over is the shape the rule exists to permit.
+      expect(dropped.some((entry) => entry.includes("issue.path"))).toBe(false);
     });
 
     it("catches a domain-named evaluator branch inside decision-core", () => {

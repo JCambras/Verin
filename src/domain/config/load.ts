@@ -38,7 +38,7 @@ import {
   domainConfigVersionId,
   type DomainConfigDocument,
 } from "./document";
-import { configError, configPathOf, type DomainConfigError } from "./errors";
+import { configError, configPathFrom, type DomainConfigError } from "./errors";
 import type { ConfiguredIntent, ConfiguredSlot } from "./intents";
 import { checkEvidenceWindows } from "./load-closure";
 import { checkIdentity, checkReferences } from "./load-references";
@@ -254,9 +254,12 @@ export const loadDomainConfig = (
     // - `{ "Household.Name": … }` joined would name a node this document does not
     // have, while a key the channel cannot carry at all would censor the whole
     // location. Either way the honest answer is the deepest node that CAN be named.
+    // The step is handed to `configError` WHOLE (D-253): this is the loader's most
+    // common failure, and passing only its path let the constructor re-walk an
+    // already-carriable string and call a truncated location complete.
     return err(
       parsed.error.issues.map((issue) =>
-        configError("grammar", configPathOf(issue.path.map(String)), issue.message)),
+        configError("grammar", configPathFrom(issue.path.map(String)), issue.message)),
     );
   }
   const document = parsed.data;
