@@ -146,26 +146,51 @@ describe("clean-slate guarantee", () => {
     expect(second.ok ? "" : second.error.code).toBe("CONFLICT");
     expect(message, "the refusal names the org it refused").toContain(other);
     expect(message, "the refusal names the ids that collided").toContain(HOUSEHOLDS[0]!.id);
-    expect(message, "the refusal names how many collided").toContain(`all ${HOUSEHOLDS.length} household id(s)`);
+    expect(message, "the refusal names how many collided").toContain(`${HOUSEHOLDS.length} of the ${HOUSEHOLDS.length} household id(s)`);
     expect(message, "the refusal names WHY the ids collide").toContain("derived from the world seed rather than scoped to an org");
     expect(message, "the refusal names the follow-up that makes a second firm work").toContain("fu-world-org-scoped-ids");
-    expect(message, "a collision from another firm is not the same as this firm's own earlier load")
-      .toContain(`held by an org other than ${other}`);
+    expect(message, "the refusal names WHOSE collision it is").toContain(`held by an org other than ${other}`);
     // The refused load wrote nothing: the transaction rolled back whole.
     const rows = await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM households WHERE org_id = $1", [other]);
     expect(Number(rows.rows[0]!.n)).toBe(0);
   });
 
-  it("the SAME firm re-offered a changed world is told so, rather than told it loaded one", async () => {
-    // Ids are derived from the world SEED and the digest from the world's bytes,
-    // so regenerating the world keeps every id and changes the idempotency key:
-    // the load runs again, conflicts away to nothing, and used to report a
-    // hundred households written. It now says which store it is looking at.
+  it("the SAME firm re-offered a REGENERATED world quietly writes what is new, and refuses nothing", async () => {
+    // The condition the refusal exists for is a conflicting row owned by ANOTHER
+    // org. Keying it on the symptom those two cases share - nothing written -
+    // broke the ordinary development loop instead: ids are derived from the
+    // world SEED and the digest from the world's bytes, so regenerating the
+    // world keeps every id and changes the idempotency key, and this firm's own
+    // re-seed conflicted away to nothing and threw.
+    const actor = systemWriteActor("seed", ORG);
+    const first = await seedWorldIntoCrm(db, actor, HOUSEHOLDS, DIGEST);
+    expect(first.ok && first.value.households).toBe(HOUSEHOLDS.length);
+    const again = await seedWorldIntoCrm(db, actor, HOUSEHOLDS, "a".repeat(64));
+    expect(again.ok, again.ok ? "" : again.error.message).toBe(true);
+    // Honest counts: nothing was written, and nothing claims otherwise.
+    expect(again.ok ? again.value : null).toEqual({ households: 0, contacts: 0, tasks: 0 });
+    const rows = await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(rows.rows[0]!.n)).toBe(HOUSEHOLDS.length);
+  });
+
+  it("a re-offered world carrying a NEW person writes that person rather than refusing the load", async () => {
+    // The documented property the symptom-keyed guard had quietly falsified: a
+    // partially-applied load completes rather than duplicating. Adding a person
+    // to a household is the commonest thing a world regeneration does.
     const actor = systemWriteActor("seed", ORG);
     await seedWorldIntoCrm(db, actor, HOUSEHOLDS, DIGEST);
-    const again = await seedWorldIntoCrm(db, actor, HOUSEHOLDS, "a".repeat(64));
-    expect(again.ok).toBe(false);
-    expect(again.ok ? "" : again.error.message).toContain(`org ${ORG} already holds them from an earlier load`);
+    const grown = HOUSEHOLDS.map((household, index) => (index > 0 ? household : {
+      ...household,
+      members: [...household.members, {
+        ...household.members[0]!,
+        key: "newcomer",
+        id: "11111111-2222-3333-4444-555555555555",
+        displayName: "Newcomer Person",
+      }],
+    }));
+    const again = await seedWorldIntoCrm(db, actor, grown, "b".repeat(64));
+    expect(again.ok, again.ok ? "" : again.error.message).toBe(true);
+    expect(again.ok ? again.value.contacts : -1, "the new person must actually land").toBe(1);
   });
 
   it("the world load is idempotent: a second run adds no rows", async () => {

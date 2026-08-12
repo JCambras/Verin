@@ -75,35 +75,45 @@ function openItemTasks(household: WorldHousehold): { id: string; subject: string
 }
 
 /**
- * A load that offered households and wrote NONE of them is refused, loudly and
- * by name. World record ids are derived from the world seed, so they are the
- * same bytes in every org: the FIRST org to load a world takes those ids, and
- * every later firm's insert conflicts away to nothing. Returning `ok` there
- * hands a second firm a household directory that renders empty with no
- * explanation - the worst available outcome for a product whose headline claim
- * is that another firm differs only by configuration. Making a second firm
- * actually receive its own copy needs org-scoped identifiers, which is a
+ * The CONDITION this refuses is a conflicting household owned by ANOTHER org -
+ * never the symptom that shares it. World record ids are derived from the world
+ * seed, so they are the same bytes in every org: the FIRST org to load a world
+ * takes those ids, and every later firm's insert conflicts away to nothing.
+ * Returning `ok` there hands a second firm a household directory that renders
+ * empty with no explanation - the worst available outcome for a product whose
+ * headline claim is that another firm differs only by configuration. Making a
+ * second firm actually receive its own copy needs org-scoped identifiers, a
  * schema-shaped change recorded as follow-up `fu-world-org-scoped-ids`; until it
  * lands this refuses instead of pretending.
+ *
+ * The SAME org re-offered a world it already holds is the ordinary development
+ * loop - regenerating the world keeps every id and changes only the digest, so
+ * the load runs again and conflicts away to nothing - and it writes whatever is
+ * genuinely new. Keying on "wrote nothing" broke that on the next regeneration
+ * anyone made, and pointed the reader at a follow-up that was not the remedy.
  */
-async function collisionRefusal(
+async function conflictingIdsNotHeldBy(
   tx: SqlTx,
   orgId: string,
-  offered: readonly (readonly [string, ...unknown[]])[],
-): Promise<never> {
-  const ids = offered.map(([id]) => id);
-  // WHOSE book holds them is asked inside this org's scope: "another firm got
-  // here first" and "this firm already holds an earlier load of the same world"
-  // need different remedies, and reading another tenant's row to name it would
-  // widen a tenant-isolation escape for a diagnostic.
-  const mine = await tx.query("SELECT id FROM households WHERE id = $1 AND org_id = $2", [ids[0]!, orgId]);
-  const holder = mine.rows.length > 0
-    ? `org ${orgId} already holds them from an earlier load of this world`
-    : `they are held by an org other than ${orgId}, which loaded this world first`;
+  offeredIds: readonly string[],
+): Promise<string[]> {
+  const foreign: string[] = [];
+  for (const id of offeredIds) {
+    // Asked inside this org's scope: reading another tenant's row to name its
+    // owner would widen a tenant-isolation escape for a diagnostic. A row that
+    // exists (the insert conflicted) and is not in this org's book is held by
+    // some other org, which is all this needs to know.
+    const mine = await tx.query("SELECT id FROM households WHERE id = $1 AND org_id = $2", [id, orgId]);
+    if (mine.rows.length === 0) foreign.push(id);
+  }
+  return foreign;
+}
+
+function collisionRefusal(orgId: string, foreign: readonly string[], offered: number): never {
   throw appError(
     "CONFLICT",
-    `world seed refused: all ${ids.length} household id(s) offered to org ${orgId} already exist and none were written`
-    + ` (${ids.slice(0, 3).join(", ")}${ids.length > 3 ? ", ..." : ""}); ${holder}.`
+    `world seed refused: ${foreign.length} of the ${offered} household id(s) offered to org ${orgId} already exist and are held by an org other than ${orgId}`
+    + ` (${foreign.slice(0, 3).join(", ")}${foreign.length > 3 ? ", ..." : ""}), which loaded this world first.`
     + " World record ids are derived from the world seed rather than scoped to an org, so only the first org to load a world receives it."
     + " Reporting success here would leave this firm's household directory rendering empty with no explanation"
     + " (org-scoped world identifiers are follow-up fu-world-org-scoped-ids).",
@@ -166,15 +176,18 @@ export async function seedWorldIntoCrm(
       // `RETURNING id` is what makes the count a count of rows WRITTEN: a row
       // that conflicted away returns nothing.
       const written = { households: 0, contacts: 0, tasks: 0 };
+      const conflicted: string[] = [];
       for (const row of householdRows) {
         const rows = await tx.query(
           "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING RETURNING id",
           [...row],
         );
-        written.households += rows.rows.length;
+        if (rows.rows.length === 0) conflicted.push(row[0]);
+        else written.households += rows.rows.length;
       }
-      if (householdRows.length > 0 && written.households === 0) {
-        await collisionRefusal(tx, orgId, householdRows);
+      if (conflicted.length > 0) {
+        const foreign = await conflictingIdsNotHeldBy(tx, orgId, conflicted);
+        if (foreign.length > 0) collisionRefusal(orgId, foreign, householdRows.length);
       }
       for (const row of contactRows) {
         const rows = await tx.query(

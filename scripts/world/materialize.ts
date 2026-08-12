@@ -41,7 +41,7 @@ function provenanceAt(asOf: string, observedAt: string, windowDays: number): Rec
 }
 
 function holdingsFor(
-  seed: string, path: string, roster: Roster, modelKey: string, balanceMinor: number, observedAt: string,
+  seed: string, path: string, roster: Roster, modelKey: string, balanceMinor: number, positions: RecordProvenance,
 ): WorldHolding[] {
   const model = roster.modelPortfolios.find((candidate) => candidate.key === modelKey);
   if (!model) throw new Error(`world materialize: ${path} references unknown model "${modelKey}"`);
@@ -72,13 +72,14 @@ function holdingsFor(
         unitsMilli: Math.trunc((marketValueMinor * 1000) / priceMinor),
         marketValueMinor,
         costBasisMinor: Math.trunc((marketValueMinor * 10_000) / (10_000 + gainBps)),
-        asOf: observedAt,
-        // The world's own instant is the reference, never the observation's: an
-        // observation compared with itself is always nought days old, so every
-        // lot the world can emit would read `high` however stale the positions
+        asOf: positions.asOf,
+        // The positions class's own provenance, measured once in `evidenceClock`
+        // against the world's instant rather than against the observation
+        // itself: an observation compared with itself is always nought days old,
+        // so every lot the world can emit would read `high` however stale the
         // snapshot behind it is - and a freshness signal that cannot vary is a
         // constant wearing a measurement's clothes.
-        provenance: provenanceAt(roster.clock.asOf, observedAt, roster.clock.freshLiquidityWindowDays),
+        provenance: positions,
       });
     });
   });
@@ -116,17 +117,17 @@ function accountsOf(input: MaterializeInput, path: string, evidence: WorldHouseh
       accountNumberMasked: maskedAccountNumber(seed, accountPath, "number"),
       openedOn: account.openedOn,
       balanceMinor: account.balanceMinor,
-      balanceObservedAt: evidence.liquidityObservedAt,
+      balanceObservedAt: evidence.liquidity.asOf,
       ownerKeys: [...account.ownerKeys],
       modelPortfolio: modelName(account.modelPortfolioKey),
       pendingRebalance: intBetween(seed, accountPath, "pending-rebalance", 0, 4) === 0,
-      holdings: holdingsFor(seed, accountPath, roster, account.modelPortfolioKey, account.balanceMinor, evidence.positionsObservedAt),
+      holdings: holdingsFor(seed, accountPath, roster, account.modelPortfolioKey, account.balanceMinor, evidence.positions),
       beneficiaries: account.beneficiaries.map((beneficiary) => ({
         partyKey: beneficiary.partyKey,
         displayName: text(names.get(beneficiary.partyKey) ?? beneficiary.partyKey),
         tier: beneficiary.tier,
         shareBps: beneficiary.shareBps,
-        provenance: provenanceAt(roster.clock.asOf, evidence.instructionsObservedAt, roster.clock.recentChangeWindowDays),
+        provenance: evidence.instructions,
       })),
       signers: account.signers.map((signer) => ({
         partyKey: signer.partyKey,
@@ -134,9 +135,9 @@ function accountsOf(input: MaterializeInput, path: string, evidence: WorldHouseh
         authorityScope: signer.authorityScope,
         effectiveFrom: signer.effectiveFrom,
         effectiveTo: signer.effectiveTo,
-        provenance: provenanceAt(roster.clock.asOf, evidence.instructionsObservedAt, roster.clock.recentChangeWindowDays),
+        provenance: evidence.instructions,
       })),
-      provenance: provenanceAt(roster.clock.asOf, evidence.liquidityObservedAt, roster.clock.freshLiquidityWindowDays),
+      provenance: evidence.liquidity,
     };
   });
 }
@@ -157,10 +158,14 @@ function evidenceClock(input: MaterializeInput, path: string): WorldHousehold["e
     const hour = days === 0 ? intBetween(seed, path, field, 8, 12) : intBetween(seed, path, field, 9, 20);
     return `${day}T${String(hour).padStart(2, "0")}:00:00.000Z`;
   };
+  // ONE instant, ONE provenance, decided here. Every record of a class - the
+  // account balance, the lot inside it, the beneficiary designation, and the
+  // evidence line a surface prints - carries this exact value, so a page cannot
+  // state two confidences for one observation.
   return {
-    liquidityObservedAt: observed(ages.liquidity, "evidence/liquidity-hour"),
-    positionsObservedAt: observed(ages.positions, "evidence/positions-hour"),
-    instructionsObservedAt: observed(ages.instructions, "evidence/instructions-hour"),
+    liquidity: provenanceAt(asOf, observed(ages.liquidity, "evidence/liquidity-hour"), roster.clock.freshLiquidityWindowDays),
+    positions: provenanceAt(asOf, observed(ages.positions, "evidence/positions-hour"), roster.clock.freshLiquidityWindowDays),
+    instructions: provenanceAt(asOf, observed(ages.instructions, "evidence/instructions-hour"), roster.clock.recentChangeWindowDays),
     retrievedAt: daysBefore(seed, path, "evidence/retrieved", asOf, 0, 1),
   };
 }
@@ -174,7 +179,7 @@ export function materializeHousehold(input: MaterializeInput): WorldHousehold {
   const evidence = evidenceClock(input, path);
   const advisor = roster.advisors.find((candidate) => candidate.key === draft.advisorKey);
   if (!advisor) throw new Error(`world materialize: ${path} references unknown advisor "${draft.advisorKey}"`);
-  const householdProvenance = provenanceAt(asOf, evidence.instructionsObservedAt, window);
+  const householdProvenance = evidence.instructions;
   const members: WorldParty[] = draft.members.map((member) => ({
     key: member.key,
     id: uuidFor(seed, `${path}/party/${member.key}`, "id"),
@@ -205,8 +210,8 @@ export function materializeHousehold(input: MaterializeInput): WorldHousehold {
     changedAt: instruction.changedAt,
     supersedesKey: instruction.supersedesKey,
     accountKeys: [...instruction.accountKeys],
-    observedAt: evidence.instructionsObservedAt,
-    provenance: provenanceAt(asOf, instruction.changedAt ?? instruction.verifiedAt ?? evidence.instructionsObservedAt, window),
+    observedAt: evidence.instructions.asOf,
+    provenance: provenanceAt(asOf, instruction.changedAt ?? instruction.verifiedAt ?? evidence.instructions.asOf, window),
   }));
   const plannedWithdrawals: WorldPlannedWithdrawal[] = draft.plannedWithdrawals.map((withdrawal) => ({
     key: withdrawal.key,

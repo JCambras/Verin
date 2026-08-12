@@ -36,7 +36,7 @@ const WINDOW_DAYS = SPEC.roster.clock.freshLiquidityWindowDays;
 const MS_PER_DAY = 86_400_000;
 
 const positionsAgeDays = (household: WorldHousehold): number =>
-  Math.trunc((Date.parse(AS_OF) - Date.parse(household.evidence.positionsObservedAt)) / MS_PER_DAY);
+  Math.trunc((Date.parse(AS_OF) - Date.parse(household.evidence.positions.asOf)) / MS_PER_DAY);
 
 /** A household whose positions snapshot is older than the freshness window, and
  * one observed the same day - both taken from the world rather than named, so a
@@ -118,7 +118,50 @@ describe("a stale positions snapshot is a real signal, not a constant", () => {
   it("says when the lot was observed, beside the value", () => {
     const household = STALE[0]!;
     const card = openedAccount(household);
-    const observedDay = household.evidence.positionsObservedAt.slice(0, 10);
+    const observedDay = household.evidence.positions.asOf.slice(0, 10);
     expect(within(card).getAllByText(`· Sample data · as of ${observedDay}`).length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The same defect one layer up: the detail view model used to COMPOSE the
+ * provenance of its three "Evidence behind this page" lines, and the composed
+ * value said `high` on every page - beside a household provenance the
+ * materializer had measured, from the very same instant, as `medium`.
+ */
+describe("the evidence lines carry the provenance the world measured", () => {
+  it("each line IS the class's own provenance, never one built on the page", () => {
+    const problems: string[] = [];
+    for (const household of WORLD) {
+      const lines = buildHouseholdDetailVM(household, household.id, AS_OF).evidenceLines;
+      const expected = [household.evidence.liquidity, household.evidence.positions, household.evidence.instructions];
+      lines.forEach((line, index) => {
+        const owed = expected[index]!;
+        if (line.provenance.asOf !== owed.asOf || line.provenance.confidence !== owed.confidence || line.provenance.source !== owed.source) {
+          problems.push(`${household.key}/${line.label}: ${line.provenance.confidence} @ ${line.provenance.asOf}, world says ${owed.confidence} @ ${owed.asOf}`);
+        }
+      });
+    }
+    expect(problems, problems.join("\n")).toEqual([]);
+  });
+
+  it("and that confidence VARIES across the world, so it is a measurement", () => {
+    const confidences = WORLD.flatMap((household) =>
+      buildHouseholdDetailVM(household, household.id, AS_OF).evidenceLines.map((line) => line.provenance.confidence));
+    expect(confidences.length).toBe(WORLD.length * 3);
+    expect(confidences.filter((value) => value === "high").length, "no evidence line reads high").toBeGreaterThan(20);
+    expect(confidences.filter((value) => value === "medium").length, "no evidence line reads medium - the label is a constant").toBeGreaterThan(20);
+  });
+
+  it("cannot disagree with the household provenance rendered on the same page", () => {
+    const problems = WORLD
+      .map((household) => ({
+        household,
+        line: buildHouseholdDetailVM(household, household.id, AS_OF).evidenceLines
+          .find((entry) => entry.label === "Instructions and authorities")!,
+      }))
+      .filter(({ household, line }) => line.provenance.confidence !== household.provenance.confidence)
+      .map(({ household, line }) => `${household.key}: line says ${line.provenance.confidence}, the household says ${household.provenance.confidence}`);
+    expect(problems, problems.join("\n")).toEqual([]);
   });
 });

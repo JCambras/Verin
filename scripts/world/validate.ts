@@ -63,6 +63,11 @@ function provenanceProblems(household: WorldHousehold, asOf: string): string[] {
     }
   };
   check(household.provenance, `${household.key}`);
+  // The evidence clock IS provenance now, so it is held to the same two rules as
+  // every record it stamps - nothing unlabeled, nothing observed in the future.
+  check(household.evidence.liquidity, `${household.key}/evidence/liquidity`);
+  check(household.evidence.positions, `${household.key}/evidence/positions`);
+  check(household.evidence.instructions, `${household.key}/evidence/instructions`);
   household.members.forEach((member) => check(member.provenance, `${household.key}/member/${member.key}`));
   household.entities.forEach((entity) => check(entity.provenance, `${household.key}/entity/${entity.key}`));
   for (const account of household.accounts) {
@@ -91,8 +96,22 @@ function provenanceProblems(household: WorldHousehold, asOf: string): string[] {
  */
 export function accountRuleProblems(household: WorldHousehold): string[] {
   const problems: string[] = [];
+  // Whoever this household records ONLY as an authorized signer owns nothing
+  // inside it. An entity household's own note says its people appear only as
+  // signers, so a joint account or a personal IRA titled to one of them makes
+  // the household contradict its own prose on the first page a reader opens -
+  // and the generator's filter is not a check: a hand-authored household reaches
+  // the same output through a different door.
+  const signersOnly = new Set(
+    household.members.filter((member) => member.role === "signer").map((member) => member.key),
+  );
   for (const account of household.accounts) {
     const where = `${household.key}/account/${account.key}`;
+    for (const owner of account.ownerKeys) {
+      if (signersOnly.has(owner)) {
+        problems.push(`${where}: titled to "${owner}", who appears in this household only as an authorized signer`);
+      }
+    }
     const symbols = account.holdings.map((holding) => holding.symbol);
     for (const symbol of new Set(symbols.filter((symbol, index) => symbols.indexOf(symbol) !== index))) {
       problems.push(`${where}: holds ${symbol} more than once - one lot rendered twice`);

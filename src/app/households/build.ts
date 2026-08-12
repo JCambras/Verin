@@ -13,7 +13,10 @@
  * simply not in the directory.
  */
 import { metric, type DisplayMetric } from "@contracts/metric";
-import { deriveArtifactProvenance, type RecordProvenance } from "@contracts/provenance";
+import {
+  deriveArtifactProvenance, foldStoredProvenance,
+  type DerivedProvenance, type RecordProvenance,
+} from "@contracts/provenance";
 import type { Household } from "@domain/schema/entities";
 import { computeHouseholdHealth, type HealthBand, type HouseholdHealth } from "@domain/world/health";
 import type { WorldHousehold } from "@domain/world/household-world";
@@ -88,8 +91,26 @@ export function buildHealthVM(household: WorldHousehold, asOf: string): HealthVM
   };
 }
 
-const count = (value: number, provenance: RecordProvenance): DisplayMetric =>
+const count = (value: number, provenance: RecordProvenance | DerivedProvenance): DisplayMetric =>
   metric(value, "count", provenance);
+
+/**
+ * The summary strip is a FOLD over the very records it counts, so its confidence
+ * and its as-of are the weakest and the newest of those records rather than a
+ * confidence typed beside them - the same rule every folded figure in this
+ * repository follows, and the reason a card can never claim to be surer than the
+ * evidence behind it. An empty book has no record to read, so the zeroes fold
+ * over nothing and say so.
+ */
+function totalsProvenance(households: readonly WorldHousehold[], asOf: string): DerivedProvenance {
+  const inputs = households.flatMap((household) => [
+    household.provenance,
+    ...household.accounts.map((account) => account.provenance),
+    ...household.bankInstructions.map((instruction) => instruction.provenance),
+    ...household.pendingActions.map((action) => action.provenance),
+  ]);
+  return foldStoredProvenance(inputs) ?? deriveArtifactProvenance([], asOf);
+}
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
@@ -197,7 +218,7 @@ export function buildDirectoryVM(input: DirectoryInput): DirectoryVM {
   const rows = authorized
     .map(({ crmRow, household }) => ({ ...worldRow(household, asOf, digest), id: crmRow.id }))
     .sort((left, right) => (left.displayName < right.displayName ? -1 : left.displayName > right.displayName ? 1 : 0));
-  const listProvenance: RecordProvenance = { source: "fixture", asOf, confidence: "high" };
+  const listProvenance = totalsProvenance(authorized.map(({ household }) => household), asOf);
   const totals = authorized.reduce(
     (acc, { household }) => ({
       accounts: acc.accounts + household.accounts.length,

@@ -131,15 +131,15 @@ import { join, relative } from "node:path";
 // lines of correction room, NAMED rather than banked. Those are NOT the figures
 // this file enforces today: the review rounds beneath this branch moved the
 // tooling ceiling again (D-194, 14,200) and moved all three measurements, so the
-// current pairing is 5,150 / 8,250 / 14,200 against RE-MEASURED 5,079 / 8,184 /
-// 14,101 (D-197) - 71, 66 and 99 lines of correction room. A summary paragraph
+// current pairing is 5,150 / 8,250 / 14,200 against RE-MEASURED 5,086 / 8,197 /
+// 14,125 (D-198) - 64, 53 and 75 lines of correction room. A summary paragraph
 // carrying a superseded ceiling is the same defect as a ceiling carrying a stale
 // measurement, so it is re-stated here rather than left for a reader to catch.
 // `contracts` and `presentation` are untouched by that work and do not move.
 const CEILINGS = {
   contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
-  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,079 re-measured, D-210)
-  infrastructure: 8250, // ADR-0057, on the fixture evidence adapter and CRM projection (8,184 re-measured, D-210)
+  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,086 re-measured, D-211)
+  infrastructure: 8250, // ADR-0057, on the fixture evidence adapter and CRM projection (8,197 re-measured, D-211)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
@@ -225,8 +225,10 @@ const CEILINGS = {
   // 123 lines of real headroom, re-taken rather than inherited. D-210 KEEPS
   // 14,200 again and re-measures 14,101 after the cross-check's closed column-type
   // reading and the holding-freshness reference instant - 99 lines of real
-  // headroom, named rather than banked.
-  tooling: 14200, // D-210 (ADR-0057), on the world review round (14,101 re-measured)
+  // headroom, named rather than banked. D-211 KEEPS 14,200 and re-measures
+  // 14,125 after the evidence clock became per-class provenance and the third
+  // account rule joined `accountRuleProblems` - 75 lines of real headroom.
+  tooling: 14200, // D-211 (ADR-0057), on the world review round (14,125 re-measured)
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

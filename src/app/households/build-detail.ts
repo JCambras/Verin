@@ -269,16 +269,27 @@ function linksOf(
   }));
 }
 
+/**
+ * The three lines under "Evidence behind this page" carry the provenance the
+ * MATERIALIZER computed for each class, never one composed here: a view model
+ * that mints its own confidence beside an instant the world has already measured
+ * states two answers to one question on the same screen, and the fabricated one
+ * always reads `high`.
+ */
+function evidenceLinesOf(household: WorldHousehold): { label: string; provenance: RecordProvenance }[] {
+  return [
+    { label: "Cash and balances", provenance: household.evidence.liquidity },
+    { label: "Positions", provenance: household.evidence.positions },
+    { label: "Instructions and authorities", provenance: household.evidence.instructions },
+  ];
+}
+
 export function buildHouseholdDetailVM(
   household: WorldHousehold,
   crmId: string,
   asOf: string,
   counterpartyNames: ReadonlyMap<string, string> = new Map(),
 ): HouseholdDetailVM {
-  const evidenceLine = (label: string, observedAt: string): { label: string; provenance: RecordProvenance } => ({
-    label,
-    provenance: { source: "fixture", asOf: observedAt, confidence: "high" },
-  });
   return {
     key: household.key,
     id: crmId,
@@ -306,11 +317,7 @@ export function buildHouseholdDetailVM(
     pendingActions: pendingOf(household),
     activity: activityOf(household),
     crossHouseholdLinks: linksOf(household, counterpartyNames),
-    evidenceLines: [
-      evidenceLine("Cash and balances", household.evidence.liquidityObservedAt),
-      evidenceLine("Positions", household.evidence.positionsObservedAt),
-      evidenceLine("Instructions and authorities", household.evidence.instructionsObservedAt),
-    ],
+    evidenceLines: evidenceLinesOf(household),
     provenance: household.provenance,
   };
 }

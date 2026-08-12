@@ -13317,6 +13317,10 @@ is corrected in the spec by this change.
 
 **Reverted:** `scripts/world/derived.ts` restored; `pnpm world:validate` byte-identical, `Tests 27 passed`.
 
+**Corrected under D-211:** this entry's title claimed both rules, but only the self-beneficiary one was
+a rule - the entity-household half was generator behaviour, which the injection above shows only as the
+byte-compare failing. It is now enforced on the output and proved in its own right: PF-274.
+
 **Date:** 2026-08-12 (review round two, ADR-0057 / D-207).
 
 ## PF-264 · households: one materiality set decides the beneficiary note AND the health factor · `src/domain/world/{household-world,health}.ts` + `src/app/households/build-detail.ts` + `src/__tests__/unit/household-beneficiary-copy.test.ts`
@@ -13623,3 +13627,118 @@ read are both counted here and refused, and the shipped DDL's seven declarations
 **Reverted:** `scripts/fixture-purge.ts` restored; `Tests 21 passed`.
 
 **Date:** 2026-08-12 (review round five, ADR-0057 / D-210).
+
+## PF-274 · an account is never titled to someone the household records only as a signer · `scripts/world/validate.ts` + `src/__tests__/fitness/world-provenance.test.ts`
+
+**Invariant:** an entity household's people hold no PERSONAL accounts inside it - enforced as the
+predicate a generated OUTPUT can be held to: nobody the household records ONLY as an authorized signer
+appears in any account's `ownerKeys`. Four normative artifacts (DECISIONS.md, `docs/world.md`, PF-263's
+own title, `AGENTS.md`) stated `accountRuleProblems` held this rule; it held two, and the third lived
+only as a filter inside the derived generator. A generator filter is not a check - the byte-compare
+proves the committed tree equals a fresh generation, so it fires for any generator change and for no
+spec change, and a hand-authored featured household reaches the same output through another door.
+
+**Injection - restore the generator behaviour the rule now forbids.** Put `signer` back into
+`buildAccounts`'s personal-account adult filter (`member.role === "client" || member.role === "spouse"
+|| member.role === "signer"`) and regenerated nothing: the rule is asserted against the generator's
+output, so `validateWorld` regenerates it in memory and reads it.
+
+**Observed failure (`pnpm exec vitest run --project fitness world-provenance`):**
+```
+× (a) enforces: the whole world regenerates and every rule in validateWorld holds
+× (d) enforces: no account names its own owner, holds one lot twice, or is titled to a signer
+AssertionError: delacroix-ingrid/account/gustavo-retirement: titled to "gustavo", who appears in this
+  household only as an authorized signer
+  delacroix-ingrid/account/joint: titled to "ingrid", who appears in this household only as an
+  authorized signer
+  beaumont-ezra/account/joint: titled to "robert", who appears in this household only as an authorized
+  signer
+  ... 40 accounts across 12 households
+Tests  2 failed
+```
+
+**Executable companions (run on every build):** `accountRuleProblems` is a NAMED PREDICATE over one
+household, so the fence hands it a hand-built violation - the first household carrying a signer-only
+person, with its first account retitled to that signer - and pins the exact message. The positive
+assertion also counts the households the rule WALKS (`> 5` carrying a signer-only person), so a world
+that stopped containing the case would fail rather than pass by describing nothing (charter #4). The
+rule passes the committed world unchanged: 12 households carry signer-only people and none owns an
+account, so no fixture byte moves for it.
+
+**Reverted:** `scripts/world/derived.ts` restored; `Tests 18 passed`; `pnpm world:validate`
+byte-identical.
+
+**Date:** 2026-08-12 (review round six, ADR-0057 / D-211).
+
+## PF-275 · one instant, one confidence: the evidence clock IS provenance · `src/domain/world/household-world.ts` + `scripts/world/materialize.ts` + `src/app/households/build-detail.ts` + `src/__tests__/unit/household-freshness.test.tsx`
+
+**Invariant:** a household's evidence classes carry the PROVENANCE the materializer measured, and no
+other layer mints one. A view model that composes `{ source: "fixture", asOf: observedAt, confidence:
+"high" }` states a second answer to a question the world has already answered - and the composed answer
+is a constant, so it is `high` on every page, beside a household the same instant made `medium`.
+
+**Injection - compose the evidence lines in the view model again.** Restored the local
+`evidenceLine(label, observedAt)` helper in `buildHouseholdDetailVM`, reading the class instants
+(`household.evidence.<class>.asOf`) and typing `confidence: "high"` beside them - exactly the shipped
+behaviour before this change.
+
+**Observed failure (`pnpm exec vitest run --project app household-freshness`):**
+```
+× each line IS the class's own provenance, never one built on the page
+× and that confidence VARIES across the world, so it is a measurement
+× cannot disagree with the household provenance rendered on the same page
+AssertionError: smith-alastair-june/Cash and balances: high @ 2026-07-28T17:00:00.000Z, world says
+  medium @ 2026-07-28T17:00:00.000Z
+  fairweather-colette/Cash and balances: high @ 2026-06-01T12:00:00.000Z, world says low @
+  2026-06-01T12:00:00.000Z
+  ... every household whose evidence is out of window
+Tests  3 failed | 5 passed (8)
+```
+
+**Executable companions (run on every build):** the suite proves the label is not a constant in either
+direction - it counts `high` and `medium` evidence lines across the whole world and requires both in
+quantity (20 high / 79 medium / 1 low on liquidity, 53 / 47 on positions, 28 / 72 on instructions) - and
+it cross-reads the instructions line against `household.provenance`, the figure rendered on the same
+page from the same instant, so the two can never disagree again. The `world-provenance` fence
+additionally holds the three evidence provenances to the same two rules as every record they stamp:
+fixture-labeled, and never observed after the world's own `asOf`.
+
+**Reverted:** `src/app/households/build-detail.ts` restored; `Tests 8 passed`.
+
+**Date:** 2026-08-12 (review round six, ADR-0057 / D-211).
+
+## PF-276 · the world-seed refusal tests its CONDITION, not a symptom safe cases share · `src/infrastructure/crm/world-seed.ts` + `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** the load refuses when a conflicting household is held by a DIFFERENT org - the case that
+would hand a second firm an empty, silent household directory - and only then. The SAME org re-offered a
+world it already holds is the ordinary development loop and writes whatever is genuinely new. Household
+ids are seed-derived and stable across world content while the digest, and so the idempotency key, is
+not, so both cases produce the identical symptom: the load runs and writes nothing.
+
+**Injection - key the refusal on the symptom again.** Replaced the ownership read with
+`if (householdRows.length > 0 && written.households === 0) collisionRefusal(...)`, which is D-209's
+shipped guard.
+
+**Observed failure (`pnpm exec vitest run --project app fixture-purge`):**
+```
+× the SAME firm re-offered a REGENERATED world quietly writes what is new, and refuses nothing
+× a re-offered world carrying a NEW person writes that person rather than refusing the load
+AssertionError: world seed refused: 5 of the 5 household id(s) offered to org org-clean-slate already
+  exist and are held by an org other than org-clean-slate (47f0c0e2-…, 79349a4c-…, 12d692cd-…), which
+  loaded this world first. …: expected false to be true
+Tests  2 failed | 10 passed (12)
+```
+The message itself is the second half of the defect: org-clean-slate is the org that loaded the world,
+and the diagnostic sends its author to a follow-up that is not the remedy.
+
+**Executable companions (run on every build):** the dangerous path still refuses, and the assertions pin
+what the refusal must NAME - the refusing org, the colliding ids, how many of how many, why the ids
+collide (seed-derived rather than org-scoped), the follow-up `fu-world-org-scoped-ids`, and that the
+holder is an org other than this one - plus that the refused transaction rolled back whole. The benign
+path asserts honest zero counts and that the store still holds exactly what it held, and a third case
+proves the property the symptom-keyed guard had quietly falsified: a re-offered world carrying a NEW
+person writes that person.
+
+**Reverted:** `src/infrastructure/crm/world-seed.ts` restored; `Tests 12 passed`.
+
+**Date:** 2026-08-12 (review round six, ADR-0057 / D-211).

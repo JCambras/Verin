@@ -7817,3 +7817,65 @@ word.
 the clean-slate type reading and the three proof-log entries revert together. The observable changes are
 the world's holding confidences, the beneficiary panel's copy on individual and joint accounts, and the
 health factor's beneficiary sentence.
+
+### D-211 · 2026-08-12 · reversible · Populated-world review round six: a rule the documents claimed, provenance nothing re-decides, and a guard that tests its condition
+
+**A rule four documents claimed and no gate could fail on.** `DECISIONS.md`, `docs/world.md`, PF-263's
+own title and `AGENTS.md` all stated that `accountRuleProblems` holds both authors to the rule that an
+entity household's people hold no PERSONAL accounts inside it. It held two rules. The third existed
+only as a filter inside the derived generator (`adults` selects role `client`/`spouse`), which is not a
+check: the byte-compare proves the committed tree equals a fresh generation, so it fires for any
+generator change and for no spec change, and a hand-authored featured household could title a personal
+account to an entity household's signer with every gate green. The rule is now ENFORCED, as the
+predicate an output can actually be held to - nobody the household records ONLY as an authorized signer
+appears in any account's `ownerKeys` - and it holds the hand-authored ten exactly as it holds the
+derived ninety. It passes the committed world unchanged (12 households carry signer-only people, none
+of them owns an account), so no byte moves for it. The four documents now state what is enforced rather
+than what was intended, and the fence counts the households the rule walks, so a world that stopped
+containing the case would fail rather than pass by describing nothing (charter #4). PF-274.
+
+**Provenance is measured once, by the layer that owns the measurement.** `buildHouseholdDetailVM`
+COMPOSED the provenance of its three "Evidence behind this page" lines - `{ source: "fixture", asOf:
+observedAt, confidence: "high" }` - so on most of the hundred pages the instructions line claimed `high`
+beside a household provenance the materializer had computed, from the very same instant, as `medium`.
+That is exactly the defect D-210 fixed one layer down for holdings, reappearing in the view model,
+which is the signal that the fix belonged in the SHAPE rather than in either call site. A household's
+`evidence` block now carries each class's PROVENANCE (`liquidity`, `positions`, `instructions`) instead
+of a bare instant: the materializer measures it once against the world's `asOf`, and the account
+balance, the lots inside it, the beneficiary designation and the surface's evidence line all carry that
+same value. Nothing outside the materializer can mint a world provenance, so one instant cannot produce
+two confidences. Measured on the regenerated world: liquidity 20 high / 79 medium / 1 low, positions 53
+/ 47, instructions 28 / 72 - a label that varies because it is a measurement. The directory's four
+summary cards stop asserting `high` too: their totals FOLD over the very records they count
+(`foldStoredProvenance`, the repository's one rule for a figure folded from stored rows), so a card can
+never claim to be surer than the evidence behind it, and the fold's watermark is the charter #3 / ADR-0022
+consequence of counting fixture rows. The world regenerates to digest `de05af94…`; `pnpm world:validate`
+is byte-identical. PF-275.
+
+**A guard must test the CONDITION, not a symptom the condition happens to share with safe cases.**
+D-209's loud refusal for the cross-org world collision keyed on `written.households === 0`. The
+condition it was ruled for is "a conflicting row owned by a different organisation"; the symptom it
+keyed on is produced just as reliably by a perfectly benign case - this same org already holds an
+earlier load of the same world. Household ids are `uuidFor(seed, path, "id")` and are STABLE across
+world content, while the digest, and therefore the idempotency key, is not - so after ANY world
+regeneration, including the one in this very entry, `pnpm db:seed` against an existing store performed
+the inserts, wrote nothing, and threw `CONFLICT` at a diagnostic that named a follow-up which was not
+the remedy. It also quietly falsified this module's documented property, that a partially-applied load
+completes rather than duplicating: a person added to a household could never land. The refusal now
+reads the OWNERSHIP of the rows that actually conflicted, inside this org's own scope (reading another
+tenant's row to name it would widen a tenant-isolation escape for a diagnostic): a conflicting
+household held by another org refuses loudly and by name, exactly as ruled, and a same-org re-offer is
+a quiet no-op that writes whatever is genuinely new and reports honest counts. Both paths are tested,
+including the one that was broken - regenerate the world, re-seed an existing store, assert it no-ops -
+and a third asserts the new person lands. This is the durable lesson, recorded plainly: the condition
+was "a conflicting row owned by a different organisation" and the symptom keyed on was "zero rows
+written", which the dangerous case and a benign re-seed both produce. PF-276.
+
+**Line budgets: no ceiling moves; three figures re-taken.** 5,150 / 8,250 / 14,200 against RE-MEASURED
+5,086 / 8,197 / 14,125 as this round lands - 64, 53 and 75 lines of correction room, named rather than
+banked. Restated in `line-budget.test.ts` so no reader takes a superseded pairing at its word.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the evidence-clock
+shape, the third account rule, the ownership-keyed refusal and the three proof-log entries revert
+together. The observable changes are the confidence carried by each household's evidence lines, the
+provenance label on the directory's four summary cards, and a same-org re-seed succeeding.

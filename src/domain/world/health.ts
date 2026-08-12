@@ -102,9 +102,9 @@ function liquidityFactor(household: WorldHousehold): Omit<HealthFactor, "weightB
 
 function freshnessFactor(household: WorldHousehold, asOf: string): Omit<HealthFactor, "weightBps"> {
   const ages = [
-    daysBetween(household.evidence.liquidityObservedAt, asOf),
-    daysBetween(household.evidence.positionsObservedAt, asOf),
-    daysBetween(household.evidence.instructionsObservedAt, asOf),
+    daysBetween(household.evidence.liquidity.asOf, asOf),
+    daysBetween(household.evidence.positions.asOf, asOf),
+    daysBetween(household.evidence.instructions.asOf, asOf),
   ];
   const oldest = ages.reduce((worst, age) => (age > worst ? age : worst), 0);
   // Full marks inside a week; nothing after ninety days. Linear between.

@@ -56,9 +56,11 @@ three are `accountRuleProblems` in `scripts/world/validate.ts`, the fourth is
 - An account never names its own owner as a beneficiary. A sole client with nobody else in the
   household simply has NO designation - which is realistic, is what the detail surface already says,
   and is what the beneficiary health factor is there to score. Naming the owner scored it complete.
-- An entity household's people hold no PERSONAL accounts inside it. Its own entity note says they
-  appear only as signers; a joint account and two IRAs titled to them contradicted that on the first
-  page a reader opens.
+- An entity household's people hold no PERSONAL accounts inside it. Enforced as the predicate the
+  output can actually be held to: nobody the household records ONLY as an authorized signer appears
+  in any account's `ownerKeys`. Its own entity note says they appear only as signers; a joint account
+  and two IRAs titled to them contradicted that on the first page a reader opens. The generator's own
+  filter is not a check - a hand-authored household reaches the same output through another door.
 - No account holds the same instrument twice. The only way to mint one was a model portfolio naming
   an asset class twice, which the roster schema now refuses at spec load.
 - Every instrument the roster carries is held by SOME account (`instrumentReachProblems`). A sleeve
@@ -67,6 +69,14 @@ three are `accountRuleProblems` in `scripts/world/validate.ts`, the fourth is
 - Every holding's confidence is measured against the world's own `asOf`, never against its own
   observation. A lot on a positions snapshot older than `freshLiquidityWindowDays` is `medium`, so the
   receding treatment on the detail surface is reading a real signal rather than a constant.
+
+**One instant, one confidence.** A household's `evidence` block carries the PROVENANCE of each class
+(`liquidity`, `positions`, `instructions`), not a bare instant: the materializer measures the
+observation against the world's `asOf` once, and every record of that class - the account balance,
+the lots inside it, the beneficiary designation, and the evidence line the detail surface prints -
+carries that exact value. Bare instants let each reader decide the confidence again, and the view
+model that did so typed `high` on every page beside a household the materializer had already measured
+as `medium`. Nothing outside the materializer mints a world provenance.
 
 ## The awkward cases, on purpose
 
@@ -130,12 +140,18 @@ adapter is **replaced, not relabeled**, when a real `EvidenceSource` lands (ADR-
 `prov_source = 'fixture'`. It deliberately does **not** seed financial accounts: an account in the
 house CRM is the output of the account-opening flow, and custodial positions are evidence.
 
-The seed counts rows **written** (`RETURNING id`), never rows offered, and a load that offered
-households and wrote none **refuses** with a typed `CONFLICT` naming the collision. World record ids
+The seed counts rows **written** (`RETURNING id`), never rows offered, and **refuses** with a typed
+`CONFLICT` naming the collision when a conflicting household is held by ANOTHER org. World record ids
 are derived from the world seed, so they are the same bytes in every org: only the first org to load a
 world receives it, and a second firm's silently empty household directory is the worst available
 outcome. Making a second firm actually receive its own copy needs org-scoped ids - follow-up
 `fu-world-org-scoped-ids`.
+
+The refusal tests that CONDITION - a conflicting row owned by a different org - and not the symptom
+it shares with a safe case. Household ids are stable across world content while the digest, and so
+the idempotency key, is not, so the SAME firm re-offered a regenerated world runs the load again and
+conflicts away to nothing. That is the ordinary development loop: it writes whatever is genuinely new
+(a person added to a household lands), reports honest counts, and refuses nothing.
 
 ## The clean-slate guarantee
 

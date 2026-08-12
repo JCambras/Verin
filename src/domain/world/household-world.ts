@@ -275,12 +275,19 @@ export interface WorldCrossHouseholdLink {
   readonly note: string;
 }
 
-/** When each class of evidence was last observed - the input the freshness
- * factor of the health breakdown reads. */
+/**
+ * Each class of evidence AS ITS PROVENANCE: the instant it was observed and the
+ * confidence that instant earns against the world's own `asOf`, decided once by
+ * the materializer. Carrying bare instants left every reader free to decide the
+ * confidence again, and a surface that typed `high` beside an observation the
+ * materializer had already measured as `medium` disagreed with itself on the
+ * same page. The freshness health factor reads `asOf`; anything stating how far
+ * an observation can be trusted reads the provenance rather than minting one.
+ */
 export interface WorldEvidenceClock {
-  readonly liquidityObservedAt: string;
-  readonly positionsObservedAt: string;
-  readonly instructionsObservedAt: string;
+  readonly liquidity: RecordProvenance;
+  readonly positions: RecordProvenance;
+  readonly instructions: RecordProvenance;
   readonly retrievedAt: string;
 }
 

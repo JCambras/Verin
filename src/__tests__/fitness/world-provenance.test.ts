@@ -119,9 +119,14 @@ describe("world-provenance fence", () => {
     expect(computeHouseholdHealth(household, asOf)).toEqual(computeHouseholdHealth(household, asOf));
   });
 
-  it("(d) enforces: no account names its own owner as a beneficiary, or one lot twice", () => {
+  it("(d) enforces: no account names its own owner, holds one lot twice, or is titled to a signer", () => {
     const problems = households.flatMap(accountRuleProblems);
     expect(problems, problems.join("\n")).toEqual([]);
+    // The third rule is only worth anything where the case EXISTS: entity
+    // households are the ones whose people appear as signers alone, and a world
+    // that stopped containing them would pass this by describing nothing.
+    const withSigners = households.filter((household) => household.members.some((member) => member.role === "signer"));
+    expect(withSigners.length, "no household records a signer-only person - the rule walks nothing").toBeGreaterThan(5);
   });
 
   it("(d) enforces: every instrument the roster carries is actually held somewhere", () => {
@@ -173,6 +178,23 @@ describe("world-provenance fence", () => {
       };
       expect(accountRuleProblems(broken)).toEqual([
         `${household.key}/account/${account.key}: names its own owner "${owner}" as a primary beneficiary`,
+      ]);
+    });
+
+    it("a personal account titled to someone the household records only as a signer is caught", () => {
+      // The shape ten LLC households used to ship: a joint account and two IRAs
+      // titled to people the household's own entity note describes as appearing
+      // "only as signers". The generator stopped producing it, but a
+      // hand-authored household reaches the same output through another door.
+      const household = households.find((candidate) => candidate.members.some((member) => member.role === "signer"))!;
+      const signer = household.members.find((member) => member.role === "signer")!;
+      const account = household.accounts[0]!;
+      const broken = {
+        ...household,
+        accounts: [{ ...account, ownerKeys: [signer.key], beneficiaries: [], holdings: account.holdings.slice(0, 1) }],
+      };
+      expect(accountRuleProblems(broken)).toEqual([
+        `${household.key}/account/${account.key}: titled to "${signer.key}", who appears in this household only as an authorized signer`,
       ]);
     });
 

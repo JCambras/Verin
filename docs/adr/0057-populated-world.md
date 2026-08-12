@@ -55,6 +55,20 @@ The other ninety are drawn path-keyed **into the same draft shape**, and a singl
 every draft into the same typed household. The ninety are therefore never structurally thinner than
 the ten, only less specific - and each household states which it is, on its own surface.
 
+**Amended by D-198** (review round). Two of the three account rules the earlier rounds recorded were
+checked on the generated output; the third - an entity household's people hold no PERSONAL accounts
+inside it - existed only as a filter inside the derived generator, so four normative artifacts claimed
+a rule no gate could fail on. It is now enforced in `accountRuleProblems` as the predicate an output
+can be held to (nobody the household records ONLY as an authorized signer appears in any account's
+`ownerKeys`), and it holds the hand-authored ten as well as the derived ninety. A generator filter is
+not a check: a hand-authored household reaches the same output through another door.
+
+**Amended by D-198.** A household's `evidence` block carries the PROVENANCE of each class rather than a
+bare instant. The materializer measures each observation against the world's `asOf` once, and every
+record of that class - the account balance, the lots inside it, the beneficiary designation, and the
+evidence line the detail surface prints - carries that exact value, so one instant can no longer
+produce two confidences on one page.
+
 ### 3. The world is EVIDENCE, behind a port
 
 `HouseholdWorldSource` (`src/domain/world/household-world.ts`) is the port; the fixture adapter
@@ -67,6 +81,14 @@ financial accounts, because an account in the house CRM is the output of the acc
 custodial positions are evidence. The CRM remains the authority on *which* households a tenant may
 see - the household surface authorizes through a tenant-scoped repository read and only then asks the
 port for depth.
+
+**Amended by D-198** (review round). The loud refusal D-196 added tested the SYMPTOM - the load wrote
+nothing - which the dangerous case (another org holds the seed-derived ids) and a perfectly safe one
+(this org already holds an earlier load of the same world) both produce. Because household ids are
+stable across world content while the digest is not, that broke `pnpm db:seed` on the next world
+regeneration anyone made. The refusal now tests the CONDITION: a conflicting household held by a
+DIFFERENT org refuses loudly and by name; a same-org re-offer writes whatever is genuinely new and
+reports honest counts.
 
 ### 4. Health is computed, never stored
 

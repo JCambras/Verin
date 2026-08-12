@@ -106,15 +106,20 @@ misses fails rather than reporting clean unread, and a false alarm on this check
 false pass (D-206, D-207, D-208, D-209, D-210). The
 `--report` path exits 0 for a developer but takes `--expect-rows=<n>` where a caller needs an
 assertion (CI uses it after the seed). `seedWorldIntoCrm` counts rows WRITTEN (`RETURNING id`), never
-rows offered, and REFUSES (`CONFLICT`, naming the collision) a load that offered households and wrote
-none: world ids are seed-derived and identical across orgs, so only the first org to load a world
-receives it and a second firm's silent empty directory is the worst available outcome
-(`fu-world-org-scoped-ids`). Every roster instrument is held by some account - the sleeve derives
-WHICH instruments, not only how many, and `validateWorld` fails on a roster entry the world can never
-render. Two account rules hold for the hand-authored ten and the derived ninety alike
-(`accountRuleProblems`): an account never names its own owner as a beneficiary and never holds one
-instrument twice, and an entity household's signers hold no personal accounts inside it. The
-directory's world-derived rows are built once per worldDigest, not once per request.
+rows offered, and REFUSES (`CONFLICT`, naming the collision) on the CONDITION - a conflicting
+household held by ANOTHER org - never on the symptom it shares with a safe case: world ids are
+seed-derived and identical across orgs, so only the first org to load a world receives it and a second
+firm's silent empty directory is the worst available outcome (`fu-world-org-scoped-ids`), while the
+SAME firm re-offered a regenerated world quietly writes whatever is new (D-198). Every roster
+instrument is held by some account - the sleeve derives WHICH instruments, not only how many, and
+`validateWorld` fails on a roster entry the world can never render. THREE account rules hold for the
+hand-authored ten and the derived ninety alike (`accountRuleProblems`): an account never names its own
+owner as a beneficiary, never holds one instrument twice, and is never titled to someone the household
+records only as an authorized signer (the enforced form of "an entity household's people hold no
+personal accounts inside it" - a generator filter is not a check). A household's `evidence` block
+carries each class's PROVENANCE rather than a bare instant, measured once against the world's `asOf`,
+so no surface can mint a second confidence for the same observation. The directory's world-derived
+rows are built once per worldDigest, not once per request.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
