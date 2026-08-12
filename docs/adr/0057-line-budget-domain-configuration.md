@@ -212,6 +212,38 @@ Two ceilings move, each only as far as its own measurement plus headroom inside 
 layers carry. `contracts` is re-taken here and is unchanged, so its ceiling is left alone rather than
 re-baselined for company.
 
+## Amendment (2026-08-11, review round 9): re-measured, NO ceiling moves
+
+This round answers the version guard's own fallout and pays for it out of the headroom the round-8
+figures already carry, so the figures below are recorded and the ceilings are left where they are.
+
+`contracts` gains one accessor: the error taxonomy already recorded whether repeating a request could
+plausibly succeed, and a caller deciding what an EXTERNAL system should do with a failure now reads that
+flag rather than inferring it from the status class (`errors.ts`).
+
+`infrastructure` gains three things, all one root cause. The webhook stops flattening every failed
+callback to 5xx, so a permanent refusal answers its own 4xx instead of asking an e-sign provider to
+redeliver, indefinitely, a callback that can never succeed. `versionMismatch` treats a MISSING recorded
+version as LEGACY and continues - refusing it would have made the guard's first act on deployment the
+stranding of every legitimate in-flight execution - and names the two versions in its refusal instead of
+misattributing the cause. And the REPLAY path is held to the same discipline as the two paths that
+drive: its awaited rule is read at `awaitingByStep[cursor - 1]`, so under a bumped plan it would name a
+step the execution never took.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,649 | 6,680 | 31 (unchanged ceiling) |
+| `domain` | 9,085 | 9,150 | 65 (unchanged ceiling) |
+| `infrastructure` | 8,341 | 8,360 | 19 (unchanged ceiling) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+`infrastructure` is now 19 lines from its ceiling. That is deliberately NOT relieved here: headroom is
+bought with a measurement and an argument, never banked in advance against work that has not been
+written.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

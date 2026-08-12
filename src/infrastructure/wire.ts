@@ -107,8 +107,20 @@ type AccountOpeningStartResult =
  * the cursor past that step before persisting, so it is the compiled step at
  * `cursor - 1`. Scanning the document for the first externally-gated capability
  * would agree only while a domain has exactly one.
+ *
+ * That cursor is POSITIONAL, so the awaited rule is only this execution's under
+ * the plan it started with: reading it out of a DIFFERENT version's plan reports
+ * a step the execution never took, or none where it is genuinely waiting. This
+ * path drives nothing, but a surface whose whole job is to say what happened may
+ * not answer confidently wrong - so a version disagreement is refused here for
+ * exactly the states whose report is derived from the cursor. A COMPLETED
+ * execution is not one of them: reporting an already-finalized run needs no plan.
  */
 function replayedRunResult(flow: CompiledFlow, state: ExecutionState): FlowRunResult {
+  if (state.status === "suspended") {
+    const stale = versionMismatch(flow, state);
+    if (stale) return { executionId: state.id, status: "failed", error: stale, data: {} };
+  }
   return {
     executionId: state.id,
     status: state.status,
@@ -155,13 +167,27 @@ const driveable = (state: ExecutionState): boolean =>
  * flowId cannot carry this: it is the domainConfigId and is stable across
  * versions. Resuming against the PINNED document rather than refusing is the end
  * state and stays owned by PC-4 (prompts 15/19, docs/domain-config-gaps.md).
+ *
+ * MISSING IS NOT MISMATCHED. An execution carrying no recorded version predates
+ * the pinning itself, so it can only have started under the plan published
+ * before this guard existed: it is LEGACY and continues. Refusing it would make
+ * the guard's first act on deployment the stranding of every legitimate in-flight
+ * execution - the very before-deploy/after-deploy harm it exists to prevent. A
+ * recorded value that is not a version string is neither, and fails closed.
  */
 function versionMismatch(flow: CompiledFlow, state: ExecutionState): AppError | null {
   const started = state.data[CONFIG_VERSION_KEY];
+  if (started === undefined) return null;
   if (started === flow.domainConfigVersionId) return null;
+  if (typeof started !== "string") {
+    return appError(
+      "CONFLICT",
+      `This execution records no readable configuration version and cannot be continued against the published ${flow.domainConfigVersionId}.`,
+    );
+  }
   return appError(
     "CONFLICT",
-    "This execution was started under a different version of the account-opening configuration and cannot be continued against the current one.",
+    `This execution was started under configuration version ${started} and cannot be continued against the published ${flow.domainConfigVersionId}.`,
   );
 }
 

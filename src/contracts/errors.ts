@@ -111,6 +111,17 @@ export function logLevelFor(code: ErrorCode): CodeMeta["logLevel"] {
   return ERROR_MAP[code].logLevel;
 }
 
+/**
+ * Whether repeating the identical request could plausibly succeed. A caller that
+ * decides what an EXTERNAL system should do with a failure (redeliver, or stop)
+ * must read this rather than infer it from the status class: a permanent refusal
+ * dressed as a server error asks the sender to retry something that can never
+ * succeed, until its retry budget is spent and the event is dropped.
+ */
+export function isRetryable(code: ErrorCode): boolean {
+  return ERROR_MAP[code].retryable;
+}
+
 /** Client-safe HTTP response body — no stack traces, no internal context. */
 export function toResponse(error: unknown): { status: number; body: { error: { code: ErrorCode; message: string } } } {
   const normalized = normalizeAppError(error) ??

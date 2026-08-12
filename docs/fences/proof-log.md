@@ -14835,3 +14835,88 @@ whose second half proves the allowed module's own use of the same constant is st
 **Reverted:** the arm restored; `DOMAIN_CONFIG_DIRECTORY` is now unexported as well.
 
 **Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review finding `config-directory-fence-evadable`).
+
+---
+
+## PF-265 · a PERMANENT refusal must not ask an e-sign provider to redeliver forever
+
+**Invariant:** the e-sign webhook's HTTP status is an INSTRUCTION to an external system. A retryable
+failure answers 5xx (the callback was not delivered; the saved cursor makes the redelivery idempotent);
+a permanent refusal answers its own 4xx, because every redelivery would meet the identical refusal until
+the provider's retry budget is spent and the signature event is dropped.
+
+**Injection.** Restored the flattening expression in `src/app/api/esign/webhook/route.ts`
+(`mapped.status >= 500 ? mapped.status : 500`) and fired a validly signed callback at an execution whose
+recorded configuration version disagrees with the published one.
+
+**Observed failure:**
+```
+× answers a PERMANENT refusal with its own 4xx, so the provider stops redelivering
+AssertionError: expected 500 to be 409 // Object.is equality
+```
+A `CONFLICT` - `{status: 409, category: "permanent", retryable: false}` in the taxonomy - reported to the
+provider as a retryable server error, which is the finding verbatim.
+
+**Companion.** "still answers an ORDINARY finalize failure with a 5xx, so the provider redelivers": a
+storage failure inside finalize (the case the blanket 5xx was written for) must not become a 4xx the
+provider treats as final.
+
+**Reverted:** the retryability read restored;
+`src/__tests__/integration/esign-webhook-route.test.ts` reports `Tests 2 passed (2)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-version-guard-fallout`).
+
+---
+
+## PF-266 · a MISSING configuration version is LEGACY, not a mismatch
+
+**Invariant:** the D-217 resume guard refuses a KNOWN DIFFERENT configuration version. An execution that
+recorded no version predates the pinning itself, so it can only have started under the plan published
+before the guard existed, and it RESUMES - otherwise the guard's first act on deployment is to strand
+every legitimate in-flight signature, the before-deploy/after-deploy harm it exists to prevent.
+
+**Injection.** Removed the `if (started === undefined) return null;` branch from `versionMismatch`
+(`src/infrastructure/wire.ts`) and resumed an execution whose persisted flow data carries no
+`domainConfigVersionId`.
+
+**Observed failure:**
+```
+× RESUMES a legacy execution that recorded no configuration version at all
+AssertionError: expected 'failed' to be 'completed' // Object.is equality
+```
+
+**Companion.** The pre-existing "REFUSES to resume an execution started under a different configuration
+version" still passes, so widening the guard to admit absence did not disarm it for disagreement.
+
+**Reverted:** the branch restored; `src/__tests__/integration/account-opening.test.ts` reports
+`Tests 22 passed (22)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-version-guard-fallout`).
+
+---
+
+## PF-267 · the replay path may not report a step read from a plan it is not running
+
+**Invariant:** a double-submit replay reports the awaited rule at `awaitingByStep[cursor - 1]`. That
+cursor is POSITIONAL, so under a different configuration version it names a step the execution never
+took. The path drives nothing, so what it can get wrong is the ANSWER - and it is refused instead.
+
+**Injection.** Removed the version check from `replayedRunResult` (`src/infrastructure/wire.ts`) and
+re-submitted the same client request id against an execution whose recorded version had been bumped.
+
+**Observed failure:**
+```
+× REFUSES a double-submit replay of an execution started under a different configuration version
+AssertionError: expected 'suspended' to be 'failed' // Object.is equality
+```
+The replay answered `suspended` with a resume token and an awaited rule borrowed from the current plan -
+for a token whose eventual resume the guard would refuse.
+
+**Companion.** The pre-existing double-submit case ("no duplicate households", D-027) still replays
+`suspended` with the SAME token, so the refusal is scoped to a version disagreement rather than to
+replay itself.
+
+**Reverted:** the check restored; `src/__tests__/integration/account-opening.test.ts` reports
+`Tests 22 passed (22)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-version-guard-fallout`).

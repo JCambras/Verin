@@ -232,6 +232,71 @@ describe("account opening: start -> suspend -> webhook resume -> exactly-once (i
     expect(Number(tasks.rows[0]!.n)).toBe(0);
   });
 
+  /**
+   * MISSING IS NOT MISMATCHED - the companion to the refusal above, and the case
+   * that catches the guard turning on its own users. An execution persisted
+   * before versions were recorded carries no version at all, so a guard that
+   * treats absence as disagreement would strand every legitimate in-flight
+   * signature the moment it deployed: the exact before-deploy/after-deploy harm
+   * it exists to prevent. Such an execution can only have started under the plan
+   * published before pinning existed, so it RESUMES.
+   */
+  it("RESUMES a legacy execution that recorded no configuration version at all", async () => {
+    const started = await startAccountOpening(db, advisor, advisorPii, {
+      householdName: "Legacy Household", firstName: "Lee", lastName: "Gacy", email: null, accountType: "individual",
+    });
+    expect(started.status).toBe("suspended");
+    const persisted = await db.query<{ context_json: string }>(
+      "SELECT context_json FROM flow_executions WHERE id = $1",
+      [started.executionId],
+    );
+    const context = JSON.parse(persisted.rows[0]!.context_json) as { cursor: number; data: Record<string, unknown> };
+    const legacyData = { ...context.data };
+    delete legacyData["domainConfigVersionId"];
+    await db.query("UPDATE flow_executions SET context_json = $2 WHERE id = $1", [
+      started.executionId,
+      JSON.stringify({ ...context, data: legacyData }),
+    ]);
+
+    const resumed = await resumeAccountOpeningByToken(db, started.token!, { signedAt: "2026-07-19T10:00:00.000Z" });
+    expect("status" in resumed && resumed.status).toBe("completed");
+    expect(await accountCount(db)).toBe(1);
+  });
+
+  /**
+   * THE REPLAY PATH ANSWERS FROM THE SAME PLAN IT WOULD DRIVE. A double-submit
+   * reports the awaited rule at `awaitingByStep[cursor - 1]`, and that cursor is
+   * positional: read out of a bumped plan it names a step the execution never
+   * took. Reporting nothing wrong is the point - this path commits no records, so
+   * what it can get wrong is the ANSWER.
+   */
+  it("REFUSES a double-submit replay of an execution started under a different configuration version", async () => {
+    const input = {
+      householdName: "Replayed Bump Household", firstName: "Ray", lastName: "Bump", email: null,
+      accountType: "individual", clientRequestId: "6b2d1c40-9a3e-4c58-8f21-7d5e4c3b2a10",
+    };
+    const started = await startAccountOpening(db, advisor, advisorPii, input);
+    expect(started.status).toBe("suspended");
+    expect(started.awaiting).toBe("esign-signature");
+    const persisted = await db.query<{ context_json: string }>(
+      "SELECT context_json FROM flow_executions WHERE id = $1",
+      [started.executionId],
+    );
+    const context = JSON.parse(persisted.rows[0]!.context_json) as { cursor: number; data: Record<string, unknown> };
+    await db.query("UPDATE flow_executions SET context_json = $2 WHERE id = $1", [
+      started.executionId,
+      JSON.stringify({ ...context, data: { ...context.data, domainConfigVersionId: "account-opening@2026.09.0" } }),
+    ]);
+
+    const replayed = await startAccountOpening(db, advisor, advisorPii, input);
+    expect(replayed.status).toBe("failed");
+    expect(replayed.error?.code).toBe("CONFLICT");
+    // No confidently-wrong report: neither a resume token nor an awaited rule
+    // borrowed from a plan this execution is not running.
+    expect(replayed.token).toBeUndefined();
+    expect(replayed.awaiting).toBeUndefined();
+  });
+
   it("a MIXED-case client request id (the route's regex is case-insensitive) completes instead of throwing after its writes commit", async () => {
     // Regression: the observability id predicate refuses a `Lu`-then-`Ll` pair as
     // a person-name shape, which mixed-case hex carries ("...3Ab5..."), while the

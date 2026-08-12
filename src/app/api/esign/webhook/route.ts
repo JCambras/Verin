@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb, readJsonBody } from "@app/_server/context";
 import { esignCallback } from "@infra/wire";
-import { appError, toResponse } from "@contracts/errors";
+import { appError, isRetryable, toResponse } from "@contracts/errors";
 
 export const runtime = "nodejs";
 
@@ -30,10 +30,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: "NOT_FOUND", message: "Unknown signing token." } }, { status: 404 });
   }
   if (result.status === "failed") {
-    // A 5xx tells the provider the callback was NOT delivered, so it redelivers and
-    // resumeFlow retries the failed execution idempotently from its saved cursor.
     const mapped = toResponse(result.error ?? appError("INTERNAL", "Finalizing the account opening failed."));
-    return NextResponse.json(mapped.body, { status: mapped.status >= 500 ? mapped.status : 500 });
+    // A RETRYABLE failure answers 5xx: it tells the provider the callback was NOT
+    // delivered, so it redelivers and resumeFlow retries the failed execution
+    // idempotently from its saved cursor. A PERMANENT refusal - a configuration
+    // version conflict, say - answers its own 4xx instead: every redelivery would
+    // meet the identical refusal, so a 5xx would only spend the provider's retry
+    // budget and then drop the signature event silently. A failed callback never
+    // answers success, whatever a code's own status says.
+    const refusal = mapped.body.error.code;
+    const status = !isRetryable(refusal) && mapped.status >= 400 ? mapped.status : Math.max(mapped.status, 500);
+    return NextResponse.json(mapped.body, { status });
   }
   return NextResponse.json({ status: result.status });
 }

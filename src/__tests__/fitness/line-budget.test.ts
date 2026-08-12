@@ -221,14 +221,18 @@ const CEILINGS = {
 // is widened to match the reachability stage's, and a compiled plan carries the
 // configuration version it was compiled from. In `infrastructure`: the
 // composition root pins that version into flow data at start and refuses to drive
-// a stored positional cursor under a different one. RE-MEASURED with this file's
-// own algorithm: contracts 6,638 / 6,680 (42), domain 9,085 / 9,150 (65),
-// infrastructure 8,315 / 8,360 (45), presentation 928 / 6,000, tooling 12,154 /
-// 12,400. `contracts` is re-taken and unchanged, so its ceiling is left alone.
+// a stored positional cursor under a different one. The round-9 amendment answers
+// that guard's own fallout - the taxonomy's retryability is read at the webhook
+// rather than flattened to 5xx, a MISSING recorded version is legacy rather than
+// mismatched, and the replay path is held to the same discipline as the two paths
+// that drive - and NO ceiling moves for it. RE-MEASURED with this file's own
+// algorithm: contracts 6,649 / 6,680 (31), domain 9,085 / 9,150 (65),
+// infrastructure 8,341 / 8,360 (19), presentation 928 / 6,000, tooling 12,154 /
+// 12,400.
 const CEILINGS = {
-  contracts: 6680, // ADR-0057 as amended twice, RATCHETED DOWN after the dead brands were deleted (6,638 measured)
+  contracts: 6680, // ADR-0057 as amended twice, RATCHETED DOWN after the dead brands were deleted (6,649 measured)
   domain: 9150, // ADR-0057 as amended six times, on the prompt-10 configuration schema (9,085 measured)
-  infrastructure: 8360, // ADR-0057 as amended once, on the version-bound resume guard (8,315 measured)
+  infrastructure: 8360, // ADR-0057 as amended once, on the version-bound resume guard (8,341 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

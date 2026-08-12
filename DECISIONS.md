@@ -9030,3 +9030,25 @@ evidence-kind label states what a KIND is, while a settlement date is a property
 row. Appending it on the demo side serves the original intent better than the original instruction did.
 
 **Revert path.** One label and one template literal.
+
+## D-221 - Prompt 10 review: the version guard's own fallout, in three places
+
+**What.** Three corrections to the D-217 guard, all one root cause - a positional cursor read against a
+plan that may no longer be the one it was recorded under. (a) The e-sign webhook reads the taxonomy's
+retryability instead of flattening every failed callback to 5xx: a PERMANENT refusal answers its own
+4xx, a retryable failure still answers 5xx. (b) A MISSING recorded configuration version is LEGACY and
+RESUMES; only a KNOWN DIFFERENT one is refused, and the refusal names both versions. (c) The REPLAY path
+refuses a version-disagreeing SUSPENDED execution rather than reporting an awaited rule read out of the
+current plan; a COMPLETED execution still replays, since reporting a finished run needs no plan.
+
+**Why.** A guard that reports a permanent refusal as a retryable server error asks an external provider
+to redeliver a callback that can never succeed, until its retry budget is spent and the signature event
+is dropped with only an error log behind it - and the sibling `simulate-sign` route already answered 409
+for the identical result, so the two disagreed. Treating ABSENCE as disagreement would have made the
+guard's first act on deployment the stranding of every legitimate in-flight execution: the exact
+before-deploy/after-deploy harm it was built to prevent. And the replay path drives nothing, so what it
+can get wrong is the ANSWER - a step identity borrowed from a plan the execution is not running is a
+silent wrong answer, which this build refuses everywhere else.
+
+**Revert path.** One accessor in `errors.ts`, one status expression in the webhook route, two branches in
+`wire.ts`.
