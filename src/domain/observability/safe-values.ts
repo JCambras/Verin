@@ -14,6 +14,12 @@ import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 export const OBSERVABILITY_ID_FIELDS = [
   "actor",
   "applicationId",
+  /**
+   * The reference a refused request carries on the WIRE and the operator's log
+   * line carries beside the diagnosis, so narrowing a client-facing message to a
+   * generic sentence never costs the ability to diagnose it (D-227).
+   */
+  "correlationId",
   "entityId",
   "executionId",
   "orgId",
@@ -30,7 +36,7 @@ export interface ObservabilityId {
 const OBSERVABILITY_IDS = new WeakSet<object>();
 export type RecordObservabilityIdField = Extract<
   ObservabilityIdField,
-  "applicationId" | "entityId" | "executionId" | "outboxRowId"
+  "applicationId" | "correlationId" | "entityId" | "executionId" | "outboxRowId"
 >;
 /**
  * Exported as TYPES, not just runtime sets: an `action: string` audit field lets a
@@ -50,6 +56,19 @@ const ACTION_NAMES = [
   "session.revoke", "task.create", "world.seed",
 ] as const;
 export type ObservabilityAction = (typeof ACTION_NAMES)[number];
+/**
+ * WHICH stage of resolving a published domain configuration refused (v3 prompt 10,
+ * ADR-0056). The client is told a generic sentence and a reference, because a
+ * dotted document path and a pair of SHA-256 hashes are deployment internals; this
+ * is the half that reaches the OPERATOR, in the log line the reference joins to.
+ * Exported as a TYPE for the same reason as the audit vocabularies above: a
+ * `string` here would degrade to "[REDACTED]" in the one line naming what broke.
+ */
+const CONFIGURATION_STAGE_NAMES = [
+  "hash-mismatch", "invalid", "not-inert", "unbindable", "uncanonical",
+  "unpinned", "unpublished", "unreadable-pins",
+] as const;
+export type ConfigurationStage = (typeof CONFIGURATION_STAGE_NAMES)[number];
 const ENTITY_TYPE_NAMES = [
   "AccountOpeningApplication", "Contact", "FinancialAccount", "Household",
   "Org", "Session", "Task", "User",
@@ -57,6 +76,7 @@ const ENTITY_TYPE_NAMES = [
 export type ObservabilityEntityType = (typeof ENTITY_TYPE_NAMES)[number];
 const ACTIONS = new Set<string>(ACTION_NAMES);
 const ENUMS = new Map<string, ReadonlySet<string>>([
+  ["configStage", new Set<string>(CONFIGURATION_STAGE_NAMES)],
   ["code", new Set([
     "AUTH_EXPIRED", "AUTH_FAILED", "CONFLICT", "FLOW_SUSPENDED", "FORBIDDEN",
     "IDEMPOTENCY_REPLAY", "INTEGRATION_ERROR", "INTEGRATION_TIMEOUT", "INTERNAL",
@@ -79,7 +99,9 @@ const LOG_MESSAGES = new Set([
   "audited write failed",
   "constant-work audit mirror failed",
   "decision ledger append failed",
+  "domain configuration could not be resolved",
   "e-sign callback finalization failed",
+  "e-sign signature callback parked until an operator restores the configuration version",
   "failed sign-in attempt for an unknown email",
   "failure-audit entry could not be recorded",
   "flow retried",
@@ -113,6 +135,7 @@ export function registerTestSpanName(name: string): void {
 const OPAQUE_ID_RE = /^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/i;
 const RECORD_ID_FIELDS = new Set<ObservabilityIdField>([
   "applicationId",
+  "correlationId",
   "entityId",
   "executionId",
   "outboxRowId",

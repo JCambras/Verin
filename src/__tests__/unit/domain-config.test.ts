@@ -292,6 +292,37 @@ describe("domain configuration: the shipped documents", () => {
   });
 
   /**
+   * The SAME deferral, one position over. The guard used to look only at
+   * `idempotencyKey`, and `resolverFor` had no arm for `decision-hash` at all, so
+   * a PAYLOAD field sourced from it passed all seven load stages, compiled
+   * cleanly, and then either failed at the step that consumed it - after earlier
+   * steps had committed real CRM rows - or, when `optional`, was dropped from the
+   * command with no diagnostic anywhere. Account opening is used because its plan
+   * is otherwise runnable: money movement is already refused for other reasons,
+   * so it could not tell this arm from those.
+   */
+  it("REFUSES compiling a plan whose capability sources a PAYLOAD field from the decision hash", () => {
+    for (const optional of [false, true]) {
+      const document = clone(documentOf("account-opening"));
+      const capability = (section<Mutable>(document, "execution")["capabilities"] as Mutable[])[0]!;
+      (capability["payload"] as Mutable[]).push({
+        kind: "value",
+        field: "decisionRef",
+        source: { from: "decision-hash" },
+        optional,
+      });
+      const loaded = loadDomainConfig(document);
+      expect(loaded.ok, "the document itself still loads: prompt 25 makes this authoring resolvable").toBe(true);
+      if (!loaded.ok) return;
+      const compiled = compileFlowDefinition(loaded.value, "open-account");
+      expect(compiled.ok, `an optional:${optional} decision-hash payload field must not compile`).toBe(false);
+      if (compiled.ok) return;
+      expect(compiled.error.message).toContain("decision hash");
+      expect(compiled.error.message).toContain(String(capability["id"]));
+    }
+  });
+
+  /**
    * The last arm of the load-clean-then-fail-mid-plan class. A `{from: slot}`
    * source over a slot the requester does not supply is LEGITIMATE authoring -
    * money movement's household and source account are selected by primitives -

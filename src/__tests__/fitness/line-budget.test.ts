@@ -243,10 +243,21 @@ const CEILINGS = {
 // RE-MEASURED with this file's own algorithm: contracts 6,682 / 6,710 (28),
 // domain 9,183 / 9,240 (57), infrastructure 8,380 / 8,400 (20), presentation
 // 928 / 6,000, tooling 12,154 / 12,400.
+//
+// ADR-0057 amendment (review round 13) raises all three for the THIRD refusal
+// category and the correlation-id-joined configuration diagnosis: `contracts`
+// carries the `retry-later` arm and its pacing constant, `domain` the
+// correlationId/configStage observability vocabulary, the exhaustive value-source
+// resolver and the engine's resume guard, `infrastructure` the operator-visible
+// parked-callback report and the one place every configuration refusal is minted.
+// `contracts` had reached its ceiling EXACTLY (6,710 / 6,710), which is the
+// zero-headroom condition the header above exists to prevent, so it moves too.
+// RE-MEASURED: contracts 6,710 / 6,740 (30), domain 9,271 / 9,330 (59),
+// infrastructure 8,485 / 8,515 (30).
 const CEILINGS = {
-  contracts: 6710, // ADR-0057 as amended three times, on the client-retry instruction vocabulary (6,682 measured)
-  domain: 9240, // ADR-0057 as amended seven times, on the prompt-10 configuration schema (9,183 measured)
-  infrastructure: 8400, // ADR-0057 as amended twice, on the instruction-bearing start refusals (8,380 measured)
+  contracts: 6740, // ADR-0057 as amended four times, on the retry-later instruction arm (6,710 measured)
+  domain: 9330, // ADR-0057 as amended eight times, on the resume guard and correlation vocabulary (9,271 measured)
+  infrastructure: 8515, // ADR-0057 as amended three times, on the single-mint configuration refusal (8,485 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

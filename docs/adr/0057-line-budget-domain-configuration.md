@@ -353,3 +353,45 @@ no further - 28 and 20 lines, the same order as every figure above them.
 - The `domain` layer is now the largest platform layer. That is the intended shape after prompt 10: the
   decision plane's grammar and its loader are domain code, and the domains themselves are not code at all.
 - Ratchet-down resumes from these figures at Wave-close, per ADR-0018.
+
+## Amendment (2026-08-12, review round 13): all three raised for the third refusal category
+
+The permanent-versus-transient split the previous amendment shipped was a FALSE BINARY, and the case that
+proves it is the configuration-version mismatch: it is neither, because it clears the moment an operator
+rolls the published document back. Answering it "do not redeliver" DISCARDS A SIGNATURE the client already
+gave, which is strictly worse than the unbounded redelivery that status was introduced to stop. So the
+vocabulary gains a third arm and the surfaces gain the machinery to express it to two audiences.
+
+`contracts` gains `retry-later` and the pacing constant every surface answering it puts on the wire
+(`Retry-After`), plus the paragraph recording why the binary was wrong. It is raised rather than held
+because it had reached its previous ceiling EXACTLY - 6,710 against 6,710 - which is the zero-headroom
+condition ADR-0033 exists to prevent, where the next one-line correction fails an unrelated gate and the
+only remedy is deleting documentation.
+
+`domain` gains three things. The observability vocabulary gains a `correlationId` id field and a closed
+`configStage` enum, so the reference a narrowed client message carries can appear in the operator's log
+line un-degraded rather than as `[REDACTED]`. `plan-compiler.ts` gains an EXHAUSTIVE value-source
+resolver: the `decision-hash` arm is written out and a `never`-typed tail makes a future grammar arm with
+no resolver a BUILD failure instead of a silent run-time `absent`, which is the exact shape the payload
+gap had. `engine.ts` gains the resume guard - a caller precondition judged against the one snapshot the
+drive uses, which is what let the composition root stop loading the row a second time.
+
+`infrastructure` gains the operator-visible parked-callback report (a signature waiting on a rollback must
+never be discovered by a client phoning to ask why nothing happened), and the single place every
+configuration refusal is minted: one generic sentence and a correlation id on the wire, the dotted document
+paths and SHA-256 hashes in the error's `context`, which `toResponse` has never returned. The version guard
+moved out of `wire.ts` into `config/execution-version.ts` - the composition root had passed the 500-line
+per-file ceiling, and the rule it holds is a fact about the document, not about how a request is wired.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,710 | **6,740** | 30 |
+| `domain` | 9,271 | **9,330** | 59 |
+| `infrastructure` | 8,485 | **8,515** | 30 |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+Each ceiling moves to its own measurement plus the correction headroom a review round needs and no
+further, the same order as every figure above it.

@@ -2,9 +2,25 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getDb, readJsonBody } from "@app/_server/context";
 import { esignCallback } from "@infra/wire";
 import { appError, isRetryable, logLevelFor, toResponse } from "@contracts/errors";
+import { CLIENT_RETRY, RETRY_LATER_AFTER_SECONDS } from "@contracts/client-retry";
 import { log } from "@infra/observability/logger";
 
 export const runtime = "nodejs";
+
+/**
+ * REDELIVER LATER - the third category, and the reason the first two were not
+ * enough (D-226).
+ *
+ * A configuration-version mismatch is NEITHER permanent NOR a transient fault:
+ * it stands until an operator rolls the published document back (or PC-4 lands)
+ * and then clears on its own. Answering it "never redeliver" DISCARDS A SIGNATURE
+ * EVENT - the client signs and their account never opens - which is strictly
+ * worse than the unbounded redelivery the do-not-redeliver status was introduced
+ * to stop. 503 is the status whose meaning to an HTTP sender is exactly that, and
+ * `Retry-After` is what keeps it from becoming the old unpaced 5xx wearing a new
+ * number.
+ */
+const RETRY_LATER_STATUS = 503;
 
 /**
  * The ONE status every downstream REFUSAL answers with.
@@ -65,13 +81,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // the signature event. A failed callback never answers success, whatever a
     // code's own status says.
     const refusal = mapped.body.error.code;
+    // A refusal the flow itself classified as OPERATOR-RECOVERABLE takes the
+    // third category, whatever code carried it: the taxonomy scores a CONFLICT
+    // non-retryable and 409, which is right for a client repeating the identical
+    // request and wrong for a provider whose redelivery after a rollback would
+    // succeed. The instruction is decided where the reason is known and read
+    // here, never re-derived from the code.
     const redeliverable = isRetryable(refusal) || mapped.status >= 500;
-    const status = redeliverable ? Math.max(mapped.status, 500) : PERMANENT_REFUSAL_STATUS;
+    const status = result.retry === CLIENT_RETRY.later
+      ? RETRY_LATER_STATUS
+      : redeliverable
+      ? Math.max(mapped.status, 500)
+      : PERMANENT_REFUSAL_STATUS;
     // The status tells the provider what to DO; this tells the operator what
     // HAPPENED, at the severity the taxonomy assigns the code - so collapsing
     // every refusal onto one status never costs a diagnosis.
     log[logLevelFor(refusal)]({ code: refusal }, "e-sign callback finalization failed");
-    return NextResponse.json(mapped.body, { status });
+    return NextResponse.json(
+      mapped.body,
+      status === RETRY_LATER_STATUS
+        // Unpaced retries are the failure this whole rule exists to bound, so the
+        // redelivery window rides on the wire rather than being left to the
+        // provider's own back-off.
+        ? { status, headers: { "retry-after": String(RETRY_LATER_AFTER_SECONDS) } }
+        : { status },
+    );
   }
   return NextResponse.json({ status: result.status });
 }

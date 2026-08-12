@@ -25,12 +25,17 @@
  * momentary ENOENT while a deploy replaces the file), and caching one would
  * disable the configured flow for the life of the process.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { LineCounter, parseDocument, visit } from "yaml";
 import { appError, type AppError } from "@contracts/errors";
 import { err, ok, type Result } from "@contracts/result";
+import {
+  generatedObservabilityId,
+  type ConfigurationStage,
+} from "@domain/observability/safe-values";
+import { log } from "@infra/observability/logger";
 import {
   bindDomainConfig,
   requiredFirmClasses,
@@ -80,15 +85,21 @@ const projectPath = (file: string): string =>
   join(process.cwd(), DOMAIN_CONFIG_DIRECTORY, file);
 
 /**
- * Tags, anchors, aliases, and merge keys - the four ways YAML stops being data.
+ * ONE parse, judged and converted (D-227).
  *
- * EXPORTED so the domain-configuration fence proves THIS implementation refuses
- * them, rather than proving the shipped documents are inert according to a
- * second copy of the rule: a copy would keep reading green after `merge: false`
- * flipped or this walk was deleted here, which is detection standing in for
- * verification (charter #2).
+ * `problems` is empty exactly when the bytes are inert; `data` is what those SAME
+ * bytes convert to. Judging the text and converting it through two independent
+ * `parseDocument` calls left the inertness verdict standing for a document that
+ * was never the one loaded - true today, and separable the moment the two call
+ * sites' options diverge.
  */
-export const inertnessProblems = (text: string): readonly string[] => {
+interface InertConfiguration {
+  readonly problems: readonly string[];
+  /** The plain data the judged Document converts to; `null` when it was refused. */
+  readonly data: unknown;
+}
+
+const readInertConfiguration = (text: string): InertConfiguration => {
   const lineCounter = new LineCounter();
   const document = parseDocument(text, { lineCounter, merge: false });
   const problems: string[] = [];
@@ -116,18 +127,63 @@ export const inertnessProblems = (text: string): readonly string[] => {
       }
     },
   });
-  return problems;
+  // Converted from the DOCUMENT the walk above just judged, never from a second
+  // parse of the same text - and only once that walk found nothing, so a document
+  // whose own parse errors are among the problems is never converted.
+  return { problems, data: problems.length > 0 ? null : (document.toJS() as unknown) };
 };
 
-const readVersionPins = (): Result<readonly VersionPin[], AppError> => {
+/**
+ * Tags, anchors, aliases, and merge keys - the four ways YAML stops being data.
+ *
+ * EXPORTED so the domain-configuration fence proves THIS implementation refuses
+ * them, rather than proving the shipped documents are inert according to a
+ * second copy of the rule: a copy would keep reading green after `merge: false`
+ * flipped or this walk was deleted here, which is detection standing in for
+ * verification (charter #2). The verdict is all the fence needs; the DATA half
+ * stays unexported so this adapter's public surface carries no `unknown`.
+ */
+export const inertnessProblems = (text: string): readonly string[] =>
+  readInertConfiguration(text).problems;
+
+/**
+ * EVERY refusal this adapter can produce, minted in ONE place (D-227).
+ *
+ * The DIAGNOSIS - dotted document paths, per-stage loader messages, the pinned
+ * and read SHA-256 hashes, the version id - is deployment internals, and
+ * `toResponse` returns an `AppError`'s message verbatim to whoever asked. It
+ * reached a browser through the intake route and an EXTERNAL e-sign provider
+ * through the webhook's JSON body. So the message on the wire is one generic
+ * sentence carrying a CORRELATION ID, the diagnosis goes to the operator's log
+ * line under the same id, and the full text rides in `context` - which
+ * `toResponse` has never returned and which is what a log sink able to carry
+ * prose would read. Minting the reference through the observability id factory
+ * rather than a bare uuid is what stops it degrading to "[REDACTED]" in the very
+ * line it exists to join.
+ */
+const configurationRefusal = (
+  domainConfigId: string,
+  stage: ConfigurationStage,
+  detail: string,
+): AppError => {
+  const correlationId = generatedObservabilityId("correlationId", randomUUID());
+  log.error({ correlationId, configStage: stage }, "domain configuration could not be resolved");
+  return appError(
+    "INTERNAL",
+    `This deployment's published configuration could not be resolved, so nothing can be started until an operator repairs it. Quote reference ${correlationId.value}.`,
+    { domainConfigId, stage, detail, correlationId: correlationId.value },
+  );
+};
+
+const readVersionPins = (domainConfigId: string): Result<readonly VersionPin[], AppError> => {
   try {
     const parsed: unknown = JSON.parse(readFileSync(projectPath("versions.json"), "utf8"));
     const versions = (parsed as { readonly versions?: readonly VersionPin[] }).versions;
     return Array.isArray(versions)
       ? ok(versions)
-      : err(appError("INTERNAL", "The domain-configuration version pin file is malformed."));
+      : err(configurationRefusal(domainConfigId, "unreadable-pins", "the domain-configuration version pin file is malformed"));
   } catch {
-    return err(appError("INTERNAL", "The domain-configuration version pin file could not be read."));
+    return err(configurationRefusal(domainConfigId, "unreadable-pins", "the domain-configuration version pin file could not be read"));
   }
 };
 
@@ -149,30 +205,26 @@ const cache = new Map<string, SourcedDomainConfig>();
  */
 const readOnce = (domainConfigId: string): Result<SourcedDomainConfig, AppError> => {
   if (!KEBAB_CASE_RE.test(domainConfigId)) {
-    return err(appError("INTERNAL", `"${domainConfigId}" is not a published domain-configuration id.`));
+    return err(configurationRefusal(domainConfigId, "unpublished", "not a published domain-configuration id"));
   }
   let text: string;
   try {
     text = readFileSync(projectPath(`${domainConfigId}.yaml`), "utf8");
   } catch {
-    return err(
-      appError("INTERNAL", `No domain configuration is published for "${domainConfigId}".`),
-    );
+    return err(configurationRefusal(domainConfigId, "unpublished", "no domain configuration is published under that id"));
   }
-  const problems = inertnessProblems(text);
-  if (problems.length > 0) {
-    return err(appError("INTERNAL", `The "${domainConfigId}" configuration is not inert: ${problems.join("; ")}`));
+  const inert = readInertConfiguration(text);
+  if (inert.problems.length > 0) {
+    return err(configurationRefusal(domainConfigId, "not-inert", inert.problems.join("; ")));
   }
-  const loaded = loadDomainConfig(parseDocument(text, { merge: false }).toJS() as unknown);
+  const loaded = loadDomainConfig(inert.data);
   if (!loaded.ok) {
-    return err(
-      appError("INTERNAL", `The "${domainConfigId}" configuration is invalid: ${formatDomainConfigErrors(loaded.error)}`),
-    );
+    return err(configurationRefusal(domainConfigId, "invalid", formatDomainConfigErrors(loaded.error)));
   }
   const canonical = canonicalConfigJson(loaded.value.document);
-  if (!canonical.ok) return err(canonical.error);
+  if (!canonical.ok) return err(configurationRefusal(domainConfigId, "uncanonical", canonical.error.message));
   const configHash = sha256(canonical.value);
-  const pins = readVersionPins();
+  const pins = readVersionPins(domainConfigId);
   if (!pins.ok) return err(pins.error);
   const pin = pins.value.find(
     (candidate) =>
@@ -181,14 +233,19 @@ const readOnce = (domainConfigId: string): Result<SourcedDomainConfig, AppError>
   );
   if (pin === undefined) {
     return err(
-      appError("INTERNAL", `Version ${loaded.value.domainConfigVersionId} is not a published domain-configuration version.`),
+      configurationRefusal(
+        domainConfigId,
+        "unpinned",
+        `version ${loaded.value.domainConfigVersionId} is not a published domain-configuration version`,
+      ),
     );
   }
   if (pin.configHash !== configHash) {
     return err(
-      appError(
-        "INTERNAL",
-        `Version ${loaded.value.domainConfigVersionId} changed without a version bump (pinned ${pin.configHash}, read ${configHash}).`,
+      configurationRefusal(
+        domainConfigId,
+        "hash-mismatch",
+        `version ${loaded.value.domainConfigVersionId} changed without a version bump (pinned ${pin.configHash}, read ${configHash})`,
       ),
     );
   }
@@ -212,10 +269,11 @@ export const loadPublishedDomainConfig = (
 
 const configFailure = (
   domainConfigId: string,
+  stage: ConfigurationStage,
   what: string,
   errors: readonly DomainConfigError[],
 ): AppError =>
-  appError("INTERNAL", `The "${domainConfigId}" configuration ${what}: ${formatDomainConfigErrors(errors)}`);
+  configurationRefusal(domainConfigId, stage, `${what}: ${formatDomainConfigErrors(errors)}`);
 
 /**
  * PROJECTIONS FOR SURFACES. A screen asks for the shape it renders, never for
@@ -227,7 +285,9 @@ export const loadIntakeForm = (domainConfigId: string): Result<IntakeForm, AppEr
   const sourced = loadPublishedDomainConfig(domainConfigId);
   if (!sourced.ok) return sourced;
   const form = intakeFormOf(sourced.value.config);
-  return form.ok ? ok(form.value) : err(configFailure(domainConfigId, "declares no usable intake form", form.error));
+  return form.ok
+    ? ok(form.value)
+    : err(configFailure(domainConfigId, "invalid", "declares no usable intake form", form.error));
 };
 
 /**
@@ -252,5 +312,5 @@ export const loadDomainLabels = (
   const bound = bindDomainConfig(sourced.value.config, firm);
   return bound.ok
     ? ok(domainLabelsOf(bound.value))
-    : err(configFailure(domainConfigId, `could not bind for ${firm.firmId}`, bound.error));
+    : err(configFailure(domainConfigId, "unbindable", `could not bind for ${firm.firmId}`, bound.error));
 };

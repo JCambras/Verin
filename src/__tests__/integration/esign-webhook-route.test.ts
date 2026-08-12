@@ -11,15 +11,23 @@ import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
  * The webhook's status is an INSTRUCTION to an external system, never a window
  * into our internal error taxonomy: a 5xx says the callback was not delivered,
  * so redeliver it, and the saved cursor makes that retry idempotent. That is
- * right for a TRANSIENT failure and wrong for a PERMANENT refusal - a
- * configuration version conflict meets the identical refusal on every
- * redelivery, so a 5xx would spend the provider's retry budget and then drop the
- * signature event with nothing but an error log behind it.
+ * right for a TRANSIENT failure and wrong for a PERMANENT refusal, which meets
+ * the identical answer on every redelivery: a 5xx there spends the provider's
+ * retry budget and then drops the signature event with nothing but an error log
+ * behind it.
  *
- * All three cases are asserted: EVERY refusal answers the one do-not-redeliver
- * status (422), whatever internal code produced it and never a status this
- * endpoint already owns for something else, and a server-side failure still
- * answers 5xx.
+ * PERMANENT VERSUS TRANSIENT WAS A FALSE BINARY, and the configuration-version
+ * conflict is the case that proves it (D-226): it is neither, because it clears
+ * the moment an operator rolls the published document back. Answering it "never
+ * redeliver" DISCARDS A SIGNATURE the client already gave - the client signs and
+ * their account never opens - which is strictly worse than the unbounded
+ * redelivery the do-not-redeliver status was introduced to stop. So it takes the
+ * third category: 503, PACED with Retry-After.
+ *
+ * All three are asserted here: the operator-recoverable refusal comes back later,
+ * a genuinely permanent refusal answers the one do-not-redeliver status whatever
+ * internal code produced it (and never a status this endpoint already owns for
+ * something else), and a server-side failure still answers 5xx.
  */
 const ORG = "org-esign-webhook-route";
 const advisorPrincipal = principalFromIdentity({
@@ -67,8 +75,15 @@ describe("POST /api/esign/webhook honors the taxonomy's retryability", () => {
     );
   });
 
-  it("answers a PERMANENT refusal with the do-not-redeliver status, whatever code produced it", async () => {
-    const { executionId, token } = await suspendedToken("Permanent Refusal Household");
+  /**
+   * The signature ARRIVED. Nothing about this deployment can finish the account
+   * opening until an operator acts, and then it can - so the provider is asked to
+   * come back rather than to give up, and the execution is left suspended with an
+   * external event still able to complete it. The pacing is asserted too: an
+   * unpaced 503 is the old blanket 5xx wearing a new number.
+   */
+  it("asks the provider to redeliver LATER when the configuration version was superseded", async () => {
+    const { executionId, token } = await suspendedToken("Superseded Version Household");
     const persisted = await db.query<{ context_json: string }>(
       "SELECT context_json FROM flow_executions WHERE id = $1",
       [executionId],
@@ -80,9 +95,14 @@ describe("POST /api/esign/webhook honors the taxonomy's retryability", () => {
     ]);
 
     const response = await callback(token);
-    expect(response.status).toBe(422);
+    expect(response.status).toBe(503);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
     const body = (await response.json()) as { error?: { code?: string } };
     expect(body.error?.code).toBe("CONFLICT");
+    // Refusing to DRIVE is not abandoning the execution: it stays suspended, so
+    // the redelivery after the rollback resumes it rather than finding nothing.
+    const after = await db.query<{ status: string }>("SELECT status FROM flow_executions WHERE id = $1", [executionId]);
+    expect(after.rows[0]!.status).toBe("suspended");
   });
 
   /**

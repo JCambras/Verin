@@ -28,7 +28,7 @@ import type { PIIBearing } from "@contracts/pii";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, normalizeAppError, type AppError } from "@contracts/errors";
 import { MACHINE_RECORD_ID_RE, parseMachineRecordId } from "@contracts/record-id";
-import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult } from "@domain/workflow/engine";
+import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult, type ResumeGuard } from "@domain/workflow/engine";
 import {
   compileFlowDefinition,
   CONFIG_VERSION_KEY,
@@ -38,6 +38,7 @@ import {
   type ExecutionAdapters,
 } from "@domain/config/plan-compiler";
 import { ACCOUNT_OPENING_DOMAIN, loadPublishedDomainConfig } from "@infra/config/domain-config-source";
+import { versionMismatch } from "@infra/config/execution-version";
 import { makeExecutionAdapters, SUPPORTED_COMMAND_TYPES } from "@infra/execution-adapters";
 import { makeExecutionStore } from "@infra/store/execution-store";
 import { auditedWrite } from "@infra/audit/audited-write";
@@ -180,48 +181,6 @@ function inputMatchesExecution(input: StartAccountOpeningInput, existing: Execut
 }
 
 /**
- * The two states a resume actually RUNS steps from. A completed execution is
- * reported idempotently without re-running anything, so it is not held to the
- * check below - refusing a doubly-fired webhook its "already finalized" answer
- * would trade one silent wrong outcome for a loud one nothing can act on.
- */
-const driveable = (state: ExecutionState): boolean =>
-  state.status === "suspended" || state.status === "failed";
-
-/**
- * A persisted execution may only be DRIVEN by the configuration version it
- * started under. The cursor is POSITIONAL and the plan is now versioned data, so
- * a legitimate version bump between the e-sign suspend and the signature webhook
- * would otherwise resume at the wrong step - skipping finalize, or re-running a
- * committed one, either of which means missing or duplicated real records. The
- * flowId cannot carry this: it is the domainConfigId and is stable across
- * versions. Resuming against the PINNED document rather than refusing is the end
- * state and stays owned by PC-4 (prompts 15/19, docs/domain-config-gaps.md).
- *
- * MISSING IS NOT MISMATCHED. An execution carrying no recorded version predates
- * the pinning itself, so it can only have started under the plan published
- * before this guard existed: it is LEGACY and continues. Refusing it would make
- * the guard's first act on deployment the stranding of every legitimate in-flight
- * execution - the very before-deploy/after-deploy harm it exists to prevent. A
- * recorded value that is not a version string is neither, and fails closed.
- */
-function versionMismatch(flow: CompiledFlow, state: ExecutionState): AppError | null {
-  const started = state.data[CONFIG_VERSION_KEY];
-  if (started === undefined) return null;
-  if (started === flow.domainConfigVersionId) return null;
-  if (typeof started !== "string") {
-    return appError(
-      "CONFLICT",
-      `This execution records no readable configuration version and cannot be continued against the published ${flow.domainConfigVersionId}.`,
-    );
-  }
-  return appError(
-    "CONFLICT",
-    `This execution was started under configuration version ${started} and cannot be continued against the published ${flow.domainConfigVersionId}.`,
-  );
-}
-
-/**
  * Typed refusal of an edited replay: the client must mint a new request id (D-027).
  * This is the one refusal here whose remedy IS a fresh identity, so it says so
  * structurally rather than in message text a client cannot act on.
@@ -272,9 +231,11 @@ function canonicalExecutionId(
 async function retryFailedStart(flow: CompiledFlow, store: ExecutionStore, deps: ExecutionAdapters, existing: ExecutionState, tenant: TenantContext): Promise<AccountOpeningStartResult> {
   // The re-drive resumes from the SAVED cursor, so it carries the same
   // positional hazard a webhook resume does. No resubmission clears it - only a
-  // configuration change an operator makes - so the submitter is told to stop.
+  // configuration change an operator makes - so the submitter keeps this
+  // execution's identity and is told to come back once that repair has landed,
+  // never to give up on work that is still completable (D-226).
   const stale = versionMismatch(flow, existing);
-  if (stale) return refused(existing.id, stale, CLIENT_RETRY.none);
+  if (stale) return refused(existing.id, stale, CLIENT_RETRY.later);
   try {
     return drivenOutcome(await retryFlow(flow.definition, store, deps, existing, tenant));
   } catch (e) {
@@ -400,11 +361,19 @@ export async function startAccountOpening(
   });
 }
 
+/**
+ * The resume outcome plus WHAT THE SENDER SHOULD DO NEXT, in the same closed
+ * vocabulary the browser reads (D-226). The e-sign provider is a different
+ * audience, so the webhook route turns the instruction into a status - but the
+ * instruction itself is decided HERE, where the reason is still known.
+ */
+type AccountOpeningResumeResult = FlowRunResult & { readonly retry?: ClientRetry };
+
 export async function resumeAccountOpeningByToken(
   db: SqlDb,
   token: string,
   payload: Record<string, unknown>,
-): Promise<FlowRunResult | { status: "not-found" }> {
+): Promise<AccountOpeningResumeResult | { status: "not-found" }> {
   const app = await getApplicationByToken(db, token);
   if (!app) return { status: "not-found" };
   const store = makeExecutionStore(db);
@@ -421,18 +390,42 @@ export async function resumeAccountOpeningByToken(
   const deps = makeExecutionAdapters(db, starter);
   // The cursor this resume would drive is POSITIONAL, so it is only meaningful
   // against the plan the execution started under. A mid-flight configuration
-  // version bump fails LOUDLY here rather than silently resuming at the wrong
-  // step. The token already scopes the row; ownership is re-checked by resumeFlow.
-  const suspended = await store.loadByToken(token);
-  if (suspended !== null && suspended.orgId === starter.tenant.orgId && driveable(suspended)) {
-    const stale = versionMismatch(flow.value, suspended);
-    if (stale) return { executionId: suspended.id, status: "failed", error: stale, data: {} };
-  }
-  return withSpan("flow.account-opening.resume", {
+  // version bump fails LOUDLY rather than silently resuming at the wrong step.
+  //
+  // Judged INSIDE the resume, against the snapshot the drive itself loaded.
+  // Loading the row here to check it and letting `resumeFlow` load it again was a
+  // third sequential round trip on the webhook path, against a store that
+  // serializes every operation behind a mutex - and two snapshots, so the version
+  // checked was not provably the version driven.
+  const parked = { stale: false };
+  const refuseSupersededVersion: ResumeGuard = (state, tenant) => {
+    const stale = versionMismatch(flow.value, state);
+    if (!stale) return null;
+    parked.stale = true;
+    // A SIGNATURE THAT ARRIVED AND IS WAITING ON AN OPERATOR must never be
+    // discovered by a client phoning to ask why nothing happened. The keyed
+    // executionId is the same value the start path logged, so the parked callback
+    // joins to the execution that produced it.
+    log.error({
+      orgId: authorityObservabilityId("orgId", tenant),
+      executionId: keyedObservabilityId("executionId", tenant, state.id),
+      flow: "account-opening",
+      code: stale.code,
+      retry: CLIENT_RETRY.later,
+    }, "e-sign signature callback parked until an operator restores the configuration version");
+    return stale;
+  };
+  const outcome = await withSpan("flow.account-opening.resume", {
     orgId: authorityObservabilityId("orgId", starter.tenant),
   }, () =>
-    resumeFlow(flow.value.definition, store, deps, token, payload, starter.tenant),
+    resumeFlow(flow.value.definition, store, deps, token, payload, starter.tenant, refuseSupersededVersion),
   );
+  // A superseded version CLEARS when an operator rolls the published document
+  // back (or when PC-4 lands), so the sender is told to come back - never that
+  // the callback is refused for good, which would discard the signature event.
+  return parked.stale && "executionId" in outcome
+    ? { ...outcome, retry: CLIENT_RETRY.later }
+    : outcome;
 }
 
 /**
@@ -445,7 +438,7 @@ export async function esignCallback(
   token: string,
   signature: string,
   payload: Record<string, unknown>,
-): Promise<FlowRunResult | { status: "not-found" } | { status: "invalid-signature" }> {
+): Promise<AccountOpeningResumeResult | { status: "not-found" } | { status: "invalid-signature" }> {
   if (!verifyCallback(token, signature)) return { status: "invalid-signature" };
   return resumeAccountOpeningByToken(db, token, payload);
 }

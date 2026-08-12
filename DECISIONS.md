@@ -9169,3 +9169,73 @@ Asserting the refusal alone would have read green on the dead end it replaced.
 
 **Revert path.** Delete `contracts/client-retry.ts`, the `retry` field on the start result, and the route's
 instruction mapping; the client falls back to a code-keyed rule with the dead end this entry closes.
+
+---
+
+## D-226 - Prompt 10 review: permanent versus transient was a FALSE BINARY; the third arm is RETRY-LATER
+
+**What.** `CLIENT_RETRY` gains a fourth member, `retry-later`, plus `RETRY_LATER_AFTER_SECONDS` - the
+pacing every surface answering it puts on the wire. A refusal that WILL CLEAR ON OPERATOR ACTION is
+neither permanent nor a transient fault, and the configuration-version mismatch is the reachable case:
+the e-sign webhook answers it 503 with `Retry-After` (not the do-not-redeliver 422), the account-opening
+route answers it 503 with `Retry-After` (not "contact your operations team"), and a signature callback
+parked on one is reported at `error` level with the tenant-keyed `executionId` the start path logged, so
+an operator finds the execution before the client phones to ask why nothing happened. The webhook reads
+the flow's own typed instruction rather than re-deriving redeliverability from the code. `resumeFlow`
+takes an optional `ResumeGuard`, so the version check happens against the state the ENGINE loaded: one
+round trip instead of three on the webhook path, and one snapshot instead of two.
+
+**Why.** D-222 fixed one half and D-224 named the rule, but both were still asking a two-valued question.
+A superseded configuration version answered "never redeliver" DISCARDS A SIGNATURE THE CLIENT ALREADY
+GAVE: the execution stays suspended forever with no external event left to complete it, which is strictly
+worse than the unbounded redelivery 422 was introduced to stop. It is also not transient - redelivering
+in ten seconds meets the identical refusal - so 5xx alone just spends the provider's retry budget. The
+two audiences share ONE taxonomy: the browser's vocabulary had the identical gap (it could say
+retry-with-new-identity, retry-with-same-identity and do-not-retry, but not "this will clear, come back"),
+so fixing one side alone would have reopened the hole on the other at the next reachable case. Pacing is
+part of the arm, not an afterthought: an unpaced 503 is the old blanket 5xx wearing a new number. The
+single-snapshot guard is the same finding one layer down - the composition root loaded the row to check
+the version and `resumeFlow` loaded it again to drive it, so the version checked was not provably the
+version driven. Proofs PF-272, PF-274.
+
+**Fenced by.** `src/__tests__/integration/esign-webhook-route.test.ts` asserts all three categories at
+once (later/paced/still-suspended, permanent-on-one-status, transient-on-5xx);
+`src/__tests__/fitness/flowstep-suspend-resume.test.ts` counts token loads and asserts the guard sees the
+drive's own state, with a passing-guard sibling so the refusal stays conditional.
+
+**Revert path.** Remove the `later` member and its two status mappings; the webhook falls back to the
+binary and the signature-discard returns.
+
+---
+
+## D-227 - Prompt 10 review: a configuration diagnosis goes to the operator, joined by a correlation id
+
+**What.** Every refusal `src/infrastructure/config/domain-config-source.ts` can produce is minted in ONE
+place. The wire gets a generic sentence carrying a correlation id; `AppError.context` gets the full
+diagnosis (dotted document paths, per-stage loader messages, the pinned and read SHA-256 hashes) and
+`toResponse` has never returned `context`; the operator's log line gets that same correlation id and a
+closed `configStage` code. The reference is minted through `generatedObservabilityId`, so it survives the
+log formatter instead of degrading to `[REDACTED]`; `correlationId` and `configStage` are registered
+observability vocabulary, derived from the real call sites both ways. The intake route answers a
+configuration refusal with the `retry-later` instruction (D-226) rather than the taxonomy's code. The YAML
+is also parsed ONCE now: the same `Document` the inertness walk judges is the one converted to data, so an
+inert verdict can never stand for a document other than the one loaded.
+
+**Why.** D-224 said the diagnosis belongs in the logs and the previous round left it riding the response:
+`toResponse` returns `AppError.message` verbatim, so the detail reached a BROWSER through the intake route
+and an EXTERNAL e-sign provider through the webhook's JSON body. Nothing in it is PII, but deployment
+internals crossing a trust boundary is exactly the class D-224 exists to close. Narrowing the message
+alone would have cost the diagnosis, which was the explicit constraint the first time the rule was
+applied - so the correlation id is what makes the narrowing safe, and it is minted where the failure is
+known rather than at each of the three surfaces that report one. The two-parse issue is smaller but the
+same shape: the bytes judged inert were not PROVABLY the bytes converted, and a future divergence in
+`parseDocument` options is all it would take to separate them. Proof PF-273.
+
+**Fenced by.** `src/__tests__/unit/domain-config-source.test.ts` asserts the wire message carries the
+reference and neither a hex digest nor a dotted document path, that the same message is what `toResponse`
+emits, that `context.detail` is still populated and is NOT in the serialized response, and that two
+refusals never share a reference - with a first case proving the shipped document still resolves, so the
+rule cannot be met by a source that refuses everything.
+
+**Revert path.** Inline the detail back into the message at `configurationRefusal`; the leak returns at
+all three surfaces at once, which is the property that made the single mint the right place to fix it.

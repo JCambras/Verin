@@ -16,7 +16,8 @@
  * executor (prompts 16/25). Until then the compiled form is this typed
  * intermediate plus the shipped suspend/resume engine, which is exactly the
  * "interim execution substrate" the design calls for - and the reason a
- * `decision-hash` key segment is REFUSED here rather than faked.
+ * `decision-hash` source is REFUSED here, in every position a compiled step
+ * resolves, rather than faked.
  */
 import { appError, type AppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
@@ -142,8 +143,28 @@ const resolverFor = (
       const value = asString(ctx[source.field]);
       return value === null ? { kind: "absent" } : { kind: "value", value };
     }
-    return { kind: "absent" };
+    if (source.from === "decision-hash") {
+      // THE ONE SOURCE THIS SUBSTRATE HAS NO VALUE FOR. `compileFlowDefinition`
+      // refuses any capability that reads it, in EVERY position a compiled step
+      // resolves, so a compiled plan never arrives here - which is the point: a
+      // bare `absent` is what let a payload field sourced from the decision hash
+      // load clean, compile clean, and then either fail at the step that consumed
+      // it (after earlier steps had committed real records) or, when the field was
+      // optional, vanish from the command with no diagnostic anywhere.
+      return { kind: "absent" };
+    }
+    return unresolvableSource(source);
   };
+};
+
+/**
+ * A value source with NO arm above. Typed `never`, so adding a variant to the
+ * grammar without teaching this resolver about it is a BUILD failure rather than
+ * a silent run-time `absent` - the shape the decision-hash gap actually had.
+ */
+const unresolvableSource = (source: never): SourceResolution => {
+  void source;
+  return { kind: "absent" };
 };
 
 /**
@@ -199,6 +220,27 @@ const unreadableSlot = (
   }
   return null;
 };
+
+/**
+ * Does this capability read the DECISION HASH anywhere a compiled step resolves?
+ *
+ * Named deferral (D-116 pattern): the hash exists once prompt 16 records a
+ * decision and prompt 25 executes against it. The guard used to look only at
+ * `idempotencyKey`, so a `{kind: value, source: {from: decision-hash}}` PAYLOAD
+ * field passed all seven load stages and compiled cleanly - then failed at the
+ * step that consumed it, after earlier steps had committed real CRM rows, or
+ * (when `optional`) was dropped from the command with no diagnostic at all. Both
+ * positions are checked here, which is every position a compiled step resolves:
+ * a `copy` field renders only `{slot:…}` and `{context:…}` placeholders, neither
+ * of which can name the decision hash.
+ */
+const readsDecisionHash = (capability: ExecutionCapability): boolean =>
+  capability.idempotencyKey.some(
+    (segment) => segment.kind !== "literal" && segment.source.from === "decision-hash",
+  ) ||
+  capability.payload.some(
+    (field) => field.kind !== "copy" && field.source.from === "decision-hash",
+  );
 
 const failure = (errors: readonly DomainConfigError[]): StepResult => ({
   kind: "fail",
@@ -373,14 +415,13 @@ export const compileFlowDefinition = (
     if (capability === undefined) {
       return err(appError("INTERNAL", `The plan step "${step.id}" names an undeclared capability.`));
     }
-    if (capability.idempotencyKey.some((segment) => segment.kind !== "literal" && segment.source.from === "decision-hash")) {
-      // Named deferral (D-116 pattern): the decision hash exists once prompt 16
-      // records a decision and prompt 25 executes against it. Refusing here is
-      // what stops a compiled plan from inventing a stand-in identity.
+    if (readsDecisionHash(capability)) {
+      // Refusing here is what stops a compiled plan from inventing a stand-in
+      // identity, or from silently omitting a value it cannot resolve.
       return err(
         appError(
           "INTERNAL",
-          `Capability "${capability.id}" keys idempotency on the decision hash, which the interim execution substrate does not have (prompt 25 lands it).`,
+          `Capability "${capability.id}" reads the decision hash - in an idempotency key or a command payload field - which the interim execution substrate does not have (prompt 25 lands it).`,
         ),
       );
     }

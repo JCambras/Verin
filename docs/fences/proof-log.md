@@ -15028,3 +15028,137 @@ document being rejected for an unrelated reason.
 `Tests 82 passed (82)`.
 
 **Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-webhook-status-collision`).
+
+## PF-271 · the decision hash is refused in EVERY position a compiled step resolves
+
+**Invariant:** the interim execution substrate has no decision hash (prompt 16 records the decision,
+prompt 25 executes against it), and `resolverFor` has no value for it. `compileFlowDefinition` refuses
+a capability that reads it in an idempotency-key segment OR a command payload field - every position a
+compiled step resolves, since a `copy` field renders only `{slot:…}` and `{context:…}` placeholders.
+
+**Injection.** Reduced `readsDecisionHash` (`src/domain/config/plan-compiler.ts:222`) back to the
+key-only predicate the guard shipped with, and compiled account opening with a
+`{kind: value, field: decisionRef, source: {from: decision-hash}}` payload field appended.
+
+**Observed failure:**
+```
+× REFUSES compiling a plan whose capability sources a PAYLOAD field from the decision hash
+AssertionError: an optional:false decision-hash payload field must not compile: expected true to be false
+ ❯ src/__tests__/unit/domain-config.test.ts:318:99
+```
+The plan compiled to a runnable flow whose `decisionRef` payload field can never resolve - and with
+`optional: true` it compiled AND dropped the field from the command with no diagnostic anywhere.
+
+**Companion.** The same case asserts the mutated document still LOADS, so the refusal cannot be
+satisfied by rejecting the DOCUMENT: `config/domains/money-movement.yaml` ships a `decision-hash`
+idempotency segment as the ratified anchor (PC-11), and refusing it at load would throw away prompt
+10's two-domain deliverable to close a runtime hole - the line D-223 already drew. `resolverFor` now
+also ends in a `never`-typed tail (`unresolvableSource`), so a future grammar arm with no resolver is a
+BUILD failure rather than the silent `absent` this gap actually was.
+
+**Reverted:** the payload half restored; `src/__tests__/unit/domain-config.test.ts` reports
+`Tests 84 passed (84)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-redeliverability-and-leak`).
+
+---
+
+## PF-272 · an operator-recoverable refusal is redelivered LATER, paced, never discarded
+
+**Invariant:** the webhook's status is an instruction about REDELIVERY, and permanent-versus-transient
+was a false binary. A configuration-version mismatch is neither: it clears when an operator rolls the
+published document back. It answers 503 with `Retry-After`, the execution stays suspended, and the
+instruction is read off the flow's own typed `retry` rather than re-derived from the error code (the
+taxonomy scores `CONFLICT` non-retryable and 409, which is right for a client repeating the identical
+request and wrong for a provider whose redelivery after a rollback succeeds).
+
+**Injection.** Disabled the retry-later arm of the status expression in
+`src/app/api/esign/webhook/route.ts:82`, leaving the permanent/transient binary that shipped.
+
+**Observed failure:**
+```
+× asks the provider to redeliver LATER when the configuration version was superseded
+AssertionError: expected 422 to be 503
+ ❯ src/__tests__/integration/esign-webhook-route.test.ts:98:29
+```
+422 tells the provider never to redeliver, so the signature event the client already gave is dropped
+and the application stays suspended with no external event left to complete it.
+
+**Companion.** The two sibling cases in the same file still pass: a genuinely permanent refusal still
+answers the ONE do-not-redeliver status whatever internal code produced it (PF-268's collision case),
+and an ordinary finalize failure still answers 5xx. So the third category is added, not substituted for
+the first two. The retry-later case also asserts `Retry-After` is present and positive - an unpaced 503
+is the blanket 5xx wearing a new number - and that the execution row is still `suspended`.
+
+**Reverted:** the arm restored; `src/__tests__/integration/esign-webhook-route.test.ts` reports
+`Tests 3 passed (3)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-redeliverability-and-leak`).
+
+---
+
+## PF-273 · a configuration refusal carries a reference on the wire and its diagnosis in the log
+
+**Invariant:** `toResponse` returns an `AppError`'s message verbatim, so the message a configuration
+refusal carries is what a browser and an external e-sign provider read. Every refusal
+`domain-config-source.ts` can produce is minted in ONE place: a generic sentence plus a correlation id
+on the wire, the dotted document paths and SHA-256 hashes in `context` (which `toResponse` has never
+returned), and an operator log line under the same correlation id and a closed `configStage` code.
+
+**Injection.** Restored the detailed message at the mint
+(`src/infrastructure/config/domain-config-source.ts:141`), spelling the domain id and the stage detail
+into the client-visible sentence exactly as the pre-fix refusals did.
+
+**Observed failure:**
+```
+× answers an unresolvable configuration with retry-later, paced, and no diagnosis on the wire
+AssertionError: expected 'The "no-such-published-domain" config…' to contain 'Quote reference'
+Received: "The "no-such-published-domain" configuration could not be resolved: no domain configuration
+is published under that id"
+ ❯ src/__tests__/integration/account-opening-route.test.ts:200:33
+```
+Two further cases in `src/__tests__/unit/domain-config-source.test.ts` failed with it, on the hex-digest
+and dotted-path shapes the narrowed message must not carry.
+
+**Companion.** The unit file's first case asserts the SHIPPED document still resolves, so the rule
+cannot be satisfied by a source that refuses everything; and it asserts the diagnosis is still
+PRESENT - `context.detail` non-empty, `context.stage` the closed code - while
+`JSON.stringify(toResponse(error))` does not contain it. Narrowing the message is what the finding
+asked for; losing the diagnosis is what the correlation id exists to prevent.
+
+**Reverted:** the generic mint restored; both files report `Tests 4 passed (4)` and `Tests 5 passed (5)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-redeliverability-and-leak`).
+
+---
+
+## PF-274 · a caller's resume precondition judges the ONE snapshot the drive uses
+
+**Invariant:** the composition root refuses to resume an execution bound to a superseded configuration
+version. It supplies that precondition as a `ResumeGuard` the engine calls against the state IT loaded,
+so the version checked is provably the version driven - and the webhook path loads the continuation
+once rather than twice.
+
+**Injection.** Re-read the row before calling the guard in `resumeFlow`
+(`src/domain/workflow/engine.ts:190`), reproducing the check-then-drive shape the composition root
+used to have.
+
+**Observed failure:**
+```
+× enforces: a resume guard judges the ONE snapshot the drive would use
+AssertionError: expected 2 to be 1
+ ❯ src/__tests__/fitness/flowstep-suspend-resume.test.ts:121:41
+```
+Two token loads for one resume, against a store that serializes every operation behind a mutex - and
+two snapshots, which is the TOCTOU half: a state that changed between them would be checked in one and
+driven in the other.
+
+**Companion.** The sibling case drives a guard that returns `null` to completion, so the refusal is
+conditional rather than a resume that never runs; and the refusal case asserts the persisted row is
+still `suspended` with only the pre-suspend steps hit, so refusing to DRIVE never advances or fails the
+execution the later redelivery must still complete.
+
+**Reverted:** the single load restored; `src/__tests__/fitness/flowstep-suspend-resume.test.ts` reports
+`Tests 6 passed (6)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-redeliverability-and-leak`).

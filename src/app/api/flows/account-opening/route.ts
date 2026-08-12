@@ -3,7 +3,7 @@ import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_se
 import { startAccountOpening, CLIENT_REQUEST_ID_RE, START_INPUT_FIELDS } from "@infra/wire";
 import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
 import { appError, logLevelFor } from "@contracts/errors";
-import { CLIENT_RETRY, type ClientRetry } from "@contracts/client-retry";
+import { CLIENT_RETRY, RETRY_LATER_AFTER_SECONDS, type ClientRetry } from "@contracts/client-retry";
 import { log } from "@infra/observability/logger";
 import {
   admitIntakeSubmission,
@@ -35,6 +35,7 @@ export const runtime = "nodejs";
 const REFUSAL_STATUS: Record<ClientRetry, number> = {
   [CLIENT_RETRY.newIdentity]: 409,
   [CLIENT_RETRY.sameIdentity]: 500,
+  [CLIENT_RETRY.later]: 503,
   [CLIENT_RETRY.none]: 422,
 };
 
@@ -43,9 +44,26 @@ const REFUSAL_MESSAGE: Record<ClientRetry, string> = {
     "These details differ from the submission already sent under this form session. Submit again to send them as a new account opening.",
   [CLIENT_RETRY.sameIdentity]:
     "The account opening could not be completed. Submit again to continue it - resubmitting picks up where it stopped rather than opening a second one.",
+  [CLIENT_RETRY.later]:
+    "This deployment is not currently able to continue account openings. Nothing was lost - your operations team must restore it, and submitting again afterwards picks this up where it stopped.",
   [CLIENT_RETRY.none]:
     "This account opening cannot be continued on this deployment. Resubmitting will not help; contact your operations team.",
 };
+
+/**
+ * One refusal shape: the typed instruction, a human sentence, and - for the arm
+ * that says "come back" - the pacing that keeps a client from hammering a
+ * deployment an operator is still repairing.
+ */
+function refusalResponse(retry: ClientRetry, message: string): NextResponse {
+  const status = REFUSAL_STATUS[retry];
+  return NextResponse.json(
+    { retry, error: { message } },
+    retry === CLIENT_RETRY.later
+      ? { status, headers: { "retry-after": String(RETRY_LATER_AFTER_SECONDS) } }
+      : { status },
+  );
+}
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // Starting the flow is the governed "execution.initiate" action (v3 §15.3);
@@ -64,7 +82,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // vocabulary - so adding a registration to the document can never render a
   // select option this route then refuses.
   const form = loadIntakeForm(ACCOUNT_OPENING_DOMAIN);
-  if (!form.ok) return errorResponse(form.error);
+  // A configuration this deployment cannot resolve is an OPERATOR-RECOVERABLE
+  // refusal, so it takes the third instruction rather than the taxonomy's code
+  // and the diagnosis that used to ride with it (D-227): the message is the
+  // generic sentence the source minted, carrying the correlation id its own log
+  // line carries, and the dotted document paths and SHA-256 hashes stay in the
+  // error's context where `toResponse` has never let them out.
+  if (!form.ok) return refusalResponse(CLIENT_RETRY.later, form.error.message);
   const admitted = admitIntakeSubmission(form.value, b);
   if (!admitted.ok) return errorResponse(admitted.error);
   const supplied = admitted.value;
@@ -131,10 +155,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const retry = result.retry ?? CLIENT_RETRY.sameIdentity;
     const error = result.error ?? appError("INTERNAL", "The account-opening flow failed to start.");
     log[logLevelFor(error.code)]({ code: error.code, retry }, "account-opening flow start failed");
-    return NextResponse.json(
-      { retry, error: { message: REFUSAL_MESSAGE[retry] } },
-      { status: REFUSAL_STATUS[retry] },
-    );
+    return refusalResponse(retry, REFUSAL_MESSAGE[retry]);
   }
 
   return NextResponse.json({

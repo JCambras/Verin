@@ -36,13 +36,17 @@ vi.mock("next/headers", () => ({ cookies: () => Promise.resolve(cookieStore) }))
  */
 const injected = vi.hoisted(() => ({
   extraField: null as null | { field: string; label: string; type: "text"; required: boolean },
+  /** Ask for a document that is genuinely not published, so the REAL refusal is exercised. */
+  unresolvableConfiguration: false,
 }));
 vi.mock("@infra/config/domain-config-source", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@infra/config/domain-config-source")>();
   return {
     ...actual,
     loadIntakeForm: (domainConfigId: string) => {
-      const form = actual.loadIntakeForm(domainConfigId);
+      const form = actual.loadIntakeForm(
+        injected.unresolvableConfiguration ? "no-such-published-domain" : domainConfigId,
+      );
       if (injected.extraField === null || !form.ok) return form;
       return { ok: true as const, value: { ...form.value, fields: [...form.value.fields, injected.extraField] } };
     },
@@ -93,6 +97,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
   beforeEach(async () => {
     cookieStore.set.mockClear();
     injected.extraField = null;
+    injected.unresolvableConfiguration = false;
     db = await createMemoryDb();
     globalStore.__verinDb = Promise.resolve(db);
     const now = new Date().toISOString();
@@ -170,6 +175,32 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
     expect(followed.status).toBe(200);
     expect(((await followed.json()) as { status?: string }).status).toBe("suspended");
     expect(await rowCounts()).toEqual({ households: 2, contacts: 2, applications: 2, executions: 2 });
+  });
+
+  /**
+   * A DEPLOYMENT AN OPERATOR CAN REPAIR IS NOT A DEAD END (D-226/D-227).
+   *
+   * The published configuration could not be resolved, which is neither the
+   * submitter's fault nor permanent: an operator restores the document and the
+   * next submit works. So the browser is told to keep this form session's identity
+   * and come back - paced, so a retry loop cannot hammer a deployment mid-repair -
+   * and it is told that in a GENERIC sentence carrying a correlation id, because
+   * the dotted document paths and SHA-256 hashes the refusal used to spell out are
+   * deployment internals that were crossing a trust boundary.
+   */
+  it("answers an unresolvable configuration with retry-later, paced, and no diagnosis on the wire", async () => {
+    injected.unresolvableConfiguration = true;
+    const response = await post(SUBMISSION);
+    expect(response.status).toBe(503);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+    const body = (await response.json()) as { retry?: string; error?: { code?: string; message?: string } };
+    expect(body.retry).toBe("retry-later");
+    // The taxonomy stays in the log line, as every other refusal on this route does.
+    expect(body.error?.code).toBeUndefined();
+    expect(body.error?.message).toContain("Quote reference");
+    expect(body.error?.message).not.toMatch(/[0-9a-f]{32}/);
+    expect(body.error?.message).not.toContain("config/domains");
+    expect(await rowCounts()).toEqual({ households: 0, contacts: 0, applications: 0, executions: 0 });
   });
 
   it("still starts the flow for a registration the configuration DOES declare", async () => {
