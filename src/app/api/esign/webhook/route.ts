@@ -21,6 +21,9 @@ export const runtime = "nodejs";
  *
  * WHICH refusal it was never rides on the status: it is in the response body's
  * `code` and in the log line beside it, where an operator actually looks.
+ *
+ * The general rule this is one instance of - a status is an instruction to a
+ * NAMED audience about what to do next, never a view of our taxonomy - is D-224.
  */
 const PERMANENT_REFUSAL_STATUS = 422;
 

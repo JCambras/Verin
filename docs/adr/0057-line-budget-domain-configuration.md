@@ -281,6 +281,35 @@ Only `domain`'s ceiling moves, by 90 lines, and only as far as its own measureme
 lines of correction headroom the previous amendment left, less the one line this round added after the figure was first taken - not more, because headroom is bought with a
 measurement and an argument rather than banked against work that has not been written.
 
+## Amendment (2026-08-12, review round 11): `infrastructure` re-measured, NO ceiling moves
+
+This round is paid for out of the 19 lines the round-9 figures left, and spends four of them.
+
+`infrastructure` gains one branch and its argument in `wire.ts`: the REPLAY path DEGRADES a
+version-disagreeing report - real persisted status and resume token, awaited rule undetermined - rather
+than answering `failed`, which corrects the round-9 refusal on that same path. Refusing to DRIVE a stale
+positional cursor and refusing to REPORT an execution that plainly exists are different acts, and the
+`failed` answer told a browser its submission never happened, whose client then minted a fresh request
+id and opened a duplicate execution (D-224). The two paths that drive steps still refuse, unchanged.
+
+`contracts`, `domain` and `presentation` are re-taken and unchanged. The round's other two corrections
+are app code in no measured bucket: the intake route reports a configured field this deployment cannot
+carry as an INTERNAL rather than a client VALIDATION, and the account-opening journey burns its
+per-session request id only on a VALIDATION.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,649 | 6,680 | 31 (unchanged ceiling) |
+| `domain` | 9,176 | 9,240 | 64 (unchanged ceiling) |
+| `infrastructure` | 8,345 | 8,360 | 15 (unchanged ceiling) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+`infrastructure` runs 15 lines from its ceiling, the narrowest this layer has held. That is recorded, not
+relieved: a ceiling raised without a measurement beside it is a ceiling nobody is holding.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

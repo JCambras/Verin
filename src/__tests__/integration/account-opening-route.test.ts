@@ -26,6 +26,29 @@ import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
 const cookieStore = { set: vi.fn() };
 vi.mock("next/headers", () => ({ cookies: () => Promise.resolve(cookieStore) }));
 
+/**
+ * A DOCUMENT that declares a trigger field this deployment's fixed start input
+ * has no room for. It cannot be authored in `config/domains/account-opening.yaml`
+ * (the file is content-hash pinned and the route would then be broken for every
+ * other case), so the published form is projected and one extra field appended -
+ * exactly what adding a slot would produce. Null for every other test, which
+ * leaves `loadIntakeForm` the real one.
+ */
+const injected = vi.hoisted(() => ({
+  extraField: null as null | { field: string; label: string; type: "text"; required: boolean },
+}));
+vi.mock("@infra/config/domain-config-source", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@infra/config/domain-config-source")>();
+  return {
+    ...actual,
+    loadIntakeForm: (domainConfigId: string) => {
+      const form = actual.loadIntakeForm(domainConfigId);
+      if (injected.extraField === null || !form.ok) return form;
+      return { ok: true as const, value: { ...form.value, fields: [...form.value.fields, injected.extraField] } };
+    },
+  };
+});
+
 const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 const ORG = "org-account-opening-route";
 const SESSION = "s-account-opening-route";
@@ -69,6 +92,7 @@ async function rowCounts(): Promise<Record<string, number>> {
 describe("POST /api/flows/account-opening refuses an undeclared registration at the boundary", () => {
   beforeEach(async () => {
     cookieStore.set.mockClear();
+    injected.extraField = null;
     db = await createMemoryDb();
     globalStore.__verinDb = Promise.resolve(db);
     const now = new Date().toISOString();
@@ -95,6 +119,24 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
     expect(body.error?.code).toBe("VALIDATION");
     expect(body.error?.message).toContain("Account type must be one of");
     // The whole point: a refusal at the boundary leaves no partial CRM state.
+    expect(await rowCounts()).toEqual({ households: 0, contacts: 0, applications: 0, executions: 0 });
+  });
+
+  /**
+   * A DEPLOYMENT DEFECT IS REPORTED AS ONE (D-224). A configured field the fixed
+   * start input cannot carry is caused by the published document and fixable by
+   * nobody submitting the form, so it answers 5xx/INTERNAL - the status an
+   * operator alerts on - rather than joining the client-error noise a 400 would
+   * bury it in. It is also what makes the journey's request-identity rule sound:
+   * every VALIDATION this endpoint answers is one the submitter can act on.
+   */
+  it("reports a configured field this deployment cannot carry as a SERVER defect, committing NOTHING", async () => {
+    injected.extraField = { field: "advisorNote", label: "Advisor note", type: "text", required: false };
+    const response = await post({ ...SUBMISSION, advisorNote: "Prefers morning calls" });
+    expect(response.status).toBe(500);
+    const body = (await response.json()) as { error?: { code?: string; message?: string } };
+    expect(body.error?.code).toBe("INTERNAL");
+    expect(body.error?.message).toContain("advisorNote");
     expect(await rowCounts()).toEqual({ households: 0, contacts: 0, applications: 0, executions: 0 });
   });
 

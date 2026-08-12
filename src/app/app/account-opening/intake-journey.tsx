@@ -32,9 +32,9 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
   // One UUID per form session (D-027): the server uses it as the executionId, so
   // a double-submit (network retry, second tab re-posting the same session)
   // replays the same execution instead of creating duplicate households. A
-  // FAILED response burns the id (re-minted in start()), so a user who edits the
-  // form and resubmits gets a genuinely fresh execution - the server refuses to
-  // replay a used id with different input.
+  // CLIENT-FAULT refusal burns the id (re-minted in start()), so a user who
+  // corrects the form and resubmits gets a genuinely fresh execution - the
+  // server refuses to replay a used id with different input.
   const [clientRequestId, setClientRequestId] = useState(() => crypto.randomUUID());
 
   // Where a phase's station sits in the declared order, or -1 when the document
@@ -83,7 +83,17 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setClientRequestId(crypto.randomUUID());
+        // BURN THE SESSION'S IDENTITY ONLY ON A REFUSAL THE USER CAN FIX BY
+        // EDITING AND RESUBMITTING (D-224). A fresh id is a fresh EXECUTION, and
+        // the per-write idempotency keys are execution-scoped, so re-minting it
+        // after a permanent server-side refusal turns one intended account
+        // opening into duplicate household, contact and application rows on the
+        // next submit. VALIDATION is the one code this endpoint answers that the
+        // submitter owns - a configuration defect it cannot carry is reported as
+        // an INTERNAL precisely so it is not mistaken for one - and an
+        // unreadable body keeps the id, because the conservative answer is to
+        // stay attached to the execution that may already exist.
+        if (body?.error?.code === "VALIDATION") setClientRequestId(crypto.randomUUID());
         return setError(body?.error?.message ?? "Could not start the flow.");
       }
       // Render what the server reports: a replayed submit can reattach to an

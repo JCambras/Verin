@@ -108,24 +108,28 @@ type AccountOpeningStartResult =
  * `cursor - 1`. Scanning the document for the first externally-gated capability
  * would agree only while a domain has exactly one.
  *
- * That cursor is POSITIONAL, so the awaited rule is only this execution's under
- * the plan it started with: reading it out of a DIFFERENT version's plan reports
- * a step the execution never took, or none where it is genuinely waiting. This
- * path drives nothing, but a surface whose whole job is to say what happened may
- * not answer confidently wrong - so a version disagreement is refused here for
- * exactly the states whose report is derived from the cursor. A COMPLETED
- * execution is not one of them: reporting an already-finalized run needs no plan.
+ * REFUSING TO DRIVE IS NOT REFUSING TO REPORT (D-224). That cursor is POSITIONAL,
+ * so the awaited rule is only this execution's under the plan it started with:
+ * read out of a DIFFERENT version's plan it names a step the execution never
+ * took. But this path runs no step - it states what an execution that already
+ * exists is doing - so a version disagreement DEGRADES the one derived field
+ * rather than answering `failed`. The persisted facts (status, resume token) are
+ * reported as they stand, and the awaited rule is left UNDETERMINED, which is
+ * the truth: this configuration cannot name the step. Answering `failed` here
+ * would tell a browser its submission did not happen, and a client that mints a
+ * fresh request id on that reading opens a SECOND execution - the duplicate
+ * household the version guard exists to prevent. The paths that genuinely drive
+ * steps still refuse.
  */
 function replayedRunResult(flow: CompiledFlow, state: ExecutionState): FlowRunResult {
-  if (state.status === "suspended") {
-    const stale = versionMismatch(flow, state);
-    if (stale) return { executionId: state.id, status: "failed", error: stale, data: {} };
-  }
+  const undetermined = state.status === "suspended" && versionMismatch(flow, state) !== null;
   return {
     executionId: state.id,
     status: state.status,
     token: state.resumeToken ?? undefined,
-    awaiting: state.status === "suspended" ? flow.awaitingByStep[state.cursor - 1] : undefined,
+    awaiting: state.status === "suspended" && !undetermined
+      ? flow.awaitingByStep[state.cursor - 1]
+      : undefined,
     data: state.data,
   };
 }

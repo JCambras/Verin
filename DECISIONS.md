@@ -9101,3 +9101,38 @@ prompt-16 context plane in `docs/domain-config-gaps.md` §3. Proofs PF-269, PF-2
 
 **Revert path.** One helper pair and one guard in `plan-compiler.ts`; one placeholder loop in the copy
 branch of `checkReferences`.
+
+---
+
+## D-224 - Prompt 10 review: a status code is an instruction to an audience, never a taxonomy view
+
+**What.** The general rule, recorded once because the same conflation has now caused three defects at two
+boundaries: THE STATUS A SURFACE RETURNS IS A MESSAGE TO A NAMED AUDIENCE ABOUT WHAT TO DO NEXT - an
+external provider (redeliver, or stop), a browser (retry the same submission, or correct it), an
+operator (page, or ignore) - and never a window onto the internal error taxonomy. Choose it by the action
+the audience should take; put WHICH failure it was in the body and the log. Three corrections apply it:
+(a) the intake route reports an unmapped configured field as an INTERNAL, since only a published document
+can cause it and no submission can fix it; (b) the account-opening journey burns its per-session client
+request id ONLY on a VALIDATION, keeping it for every permanent server-side refusal; (c) the replay path
+in `wire.ts` DEGRADES a version-disagreeing report - real persisted status and token, awaited rule
+undetermined - instead of answering `failed`, which corrects D-221(c). The paths that DRIVE steps
+(`resumeAccountOpeningByToken`, `retryFailedStart`) still refuse, unchanged. D-222 is the same rule at
+the webhook and now cites this entry.
+
+**Why.** (b) is the root defect and holds independently of the version guard: a fresh request id is a
+fresh EXECUTION, and the per-write idempotency keys are execution-scoped, so re-minting one in answer to
+a refusal the user cannot fix converts an honest refusal into duplicate household, contact and
+application rows on the next submit - the exact harm this branch has spent four rounds closing. (c) is
+its supplier: a reporting path that answers `failed` tells a browser the submission did not happen, and
+refusing to DRIVE a stale cursor is a different act from refusing to REPORT an execution that plainly
+exists - the awaited rule is the ONLY field derived from the plan, so it alone goes undetermined. (a)
+makes (b) sound: burning on VALIDATION is only correct while every VALIDATION this endpoint emits is one
+the submitter owns, which a deployment defect filed as a client 400 would have broken.
+
+**Residual, reported not fixed.** A user whose id is kept after a permanent refusal and who then EDITS
+the form meets the D-027 edited-replay CONFLICT with no in-page remedy (reloading mints a new session
+id). Banked as `fu-intake-spent-id-recovery` for prompt 12, which owns the generic intake pipeline: the
+server knows the identity is spent and the client should be told structurally, not by message text.
+
+**Revert path.** One code literal in the intake route, one condition in `intake-journey.tsx`, and one
+branch in `replayedRunResult`.

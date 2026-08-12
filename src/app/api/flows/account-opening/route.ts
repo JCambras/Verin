@@ -39,11 +39,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // whatever step sources the slot, after the earlier steps had committed - the
   // partial write a clean boundary refusal exists to prevent. Deriving the input
   // from the configured trigger fields is prompt 12's intake pipeline (D-210).
+  //
+  // An INTERNAL, not a VALIDATION (D-224): this fires only when the PUBLISHED
+  // DOCUMENT declares a field this deployment has no room for, which no
+  // submission can cause and no user can fix. Filing it as a client 400 would
+  // bury a broken configuration in client-error noise instead of raising the
+  // server error an operator alerts on - the policy `intake-view.ts` already
+  // states, and the reason every VALIDATION this route emits is one the
+  // submitter can act on.
   const unmapped = unmappedIntakeFields(supplied, START_INPUT_FIELDS);
   if (unmapped.length > 0) {
     return errorResponse(
       appError(
-        "VALIDATION",
+        "INTERNAL",
         `This deployment cannot carry the configured intake field(s) ${unmapped.map((field) => JSON.stringify(field)).join(", ")}; the account-opening start input is a fixed shape until the generic intake pipeline lands.`,
       ),
     );
