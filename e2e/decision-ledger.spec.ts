@@ -67,7 +67,8 @@ test("failed verification presents a dedicated entries-withheld state", async ({
     "Verification failed",
   );
   await expect(page.getByTestId("ledger-entries-withheld")).toBeVisible();
-  await expect(page.getByText("No decision events have been recorded")).toHaveCount(0);
+  await expect(page.getByText("No decision events yet")).toHaveCount(0);
+  await expect(page.getByText("No events in the displayed window")).toHaveCount(0);
 });
 
 test("bounded replay identifies decisions withheld outside its trust window", async ({ page }) => {
@@ -97,5 +98,42 @@ test("bounded replay identifies decisions withheld outside its trust window", as
   await expect(page.getByTestId("ledger-decisions-withheld")).toContainText(
     "Withheld decisions: 1",
   );
-  await expect(page.getByText("No decision events have been recorded")).toHaveCount(0);
+  // An empty window over a chain that stores 12 events may never read as "no decisions
+  // exist for this firm": it names itself, and the stored count stays on the page.
+  await expect(page.getByText("No decision events yet")).toHaveCount(0);
+  await expect(page.getByText("No events in the displayed window")).toBeVisible();
+  await expect(
+    page.getByText("stored decision history exists for the firm", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("Showing the latest 0 of")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open the demo" })).toHaveCount(0);
+});
+
+test("a chain with no stored events invites the first governed journey", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.route("**/api/ledger", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        verification: {
+          ok: true,
+          levels: ["L1", "L2", "L3", "L4"].map((level) => ({
+            level,
+            ok: true,
+            entriesChecked: 0,
+            reason: null,
+          })),
+        },
+        total: null,
+        decisionsTotal: null,
+        decisionsWithheld: null,
+        decisions: [],
+        entries: [],
+      }),
+    });
+  });
+  await page.goto("/app/ledger");
+  await expect(page.getByText("No decision events yet")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open the demo" })).toBeVisible();
+  await expect(page.getByText("No events in the displayed window")).toHaveCount(0);
 });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { createRef, useRef, useState } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { createRef, useRef, useState, type ReactElement } from "react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Dialog } from "@app/presentation/dialog";
@@ -96,6 +96,34 @@ describe("canonical presentation primitives", () => {
     expect(trigger).toHaveAccessibleDescription("Complete decision hash");
   });
 
+  it("dismisses tooltip content on Escape, keeps trigger focus, and restores on leave", async () => {
+    const user = userEvent.setup();
+    render(<Tooltip label="Complete decision hash">a3f9c2…</Tooltip>);
+    await user.tab();
+    const trigger = screen.getByText("a3f9c2…");
+    const panel = screen.getByTestId("tooltip-panel");
+    expect(panel).toHaveAttribute("data-state", "available");
+    expect(panel.className).toContain("group-focus-within:visible");
+
+    await user.keyboard("{Escape}");
+    expect(panel).toHaveAttribute("data-state", "dismissed");
+    expect(panel.className).not.toContain("group-focus-within:visible");
+    expect(trigger).toHaveFocus();
+
+    await user.tab();
+    expect(trigger).not.toHaveFocus();
+    expect(panel).toHaveAttribute("data-state", "available");
+  });
+
+  it("keeps the pointer path from the trigger into tooltip content hoverable", () => {
+    render(<Tooltip label="Complete decision hash">a3f9c2…</Tooltip>);
+    const panel = screen.getByTestId("tooltip-panel");
+    // The offset is padding INSIDE the hoverable panel, never a margin gap that
+    // un-hovers both elements while the pointer travels across it (WCAG 1.4.13).
+    expect(panel.className).toContain("pb-2");
+    expect(panel.className).not.toMatch(/(?:^|\s)-?m[btlrxy]?-/);
+  });
+
   it("opens a modal dialog, focuses its field, and closes on Escape", () => {
     const close = vi.fn();
     const ref = createRef<HTMLInputElement>();
@@ -123,6 +151,36 @@ describe("canonical presentation primitives", () => {
     expect(live).toHaveAttribute("aria-live", "polite");
     await user.click(screen.getByRole("button", { name: "Dismiss Household saved" }));
     expect(screen.queryByText("Household saved")).not.toBeInTheDocument();
+  });
+
+  it("holds toast auto-dismiss while it has focus or the pointer, then resumes", async () => {
+    function Harness() {
+      const { showToast } = useToast();
+      return <Button onClick={() => showToast({ title: "Household saved", durationMs: 1000 })}>Save</Button>;
+    }
+    vi.useFakeTimers();
+    try {
+      render(<ToastProvider><Harness /></ToastProvider>);
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      const dismiss = screen.getByRole("button", { name: "Dismiss Household saved" });
+      act(() => dismiss.focus());
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(screen.getByText("Household saved")).toBeVisible();
+      expect(dismiss).toHaveFocus();
+
+      const held = screen.getByTestId("toast");
+      fireEvent.mouseOver(held);
+      act(() => dismiss.blur());
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(screen.getByText("Household saved")).toBeVisible();
+
+      fireEvent.mouseOut(held);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(screen.queryByText("Household saved")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -154,6 +212,17 @@ describe("Table", () => {
     expect(screen.getByText("Households (re-sorted by Name, ascending)")).toBeInTheDocument();
   });
 
+  it("keeps the region landmark label true to the active sort", async () => {
+    const user = userEvent.setup();
+    render(<Table caption="Households, newest first" columns={columns} rows={[row(2), row(1)]} />);
+    expect(screen.getByRole("region", { name: "Households, newest first" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Name/ }));
+    expect(screen.queryByRole("region", { name: "Households, newest first" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Households, newest first (re-sorted by Name, ascending)" }),
+    ).toBeInTheDocument();
+  });
+
   it("aligns each sortable header with its column, indexes the header row, and prints its labels", () => {
     render(<Table caption="Households" columns={columns} rows={[row(1)]} />);
     const header = screen.getAllByRole("row")[0]!;
@@ -181,6 +250,23 @@ describe("Table", () => {
     fireEvent.scroll(region, { target: { scrollTop: 120_000 } });
     expect(screen.queryByText("Household 0000")).not.toBeInTheDocument();
     expect(Number(region.getAttribute("data-rendered-row-count"))).toBeLessThan(40);
+  });
+
+  /**
+   * Rendered register rows are taller than the seeded estimate (the ledger's event cell
+   * stacks a type, a timestamp, and a provenance badge), so the scroll extent runs past
+   * `rowCount * estimate`. An unclamped window start then indexes beyond the last row and
+   * the body renders blank at the bottom of the register.
+   */
+  it("clamps the virtual window so the tail of a taller-than-estimated register renders", () => {
+    const rows = Array.from({ length: 200 }, (_, index) => row(index));
+    render(<Table caption="Ledger fixture" columns={columns} rows={rows} />);
+    const region = screen.getByRole("region", { name: "Ledger fixture" });
+    fireEvent.scroll(region, { target: { scrollTop: 1_000_000 } });
+    const rendered = Number(region.getAttribute("data-rendered-row-count"));
+    expect(rendered).toBeGreaterThan(0);
+    expect(rendered).toBeLessThan(40);
+    expect(screen.getByText("Household 0199")).toBeVisible();
   });
 
   it("owns its loading and actionable empty states", () => {
@@ -238,6 +324,35 @@ describe("ErrorBoundary", () => {
     fails = false;
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(screen.getByRole("button", { name: "ready" })).toBeVisible();
+    consoleError.mockRestore();
+  });
+
+  function Broken(): ReactElement {
+    throw new Error("render failed");
+  }
+
+  it("records a diagnostic when the host supplies no reporter", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ErrorBoundary><Broken /></ErrorBoundary>);
+    expect(screen.getByRole("alert")).toBeVisible();
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("ErrorBoundary caught a render failure"),
+      expect.any(Error),
+      expect.any(String),
+    );
+    consoleError.mockRestore();
+  });
+
+  it("routes a caught failure to a host reporter instead of the default record", () => {
+    const onError = vi.fn();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<ErrorBoundary onError={onError}><Broken /></ErrorBoundary>);
+    expect(onError).toHaveBeenCalledOnce();
+    expect(consoleError).not.toHaveBeenCalledWith(
+      expect.stringContaining("ErrorBoundary caught a render failure"),
+      expect.anything(),
+      expect.anything(),
+    );
     consoleError.mockRestore();
   });
 });

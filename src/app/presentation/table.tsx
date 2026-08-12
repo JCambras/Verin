@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { Button, EmptyState, StatusBadge } from "./ui";
 
 export interface TableColumn {
@@ -40,7 +40,8 @@ interface SortState {
 export interface TableEmptyState {
   readonly title: string;
   readonly description: string;
-  readonly action: ReactNode;
+  /** Omitted when the state has no honest next step; an invented one is a false affordance. */
+  readonly action?: ReactNode;
 }
 
 export interface TableProps {
@@ -54,7 +55,18 @@ export interface TableProps {
   readonly className?: string;
 }
 
-const ROW_HEIGHT = 40;
+/**
+ * The virtual window is derived from MEASURED row heights, not from a fixed guess.
+ * Registers stack content in a cell (the ledger's event cell carries a type, a
+ * timestamp, and a provenance badge), so an assumed height makes the scroll extent
+ * disagree with the rendered body: scrolling to the end of a taller register lands a
+ * window start past the last row and the body renders blank. The estimate below only
+ * seeds the first paint; every index is additionally clamped to the row count, so an
+ * un-measured or mid-convergence height can never produce an empty window.
+ */
+const ESTIMATED_ROW_HEIGHT = 40;
+const MIN_ROW_HEIGHT = 16;
+const HEIGHT_TOLERANCE = 2;
 const VIEWPORT_HEIGHT = 384;
 const OVERSCAN = 6;
 
@@ -90,8 +102,10 @@ export function Table({
   className,
 }: TableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const [scrollTop, setScrollTop] = useState(0);
+  const [rowHeight, setRowHeight] = useState(ESTIMATED_ROW_HEIGHT);
 
   const sortedRows = useMemo(() => {
     if (!sort) return rows;
@@ -108,12 +122,29 @@ export function Table({
   }, [rows, sort]);
 
   const virtualized = !loading && sortedRows.length > virtualizeAbove;
-  const start = virtualized ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN) : 0;
-  const visibleCount = Math.ceil(VIEWPORT_HEIGHT / ROW_HEIGHT) + OVERSCAN * 2;
+  const visibleCount = Math.ceil(VIEWPORT_HEIGHT / rowHeight) + OVERSCAN * 2;
+  const maxStart = Math.max(0, sortedRows.length - visibleCount);
+  const start = virtualized
+    ? Math.min(maxStart, Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN))
+    : 0;
   const end = virtualized ? Math.min(sortedRows.length, start + visibleCount) : sortedRows.length;
   const visibleRows = loading ? [] : sortedRows.slice(start, end);
-  const topSpace = start * ROW_HEIGHT;
-  const bottomSpace = Math.max(0, (sortedRows.length - end) * ROW_HEIGHT);
+  const topSpace = virtualized ? start * rowHeight : 0;
+  const bottomSpace = virtualized ? Math.max(0, (sortedRows.length - end) * rowHeight) : 0;
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!virtualized || !body || sortedRows.length === 0) return;
+    const heights = Array.from(body.querySelectorAll<HTMLTableRowElement>("tr[data-table-row]"))
+      .map((element) => element.offsetHeight)
+      .filter((height) => height > 0);
+    if (heights.length === 0) return;
+    const measured = Math.max(
+      MIN_ROW_HEIGHT,
+      Math.round(heights.reduce((total, height) => total + height, 0) / heights.length),
+    );
+    setRowHeight((current) => (Math.abs(current - measured) >= HEIGHT_TOLERANCE ? measured : current));
+  }, [virtualized, sortedRows]);
 
   function changeSort(columnId: string) {
     setSort((current) => ({
@@ -137,7 +168,7 @@ export function Table({
     <div
       ref={scrollRef}
       role="region"
-      aria-label={caption}
+      aria-label={sortedCaption}
       aria-busy={loading || undefined}
       tabIndex={0}
       onScroll={handleScroll}
@@ -188,7 +219,7 @@ export function Table({
             })}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody ref={bodyRef} className="divide-y divide-slate-100">
           {loading ? (
             <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-sm text-slate-600"><span role="status">Loading…</span></td></tr>
           ) : null}
@@ -208,6 +239,7 @@ export function Table({
           {visibleRows.map((row, index) => (
             <tr
               key={row.id}
+              data-table-row=""
               aria-rowindex={start + index + 2}
               className={joinClasses("print-avoid-break", row.className)}
             >

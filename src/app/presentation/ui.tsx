@@ -297,12 +297,17 @@ export function Card({
   return <Tag {...props} className={cardClassName({ variant, padding, className })}>{children}</Tag>;
 }
 
-export function EmptyState({ title, description, action }: { title: string; description: string; action: ReactNode }) {
+/**
+ * `action` is optional because some empty states have no honest next step - a register
+ * window that is empty while stored history exists offers nothing to click, and inventing
+ * a control there would be a false affordance on a compliance surface.
+ */
+export function EmptyState({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
   return (
     <Card variant="dashed" padding="roomy" className="flex flex-col items-center gap-2 text-center animate-fade-in">
       <p className="text-sm font-medium text-slate-800">{title}</p>
       <p className="max-w-sm text-sm text-slate-600">{description}</p>
-      <div className="mt-1">{action}</div>
+      {action ? <div className="mt-1">{action}</div> : null}
     </Card>
   );
 }

@@ -6,7 +6,7 @@ import type { LedgerRegisterViewModel } from "@app/ledger/model";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import { buttonClassName, Card, StatusBadge } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
-import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
+import { Table, type TableColumn, type TableEmptyState, type TableRow } from "@app/presentation/table";
 
 const COLUMNS: readonly TableColumn[] = [
   { id: "sequence", header: "#", align: "right", sortable: true },
@@ -15,6 +15,23 @@ const COLUMNS: readonly TableColumn[] = [
   { id: "decision", header: "Decision", sortable: true },
   { id: "hash", header: "Hash", sortable: true },
 ];
+
+/**
+ * An empty register means two different things, and a compliance surface may not conflate
+ * them: nothing has ever been recorded for the firm, or the displayed window holds nothing
+ * while the chain still stores events. The second reads as an affirmative "no decisions
+ * exist" if it borrows the first one's copy, so each state names itself.
+ */
+const NO_HISTORY_STATE = {
+  title: "No decision events yet",
+  description: "Run the governed money-movement journey to record the first decision event.",
+} as const;
+
+const EMPTY_WINDOW_STATE: TableEmptyState = {
+  title: "No events in the displayed window",
+  description:
+    "This view is empty, but stored decision history exists for the firm. The stored-event count below states what the chain holds, and verification still covers all of it.",
+};
 
 export default function DecisionLedgerPage() {
   const [model, setModel] = useState<LedgerRegisterViewModel | null>(null);
@@ -62,6 +79,14 @@ export default function DecisionLedgerPage() {
       },
     },
   })) ?? [];
+
+  const storedEventsExist = model?.total != null && model.total.value > 0;
+  const registerEmptyState: TableEmptyState = storedEventsExist
+    ? EMPTY_WINDOW_STATE
+    : {
+        ...NO_HISTORY_STATE,
+        action: <Link href="/app/demo" className={buttonClassName()}>Open the demo</Link>,
+      };
 
   return (
     <div className="flex flex-col gap-6">
@@ -218,11 +243,7 @@ export default function DecisionLedgerPage() {
               caption="Decision ledger entries, newest first"
               columns={COLUMNS}
               rows={entryRows}
-              emptyState={{
-                title: "No decision events yet",
-                description: "Run the governed money-movement journey to record the first decision event.",
-                action: <Link href="/app/demo" className={buttonClassName()}>Open the demo</Link>,
-              }}
+              emptyState={registerEmptyState}
             />
           )}
           {model.verification.ok && model.total &&

@@ -152,22 +152,61 @@ export function presentationPrimitiveViolations(sf: SourceFile, rel: string): st
     }
   }
 
-  const literals = [
-    ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),
-    ...sf.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
-  ];
-  for (const literal of literals) {
-    const recipe = tokens(literal.getLiteralText());
-    if (hasRecipe(recipe, BUTTON_RECIPE)) report(literal, "ad-hoc button class recipe bypasses buttonClassName/Button");
-    if (hasRecipe(recipe, PILL_RECIPE)) report(literal, "ad-hoc pill class recipe bypasses Pill/StatusBadge");
-    if (hasRecipe(recipe, BADGE_RECIPE)) report(literal, "ad-hoc badge class recipe bypasses Badge");
+  for (const { node, text } of classRecipeCandidates(sf)) {
+    const recipe = tokens(text);
+    if (hasRecipe(recipe, BUTTON_RECIPE)) report(node, "ad-hoc button class recipe bypasses buttonClassName/Button");
+    if (hasRecipe(recipe, PILL_RECIPE)) report(node, "ad-hoc pill class recipe bypasses Pill/StatusBadge");
+    if (hasRecipe(recipe, BADGE_RECIPE)) report(node, "ad-hoc badge class recipe bypasses Badge");
   }
   return [...new Set(out)];
 }
 
+/**
+ * An interpolated template is the repository's dominant className idiom, and its class
+ * tokens live in TemplateHead/Middle/Tail nodes plus the string literals inside each
+ * `${…}` arm - none of which is a StringLiteral. Reading only the plain literals let a
+ * complete control recipe written that way through the fence untouched, so the whole
+ * template is composed into one token set: the head, every span literal, and every
+ * literal nested in the interpolations, which is exactly what the browser ends up with
+ * for whichever arm is taken.
+ */
+function templateClassText(template: Node): string {
+  const parts: string[] = [];
+  if (Node.isTemplateExpression(template)) {
+    parts.push(template.getHead().getLiteralText());
+    for (const span of template.getTemplateSpans()) parts.push(span.getLiteral().getLiteralText());
+  }
+  for (const nested of [
+    ...template.getDescendantsOfKind(SyntaxKind.StringLiteral),
+    ...template.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
+  ]) {
+    parts.push(nested.getLiteralText());
+  }
+  return parts.join(" ");
+}
+
+function classRecipeCandidates(sf: SourceFile): Array<{ node: Node; text: string }> {
+  const candidates: Array<{ node: Node; text: string }> = [];
+  for (const literal of [
+    ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),
+    ...sf.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
+  ]) {
+    candidates.push({ node: literal, text: literal.getLiteralText() });
+  }
+  for (const template of sf.getDescendantsOfKind(SyntaxKind.TemplateExpression)) {
+    candidates.push({ node: template, text: templateClassText(template) });
+  }
+  return candidates;
+}
+
+/**
+ * Both extensions: a class-string constant exported from a `.ts` module under `src/app`
+ * reaches the same JSX as one written inline, so scanning only `.tsx` left a styling
+ * path the fence could not see.
+ */
 function appProject(): Project {
   const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
-  for (const file of walk(`${REPO_ROOT}src/app`, (candidate) => candidate.endsWith(".tsx"))) {
+  for (const file of walk(`${REPO_ROOT}src/app`, (candidate) => candidate.endsWith(".tsx") || candidate.endsWith(".ts"))) {
     project.addSourceFileAtPath(file);
   }
   return project;
@@ -257,6 +296,52 @@ describe("presentation-primitives fence", () => {
       );
       expect(found.some((entry) => entry.includes("dynamic className"))).toBe(true);
       expect(found.some((entry) => entry.includes("buttonClassName restyles"))).toBe(true);
+    });
+
+    it("rejects an interpolated-template button recipe (the repository's dominant idiom)", () => {
+      const found = presentationPrimitiveViolations(
+        source(
+          "export function P({ busy }: { busy: boolean }){ return <a className={`inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium ${busy ? \"opacity-50\" : \"\"}`}>Save</a>; }",
+        ),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([expect.stringContaining("ad-hoc button class recipe")]);
+    });
+
+    it("rejects a recipe split across a template head and its interpolated arms", () => {
+      const found = presentationPrimitiveViolations(
+        source(
+          "export function P({ on }: { on: boolean }){ return <span className={`rounded-full border ${on ? \"px-2.5 py-0.5 text-xs\" : \"px-2 py-1 text-sm\"}`}>Done</span>; }",
+        ),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([expect.stringContaining("ad-hoc pill class recipe")]);
+    });
+
+    it("accepts an interpolated layout template that is not a control recipe", () => {
+      const found = presentationPrimitiveViolations(
+        source(
+          "export function P({ wide }: { wide: boolean }){ return <div className={`flex flex-col gap-2 p-4 ${wide ? \"w-full\" : \"w-64\"}`}>Content</div>; }",
+        ),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([]);
+    });
+
+    it("rejects a class-string constant exported from a .ts module", () => {
+      const found = presentationPrimitiveViolations(
+        source('export const ACTION = "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium";'),
+        "src/app/example/styles.ts",
+      );
+      expect(found).toEqual([expect.stringContaining("src/app/example/styles.ts:1 :: ad-hoc button class recipe")]);
+    });
+
+    it("scans .ts modules under src/app, not only .tsx", () => {
+      const scanned = appProject()
+        .getSourceFiles()
+        .map((sf) => relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/"));
+      expect(scanned).toContain("src/app/ledger/model.ts");
+      expect(scanned).toContain("src/app/presentation/ui.tsx");
     });
 
     it("accepts layout-only composition around canonical controls", () => {

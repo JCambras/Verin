@@ -12711,3 +12711,54 @@ and a padded layout wrapper that must still pass (the fence widened, not loosene
 
 **Reverted:** both injected links were removed immediately; the focused fence returned to `Tests 11
 passed` on the restored tree.
+
+**Amendment (2026-08-11, review round D-193) - the interpolated-template blindspot.** The recipe
+scan collected only `StringLiteral` and `NoSubstitutionTemplateLiteral` nodes. An interpolated
+template - the repository's dominant `className` idiom - carries its class tokens in
+`TemplateHead`/`TemplateMiddle`/`TemplateTail` plus the literals inside each `${…}` arm, none of
+which is a `StringLiteral`, so a COMPLETE control recipe written that way was invisible to the
+charter enforcement point. The scan now composes the whole template (head, every span literal, and
+every literal nested in the interpolations) into one token set. Related second hole: `appProject()`
+walked only `.tsx`, so a class-string constant exported from a `.ts` module under `src/app` was never
+read at all; the walk now takes both extensions.
+
+**Injection A - an interpolated-template button-styled link on the landing page.** Added
+```
+<a href="/login" className={`inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-slate-900 text-white ${busy ? "opacity-50" : ""}`}>Sign in</a>
+```
+to `src/app/page.tsx`.
+
+**Observed on the PRE-amendment fence (injection in place):**
+```
+Test Files  1 passed (1)
+     Tests  11 passed (11)
+```
+The enforce test passed with a fully-styled second button path in the tree - the escape, verbatim.
+
+**Observed on the amended fence (same injection):**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/page.tsx:13 :: ad-hoc button class recipe bypasses buttonClassName/Button
+❯ src/__tests__/fitness/presentation-primitives.test.ts:222:83
+```
+
+**Injection B - a control recipe in a `.ts` module.** Created `src/app/_adv-styles.ts` holding
+`export const ADV_ACTION = "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-slate-900 text-white";`
+
+**Observed on the PRE-amendment fence (`.tsx`-only walk):** `Tests 11 passed (11)` - the file was
+never opened.
+
+**Observed on the amended fence (same injection):**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/_adv-styles.ts:1 :: ad-hoc button class recipe bypasses buttonClassName/Button
+❯ src/__tests__/fitness/presentation-primitives.test.ts:222:83
+```
+
+**Executable companions added:** an interpolated-template button recipe, a pill recipe split across a
+template head and its two interpolated arms, a class-string constant in a `.ts` module, an
+interpolated LAYOUT template that must still pass (the fence widened, not loosened), and a coverage
+assertion that the real-tree walk admits `src/app/ledger/model.ts` alongside `.tsx`.
+
+**Reverted:** `src/app/page.tsx` was restored from its pre-injection bytes and `src/app/_adv-styles.ts`
+was deleted immediately; the focused fence returned to `Tests 16 passed` on the restored tree.

@@ -6757,3 +6757,62 @@ ceilings in `line-budget.test.ts`; no ceiling moves.
 
 **Revert path:** revert this changeset; the primitives, registers, fence, and specs return to their
 D-191 state, and the deferral table and `fu-audit-full-identifier-disclosure` revert with it.
+
+### D-193 · 2026-08-11 · reversible · Second review round: measured windowing, register-state honesty, and a dismissible tooltip
+
+The prompt-2 review gate returned eight further findings; all eight are resolved here.
+
+**Windowing is measured, not assumed.** `Table` derived its virtual window from a fixed 40px row
+height. Shipped register rows are taller than that - the decision ledger stacks an event type, a
+timestamp, and a provenance badge in one cell (~80px) - so the container's scroll extent ran past
+`rowCount × 40`, and scrolling to the bottom produced a window start BEYOND the last row: an empty
+slice, a blank register body, and a spacer-driven scroll bounce as the browser re-clamped. Both
+registers reach 200 rows against a `virtualizeAbove` of 100, so both virtualize and both could hit it.
+The estimate now seeds only the first paint; a row-set-scoped effect measures the rendered rows and
+the window and both spacers are computed from that height, with every index additionally clamped to
+the row count so an un-measured or mid-convergence height can never yield an empty window. The
+5,000-row path is unchanged in character (one bounded window plus overscan). The existing e2e fixture
+could not have caught this: its single-line rows are SHORTER than the estimate, which is the safe
+direction of the mismatch, so a ledger-shaped 200-row e2e with an asserted row height above 40px was
+added beside it.
+
+**An empty register names which empty it is.** The prior round collapsed two different claims into one
+copy. "No decision events yet · Run the governed money-movement journey to record the first decision
+event" rendered whenever `entries` was empty, including directly above "Showing the latest 0 of 12
+stored events" - an affirmative "this firm has no decisions" over a chain holding twelve. The two
+states are now distinct and typed: a chain with no stored events keeps the inviting copy and its
+primary action, while an empty displayed window over a positive stored total says the view is empty
+and stored decision history exists, keeping the accurate stored-event line. `EmptyState`'s action
+became optional to carry that: the window case has no honest next step, and inventing a control on a
+compliance surface is a false affordance. Every other empty state still passes a real primary action.
+
+**Accessibility of the shared leaves.** The region landmark's `aria-label` kept the unsorted caption
+while the `<caption>` re-composed itself, so a screen-reader user entering the landmark heard "newest
+first" after sorting ascending - the exact false claim D-192 added the sorted caption to prevent; both
+now read `sortedCaption`. `Tooltip` is a client leaf: Escape dismisses its content while the trigger
+keeps focus, and the offset moved from a margin to padding INSIDE the hoverable panel, so the pointer
+can travel from trigger to content without crossing a strip where neither is hovered (WCAG 1.4.13,
+Dismissible and Hoverable). Toast auto-dismiss is held while a toast contains focus or the pointer and
+resumes with its remaining time, so a timer can no longer unmount the control a keyboard user is
+sitting on and drop focus to `<body>` (WCAG 2.2.1). `ErrorBoundary` records a default diagnostic to the
+browser console when the host passes no `onError` - the surface the no-console fence sanctions for a
+client boundary (ADR-0013) - because the one shipped mount wraps every authenticated page and a caught
+failure that goes nowhere is an undiagnosable production incident.
+
+**Fence and test robustness.** The presentation-primitives recipe scan read only plain string literals,
+so a complete control recipe written as an interpolated template - the repository's dominant className
+idiom - passed untouched, and its project walk took only `.tsx`, so a class-string constant in a `.ts`
+module under `src/app` was never opened. Both holes are closed and both were injected against the real
+tree, observed passing on the pre-amendment fence and failing with `file:line` on the amended one, then
+reverted; the evidence is appended to PF-247. Two decision-ledger e2e assertions targeted
+"No decision events have been recorded", a string deleted in the prior round, so they could never fail;
+they now assert against the current distinct empty-state copy, joined by a spec for the genuinely-empty
+chain. Five unit regressions (window clamp, sorted landmark label, tooltip Escape, toast hold,
+boundary diagnostic) were each observed failing against the pre-fix components before being kept.
+
+The presentation tier re-measures at 1,782/6,000 lines on the tree as it lands, recorded beside the
+ceilings in `line-budget.test.ts`; no ceiling moves, and no runtime dependency was added.
+
+**Revert path:** revert this changeset; the fixed-height window, the single empty-state copy, the
+CSS-only tooltip, the unheld toast timer, the silent boundary, and the literal-only fence scan return
+to their D-192 state.

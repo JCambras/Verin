@@ -20,8 +20,18 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     return { error };
   }
 
+  /**
+   * The boundary wraps every authenticated page, so a caught failure that goes nowhere
+   * leaves a production incident with no record of what broke. Absent a host-supplied
+   * reporter this records to the browser console - the surface the no-console fence
+   * sanctions for a client boundary (ADR-0013) - and never to the user-facing card.
+   */
   override componentDidCatch(error: Error, info: ErrorInfo) {
-    this.props.onError?.(error, info);
+    if (this.props.onError) {
+      this.props.onError(error, info);
+      return;
+    }
+    console.error("ErrorBoundary caught a render failure", error, info.componentStack ?? "");
   }
 
   private readonly retry = () => {

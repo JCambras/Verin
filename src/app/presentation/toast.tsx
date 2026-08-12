@@ -54,11 +54,29 @@ export function Toast({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (i
   );
 }
 
-export function ToastHost({ toasts, onDismiss }: { toasts: readonly ToastMessage[]; onDismiss: (id: string) => void }) {
+export function ToastHost({
+  toasts,
+  onDismiss,
+  onHold,
+  onRelease,
+}: {
+  toasts: readonly ToastMessage[];
+  onDismiss: (id: string) => void;
+  onHold?: (id: string) => void;
+  onRelease?: (id: string) => void;
+}) {
   return (
     <div aria-live="polite" aria-relevant="additions" className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2">
       {toasts.map((toast) => (
-        <div key={toast.id} className="pointer-events-auto">
+        <div
+          key={toast.id}
+          data-testid="toast"
+          className="pointer-events-auto"
+          onMouseEnter={() => onHold?.(toast.id)}
+          onMouseLeave={() => onRelease?.(toast.id)}
+          onFocusCapture={() => onHold?.(toast.id)}
+          onBlurCapture={() => onRelease?.(toast.id)}
+        >
           <Toast toast={toast} onDismiss={onDismiss} />
         </div>
       ))}
@@ -66,21 +84,69 @@ export function ToastHost({ toasts, onDismiss }: { toasts: readonly ToastMessage
   );
 }
 
+/**
+ * A held toast keeps its remaining time and never unmounts while the pointer rests on it
+ * or it holds focus: auto-dismissing a toast the keyboard is currently inside drops focus
+ * to <body> and loses the user's place in the tab order (WCAG 2.2.1).
+ */
+interface ToastTimer {
+  readonly handle: number | null;
+  readonly remainingMs: number;
+  readonly resumedAt: number;
+}
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<readonly ToastMessage[]>([]);
   const counter = useRef(0);
-  const timers = useRef(new Map<string, number>());
+  const timers = useRef(new Map<string, ToastTimer>());
+  const holds = useRef(new Map<string, number>());
 
   const dismissToast = useCallback((id: string) => {
     const timer = timers.current.get(id);
-    if (timer !== undefined) window.clearTimeout(timer);
+    if (timer && timer.handle !== null) window.clearTimeout(timer.handle);
     timers.current.delete(id);
+    holds.current.delete(id);
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
+  const scheduleDismiss = useCallback((id: string, remainingMs: number) => {
+    timers.current.set(id, {
+      handle: window.setTimeout(() => dismissToast(id), remainingMs),
+      remainingMs,
+      resumedAt: Date.now(),
+    });
+  }, [dismissToast]);
+
+  const holdToast = useCallback((id: string) => {
+    holds.current.set(id, (holds.current.get(id) ?? 0) + 1);
+    const timer = timers.current.get(id);
+    if (!timer || timer.handle === null) return;
+    window.clearTimeout(timer.handle);
+    timers.current.set(id, {
+      handle: null,
+      remainingMs: Math.max(0, timer.remainingMs - (Date.now() - timer.resumedAt)),
+      resumedAt: timer.resumedAt,
+    });
+  }, []);
+
+  const releaseToast = useCallback((id: string) => {
+    const remainingHolds = (holds.current.get(id) ?? 0) - 1;
+    if (remainingHolds > 0) {
+      holds.current.set(id, remainingHolds);
+      return;
+    }
+    holds.current.delete(id);
+    const timer = timers.current.get(id);
+    if (!timer || timer.handle !== null) return;
+    scheduleDismiss(id, timer.remainingMs);
+  }, [scheduleDismiss]);
+
   useEffect(() => () => {
-    for (const timer of timers.current.values()) window.clearTimeout(timer);
+    for (const timer of timers.current.values()) {
+      if (timer.handle !== null) window.clearTimeout(timer.handle);
+    }
     timers.current.clear();
+    holds.current.clear();
   }, []);
 
   const showToast = useCallback((input: ToastInput) => {
@@ -88,15 +154,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const id = `toast-${counter.current}`;
     const { durationMs = 5000, ...message } = input;
     setToasts((current) => [...current, { ...message, id }]);
-    if (durationMs > 0) timers.current.set(id, window.setTimeout(() => dismissToast(id), durationMs));
+    if (durationMs > 0) scheduleDismiss(id, durationMs);
     return id;
-  }, [dismissToast]);
+  }, [scheduleDismiss]);
 
   const value = useMemo(() => ({ showToast, dismissToast }), [dismissToast, showToast]);
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      <ToastHost toasts={toasts} onDismiss={dismissToast} onHold={holdToast} onRelease={releaseToast} />
     </ToastContext.Provider>
   );
 }
