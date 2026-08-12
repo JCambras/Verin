@@ -279,10 +279,23 @@ const CEILINGS = {
 // left alone rather than raised for company.
 // RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,388 / 9,450 (62),
 // infrastructure 8,683 / 8,745 (62).
+//
+// ADR-0057 amendment (review round 16) raises `domain` for making the refusal port
+// the ONE mint rather than a mark nine authors applied nine ways: the port grows a
+// third arm and a home beside the fault type it converts, the plan compiler's six
+// hand-written refusals become typed faults with real document paths, the intake
+// view's two become the same, and the diagnosis shape learns the subscripted
+// segment its emitters had been producing all along. The DELETED half is real too -
+// nine interpolated sentences and two marker imports - so the net is 104 lines for
+// a classification that is now structural. `contracts` and `infrastructure` are
+// RE-TAKEN: `infrastructure` moved by 18 lines and both stay inside the ceilings
+// they already had, so neither is raised for company.
+// RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,492 / 9,555 (63),
+// infrastructure 8,701 / 8,745 (44).
 const CEILINGS = {
   contracts: 6782, // ADR-0057 as amended five times, on classification by cause (6,752 measured)
-  domain: 9450, // ADR-0057 as amended ten times, on the derived refusal class (9,388 measured)
-  infrastructure: 8745, // ADR-0057 as amended five times, on the derived refusal class (8,683 measured)
+  domain: 9555, // ADR-0057 as amended eleven times, on the one-mint refusal port (9,492 measured)
+  infrastructure: 8745, // ADR-0057 as amended five times, on the derived refusal class (8,701 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

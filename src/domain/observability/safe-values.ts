@@ -85,6 +85,20 @@ const CONFIGURATION_STAGE_NAMES = [
   "superseded-version", "unbindable", "uncanonical", "unpinned", "unpublished",
   "unreadable-pins",
   /**
+   * The document's declared intake fields and this deployment's fixed input
+   * shape disagree - either direction, since a field the document declares and
+   * the deployment cannot carry, and a field the deployment requires and the
+   * document no longer declares, are the same disagreement seen from two ends.
+   */
+  "intake-mismatch",
+  /**
+   * A document that loaded cleanly and then would not compile into a runnable
+   * plan: an undeclared intent or capability, a plan template with no runnable
+   * order, a source the interim substrate cannot resolve, or a command type this
+   * build ships no execution adapter for.
+   */
+  "uncompilable",
+  /**
    * A persisted execution recording something that is not a version string at
    * all, kept APART from `superseded-version` because `compareVersion` makes the
    * distinction deliberately and the log line could not express it: a missing
@@ -285,11 +299,30 @@ const CONFIGURATION_DIAGNOSIS_SHAPES: Readonly<Record<ConfigurationDiagnosisFiel
   // legitimately camelCase, so the person-name shape isOpaqueId keys on would
   // refuse `execution.planTemplates` - the closed alphabet and the segment cap
   // are what bound this instead.
-  configPath: /^[A-Za-z0-9_-]{1,64}(?:\.[A-Za-z0-9_-]{1,64}){0,15}$/,
+  //
+  // A SEGMENT MAY BE SUBSCRIPTED, because the emitters subscript them: the loader
+  // builds `${path}[${index}]` wherever it walks a declared LIST (a key segment,
+  // a conflict-key segment, a parameter array), which is exactly the position
+  // `unrunnable-step` reports from. Admitting only dots sealed those paths to
+  // "[REDACTED]" and left the most likely run-time fault with a stage and no
+  // location - the dead diagnosis channel D-229 exists to prevent. Bounded like
+  // every other part of the shape: a nesting cap, a digit cap, no other
+  // punctuation, and the caller's 128-character ceiling above all of it.
+  configPath: /^[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,3}(?:\.[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,3}){0,15}$/,
   configVersion: CONFIG_VERSION_RE,
   configVersionStarted: CONFIG_VERSION_RE,
   domainConfigId: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
 };
+/**
+ * EXPOSED so the fence can prove every shape above against the values its REAL
+ * emitters produce, rather than against examples someone wrote next to the regex.
+ * The `configPath` shape admitted only dot-separated segments while the loader
+ * subscripted every list it walked, so the most likely run-time fault logged a
+ * stage and "[REDACTED]" where its location should have been.
+ */
+export const CONFIGURATION_DIAGNOSIS_FIELDS = Object.freeze(
+  Object.keys(CONFIGURATION_DIAGNOSIS_SHAPES).sort(),
+) as readonly ConfigurationDiagnosisField[];
 export function configurationDiagnosisId(
   field: ConfigurationDiagnosisField,
   value: string,

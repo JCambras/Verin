@@ -10,7 +10,7 @@ import {
   admitIntakeSubmission,
   optionalIntakeValue,
   requiredIntakeValue,
-  unmappedIntakeFields,
+  unmappedIntakeFault,
 } from "@domain/config/intake-view";
 import { domainLabelsOf } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
@@ -18,10 +18,9 @@ import {
   compileFlowDefinition,
   EXECUTION_SCOPE_KEY,
   INITIATING_ACTOR_KEY,
-  type ConfiguredStepRefusal,
 } from "@domain/config/plan-compiler";
-import type { DomainConfigError } from "@domain/config/errors";
-import { appError } from "@contracts/errors";
+import type { ConfiguredRefusal, DomainConfigError } from "@domain/config/errors";
+import { appError, type AppError } from "@contracts/errors";
 import { RESERVED_TRIGGER_FIELDS } from "@domain/config/vocabulary";
 import { policyRegistriesFor } from "@domain/config/registries";
 import {
@@ -52,17 +51,28 @@ function documentOf(domain: string): Mutable {
 }
 
 /**
- * THE PORT A COMPILED STEP REFUSES THROUGH (D-231), in test form: it RECORDS the
- * typed fault rather than rendering it, which is exactly what the port exists for.
- * The compiler used to flatten the loader's dotted document paths into an
- * `AppError` message the e-sign webhook returns verbatim to the external provider;
- * the shipped minter turns the same fault into a correlation id on the wire and
- * registered structured values on the operator's line.
+ * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-231), in test form: it
+ * RECORDS the typed fault rather than rendering it, which is exactly what the port
+ * exists for. The compiler used to flatten the loader's dotted document paths into
+ * an `AppError` message the e-sign webhook returns verbatim to the external
+ * provider; the shipped minter turns the same fault into a correlation id on the
+ * wire and registered structured values on the operator's line.
+ *
+ * Each arm records its own STAGE alongside the fault, so a test can assert that a
+ * refusal took the arm its cause belongs to rather than merely that something
+ * refused.
  */
 const stepFaults: DomainConfigError[] = [];
-const recordStepFault: ConfiguredStepRefusal = (fault) => {
+const refusedStages: string[] = [];
+const record = (stage: string) => (fault: DomainConfigError): AppError => {
   stepFaults.push(fault);
-  return appError("INTERNAL", "The configured step could not be prepared.");
+  refusedStages.push(stage);
+  return appError("INTERNAL", "The published configuration could not be resolved.");
+};
+const recordStepFault: ConfiguredRefusal = {
+  uncompilable: record("uncompilable"),
+  unrunnableStep: record("unrunnable-step"),
+  intakeMismatch: record("intake-mismatch"),
 };
 
 function loadedOf(domain: string): LoadedDomainConfig {
@@ -255,7 +265,12 @@ describe("domain configuration: the shipped documents", () => {
     );
     expect(compiled.ok).toBe(false);
     if (compiled.ok) return;
-    expect(compiled.error.message).toContain("no runnable order");
+    // STATED THROUGH THE SHARED MINT, so the step ids that never become ready go
+    // to the operator's line as a document path and never to the wire.
+    expect(refusedStages.at(-1)).toBe("uncompilable");
+    expect(stepFaults.at(-1)!.path).toMatch(/^execution\.planTemplates\./);
+    expect(stepFaults.at(-1)!.message).toContain("no runnable order");
+    expect(compiled.error.message).not.toContain("no runnable order");
   });
 
   /**
@@ -310,7 +325,8 @@ describe("domain configuration: the shipped documents", () => {
     const compiled = compileFlowDefinition(loadedOf("money-movement"), "distribute-cash", recordStepFault);
     expect(compiled.ok).toBe(false);
     if (compiled.ok) return;
-    expect(compiled.error.message).toContain("decision hash");
+    expect(refusedStages.at(-1)).toBe("uncompilable");
+    expect(stepFaults.at(-1)!.message).toContain("decision hash");
   });
 
   /**
@@ -339,8 +355,12 @@ describe("domain configuration: the shipped documents", () => {
       const compiled = compileFlowDefinition(loaded.value, "open-account", recordStepFault);
       expect(compiled.ok, `an optional:${optional} decision-hash payload field must not compile`).toBe(false);
       if (compiled.ok) return;
-      expect(compiled.error.message).toContain("decision hash");
-      expect(compiled.error.message).toContain(String(capability["id"]));
+      expect(refusedStages.at(-1)).toBe("uncompilable");
+      expect(stepFaults.at(-1)!.message).toContain("decision hash");
+      // The capability the operator must look at is on the fault's PATH; the
+      // browser and the e-sign provider see neither it nor the deferral prose.
+      expect(stepFaults.at(-1)!.path).toBe(`execution.capabilities.${String(capability["id"])}`);
+      expect(compiled.error.message).not.toContain(String(capability["id"]));
     }
   });
 
@@ -366,8 +386,10 @@ describe("domain configuration: the shipped documents", () => {
     const compiled = compileFlowDefinition(loaded.value, "distribute-cash", recordStepFault);
     expect(compiled.ok).toBe(false);
     if (compiled.ok) return;
-    expect(compiled.error.message).toContain("source-account");
-    expect(compiled.error.message).toContain("bound-by-primitive");
+    expect(refusedStages.at(-1)).toBe("uncompilable");
+    expect(stepFaults.at(-1)!.message).toContain("bound-by-primitive");
+    expect(stepFaults.at(-1)!.path).toMatch(/^execution\.capabilities\./);
+    expect(compiled.error.message).not.toContain("bound-by-primitive");
   });
 
   it("enforces: the intake form projects the trigger fields the shipped route validates", () => {
@@ -425,17 +447,29 @@ describe("domain configuration: the shipped documents", () => {
       expect(withoutEmail.ok && withoutEmail.value["email"]).toBeNull();
     });
 
-    it("names an admitted field the shipped start input cannot carry, instead of dropping it", () => {
+    it("refuses an admitted field the shipped start input cannot carry, instead of dropping it", () => {
       const admitted = submit(VALID);
       expect(admitted.ok).toBe(true);
       if (!admitted.ok) return;
+      stepFaults.length = 0;
+      refusedStages.length = 0;
       // The five shipped fields all land; a sixth configured slot would not, and
-      // the route refuses it by name rather than losing it at a later step whose
+      // the route refuses it rather than losing it at a later step whose
       // predecessors have already committed (D-210).
-      expect(unmappedIntakeFields(admitted.value, Object.keys(VALID))).toEqual([]);
-      expect(
-        unmappedIntakeFields({ ...admitted.value, advisorNote: "x", branchCode: null }, Object.keys(VALID)),
-      ).toEqual(["advisorNote", "branchCode"]);
+      expect(unmappedIntakeFault(admitted.value, Object.keys(VALID), recordStepFault)).toBeNull();
+      const refusal = unmappedIntakeFault(
+        { ...admitted.value, advisorNote: "x", branchCode: null },
+        Object.keys(VALID),
+        recordStepFault,
+      );
+      expect(refusal).not.toBeNull();
+      // MINTED THROUGH THE SHARED PORT, not spelled here: the field the document
+      // declares reaches the operator as the fault's own dotted path, and the
+      // refusal itself carries no name a browser or the e-sign provider could read.
+      expect(refusedStages).toEqual(["intake-mismatch"]);
+      expect(stepFaults).toHaveLength(1);
+      expect(stepFaults[0]!.path).toBe("presentation.form.fields.advisorNote");
+      expect(refusal?.message).not.toContain("advisorNote");
     });
 
     it("refuses a value longer than the slot's DECLARED maximum, at that exact length", () => {
@@ -472,25 +506,31 @@ describe("domain configuration: the shipped documents", () => {
       if (!projected.ok || !admitted.ok) return;
       const declared = projected.value;
       const supplied = admitted.value;
-      const householdName = requiredIntakeValue(declared, supplied, "householdName");
+      const householdName = requiredIntakeValue(declared, supplied, "householdName", recordStepFault);
       expect(householdName.ok && householdName.value).toBe("Smith Family");
       // A trigger field the document no longer declares is a DEPLOYMENT defect,
-      // reported as INTERNAL - never the empty string the boundary's own
-      // required-field check just excluded, and never client-error noise.
-      const renamed = requiredIntakeValue(declared, supplied, "household_name");
+      // refused through the shared configuration mint - never the empty string the
+      // boundary's own required-field check just excluded, and never client-error
+      // noise. The field name goes to the fault's path, not to the wire.
+      stepFaults.length = 0;
+      refusedStages.length = 0;
+      const renamed = requiredIntakeValue(declared, supplied, "household_name", recordStepFault);
       expect(renamed.ok).toBe(false);
       if (renamed.ok) return;
-      expect(renamed.error.code).toBe("INTERNAL");
+      expect(refusedStages).toEqual(["intake-mismatch"]);
+      expect(stepFaults[0]!.path).toBe("presentation.form.fields.household_name");
+      expect(renamed.error.message).not.toContain("household_name");
       // An optional field is null when absent, and refused when UNDECLARED - the
       // two cases a `?? null` default cannot tell apart.
       const withoutEmail = submit({ ...VALID, email: "" });
       expect(withoutEmail.ok).toBe(true);
       if (!withoutEmail.ok) return;
-      expect(optionalIntakeValue(declared, withoutEmail.value, "email")).toEqual({ ok: true, value: null });
-      const undeclared = optionalIntakeValue(declared, withoutEmail.value, "emailAddress");
+      expect(optionalIntakeValue(declared, withoutEmail.value, "email", recordStepFault))
+        .toEqual({ ok: true, value: null });
+      const undeclared = optionalIntakeValue(declared, withoutEmail.value, "emailAddress", recordStepFault);
       expect(undeclared.ok).toBe(false);
       if (undeclared.ok) return;
-      expect(undeclared.error.code).toBe("INTERNAL");
+      expect(refusedStages).toEqual(["intake-mismatch", "intake-mismatch"]);
     });
 
     it("separates an undeclared field from a DECLARED one the submission left absent", () => {
@@ -502,7 +542,7 @@ describe("domain configuration: the shipped documents", () => {
       // gets the friendly required-field 400 worded from the DECLARED label - the
       // same message an omitted required field produces - rather than the
       // misleading "this domain declares no ... field" a bare lookup returned.
-      const absent = requiredIntakeValue(projected.value, admitted.value, "email");
+      const absent = requiredIntakeValue(projected.value, admitted.value, "email", recordStepFault);
       expect(absent.ok).toBe(false);
       if (absent.ok) return;
       expect(absent.error.code).toBe("VALIDATION");
@@ -518,9 +558,9 @@ describe("domain configuration: the shipped documents", () => {
       // one; the admitted map is a plain literal, so an `in` check would walk
       // Object.prototype and return a FUNCTION through a Result<string|null>.
       for (const inherited of ["toString", "constructor", "valueOf"]) {
-        const optional = optionalIntakeValue(projected.value, admitted.value, inherited);
+        const optional = optionalIntakeValue(projected.value, admitted.value, inherited, recordStepFault);
         expect(optional.ok, inherited).toBe(false);
-        const required = requiredIntakeValue(projected.value, admitted.value, inherited);
+        const required = requiredIntakeValue(projected.value, admitted.value, inherited, recordStepFault);
         expect(required.ok, inherited).toBe(false);
       }
     });

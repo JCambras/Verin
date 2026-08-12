@@ -19,13 +19,12 @@
  * `decision-hash` source is REFUSED here, in every position a compiled step
  * resolves, rather than faked.
  */
-import { appError, type AppError } from "@contracts/errors";
-import { operatorRecoverable } from "@contracts/client-retry";
+import type { AppError } from "@contracts/errors";
 import type { PIIBearing } from "@contracts/pii";
 import { err, ok, type Result } from "@contracts/result";
 import type { TenantContext } from "@contracts/tenant";
 import type { FlowData, FlowDefinition, FlowStep, StepResult } from "@domain/workflow/engine";
-import { configError, type DomainConfigError } from "./errors";
+import { configError, type ConfiguredRefusal, type DomainConfigError } from "./errors";
 import type { ConfiguredSlot } from "./intents";
 import type { LoadedDomainConfig } from "./load";
 import type { ExecutionCapability, PlanStep } from "./operations";
@@ -76,7 +75,11 @@ const asString = (value: unknown): string | null => {
  * function is reachable from any `LoadedDomainConfig`, and a partial plan would
  * run to `completed` having skipped work.
  */
-const orderedSteps = (steps: readonly PlanStep[]): Result<readonly PlanStep[], AppError> => {
+const orderedSteps = (
+  steps: readonly PlanStep[],
+  planTemplateId: string,
+  refuse: ConfiguredRefusal,
+): Result<readonly PlanStep[], AppError> => {
   const remaining = new Map(steps.map((step) => [step.id as string, step]));
   const done = new Set<string>();
   const out: PlanStep[] = [];
@@ -87,10 +90,13 @@ const orderedSteps = (steps: readonly PlanStep[]): Result<readonly PlanStep[], A
     const next = ready[0];
     if (next === undefined) {
       return err(
-        operatorRecoverable(appError(
-          "INTERNAL",
-          `The plan template has no runnable order: ${[...remaining.keys()].sort().join(", ")} depend on a step that never becomes ready.`,
-        )),
+        refuse.uncompilable(
+          configError(
+            "incoherent",
+            `execution.planTemplates.${planTemplateId}.steps`,
+            "no runnable order exists: a step depends on one that never becomes ready",
+          ),
+        ),
       );
     }
     out.push(next);
@@ -244,29 +250,13 @@ const readsDecisionHash = (capability: ExecutionCapability): boolean =>
   );
 
 /**
- * HOW A COMPILED STEP REPORTS A DOCUMENT IT CANNOT PREPARE (D-231).
- *
- * This module is domain code and reaches no logger, so it states the FAULT - the
- * loader's own code and dotted document path - and the composition root's
- * configuration source turns it into the one refusal shape every other stage
- * takes: a generic sentence carrying a correlation id on the wire, and the
- * diagnosis as registered structured values on the operator's line under that
- * same id. It used to interpolate the loader's formatted output straight into a
- * message the e-sign webhook returns verbatim to the EXTERNAL provider.
- *
- * REQUIRED rather than defaulted: a default that quietly dropped the fault would
- * be the channel-nobody-reads this rule exists to refuse (D-229).
- */
-export type ConfiguredStepRefusal = (fault: DomainConfigError) => AppError;
-
-/**
  * The FIRST fault, for the reason the loader's own diagnosis reports one: the
  * accumulated list is in document order, and a single registered value is the
  * only shape the operator's channel carries.
  */
-const failure = (refuse: ConfiguredStepRefusal, errors: readonly DomainConfigError[]): StepResult => ({
+const failure = (refuse: ConfiguredRefusal, errors: readonly DomainConfigError[]): StepResult => ({
   kind: "fail",
-  error: refuse(
+  error: refuse.unrunnableStep(
     errors[0] ??
       configError("incoherent", "execution", "the configured step could not be prepared"),
   ),
@@ -337,7 +327,7 @@ const compileStep = (
   config: LoadedDomainConfig,
   actionId: string,
   plan: StepPlan,
-  refuse: ConfiguredStepRefusal,
+  refuse: ConfiguredRefusal,
 ): FlowStep<ExecutionAdapters> => ({
   id: plan.step.id,
   name: plan.capability.describes,
@@ -418,54 +408,73 @@ export type CompiledFlow = {
  *
  * EVERY refusal here is OPERATOR-RECOVERABLE by cause (D-228): it says this
  * deployment cannot compile the document it publishes, which an operator clears
- * by rolling that document back and no submitter clears by any means. Marking it
- * at the mint is what lets each surface inherit the instruction rather than
- * choosing one - the start path used to answer "resubmitting will not help" here.
+ * by rolling that document back and no submitter clears by any means. All of them
+ * go through the SAME injected mint the compiled steps use, so the classification
+ * comes from one place: they used to mark themselves, each interpolating the
+ * intent, template, step, capability and slot ids into a message the e-sign
+ * webhook returns verbatim to the EXTERNAL provider and the browser reads with no
+ * quotable reference at all.
  */
 export const compileFlowDefinition = (
   config: LoadedDomainConfig,
   actionId: string,
-  refuse: ConfiguredStepRefusal,
+  refuse: ConfiguredRefusal,
 ): Result<CompiledFlow, AppError> => {
   const intent = config.intents.get(actionId);
   if (intent === undefined) {
-    return err(operatorRecoverable(appError("INTERNAL", `The configuration declares no intent named "${actionId}".`)));
+    return err(refuse.uncompilable(
+      configError("unknown-reference", `intents.${actionId}`, "this document declares no such intent"),
+    ));
   }
   const template = config.document.execution.planTemplates.find(
     (candidate) => candidate.id === intent.intent.executionPlan,
   );
   if (template === undefined) {
-    return err(operatorRecoverable(appError("INTERNAL", `The configuration declares no plan template for "${actionId}".`)));
+    return err(refuse.uncompilable(
+      configError(
+        "unknown-reference",
+        `intents.${actionId}.executionPlan`,
+        "this document declares no plan template with that id",
+      ),
+    ));
   }
   const awaitingRules = new Set(
     config.document.verification.filter((rule) => rule.awaitsExternal).map((rule) => rule.id as string),
   );
-  const ordered = orderedSteps(template.steps);
+  const ordered = orderedSteps(template.steps, template.id, refuse);
   if (!ordered.ok) return ordered;
   const plans: StepPlan[] = [];
   for (const step of ordered.value) {
     const capability = config.document.execution.capabilities.find((entry) => entry.id === step.capability);
     if (capability === undefined) {
-      return err(operatorRecoverable(appError("INTERNAL", `The plan step "${step.id}" names an undeclared capability.`)));
+      return err(refuse.uncompilable(
+        configError(
+          "unknown-reference",
+          `execution.planTemplates.${template.id}.steps.${step.id}.capability`,
+          "this plan step names a capability the document does not declare",
+        ),
+      ));
     }
     if (readsDecisionHash(capability)) {
       // Refusing here is what stops a compiled plan from inventing a stand-in
       // identity, or from silently omitting a value it cannot resolve.
-      return err(
-        operatorRecoverable(appError(
-          "INTERNAL",
-          `Capability "${capability.id}" reads the decision hash - in an idempotency key or a command payload field - which the interim execution substrate does not have (prompt 25 lands it).`,
-        )),
-      );
+      return err(refuse.uncompilable(
+        configError(
+          "incoherent",
+          `execution.capabilities.${capability.id}`,
+          "this capability reads the decision hash - in an idempotency key or a command payload field - which the interim execution substrate does not have (prompt 25 lands it)",
+        ),
+      ));
     }
     const unreadable = unreadableSlot(capability, intent.slots, config.document.presentation.copy.commandText);
     if (unreadable !== null) {
-      return err(
-        operatorRecoverable(appError(
-          "INTERNAL",
-          `Capability "${capability.id}" reads slot "${unreadable.id}", which resolves ${unreadable.resolution} and so carries no trigger field; the interim execution substrate reads a slot only from the request that started the flow, and that value arrives with the evaluator's context plane (prompt 16).`,
-        )),
-      );
+      return err(refuse.uncompilable(
+        configError(
+          "incoherent",
+          `execution.capabilities.${capability.id}`,
+          `this capability reads a slot that resolves ${unreadable.resolution} and so carries no trigger field; the interim execution substrate reads a slot only from the request that started the flow, and that value arrives with the evaluator's context plane (prompt 16)`,
+        ),
+      ));
     }
     plans.push({ step, capability, awaits: awaitingRules.has(capability.verificationRule) });
   }

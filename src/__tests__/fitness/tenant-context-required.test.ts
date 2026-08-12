@@ -133,11 +133,19 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/document.ts :: canonicalConfigJson.<call>",
   "src/domain/config/document.ts :: domainConfigVersionId.<call>",
   "src/domain/config/errors.ts :: configError.<call>",
+  // The port EVERY configuration refusal is minted through (D-231): each arm
+  // carries one typed loader fault out of pure domain code so the composition
+  // root can state it to an operator, and reaches no repository. The shipped
+  // implementation mints and logs; the tenant scoping that matters there is on
+  // the execution the refused work was driving, which its own `invoke` carries.
+  "src/domain/config/errors.ts :: ConfiguredRefusal.intakeMismatch",
+  "src/domain/config/errors.ts :: ConfiguredRefusal.uncompilable",
+  "src/domain/config/errors.ts :: ConfiguredRefusal.unrunnableStep",
   "src/domain/config/evidence.ts :: durationSeconds.<call>",
   "src/domain/config/intake-view.ts :: admitIntakeSubmission.<call>",
   "src/domain/config/intake-view.ts :: optionalIntakeValue.<call>",
   "src/domain/config/intake-view.ts :: requiredIntakeValue.<call>",
-  "src/domain/config/intake-view.ts :: unmappedIntakeFields.<call>",
+  "src/domain/config/intake-view.ts :: unmappedIntakeFault.<call>",
   "src/domain/config/intake.ts :: intakeFormOf.<call>",
   "src/domain/config/labels.ts :: domainLabelsOf.<call>",
   "src/domain/config/load-closure.ts :: checkBucketSource.<call>",
@@ -162,12 +170,6 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/parameters.ts :: RefResolver.<call>",
   "src/domain/config/parameters.ts :: resolveParameters.<call>",
   "src/domain/config/plan-compiler.ts :: compileFlowDefinition.<call>",
-  // The port a compiled step REFUSES through: it carries a typed loader fault out
-  // of pure domain code so the composition root can state it to an operator, and
-  // reaches no repository. Its shipped implementation mints and logs; the tenant
-  // scoping that matters there is on the execution the step was driving, which the
-  // step's own `invoke` already carries.
-  "src/domain/config/plan-compiler.ts :: ConfiguredStepRefusal.<call>",
   "src/domain/config/registries.ts :: policyRegistriesFor.<call>",
   "src/domain/config/segments.ts :: bucketOf.<call>",
   "src/domain/config/segments.ts :: renderKeySegments.<call>",

@@ -1,7 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_server/context";
 import { startAccountOpening, CLIENT_REQUEST_ID_RE, START_INPUT_FIELDS } from "@infra/wire";
-import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
+import {
+  ACCOUNT_OPENING_DOMAIN,
+  configuredRefusal,
+  loadIntakeForm,
+} from "@infra/config/domain-config-source";
 import { appError, logLevelFor, type AppError } from "@contracts/errors";
 import { CLIENT_RETRY, clientRetryFor } from "@contracts/client-retry";
 import { refusalResponse } from "@app/_server/refusal";
@@ -10,7 +14,7 @@ import {
   admitIntakeSubmission,
   optionalIntakeValue,
   requiredIntakeValue,
-  unmappedIntakeFields,
+  unmappedIntakeFault,
   CLIENT_REQUEST_ID_KEY,
 } from "@domain/config/intake-view";
 
@@ -30,10 +34,11 @@ function intakeReadRefusal(error: AppError): NextResponse {
 }
 
 /**
- * Boundary refusals (authorization, malformed body, an undeclared registration, a
- * field this deployment cannot carry) keep their own code: those ARE the answer to
- * the submitter's request, and nothing has been written yet. Everything the FLOW
- * refuses takes the shared instruction shape in `@app/_server/refusal`.
+ * Boundary refusals of the SUBMISSION (authorization, a malformed body, an
+ * undeclared registration) keep their own code: those ARE the answer to the
+ * submitter's request, and nothing has been written yet. Everything whose cause is
+ * the published CONFIGURATION - whether the flow raised it or this boundary did -
+ * takes the shared instruction shape in `@app/_server/refusal`.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // Starting the flow is the governed "execution.initiate" action (v3 §15.3);
@@ -47,6 +52,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const parsed = await readJsonBody(req);
   if (!parsed.ok) return errorResponse(parsed.error);
   const b = parsed.value;
+  // EVERY refusal below whose cause is the published document is minted HERE, so
+  // this boundary carries no second opinion about what one means (D-232).
+  const refuse = configuredRefusal(ACCOUNT_OPENING_DOMAIN);
   // The intake rules this boundary enforces are the ones the published
   // configuration DECLARES - per-slot maximum lengths and the registration
   // vocabulary - so adding a registration to the document can never render a
@@ -70,21 +78,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // partial write a clean boundary refusal exists to prevent. Deriving the input
   // from the configured trigger fields is prompt 12's intake pipeline (D-210).
   //
-  // An INTERNAL, not a VALIDATION (D-224): this fires only when the PUBLISHED
-  // DOCUMENT declares a field this deployment has no room for, which no
-  // submission can cause and no user can fix. Filing it as a client 400 would
-  // bury a broken configuration in client-error noise instead of raising the
-  // server error an operator alerts on - the policy `intake-view.ts` already
-  // states, and the reason every VALIDATION this route emits is one the
-  // submitter can act on.
-  const unmapped = unmappedIntakeFields(supplied, START_INPUT_FIELDS);
-  if (unmapped.length > 0) {
-    return errorResponse(
-      appError(
-        "INTERNAL",
-        `This deployment cannot carry the configured intake field(s) ${unmapped.map((field) => JSON.stringify(field)).join(", ")}; the account-opening start input is a fixed shape until the generic intake pipeline lands.`,
-      ),
-    );
+  // CLASSIFIED BY CAUSE, NOT BY CALL SITE (D-228). This fires only when the
+  // PUBLISHED DOCUMENT declares a field this deployment has no room for: a
+  // configuration defect an operator rollback clears and no submitter can, which
+  // is the same cause every other configuration refusal carries and therefore the
+  // same operator-recoverable "come back" instruction. So it is minted through the
+  // shared mint and the instruction is INHERITED here, rather than this boundary
+  // deciding for itself that a bare server error with no retry arm would do - and
+  // the field the document declares reaches the operator's log line as a
+  // registered path instead of the browser as prose (D-229).
+  const unmapped = unmappedIntakeFault(supplied, START_INPUT_FIELDS, refuse);
+  if (unmapped !== null) {
+    return refusalResponse(clientRetryFor(unmapped, CLIENT_RETRY.sameIdentity), unmapped);
   }
   // Double-submit protection (D-027): the client mints one UUID per form session;
   // it becomes the lowercase canonical executionId, so case variants and a
@@ -100,15 +105,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // The admitted values are read back through the checked accessors, so a trigger
   // field renamed in the document is a refusal here rather than a blank passed on
   // for a value this boundary just declared required.
-  const householdName = requiredIntakeValue(form.value, supplied, "householdName");
+  const householdName = requiredIntakeValue(form.value, supplied, "householdName", refuse);
   if (!householdName.ok) return intakeReadRefusal(householdName.error);
-  const firstName = requiredIntakeValue(form.value, supplied, "firstName");
+  const firstName = requiredIntakeValue(form.value, supplied, "firstName", refuse);
   if (!firstName.ok) return intakeReadRefusal(firstName.error);
-  const lastName = requiredIntakeValue(form.value, supplied, "lastName");
+  const lastName = requiredIntakeValue(form.value, supplied, "lastName", refuse);
   if (!lastName.ok) return intakeReadRefusal(lastName.error);
-  const accountType = requiredIntakeValue(form.value, supplied, "accountType");
+  const accountType = requiredIntakeValue(form.value, supplied, "accountType", refuse);
   if (!accountType.ok) return intakeReadRefusal(accountType.error);
-  const email = optionalIntakeValue(form.value, supplied, "email");
+  const email = optionalIntakeValue(form.value, supplied, "email", refuse);
   if (!email.ok) return intakeReadRefusal(email.error);
 
   const db = await getDb();

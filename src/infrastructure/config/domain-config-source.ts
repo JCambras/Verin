@@ -49,8 +49,11 @@ import { intakeFormOf } from "@domain/config/intake";
 import type { IntakeForm } from "@domain/config/intake-view";
 import { domainLabelsOf, type DomainLabels } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
-import type { DomainConfigError, DomainConfigErrorCode } from "@domain/config/errors";
-import type { ConfiguredStepRefusal } from "@domain/config/plan-compiler";
+import type {
+  ConfiguredRefusal,
+  DomainConfigError,
+  DomainConfigErrorCode,
+} from "@domain/config/errors";
 import { KEBAB_CASE_RE } from "@domain/config/vocabulary";
 
 /**
@@ -331,18 +334,28 @@ const firstFault = (errors: readonly DomainConfigError[]): ConfigurationDiagnosi
 };
 
 /**
- * The refusal a COMPILED STEP reports when the published document cannot be
- * prepared against the execution it is running (v3 prompt 10, D-231).
+ * THE MINT EVERY REFUSAL OUTSIDE THIS FILE'S OWN LOAD STAGES COMES THROUGH
+ * (v3 prompt 10, D-231).
  *
- * The plan compiler is domain code and cannot reach a logger, so it states the
- * fault and this adapter - the one place every configuration refusal is minted -
- * turns it into the same generic-sentence-plus-reference on the wire and the same
- * registered diagnosis on the operator's line as every other stage. Before this,
- * that one refusal interpolated the loader's dotted document paths into a message
- * the e-sign webhook returns verbatim to the EXTERNAL provider.
+ * The plan compiler and the intake view are domain code and cannot reach a
+ * logger, and the composition root's own compile checks had no reason to say it
+ * differently - so all three state a typed fault and this adapter, the one place
+ * every configuration refusal is minted, turns it into the same
+ * generic-sentence-plus-reference on the wire and the same registered diagnosis
+ * on the operator's line as every load stage above.
+ *
+ * Nine refusals used to mark themselves `operatorRecoverable` and write their own
+ * sentence, each interpolating the intent, capability, slot or trigger-field id
+ * the fault concerned: the browser got a bare server error with nothing to quote,
+ * the external e-sign provider got the ids verbatim, and the operator got no line
+ * at all. A classification nine authors apply by hand is a convention, and the
+ * tenth author would have written a tenth variant.
  */
-export const configuredStepRefusal = (domainConfigId: string): ConfiguredStepRefusal =>
-  (fault) => configurationRefusal(domainConfigId, "unrunnable-step", firstFault([fault]));
+export const configuredRefusal = (domainConfigId: string): ConfiguredRefusal => ({
+  uncompilable: (fault) => configurationRefusal(domainConfigId, "uncompilable", firstFault([fault])),
+  unrunnableStep: (fault) => configurationRefusal(domainConfigId, "unrunnable-step", firstFault([fault])),
+  intakeMismatch: (fault) => configurationRefusal(domainConfigId, "intake-mismatch", firstFault([fault])),
+});
 
 /**
  * PROJECTIONS FOR SURFACES. A screen asks for the shape it renders, never for

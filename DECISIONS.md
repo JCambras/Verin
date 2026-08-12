@@ -9399,3 +9399,65 @@ broken document is noticed at. Proofs PF-279, PF-280, PF-281, PF-282.
 
 **Revert path.** Re-list the sites and narrow the patterns; the four proofs above each name the file and
 line the derivation caught and the list could not.
+
+## D-232 - Prompt 10 review: a classification nine authors apply by hand is a convention, not a mechanism
+
+**Decision.** Every configuration refusal is MINTED IN ONE PLACE, and the modules that find a fault state
+it as data instead. `ConfiguredRefusal` (`src/domain/config/errors.ts`, beside the fault type it converts)
+has three arms - `uncompilable`, `unrunnableStep`, `intakeMismatch` - each a registered
+`ConfigurationStage`; the shipped implementation is `configuredRefusal(domainConfigId)` in the one adapter
+that already mints every load-stage refusal.
+
+- **The plan compiler mints nothing.** Its six compile-time refusals - no such intent, no such plan
+  template, no runnable order, an undeclared capability, a decision-hash source, an unreadable slot -
+  become `configError(code, path, message)` faults routed through the port, alongside the step-time
+  refusals that already were. The intent, template, step, capability and slot ids they interpolated now
+  travel as the fault's dotted document PATH to the operator's log line.
+- **The intake view mints nothing.** Its undeclared-trigger-field refusal takes the same route, and the
+  route's unmapped-configured-field check becomes `unmappedIntakeFault`, so a field the deployment cannot
+  carry is refused through the mint rather than named on the wire in a bare 500. That refusal INHERITS
+  retry-later from its cause (D-228) instead of the boundary deciding locally: it answers 503 with a
+  pacing header, the shared sentence and a quotable reference.
+- **The composition root mints nothing of its own.** `configuredFlow`'s unsupported-command-type refusal -
+  the last one outside the minter, which emitted no log line at all and sent the document's command types
+  verbatim to the EXTERNAL e-sign provider - states a fault at
+  `execution.capabilities.<id>.commandType`.
+
+**Why.** D-231 made the CLASSIFICATION derivable and left the SHAPE conventional. Nine refusals marked
+themselves `operatorRecoverable` and then each wrote its own sentence, so the browser got a server error
+with nothing to quote, the provider got the ids, and the operator got no line - and the tenth author would
+have written a tenth variant. Marking is now necessary but not sufficient: a mint owes a `correlationId`
+in its own context and an operator log line in the same function, which is a property of the code rather
+than of anyone's memory.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, extended with both halves of
+the D-229 channel and re-anchored on the port's own declared arms (a root that neither mints nor refuses
+through the port is reported). Proof PF-283.
+
+**Revert path.** Re-mint in place; PF-283 names the two files and lines the extended rule caught.
+
+## D-233 - Prompt 10 review: a shape is validated against what the emitters produce, never against examples
+
+**Decision.** `CONFIGURATION_DIAGNOSIS_SHAPES` is proven against REAL EMITTER OUTPUT. `configPath` admits a
+subscripted segment (`…idempotencyKey[1]`, `…segments[2]`, `…sourcesToReconcile[0]`), bounded like every
+other part of the shape, because the loader builds `${path}[${index}]` wherever it walks a declared list.
+RULE L drives the real loader over both shipped documents corrupted one string leaf at a time - with an
+id-shaped probe that reaches the reference-closure emitters and a non-id-shaped one that reaches the
+grammar emitters - drives the real compiler's steps with the document's own projected trigger fields, and
+checks the remaining five fields against the version ids, pinned hashes and canonical-byte digests the
+shipped adapter really computes.
+
+**Why.** The diagnosis channel degrades an unregistered value to `[REDACTED]` silently, on purpose. A shape
+narrower than its emitters therefore reports the stage and CENSORS the location, and nothing anywhere
+fails - so `unrunnable-step`, the most likely run-time configuration fault, logged a stage with no place to
+look. That is D-229's dead channel one level down, and it survived four review rounds because the regex was
+checked against strings someone wrote next to it. The same reasoning fixed an unguarded member-chain
+recursion in the shared fence util, where an ordinary `node = node[segment]` cursor walk killed the
+charter-drift fence with a `RangeError` - a detection channel dying in a way that reads as a fence bug.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, with anti-vacuity on the sweep
+size, on reaching the subscripting emitters in at least three modules, on the compiled-step run producing a
+subscripted path, and on the field map equalling `CONFIGURATION_DIAGNOSIS_FIELDS` exactly.
+`src/__tests__/fitness/charter-drift.test.ts` carries the cursor-walk companion. Proofs PF-284, PF-285.
+
+**Revert path.** Narrow the shape; PF-284 lists the exact emitted paths the dot-only form sealed.

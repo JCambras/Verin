@@ -14,7 +14,12 @@
  * EXTERNAL provider. A fault reaches an operator as REGISTERED STRUCTURED VALUES
  * (`configCode`, `configPath`) on the log line the client's correlation id joins
  * to, which is also the only shape this repository's log formatter carries.
+ *
+ * `ConfiguredRefusal` below is the ONE conversion from a fault to an `AppError`,
+ * and it lives here for the same reason: what a fault BECOMES is a fact about the
+ * fault, not about whichever module found it.
  */
+import type { AppError } from "@contracts/errors";
 
 export const DOMAIN_CONFIG_ERROR_CODES = [
   /** Stage 1: the document uses YAML machinery that is not inert data. */
@@ -49,3 +54,35 @@ export const configError = (
   path: string,
   message: string,
 ): DomainConfigError => ({ code, path, message });
+
+/**
+ * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-231).
+ *
+ * Classifying a refusal by its CAUSE (D-228) only holds if the classification is a
+ * MECHANISM. Marking each mint `operatorRecoverable` by hand was a convention:
+ * nine refusals across the plan compiler, the intake view and the composition root
+ * each said the same thing in their own words, so the wire got a server error with
+ * nothing to quote, the external e-sign provider got the intent, capability, slot
+ * and trigger-field ids verbatim, the operator got no line at all - and the tenth
+ * author would have written a tenth variant.
+ *
+ * So a configuration module does not MINT. It states the typed fault it found and
+ * this port turns it into the one refusal shape: a generic sentence carrying a
+ * correlation id on the wire, the diagnosis as registered structured values on the
+ * operator's line under that same id. Pure domain code reaches no logger, which is
+ * why the mint lives behind a port rather than in the module that found the fault.
+ *
+ * The arms are the STAGES an operator queries by, not call sites, and each is
+ * operator-recoverable by construction.
+ */
+export interface ConfiguredRefusal {
+  /** No runnable plan: an undeclared intent, capability or plan order, an
+   * unresolvable source, or a command type this build has no adapter for. */
+  uncompilable(fault: DomainConfigError): AppError;
+  /** A compiled step could not be PREPARED against the execution it is running:
+   * an unresolved key segment or payload field, an adapter that published nothing. */
+  unrunnableStep(fault: DomainConfigError): AppError;
+  /** The declared intake fields and this deployment's fixed shape disagree - a
+   * declared field it cannot carry, or a field it requires the document dropped. */
+  intakeMismatch(fault: DomainConfigError): AppError;
+}

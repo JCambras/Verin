@@ -2387,6 +2387,28 @@ new Registrar(it.skip);`,
     );
   });
 
+  it("(b companion) survives a self-referential member cursor rather than dying on it", () => {
+    // `node = node[segment]` is an ORDINARY cursor walk, and it made the member
+    // analysis and the assignment analysis feed each other until the stack ran
+    // out - the fence dying with a RangeError on the very code it was meant to
+    // clear. A fence that crashes on legal code reads as a fence bug and gets
+    // "fixed" by rewriting the analysed file, so the guard is proven here.
+    expect(
+      disabledVitestRegistrationProblems(
+        `import "./cursor";\nimport { it } from "vitest";\nit("live companion", () => {});`,
+        "fitness.test.ts",
+        {
+          "cursor.ts":
+            `export const at = (root, path) => {\n` +
+            `  let node = root;\n` +
+            `  for (const segment of path) node = node[segment];\n` +
+            `  return node;\n` +
+            `};`,
+        },
+      ),
+    ).toEqual([]);
+  });
+
   it("(b companion) permits ONLY the corpus-world seam to import vitest, and only as {inject}", () => {
     const entry = "src/__tests__/fitness/example.test.ts";
     const entrySource = (helper: string) =>

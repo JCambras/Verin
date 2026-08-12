@@ -15398,3 +15398,119 @@ which fails it the moment it suppresses nothing.
 **Reverted:** the generic sentence restored; `Tests 47 passed (47)`.
 
 **Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-283 - a configuration refusal that MARKS its cause and still says nothing to anyone
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, extended from "the cause is
+marked" to "the cause is marked AND the refusal takes the one shape": every non-`VALIDATION` mint in a
+configuration module must carry a `correlationId` in its own context (what `refusalResponse` appends for
+the caller to quote) and state its diagnosis on an operator log line in the SAME function (what that
+reference joins to). A module that refuses through the shared `ConfiguredRefusal` port mints nothing and
+is outside the rule by construction, which is what makes "one place" a mechanism rather than a
+convention nine authors applied nine ways.
+
+**Injection 1** - the exact regression, in the module the previous round's port was introduced for.
+Restored `compileFlowDefinition`'s hand-written intent refusal in `src/domain/config/plan-compiler.ts`:
+`operatorRecoverable(appError("INTERNAL", \`The configuration declares no intent named "${actionId}".\`))`.
+
+```
+× (I) enforces: every configuration refusal is minted with its cause marked, in ONE shape
+AssertionError: configuration refusals minted outside the one shape:
+src/domain/config/plan-compiler.ts:426: a configuration refusal is minted with no correlationId for the caller to quote
+src/domain/config/plan-compiler.ts:426: a configuration refusal is minted without stating its diagnosis on an operator log line
+```
+
+**Injection 2** - the same class one layer out, in the composition root. Restored the unsupported-command
+refusal in `src/infrastructure/config/configured-flow.ts`, which interpolated the document's own command
+type into a message the e-sign webhook returns verbatim to the EXTERNAL provider and emitted no log line
+at all.
+
+```
+× (I) enforces: every configuration refusal is minted with its cause marked, in ONE shape
+AssertionError: configuration refusals minted outside the one shape:
+src/infrastructure/config/configured-flow.ts:55: a configuration refusal is minted with no correlationId for the caller to quote
+src/infrastructure/config/configured-flow.ts:55: a configuration refusal is minted without stating its diagnosis on an operator log line
+```
+
+**Companion.** The `detects` block plants a marked-but-silent mint and asserts BOTH halves are reported;
+plants a mint whose log line lives in a same-module helper it never calls, and asserts the delegation is
+refused (that delegation is how the diagnosis was lost); proves a module that states its fault through
+the PORT satisfies the anti-vacuity anchor while minting nothing; and proves the arms are read from the
+`ConfiguredRefusal` interface itself - an emptied declaration leaves the anchor recognising nothing and
+the root is then reported as refusing nothing rather than passing.
+
+**Reverted:** both mints routed back through the port; `Tests 54 passed (54)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-one-mint-and-emitter-derived-shapes`).
+
+---
+
+## PF-284 - a diagnosis shape narrower than the emitters it guards
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L (new). Every
+`CONFIGURATION_DIAGNOSIS_SHAPES` entry is checked against REAL EMITTER OUTPUT: the real loader is driven
+over both shipped documents corrupted one string leaf at a time (with an id-shaped and a non-id-shaped
+probe, so the reference-closure emitters and the grammar emitters are both reached), the real compiler's
+steps are driven with the document's own projected trigger fields, and the version ids, pinned hashes and
+canonical-byte digests are read from the artifacts the shipped adapter really reads them from.
+
+**Injection.** Restored the shipped `configPath` shape to its dot-only form in
+`src/domain/observability/safe-values.ts`:
+`/^[A-Za-z0-9_-]{1,64}(?:\.[A-Za-z0-9_-]{1,64}){0,15}$/`.
+
+**Observed failure:**
+```
+× (L) enforces: every dotted path the loader EMITS survives the diagnosis channel
+AssertionError: the operator's line would report a stage with its location censored:
+configPath: the emitters produce "conflictKeys.liquidity-key.segments[1]", which the declared shape seals
+configPath: the emitters produce "execution.capabilities.funds-transfer.idempotencyKey[3]", which the declared shape seals
+configPath: the emitters produce "primitiveBindings.identity-reconciliation.parameters.sourcesToReconcile[0]", which the declared shape seals
+× (L) enforces: a step the COMPILER cannot prepare reports a path the channel carries
+× (L) enforces: every OTHER diagnosis shape admits what its real emitters produce
+× (L) catches the shape this rule was written for: the dot-only configPath
+```
+
+**Companion.** The `detects` block replays the exact regression against real emitter output - it asserts
+the sweep REACHES paths the pre-fix shape sealed (or the companion proves nothing) and that the live
+shape admits every one; a second case asserts the shapes still SEAL what they exist to seal (prose, a
+person's name, an over-long run, a non-digest, a spaced document id) and that the EMPTY path - a fact the
+loader never had rather than a censored one - is not reported. The enforcing rules carry their own
+anti-vacuity: the sweep must emit over 100 paths and reach the subscripting emitters in at least three
+distinct modules, the compiled-step run must produce a subscripted path, and the field map must equal
+`CONFIGURATION_DIAGNOSIS_FIELDS` exactly with every field checked against non-empty real output.
+
+**Reverted:** the subscripted shape restored; `Tests 54 passed (54)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-one-mint-and-emitter-derived-shapes`).
+
+---
+
+## PF-285 - a fence that dies on an ordinary cursor walk
+
+**Fence.** `src/__tests__/fitness/charter-drift.test.ts` (b), through the shared member-chain analysis in
+`src/__tests__/fitness/_fence-utils.ts`. `memberSources` recursed with no visited set while
+`expressionSources` follows assignments, so the ordinary `node = node[segment]` cursor loop made
+`node[segment]` a source OF `node` and the two walks fed each other until the stack ran out. A fence that
+crashes on legal code reads as a fence bug and gets "fixed" by rewriting the file it was analysing, which
+is a detection channel silently going dead - the same failure class as PF-284 one level up.
+
+**Injection.** Removed the guard (`if (walked.has(at)) return []`) from `memberSources`.
+
+**Observed failure:**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+× (b companion) survives a self-referential member cursor rather than dying on it
+RangeError: Maximum call stack size exceeded
+ ❯ expressionSources src/__tests__/fitness/_fence-utils.ts:420:31
+```
+
+**Companion.** `(b companion) survives a self-referential member cursor rather than dying on it` runs the
+real registration analysis over an imported helper containing exactly that cursor walk and requires an
+empty problem list - so the guard cannot be removed without a named test failing, rather than the whole
+fence failing for a reason nobody attributes to it.
+
+**Reverted:** the guard restored; `Tests 19 passed (19)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-one-mint-and-emitter-derived-shapes`).

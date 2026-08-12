@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { parseDocument } from "yaml";
 import { Node, Project, SyntaxKind, type CallExpression, type SourceFile } from "ts-morph";
 import { CLIENT_RETRY } from "@contracts/client-retry";
+import { appError, type AppError } from "@contracts/errors";
 import {
   REPO_ROOT,
   callResolvesToDeclaration,
@@ -16,6 +17,15 @@ import {
 } from "./_fence-utils";
 import { canonicalConfigJson, type DomainConfigDocument } from "@domain/config/document";
 import { loadDomainConfig } from "@domain/config/load";
+import { intakeFormOf } from "@domain/config/intake";
+import { compileFlowDefinition } from "@domain/config/plan-compiler";
+import type { ConfiguredRefusal, DomainConfigError } from "@domain/config/errors";
+import {
+  CONFIGURATION_DIAGNOSIS_FIELDS,
+  configurationDiagnosisId,
+  readObservabilityId,
+  type ConfigurationDiagnosisField,
+} from "@domain/observability/safe-values";
 import {
   bindDomainConfig,
   requiredFirmClasses,
@@ -92,7 +102,7 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    registry built from nothing but the derivation must BIND each shipped
  *    document, and the companion proves dropping any one derived entry fails.
  *
- *  RULE I - A CONFIGURATION REFUSAL IS MINTED WITH ITS CAUSE MARKED. Every
+ *  RULE I - A CONFIGURATION REFUSAL IS MINTED IN ONE SHAPE, IN ONE PLACE. Every
  *    refusal meaning "this deployment cannot resolve or compile its published
  *    configuration" is operator-recoverable, so it carries `operatorRecoverable`
  *    at the mint (D-228). Unmarked, it reads green everywhere and then tells an
@@ -103,6 +113,18 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    The derivation is COMPLETE rather than merely broad: marking a refusal means
  *    importing the marker, and no module outside those roots may, so there is no
  *    residue to register and nothing to go stale.
+ *
+ *    MARKING IS NOT ENOUGH, because a mark is a convention and nine authors
+ *    applied it nine ways: each wrote its own sentence naming the intent,
+ *    capability, slot or trigger field it concerned, so the browser got a server
+ *    error with nothing to quote, the external e-sign provider got those ids
+ *    verbatim, and the operator got no line at all. So a marked mint ALSO owes the
+ *    two halves of the D-229 channel, structurally: a `correlationId` in its own
+ *    context (what `refusalResponse` appends for the caller to quote) and an
+ *    operator log line in the same function (what that reference joins to). A
+ *    module that states a fault through the shared PORT instead mints nothing and
+ *    is outside the rule by construction - which is what makes "one place" a
+ *    mechanism rather than a tenth author's good intentions.
  *
  *  RULE J - NO SURFACE STATES AN INSTRUCTION IT COULD READ FROM THE CAUSE.
  *    Assigning a `ClientRetry` per call site is what produced the inconsistency
@@ -122,6 +144,25 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    (repository paths, bare file names, environment variable names, digests, and
  *    a message BUILT from a loader fault at run time), not one pattern that
  *    happens to catch some of them. A module specifier is resolution, not copy.
+ *
+ *  RULE L - THE DIAGNOSIS SHAPES ADMIT WHAT THE EMITTERS ACTUALLY PRODUCE. The
+ *    operator half of RULE I is a set of REGISTERED id fields, each guarded by a
+ *    declared shape, and an unregistered value degrades to "[REDACTED]" silently -
+ *    on purpose (that is the safety property). Which makes a shape that is
+ *    narrower than its emitters a channel that reports the stage and censors the
+ *    location, and nothing anywhere fails. `configPath` was exactly that: it
+ *    admitted only dot-separated segments while the loader subscripts every LIST
+ *    it walks (`…idempotencyKey[1]`, `…segments[2]`, `…sourcesToReconcile[0]`),
+ *    which is precisely where the `unrunnable-step` stage reports from.
+ *
+ *    So the shapes are checked against REAL EMITTER OUTPUT rather than against
+ *    examples written beside the regex: the REAL loader is driven over the SHIPPED
+ *    documents corrupted one string leaf at a time (both an id-shaped and a
+ *    non-id-shaped token, so the reference-closure emitters and the grammar
+ *    emitters are both reached), the REAL compiler's steps are driven with empty
+ *    flow data, and every path either produces must survive the channel. The other
+ *    five fields are checked the same way, against the version ids, the pinned
+ *    hashes and the canonical-byte digests the shipped adapter really computes.
  *
 
  * NAMED DEFERRALS. `policyRegistriesFor` derives prompt 9's four pinned
@@ -556,6 +597,68 @@ const SUBMITTER_REFUSAL_CODE = "VALIDATION";
 const CAUSE_MARKER = "operatorRecoverable";
 const CLIENT_RETRY_CONTRACT = "src/contracts/client-retry.ts";
 
+/**
+ * THE SHARED REFUSAL PORT, read from its OWN interface declaration so the
+ * anti-vacuity anchor below cannot fall behind a fourth stage. A configuration
+ * module either mints (and owes the shape RULE I demands) or states a fault
+ * through one of these arms; a root doing NEITHER is a derivation pointing at
+ * nothing, which is the vacuous pass the charter treats as worse than no fence.
+ */
+const REFUSAL_PORT_FILE = "src/domain/config/errors.ts";
+const REFUSAL_PORT = "ConfiguredRefusal";
+
+export function refusalPortArms(project: Project): string[] {
+  const sourceFile = project.getSourceFiles()
+    .find((candidate) => normalizedPath(candidate.getFilePath()) === REFUSAL_PORT_FILE);
+  return (sourceFile?.getInterface(REFUSAL_PORT)?.getMethods() ?? [])
+    .map((method) => method.getName())
+    .sort();
+}
+
+/** Every call of a shared-port arm in one file - how a module refuses without minting. */
+const portRefusals = (sourceFile: SourceFile, arms: readonly string[]): CallExpression[] =>
+  sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression).filter((call) => {
+    const callee = call.getExpression().asKind(SyntaxKind.PropertyAccessExpression);
+    return callee !== undefined && arms.includes(callee.getName());
+  });
+
+/**
+ * THE LOGGER, resolved through the IMPORT rather than by spelling, so a module
+ * that aliases it still counts and a local `log` object of its own does not.
+ */
+const LOGGER_MODULE = "observability/logger";
+const OPERATOR_LEVELS = ["error", "warn"];
+
+function loggerBindings(sourceFile: SourceFile): string[] {
+  return sourceFile.getImportDeclarations()
+    .filter((declaration) => declaration.getModuleSpecifierValue().includes(LOGGER_MODULE))
+    .flatMap((declaration) => declaration.getNamedImports())
+    .map((named) => named.getAliasNode()?.getText() ?? named.getName());
+}
+
+/** Does this mint carry the reference `refusalResponse` appends for the caller to quote? */
+const carriesReference = (mint: CallExpression): boolean =>
+  mint.getArguments()[2]?.asKind(SyntaxKind.ObjectLiteralExpression)
+    ?.getProperties()
+    .some((property) => Node.isPropertyAssignment(property) && property.getName() === "correlationId") === true;
+
+/**
+ * Does the function that MINTS this refusal also state it to an operator? Same
+ * function, not merely the same module: a mint that delegates its own statement is
+ * how eight of the nine ended up stating nothing at all, and the log line is the
+ * only place the diagnosis this rule protects can legally go.
+ */
+function statedToOperator(mint: CallExpression, loggers: readonly string[]): boolean {
+  const owner = mint.getAncestors().find((ancestor) => Node.isFunctionLikeDeclaration(ancestor));
+  if (owner === undefined || loggers.length === 0) return false;
+  return owner.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
+    const callee = call.getExpression().asKind(SyntaxKind.PropertyAccessExpression);
+    return callee !== undefined &&
+      loggers.includes(callee.getExpression().getText()) &&
+      OPERATOR_LEVELS.includes(callee.getName());
+  });
+}
+
 const callsNamed = (owner: Node, name: string): CallExpression[] =>
   owner.getDescendantsOfKind(SyntaxKind.CallExpression)
     .filter((call) => call.getExpression().getText() === name);
@@ -583,6 +686,7 @@ const marksCause = (mint: CallExpression): boolean => {
 export function unmarkedConfigurationRefusals(
   project: Project,
   roots: readonly string[],
+  arms: readonly string[],
 ): string[] {
   const out: string[] = [];
   const derived = new Map<string, number>(roots.map((root) => [root, 0]));
@@ -590,17 +694,31 @@ export function unmarkedConfigurationRefusals(
     const file = normalizedPath(sourceFile.getFilePath());
     const root = roots.find((candidate) => file.startsWith(candidate));
     if (root === undefined || file.includes("/__tests__/")) continue;
+    const loggers = loggerBindings(sourceFile);
+    derived.set(root, (derived.get(root) ?? 0) + portRefusals(sourceFile, arms).length);
     for (const mint of callsNamed(sourceFile, "appError")) {
       if (mintedCode(mint) === SUBMITTER_REFUSAL_CODE) continue;
       derived.set(root, (derived.get(root) ?? 0) + 1);
+      const at = `${file}:${mint.getStartLineNumber()}`;
       if (!marksCause(mint)) {
-        out.push(`${file}:${mint.getStartLineNumber()}: a configuration refusal is minted without operatorRecoverable()`);
+        out.push(`${at}: a configuration refusal is minted without operatorRecoverable()`);
+      }
+      // ...AND IN THE ONE SHAPE. A marked mint with no reference hands the caller a
+      // sentence nothing can be quoted from; one with no operator line leaves that
+      // reference joining to nothing. Either half missing is the channel D-229
+      // exists to keep alive, so both are structural rather than conventional.
+      if (!carriesReference(mint)) {
+        out.push(`${at}: a configuration refusal is minted with no correlationId for the caller to quote`);
+      }
+      if (!statedToOperator(mint, loggers)) {
+        out.push(`${at}: a configuration refusal is minted without stating its diagnosis on an operator log line`);
       }
     }
   }
-  // ANTI-VACUITY: a root that refuses nothing is a derivation pointing at nothing.
-  for (const [root, mints] of derived) {
-    if (mints === 0) out.push(`${root} mints no configuration refusal - the derivation is stale`);
+  // ANTI-VACUITY: a root that neither mints nor refuses through the shared port is
+  // a derivation pointing at nothing.
+  for (const [root, refusals] of derived) {
+    if (refusals === 0) out.push(`${root} refuses nothing - the derivation is stale`);
   }
   return out.sort();
 }
@@ -877,6 +995,72 @@ export function copyNamingDeploymentInternals(project: Project, roots: readonly 
   return [...new Set(out)].sort();
 }
 
+/**
+ * WHAT THE EMITTERS ACTUALLY PRODUCE (RULE L).
+ *
+ * TWO probe tokens, because the loader is STAGED and stops at the first stage that
+ * refuses: an id-shaped token passes the grammar and reaches the reference-closure
+ * and coherence emitters (the ones that subscript a list), while a non-id-shaped
+ * one is refused at the grammar stage and reaches the Zod-derived paths. Sweeping
+ * with either alone leaves half the emitters unexercised.
+ */
+const DIAGNOSIS_PROBES = ["no-such-id-zzz", "__not_an_id__"] as const;
+
+type JsonNode = Record<string, unknown>;
+
+/** Every string leaf of a document, as the path to it. */
+function stringLeaves(value: unknown, at: readonly (string | number)[], out: (string | number)[][]): void {
+  if (typeof value === "string") return void out.push([...at]);
+  if (Array.isArray(value)) return void value.forEach((entry, index) => stringLeaves(entry, [...at, index], out));
+  if (typeof value === "object" && value !== null) {
+    for (const [key, entry] of Object.entries(value)) stringLeaves(entry, [...at, key], out);
+  }
+}
+
+function withLeafReplaced(document: JsonNode, at: readonly (string | number)[], value: string): JsonNode {
+  const mutant = JSON.parse(JSON.stringify(document)) as JsonNode;
+  let node = mutant as Record<string | number, unknown>;
+  for (const segment of at.slice(0, -1)) node = node[segment] as Record<string | number, unknown>;
+  node[at.at(-1)!] = value;
+  return mutant;
+}
+
+/**
+ * Every dotted path the REAL loader emits for the shipped documents, corrupted one
+ * string leaf at a time. Hand-writing the paths would prove only that someone can
+ * write a string the regex accepts, which is the mistake being fenced.
+ */
+export function emittedConfigurationPaths(documents: readonly JsonNode[]): string[] {
+  const paths = new Set<string>();
+  for (const document of documents) {
+    const leaves: (string | number)[][] = [];
+    stringLeaves(document, [], leaves);
+    for (const leaf of leaves) {
+      for (const probe of DIAGNOSIS_PROBES) {
+        const loaded = loadDomainConfig(withLeafReplaced(document, leaf, probe));
+        if (!loaded.ok) for (const fault of loaded.error) paths.add(fault.path);
+      }
+    }
+  }
+  return [...paths].sort();
+}
+
+/**
+ * Which of these values the diagnosis channel would SEAL. An emitted value that
+ * seals is a stage reported with its location censored - the operator cannot tell
+ * that from a value withheld for safety, which is why this is a build failure and
+ * not a log-review problem.
+ */
+export function sealedDiagnosisValues(
+  field: ConfigurationDiagnosisField,
+  values: readonly string[],
+): string[] {
+  return values
+    .filter((value) => value !== "" && readObservabilityId(configurationDiagnosisId(field, value), field) !== value)
+    .map((value) => `${field}: the emitters produce ${JSON.stringify(value)}, which the declared shape seals`)
+    .sort();
+}
+
 describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
   const vocabulary = domainVocabulary();
 
@@ -1016,10 +1200,12 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     expect(Object.values(classes).flat().length).toBeGreaterThan(0);
   });
 
-  it("(I) enforces: every configuration refusal is minted with its cause marked", () => {
+  it("(I) enforces: every configuration refusal is minted with its cause marked, in ONE shape", () => {
     const project = realProject();
-    const unmarked = unmarkedConfigurationRefusals(project, CONFIGURATION_MODULE_ROOTS);
-    expect(unmarked, `configuration refusals whose cause is unmarked:\n${unmarked.join("\n")}`).toEqual([]);
+    const arms = refusalPortArms(project);
+    expect(arms, `${REFUSAL_PORT_FILE} must declare the port, or the derivation checks nothing`).not.toEqual([]);
+    const unmarked = unmarkedConfigurationRefusals(project, CONFIGURATION_MODULE_ROOTS, arms);
+    expect(unmarked, `configuration refusals minted outside the one shape:\n${unmarked.join("\n")}`).toEqual([]);
     // ...and the derivation is COMPLETE: nothing marks a configuration refusal
     // where a rule derived from the configuration modules could not see it.
     const outside = configurationMarkersOutsideModules(project, CONFIGURATION_MODULE_ROOTS);
@@ -1055,6 +1241,92 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     expect(stale, `escapes that suppress nothing:\n${stale.join("\n")}`).toEqual([]);
   });
 
+  it("(L) enforces: every dotted path the loader EMITS survives the diagnosis channel", () => {
+    const emitted = emittedConfigurationPaths(DOMAIN_FILES.map((file) => parsed(file) as JsonNode));
+    const sealed = sealedDiagnosisValues("configPath", emitted);
+    expect(
+      sealed,
+      `the operator's line would report a stage with its location censored:\n${sealed.join("\n")}`,
+    ).toEqual([]);
+    // ANTI-VACUITY. A sweep that emitted nothing, or nothing SUBSCRIPTED, would
+    // pass this against exactly the emitters the shape used to seal.
+    expect(emitted.length).toBeGreaterThan(100);
+    const subscripted = emitted.filter((path) => path.includes("["));
+    expect(
+      [...new Set(subscripted.map((path) => path.replace(/\[\d+\]/g, "[]").replace(/\.[a-z0-9-]+\./g, ".*.")))].sort()
+        .length,
+      "the sweep must reach the emitters that subscript a list, in every module that has one",
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("(L) enforces: a step the COMPILER cannot prepare reports a path the channel carries", async () => {
+    // The `unrunnable-step` stage, from the REAL compiler - the run-time fault the
+    // sealed shape hid, reached the only way that proves anything: by running the
+    // thing that emits it. Flow data is the document's OWN projected trigger
+    // fields, so the payloads resolve and the plan gets far enough to render a key
+    // segment, which is where the subscripted path this rule exists for comes from.
+    const loaded = loadDomainConfig(parsed("account-opening.yaml"));
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const form = intakeFormOf(loaded.value);
+    expect(form.ok).toBe(true);
+    if (!form.ok) return;
+    const started = Object.fromEntries(form.value.fields.map((field) => [field.field, "supplied"]));
+    const faults: DomainConfigError[] = [];
+    const record = (fault: DomainConfigError): AppError => {
+      faults.push(fault);
+      return appError("INTERNAL", "The published configuration could not be resolved.");
+    };
+    const refuse: ConfiguredRefusal = {
+      uncompilable: record, unrunnableStep: record, intakeMismatch: record,
+    };
+    const compiled = compileFlowDefinition(loaded.value, "open-account", refuse);
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    for (const step of compiled.value.definition.steps) {
+      const result = await step.execute(started, { invoke: () => Promise.resolve({}) }, {} as never);
+      expect(result.kind).toBe("fail");
+    }
+    const emitted = faults.map((fault) => fault.path);
+    expect(
+      emitted.filter((path) => path.includes("[")).length,
+      "a step with no resolvable inputs must report the key segment that failed",
+    ).toBeGreaterThan(0);
+    expect(sealedDiagnosisValues("configPath", emitted)).toEqual([]);
+  });
+
+  it("(L) enforces: every OTHER diagnosis shape admits what its real emitters produce", () => {
+    const pins = JSON.parse(readFileSync(join(REPO_ROOT, CONFIG_DIRECTORY, "versions.json"), "utf8")) as {
+      versions: VersionPin[];
+    };
+    const loaded = DOMAIN_FILES.map((file) => loadDomainConfig(parsed(file)));
+    expect(loaded.every((result) => result.ok)).toBe(true);
+    const documents = loaded.flatMap((result) => (result.ok ? [result.value] : []));
+    // Each value read from the SHIPPED artifact the adapter really reads it from:
+    // the loader's own version id, the pin file's hashes, and the digest over the
+    // canonical bytes `readOnce` computes before comparing them.
+    const readHashes = documents.flatMap((document) => {
+      const canonical = canonicalConfigJson(document.document);
+      return canonical.ok ? [createHash("sha256").update(canonical.value, "utf8").digest("hex")] : [];
+    });
+    const versions = documents.map((document) => document.domainConfigVersionId);
+    const emitters: Readonly<Record<ConfigurationDiagnosisField, readonly string[]>> = {
+      configHashPinned: pins.versions.map((pin) => pin.configHash),
+      configHashRead: readHashes,
+      configPath: emittedConfigurationPaths(DOMAIN_FILES.map((file) => parsed(file) as JsonNode)),
+      configVersion: versions,
+      configVersionStarted: versions,
+      domainConfigId: documents.map((document) => document.document.domainConfigId),
+    };
+    // ANTI-VACUITY: EVERY declared field is exercised, and every field by real values.
+    expect(Object.keys(emitters).sort()).toEqual([...CONFIGURATION_DIAGNOSIS_FIELDS].sort());
+    for (const [field, values] of Object.entries(emitters)) {
+      expect(values.length, `${field} is checked against no real emitter output`).toBeGreaterThan(0);
+      const sealed = sealedDiagnosisValues(field as ConfigurationDiagnosisField, values);
+      expect(sealed, sealed.join("\n")).toEqual([]);
+    }
+  });
+
   it("enforces: every named deferral still has no shipped caller", () => {
     const stale: string[] = [];
     for (const [entry, reason] of Object.entries(NAMED_DEFERRALS)) {
@@ -1077,24 +1349,55 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
   });
 
   describe("detects (companion): incomplete or dishonest work CANNOT pass", () => {
+    /** The port arms the real interface declares, so a companion checks the same rule. */
+    const ARMS = refusalPortArms(realProject());
+
     it("(I) catches a configuration refusal minted in an UNLISTED function of a config module", () => {
       // The live counterexample the hand-listed registry could not see: a mint in
       // a registered FILE but an unregistered FUNCTION. The derivation names no
       // function at all, so this is caught without anyone adding it.
       const project = inMemoryProject({
         "/src/domain/config/plan-compiler.ts":
-          `const failure = (errors) => ({ kind: "fail", error: appError("INTERNAL", "step: " + fmt(errors)) });\n` +
-          `export const compileFlowDefinition = () => err(operatorRecoverable(appError("INTERNAL", "no such intent")));`,
+          `import { log } from "@infra/observability/logger";\n` +
+          `const failure = (errors) => { log.error({}, "x"); return appError("INTERNAL", "step: " + fmt(errors), { correlationId: c }); };\n` +
+          `export const compile = () => { log.error({}, "x"); return err(operatorRecoverable(appError("INTERNAL", "no such intent", { correlationId: c }))); };`,
       });
-      const unmarked = unmarkedConfigurationRefusals(project, ["src/domain/config/"]);
-      expect(unmarked).toEqual([
-        "src/domain/config/plan-compiler.ts:1: a configuration refusal is minted without operatorRecoverable()",
+      expect(unmarkedConfigurationRefusals(project, ["src/domain/config/"], ARMS)).toEqual([
+        "src/domain/config/plan-compiler.ts:2: a configuration refusal is minted without operatorRecoverable()",
       ]);
       const marked = inMemoryProject({
         "/src/domain/config/plan-compiler.ts":
-          `const failure = (errors) => ({ kind: "fail", error: operatorRecoverable(appError("INTERNAL", "step")) });`,
+          `import { log } from "@infra/observability/logger";\n` +
+          `const failure = (e) => { log.error({}, "x"); return operatorRecoverable(appError("INTERNAL", "step", { correlationId: c })); };`,
       });
-      expect(unmarkedConfigurationRefusals(marked, ["src/domain/config/"])).toEqual([]);
+      expect(unmarkedConfigurationRefusals(marked, ["src/domain/config/"], ARMS)).toEqual([]);
+    });
+
+    it("(I) catches a MARKED refusal that carries no reference and states nothing to an operator", () => {
+      // Marking alone is what the nine bypasses all had: the classification was
+      // right and the channel was dead. A mint with no correlationId hands the
+      // caller a sentence with nothing to quote; one with no log line leaves that
+      // reference joining to nothing.
+      const silent = inMemoryProject({
+        "/src/infrastructure/config/configured-flow.ts":
+          `export const flow = () => err(operatorRecoverable(appError("INTERNAL", "no adapter for: " + types)));`,
+      });
+      expect(unmarkedConfigurationRefusals(silent, ["src/infrastructure/config/"], ARMS)).toEqual([
+        "src/infrastructure/config/configured-flow.ts:1: a configuration refusal is minted with no correlationId for the caller to quote",
+        "src/infrastructure/config/configured-flow.ts:1: a configuration refusal is minted without stating its diagnosis on an operator log line",
+      ]);
+      // The log must be in the MINTING function, and it must be the real logger:
+      // a same-module helper the mint never calls is the delegation that lost the
+      // diagnosis in the first place.
+      const elsewhere = inMemoryProject({
+        "/src/infrastructure/config/configured-flow.ts":
+          `import { log } from "@infra/observability/logger";\n` +
+          `const report = () => log.error({}, "domain configuration could not be resolved");\n` +
+          `export const flow = () => err(operatorRecoverable(appError("INTERNAL", "x", { correlationId: c })));`,
+      });
+      expect(unmarkedConfigurationRefusals(elsewhere, ["src/infrastructure/config/"], ARMS)).toEqual([
+        "src/infrastructure/config/configured-flow.ts:3: a configuration refusal is minted without stating its diagnosis on an operator log line",
+      ]);
     });
 
     it("(I) exempts a SUBMITTER refusal by its code, not by a blessed-function list", () => {
@@ -1103,10 +1406,33 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
           `export const admit = (f) => err(appError("VALIDATION", f.label + " is required."));`,
       });
       // A submitter's own typo is not operator-recoverable, so the VALIDATION is
-      // clean - but the root then refuses nothing, which is reported rather than
-      // read as proof.
-      expect(unmarkedConfigurationRefusals(project, ["src/domain/config/"])).toEqual([
-        "src/domain/config/ mints no configuration refusal - the derivation is stale",
+      // clean - but the root then refuses nothing at all, which is reported rather
+      // than read as proof.
+      expect(unmarkedConfigurationRefusals(project, ["src/domain/config/"], ARMS)).toEqual([
+        "src/domain/config/ refuses nothing - the derivation is stale",
+      ]);
+      // ...and a module that states its fault through the shared PORT satisfies the
+      // anti-vacuity anchor while minting nothing, which is the whole architecture.
+      const ported = inMemoryProject({
+        "/src/domain/config/intake-view.ts":
+          `export const read = (f, refuse) => err(refuse.intakeMismatch(configError("unknown-reference", p, "m")));`,
+      });
+      expect(unmarkedConfigurationRefusals(ported, ["src/domain/config/"], ARMS)).toEqual([]);
+    });
+
+    it("(I) ANTI-VACUITY: the port arms are read from the interface, not spelled here", () => {
+      const project = realProject();
+      expect(refusalPortArms(project)).toEqual(["intakeMismatch", "uncompilable", "unrunnableStep"]);
+      // An emptied port declaration leaves the anchor with nothing to recognise,
+      // and the rule then reports the root as refusing nothing rather than passing.
+      const emptied = inMemoryProject({
+        "/src/domain/config/errors.ts": `export interface ConfiguredRefusal { }`,
+        "/src/domain/config/intake-view.ts":
+          `export const read = (f, refuse) => err(refuse.intakeMismatch(configError("unknown-reference", p, "m")));`,
+      });
+      expect(refusalPortArms(emptied)).toEqual([]);
+      expect(unmarkedConfigurationRefusals(emptied, ["src/domain/config/"], refusalPortArms(emptied))).toEqual([
+        "src/domain/config/ refuses nothing - the derivation is stale",
       ]);
     });
 
@@ -1133,8 +1459,8 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
       const project = inMemoryProject({
         "/src/domain/config/load.ts": `export const load = () => ok(1);`,
       });
-      expect(unmarkedConfigurationRefusals(project, ["src/domain/config/"])).toEqual([
-        "src/domain/config/ mints no configuration refusal - the derivation is stale",
+      expect(unmarkedConfigurationRefusals(project, ["src/domain/config/"], ARMS)).toEqual([
+        "src/domain/config/ refuses nothing - the derivation is stale",
       ]);
       expect(configurationMarkersOutsideModules(project, ["src/domain/config/"])).toEqual([
         "no configuration module imports operatorRecoverable() - the rule checks a mark nobody applies",
@@ -1241,6 +1567,33 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
           `import { x } from "../../_server/refusal.ts";\nexport const P = () => <p>Ask your operations team.</p>;`,
       });
       expect(copyNamingDeploymentInternals(imports, ["src/app/"])).toEqual([]);
+    });
+
+    it("(L) catches the shape this rule was written for: the dot-only configPath", () => {
+      // THE EXACT REGRESSION, replayed against REAL emitter output. The shipped
+      // shape admitted only dot-separated segments, and the loader subscripts every
+      // list it walks - so `unrunnable-step`, the most likely run-time configuration
+      // fault, reported a stage and "[REDACTED]" where its location belonged.
+      const emitted = emittedConfigurationPaths(DOMAIN_FILES.map((file) => parsed(file) as JsonNode));
+      const dotsOnly = /^[A-Za-z0-9_-]{1,64}(?:\.[A-Za-z0-9_-]{1,64}){0,15}$/;
+      const sealedByTheOldShape = emitted.filter((path) => path !== "" && !dotsOnly.test(path));
+      expect(
+        sealedByTheOldShape.length,
+        "the sweep must reach paths the pre-fix shape sealed, or this companion proves nothing",
+      ).toBeGreaterThan(0);
+      // ...and the live shape admits every one of them, which is the fix.
+      expect(sealedDiagnosisValues("configPath", sealedByTheOldShape)).toEqual([]);
+    });
+
+    it("(L) catches a value NO shape admits, and never mistakes an absent path for a sealed one", () => {
+      // Prose, a person's name, an unbounded run: the shapes exist to seal these,
+      // and the rule must report them rather than accept whatever it is handed.
+      expect(sealedDiagnosisValues("configPath", ["intents open-account", "x".repeat(200)])).toHaveLength(2);
+      expect(sealedDiagnosisValues("domainConfigId", ["Account Opening"])).toHaveLength(1);
+      expect(sealedDiagnosisValues("configHashRead", ["not-a-digest"])).toHaveLength(1);
+      // The EMPTY path is a fact the loader never had, not a censored one - the
+      // adapter omits it rather than sealing it, so the rule skips it too.
+      expect(sealedDiagnosisValues("configPath", [""])).toEqual([]);
     });
 
     it("catches a domain-named evaluator branch inside decision-core", () => {

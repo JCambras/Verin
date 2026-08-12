@@ -17,12 +17,14 @@
  * The admitted values are read back through `requiredIntakeValue` /
  * `optionalIntakeValue` rather than indexed with a default, so a caller naming a
  * transport field the document no longer declares is refused instead of handed a
- * blank for a value the form just required. That refusal is an INTERNAL: a
- * caller asking for a field no document declares is a DEPLOYMENT defect, and
- * reporting it as a client VALIDATION would bury a broken configuration in
- * client-error noise. Only a value the document DOES declare, and that the
- * submission left absent, is the ordinary VALIDATION a user can act on - and it
- * carries the same declared label the form's own required check uses.
+ * blank for a value the form just required. That refusal is a CONFIGURATION
+ * refusal, minted through the injected port every other one goes through (D-231)
+ * rather than spelled here: a caller asking for a field no document declares is a
+ * DEPLOYMENT defect, so it owes the same generic sentence plus correlation
+ * reference on the wire and the same registered diagnosis on the operator's line.
+ * Only a value the document DOES declare, and that the submission left absent, is
+ * the ordinary VALIDATION a user can act on - and it carries the same declared
+ * label the form's own required check uses.
  *
  * Declaration is read from the form, and presence - in the submitted payload as
  * well as in the admitted map - with `Object.hasOwn`, never `in` and never a
@@ -31,8 +33,8 @@
  * trigger field of that name.
  */
 import { appError, type AppError } from "@contracts/errors";
-import { operatorRecoverable } from "@contracts/client-retry";
 import { err, ok, type Result } from "@contracts/result";
+import { configError, type ConfiguredRefusal } from "./errors";
 
 /**
  * The transport key a client mints once per form session so a re-submit replays
@@ -121,23 +123,42 @@ export const admitIntakeSubmission = (
 };
 
 /**
- * The admitted fields a caller's FIXED input shape has no room for, sorted.
+ * WHERE ONE INTAKE FIELD LIVES IN THE DOCUMENT, as the dotted path a fault
+ * carries. The trigger field is the token the projected form is keyed by and the
+ * one an operator greps for in the YAML, so it is the last segment - and it is a
+ * document value throughout, never anything a submitter chose.
+ */
+const fieldPath = (field: string): string => `presentation.form.fields.${field}`;
+
+/**
+ * The FIRST admitted field a caller's FIXED input shape has no room for, as a
+ * refusal minted through the shared port - or `null` when every admitted field
+ * lands.
  *
  * A boundary that judges the whole configured field list and then reads back a
  * fixed subset would silently drop the rest: the screen renders the new control,
  * the boundary admits its value, and the value vanishes - to be missed at
- * whatever step sources it, by which point earlier steps have committed. Naming
- * the unmapped fields turns that into an immediate, actionable refusal for the
- * author who added the slot.
+ * whatever step sources it, by which point earlier steps have committed. The
+ * field that caused it reaches the operator as the fault's own path rather than
+ * the wire as prose (D-229).
  */
-export const unmappedIntakeFields = (
+export const unmappedIntakeFault = (
   admitted: Readonly<Record<string, string | null>>,
   carried: readonly string[],
-): readonly string[] => {
+  refuse: ConfiguredRefusal,
+): AppError | null => {
   const known = new Set<string>(carried);
-  return Object.keys(admitted)
-    .filter((field) => !known.has(field))
-    .sort();
+  const unmapped = Object.keys(admitted).filter((field) => !known.has(field)).sort();
+  const first = unmapped[0];
+  return first === undefined
+    ? null
+    : refuse.intakeMismatch(
+      configError(
+        "incoherent",
+        fieldPath(first),
+        "this deployment's fixed start input has no room for a field the document declares",
+      ),
+    );
 };
 
 /** The label the document declares for a trigger field, or `undefined` if it declares none. */
@@ -149,10 +170,14 @@ const declaredLabel = (form: IntakeForm, field: string): string | undefined =>
  * defect, not client input. OPERATOR-RECOVERABLE by cause (D-228) - a rolled-back
  * document restores the trigger field and the next submit works - so the surface
  * inherits "come back" rather than answering a bare server error to a submitter
- * who did nothing wrong and can do nothing about it.
+ * who did nothing wrong and can do nothing about it. The instruction is inherited
+ * from the shared mint rather than marked here, which is what keeps this refusal
+ * from drifting apart from the eight others that say the same thing.
  */
-const undeclared = (field: string): AppError =>
-  operatorRecoverable(appError("INTERNAL", `This domain declares no "${field}" intake field.`));
+const undeclared = (field: string, refuse: ConfiguredRefusal): AppError =>
+  refuse.intakeMismatch(
+    configError("unknown-reference", fieldPath(field), "this document declares no intake field of that name"),
+  );
 
 /**
  * Read one admitted value a caller REQUIRES. An undeclared field is an INTERNAL
@@ -165,9 +190,10 @@ export const requiredIntakeValue = (
   form: IntakeForm,
   admitted: Readonly<Record<string, string | null>>,
   field: string,
+  refuse: ConfiguredRefusal,
 ): Result<string, AppError> => {
   const label = declaredLabel(form, field);
-  if (label === undefined || !Object.hasOwn(admitted, field)) return err(undeclared(field));
+  if (label === undefined || !Object.hasOwn(admitted, field)) return err(undeclared(field, refuse));
   const value = admitted[field];
   return typeof value === "string" && value !== ""
     ? ok(value)
@@ -179,9 +205,10 @@ export const optionalIntakeValue = (
   form: IntakeForm,
   admitted: Readonly<Record<string, string | null>>,
   field: string,
+  refuse: ConfiguredRefusal,
 ): Result<string | null, AppError> => {
   if (declaredLabel(form, field) === undefined || !Object.hasOwn(admitted, field)) {
-    return err(undeclared(field));
+    return err(undeclared(field, refuse));
   }
   const value = admitted[field];
   return ok(typeof value === "string" && value !== "" ? value : null);

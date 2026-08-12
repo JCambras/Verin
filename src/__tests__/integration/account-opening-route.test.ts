@@ -139,20 +139,28 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
   });
 
   /**
-   * A DEPLOYMENT DEFECT IS REPORTED AS ONE (D-224). A configured field the fixed
-   * start input cannot carry is caused by the published document and fixable by
-   * nobody submitting the form, so it answers 5xx/INTERNAL - the status an
-   * operator alerts on - rather than joining the client-error noise a 400 would
-   * bury it in. It is also what makes the journey's request-identity rule sound:
-   * every VALIDATION this endpoint answers is one the submitter can act on.
+   * A DEPLOYMENT DEFECT IS CLASSIFIED BY ITS CAUSE (D-228), not by which layer
+   * noticed it. A configured field the fixed start input cannot carry is caused by
+   * the published document, cleared by an operator rolling that document back, and
+   * fixable by nobody submitting the form - so it takes the operator-recoverable
+   * arm every other configuration refusal takes: 503 with a pacing header, the
+   * shared "come back" sentence, and a quotable reference. It answered a bare 500
+   * with no typed instruction at all, which was this boundary deciding locally what
+   * the shared rule already decides.
+   *
+   * And the configured field id stays OFF THE WIRE (D-229): it reaches the
+   * operator's log line as a registered document path instead.
    */
-  it("reports a configured field this deployment cannot carry as a SERVER defect, committing NOTHING", async () => {
+  it("answers a configured field this deployment cannot carry as retry-later, committing NOTHING", async () => {
     injected.extraField = { field: "advisorNote", label: "Advisor note", type: "text", required: false };
     const response = await post({ ...SUBMISSION, advisorNote: "Prefers morning calls" });
-    expect(response.status).toBe(500);
-    const body = (await response.json()) as { error?: { code?: string; message?: string } };
-    expect(body.error?.code).toBe("INTERNAL");
-    expect(body.error?.message).toContain("advisorNote");
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("60");
+    const body = (await response.json()) as { retry?: string; error?: { code?: string; message?: string } };
+    expect(body.retry).toBe("retry-later");
+    expect(body.error?.code).toBeUndefined();
+    expect(body.error?.message).not.toContain("advisorNote");
+    expect(body.error?.message).toContain("Quote reference");
     expect(await rowCounts()).toEqual({ households: 0, contacts: 0, applications: 0, executions: 0 });
   });
 

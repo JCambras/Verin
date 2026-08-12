@@ -466,3 +466,33 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 | `infrastructure` | 8,683 | **8,745** | 62 |
 | `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
 | `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+## Amendment (2026-08-12, review round 16): `domain` raised for the one-mint refusal port
+
+`domain` grows past its ceiling answering this round's finding in code: the classification the previous
+amendment shipped was correct and was still a CONVENTION. Nine refusals - six in the plan compiler, two in
+the intake view, one in the composition root - each marked themselves `operatorRecoverable` and then wrote
+their own sentence, interpolating the intent, capability, slot or trigger-field id they concerned. So the
+browser got a server error with nothing to quote, the external e-sign provider got those ids verbatim, and
+the operator got no log line at all. A tenth author would have written a tenth variant.
+
+`domain` gains a third arm on the refusal port and a home for it beside the fault type it converts, the
+plan compiler's six hand-written refusals rewritten as typed faults carrying real document paths, the
+intake view's two rewritten the same way, and the `configPath` shape widened to the subscripted segment
+its emitters had been producing all along (the loader subscripts every list it walks, so the shape sealed
+exactly the run-time faults it exists to report). The deleted half is real - nine interpolated sentences,
+two marker imports, one formatted message - so the net is 104 lines for a classification that is now
+structural rather than remembered.
+
+`contracts` and `infrastructure` are RE-TAKEN rather than carried forward. `infrastructure` moved by 18
+lines and both stay inside the ceilings they already hold, so neither is raised for company.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,752 | 6,782 | 30 (unchanged) |
+| `domain` | 9,492 | **9,555** | 63 |
+| `infrastructure` | 8,701 | 8,745 | 44 (unchanged) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
