@@ -8,6 +8,11 @@ import { inMemoryProject, REPO_ROOT, walk } from "./_fence-utils";
  * canonical Button, Badge, and Pill implementations in presentation/ui.tsx.
  * A native button or a repeated button/chip class recipe in feature code creates
  * a second visual path that will drift across every future workflow.
+ *
+ * PRIMITIVE_FILES is an EXACT-PATH escape list, so a rename or a split (the 500-line
+ * per-file ceiling makes splits routine here) would silently exempt nothing while a
+ * reader still believes the file is covered. The staleness guard below fails with
+ * `file:line` the moment an entry stops resolving against the scanned tree.
  */
 const PRIMITIVE_FILES = new Set([
   "src/app/presentation/dialog.tsx",
@@ -204,6 +209,14 @@ function classRecipeCandidates(sf: SourceFile): Array<{ node: Node; text: string
  * reaches the same JSX as one written inline, so scanning only `.tsx` left a styling
  * path the fence could not see.
  */
+/** An escape that points at nothing exempts nothing, and reads as coverage it no longer gives. */
+export function stalePrimitiveEscapes(scanned: Iterable<string>): string[] {
+  const present = new Set(scanned);
+  return [...PRIMITIVE_FILES]
+    .filter((rel) => !present.has(rel))
+    .map((rel) => `${rel}:1 :: reviewed primitive escape no longer resolves in the scanned tree`);
+}
+
 function appProject(): Project {
   const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
   for (const file of walk(`${REPO_ROOT}src/app`, (candidate) => candidate.endsWith(".tsx") || candidate.endsWith(".ts"))) {
@@ -213,6 +226,10 @@ function appProject(): Project {
 }
 
 describe("presentation-primitives fence", () => {
+  const scanned = appProject()
+    .getSourceFiles()
+    .map((sf) => relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/"));
+
   it("enforces: product surfaces have no second button, badge, or pill styling path", () => {
     const offenders: string[] = [];
     for (const sf of appProject().getSourceFiles()) {
@@ -220,6 +237,25 @@ describe("presentation-primitives fence", () => {
       offenders.push(...presentationPrimitiveViolations(sf, rel));
     }
     expect(offenders, `ad-hoc presentation primitives:\n${offenders.join("\n")}`).toEqual([]);
+  });
+
+  it("staleness guard: every reviewed primitive escape still resolves in the scanned tree", () => {
+    const stale = stalePrimitiveEscapes(scanned);
+    expect(stale, `PRIMITIVE_FILES entries exempt nothing:\n${stale.join("\n")}`).toEqual([]);
+  });
+
+  describe("detects (companion): the staleness guard rejects an escape that resolves to nothing", () => {
+    it("reports a renamed primitive with file and line", () => {
+      const renamed = scanned.filter((rel) => rel !== "src/app/presentation/table.tsx");
+      expect(stalePrimitiveEscapes(renamed)).toEqual([
+        "src/app/presentation/table.tsx:1 :: reviewed primitive escape no longer resolves in the scanned tree",
+      ]);
+    });
+
+    it("passes only against a tree that really holds every escape", () => {
+      expect(stalePrimitiveEscapes(scanned)).toEqual([]);
+      expect(stalePrimitiveEscapes([])).toHaveLength(7);
+    });
   });
 
   describe("detects (companion): real bypasses fail with file and line", () => {

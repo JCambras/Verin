@@ -155,14 +155,31 @@ export function Table({
     setRowHeight((current) => (Math.abs(current - measured) >= HEIGHT_TOLERANCE ? measured : current));
   }, [virtualized, sortedRows]);
 
+  function rewind() {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }
+
   function changeSort(columnId: string) {
     setSort((current) => ({
       columnId,
       direction: current?.columnId === columnId && current.direction === "ascending" ? "descending" : "ascending",
     }));
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    setScrollTop(0);
+    rewind();
   }
+
+  /**
+   * Sortability is only honest on a register whose recorded order the viewer can get
+   * BACK, and getting it back may not be a puzzle of repeat header clicks: from any
+   * sorted state this is the single action that returns the rows exactly as the caller
+   * supplied them (D-194).
+   */
+  function restoreRecordedOrder() {
+    setSort(initialSort ?? null);
+    rewind();
+  }
+
+  const reordered = sort?.columnId !== initialSort?.columnId || sort?.direction !== initialSort?.direction;
 
   function handleScroll(event: UIEvent<HTMLDivElement>) {
     if (virtualized) setScrollTop(event.currentTarget.scrollTop);
@@ -173,7 +190,7 @@ export function Table({
     ? `${caption} (re-sorted by ${sortedColumn.header}, ${sort.direction})`
     : caption;
 
-  return (
+  const register = (
     <div
       ref={scrollRef}
       role="region"
@@ -274,6 +291,19 @@ export function Table({
           ) : null}
         </tbody>
       </table>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-2">
+      {reordered ? (
+        <div className="flex justify-end print-hide">
+          <Button type="button" variant="secondary" size="compact" onClick={restoreRecordedOrder}>
+            Restore recorded order
+          </Button>
+        </div>
+      ) : null}
+      {register}
     </div>
   );
 }

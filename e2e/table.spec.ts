@@ -40,6 +40,12 @@ test("the canonical table keeps a 5,000-row register windowed while scrolling", 
   await expect(
     page.getByRole("region", { name: "Audit log entries, newest first (re-sorted by #, ascending)" }),
   ).toBeVisible();
+
+  // A sortable register owes its recorded order back in ONE action (D-194); repeat
+  // header clicks are not a restoration a compliance reader can rely on.
+  await page.getByRole("button", { name: "Restore recorded order" }).click();
+  await expect(page.getByRole("region", { name: "Audit log entries, newest first" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Restore recorded order" })).toHaveCount(0);
 });
 
 /**

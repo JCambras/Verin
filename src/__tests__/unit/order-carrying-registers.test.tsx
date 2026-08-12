@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getJourney } from "@app/demo/journey";
 import { PolicyTraceSurface } from "@app/demo/surfaces/policy-trace";
+import { ExecutionTimeline } from "@app/presentation/execution-timeline";
+import AuditPage from "@app/app/audit/page";
+import DecisionLedgerPage from "@app/app/ledger/page";
+import type { LedgerRegisterViewModel } from "@app/ledger/model";
 
 /**
  * A register whose ROW ORDER IS THE CLAIM offers no way to reorder itself (D-194).
@@ -46,4 +51,154 @@ describe("order-carrying registers", () => {
       vm.rows.map((row) => String(row.order)),
     );
   });
+
+  it("gives the execution timeline no column that reconstructs its position", () => {
+    render(
+      <ExecutionTimeline
+        caption="Execution timeline"
+        rows={[1, 2].map((step) => ({
+          step: `Step ${step}`,
+          target: "Custodian",
+          status: "submitted",
+          statusLabel: "Submitted",
+          timestamp: `2026-08-11T12:0${step}:00.000Z`,
+          identifiers: [],
+          devBadgeLabel: "Demonstration data",
+        }))}
+      />,
+    );
+    const headers = screen.getAllByRole("columnheader");
+    expect(headers.map((header) => header.textContent)).toEqual(["Step", "Target", "Status", "When"]);
+    for (const header of headers) expect(header).not.toHaveAttribute("aria-sort");
+    expect(screen.queryByRole("button", { name: "Restore recorded order" })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The other half of D-194: a register MAY be sortable, and the audit trail and the
+ * decision ledger are the two that are - a compliance reader legitimately re-orders by
+ * actor or action. The permission is conditional, so each condition is asserted on the
+ * shipped surface rather than on a fixture: the sequence column that carries recorded
+ * order is visible and sortable, the caption and the landmark both disclose the active
+ * sort instead of still promising "newest first", and ONE action puts the recorded
+ * order back.
+ */
+describe("sortable compliance registers", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const FOLD = {
+    source: "computed",
+    asOf: "2026-08-05T12:00:00.000Z",
+    confidence: "high",
+    demonstration: false,
+    derivedFrom: ["verin-crm"],
+  } as const;
+
+  function stubFetch(body: unknown) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => body })),
+    );
+  }
+
+  /** Recorded order is newest first, so the register's own sequence column reads down. */
+  const AUDIT_ENTRIES = [3, 2, 1].map((sequence) => ({
+    sequence,
+    actor: sequence === 2 ? "ada" : `actor-${sequence}`,
+    action: "household.created",
+    entityType: "household",
+    detail: `Entry ${sequence}`,
+    createdAt: `2026-08-11T12:00:0${sequence}.000Z`,
+    entryHash: `hash-${sequence}`,
+  }));
+
+  const LEDGER_MODEL: LedgerRegisterViewModel = {
+    verification: {
+      ok: true,
+      levels: (["L1", "L2", "L3", "L4"] as const).map((level) => ({
+        level,
+        ok: true,
+        entriesChecked: 3,
+        reason: null,
+      })),
+    },
+    total: { value: 3, format: "count", provenance: FOLD },
+    decisionsTotal: null,
+    decisionsWithheld: null,
+    decisions: [],
+    entries: [3, 2, 1].map((sequence) => ({
+      sequence,
+      occurredAt: `2026-08-11T12:00:0${sequence}.000Z`,
+      eventType: sequence === 2 ? "DecisionApproved" : "DecisionRecorded",
+      actor: `actor-${sequence}`,
+      decisionId: `dec:GC-01:000${sequence}`,
+      entryHash: `hash-${sequence}`,
+      provenanceLabel: null,
+    })),
+  };
+
+  const SURFACES = [
+    {
+      name: "audit trail",
+      caption: "Audit log entries, newest first",
+      element: <AuditPage />,
+      body: { verdict: { ok: true, entriesChecked: 3, reason: null }, entries: AUDIT_ENTRIES, total: 3 },
+      sortBy: "Actor",
+    },
+    {
+      name: "decision ledger",
+      caption: "Decision ledger entries, newest first",
+      element: <DecisionLedgerPage />,
+      body: LEDGER_MODEL,
+      sortBy: "Event",
+    },
+  ] as const;
+
+  async function openRegister(surface: (typeof SURFACES)[number]) {
+    stubFetch(surface.body);
+    render(surface.element);
+    return screen.findByRole("region", { name: surface.caption });
+  }
+
+  const sequences = (register: HTMLElement) =>
+    within(register)
+      .getAllByRole("row")
+      .slice(1)
+      .map((row) => row.querySelector("td")?.textContent);
+
+  for (const surface of SURFACES) {
+    it(`shows a sortable sequence column on the ${surface.name}`, async () => {
+      const register = await openRegister(surface);
+      const sequence = within(register).getAllByRole("columnheader")[0]!;
+      expect(sequence).toHaveTextContent("#");
+      expect(sequence).toHaveAttribute("aria-sort", "none");
+      expect(within(sequence).getByRole("button", { name: /#/ })).toBeVisible();
+      expect(sequences(register)).toEqual(["3", "2", "1"]);
+    });
+
+    it(`keeps the ${surface.name} caption and landmark true to the active sort`, async () => {
+      const user = userEvent.setup();
+      const register = await openRegister(surface);
+      await user.click(within(register).getByRole("button", { name: new RegExp(surface.sortBy) }));
+
+      const sorted = `${surface.caption} (re-sorted by ${surface.sortBy}, ascending)`;
+      expect(screen.queryByRole("region", { name: surface.caption })).not.toBeInTheDocument();
+      expect(screen.getByRole("region", { name: sorted })).toBeInTheDocument();
+      expect(screen.getByRole("region", { name: sorted }).querySelector("caption")).toHaveTextContent(sorted);
+    });
+
+    it(`restores the ${surface.name}'s recorded order in one action`, async () => {
+      const user = userEvent.setup();
+      const register = await openRegister(surface);
+      expect(screen.queryByRole("button", { name: "Restore recorded order" })).not.toBeInTheDocument();
+
+      await user.click(within(register).getByRole("button", { name: new RegExp(surface.sortBy) }));
+      expect(sequences(screen.getByRole("region", { name: new RegExp(surface.sortBy) }))).not.toEqual(["3", "2", "1"]);
+
+      await user.click(screen.getByRole("button", { name: "Restore recorded order" }));
+      const restored = screen.getByRole("region", { name: surface.caption });
+      expect(sequences(restored)).toEqual(["3", "2", "1"]);
+      expect(screen.queryByRole("button", { name: "Restore recorded order" })).not.toBeInTheDocument();
+    });
+  }
 });

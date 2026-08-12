@@ -7,6 +7,16 @@ interface ErrorBoundaryProps {
   readonly children: ReactNode;
   readonly title?: string;
   readonly onError?: (error: Error, info: ErrorInfo) => void;
+  /**
+   * Identity of the content this boundary is guarding. A boundary mounted in a
+   * PERSISTENT host (an App Router layout is reconciled by position, so only
+   * `children` is swapped on a client-side navigation) would otherwise hold a
+   * caught error across every later destination: one failed view would leave the
+   * whole section showing the fallback over content that is perfectly healthy.
+   * A host that swaps content passes what identifies it, and the caught error is
+   * released when it changes.
+   */
+  readonly resetKey?: string | number;
 }
 
 interface ErrorBoundaryState {
@@ -32,6 +42,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       return;
     }
     console.error("ErrorBoundary caught a render failure", error, info.componentStack ?? "");
+  }
+
+  override componentDidUpdate(previous: ErrorBoundaryProps) {
+    if (this.state.error && previous.resetKey !== this.props.resetKey) this.setState({ error: null });
   }
 
   private readonly retry = () => {

@@ -12762,3 +12762,35 @@ assertion that the real-tree walk admits `src/app/ledger/model.ts` alongside `.t
 
 **Reverted:** `src/app/page.tsx` was restored from its pre-injection bytes and `src/app/_adv-styles.ts`
 was deleted immediately; the focused fence returned to `Tests 16 passed` on the restored tree.
+
+**Amendment (2026-08-11, review round D-195) - the escape list had no staleness guard.**
+`PRIMITIVE_FILES` is a seven-entry EXACT-PATH escape list, and every comparable escape registry in
+this repository carries a companion proving its entries still resolve (`no-console.test.ts` has one
+verbatim). Without it a rename or a split - which the 500-line per-file ceiling makes routine here -
+leaves an entry exempting NOTHING while a reader still believes the file is covered, and no test
+notices. `stalePrimitiveEscapes` now reports every entry that no longer resolves in the scanned tree,
+with `file:line`.
+
+**Injection - a renamed primitive.** `git mv src/app/presentation/tooltip.tsx
+src/app/presentation/tooltip-panel.tsx` (the exact shape of the drift: the file is still in the tree,
+under a different path, and the escape now points at nothing).
+
+**Observed on the PRE-amendment fence (injection in place):** the enforce test passed - the file walk
+found `tooltip-panel.tsx`, no recipe in it tripped a rule, and the dead `tooltip.tsx` escape was
+simply never consulted. A stale escape is INVISIBLE to the enforcement point it belongs to, which is
+why the guard cannot be the enforce test.
+
+**Observed on the amended fence (same injection):**
+```
+× staleness guard: every reviewed primitive escape still resolves in the scanned tree
+PRIMITIVE_FILES entries exempt nothing:
+src/app/presentation/tooltip.tsx:1 :: reviewed primitive escape no longer resolves in the scanned tree
+❯ src/__tests__/fitness/presentation-primitives.test.ts:243
+```
+
+**Executable companions added:** a tree with one reviewed path filtered out, which must report that
+exact path with its line, and a pair asserting the guard passes ONLY against a tree that really holds
+every escape (an empty tree reports all seven), so the guard cannot pass vacuously.
+
+**Reverted:** the rename was undone immediately; the focused fence returned to `Tests 19 passed` on
+the restored tree.

@@ -6822,20 +6822,45 @@ to their D-192 state.
 
 The prompt-2 review gate returned four further findings; all four are resolved here.
 
-**A register whose row order carries meaning is not sortable.** D-192 settled this for
+**Sortability is conditional, and the conditions are a test.** *(This paragraph was rewritten under
+D-195, which found the rule as first recorded contradicted the tree; the "Restore recorded order"
+control it names below landed in that round, not this one.)* D-192 settled this for
 `ExecutionTimeline` and the same change then shipped a fully sortable precedence trace one file over,
-so the rule is generalised here rather than re-litigated per surface. Sorting is an affordance for
-TABULAR DATA, where row order is a convenience the viewer may set. It is not an affordance for a
-register whose order IS the claim: precedence traces (applied in order), execution timelines
-(append-only chronology), the decision ledger and the audit register (recorded order, newest first).
-Those keep their recorded order, and a surface that would need a different order asks for a different
-view rather than a sort control. `Table` already defaults `sortable` to absent per column, and it must
-stay that way: sortability is opted INTO by the caller that can justify it, never imported by default
-into a caller whose order is semantic. `PolicyTraceSurface` accordingly declares four unsortable
+so the rule is generalised here rather than re-litigated per surface. The rule as this entry FIRST
+recorded it was a blanket one - "a register whose order is the claim is not sortable" - listing the
+decision ledger and the audit register among the registers that keep recorded order while both shipped
+fully sortable and this same entry said the ledger's sortability stands. A durable rule that
+contradicts the tree it governs is worse than none, so it is superseded here by an operational
+principle a future author can APPLY rather than interpret:
+
+> A register may be sortable only when (1) its recorded order is reconstructible from a VISIBLE
+> sortable column, (2) the caption and the landmark label state the ACTIVE sort rather than asserting a
+> fixed order, and (3) restoring recorded order is ONE action away. Where position itself is the only
+> carrier of the meaning, the register stays unsortable.
+
+The three conditions are conditions on PERMISSION, not an obligation: `Table` defaults `sortable` to
+absent per column and must stay that way, so sortability is opted INTO by a caller with a reader who
+needs it, never imported by default. Condition (3) is why `Table` now renders a "Restore recorded
+order" control whenever the active sort differs from the one the caller declared: repeat header clicks
+put recorded order two or more actions away from an arbitrary sorted state, which is not a restoration
+a reader can rely on.
+
+**The audit register and the decision ledger are sortable, and satisfy all three.** Their claim is
+CONTENTS and INTEGRITY - what was recorded and that the chain is unbroken - not the position a row
+happens to occupy, and a compliance reader legitimately asks "everything this actor did" or "every
+`household.updated`". Recorded order survives the sort in data a reader can see: both carry a visible,
+sortable `#` sequence column and a hash chain whose verdict is computed over the whole chain
+regardless of display order. Both disclose every active sort in the caption and the landmark, and both
+restore recorded order in one action.
+
+**The precedence trace and the execution timeline are not sortable.** `ExecutionTimeline` fails
+condition (1) outright: nothing in Step / Target / Status / When reconstructs which step came first,
+so its position is the only carrier and sorting would silently destroy it. `PolicyTraceSurface` does
+render a visible `#`, so it could be permitted - but permission is not obligation, and a four-row
+precedence trace whose entire surface claim is "the rules that governed this decision, in the order
+they were applied" has no reader asking for a different order. It accordingly declares four unsortable
 columns, and the now-inert `sortValue` entries went with them, since a sort value on an unsortable
-register is a claim the surface does not make. The decision ledger's sortability was deliberated in
-D-192 and stands: it is the one register here whose rows a compliance reader legitimately re-orders,
-and its caption and landmark disclose the active sort.
+register is a claim the surface does not make.
 
 **One collator, not one per comparison.** `compareValues` called `localeCompare` with an options
 object, which is exactly the call shape that misses V8's cached-collator fast path and constructs a
@@ -6863,3 +6888,72 @@ sentence is corrected to its true 1,804, no ceiling moves, and no runtime depend
 
 **Revert path:** revert this changeset; the sortable precedence trace, the per-comparison collator, the
 focus-only tooltip dismissal, and the stale presentation figure return to their D-193 state.
+
+### D-195 · 2026-08-11 · reversible · Fourth review round: a boundary that lets go, and governance that matches the tree
+
+The prompt-2 review gate returned five findings; all five are resolved here. Four of them are the same
+failure in different places - a durable statement that stopped matching the code it governs - and the
+fifth is a latent bug that turns one broken page into a broken section.
+
+**A boundary mounted in a persistent host must let go.** `ErrorBoundary` was mounted directly in the
+`/app` layout with nothing to key it. App Router preserves a layout across client-side navigation: the
+element is reconciled by position, so the boundary INSTANCE and its `state.error` survive a route
+change while only `children` are swapped. One render failure on `/app/audit` therefore left
+`/app/console` and `/app/ledger` showing "This view could not be shown." over content that never
+failed - the nav kept working and every destination was dead, recoverable only by clicking "Try again"
+on whichever page the viewer happened to be standing on. There is no `error.tsx` or `global-error.tsx`
+anywhere under `src/app`, so nothing else would have reset it. The primitive now takes a `resetKey`
+naming the content it guards and releases a caught error when that key changes, and
+`RouteErrorBoundary` (`src/app/app/route-error-boundary.tsx`) is the smallest client leaf that can
+supply it: the layout stays a Server Component and the leaf reads `usePathname`. The regression asserts
+BOTH halves - arriving at a different route clears the fallback, and re-rendering the SAME route with
+healthy children does not, so the reset is keyed on the view rather than on any re-render.
+
+**D-194's rule is superseded by one a future author can apply.** As first written it named the decision
+ledger and the audit register among the registers that keep recorded order, then two paragraphs later
+said the ledger's sortability stands - and both ship fully sortable, with the audit register never
+re-litigated anywhere. A durable rule that contradicts the tree it governs is worse than no rule,
+because the next author obeys whichever half they read first. D-194 above now carries the operational
+principle instead: sortable is permitted only when recorded order is reconstructible from a visible
+sortable column, the caption and landmark state the active sort, and restoring recorded order is one
+action away; where position is the only carrier of meaning, the register stays unsortable. The third
+condition was not met by anything in the tree - repeat header clicks put recorded order two or more
+actions away from an arbitrary sorted state - so `Table` now renders a "Restore recorded order" control
+whenever the active sort differs from the caller's declared one. Coverage is on the SHIPPED surfaces,
+not on fixtures: the audit trail and the decision ledger each prove a visible sortable `#`, a caption
+and landmark that follow every active sort, and one action that puts recorded order back; the
+precedence trace and the execution timeline each prove no sortable header at all.
+
+**The design language described a Tooltip that no longer exists.** It still read "Tooltip remains
+server-capable because its interaction is native focus plus CSS", which stopped being true at D-193 and
+was contradicted outright at D-194 - the primitive carries `"use client"`, holds visibility in state,
+and installs a document `keydown` listener. `AGENTS.md` makes that document normative and tells UI
+prompts to read it first, and Tooltip's first product caller arrives at prompt 3, so the next author
+would have been told by the authority that it can be rendered from a Server Component, which fails at
+build time. The row now states the client-leaf reason (Dismissible is owed to pointer users, whose
+Escape lands on the document), and the `table.tsx` row records the conditional sortability above.
+
+**An escape list with no staleness guard.** `PRIMITIVE_FILES` is a seven-entry exact-path escape list
+with no companion proving its entries resolve, unlike every comparable registry here. A rename or a
+split - routine under the 500-line per-file ceiling - would leave an entry exempting nothing while a
+reader still believed the file was covered, and the enforce test cannot notice, because a dead escape
+is simply never consulted. `stalePrimitiveEscapes` closes it with `file:line`. Proven adversarially by
+renaming `tooltip.tsx` in the real tree: the enforce test passed with the escape pointing at nothing,
+the guard failed naming the exact path, and the rename was reverted (PF-247).
+
+**PORT-LEDGER rows that the previous rounds invalidated.** The catalog's header asserts everything in
+the deferred table is NOT built, while row 9 still deferred toasts (a `ToastProvider` ships in the
+authenticated layout and fires on console create and rename) and row 19 still measured a deferred
+step-up gate against `window.prompt`, which this branch deleted when the console rename became the
+canonical `Dialog`. Both rows now name what shipped and what genuinely remains deferred - step-up
+AUTH, not the modal - and the header says a LIVE row means exactly that. No fence covers this file,
+which is why it has to be corrected by hand in the PR that moves it.
+
+The presentation tier re-measures at 1,884/6,000 with `line-budget.test.ts`'s own algorithm on the tree
+as this round lands (1,840 at D-194); the recorded figure there is updated to match. No ceiling moves,
+no runtime dependency was added, and nothing under `domain/`, `contracts/`, or `infrastructure/` was
+touched.
+
+**Revert path:** revert this changeset; the section-wide error fallback, the two-or-more-action return
+to recorded order, the contradictory sortability rule, the server-capable Tooltip claim, the unguarded
+escape list, and the stale port-ledger rows return to their D-194 state.
