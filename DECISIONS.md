@@ -7358,3 +7358,58 @@ moves, no runtime dependency was added, and nothing under `domain/`, `contracts/
 **Revert path:** revert this changeset; the two compliance landmarks return to their captions,
 "newest first" returns to those captions as prose, the fence stops requiring a name, and both records
 return to their D-200 state.
+
+### D-202 · 2026-08-12 · reversible · Eleventh review round: layout is declared, never a side effect of a strategy
+
+The prompt-2 review gate returned four findings; all four are resolved here. The substantive one is
+a design change made by a performance strategy; the rest are a fence that reviewed a spelling, a
+reset key that missed the one navigation that needs it, and an unreachable branch.
+
+**A presentational choice may never be a side effect of a rendering strategy.** The register's
+384px scroll cap was applied as `virtualized && "max-h-96"`, so it appeared and disappeared at
+exactly `virtualizeAbove`: at 100 entries the audit register rendered full height inline, and at 101
+the same register collapsed into a capped, scrolling box. Both compliance APIs cap at 200 and both
+grow through that threshold in ordinary use, so a firm watched its audit trail change shape as it
+crossed one row - a design decision nobody made, taken by a windowing heuristic. `Table` now takes a
+typed `layout`: `"scroll-region"` caps the register and scrolls it in its own box at EVERY row count,
+`"auto"` grows it to its content, and both compliance registers declare the former. Changing how a
+body is rendered no longer changes how the register looks.
+
+**The dependency runs one way, and only one way.** Windowing needs a bounded viewport to be sound:
+a window over a box that grows to its content leaves the unrendered rows as blank space the reader
+can scroll to, because nothing ever clamps the box or fires its scroll handler. So windowing is
+available INSIDE a declared scroll region and nowhere else, and within one it is decided by row
+count, `loading`, and the print pass alone. Layout is the caller's declaration; the strategy follows
+from it. The cap's pixel figure is no longer restated as a second authority either - `max-h-96` is
+the layout contract, and the window math MEASURES the viewport off the element (seeded, like the row
+height, only for the first paint), so a caller's own height in `className` is read rather than
+silently disagreed with.
+
+**A JSX tag is a local name, so the fence resolves what it NAMES.** `register-sortability`
+identified a register by its tag's TEXT, so `import { Table as Register }` or `import * as P` took
+the register out of its sight entirely - not refused, not reported, simply not a register, free to
+ship with a landmark named after an order-asserting caption. The tag is now resolved through
+aliases, namespace members, local bindings and re-export chains to one of three verdicts, and only a
+tag PROVEN to name something else is skipped: a package import, a default import, a module outside
+the scanned tree, and a chain deeper than the cap are all held to the rule. The alias resolution
+itself is now one helper (`canonicalLocalNames`) shared with `presentation-primitives`, which had the
+same resolution for its own control tags - two partial authorities on what "canonical" means was the
+shape that let this diverge. Proven adversarially against the shipped tree (PF-252).
+
+**A view is its path AND its query.** `RouteErrorBoundary` keyed its reset on `usePathname()`, so a
+client navigation that changes only search params never released a caught error - and the demo's
+approval gate is exactly that navigation, linking back to its own station with `approved=1`. The one
+place the reset matters most (the approved view is what the viewer went there to see) was the one
+place it did not happen. The key is now the path and the query together.
+
+**And a branch that could not run.** `comparisonText`'s metric arm was unreachable:
+`comparisonSortValue` returns the metric's NUMBER before ever asking for words. The dead arm is gone
+and the fallback's real contract - badge label, else display text, else nothing - reads at a glance.
+
+The presentation tier re-measures at 2,240/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (2,199 at D-201); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the cap returns to riding on windowing, the fence returns to
+comparing tag text, and the boundary returns to a path-only reset key.

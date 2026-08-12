@@ -8,7 +8,8 @@ import {
   type ObjectLiteralExpression,
   type SourceFile,
 } from "ts-morph";
-import { appSourceProject, inMemoryProject, relativeToRepo } from "./_fence-utils";
+import { dirname, join, resolve } from "node:path";
+import { appSourceProject, canonicalLocalNames, inMemoryProject, relativeToRepo, SRC_ROOT } from "./_fence-utils";
 
 /**
  * REGISTER-SORTABILITY FENCE (D-194/D-196, charter #1/#4). `Table` defaults every
@@ -239,22 +240,144 @@ function declaredRegionName(owner: JsxOpeningElement | JsxSelfClosingElement): s
   return name !== null && name.trim().length > 0 ? name : null;
 }
 
+/**
+ * A JSX tag is a LOCAL NAME, so comparing its text to "Table" reviews the registers whose
+ * author happened to spell it that way and skips every other one: `import { Table as
+ * Register }` and `import * as P` both render the canonical register under a name this
+ * fence would not recognize, and an unrecognized register is not refused - it is invisible,
+ * which is how it would ship with a landmark named after an order-asserting caption.
+ *
+ * So the tag is RESOLVED, through aliases, namespace members, local bindings, and
+ * re-export chains, to one of three verdicts. Only a tag proven to be something ELSE is
+ * skipped; a tag this fence cannot follow - a package import, a default import, a module
+ * outside the scanned tree - is held to the rule rather than waved through.
+ */
+type TagVerdict = "canonical" | "distinct" | "unproven";
+
+const TABLE_MODULE_PATH = "/src/app/presentation/table.tsx";
+/** A re-export chain deeper than this is refused rather than followed indefinitely. */
+const MAX_MODULE_DEPTH = 4;
+
+function isTableModule(specifier: string): boolean {
+  return specifier === "@app/presentation/table" || specifier === "./table" ||
+    specifier.endsWith("/presentation/table");
+}
+
+function isTableModuleFile(file: SourceFile): boolean {
+  return file.getFilePath().replace(/\\/g, "/").endsWith(TABLE_MODULE_PATH);
+}
+
+/** The scanned source file a specifier names, or nothing - a package, or outside the walk. */
+function resolveModuleFile(sf: SourceFile, specifier: string): SourceFile | undefined {
+  const base = specifier.startsWith("@app/")
+    ? join(SRC_ROOT, "app", specifier.slice("@app/".length))
+    : specifier.startsWith(".")
+      ? resolve(dirname(sf.getFilePath()), specifier)
+      : null;
+  if (base === null) return undefined;
+  for (const candidate of [`${base}.tsx`, `${base}.ts`, join(base, "index.tsx"), join(base, "index.ts")]) {
+    const found = sf.getProject().getSourceFile(candidate);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** What a name a file DECLARES or IMPORTS finally is. */
+function bindingVerdict(sf: SourceFile, name: string, depth: number, seen: Set<string>): TagVerdict {
+  const key = `${sf.getFilePath()}#${name}`;
+  if (depth > MAX_MODULE_DEPTH || seen.has(key)) return "unproven";
+  seen.add(key);
+  if (canonicalLocalNames(sf, isTableModule, ["Table"]).has(name)) return "canonical";
+
+  for (const declaration of sf.getImportDeclarations()) {
+    for (const named of declaration.getNamedImports()) {
+      if ((named.getAliasNode()?.getText() ?? named.getName()) !== name) continue;
+      const target = resolveModuleFile(sf, declaration.getModuleSpecifierValue());
+      return target ? exportedVerdict(target, named.getName(), depth + 1, seen) : "unproven";
+    }
+  }
+
+  if (sf.getFunctions().some((fn) => fn.getName() === name)) return "distinct";
+  if (sf.getClasses().some((cls) => cls.getName() === name)) return "distinct";
+  const declarations = sf
+    .getDescendantsOfKind(SyntaxKind.VariableDeclaration)
+    .filter((declaration) => declaration.getName() === name);
+  if (declarations.length !== 1) return "unproven";
+  const initializer = unwrapExpression(declarations[0]!.getInitializer());
+  if (!initializer) return "unproven";
+  if (Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)) return "distinct";
+  return Node.isIdentifier(initializer) || Node.isPropertyAccessExpression(initializer)
+    ? tagVerdict(sf, initializer.getText(), depth, seen)
+    : "unproven";
+}
+
+/** What a name a module EXPORTS finally is, following re-export chains. */
+function exportedVerdict(file: SourceFile, name: string, depth: number, seen: Set<string>): TagVerdict {
+  if (depth > MAX_MODULE_DEPTH) return "unproven";
+  if (isTableModuleFile(file) && name === "Table") return "canonical";
+  for (const declaration of file.getExportDeclarations()) {
+    const specifier = declaration.getModuleSpecifierValue();
+    const named = declaration.getNamedExports();
+    const match = named.find((entry) => (entry.getAliasNode()?.getText() ?? entry.getName()) === name);
+    if (match) {
+      if (!specifier) return bindingVerdict(file, match.getName(), depth, seen);
+      if (isTableModule(specifier)) return match.getName() === "Table" ? "canonical" : "unproven";
+      const target = resolveModuleFile(file, specifier);
+      return target ? exportedVerdict(target, match.getName(), depth + 1, seen) : "unproven";
+    }
+    // `export * from "..."`: the name may or may not arrive through it, so a star export
+    // that could carry it is refused rather than assumed to be carrying something else.
+    if (named.length === 0 && specifier) {
+      const target = resolveModuleFile(file, specifier);
+      if (!target) return "unproven";
+      const through = exportedVerdict(target, name, depth + 1, seen);
+      if (through !== "distinct") return through;
+    }
+  }
+  return bindingVerdict(file, name, depth, seen);
+}
+
+function tagVerdict(sf: SourceFile, tag: string, depth = 0, seen = new Set<string>()): TagVerdict {
+  if (canonicalLocalNames(sf, isTableModule, ["Table"]).has(tag)) return "canonical";
+  const dot = tag.indexOf(".");
+  // A namespace member reached through a module this fence cannot read is unproven, and
+  // a member of anything other than the canonical `Table` export is not this register.
+  if (dot >= 0) {
+    const namespaceName = tag.slice(0, dot);
+    const member = tag.slice(dot + 1);
+    for (const declaration of sf.getImportDeclarations()) {
+      if (declaration.getNamespaceImport()?.getText() !== namespaceName) continue;
+      const target = resolveModuleFile(sf, declaration.getModuleSpecifierValue());
+      return target ? exportedVerdict(target, member, depth + 1, seen) : "unproven";
+    }
+    return "unproven";
+  }
+  return bindingVerdict(sf, tag, depth, seen);
+}
+
 interface TableElement {
   readonly attribute: Node;
   readonly owner: JsxOpeningElement | JsxSelfClosingElement;
   readonly array: ArrayLiteralExpression | null;
 }
 
-/** Every `<Table columns={...}>` in the file, paired with the array literal it names. */
+/** Every rendered register in the file, paired with the array literal its columns name. */
 function tableColumnAttributes(sf: SourceFile): TableElement[] {
   const out: TableElement[] = [];
+  const verdicts = new Map<string, TagVerdict>();
   for (const attribute of sf.getDescendantsOfKind(SyntaxKind.JsxAttribute)) {
     if (attribute.getNameNode().getText() !== "columns") continue;
     const owner = attribute.getFirstAncestor(
       (node) => Node.isJsxOpeningElement(node) || Node.isJsxSelfClosingElement(node),
     );
     if (!owner || !(Node.isJsxOpeningElement(owner) || Node.isJsxSelfClosingElement(owner))) continue;
-    if (owner.getTagNameNode().getText() !== "Table") continue;
+    const tag = owner.getTagNameNode().getText();
+    let verdict = verdicts.get(tag);
+    if (verdict === undefined) {
+      verdict = tagVerdict(sf, tag);
+      verdicts.set(tag, verdict);
+    }
+    if (verdict === "distinct") continue;
     const initializer = attribute.getInitializer();
     const expression = initializer && Node.isJsxExpression(initializer) ? initializer.getExpression() : undefined;
     const resolved = resolveLiteral(expression);
@@ -494,6 +617,14 @@ describe("register-sortability fence", () => {
       return inMemoryProject({ [path]: text }).getSourceFiles()[0]!;
     }
 
+    /** A multi-file fixture, so a re-export chain is followed across real modules. */
+    function sourceFrom(files: Record<string, string>, path: string): SourceFile {
+      return inMemoryProject(files).getSourceFileOrThrow(path);
+    }
+
+    const SEQUENCE_COLUMN =
+      'const C: readonly TableColumn[] = [{ id: "sequence", header: "#", sortable: true }];';
+
     const COLUMNS = (extra: string) =>
       `const C = [${extra}{ id: "when", header: "When", sortable: true }]; export default function P(){ return C.length; }`;
 
@@ -683,6 +814,72 @@ describe("register-sortability fence", () => {
         'const NAME = "Audit log";\nconst C: readonly TableColumn[] = [{ id: "sequence", header: "#", sortable: true }];\nexport default function P(){ return <Table caption="Entries, newest first" regionName={NAME} columns={C} rows={[]} />; }',
       );
       expect(registerSortabilityViolations(named, "src/app/example/page.tsx", reviewed)).toEqual([]);
+    });
+
+    /**
+     * The hole this closes: the register was identified by its tag's TEXT, so renaming
+     * the import took it out of the fence's sight entirely - not refused, not reported,
+     * simply not a register - and it shipped with its landmark named after a caption
+     * free to assert an order the reader can sort away. A tag is a local name; what it
+     * NAMES is what the rule attaches to.
+     */
+    it("holds an aliased, namespaced, or re-exported canonical register to the landmark rule", () => {
+      const reviewed = new Map([["src/app/example/page.tsx", "sequence"]]);
+      const render = (imports: string, tag: string, attributes = "") =>
+        registerSortabilityViolations(
+          source(
+            `${imports}\n${SEQUENCE_COLUMN}\nexport default function P(){ return <${tag} caption="Entries, newest first" ${attributes}columns={C} rows={[]} />; }`,
+          ),
+          "src/app/example/page.tsx",
+          reviewed,
+        );
+
+      for (const [imports, tag] of [
+        ['import { Table as Register } from "@app/presentation/table";', "Register"],
+        ['import * as Primitives from "../presentation/table";', "Primitives.Table"],
+        // A tag this fence cannot follow at all is held to the rule rather than skipped.
+        ['import { Register } from "some-package";', "Register"],
+        ['import Register from "../presentation/table";', "Register"],
+      ] as const) {
+        expect(render(imports, tag), `${imports} rendered as <${tag}>`).toEqual([
+          expect.stringContaining("src/app/example/page.tsx:3 :: a sortable register must name its own landmark"),
+        ]);
+        expect(render(imports, tag, 'regionName="Audit log" ')).toEqual([]);
+      }
+
+      // And through a module that merely re-publishes it.
+      const reExported = registerSortabilityViolations(
+        sourceFrom(
+          {
+            "/src/app/presentation/table.tsx": "export function Table(){ return null; }",
+            "/src/app/registers/index.ts": 'export { Table } from "../presentation/table";',
+            "/src/app/example/page.tsx": `import { Table as Register } from "../registers";\n${SEQUENCE_COLUMN}\nexport default function P(){ return <Register caption="Entries, newest first" columns={C} rows={[]} />; }`,
+          },
+          "/src/app/example/page.tsx",
+        ),
+        "src/app/example/page.tsx",
+        reviewed,
+      );
+      expect(reExported).toEqual([expect.stringContaining("a sortable register must name its own landmark")]);
+    });
+
+    /**
+     * Resolution has to cut both ways, or the rule above is just "every component taking
+     * columns is a register": a component PROVEN to be something else is left alone.
+     */
+    it("leaves a component that is provably not the canonical register alone", () => {
+      const found = registerSortabilityViolations(
+        sourceFrom(
+          {
+            "/src/app/presentation/chart.tsx": "export function Chart(){ return null; }",
+            "/src/app/example/page.tsx": `import { Chart } from "../presentation/chart";\n${SEQUENCE_COLUMN}\nexport default function P(){ return <Chart columns={C} rows={[]} />; }`,
+          },
+          "/src/app/example/page.tsx",
+        ),
+        "src/app/example/page.tsx",
+        new Map([["src/app/example/page.tsx", "sequence"]]),
+      );
+      expect(found).toEqual([]);
     });
 
     /** An unsortable register keeps the default: its caption cannot come apart from its rows. */

@@ -6,7 +6,7 @@
  * result appear only in the approved state - the gate is real choreography, not
  * decoration. A number is never LLM-drafted: every figure renders through Metric.
  */
-import { formatMetricValue, type DisplayMetric } from "@contracts/metric";
+import type { DisplayMetric } from "@contracts/metric";
 import { Metric } from "@app/presentation/metric";
 import { Card, StatusBadge } from "@app/presentation/ui";
 import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
@@ -36,10 +36,10 @@ const DISPOSITION_RANKS = new Map<string, number>(Object.entries(DISPOSITION_RES
 const SIMULATION_SORT_NOTE =
   "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order; that grouping is fixed, the direction reverses the values inside each group, and blanks stay last";
 
+/** The fallback band's text: a cell with a metric never reaches here - it has a NUMBER,
+ * and `comparisonSortValue` yields that before asking for words. */
 function comparisonText(cell: ComparisonCellVM): string {
-  return [cell.badge?.label, cell.metric ? formatMetricValue(cell.metric) : null, cell.display]
-    .filter((part): part is string => Boolean(part))
-    .join(" ");
+  return [cell.badge?.label, cell.display].filter((part): part is string => Boolean(part)).join(" ");
 }
 
 /** The number the reader SEES: money is stored in minor units, so a column mixing money

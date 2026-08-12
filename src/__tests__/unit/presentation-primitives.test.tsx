@@ -482,7 +482,7 @@ describe("Table", () => {
 
   it("virtualizes a 5,000-row body and updates the window on scroll", () => {
     const rows = Array.from({ length: 5000 }, (_, index) => row(index));
-    render(<Table caption="Large household fixture" columns={columns} rows={rows} />);
+    render(<Table caption="Large household fixture" layout="scroll-region" columns={columns} rows={rows} />);
     const region = screen.getByRole("region", { name: "Large household fixture" });
     expect(region).toHaveAttribute("data-row-count", "5000");
     expect(Number(region.getAttribute("data-rendered-row-count"))).toBeLessThan(40);
@@ -500,13 +500,46 @@ describe("Table", () => {
    */
   it("clamps the virtual window so the tail of a taller-than-estimated register renders", () => {
     const rows = Array.from({ length: 200 }, (_, index) => row(index));
-    render(<Table caption="Ledger fixture" columns={columns} rows={rows} />);
+    render(<Table caption="Ledger fixture" layout="scroll-region" columns={columns} rows={rows} />);
     const region = screen.getByRole("region", { name: "Ledger fixture" });
     fireEvent.scroll(scrollBox(region), { target: { scrollTop: 1_000_000 } });
     const rendered = Number(region.getAttribute("data-rendered-row-count"));
     expect(rendered).toBeGreaterThan(0);
     expect(rendered).toBeLessThan(40);
     expect(screen.getByText("Household 0199")).toBeVisible();
+  });
+
+  /**
+   * The height cap used to ride on windowing, so a register that crossed the threshold by
+   * ONE row collapsed from full height into a 384px box - a design change nobody chose,
+   * made by a performance strategy, on registers that grow through that threshold in
+   * ordinary use. Layout is the caller's declaration now, so it holds still across the
+   * boundary while only the body's rendering changes (D-202).
+   */
+  it("keeps a scroll region's height cap across the windowing threshold", () => {
+    const capped = (rowCount: number, layout: "auto" | "scroll-region") => {
+      const view = render(
+        <Table
+          caption="Households"
+          layout={layout}
+          virtualizeAbove={100}
+          columns={columns}
+          rows={Array.from({ length: rowCount }, (_, index) => row(index))}
+        />,
+      );
+      const box = scrollBox(view.container.querySelector<HTMLElement>("[role='region']")!);
+      const windowed = view.container.querySelectorAll("tr[data-table-row]").length < rowCount;
+      view.unmount();
+      return { cap: box.className.includes("max-h-96"), windowed };
+    };
+
+    // The cap holds either side of the threshold; only the windowing changes.
+    expect(capped(99, "scroll-region")).toEqual({ cap: true, windowed: false });
+    expect(capped(100, "scroll-region")).toEqual({ cap: true, windowed: false });
+    expect(capped(101, "scroll-region")).toEqual({ cap: true, windowed: true });
+    // A register declared to grow is never capped, and is never windowed either: a window
+    // over a box that grows to its content leaves blank space where the rest of it is.
+    expect(capped(101, "auto")).toEqual({ cap: false, windowed: false });
   });
 
   /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Node, SyntaxKind, type SourceFile } from "ts-morph";
-import { appSourceProject, inMemoryProject, relativeToRepo } from "./_fence-utils";
+import { appSourceProject, canonicalLocalNames, inMemoryProject, relativeToRepo } from "./_fence-utils";
 
 /**
  * PRESENTATION-PRIMITIVES FENCE (charter #1/#9/#10). Product surfaces use the
@@ -34,32 +34,11 @@ function isPrimitiveImport(moduleSpecifier: string): boolean {
 }
 
 function canonicalControlTags(sf: SourceFile): Set<string> {
-  const tags = new Set<string>();
-  for (const declaration of sf.getImportDeclarations()) {
-    if (!isPrimitiveImport(declaration.getModuleSpecifierValue())) continue;
-    for (const named of declaration.getNamedImports()) {
-      const imported = named.getName();
-      if (CONTROL_TAGS.has(imported)) tags.add(named.getAliasNode()?.getText() ?? imported);
-    }
-    const namespace = declaration.getNamespaceImport()?.getText();
-    if (namespace) for (const tag of CONTROL_TAGS) tags.add(`${namespace}.${tag}`);
-  }
-  return tags;
+  return canonicalLocalNames(sf, isPrimitiveImport, CONTROL_TAGS);
 }
 
 function canonicalButtonBuilders(sf: SourceFile): Set<string> {
-  const builders = new Set<string>();
-  for (const declaration of sf.getImportDeclarations()) {
-    if (!isPrimitiveImport(declaration.getModuleSpecifierValue())) continue;
-    for (const named of declaration.getNamedImports()) {
-      if (named.getName() === "buttonClassName") {
-        builders.add(named.getAliasNode()?.getText() ?? "buttonClassName");
-      }
-    }
-    const namespace = declaration.getNamespaceImport()?.getText();
-    if (namespace) builders.add(`${namespace}.buttonClassName`);
-  }
-  return builders;
+  return canonicalLocalNames(sf, isPrimitiveImport, ["buttonClassName"]);
 }
 
 function tokens(text: string): Set<string> {

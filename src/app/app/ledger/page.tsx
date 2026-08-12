@@ -257,6 +257,7 @@ export default function DecisionLedgerPage() {
             <Table
               caption="Decision ledger entries"
               regionName="Decision ledger"
+              layout="scroll-region"
               columns={COLUMNS}
               rows={entryRows}
               initialSort={RECORDED_ORDER}

@@ -123,6 +123,7 @@ export default function AuditPage() {
           <Table
             caption="Audit log entries"
             regionName="Audit log"
+            layout="scroll-region"
             columns={COLUMNS}
             rows={rows}
             loading={loading}

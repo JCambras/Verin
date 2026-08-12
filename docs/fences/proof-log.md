@@ -12952,3 +12952,46 @@ requirement on registers whose rows can move rather than a blanket ban on the de
 on the restored tree.
 
 **Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - tenth review round, D-201).
+
+---
+
+## PF-252 · register-sortability, amended: a register is what its tag NAMES, not how it is spelled (D-202)
+
+**Invariant (amendment):** a rendered register is identified by resolving its JSX tag to the
+canonical `Table` export - through named-import aliases, namespace members, local bindings, and
+re-export chains - rather than by comparing the tag's TEXT to "Table". Only a tag PROVEN to name
+something else is skipped; a package import, a default import, a module outside the scanned tree, and
+a chain deeper than the depth cap are all held to the rule rather than waved through. The alias
+resolution is the same `canonicalLocalNames` helper the sibling `presentation-primitives` fence uses
+for its own control tags, so the two cannot disagree about what "canonical" means.
+
+**The hole:** `import { Table as Register }` (or `import * as P` and `<P.Table>`) rendered the
+canonical register under a name the fence did not recognize. It was not refused and not reported - it
+was not a register at all, so `regionName` was never required and the columns' own review never
+attached to an element. The register then shipped with `registerName = regionName ?? caption`
+inheriting an order-asserting caption, which is exactly what PF-251/D-201 was written to close.
+
+**Injection - the shipped audit register, laundered through an alias.** Renamed the import to
+`Table as Register` in `src/app/app/audit/page.tsx`, rendered `<Register>`, and restored the
+order-asserting caption with no `regionName`, leaving the registry entry intact so the injection also
+proves a review cannot buy the shape out. Before this amendment that file PASSED.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/app/audit/page.tsx:123 :: a sortable register must name its own landmark: declare a literal 'regionName' rather than inheriting a caption, which is free to assert an order the reader can sort away (D-201)
+❯ src/__tests__/fitness/register-sortability.test.ts:607
+```
+
+**Executable companions (run on every build):** an aliased import, a namespace member, an import from
+a package this fence cannot resolve, and a default import - each held to the landmark rule and each
+accepted once it declares a name; a register reached through a module that merely re-publishes
+`Table` - refused; and a component PROVEN to be something else (a locally declared `Chart` taking a
+`columns` prop) - left alone, so the rule resolves rather than blanket-flagging every component that
+takes columns.
+
+**Reverted:** the injection was undone immediately; the focused fence returned to `Tests 20 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - eleventh review round, D-202).

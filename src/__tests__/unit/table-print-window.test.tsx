@@ -6,7 +6,7 @@ import { Table, type TableColumn, type TableRow } from "@app/presentation/table"
 
 /**
  * The print pass and the virtual window have to agree about where the register is
- * scrolled to (D-198). Suspending windowing drops the height cap, so the box stops
+ * scrolled to (D-198). The print pass lifts the height cap, so the box stops
  * overflowing and the browser clamps its `scrollTop`; the scroll handler is gated on
  * windowing being ON and refuses every scroll the pass causes, so React keeps the offset
  * it held before. Resuming from that stale offset puts the rendered slice hundreds of
@@ -31,7 +31,7 @@ const rows: readonly TableRow[] = Array.from({ length: ROWS }, (_, index) => ({
 
 describe("a windowed register across a print pass", () => {
   function renderRegister() {
-    const view = render(<Table caption="Register" columns={COLUMNS} rows={rows} />);
+    const view = render(<Table caption="Register" layout="scroll-region" columns={COLUMNS} rows={rows} />);
     const box = view.container.querySelector<HTMLDivElement>("[data-table-scroll]")!;
     const firstRenderedIndex = () =>
       Number(view.container.querySelector("tr[data-table-row]")!.getAttribute("aria-rowindex")) - 2;
@@ -92,11 +92,12 @@ describe("a windowed register across a print pass", () => {
 /**
  * Printing is not the only way out of windowing, and the disagreement it caused was never
  * about printing: the scroll handler is gated on windowing being ON, so ANY suspension
- * leaves React holding an offset the element has since dropped. A row count falling to the
- * threshold, a refetch flipping `loading`, a caller widening `virtualizeAbove` - each drops
- * the height cap, each lets the browser clamp the box, and resuming from the held offset
- * puts the rendered slice below a box that is scrolled to the top. So the reconciliation
- * is keyed on the WINDOWING TRANSITION rather than on the print pass that first exposed it.
+ * leaves React holding an offset the element is free to move without it. A row count
+ * falling to the threshold, a refetch flipping `loading`, a caller widening
+ * `virtualizeAbove` - through each of those the reader, a resize, or a zoom can put the
+ * box somewhere else, and resuming from the held offset puts the rendered slice below a
+ * box scrolled elsewhere. So the reconciliation is keyed on the WINDOWING TRANSITION
+ * rather than on the print pass that first exposed it.
  */
 describe("a register that leaves and re-enters windowing", () => {
   const HELD_OFFSET = 4000;
@@ -110,7 +111,7 @@ describe("a register that leaves and re-enters windowing", () => {
 
   for (const suspension of SUSPENSIONS) {
     it(`resumes at the element's offset when ${suspension.name}`, () => {
-      const view = render(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} />);
+      const view = render(<Table caption="Register" layout="scroll-region" columns={COLUMNS} rows={rows} {...WINDOWED} />);
       const box = view.container.querySelector<HTMLDivElement>("[data-table-scroll]")!;
       const firstRenderedIndex = () =>
         Number(view.container.querySelector("tr[data-table-row]")!.getAttribute("aria-rowindex")) - 2;
@@ -121,12 +122,12 @@ describe("a register that leaves and re-enters windowing", () => {
       });
       expect(firstRenderedIndex()).toBe(Math.floor(HELD_OFFSET / ROW_HEIGHT) - OVERSCAN);
 
-      view.rerender(<Table caption="Register" columns={COLUMNS} rows={rows} {...suspension.suspended} />);
-      // The uncapped box no longer overflows, so the browser pins it at the top.
+      view.rerender(<Table caption="Register" layout="scroll-region" columns={COLUMNS} rows={rows} {...suspension.suspended} />);
+      // The element moves while the handler is refusing scrolls - here, all the way back.
       act(() => {
         box.scrollTop = 0;
       });
-      view.rerender(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} />);
+      view.rerender(<Table caption="Register" layout="scroll-region" columns={COLUMNS} rows={rows} {...WINDOWED} />);
 
       expect(box.scrollTop).toBe(0);
       expect(firstRenderedIndex()).toBe(0);
@@ -134,15 +135,15 @@ describe("a register that leaves and re-enters windowing", () => {
   }
 
   it("keeps the reader's place across a suspension the element survives", () => {
-    const view = render(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} />);
+    const view = render(<Table caption="Register" layout="scroll-region" columns={COLUMNS} rows={rows} {...WINDOWED} />);
     const box = view.container.querySelector<HTMLDivElement>("[data-table-scroll]")!;
     act(() => {
       box.scrollTop = HELD_OFFSET;
       box.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
 
-    view.rerender(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} loading />);
-    view.rerender(<Table caption="Register" columns={COLUMNS} rows={rows} {...WINDOWED} />);
+    view.rerender(<Table caption="Register" layout="scroll-region" columns={COLUMNS} rows={rows} {...WINDOWED} loading />);
+    view.rerender(<Table caption="Register" layout="scroll-region" columns={COLUMNS} rows={rows} {...WINDOWED} />);
 
     expect(box.scrollTop).toBe(HELD_OFFSET);
     const first = Number(view.container.querySelector("tr[data-table-row]")!.getAttribute("aria-rowindex")) - 2;

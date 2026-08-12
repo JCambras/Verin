@@ -61,6 +61,12 @@ export interface TableEmptyState {
   readonly action?: ReactNode;
 }
 
+/**
+ * How the register OCCUPIES the page. `"auto"` grows to its content; `"scroll-region"`
+ * caps the register and scrolls it inside its own box.
+ */
+export type TableLayout = "auto" | "scroll-region";
+
 export interface TableProps {
   readonly caption: string;
   /**
@@ -80,6 +86,21 @@ export interface TableProps {
   readonly regionName?: string;
   readonly columns: readonly TableColumn[];
   readonly rows: readonly TableRow[];
+  /**
+   * A LAYOUT declaration, never a consequence of one. The height cap used to ride on
+   * windowing, so a register that crossed `virtualizeAbove` by a single row collapsed
+   * from full height into a 384px box: a design change nobody chose, made by a
+   * performance strategy, and both compliance registers grow through that threshold in
+   * ordinary use. Changing how a body is RENDERED may not change how the register LOOKS
+   * (D-202), so the cap now follows this declaration at every row count.
+   *
+   * The dependency runs one way only: windowing needs a bounded viewport to be sound - a
+   * window over a box that grows to its content leaves the unrendered rows as blank space
+   * the reader can scroll to - so it is available inside a declared scroll region and
+   * nowhere else. Within one, whether the body is windowed is decided by row count,
+   * `loading`, and the print pass alone.
+   */
+  readonly layout?: TableLayout;
   readonly loading?: boolean;
   readonly emptyState?: TableEmptyState;
   readonly initialSort?: SortState;
@@ -99,8 +120,17 @@ export interface TableProps {
 const ESTIMATED_ROW_HEIGHT = 40;
 const MIN_ROW_HEIGHT = 16;
 const HEIGHT_TOLERANCE = 2;
-const VIEWPORT_HEIGHT = 384;
 const OVERSCAN = 6;
+
+/**
+ * The scroll region's height is stated ONCE, as the class the box wears; the pixel
+ * figure beside it only seeds the window math for the first paint, exactly as the row
+ * estimate above does. Both are then MEASURED off the element, so the arithmetic reads
+ * the height the box actually has - including one a caller's own `className` imposed,
+ * which a restated constant would have quietly disagreed with.
+ */
+const SCROLL_REGION_CLASS = "max-h-96";
+const ESTIMATED_VIEWPORT_HEIGHT = 384;
 
 function joinClasses(...values: Array<string | false | null | undefined>): string {
   return values.filter(Boolean).join(" ");
@@ -123,6 +153,7 @@ export function Table({
   regionName,
   columns,
   rows,
+  layout = "auto",
   loading = false,
   emptyState,
   initialSort,
@@ -135,18 +166,20 @@ export function Table({
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const [scrollTop, setScrollTop] = useState(0);
   const [rowHeight, setRowHeight] = useState(ESTIMATED_ROW_HEIGHT);
+  const [viewportHeight, setViewportHeight] = useState(ESTIMATED_VIEWPORT_HEIGHT);
   const [printing, setPrinting] = useState(false);
 
   /**
    * The window index and the element's scroll offset must agree, and the scroll handler
    * alone cannot keep them agreeing: it is gated on windowing being ON, so every scroll
    * that happens while windowing is suspended is refused and React keeps whatever offset
-   * it held before. Suspending windowing drops the height cap, the box stops overflowing,
-   * and the browser clamps the offset to 0; restoring the cap lets the browser put an
-   * offset back. Resuming a window from an offset the element no longer has places the
-   * rendered slice hundreds of pixels away from the visible band and the register reads as
-   * blank. Whatever the element settles on IS the offset; the only thing owed is that state
-   * agrees with it.
+   * it held before. The element meanwhile moves on its own: the print pass lifts the
+   * height cap, the box stops overflowing and the browser clamps the offset to 0, and
+   * restoring the cap lets it put an offset back - as do a resize, a zoom, or a reader
+   * scrolling a suspended register. Resuming a window from an offset the element no longer
+   * has places the rendered slice hundreds of pixels away from the visible band and the
+   * register reads as blank. Whatever the element settles on IS the offset; the only thing
+   * owed is that state agrees with it.
    */
   function reconcileScrollOffset() {
     const box = scrollRef.current;
@@ -158,8 +191,9 @@ export function Table({
    * scroll box, so printing one emits a cropped box with blank spacer bands where the
    * rest of the record should be - and both compliance registers exceed the threshold
    * in ordinary use. No stylesheet can fix that: the missing rows do not exist. So
-   * windowing is SUSPENDED for the print pass, which drops the height cap and the
-   * spacers with it and prints the complete sorted register.
+   * windowing is SUSPENDED for the print pass, which takes the spacers with it, and the
+   * `print:` height-cap escape below un-crops the box - together they print the complete
+   * sorted register.
    *
    * The commit is synchronous because `window.print()` blocks the main thread: a
    * batched update would land after the page had already been captured, and so would the
@@ -202,8 +236,9 @@ export function Table({
     return indexed.map(({ row }) => row);
   }, [rows, sort]);
 
-  const virtualized = !loading && !printing && sortedRows.length > virtualizeAbove;
-  const visibleCount = Math.ceil(VIEWPORT_HEIGHT / rowHeight) + OVERSCAN * 2;
+  const scrollRegion = layout === "scroll-region";
+  const virtualized = scrollRegion && !loading && !printing && sortedRows.length > virtualizeAbove;
+  const visibleCount = Math.ceil(viewportHeight / rowHeight) + OVERSCAN * 2;
   const maxStart = Math.max(0, sortedRows.length - visibleCount);
   const start = virtualized
     ? Math.min(maxStart, Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN))
@@ -226,6 +261,12 @@ export function Table({
   useEffect(() => {
     const body = bodyRef.current;
     if (!virtualized || !body || sortedRows.length === 0) return;
+    const measuredViewport = scrollRef.current?.clientHeight ?? 0;
+    if (measuredViewport > 0) {
+      setViewportHeight((current) =>
+        Math.abs(current - measuredViewport) >= HEIGHT_TOLERANCE ? measuredViewport : current,
+      );
+    }
     const heights = Array.from(body.querySelectorAll<HTMLTableRowElement>("tr[data-table-row]"))
       .map((element) => element.offsetHeight)
       .filter((height) => height > 0);
@@ -309,7 +350,7 @@ export function Table({
       className={joinClasses(
         "overflow-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600",
         "print:max-h-none print:overflow-visible",
-        virtualized && "max-h-96",
+        scrollRegion && SCROLL_REGION_CLASS,
         className,
       )}
     >
