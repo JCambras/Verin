@@ -83,6 +83,32 @@ function provenanceProblems(household: WorldHousehold, asOf: string): string[] {
   return problems;
 }
 
+/**
+ * The rules an ACCOUNT must satisfy however it was authored. A NAMED PREDICATE
+ * over one household so the fence can feed it a violation, and applied to the
+ * generated output rather than to a spec file, so the hand-authored ten and the
+ * derived ninety are held to it alike.
+ */
+export function accountRuleProblems(household: WorldHousehold): string[] {
+  const problems: string[] = [];
+  for (const account of household.accounts) {
+    const where = `${household.key}/account/${account.key}`;
+    const symbols = account.holdings.map((holding) => holding.symbol);
+    for (const symbol of new Set(symbols.filter((symbol, index) => symbols.indexOf(symbol) !== index))) {
+      problems.push(`${where}: holds ${symbol} more than once - one lot rendered twice`);
+    }
+    // An estate does not pass to the person it already belongs to, and a
+    // self-designation scores the account COMPLETE on the beneficiary health
+    // factor - inflating the one number this surface exists to earn.
+    for (const beneficiary of account.beneficiaries) {
+      if (account.ownerKeys.includes(beneficiary.partyKey)) {
+        problems.push(`${where}: names its own owner "${beneficiary.partyKey}" as a ${beneficiary.tier} beneficiary`);
+      }
+    }
+  }
+  return problems;
+}
+
 function structureProblems(world: GeneratedWorld, spec: LoadedWorldSpec): string[] {
   const problems: string[] = [];
   const byKey = new Map(world.households.map((household) => [household.key, household]));
@@ -99,6 +125,7 @@ function structureProblems(world: GeneratedWorld, spec: LoadedWorldSpec): string
     if (household.accounts.length === 0) problems.push(`${household.key}: no accounts - a household without an account renders as an empty surface`);
     if (household.members.length === 0) problems.push(`${household.key}: no members`);
     if (household.activity.length === 0) problems.push(`${household.key}: no recent activity`);
+    problems.push(...accountRuleProblems(household));
     for (const link of household.crossHouseholdLinks) {
       const counterparty = byKey.get(link.counterpartyHouseholdKey);
       if (!counterparty) {

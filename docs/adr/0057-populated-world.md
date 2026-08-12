@@ -89,6 +89,12 @@ one. A sweep that finds no provenance-bearing table reports a problem rather tha
 (charter #4). The fixture adapter additionally refuses to serve anything under `APP_ENV=production`,
 so the guarantee is structural on both sides.
 
+The derivation is read three ways that share no code, and any disagreement is a sweep problem: a
+structural parse of each table's balanced body and its top-level column items; a plain count of every
+`prov_source` the DDL names; and the store's OWN column catalog, which is not a reading of the DDL at
+all and therefore also catches a provenance-bearing table created outside `MIGRATION_SQL`. Two
+readings that resolve a declaration the same way agree by construction and cross-check nothing.
+
 ### 6. Budgets are amended by measurement
 
 `src/domain/**` gains the world model and the health computation; `src/infrastructure/**` gains the
@@ -97,9 +103,16 @@ ceilings are raised against figures **re-measured on the tree as it lands**:
 
 | Layer | Measured | Ceiling | Named headroom |
 |---|---|---|---|
-| `domain` | 5,044 | 5,150 | 106 |
-| `infrastructure` | 8,136 | 8,250 | 114 |
-| `tooling` (`scripts/**`) | 13,784 | 14,000 | 216 |
+| `domain` | 5,045 | 5,150 | 105 |
+| `infrastructure` | 8,144 | 8,250 | 106 |
+| `tooling` (`scripts/**`) | 14,005 | 14,200 | 195 |
+
+**Amended by D-194** (review round). The figures are re-taken on the tree as it lands: the
+clean-slate sweep's third, catalog-based reading, the two account rules `validateWorld` now holds
+both authors to, and the roster's asset-class uniqueness refinement left `tooling` with 15 lines of
+headroom against the original 14,000 - the condition ADR-0018's own commentary calls out, where the
+next one-line correction fails an unrelated ceiling. `tooling` moves to 14,200; `domain` and
+`infrastructure` are unmoved and merely re-measured.
 
 `contracts` and `presentation` are unmoved. Headroom is *named* rather than banked, so the next change
 to any of these layers reads as the measured amendment it is. No ceiling here was paid for by deleting

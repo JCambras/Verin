@@ -17,7 +17,8 @@
  * confirmed - the "shadow world" the charter's DO-NOT-PORT list names.
  *
  * One audited write covers the whole load: it is one operation, and one entry
- * carrying honest counts is a better audit record than five thousand.
+ * carrying honest counts - rows WRITTEN, never rows offered - is a better audit
+ * record than five thousand.
  */
 import type { SqlDb } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
@@ -25,6 +26,11 @@ import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import type { Result } from "@contracts/result";
 import type { WorldHousehold } from "@domain/world/household-world";
 
+/** Rows this call actually WROTE, never rows offered. Every insert is
+ * `ON CONFLICT DO NOTHING` on ids derived from the world seed, so they are the
+ * same ids in every org: a second firm seeding the same world conflicts on every
+ * key and writes nothing. Reporting the input length there would book an audit
+ * entry claiming a load that never happened. */
 export interface WorldSeedCounts {
   readonly households: number;
   readonly contacts: number;
@@ -88,9 +94,11 @@ export async function seedWorldIntoCrm(
     entityType: "Org",
     entityId: orgId,
     idempotencyKey: `world-seed:${orgId}:${worldDigest}`,
-    // PII-minimized: counts and the world digest, never a household name.
-    detail: `Loaded the labeled fixture world (${households.length} households, digest ${worldDigest.slice(0, 12)})`,
-    buildAfter: (counts) => ({ ...counts, worldDigest }),
+    // PII-minimized: counts and the world digest, never a household name. The
+    // detail states what was OFFERED, because it is fixed before the write runs;
+    // what was written is the after-snapshot, which is built from the result.
+    detail: `Projected the labeled fixture world (${households.length} households offered, digest ${worldDigest.slice(0, 12)})`,
+    buildAfter: (counts) => ({ ...counts, householdsOffered: households.length, worldDigest }),
     perform: async (tx) => {
       const householdRows = households.map((household) => [
         household.id, orgId, household.displayName, null, null, household.state,
@@ -118,25 +126,31 @@ export async function seedWorldIntoCrm(
       // a variable is SQL no static analysis can attribute to a table - which is
       // exactly what the append-only fences read. The whole projection is a few
       // hundred rows inside one transaction, so the trade costs nothing real.
+      // `RETURNING id` is what makes the count a count of rows WRITTEN: a row
+      // that conflicted away returns nothing.
+      const written = { households: 0, contacts: 0, tasks: 0 };
       for (const row of householdRows) {
-        await tx.query(
-          "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING",
+        const rows = await tx.query(
+          "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING RETURNING id",
           [...row],
         );
+        written.households += rows.rows.length;
       }
       for (const row of contactRows) {
-        await tx.query(
-          "INSERT INTO contacts (id,org_id,household_id,first_name,last_name,email,phone,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING",
+        const rows = await tx.query(
+          "INSERT INTO contacts (id,org_id,household_id,first_name,last_name,email,phone,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING id",
           [...row],
         );
+        written.contacts += rows.rows.length;
       }
       for (const row of taskRows) {
-        await tx.query(
-          "INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING",
+        const rows = await tx.query(
+          "INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING id",
           [...row],
         );
+        written.tasks += rows.rows.length;
       }
-      return { households: householdRows.length, contacts: contactRows.length, tasks: taskRows.length };
+      return written;
     },
   });
 }

@@ -7553,3 +7553,76 @@ derived generator reuses its already-derived city instead of re-deriving it and 
 
 **Revert path:** revert this changeset; the two new test files, the three proof-log entries and the
 CI flag revert together. No generated fixture bytes and no gate semantics change.
+
+### D-207 · 2026-08-12 · reversible · Populated-world review round two: three readings of the DDL, counts of rows written, and a world that survives its own prose
+
+Round two of the ADR-0057 review, plus four defects the supervisor had already ruled on.
+
+**A cross-check that agrees by construction is not a cross-check (charter #4).** Round one gave
+`provenanceBearingTables` a paren-balanced table walk and a "second, independent" reading - but both
+resolved a declaration through the SAME `PROV_SOURCE_COLUMN_RE`, so a column shape the regex did not
+recognize (`id text PRIMARY KEY, prov_source text NOT NULL` on one line, `"prov_source" text NOT
+NULL`) was invisible to the derivation AND to the check meant to catch it, and the table reported
+clean without ever being read. The derivation is now a STRUCTURAL parse - balanced table bodies split
+on top-level commas, the item's leading identifier, quoted or not - and it is checked against two
+readings that share no code with it: a plain count of every `prov_source` the DDL names, and the
+STORE's own column catalog (`information_schema.columns`), which is not a reading of the DDL at all
+and therefore also catches a provenance-bearing table created outside `MIGRATION_SQL`. Any
+disagreement is a sweep problem, which fails the runner. PF-260, PF-261.
+
+**An audit entry states what was written, not what was offered.** `seedWorldIntoCrm` returned
+`householdRows.length`, and its audited `detail` said the same. Every insert is `ON CONFLICT DO
+NOTHING` on ids derived from the world seed, so they are identical in every org: a SECOND firm
+seeding the same world conflicts on every key, writes nothing, and booked an entry claiming it had
+loaded a hundred households (the idempotency key is per-org, so the replay guard never covered this).
+The inserts now carry `RETURNING id` and the counts are rows written; the detail states the households
+OFFERED, because it is fixed before the write runs, and the after-snapshot carries both. PF-262.
+
+**The world has to survive being read.** Three rules now hold for the hand-authored ten and the
+derived ninety alike, checked on the generated OUTPUT by `accountRuleProblems` so neither author can
+break one the other cannot: an account never names its own OWNER as a beneficiary (23 derived
+retirement accounts and one hand-authored SEP IRA did, which rendered as "Naomi Ashcombe - Primary -
+100%" on her own IRA and scored the beneficiary health factor complete); an entity household's people
+hold no PERSONAL accounts inside it (ten LLC households carried a Joint WROS and two IRAs titled to
+people their own entity note describes as appearing "only as signers"); and no account holds one
+instrument twice - mintable only by a model portfolio naming an asset class twice, which the roster
+schema now refuses at spec load. The world regenerates to 335 accounts from 362 and a new
+`worldDigest`. PF-263.
+
+**The directory stops re-deriving the world per request.** `/api/households` opened every household
+in the world and built a hundred six-factor health breakdowns and a hundred search haystacks for
+every caller. The health figure STAYS - it is the "numbers feel earned" point of the surface - so
+instead the world-derived half of each row is built once per `worldDigest` and cached (nothing
+tenant-scoped is cached; the CRM still decides per request which rows a caller may see), and the
+route now intersects on the MANIFEST's summaries before opening any deep file, which is the role the
+manifest was built for and which nothing had been reading.
+
+**Three prose corrections the regenerated world made visible.** An entity household now holds one
+account, so `1 accounts across 1 tax treatments` became prose a reader meets rather than an
+unreachable case, and its bank instruction was titled to a SIGNER while the account it pays belongs
+to the entity - it is now titled to the primary account's owner, which also correctly retitles the
+trust households. A household may carry two instructions of the same polarity, and the text was
+chosen by polarity alone, so one sentence appeared twice under two source references and read as a
+rendering bug; the two texts per polarity are now indexed. All three were found by looking at the
+rendered pages, not by a test.
+
+**Line budgets re-measured (ADR-0057 amendment).** `tooling` had 15 lines of headroom left, which is
+the ADR-0018 condition where the next one-line correction fails an unrelated ceiling: raised to
+14,200 against a re-measured 14,005 (195 lines of named headroom). `domain` (5,045) and `infrastructure` (8,144) are unmoved and
+merely re-taken.
+
+**Not done, reported rather than forced.** The supervisor also ruled that the two world fences should
+stop calling `validateWorld()` at module scope and read the injected shared world the corpus fences
+use (D-175/D-176). Adopting that seam is NOT mechanical here: `inject` is the only channel, and
+charter-drift permits exactly ONE non-entry module to import the Vitest runtime
+(`CORPUS_WORLD_VITEST_SEAM`, captain ruling g8-relight-askuser 1a), so a world reader needs that
+captain-ruled escape widened. Sharing the existing module instead would make a corpus failure take the
+world fences down with it - the property `_corpus-world-setup.ts` is explicitly built to avoid - and
+providing a second key rewrites the counted-double contract of `corpus-world-sharing.test.ts`, a seam
+shared with other in-flight work. Measured cost of the anti-pattern here is one extra
+`validateWorld()` per run (~0.3s of a ~134s suite) against a 1.5MB injected payload transferred twice,
+so forcing it would also be a poor trade. It needs a governance decision, not an agent edit.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the featured-spec
+correction, the fences, the budget amendment and the four proof-log entries revert together. No gate
+semantics change.

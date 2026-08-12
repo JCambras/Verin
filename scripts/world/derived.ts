@@ -33,6 +33,19 @@ type Archetype = (typeof ARCHETYPES)[number];
 
 const RETIREMENT_REGISTRATIONS = ["ira-traditional", "ira-roth", "rollover-ira", "sep-ira"] as const;
 
+const FORBIDDEN_TEXTS = [
+  "No distribution settles to an account this household does not own without a countersigned instruction.",
+  "No position may be liquidated to fund a distribution without the household's written acknowledgement.",
+] as const;
+const REQUIRED_TEXTS = [
+  "The household is notified before any distribution over $10,000 leaves it.",
+  "Every change to an account's target model is reviewed with the household before it is placed.",
+] as const;
+
+/** An entity household holds exactly one account, so "1 accounts" is now prose a
+ * reader meets rather than a case the shape could not reach. */
+const countOf = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? "" : "s"}`;
+
 const slug = (value: string): string =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
@@ -119,7 +132,11 @@ function buildAccounts(
   seed: string, path: string, roster: Roster,
   members: readonly DerivedMember[], entities: FeaturedHousehold["entities"], asOf: string,
 ): FeaturedHousehold["accounts"] {
-  const adults = members.filter((member) => member.role === "client" || member.role === "spouse" || member.role === "signer");
+  // PERSONAL accounts belong to the household's own clients. An entity
+  // household's people appear only as SIGNERS - its own entity note says so - so
+  // a joint account and two personal IRAs titled to them would make the
+  // household contradict its own prose on the first page a reader opens.
+  const adults = members.filter((member) => member.role === "client" || member.role === "spouse");
   const children = members.filter((member) => member.role === "beneficiary");
   const accounts: FeaturedHousehold["accounts"] = [];
   const custodian = pick(seed, path, "custodian", roster.custodians).key;
@@ -161,12 +178,18 @@ function buildAccounts(
   adults.forEach((adult, index) => {
     const registration = pick(seed, path, `${adult.key}/registration`, RETIREMENT_REGISTRATIONS);
     const other = adults[index === 0 ? adults.length - 1 : 0]!;
+    // An account owner is never their own beneficiary. A sole adult with nobody
+    // else in the household simply has NO designation - which is the realistic
+    // case, is what the surface already says, and is what the beneficiary health
+    // factor is there to score. Naming the owner would score it complete.
+    const primaryKey = other.key === adult.key ? null : other.key;
+    const contingent = children.slice(0, 1).filter((child) => child.key !== primaryKey);
     accounts.push(account(`${adult.key}-retirement`, `${adult.displayName} - ${registration === "ira-roth" ? "Roth IRA" : registration === "sep-ira" ? "SEP IRA" : registration === "rollover-ira" ? "Rollover IRA" : "Traditional IRA"}`,
       registration, "retirement", [adult.key],
       dollars(seed, path, `${adult.key}/retirement-balance`, 60_000, 2_200_000), openedOn(`${adult.key}/retirement-opened`, 200, 3600),
       [
-        { partyKey: other.key === adult.key ? (children[0]?.key ?? adult.key) : other.key, tier: "primary" as const, shareBps: 10000 },
-        ...children.slice(0, 1).map((child) => ({ partyKey: child.key, tier: "contingent" as const, shareBps: 10000 })),
+        ...(primaryKey === null ? [] : [{ partyKey: primaryKey, tier: "primary" as const, shareBps: 10000 }]),
+        ...contingent.map((child) => ({ partyKey: child.key, tier: "contingent" as const, shareBps: 10000 })),
       ]));
   });
   for (const child of children.slice(0, 2)) {
@@ -190,6 +213,12 @@ export function derivedHousehold(
   const base = `${slug(surname)}-${members[0]!.key}`;
   const key = takenKeys.has(base) ? `${base}-${slot}` : base;
   const primaryAccount = accounts[0]!;
+  // A bank instruction is titled to whoever OWNS the account it pays. An entity
+  // household's only account belongs to the entity, so titling it to a signer
+  // read as a mismatch on the one page that shows both.
+  const titledTo = members.find((member) => member.key === primaryAccount.ownerKeys[0])?.displayName
+    ?? entities.find((entity) => entity.key === primaryAccount.ownerKeys[0])?.name
+    ?? members[0]!.displayName;
   const bankChanged = intBetween(seed, path, "bank-changed", 0, 9) < 2;
   const changedAt = daysBefore(seed, path, "bank-change-at", asOf, 1, roster.clock.recentChangeWindowDays);
   const withdrawalCount = intBetween(seed, path, "withdrawal-count", 0, 2);
@@ -207,7 +236,7 @@ export function derivedHousehold(
     serviceTier: pick(seed, path, "tier", roster.serviceTiers),
     city,
     openedOn: dayOf(daysBefore(seed, path, "opened", asOf, 200, 5400)),
-    narrative: `${archetype.replace(/-/g, " ")} household in ${city}; ${accounts.length} accounts across ${new Set(accounts.map((account) => account.taxClass)).size} tax treatments.`,
+    narrative: `${archetype.replace(/-/g, " ")} household in ${city}; ${countOf(accounts.length, "account")} across ${countOf(new Set(accounts.map((account) => account.taxClass)).size, "tax treatment")}.`,
     members: members.map((member) => ({ ...member, relationships: [...member.relationships] })),
     entities,
     accounts,
@@ -215,14 +244,14 @@ export function derivedHousehold(
       ...(bankChanged
         ? [{
             key: "prior", bank: pick(seed, path, "bank", roster.banks), lastFour: lastFour(seed, path, "prior-last-four"),
-            titledTo: members[0]!.displayName, status: "superseded" as const,
+            titledTo, status: "superseded" as const,
             verifiedAt: daysBefore(seed, path, "prior-verified", changedAt, 60, 900), changedAt: null,
             supersedesKey: null, accountKeys: [primaryAccount.key],
           }]
         : []),
       {
         key: "current", bank: pick(seed, path, "bank", roster.banks), lastFour: lastFour(seed, path, "last-four"),
-        titledTo: members[0]!.displayName, status: "current" as const,
+        titledTo, status: "current" as const,
         verifiedAt: bankChanged ? null : daysBefore(seed, path, "verified", asOf, 30, 800),
         changedAt: bankChanged ? changedAt : null,
         supersedesKey: bankChanged ? "prior" : null, accountKeys: [primaryAccount.key],
@@ -242,9 +271,10 @@ export function derivedHousehold(
         kind: (forbidden ? "restriction" : "standing-instruction") as FeaturedHousehold["instructions"][number]["kind"],
         polarity: (forbidden ? "forbidden" : "required") as FeaturedHousehold["instructions"][number]["polarity"],
         scope: "household" as const, subjectRef: "household",
-        text: forbidden
-          ? "No distribution settles to an account this household does not own without a countersigned instruction."
-          : "The household is notified before any distribution over $10,000 leaves it.",
+        // Indexed, not drawn: a household may carry two instructions of the same
+        // polarity, and one sentence stated twice under two source references
+        // reads as a rendering bug rather than as two standing instructions.
+        text: (forbidden ? FORBIDDEN_TEXTS : REQUIRED_TEXTS)[n % 2]!,
         sourceRef: `HH-INSTR-${slug(surname).toUpperCase()}-${String(n + 1).padStart(3, "0")} v1`,
         effectiveFrom: daysBefore(seed, path, `instruction-${n}/from`, asOf, 200, 2400),
         effectiveTo: null,

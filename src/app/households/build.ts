@@ -104,12 +104,15 @@ const openItemsOf = (household: WorldHousehold): number =>
   household.bankInstructions.filter((i) => i.state === "current" && i.verifiedAt === null).length
   + household.pendingActions.filter((a) => a.state === "blocked" || a.state === "rejected").length;
 
-function buildRow(crmRow: Household, household: WorldHousehold, asOf: string): HouseholdRowVM {
+/** Everything on a directory row that the WORLD decides. The only field left is
+ * the CRM record id, which is the tenant's own and is attached per request. */
+type WorldRowVM = Omit<HouseholdRowVM, "id">;
+
+function buildWorldRow(household: WorldHousehold, asOf: string): WorldRowVM {
   const totalBalanceMinor = household.accounts.reduce((sum, account) => sum + account.balanceMinor, 0);
   const openItems = openItemsOf(household);
   return {
     key: household.key,
-    id: crmRow.id,
     displayName: household.displayName,
     surname: household.surname,
     state: household.state,
@@ -137,6 +140,35 @@ function buildRow(crmRow: Household, household: WorldHousehold, asOf: string): H
   };
 }
 
+/**
+ * A row's world-derived half is built ONCE PER WORLD, not once per request. A
+ * hundred-row directory otherwise re-derives a hundred six-factor health
+ * breakdowns and a hundred search haystacks for every caller, and the world is
+ * immutable committed bytes identified by its digest - so the digest is the key,
+ * and a regenerated world evicts the previous one wholesale. The CRM still
+ * decides per request WHICH rows the tenant may see; nothing tenant-scoped is
+ * cached here. Held on `globalThis` for the same reason the store singleton is:
+ * Next bundles route handlers and server components separately, so a
+ * module-local cache would be two caches.
+ */
+const rowCacheHome = globalThis as unknown as {
+  __verinDirectoryRows?: { digest: string; rows: Map<string, WorldRowVM> };
+};
+
+function worldRow(household: WorldHousehold, asOf: string, digest: string | null): WorldRowVM {
+  // No identity means no world to key on (and `asOf` is then the wall clock),
+  // so there is nothing stable to cache: build it and move on.
+  if (digest === null) return buildWorldRow(household, asOf);
+  const home = rowCacheHome.__verinDirectoryRows?.digest === digest
+    ? rowCacheHome.__verinDirectoryRows
+    : (rowCacheHome.__verinDirectoryRows = { digest, rows: new Map<string, WorldRowVM>() });
+  const cached = home.rows.get(household.id);
+  if (cached) return cached;
+  const built = buildWorldRow(household, asOf);
+  home.rows.set(household.id, built);
+  return built;
+}
+
 export interface DirectoryInput {
   readonly crmHouseholds: readonly Household[];
   readonly worldHouseholds: readonly WorldHousehold[];
@@ -151,6 +183,7 @@ export interface DirectoryInput {
  */
 export function buildDirectoryVM(input: DirectoryInput): DirectoryVM {
   const asOf = input.identity?.asOf ?? new Date().toISOString();
+  const digest = input.identity?.digest ?? null;
   const worldById = new Map(input.worldHouseholds.map((household) => [household.id, household]));
   // The intersection is computed ONCE and everything on the page reads from it:
   // totals summarizing households the tenant may not list would be a disclosure
@@ -162,7 +195,7 @@ export function buildDirectoryVM(input: DirectoryInput): DirectoryVM {
     })
     .filter((pair): pair is { crmRow: Household; household: WorldHousehold } => pair !== null);
   const rows = authorized
-    .map(({ crmRow, household }) => buildRow(crmRow, household, asOf))
+    .map(({ crmRow, household }) => ({ ...worldRow(household, asOf, digest), id: crmRow.id }))
     .sort((left, right) => (left.displayName < right.displayName ? -1 : left.displayName > right.displayName ? 1 : 0));
   const listProvenance: RecordProvenance = { source: "fixture", asOf, confidence: "high" };
   const totals = authorized.reduce(

@@ -83,7 +83,7 @@ async function seedWorld(db: SqlDb, actor: WriteActor): Promise<string> {
   const loaded = await seedWorldIntoCrm(db, actor, world.households, digest);
   if (!loaded.ok) throw new Error(`world seed failed: ${loaded.error.code} ${loaded.error.message}`);
   const { households, contacts, tasks } = loaded.value;
-  return `${households} households, ${contacts} people, ${tasks} open items (world ${spec.roster.worldVersion}, labeled fixture)`;
+  return `${households} households, ${contacts} people, ${tasks} open items written (world ${spec.roster.worldVersion}, labeled fixture)`;
 }
 
 seed()

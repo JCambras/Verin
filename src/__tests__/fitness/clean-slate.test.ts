@@ -68,6 +68,20 @@ describe("clean-slate fence", () => {
     expect(provenanceDerivationProblems(ddl)).toEqual([]);
   });
 
+  it("enforces: an INLINE and a QUOTED prov_source declaration are both swept", () => {
+    // Neither is line-oriented, and a reader that only recognizes "the column
+    // starting a line" reports both tables clean without ever opening them.
+    const ddl = [
+      "CREATE TABLE IF NOT EXISTS inline (id text PRIMARY KEY, prov_source text NOT NULL);",
+      'CREATE TABLE IF NOT EXISTS quoted (',
+      '  id text PRIMARY KEY,',
+      '  "prov_source" text NOT NULL',
+      ");",
+    ].join("\n");
+    expect(provenanceBearingTables(ddl)).toEqual(["inline", "quoted"]);
+    expect(provenanceDerivationProblems(ddl)).toEqual([]);
+  });
+
   it("enforces: a nested paren inside a column list does not end the table early", () => {
     const ddl = [
       "CREATE TABLE IF NOT EXISTS checked (",
@@ -137,8 +151,26 @@ describe("clean-slate fence", () => {
       expect(provenanceBearingTables(ddl)).toEqual(["swept"]);
       const problems = provenanceDerivationProblems(ddl);
       expect(problems.length).toBe(1);
-      expect(problems[0]).toContain("declares 2 prov_source column(s)");
+      expect(problems[0]).toContain("names prov_source 2 time(s)");
+      expect(problems[0]).toContain("recognized 1 declaration(s)");
       expect(cleanSlateViolations(sweep([{ table: "swept", rows: 0 }], problems))).toEqual(problems);
+    });
+
+    it("the cross-check does not share the derivation's reading, so it can actually disagree", () => {
+      // The failure the previous cross-check could not see: a declaration shape
+      // the structural parse does not recognize. Both readings agreeing by
+      // construction is not a cross-check, so the shape is counted by the second
+      // reading and the table is refused rather than reported clean.
+      const ddl = [
+        "CREATE TABLE IF NOT EXISTS parsed (",
+        "  prov_source text NOT NULL",
+        ");",
+        "CREATE UNLOGGED TABLE unparsed (",
+        "  prov_source text NOT NULL",
+        ");",
+      ].join("\n");
+      expect(provenanceBearingTables(ddl)).toEqual(["parsed"]);
+      expect(provenanceDerivationProblems(ddl).length).toBe(1);
     });
   });
 

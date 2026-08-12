@@ -47,6 +47,19 @@ household's file - the property the fence checks directly.
 provenance, derives holding lots, and fixes emission order. The ninety are never structurally
 thinner than the ten - only less specific, and each household says which it is on its own surface.
 
+**Rules that hold for both authors.** They are checked on the generated OUTPUT
+(`accountRuleProblems` in `scripts/world/validate.ts`), so the hand-authored ten cannot quietly
+break one the generator no longer can:
+
+- An account never names its own owner as a beneficiary. A sole client with nobody else in the
+  household simply has NO designation - which is realistic, is what the detail surface already says,
+  and is what the beneficiary health factor is there to score. Naming the owner scored it complete.
+- An entity household's people hold no PERSONAL accounts inside it. Its own entity note says they
+  appear only as signers; a joint account and two IRAs titled to them contradicted that on the first
+  page a reader opens.
+- No account holds the same instrument twice. The only way to mint one was a model portfolio naming
+  an asset class twice, which the roster schema now refuses at spec load.
+
 ## The awkward cases, on purpose
 
 - **Four Smith households and three Whitfields.** Surname search is provably not the same as finding
@@ -98,8 +111,16 @@ pnpm fixture:check --report   # counts them (what a seeded development store wan
 
 The sweep derives its table list from the shipped DDL - every table whose DDL carries a
 `prov_source` column - so a new provenance-bearing table widens the guarantee automatically. A sweep
-that finds no such table reports a problem rather than passing vacuously (charter #4). The fixture
-adapter additionally refuses to serve anything under `APP_ENV=production`. Proof PF-255.
+that finds no such table reports a problem rather than passing vacuously (charter #4).
+
+That derivation is read THREE ways, and any disagreement is a sweep problem, which fails the runner:
+a structural parse of each table's balanced body and its top-level column items; a plain count of
+every `prov_source` the DDL names, which shares no code with the parse and therefore catches a
+declaration shape the parse does not recognize; and the store's OWN column catalog, which is not a
+reading of the DDL at all and catches a provenance-bearing table created outside `MIGRATION_SQL`.
+Two readings that resolve a declaration the same way agree by construction and cross-check nothing.
+The fixture adapter additionally refuses to serve anything under `APP_ENV=production`.
+Proofs PF-255, PF-260, PF-261.
 
 ## Changing the world
 

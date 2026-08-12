@@ -13204,3 +13204,117 @@ a browser.
 **Reverted:** route restored; `Tests 3 passed`.
 
 **Date:** 2026-08-11 (review follow-up, ADR-0057).
+
+## PF-260 · clean slate: the DDL cross-check does not share the derivation's reading · `scripts/fixture-purge.ts` + `src/__tests__/fitness/clean-slate.test.ts`
+
+**Invariant:** the swept table list is derived from the shipped DDL, and a provenance-bearing table
+the derivation misses must FAIL rather than report clean unread (charter #4). PF-256 made the table
+walk paren-balanced and added a "second, independent" reading - but both resolved a declaration
+through the same `PROV_SOURCE_COLUMN_RE`, so the two agreed by construction on any column shape the
+regex did not recognize.
+
+**Injection - make the cross-check share the derivation again.** Replaced the token count with the
+structural parse's own result (`const named = provenanceColumnDeclarations(ddl).length`), which is
+what "two readings that both resolve a declaration the same way" means in code.
+
+**Observed failure (`pnpm exec vitest run --project fitness clean-slate`):**
+```
+× a prov_source column the table walk never reached is a PROBLEM, not a silent miss
+× the cross-check does not share the derivation's reading, so it can actually disagree
+AssertionError: expected +0 to be 1 // Object.is equality
+Tests  2 failed | 15 passed (17)
+```
+
+**Executable companions (run on every build):** the fence proves the structural parse now reads an
+INLINE (`id text PRIMARY KEY, prov_source text NOT NULL`) and a QUOTED (`"prov_source" text NOT
+NULL`) declaration - the two shapes the old line-oriented regex dropped - and that a
+`CREATE UNLOGGED TABLE` the parse does not read still lands as a disagreement.
+
+**Reverted:** `scripts/fixture-purge.ts` restored; `Tests 17 passed`.
+
+**Date:** 2026-08-12 (review round two, ADR-0057 / D-207).
+
+## PF-261 · clean slate: the STORE's own catalog is read, not just the DDL · `scripts/fixture-purge.ts` + `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** a provenance-bearing table that is not in the shipped DDL at all - created by hand, by
+an extension, or by a migration path this parse does not read - must not sit outside the sweep and
+report its rows clean.
+
+**Injection - drop the catalog reading from the sweep.** Removed
+`...(await catalogDisagreements(db, derived))` from `sweepFixtureRows`, against a migrated store with
+a `rogue_evidence (id text PRIMARY KEY, prov_source text NOT NULL)` table created outside
+`MIGRATION_SQL`.
+
+**Observed failure (`pnpm exec vitest run --project app fixture-purge`):**
+```
+× a provenance-bearing table the shipped DDL never declared is caught by the store's own catalog
+AssertionError: expected false to be true // Object.is equality
+Tests  1 failed | 6 passed (7)
+```
+
+**Executable companions (run on every build):** the same suite proves a migrated, unseeded instance
+still sweeps CLEAN with the catalog reading in place (the check is not merely noisy), that a table
+the sweep cannot READ is still a problem, and that the rogue table reaches `cleanSlateViolations`
+rather than only the sweep's internal problem list.
+
+**Reverted:** `scripts/fixture-purge.ts` restored; `Tests 7 passed`.
+
+**Date:** 2026-08-12 (review round two, ADR-0057 / D-207).
+
+## PF-262 · world seed: the audit records rows WRITTEN, not rows offered · `src/infrastructure/crm/world-seed.ts` + `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** an audited write states what it did. World ids are derived from the world seed and are
+therefore identical in every org, so a SECOND firm seeding the same world conflicts on every primary
+key and writes nothing - and the per-org idempotency key means the replay guard never sees it.
+
+**Injection - report the input length.** Restored
+`return { households: householdRows.length, contacts: contactRows.length, tasks: taskRows.length }`.
+
+**Observed failure (`pnpm exec vitest run --project app fixture-purge`):**
+```
+× a second firm seeding the same world reports the rows it WROTE, not the rows it offered
+AssertionError: the second firm wrote no households: expected 5 to be +0
+Tests  1 failed | 6 passed (7)
+```
+
+**Executable companions (run on every build):** the same case asserts the FIRST firm's count is the
+real one (5 of 5), so a fix that simply returned zero everywhere would fail too, and the existing
+idempotency case still proves a repeated load adds no rows.
+
+**Reverted:** `world-seed.ts` restored; `Tests 7 passed`.
+
+**Date:** 2026-08-12 (review round two, ADR-0057 / D-207).
+
+## PF-263 · world: an account never names its own owner, and an entity household's signers hold no personal accounts · `scripts/world/{derived,validate,spec}.ts` + `src/__tests__/fitness/world-provenance.test.ts`
+
+**Invariant:** the generated world has to survive being read. An owner is not their own beneficiary
+(and a self-designation scores the beneficiary health factor COMPLETE, inflating the one number the
+surface exists to earn); an entity household's people appear only as signers, which its own entity
+note says, so no personal account is titled to them inside it.
+
+**Injection - restore both generator behaviours.** Put `signer` back into the personal-account adult
+filter and restored the self-referential beneficiary fallback
+(`other.key === adult.key ? (children[0]?.key ?? adult.key) : other.key`), then regenerated nothing -
+the committed tree is the fixed world, so the rule is asserted against the generator's output.
+
+**Observed failure (`pnpm exec vitest run --project fitness world-provenance`):**
+```
+× (a) enforces: the whole world regenerates and every rule in validateWorld holds
+× (d) enforces: no account names its own owner as a beneficiary, or one lot twice
+AssertionError: fontaine-elaine/account/elaine-retirement: names its own owner "elaine" as a primary beneficiary
+  delacroix-soren/account/soren-retirement: names its own owner "soren" as a primary beneficiary
+  ... 16 accounts
+Tests  2 failed
+```
+
+**Executable companions (run on every build):** `accountRuleProblems` is a NAMED PREDICATE over one
+household, so the fence feeds it a hand-built violation of each rule (a self-designated owner, one
+instrument listed twice) and pins the exact message; a third companion proves the roster schema
+REFUSES a model portfolio naming one asset class twice - the only way to mint a duplicate lot - while
+the shipped roster still parses. The rules run on the generated OUTPUT, so the hand-authored ten are
+held to them too: `fairweather-colette`'s SEP IRA named her as her own 100% primary beneficiary and
+is corrected in the spec by this change.
+
+**Reverted:** `scripts/world/derived.ts` restored; `pnpm world:validate` byte-identical, `Tests 27 passed`.
+
+**Date:** 2026-08-12 (review round two, ADR-0057 / D-207).

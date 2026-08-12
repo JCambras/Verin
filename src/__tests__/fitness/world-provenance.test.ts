@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { canFeedComplianceDecision, deriveArtifactProvenance, isDemonstration, type RecordProvenance } from "@contracts/provenance";
 import { computeHouseholdHealth } from "@domain/world/health";
 import type { WorldHousehold } from "@domain/world/household-world";
-import { validateWorld } from "../../../scripts/world/validate";
+import { accountRuleProblems, validateWorld } from "../../../scripts/world/validate";
+import { RosterSchema } from "../../../scripts/world/spec";
 
 /**
  * WORLD-PROVENANCE FENCE (ADR-0057; charter #3 + ADR-0022).
@@ -118,6 +119,11 @@ describe("world-provenance fence", () => {
     expect(computeHouseholdHealth(household, asOf)).toEqual(computeHouseholdHealth(household, asOf));
   });
 
+  it("(d) enforces: no account names its own owner as a beneficiary, or one lot twice", () => {
+    const problems = households.flatMap(accountRuleProblems);
+    expect(problems, problems.join("\n")).toEqual([]);
+  });
+
   it("(d) enforces: every account's holdings sum to its balance", () => {
     const problems = households.flatMap((household) =>
       household.accounts
@@ -144,6 +150,45 @@ describe("world-provenance fence", () => {
       const relabelled: RecordProvenance = { source: "verin-crm", asOf, confidence: "high" };
       expect(canFeedComplianceDecision(relabelled)).toBe(true);
       expect(canFeedComplianceDecision({ ...relabelled, source: "fixture" })).toBe(false);
+    });
+
+    it("an account that names its own owner as beneficiary is caught", () => {
+      const household = households[0]!;
+      const account = household.accounts[0]!;
+      const owner = account.ownerKeys[0]!;
+      const broken = {
+        ...household,
+        accounts: [{ ...account, beneficiaries: [{ partyKey: owner, displayName: owner, tier: "primary" as const, shareBps: 10_000, provenance: household.provenance }] }],
+      };
+      expect(accountRuleProblems(broken)).toEqual([
+        `${household.key}/account/${account.key}: names its own owner "${owner}" as a primary beneficiary`,
+      ]);
+    });
+
+    it("an account holding the same instrument twice is caught", () => {
+      const household = households[0]!;
+      const account = household.accounts[0]!;
+      const holding = account.holdings[0]!;
+      const broken = { ...household, accounts: [{ ...account, beneficiaries: [], holdings: [holding, holding] }] };
+      expect(accountRuleProblems(broken)).toEqual([
+        `${household.key}/account/${account.key}: holds ${holding.symbol} more than once - one lot rendered twice`,
+      ]);
+    });
+
+    it("a model portfolio naming one asset class twice is refused at spec load", () => {
+      // The only way to MINT a duplicate lot: two targets sharing a class draw
+      // the same instruments under the same field key. Refused before the
+      // generator ever sees it, so the output rule above is a second net.
+      const roster = world.spec.roster;
+      const duplicated = {
+        ...roster,
+        modelPortfolios: [{
+          key: "doubled", displayName: "Doubled",
+          targets: [{ assetClass: "equity" as const, weightBps: 5000 }, { assetClass: "equity" as const, weightBps: 5000 }],
+        }],
+      };
+      expect(RosterSchema.safeParse(duplicated).success).toBe(false);
+      expect(RosterSchema.safeParse(roster).success, "the shipped roster must still parse").toBe(true);
     });
 
     it("a household whose account holdings do not reconcile is caught", () => {

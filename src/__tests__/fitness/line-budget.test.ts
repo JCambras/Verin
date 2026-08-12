@@ -133,8 +133,8 @@ import { join, relative } from "node:path";
 // and `presentation` are untouched by that work and do not move.
 const CEILINGS = {
   contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
-  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,044 measured)
-  infrastructure: 8250, // ADR-0057, on the fixture evidence adapter and CRM projection (8,136 measured)
+  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,045 re-measured, D-207)
+  infrastructure: 8250, // ADR-0057, on the fixture evidence adapter and CRM projection (8,144 re-measured, D-207)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
@@ -208,7 +208,14 @@ const CEILINGS = {
   // re-took is worth. That gap is recorded
   // honestly in D-172 under follow-up key `fu-corpus-test-tree-budget`, not left
   // implicit here.
-  tooling: 14000, // ADR-0057, on the populated-world generator and clean-slate sweep (13,784 measured)
+  // D-207 (ADR-0057 amendment) raises it to 14,200 against a RE-MEASURED 14,005:
+  // the populated-world review round added the clean-slate sweep's third,
+  // catalog-based reading, the two account rules validate now holds both authors
+  // to, and the roster's asset-class uniqueness refinement. 216 lines of named
+  // headroom became 15, which is the exact "next one-line correction fails an
+  // unrelated ceiling" condition the paragraph above argues against - so the
+  // figure is re-taken and 195 lines are named again rather than banked.
+  tooling: 14200, // D-207 (ADR-0057), on the world review round (14,005 measured)
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

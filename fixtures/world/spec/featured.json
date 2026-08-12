@@ -318,7 +318,7 @@
       "accounts": [
         { "key": "individual", "title": "Colette Fairweather - Individual", "registration": "individual", "taxClass": "taxable", "custodianKey": "calder-securities", "openedOn": "2018-10-18", "balanceMinor": 63400000, "ownerKeys": ["colette"], "modelPortfolioKey": "growth-80-20", "beneficiaries": [], "signers": [] },
         { "key": "sep-ira", "title": "Colette Fairweather - SEP IRA", "registration": "sep-ira", "taxClass": "retirement", "custodianKey": "calder-securities", "openedOn": "2019-03-01", "balanceMinor": 19700000, "ownerKeys": ["colette"], "modelPortfolioKey": "balanced-60-40",
-          "beneficiaries": [{ "partyKey": "colette", "tier": "primary", "shareBps": 10000 }], "signers": [] }
+          "beneficiaries": [], "signers": [] }
       ],
       "bankInstructions": [
         { "key": "cedarcrest-7781", "bank": "Cedarcrest Savings", "lastFour": "7781", "titledTo": "Colette Fairweather", "status": "current", "verifiedAt": null, "changedAt": "2026-08-02T16:40:00.000Z", "supersedesKey": null, "accountKeys": ["individual"] }

@@ -29,13 +29,22 @@ export interface FixtureSweep {
 }
 
 const CREATE_TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-9_]*)\s*\(/gi;
-/** A column declaration, which is what widens the sweep - not a mention of the
- * column in an index, a constraint, or a comment. Line-oriented on purpose: it
- * is a SECOND reading of the DDL, independent of the paren scan below, and two
- * independent readings that disagree are what makes a miss detectable. */
-const PROV_SOURCE_COLUMN_RE = /^[ \t]*prov_source[ \t]+[a-z]/gim;
+/** `prov_source` in the position a database reads a column name from: the first
+ * identifier of a top-level item in a table's column list, quoted or not. */
+const PROV_SOURCE_DECLARATION_RE = /^"?prov_source"?[\s(]/i;
+/** The SECOND reading, and deliberately a DIFFERENT KIND of one: every mention
+ * of the column name anywhere in the DDL, sharing no code with the structural
+ * parse above. Two readings that resolve a declaration the same way agree by
+ * construction and cannot cross-check anything - a shape the structural parse
+ * fails to recognize still lands in this count, and the disagreement is what
+ * makes the miss visible. */
+const PROV_SOURCE_TOKEN_RE = /\bprov_source\b/gi;
 
 const matchCount = (text: string, pattern: RegExp): number => [...text.matchAll(pattern)].length;
+
+/** Both readings run on comment-free SQL, so a comment naming the column is
+ * neither a declaration nor a disagreement. */
+const withoutComments = (sql: string): string => sql.replace(/--[^\n]*/g, "");
 
 /**
  * The body of every `CREATE TABLE` in the DDL, delimited by BALANCED parentheses
@@ -70,33 +79,93 @@ function createTableBodies(ddl: string): { name: string; body: string }[] {
 }
 
 /**
+ * The items of a table's column list, split on TOP-LEVEL commas: a nested
+ * `CHECK (a IN ('x','y'))` or a compound key does not end an item, and a
+ * declaration written inline after another one is its own item rather than a
+ * line the reader never looks at.
+ */
+function columnItems(body: string): string[] {
+  const items: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index]!;
+    if (char === "'") {
+      const close = body.indexOf(char, index + 1);
+      index = close === -1 ? body.length : close;
+    } else if (char === "(") depth += 1;
+    else if (char === ")") depth -= 1;
+    else if (char === "," && depth === 0) {
+      items.push(body.slice(start, index));
+      start = index + 1;
+    }
+  }
+  items.push(body.slice(start));
+  return items;
+}
+
+/** Every `prov_source` column declaration in the DDL, as `table` names (one per
+ * declaration). Parsed STRUCTURALLY - balanced table bodies, top-level column
+ * items, the item's leading identifier - so an indented closing paren, an inline
+ * column list and a quoted identifier all read the way a database reads them. */
+function provenanceColumnDeclarations(ddl: string): string[] {
+  return createTableBodies(withoutComments(ddl)).flatMap((table) =>
+    columnItems(table.body)
+      .filter((item) => PROV_SOURCE_DECLARATION_RE.test(item.trim()))
+      .map(() => table.name),
+  );
+}
+
+/**
  * Every table whose DDL declares a `prov_source` column. Derived from the
  * migration SQL, so adding a provenance-bearing table automatically widens the
  * sweep instead of silently escaping it.
  */
 export function provenanceBearingTables(ddl: string = MIGRATION_SQL): string[] {
-  const tables = createTableBodies(ddl)
-    .filter((table) => matchCount(table.body, PROV_SOURCE_COLUMN_RE) > 0)
-    .map((table) => table.name);
-  return [...new Set(tables)].sort();
+  return [...new Set(provenanceColumnDeclarations(ddl))].sort();
 }
 
 /**
- * The derivation checked against itself. Counting `prov_source` column
- * declarations across the whole DDL is independent of walking each table's
- * body, so a declaration the table walk never reached - an indented closing
- * paren, a `CREATE TABLE` shape this does not parse, an `ALTER TABLE ... ADD
- * COLUMN prov_source` - shows up here as a disagreement. That disagreement is
- * reported as a PROBLEM, which fails the check: a table the derivation misses
- * must never be a table the sweep silently reports clean (charter #4).
+ * The structural parse checked against a reading that shares nothing with it:
+ * how many times the DDL names `prov_source` at all. A declaration the parse
+ * never recognized - one written in a `CREATE TABLE` shape this does not read,
+ * an `ALTER TABLE ... ADD COLUMN prov_source`, a form nobody has written yet -
+ * is still counted here, so the two disagree. That disagreement is reported as a
+ * PROBLEM, which fails the check: a table the derivation misses must never be a
+ * table the sweep silently reports clean (charter #4).
  */
 export function provenanceDerivationProblems(ddl: string = MIGRATION_SQL): string[] {
-  const declared = matchCount(ddl, PROV_SOURCE_COLUMN_RE);
-  const derived = provenanceBearingTables(ddl).length;
-  if (declared === derived) return [];
+  const named = matchCount(withoutComments(ddl), PROV_SOURCE_TOKEN_RE);
+  const parsed = provenanceColumnDeclarations(ddl).length;
+  if (named === parsed) return [];
   return [
-    `the shipped DDL declares ${declared} prov_source column(s) but the sweep derived ${derived} provenance-bearing table(s) - a provenance-bearing table is outside the sweep and would report clean without ever being read (charter #4)`,
+    `the shipped DDL names prov_source ${named} time(s) but the column parse recognized ${parsed} declaration(s) - a provenance-bearing column outside the sweep would report its table clean without ever being read (charter #4)`,
   ];
+}
+
+const CATALOG_SQL =
+  "SELECT DISTINCT table_name FROM information_schema.columns "
+  + "WHERE column_name = 'prov_source' AND table_schema NOT IN ('pg_catalog', 'information_schema')";
+
+/**
+ * The THIRD reading, and the only one that is not a reading of the DDL: the
+ * store's OWN column catalog. It sees a provenance-bearing table however it was
+ * declared - including one created outside `MIGRATION_SQL` entirely - so a table
+ * both textual readings missed fails here rather than passing unread. A catalog
+ * that cannot be read is itself a problem: an unchecked derivation is exactly
+ * the state this module exists to refuse.
+ */
+async function catalogDisagreements(db: SqlDb, derived: readonly string[]): Promise<string[]> {
+  const known = new Set(derived);
+  try {
+    const result = await db.query<{ table_name: string }>(CATALOG_SQL);
+    return [...new Set(result.rows.map((row) => row.table_name))]
+      .filter((table) => !known.has(table))
+      .sort()
+      .map((table) => `${table}: the store declares a prov_source column the DDL derivation never reached - it would report clean without being read (charter #4)`);
+  } catch (e) {
+    return [`the store's column catalog could not be read, so the derived table list is unchecked (${e instanceof Error ? e.message : String(e)})`];
+  }
 }
 
 /**
@@ -106,9 +175,14 @@ export function provenanceDerivationProblems(ddl: string = MIGRATION_SQL): strin
  */
 export async function sweepFixtureRows(
   db: SqlDb,
-  tables: readonly string[] = provenanceBearingTables(),
+  swept?: readonly string[],
 ): Promise<FixtureSweep> {
-  const problems: string[] = [...provenanceDerivationProblems()];
+  const derived = provenanceBearingTables();
+  const tables = swept ?? derived;
+  const problems: string[] = [
+    ...provenanceDerivationProblems(),
+    ...(await catalogDisagreements(db, derived)),
+  ];
   const counts: FixtureTableCount[] = [];
   if (tables.length === 0) {
     return { tables: [], totalRows: 0, problems: [...problems, "no provenance-bearing table found in the shipped DDL - the sweep would pass vacuously (charter #4)"] };

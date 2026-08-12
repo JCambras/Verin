@@ -74,10 +74,37 @@ describe("clean-slate guarantee", () => {
     expect(Number(survivors.rows[0]!.n), "purging fixtures must not touch the firm's own records").toBe(1);
   });
 
+  it("a provenance-bearing table the shipped DDL never declared is caught by the store's own catalog", async () => {
+    // The reading that is not a reading of the DDL at all. A table created
+    // outside `MIGRATION_SQL` - or declared in a shape the DDL parse does not
+    // recognize - is invisible to both textual readings, so the sweep would
+    // report clean for rows it never counted.
+    await db.exec("CREATE TABLE rogue_evidence (id text PRIMARY KEY, prov_source text NOT NULL)");
+    const sweep = await sweepFixtureRows(db);
+    expect(sweep.problems.some((problem) => problem.startsWith("rogue_evidence:"))).toBe(true);
+    expect(cleanSlateViolations(sweep).some((violation) => violation.startsWith("rogue_evidence:"))).toBe(true);
+  });
+
   it("the sweep FAILS rather than reporting clean when it cannot read a table (charter #4)", async () => {
     const sweep = await sweepFixtureRows(db, ["households", "table_that_does_not_exist"]);
     expect(sweep.problems.length).toBe(1);
     expect(cleanSlateViolations(sweep)[0]).toContain("table_that_does_not_exist");
+  });
+
+  it("a second firm seeding the same world reports the rows it WROTE, not the rows it offered", async () => {
+    // World ids are derived from the world seed, so they are identical in every
+    // org: the second load conflicts on every key and writes nothing. A count
+    // taken from the input length would book an audit entry claiming otherwise.
+    const other = "org-second-firm";
+    await db.query(
+      "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Second Firm',$2,'verin-crm',$2,'high')",
+      [other, TS],
+    );
+    const first = await seedWorldIntoCrm(db, systemWriteActor("seed", ORG), HOUSEHOLDS, DIGEST);
+    const second = await seedWorldIntoCrm(db, systemWriteActor("seed", other), HOUSEHOLDS, DIGEST);
+    expect(first.ok && first.value.households).toBe(HOUSEHOLDS.length);
+    expect(second.ok && second.value.households, "the second firm wrote no households").toBe(0);
+    expect(second.ok && second.value.contacts).toBe(0);
   });
 
   it("the world load is idempotent: a second run adds no rows", async () => {

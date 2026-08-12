@@ -83,11 +83,17 @@ export const RosterSchema = z.strictObject({
   // A model's target allocation is hand-owned data, not a table hidden in the
   // generator: the holdings a surface renders are a split of the account
   // balance across these weights, so the weights belong where a person edits.
+  // One asset class per model, at most once: two targets naming the same class
+  // draw the SAME instruments under the same field key, so the account would
+  // render one lot twice and its weights would silently double-count.
   modelPortfolios: z.array(NamedKey.extend({
     targets: z.array(z.strictObject({
       assetClass: z.enum(ASSET_CLASSES),
       weightBps: z.int().min(1).max(10000),
-    })).min(1),
+    })).min(1).refine(
+      (targets) => new Set(targets.map((target) => target.assetClass)).size === targets.length,
+      "a model portfolio names each asset class at most once",
+    ),
   })).min(1),
   withdrawalPurposes: z.array(Text).min(1),
   activityKinds: z.array(z.enum(ACTIVITY_KINDS)).min(1),

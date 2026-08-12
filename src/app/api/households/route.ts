@@ -21,9 +21,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!auth.ok) return errorResponse(auth.error);
   const db = await getDb();
   const crmHouseholds = await listHouseholds(db, auth.value);
+  // The manifest's summaries carry the world id, which is what the intersection
+  // is computed on - so the deep file of a household this tenant is NOT
+  // authorized to list is never opened, let alone summarized. That is the whole
+  // reason the list method returns summaries rather than households.
+  const authorizedIds = new Set(crmHouseholds.map((crmRow) => crmRow.id));
   const summaries = await fixtureWorldSource.listHouseholds(auth.value);
   const worldHouseholds: WorldHousehold[] = [];
   for (const summary of summaries) {
+    if (!authorizedIds.has(summary.id)) continue;
     const household = await fixtureWorldSource.getHousehold(auth.value, summary.key);
     if (household) worldHouseholds.push(household);
   }

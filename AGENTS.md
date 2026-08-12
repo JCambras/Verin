@@ -85,10 +85,18 @@ accounts, which the account-opening flow mints. HEALTH IS COMPUTED, NEVER STORED
 IMPORTS them, so a fixture cannot carry a value the product cannot render. Clean slate is COUNTED:
 `pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`) and
 fails on the first fixture-marked row; a sweep over zero tables is a problem, never a pass. That
-derivation is paren-balanced AND cross-checked against an independent count of the DDL's
-`prov_source` declarations, so a table it misses fails rather than reporting clean unread; the
+derivation is read THREE ways that share no code - a structural parse of each table's balanced body
+and its top-level column items, a plain count of every `prov_source` the DDL names, and the STORE's
+own column catalog - because two readings that resolve a declaration the same way agree by
+construction and cross-check nothing; any disagreement is a sweep problem, so a table one reading
+misses fails rather than reporting clean unread (D-206, D-207). The
 `--report` path exits 0 for a developer but takes `--expect-rows=<n>` where a caller needs an
-assertion (CI uses it after the seed) - D-193.
+assertion (CI uses it after the seed). `seedWorldIntoCrm` counts rows WRITTEN (`RETURNING id`), never
+rows offered: world ids are seed-derived and identical across orgs, so a second firm's load conflicts
+away to nothing. Two account rules hold for the hand-authored ten and the derived ninety alike
+(`accountRuleProblems`): an account never names its own owner as a beneficiary and never holds one
+instrument twice, and an entity household's signers hold no personal accounts inside it. The
+directory's world-derived rows are built once per worldDigest, not once per request.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
