@@ -42,6 +42,13 @@ settle now.
   without a failed-transaction retry fork. Later appends require a nominal
   transaction capability and use a savepoint, so a caller that catches an append
   error cannot commit a prefix. No decision-ledger outbox exists.
+  **Amended by ADR-0057 (D-217):** both also require the producer to NAME the entry's
+  `recordOrigin`, beside the `RecordProvenance` they already require. The producer knows
+  whether it is writing a real decision or a demonstration one and the repository never
+  can, so the column is written at the insert rather than left to a DDL default - which
+  had the clean-slate sweep report `decision_ledger 0` over the synthetic chain
+  `pnpm db:seed` had just written there. This table's append-only trigger puts those rows
+  beyond any later backfill (`src/infrastructure/store/record-origin-migration.ts`).
 - Composite `(org_id, id)` foreign keys make decision, evidence, membership,
   causation, and exception-triggering links structurally same-tenant. Every
   reference an event can name is a promoted column L3 re-derives from the payload.

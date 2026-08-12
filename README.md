@@ -31,6 +31,10 @@ Practice intelligence for registered investment advisers. The third and final bu
     generated into `fixtures/corpus/` and gated by `pnpm corpus:validate`. Its real-derived partition
     ships empty behind [`docs/corpus-scrub-procedure.md`](./docs/corpus-scrub-procedure.md), so no
     detection rate is reported.
+12. **[`docs/world.md`](./docs/world.md)** - the normative specification of the populated world
+    (ADR-0057): a hundred named households generated into `fixtures/world/`, served as evidence behind
+    a port, and held to a clean-slate guarantee that is COUNTED (`pnpm world:validate`,
+    `pnpm fixture:check`).
 
 ## Stack
 
@@ -51,6 +55,8 @@ corepack pnpm knip            # dead exports / unused dependencies
 corepack pnpm v3:invariants   # 30 v3 invariants: active-pass / active-fail / not-yet-active
 corepack pnpm golden:validate # 16 golden cases: complete, vocabulary-aligned, signoff-gated
 corepack pnpm corpus:validate # replay corpus: regenerate + byte-compare, labels, intake, signoff
+corepack pnpm world:validate  # populated world: regenerate + byte-compare, provenance, world rules
+corepack pnpm fixture:check   # clean slate: zero demonstration-origin rows (--report on a seeded store)
 corepack pnpm build
 ```
 

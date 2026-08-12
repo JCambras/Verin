@@ -61,8 +61,15 @@ tier (`src/app/presentation/`, ADR-0012) rather than waiting for a trigger. WhyB
 ## The 20 non-data gaps (debrief) — each with source `file:line` + un-defer trigger
 
 Every non-data gap the debrief named is enumerated below — none silently dropped (ADR-0012 consequence).
-"First demo milestone" is the single trigger that un-defers the marquee demo machinery *and* the deferred
-populated world together (captain D-005 / ADR-0012).
+"First demo milestone" was the single trigger that un-defers the marquee demo machinery *and* the
+deferred populated world together (captain D-005 / ADR-0012).
+
+> **The populated-world half of that trigger has FIRED (ADR-0057, front-end parity prompt 4).** Verin
+> did not port Meridian's world: it GENERATES its own - a hundred named households, deterministic from
+> a spec and a seed, labeled `source=fixture` end to end, served as evidence behind
+> `HouseholdWorldSource` rather than modeled into the house CRM, and held to a clean-slate guarantee
+> that is counted rather than promised (`docs/world.md`, `pnpm fixture:check`). The demo machinery in
+> the table below is unaffected and still waits on the demo milestone.
 
 | # | Capability (what / why) | Meridian source `file:line` | Un-defer trigger |
 |---|-------------------------|-----------------------------|------------------|
@@ -70,7 +77,7 @@ populated world together (captain D-005 / ADR-0012).
 | 2 | **Audio narration** — 50 mp3 (tour 17 + mm 15 + pe 18) synced to playback; await-`ended` advance loop; anti-pop fade-in | `public/audio/{tour,mm,pe}`; loop `MMWalkthroughOverlay.tsx:227-271` | First demo milestone |
 | 3 | **Animated demo cursor + click ripples** — a fixed animated pointer with ripple rings; native-setter typing into React-controlled inputs | cursor `WalkthroughOverlay.tsx:302-329`; native setter `WalkthroughOverlay.tsx:39-47` | First demo milestone |
 | 4 | **ScreenRecorder / "Record demo"** — `MediaRecorder` over `getDisplayMedia`, downloadable capture | `src/components/shared/ScreenRecorder.tsx:55-91` | First demo milestone |
-| 5 | **Persona system as experience** — persona-select login; named households/advisors as demo characters (Thompsons, Jordans, Shakespeares, Becky/Carlos TalkTrack) | Thompsons `DEMO_CHEATSHEET.md:19-65`; Jordans `walkthrough-script.ts:37-39`; Shakespeares `src/app/backstage-builder/data/shakespeare.ts:180-205`; Becky/Carlos `src/app/backstage-builder/components/TalkTrack.tsx:110-117` | First demo milestone (paired with the deferred populated world, ADR-0012) |
+| 5 | **Persona system as experience** — persona-select login; named households/advisors as demo characters (Thompsons, Jordans, Shakespeares, Becky/Carlos TalkTrack) | Thompsons `DEMO_CHEATSHEET.md:19-65`; Jordans `walkthrough-script.ts:37-39`; Shakespeares `src/app/backstage-builder/data/shakespeare.ts:180-205`; Becky/Carlos `src/app/backstage-builder/components/TalkTrack.tsx:110-117` | **Named households LIVE** - Verin's own generated world, not Meridian's (ADR-0057; `docs/world.md`). Persona-select login and the demo characters built on top of it: first demo milestone |
 | 6 | **Pervasive explainability** — WhyBubble on *every* automated decision, with regulation citations | doctrine `CONVENTIONS.md:106-112`; `src/components/shared/WhyBubble.tsx` | **LIVE** (WhyBubble ships in the skeleton); pervasiveness across flows grows flow-by-flow — N/A as a defer |
 | 7 | **NotificationCenter** — derived alerts feed (~181 lines) | `src/components/shared/NotificationCenter.tsx` | When a home/dashboard surface with derived alerts ships |
 | 8 | **CommandPalette in production** — ⌘K, 300ms-debounced search (~234 lines) | `src/components/shared/CommandPalette.tsx` | When the app shell has >1 primary surface to navigate |

@@ -244,7 +244,10 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 `pnpm test` (unit+integration+fitness, **non-UTC clock**) · `pnpm test:fitness` · `pnpm test:e2e`
 (Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report) ·
 `pnpm golden:validate` (16-case golden truth set) ·
-`pnpm corpus:{generate,validate,report}` (replay corpus; `validate` is the blocking `corpus` gate). All gates
+`pnpm corpus:{generate,validate,report}` (replay corpus; `validate` is the blocking `corpus` gate) ·
+`pnpm world:{generate,validate}` (populated world; `validate` is the blocking `world` gate) ·
+`pnpm fixture:check` (clean slate; the same `world` job runs it on a fresh store and again with
+`--report --expect-rows` after `pnpm db:seed`). All gates
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.

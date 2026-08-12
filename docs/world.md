@@ -183,7 +183,22 @@ adapter is **replaced, not relabeled**, when a real `EvidenceSource` lands (ADR-
 `pnpm db:seed` projects households, their people, and their open items into the house CRM, labeled
 `prov_source = 'fixture'` and `record_origin = 'world-fixture'`. It deliberately does **not** seed
 financial accounts: an account in the house CRM is the output of the account-opening flow, and
-custodial positions are evidence.
+custodial positions are evidence. The seeding itself is a function of a store
+(`seedDemoStore`, `scripts/seed-demo-store.ts`), and `scripts/db-seed.ts` is the runner that opens and
+closes the configured one - so the clean-slate guarantee below is proved against THIS seed rather than
+against a re-implementation of part of it.
+
+The same seed writes the scaffolding those rows hang on: the demonstration firm, the two demo accounts
+that carry a publicly committed password, and the synthetic decision chain the audit-chain gate needs
+in order to verify anything. Those are demonstration records too, so they carry the SECOND
+demonstration origin, `demo-seed` - not the world's, because they are not the world, and
+`DEMONSTRATION_ORIGINS` is a list precisely so a new demonstration writer has to be classified rather
+than fall into the clean half. **Every one of those paths NAMES the column at its own insert** -
+`seedWorldIntoCrm`, the org insert in `scripts/seed-demo-store.ts`, `createUser`, and
+`recordDecision` / `appendDecisionEvents`, where `recordOrigin` is a REQUIRED input because the
+producer knows which kind of row it is minting and the repository never can. A default is a claim
+about rows you did not write, and an unnamed insert had the sweep print `decision_ledger 0`, `orgs 0`
+and `users 0` over rows `pnpm db:seed` had just put there.
 
 **Two facts, two columns, and neither answers the other's question.** `prov_source` is where a VALUE
 came from and it MOVES: an advisor who renames a seeded household has entered that name, so the
@@ -197,13 +212,37 @@ own. The clean-slate sweep
 counts the ORIGIN: keyed on `prov_source` it would leave a seeded household in production the moment
 somebody typed over it.
 
-A column's DEFAULT cannot answer for rows that already exist, so the migration that introduced
-`record_origin` also **backfills** it: a store that already held the world would otherwise stamp every
-one of those rows `firm-record` and report clean while a hundred households rendered - the guarantee
-failing open through the migration that enforces it. The backfill carries the marker those rows were
-written with (`prov_source = 'fixture'`, in the three tables the projection writes), which at that
-version names exactly the rows a fresh seed gives the demonstration origin, so an upgraded store and a
-freshly seeded one agree rather than diverge.
+A column's DEFAULT cannot answer for rows that already exist. A store that already held the world when
+`record_origin` arrived (version 9) stamped every one of those rows `firm-record` and reported clean
+while a hundred households rendered - the guarantee failing open through the migration that enforces
+it, on precisely the stores the repair exists for. So the corrections version 9's default could not
+make ship as **their own versions**, never as an edit to a shipped one: `runMigrations` matches the
+ledger on `(version, name)`, so an `UPDATE` appended to a version a store already recorded is dead code
+on exactly those stores (D-016/D-029).
+
+| Version | Reaches | By the condition |
+|---|---|---|
+| 10 `record-origin-backfill` | the world's rows, in the three tables its CRM projection writes | `prov_source = 'fixture'` - the marker those rows were written with |
+| 11 `demo-tenant-record-origin` | the demonstration org and its two demonstration accounts | IDENTITY - `orgs.id`, and `users.org_id` plus the two demo emails |
+
+Version 10's condition names exactly the rows a fresh seed gives the demonstration origin, so an
+upgraded store and a freshly seeded one agree rather than diverge. Version 11 cannot borrow it: the
+demonstration tenant and its users carry `prov_source = 'verin-crm'` like every row this firm's own
+flows write, so no value-provenance condition can name them - and re-seeding cannot reach them either
+(the org insert is `ON CONFLICT (id) DO NOTHING` and the seed skips a user it already resolves). It
+keys on those two accounts rather than on the org's membership, because a developer's own account
+inside the demonstration org is a real record and condemning it to the purge is the same false claim in
+the other direction. The demonstration identity both the seed and the migration key on is named once,
+in `src/infrastructure/store/demo-tenant.ts`.
+
+**Where the repair stops, said by the code that makes it.** Neither version reaches `decision_ledger`,
+and no version ever can: `decision_ledger_no_update` is a BEFORE UPDATE trigger that refuses every
+update on that table (ADR-0041), so a store that seeded its synthetic chain before `recordOrigin`
+became required reports `decision_ledger 0` over that chain permanently, and the only remedy is
+recreating the store. Each data-correcting version states its own reach in
+`src/infrastructure/store/record-origin-migration.ts` rather than leaving it to be rediscovered. A
+store created after this branch walks none of this: the bootstrap applies every version against an
+empty schema, and each insert path names its own origin.
 
 The seed counts rows **written** (`RETURNING id`), never rows offered, and **refuses** with a typed
 `CONFLICT` naming the collision when a conflicting household is held by ANOTHER org. World record ids
@@ -228,7 +267,31 @@ pnpm fixture:check --report --expect-rows=n # the same count as an ASSERTION (CI
 
 `--report` exits 0 whatever it finds, which is what a developer wants and what a GATE must never be:
 `--expect-rows` is how the CI step after the seed proves the world actually landed, because a report
-that finds nothing proves nothing (charter #4).
+that finds nothing proves nothing (charter #4). It belongs to that path only, so `--expect-rows`
+without `--report` exits 2 naming the mistake rather than being ignored - the run it would otherwise
+fall through to asserts the OPPOSITE verdict, and the caller would believe their floor was applied.
+
+**Marking a row makes it VISIBLE, not removable.** The decision and audit chains this seed writes are
+append-only by DDL trigger, their replay sources and heads describe entries that cannot be removed, and
+the tenant and identities those chains are anchored to cannot be deleted while they exist. The
+demonstration seed is therefore IRREVERSIBLE: a store that has run it can never be swept empty again.
+The guarantee was never "the seed can be undone" - it is that a production instance was never seeded
+(`assertSeedableEnvironment` refuses `APP_ENV=production` before a store is opened, and again before
+any write) AND that any demonstration row is COUNTABLE if one is there.
+
+That guarantee end to end is the FIRST case in `src/__tests__/integration/fixture-purge.test.ts`: it
+migrates, runs the COMPLETE `seedDemoStore` the CLI runs, purges by a predicate derived from the LIVE
+store catalog, and measures EVERY base table's row count before and after - not only the tables
+carrying the marker, because the same seed writes into ten tables that carry neither provenance column
+and a seeded path landing in one of those was invisible to the case added to catch invisible seeded
+paths. Every table the seed grew is back to its pre-seed count OR named in `IRREVERSIBLE_SEED_RESIDUE`
+with the mechanism that refuses the delete - the append-only trigger, or the foreign key the store
+itself raises - and the list is exact in both directions, so a name the seed no longer earns fails as
+loudly as a seeded table missing from it. The other cases are optimisations of that one, never
+substitutes: this guarantee has failed open in three shapes so far - a defaulted column that answered
+for rows it never wrote, an insert path that named no origin, and a migration that never ran on the
+store it was written for - and each time every mechanism check passed, because each checked one
+mechanism and nothing ran the whole thing.
 
 What it COUNTS is `record_origin`, never `prov_source` - see the two facts above. What it counts it
 IN is derived from the shipped DDL: every table whose DDL carries a `prov_source` column, so a new

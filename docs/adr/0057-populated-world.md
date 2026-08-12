@@ -184,6 +184,35 @@ same three ways; the pairing between the two columns is itself checked twice - f
 `ALTER TABLE`) and from the store's own catalog - so a provenance-bearing table with no origin to
 count by fails rather than being swept blind.
 
+**Amended by D-217, D-218 and D-219** (review rounds). A column marked in the DDL is only as good as
+the writes and the repairs behind it, and both were missing:
+
+- **Every path that writes a demonstration row NAMES the origin at its insert**, because a default is
+  a claim about rows you did not write. `recordOrigin` is a REQUIRED input to `recordDecision` /
+  `appendDecisionEvents` and to `createUser`, and the seed's own org insert names it - unnamed, they
+  had the sweep print `decision_ledger 0`, `orgs 0` and `users 0` over rows `pnpm db:seed` had just
+  written, including the accounts carrying the publicly committed demo password. The seeded
+  scaffolding and chain take a THIRD classified origin, `demo-seed`, rather than borrowing the world's:
+  `DEMONSTRATION_ORIGINS` is a list so a new demonstration writer must be classified rather than fall
+  into the clean half.
+- **Each correction to rows that already exist is its OWN migration version.** Version 9 adds the
+  column; version 10 (`record-origin-backfill`) re-stamps the world's rows by the marker they were
+  written with; version 11 (`demo-tenant-record-origin`) re-stamps the demonstration tenant and its two
+  demonstration accounts by IDENTITY, since no value-provenance condition can name rows whose values
+  this firm's own flows wrote. `runMigrations` matches the ledger on `(version, name)`, so an `UPDATE`
+  appended to a shipped version is dead code on exactly the stores needing the repair (D-016/D-029) -
+  the mistake this ADR's own first backfill made. Each version states WHERE ITS REACH STOPS in
+  `src/infrastructure/store/record-origin-migration.ts`, including the one place no version can reach:
+  `decision_ledger`, whose BEFORE UPDATE trigger (ADR-0041) refuses every update.
+- **The seed is IRREVERSIBLE, and the guarantee is stated as what it is.** The decision and audit
+  chains are append-only by trigger and the tenant and identities they are anchored to cannot be
+  deleted while they exist, so the guarantee is that production was never seeded
+  (`assertSeedableEnvironment`) AND that any demonstration row is countable if one is there - never
+  that the seed can be undone. The end-to-end case runs the COMPLETE `seedDemoStore`, purges through
+  the live catalog, and measures every base table's row count before and after rather than only the
+  tables carrying the marker; each survivor is named in `IRREVERSIBLE_SEED_RESIDUE` with the mechanism
+  the store itself raises (an append-only trigger, or a foreign key), exact in both directions.
+
 ### 6. Budgets are amended by measurement
 
 `src/domain/**` gains the world model and the health computation; `src/infrastructure/**` gains the

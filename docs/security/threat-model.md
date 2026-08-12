@@ -25,6 +25,10 @@ date (never omitted).
 - **House-CRM store** — the system of record (identity PII lives here).
 - **Replay-corpus fixtures** - `fixtures/corpus/`: author-invented synthetic cases today, plus a
   captain-gated intake for anonymized real defect history that ships EMPTY (ADR-0052).
+- **Populated-world fixtures** - `fixtures/world/`: a hundred generated, labeled-synthetic households
+  (ADR-0057). They are EVIDENCE read through `HouseholdWorldSource` under a `pii.view` grant, not house-CRM
+  records; the CRM holds only the projected households, people and open items, each stamped
+  `record_origin = 'world-fixture'`. The asset here is the boundary: none of it may reach production.
 - **Config/secrets** — `SESSION_SECRET`, `ESIGN_WEBHOOK_SECRET`, DB DSN.
 
 Trust boundaries: client → app (never trust client identity/role); app → store (org-scoped); external
@@ -140,11 +144,23 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   register withholds entries it could not authenticate rather than showing them unverified. *Fence:*
   `auth-enforcement`, `governed-actions` (routes resolve a session and check role/grant; v3 §15.3).
 - **T-E2 (High): demo/seed affordance reachable in production.** *Control:* the config fail-closed guards
-  refuse a non-postgres driver or placeholder secrets in production (ADR-0003); the populated demo world
-  is deferred (D-005), and the one demo affordance that ships - the D-036 walking-skeleton screens under
-  `/app/demo` - is static labeled fakes behind the `/app` auth guard, writing no state (ADR-0027
-  provenance badges). *Fence:* the config superRefine guards plus `demo-skeleton-honesty` (skeleton data
-  pinned to the contract); a dedicated demo-mode fence lands with the demo milestone.
+  refuse a non-postgres driver or placeholder secrets in production (ADR-0003); the D-036 walking-skeleton
+  screens under `/app/demo` are static labeled fakes behind the `/app` auth guard, writing no state
+  (ADR-0027 provenance badges). *Fence:* the config superRefine guards plus `demo-skeleton-honesty`
+  (skeleton data pinned to the contract); a dedicated demo-mode fence lands with the demo milestone.
+- **T-E3 (High): the populated demo world, or the seed that writes it, reaches production.** *Exploit:*
+  `pnpm db:seed` is pointed at a production store - it mints two accounts carrying a publicly committed
+  password - or a demonstration household survives into a real book and is read as a firm record.
+  *Control:* the world is no longer deferred (ADR-0057), so the guarantee is structural on three sides.
+  `assertSeedableEnvironment` refuses `APP_ENV=production` before a store is opened and again before any
+  write; the fixture evidence adapter refuses to serve anything under `APP_ENV=production`; and every row
+  the seed writes NAMES a demonstration `record_origin` at its insert, so `pnpm fixture:check` counts
+  them from a table list derived from the shipped DDL and fails on the first one. The origin never moves
+  when a value is edited, so editing a seeded record cannot launder it. The seed is IRREVERSIBLE (the
+  decision and audit chains it writes are append-only by trigger), so the guarantee is "production was
+  never seeded", never "the seed can be undone" - see `docs/world.md`. *Fence:* `clean-slate` and
+  `world-provenance`, plus the blocking `world` CI job, which runs the check on a fresh store AND with a
+  row floor after the seed (a check that finds nothing proves nothing).
 
 ## Gaps (explicit, owned, dated)
 
