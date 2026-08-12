@@ -162,6 +162,17 @@ rejection is a value, never a throw.
   quantity resolve to coordinate a decision BEFORE the plan runs, so neither is available there. Checked
   against the whole plan instead, a payload field of the second step naming the third step's output
   loads clean and then fails mid-plan - after the first step's write has committed (proof PF-262).
+- **A slot a capability reads must have a TRANSPORT, and a command text is checked against the intent
+  that renders it.** The interim resolver reads a slot only through its declared `triggerField`, which
+  the grammar forbids on any slot that is not `supplied-by-trigger`, so a capability sourcing a
+  `bound-by-primitive` or `derived` slot is refused when the plan is COMPILED - naming the slot and its
+  resolution - rather than compiling into a step that commits its predecessors and then cannot resolve
+  its own payload. The refusal is at compile rather than at load because the authoring is legal: money
+  movement's `household` and `source-account` ARE selected by primitives, and prompt 16's context plane
+  is what supplies them (`docs/domain-config-gaps.md` §3). Separately, a `{slot:…}` placeholder in
+  `commandText` resolves through ONE intent's resolver while the completeness stage holds copy to the
+  union of every intent's slots, so the closure stage checks each command text against the slots of the
+  intent whose plan reaches it (proofs PF-269, PF-270).
 - **Flow data has three writers, and they share one camelCase namespace.** A slot's `triggerField`, a
   capability's `publishes[].as`, and the fields of the observation that closes an awaited rule all land
   in the same record, so the loader refuses a collision between any two of them and a collision with the

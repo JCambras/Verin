@@ -231,7 +231,7 @@ const CEILINGS = {
 // 12,400.
 const CEILINGS = {
   contracts: 6680, // ADR-0057 as amended twice, RATCHETED DOWN after the dead brands were deleted (6,649 measured)
-  domain: 9150, // ADR-0057 as amended six times, on the prompt-10 configuration schema (9,085 measured)
+  domain: 9240, // ADR-0057 as amended seven times, on the prompt-10 configuration schema (9,176 measured)
   infrastructure: 8360, // ADR-0057 as amended once, on the version-bound resume guard (8,341 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until

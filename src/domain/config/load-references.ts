@@ -20,6 +20,7 @@ import {
   type SourceAvailability,
 } from "./load-closure";
 import type { DomainConfigEnvironment, LoadedBinding, LoadedIntent } from "./load";
+import { templatePlaceholders } from "./segments";
 
 /**
  * Each plan step's transitive `dependsOn` closure - the steps that have run, and
@@ -64,7 +65,8 @@ export const checkReferences = (
   const verificationIds = new Set(document.verification.map((entry) => entry.id as string));
   const templateIds = new Set(document.authority.templates.map((entry) => entry.id as string));
   const bindingIds = new Set(bindings.keys());
-  const commandTextKeys = new Set(Object.keys(document.presentation.copy.commandText));
+  const commandText = document.presentation.copy.commandText;
+  const commandTextKeys = new Set(Object.keys(commandText));
   const allSlots = new Set(document.intents.flatMap((intent) => intent.slots.map((slot) => slot.id)));
 
   for (const [id, loaded] of intents) {
@@ -209,7 +211,25 @@ export const checkReferences = (
       for (const field of capability.payload) {
         const fieldPath = `${at}.payload.${field.field}`;
         if (field.kind === "copy") {
-          requireMember(field.copy, commandTextKeys, fieldPath, "command text key", sink);
+          // The copy KEY is domain-wide; the placeholders it renders are NOT.
+          // `buildPayload` resolves a `{slot:…}` through THIS intent's resolver,
+          // while stage 6 holds copy to the UNION of every intent's slot ids
+          // because copy is authored per domain. In a two-intent document that
+          // difference is another load-clean-then-fail hole: a template naming
+          // intent A's slot, reached from a capability in intent B's plan, closes
+          // cleanly and then fails at that step, after earlier steps committed.
+          if (requireMember(field.copy, commandTextKeys, fieldPath, "command text key", sink)) {
+            for (const placeholder of templatePlaceholders(commandText[field.copy] ?? "")) {
+              if (placeholder.kind !== "slot" || loaded.slots.has(placeholder.token)) continue;
+              sink(
+                configError(
+                  "unknown-reference",
+                  fieldPath,
+                  `command text ${JSON.stringify(field.copy)} reads {slot:${placeholder.token}}, which intent ${id} does not declare`,
+                ),
+              );
+            }
+          }
           continue;
         }
         checkSource(field.source, "payload", fieldPath, stepWorld, sink);

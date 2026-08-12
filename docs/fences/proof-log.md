@@ -14920,3 +14920,111 @@ replay itself.
 `Tests 22 passed (22)`.
 
 **Date:** 2026-08-11 (v3 prompt 10, ADR-0056; review ruling `p10-version-guard-fallout`).
+
+---
+
+## PF-268 · a downstream refusal may not borrow a status this endpoint already owns
+
+**Invariant:** the e-sign webhook's HTTP status is an INSTRUCTION about REDELIVERY, not a window into
+the internal error taxonomy. Every downstream REFUSAL answers ONE dedicated status (422) whatever code
+produced it; a server-side failure still answers 5xx; and 401 and 404 keep meaning only what this
+handler already says they mean - "invalid webhook signature" and "unknown signing token". PF-265 fixed
+the first half of this (a permanent refusal must not ask for redelivery forever) by passing the internal
+code's own status through, which collided with the two statuses the handler owns.
+
+**Injection.** Restored the pass-through expression in `src/app/api/esign/webhook/route.ts:65`
+(`!isRetryable(refusal) && mapped.status >= 400 ? mapped.status : …`) and fired two validly signed
+callbacks: one at an execution whose recorded configuration version disagrees with the published one,
+and one whose application row no longer carries the id the suspended execution recorded, so finalize's
+org-scoped UPDATE matches zero rows.
+
+**Observed failure:**
+```
+× answers a PERMANENT refusal with the do-not-redeliver status, whatever code produced it
+AssertionError: expected 409 to be 422 // Object.is equality
+× never reports a downstream permanent failure with a status this endpoint already owns
+AssertionError: expected 404 to be 422 // Object.is equality
+```
+The second is the finding verbatim: a finalize-time `NOT_FOUND` reported to the provider with the same
+404 this route uses for "that signing token does not exist".
+
+**Companion.** "still answers an ORDINARY finalize failure with a 5xx, so the provider redelivers": a
+dropped `financial_accounts` table raises `INTERNAL`, which the taxonomy scores non-retryable but 500 -
+an operational fault a redelivery after repair completes, not a refusal - and it must stay 5xx. That
+case is what forced the predicate to be `isRetryable(code) || status >= 500` rather than retryability
+alone.
+
+**Reverted:** the single-status mapping restored;
+`src/__tests__/integration/esign-webhook-route.test.ts` reports `Tests 3 passed (3)`, and the run
+carries the diagnosis the narrowed status no longer does:
+`{"code":"INTERNAL","msg":"e-sign callback finalization failed"}`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-webhook-status-collision`).
+
+---
+
+## PF-269 · a runnable plan may not carry a slot source the trigger cannot supply
+
+**Invariant:** `resolverFor` reads a slot ONLY through its declared `triggerField`, and the intent
+grammar forbids one on any slot that is not `supplied-by-trigger`. A capability sourcing a
+`bound-by-primitive` or `derived` slot - in a payload field, an idempotency-key segment, or a
+`{slot:…}` placeholder of its command text - therefore closes cleanly through all seven load stages and
+then fails at the step that consumes it, after earlier steps have committed real CRM rows. The plan is
+refused where it becomes RUNNABLE, because the authoring itself is legitimate: money movement's
+`household` and `source-account` genuinely are selected by primitives, and their values arrive with the
+evaluator's context plane (prompt 16).
+
+**Injection.** Removed the `unreadableSlot` refusal from `compileFlowDefinition`
+(`src/domain/config/plan-compiler.ts:334`) and compiled money movement's plan with only its
+`decision-hash` idempotency segment dropped - the segment prompt 25 replaces, and today the only reason
+that plan is refused at all.
+
+**Observed failure:**
+```
+× REFUSES compiling a plan whose capability reads a slot the trigger cannot supply
+AssertionError: expected true to be false // Object.is equality
+ ❯ src/__tests__/unit/domain-config.test.ts:314:25
+```
+The plan compiled to a runnable flow whose `sourceAccountRef` payload field and `source-account` key
+segment can never resolve.
+
+**Companion.** The same case asserts the mutated document still LOADS (`expect(loaded.ok).toBe(true)`),
+so the refusal cannot be satisfied by rejecting the shipped document instead - which would have thrown
+away prompt 10's two-domain deliverable to close a runtime hole. The pre-existing "a decision-hash
+idempotency key is REFUSED by the interim substrate" still passes, so the two deferrals stay distinct.
+
+**Reverted:** the refusal restored; `src/__tests__/unit/domain-config.test.ts` reports
+`Tests 82 passed (82)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-webhook-status-collision`).
+
+---
+
+## PF-270 · a command-text placeholder is checked against the intent that RENDERS it
+
+**Invariant:** copy is authored per DOMAIN, so stage 6 holds a template to the union of every intent's
+slot ids - but `buildPayload` renders it through ONE intent's resolver. Where those scopes differ, a
+template naming intent A's slot and reached from a capability in intent B's plan loads clean and then
+fails mid-plan. The closure stage checks each command text against the slots of the intent whose plan
+actually reaches it.
+
+**Injection.** Reduced the copy branch of `checkReferences` back to the bare key check
+(`src/domain/config/load-references.ts:221`) and loaded a money-movement document carrying a second
+intent that shares the plan but does not declare `purpose`, with a command text reading
+`{slot:purpose}`.
+
+**Observed failure:**
+```
+× flags a command-text slot the RENDERING intent does not declare (stage 3, not the union)
+AssertionError: the mutated document must NOT load: expected true to be false
+ ❯ src/__tests__/unit/domain-config.test.ts:569:61
+```
+
+**Companion.** The case asserts the load reports EXACTLY the one new error, so the document is legal in
+every other respect - which is what proves the union check would have admitted it rather than the
+document being rejected for an unrelated reason.
+
+**Reverted:** the per-intent check restored; `src/__tests__/unit/domain-config.test.ts` reports
+`Tests 82 passed (82)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-webhook-status-collision`).

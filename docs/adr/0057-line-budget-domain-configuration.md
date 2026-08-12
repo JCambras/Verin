@@ -244,6 +244,43 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 bought with a measurement and an argument, never banked in advance against work that has not been
 written.
 
+## Amendment (2026-08-11, review round 10): `domain` re-measured
+
+The 65 lines of correction headroom the round-9 figures carried are spent, on the last two members of
+the load-clean-then-fail-mid-plan class and on nothing else.
+
+`domain` answers both. A capability that sources a slot the requester does not supply is refused where
+the plan becomes RUNNABLE (`plan-compiler.ts`): the interim resolver reads a slot only through its
+declared trigger field, and the intent grammar forbids one on a `bound-by-primitive` or `derived` slot,
+so such a plan would commit its earlier steps and then fail at the step that consumed it. The refusal is
+at COMPILE rather than at LOAD because the authoring is legitimate - money movement's household and
+source account genuinely are selected by primitives, and their values arrive with the evaluator's
+context plane (prompt 16) - so refusing the DOCUMENT would reject a shipped deliverable to close a
+runtime hole. Second, a command-text placeholder is now checked against the slots of the intent whose
+plan actually renders it rather than against the union of every intent's slots
+(`load-references.ts`), because `buildPayload` resolves it through one intent's resolver while stage 6
+is authored per domain.
+
+`contracts` and `infrastructure` are re-taken and unchanged except for the webhook route, which is app
+code in no measured bucket: the status it returns is a message to the provider about redelivery, and
+every refusal now takes one dedicated status rather than passing an internal code's own status through
+onto a status this endpoint already owns. `domain/observability/safe-values.ts` gains the one registered
+log message that carries the diagnosis the narrowed status no longer does.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,649 | 6,680 | 31 (unchanged ceiling) |
+| `domain` | 9,176 | **9,240** | 64 |
+| `infrastructure` | 8,341 | 8,360 | 19 (unchanged ceiling) |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+Only `domain`'s ceiling moves, by 90 lines, and only as far as its own measurement plus the 64
+lines of correction headroom the previous amendment left, less the one line this round added after the figure was first taken - not more, because headroom is bought with a
+measurement and an argument rather than banked against work that has not been written.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

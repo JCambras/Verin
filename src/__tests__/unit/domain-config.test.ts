@@ -291,6 +291,32 @@ describe("domain configuration: the shipped documents", () => {
     expect(compiled.error.message).toContain("decision hash");
   });
 
+  /**
+   * The last arm of the load-clean-then-fail-mid-plan class. A `{from: slot}`
+   * source over a slot the requester does not supply is LEGITIMATE authoring -
+   * money movement's household and source account are selected by primitives -
+   * but the interim resolver reads a slot only through its trigger field, so a
+   * plan carrying one would commit its earlier steps and then fail at the step
+   * that consumes it. Money movement is refused today for its decision-hash
+   * segment; removing that one segment (prompt 25's job) must not turn the plan
+   * runnable with an unresolvable source still in it.
+   */
+  it("REFUSES compiling a plan whose capability reads a slot the trigger cannot supply", () => {
+    const document = clone(documentOf("money-movement"));
+    const capability = (section<Mutable>(document, "execution")["capabilities"] as Mutable[])[0]!;
+    capability["idempotencyKey"] = (capability["idempotencyKey"] as Mutable[]).filter(
+      (segment) => (segment["source"] as Mutable | undefined)?.["from"] !== "decision-hash",
+    );
+    const loaded = loadDomainConfig(document);
+    expect(loaded.ok, "the document itself must still load: the authoring is legal").toBe(true);
+    if (!loaded.ok) return;
+    const compiled = compileFlowDefinition(loaded.value, "distribute-cash");
+    expect(compiled.ok).toBe(false);
+    if (compiled.ok) return;
+    expect(compiled.error.message).toContain("source-account");
+    expect(compiled.error.message).toContain("bound-by-primitive");
+  });
+
   it("enforces: the intake form projects the trigger fields the shipped route validates", () => {
     const form = intakeFormOf(loadedOf("account-opening"));
     expect(form.ok).toBe(true);
@@ -516,6 +542,37 @@ describe("detects (companion): a configuration that is wrong in any of the seven
       const result = loadDomainConfig(input);
       expect(result.ok).toBe(false);
     }
+  });
+
+  /**
+   * Copy is authored per DOMAIN, so stage 6 holds a template to the union of
+   * every intent's slot ids - but `buildPayload` renders it against ONE intent's
+   * resolver. A second intent sharing the plan is where those two scopes come
+   * apart: the union still knows `purpose`, the rendering intent does not, and
+   * without the per-intent check the document loads clean and then fails at the
+   * step that renders the command text, after earlier steps committed.
+   */
+  it("flags a command-text slot the RENDERING intent does not declare (stage 3, not the union)", () => {
+    const document = clone(documentOf("money-movement"));
+    const intents = section<Mutable[]>(document, "intents");
+    const second = clone(intents[0]!) as Mutable;
+    second["id"] = "distribute-cash-b";
+    second["slots"] = (second["slots"] as Mutable[]).filter((slot) => slot["id"] !== "purpose");
+    intents.push(second);
+    const capability = (section<Mutable>(document, "execution")["capabilities"] as Mutable[])[0]!;
+    (capability["payload"] as Mutable[]).push({ kind: "copy", field: "note", copy: "transfer-note" });
+    const copy = section<Mutable>(document, "presentation")["copy"] as Mutable;
+    (copy["commandText"] as Mutable)["transfer-note"] = "For {slot:purpose}";
+    (copy["intents"] as Mutable)["distribute-cash-b"] = { label: "Move money again" };
+
+    const result = loadDomainConfig(document);
+    expect(result.ok, "the mutated document must NOT load").toBe(false);
+    if (result.ok) return;
+    // The ONLY complaint is the new one: everything else about this document is
+    // legal, which is what proves the union check would have let it through.
+    expect(result.error.map((error) => error.message)).toEqual([
+      'command text "transfer-note" reads {slot:purpose}, which intent distribute-cash-b does not declare',
+    ]);
   });
 
   it("flags an unknown key (stage 2: strict grammar)", () => {

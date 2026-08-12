@@ -72,6 +72,7 @@ const LOG_MESSAGES = new Set([
   "audited write failed",
   "constant-work audit mirror failed",
   "decision ledger append failed",
+  "e-sign callback finalization failed",
   "failed sign-in attempt for an unknown email",
   "failure-audit entry could not be recorded",
   "flow retried",

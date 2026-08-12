@@ -8,15 +8,18 @@ import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
 /**
  * WHAT THE E-SIGN PROVIDER IS TOLD TO DO NEXT.
  *
- * The webhook's status is an INSTRUCTION to an external system: a 5xx says the
- * callback was not delivered, so redeliver it, and the saved cursor makes that
- * retry idempotent. That is right for a TRANSIENT failure and wrong for a
- * PERMANENT refusal - a configuration version conflict meets the identical
- * refusal on every redelivery, so a 5xx would spend the provider's retry budget
- * and then drop the signature event with nothing but an error log behind it.
+ * The webhook's status is an INSTRUCTION to an external system, never a window
+ * into our internal error taxonomy: a 5xx says the callback was not delivered,
+ * so redeliver it, and the saved cursor makes that retry idempotent. That is
+ * right for a TRANSIENT failure and wrong for a PERMANENT refusal - a
+ * configuration version conflict meets the identical refusal on every
+ * redelivery, so a 5xx would spend the provider's retry budget and then drop the
+ * signature event with nothing but an error log behind it.
  *
- * Both halves are asserted: the permanent refusal answers its own 4xx, and the
- * transient one still answers 5xx.
+ * All three cases are asserted: EVERY refusal answers the one do-not-redeliver
+ * status (422), whatever internal code produced it and never a status this
+ * endpoint already owns for something else, and a server-side failure still
+ * answers 5xx.
  */
 const ORG = "org-esign-webhook-route";
 const advisorPrincipal = principalFromIdentity({
@@ -64,7 +67,7 @@ describe("POST /api/esign/webhook honors the taxonomy's retryability", () => {
     );
   });
 
-  it("answers a PERMANENT refusal with its own 4xx, so the provider stops redelivering", async () => {
+  it("answers a PERMANENT refusal with the do-not-redeliver status, whatever code produced it", async () => {
     const { executionId, token } = await suspendedToken("Permanent Refusal Household");
     const persisted = await db.query<{ context_json: string }>(
       "SELECT context_json FROM flow_executions WHERE id = $1",
@@ -77,9 +80,32 @@ describe("POST /api/esign/webhook honors the taxonomy's retryability", () => {
     ]);
 
     const response = await callback(token);
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(422);
     const body = (await response.json()) as { error?: { code?: string } };
     expect(body.error?.code).toBe("CONFLICT");
+  });
+
+  /**
+   * The collision the single status exists to remove. This handler already
+   * answers 404 for "unknown signing token" and 401 for "invalid webhook
+   * signature"; a finalize-time NOT_FOUND is a DIFFERENT fact - the token was
+   * fine and a downstream write matched no row - and must not be reported with
+   * the same code the provider reads as "that token does not exist".
+   */
+  it("never reports a downstream permanent failure with a status this endpoint already owns", async () => {
+    const { token } = await suspendedToken("Collision Household");
+    // The application row keeps its token (so the callback resolves) but no
+    // longer carries the id the suspended execution recorded, so finalize's
+    // org-scoped UPDATE matches zero rows and throws NOT_FOUND.
+    await db.query(
+      "UPDATE account_opening_applications SET id = $2 WHERE esign_token = $1",
+      [token, "11111111-2222-4333-8444-555555555555"],
+    );
+
+    const response = await callback(token);
+    const body = (await response.json()) as { error?: { code?: string } };
+    expect(body.error?.code).toBe("NOT_FOUND");
+    expect(response.status).toBe(422);
   });
 
   it("still answers an ORDINARY finalize failure with a 5xx, so the provider redelivers", async () => {

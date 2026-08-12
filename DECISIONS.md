@@ -9052,3 +9052,52 @@ silent wrong answer, which this build refuses everywhere else.
 
 **Revert path.** One accessor in `errors.ts`, one status expression in the webhook route, two branches in
 `wire.ts`.
+
+---
+
+## D-222 - Prompt 10 review: the webhook's status is a REDELIVERY instruction, not a taxonomy view
+
+**What.** The e-sign webhook maps EVERY downstream refusal to one dedicated status, 422, whatever
+internal code produced it, and keeps 5xx for server-side failures. The refusal predicate is
+`isRetryable(code) || status >= 500`: an `INTERNAL` raised by a missing table is non-retryable in the
+taxonomy but is an operational fault a redelivery after repair completes, so it stays 5xx. The taxonomy
+code and its message stay in the response body, and a log line at the severity the taxonomy assigns the
+code carries the diagnosis the narrowed status no longer does.
+
+**Why.** D-221(a) fixed half of this by passing the internal code's own status through - which let
+`NOT_FOUND` (404) and `AUTH_FAILED` (401) out of the failed-callback branch, onto the two statuses this
+same handler already uses for "unknown signing token" and "invalid webhook signature". A finalize-time
+`NOT_FOUND` is reachable (`completeApplication` and the finalize adapter throw it on a zero-row UPDATE),
+so a provider and its dashboards would read "that token does not exist" for "the token was fine and a
+downstream write failed". Narrowing the same expression twice is the signal that the expression was the
+wrong shape: the status answers ONE question - redeliver or do not - and the diagnosis belongs in the
+body and the log, where an operator looks. Proof PF-268.
+
+**Revert path.** One constant, one predicate, and one log call in `src/app/api/esign/webhook/route.ts`,
+plus the message's registration in the observability vocabulary.
+
+---
+
+## D-223 - Prompt 10 review: a slot a plan READS must have a transport, refused at COMPILE
+
+**What.** `compileFlowDefinition` refuses a plan whose capability sources a slot that is not
+`supplied-by-trigger` - in a payload field, an idempotency-key segment, or a `{slot:…}` placeholder of
+its command text - naming the slot and its resolution. Separately, a command-text placeholder is now
+checked at LOAD against the slots of the intent whose plan reaches it, rather than against the union of
+every intent's slots.
+
+**Why.** These are the last two members of the load-clean-then-fail-mid-plan class. The interim resolver
+reads a slot ONLY through its declared `triggerField`, which the intent grammar forbids on any slot that
+is not trigger-supplied, so such a plan commits its earlier steps and then cannot resolve its own
+payload - and `config/domains/money-movement.yaml` already carries four such sources, harmless today
+only because its `decision-hash` segment refuses that plan for an unrelated reason prompt 25 removes.
+The refusal is at COMPILE and not at LOAD because the authoring is legitimate: money movement's
+`household` and `source-account` genuinely ARE selected by primitives, and refusing the DOCUMENT would
+throw away prompt 10's two-domain deliverable to close a runtime hole - so the document stays loadable
+while a plan carrying an unresolvable source stays unrunnable, exactly the line the `decision-hash`
+deferral already draws. The command-text half is the same scope mismatch one stage over: copy is
+authored per domain, but `buildPayload` renders it through one intent's resolver. Recorded against the
+prompt-16 context plane in `docs/domain-config-gaps.md` §3. Proofs PF-269, PF-270.
+
+**Revert path.** One helper pair and one guard in `plan-compiler.ts`; one placeholder loop in the copy
+branch of `checkReferences`.

@@ -24,9 +24,16 @@ import { err, ok, type Result } from "@contracts/result";
 import type { TenantContext } from "@contracts/tenant";
 import type { FlowData, FlowDefinition, FlowStep, StepResult } from "@domain/workflow/engine";
 import { configError, formatDomainConfigErrors, type DomainConfigError } from "./errors";
+import type { ConfiguredSlot } from "./intents";
 import type { LoadedDomainConfig } from "./load";
 import type { ExecutionCapability, PlanStep } from "./operations";
-import { renderKeySegments, renderTemplate, type SourceResolution, type ValueSource } from "./segments";
+import {
+  renderKeySegments,
+  renderTemplate,
+  templatePlaceholders,
+  type SourceResolution,
+  type ValueSource,
+} from "./segments";
 import { CONFIG_VERSION_KEY, EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY } from "./vocabulary";
 
 /**
@@ -137,6 +144,60 @@ const resolverFor = (
     }
     return { kind: "absent" };
   };
+};
+
+/**
+ * Every slot ONE capability reads, by all three routes the resolver serves: an
+ * idempotency-key segment, a value payload field, and a `{slot:…}` placeholder
+ * of the command text a copy payload field renders.
+ */
+const slotsRead = (
+  capability: ExecutionCapability,
+  commandText: Readonly<Record<string, string>>,
+): readonly string[] => {
+  const names: string[] = [];
+  for (const segment of capability.idempotencyKey) {
+    if (segment.kind !== "literal" && segment.source.from === "slot") names.push(segment.source.slot);
+  }
+  for (const field of capability.payload) {
+    if (field.kind !== "copy") {
+      if (field.source.from === "slot") names.push(field.source.slot);
+      continue;
+    }
+    // OWN property: a copy key naming `constructor` would otherwise hand a
+    // FUNCTION to the placeholder scanner, and this walk must stay total.
+    if (!Object.hasOwn(commandText, field.copy)) continue;
+    for (const placeholder of templatePlaceholders(commandText[field.copy] ?? "")) {
+      if (placeholder.kind === "slot") names.push(placeholder.token);
+    }
+  }
+  return names;
+};
+
+/**
+ * A slot a compiled step could never READ. `resolverFor` reads a slot only
+ * through its declared `triggerField`, and the intent schema FORBIDS one on any
+ * slot that is not `supplied-by-trigger` - so a capability sourcing a
+ * `bound-by-primitive` or `derived` slot closes cleanly through every load stage
+ * and then fails at the step that consumes it, AFTER earlier steps have
+ * committed real records.
+ *
+ * Refused HERE rather than at load because the authoring is legitimate: money
+ * movement's household and source account genuinely ARE selected by primitives,
+ * and their values arrive with the evaluator's context plane (prompt 16). What
+ * may not happen is a RUNNABLE plan carrying a source nothing can resolve, which
+ * is the same line the `decision-hash` deferral above draws.
+ */
+const unreadableSlot = (
+  capability: ExecutionCapability,
+  slots: ReadonlyMap<string, ConfiguredSlot>,
+  commandText: Readonly<Record<string, string>>,
+): ConfiguredSlot | null => {
+  for (const name of slotsRead(capability, commandText)) {
+    const slot = slots.get(name);
+    if (slot !== undefined && slot.triggerField === undefined) return slot;
+  }
+  return null;
 };
 
 const failure = (errors: readonly DomainConfigError[]): StepResult => ({
@@ -320,6 +381,15 @@ export const compileFlowDefinition = (
         appError(
           "INTERNAL",
           `Capability "${capability.id}" keys idempotency on the decision hash, which the interim execution substrate does not have (prompt 25 lands it).`,
+        ),
+      );
+    }
+    const unreadable = unreadableSlot(capability, intent.slots, config.document.presentation.copy.commandText);
+    if (unreadable !== null) {
+      return err(
+        appError(
+          "INTERNAL",
+          `Capability "${capability.id}" reads slot "${unreadable.id}", which resolves ${unreadable.resolution} and so carries no trigger field; the interim execution substrate reads a slot only from the request that started the flow, and that value arrives with the evaluator's context plane (prompt 16).`,
         ),
       );
     }
