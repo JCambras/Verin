@@ -73,7 +73,12 @@ function holdingsFor(
         marketValueMinor,
         costBasisMinor: Math.trunc((marketValueMinor * 10_000) / (10_000 + gainBps)),
         asOf: observedAt,
-        provenance: provenanceAt(observedAt, observedAt, roster.clock.freshLiquidityWindowDays),
+        // The world's own instant is the reference, never the observation's: an
+        // observation compared with itself is always nought days old, so every
+        // lot the world can emit would read `high` however stale the positions
+        // snapshot behind it is - and a freshness signal that cannot vary is a
+        // constant wearing a measurement's clothes.
+        provenance: provenanceAt(roster.clock.asOf, observedAt, roster.clock.freshLiquidityWindowDays),
       });
     });
   });

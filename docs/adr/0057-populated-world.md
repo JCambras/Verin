@@ -80,6 +80,16 @@ is a typed number wearing a computation's clothes.
 Every health figure is published through `deriveArtifactProvenance`, so it renders watermarked
 "demonstration - not a compliance record" and `canFeedComplianceDecision` refuses it (ADR-0022).
 
+**Amended by D-197** (review round). Beneficiary materiality was ONE set answering two different
+questions, and it got the surface wrong in both directions in turn: scoring every registration
+invented a deficiency on a third of the accounts, and then wording the empty panel from the health set
+told a reader that an individual or joint account cannot take a transfer-on-death designation. The
+questions are now two named sets in the shared world vocabulary -
+`BENEFICIARY_CAPABLE_REGISTRATIONS` (can this registration carry a designation at all?) and
+`BENEFICIARY_SCORED_REGISTRATIONS` (does a missing designation count against health?) - and neither
+answers the other's. The health factor and the deficiency note read the second; the empty beneficiary
+panel reads the first. An absence is never reported as a gap, and a capability is never denied.
+
 ### 5. The clean-slate guarantee is counted, not promised
 
 Every world row is written with `prov_source = 'fixture'` - not `verin-crm`. `scripts/fixture-purge.ts`
@@ -94,6 +104,21 @@ structural parse of each table's balanced body and its top-level column items; a
 `prov_source` the DDL names; and the store's OWN column catalog, which is not a reading of the DDL at
 all and therefore also catches a provenance-bearing table created outside `MIGRATION_SQL`. Two
 readings that resolve a declaration the same way agree by construction and cross-check nothing.
+
+**Amended by D-196 and D-197** (review rounds). The second reading counts DECLARATIONS, not mentions:
+a column-level `CHECK (prov_source IN (...))` names the column twice for one declaration, and
+`CREATE INDEX ... ON t (prov_source)` is the index this cross-tenant sweep would itself want, so
+counting mentions failed the check on ordinary schema work while naming an unswept table that does not
+exist. Declaration-versus-reference is decided off the CLOSED set of column types a provenance column
+is declared as (`PROVENANCE_COLUMN_TYPES`), never off a list of keywords that may follow a reference:
+that list is open and grows with SQL usage, and every keyword nobody thought of would false-fail the
+check the same way. A declaration naming a type outside the closed set fails the other way and says
+so, so the reading can never go quietly blind. The third reading matches
+`ANY(current_schemas(false))`, the search path the sweep's own unqualified `SELECT` resolves through -
+`current_schema()` alone was NARROWER than the sweep, the fail-open direction this module refuses -
+while the view and other-schema false alarms stay closed through the `BASE TABLE` join. A false alarm
+on the clean-slate check is as corrosive as a false pass: it is the one check that has to be
+unambiguous.
 
 ### 6. Budgets are amended by measurement
 
@@ -113,6 +138,11 @@ both authors to, and the roster's asset-class uniqueness refinement left `toolin
 headroom against the original 14,000 - the condition ADR-0018's own commentary calls out, where the
 next one-line correction fails an unrelated ceiling. `tooling` moves to 14,200; `domain` and
 `infrastructure` are unmoved and merely re-measured.
+
+**Re-measured by D-196 and D-197** (review rounds), with NO ceiling moving in either: the pairing is
+5,150 / 8,250 / 14,200 against 5,079 / 8,184 / 14,101 as this round lands - 71, 66 and 99 lines of
+correction room, named rather than banked. A ceiling carrying a stale measurement is a ceiling nobody
+re-took.
 
 `contracts` and `presentation` are unmoved. Headroom is *named* rather than banked, so the next change
 to any of these layers reads as the measured amendment it is. No ceiling here was paid for by deleting

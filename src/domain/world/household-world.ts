@@ -52,18 +52,35 @@ export const REGISTRATION_TYPES = [
 export type RegistrationType = (typeof REGISTRATION_TYPES)[number];
 
 /**
- * The registrations on which a beneficiary designation is MATERIAL - the ones
- * where the designation is how the asset actually passes. Everywhere else it
- * passes by survivorship, by the trust's or entity's own documents, or through
- * the estate, so an account with no designation is not a gap and nothing may
- * report one.
+ * CAN a registration carry a beneficiary designation at all? Every registration
+ * titled to a natural person can: an individual or joint account takes a
+ * transfer-on-death designation as routinely as an IRA takes a beneficiary form.
+ * A registration titled to a TRUST or an ENTITY cannot - the trust instrument or
+ * the operating agreement says who receives, and there is no designation to
+ * make - so on those, and only those, a surface may say the registration does
+ * not take one.
  *
- * ONE source of truth, deliberately: the health factor scores this set and the
- * detail surface words its note from it, so a reader can never be told an
- * account is missing a designation beside a health panel that says the same
- * household is complete.
+ * Deliberately SEPARATE from `BENEFICIARY_SCORED_REGISTRATIONS`, and neither set
+ * answers the other's question. Collapsing the two is what put "this
+ * registration does not take a beneficiary designation" on ninety joint and
+ * individual accounts, which is simply untrue of them.
  */
-export const BENEFICIARY_BEARING_REGISTRATIONS: ReadonlySet<RegistrationType> = new Set<RegistrationType>([
+export const BENEFICIARY_CAPABLE_REGISTRATIONS: ReadonlySet<RegistrationType> = new Set<RegistrationType>([
+  "individual", "joint-wros", "ira-traditional", "ira-roth", "rollover-ira", "sep-ira", "education-529",
+]);
+
+/**
+ * DOES a missing designation count against the household's health? Only where
+ * the designation is how the asset actually passes: a retirement account and a
+ * 529 pass by designation and nothing else, so an absence there is a real
+ * shortfall. On an individual or joint account a designation is available but
+ * optional - the account still passes, by survivorship or through the estate -
+ * so an absence is a fact, not a deficiency, and nothing may report it as one.
+ *
+ * The health factor scores THIS set and the detail note is worded from it, so
+ * the score and the sentence beside it cannot disagree.
+ */
+export const BENEFICIARY_SCORED_REGISTRATIONS: ReadonlySet<RegistrationType> = new Set<RegistrationType>([
   "ira-traditional", "ira-roth", "rollover-ira", "sep-ira", "education-529",
 ]);
 

@@ -14,7 +14,7 @@
  * `deriveArtifactProvenance`, which watermarks it and bars it from feeding a
  * compliance decision - this module returns the arithmetic, never the licence.
  */
-import { BENEFICIARY_BEARING_REGISTRATIONS, type WorldHousehold } from "./household-world";
+import { BENEFICIARY_SCORED_REGISTRATIONS, type WorldHousehold } from "./household-world";
 
 export const HEALTH_FACTOR_IDS = [
   "liquidity", "evidence-freshness", "instruction-integrity",
@@ -144,24 +144,28 @@ function instructionFactor(household: WorldHousehold): Omit<HealthFactor, "weigh
   };
 }
 
+/** Scored over the accounts a designation actually GOVERNS, never over every
+ * account that could carry one: an individual or joint account passes by
+ * survivorship or through the estate, so no designation on it is a fact rather
+ * than a shortfall, and scoring it as one would invent a deficiency. */
 function beneficiaryFactor(household: WorldHousehold): Omit<HealthFactor, "weightBps"> {
-  const bearing = household.accounts.filter((account) => BENEFICIARY_BEARING_REGISTRATIONS.has(account.registration));
-  const complete = bearing.filter((account) => {
+  const governed = household.accounts.filter((account) => BENEFICIARY_SCORED_REGISTRATIONS.has(account.registration));
+  const complete = governed.filter((account) => {
     const primaryBps = account.beneficiaries
       .filter((beneficiary) => beneficiary.tier === "primary")
       .reduce((sum, beneficiary) => sum + beneficiary.shareBps, 0);
     return primaryBps === 10_000;
   });
-  const score = bearing.length === 0 ? 100 : clamp((complete.length * 100) / bearing.length);
-  const statement = bearing.length === 0
-    ? "No account in this household carries a beneficiary designation."
-    : `${complete.length} of ${bearing.length} beneficiary-bearing ${plural(bearing.length, "account has", "accounts have")} a primary designation totalling 100%.`;
+  const score = governed.length === 0 ? 100 : clamp((complete.length * 100) / governed.length);
+  const statement = governed.length === 0
+    ? "No account in this household passes by beneficiary designation."
+    : `${complete.length} of ${governed.length} ${plural(governed.length, "account that passes", "accounts that pass")} by designation ${plural(governed.length, "has", "have")} a primary designation totalling 100%.`;
   return {
     id: "beneficiary-completeness",
     label: "Beneficiary completeness",
     score,
     statement,
-    readRecords: [`${bearing.length} beneficiary-bearing ${plural(bearing.length, "account", "accounts")}`],
+    readRecords: [`${governed.length} ${plural(governed.length, "account", "accounts")} passing by designation`],
   };
 }
 

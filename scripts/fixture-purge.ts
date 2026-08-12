@@ -46,16 +46,24 @@ const PROV_SOURCE_DECLARATION_RE = /^"?prov_source"?[\s(]/i;
  * the index this very sweep would want - and every one of those would fail the
  * check while naming an unswept table that does not exist. A false alarm on the
  * one check that has to be unambiguous is as corrosive as a false pass. */
-const PROV_SOURCE_DECLARED_RE = /(?<![.\w])"?prov_source"?\s+([a-z][a-z0-9_]*)/gi;
-/** What can follow a REFERENCE to the column but never its type, so a use is not
- * miscounted as a declaration: `CHECK (prov_source IS NOT NULL)`,
- * `ALTER COLUMN prov_source SET NOT NULL`, `ORDER BY prov_source DESC`. An
- * operator (`prov_source = 'fixture'`) or a delimiter (`(prov_source)`,
- * `prov_source,`) is not an identifier at all, so it never reaches this list. */
-const REFERENCE_FOLLOWERS = new Set([
-  "and", "as", "asc", "between", "collate", "desc", "drop", "from", "ilike", "in",
-  "is", "like", "not", "on", "or", "set", "similar", "then", "to", "type", "using", "when", "where",
-]);
+const PROV_SOURCE_DECLARED_RE = /(?<![.\w])"?prov_source"?\s+"?([a-z][a-z0-9_]*)"?/gi;
+/**
+ * The TYPE a `prov_source` declaration names. Declaration-versus-reference is
+ * decided by what a DECLARATION looks like, never by listing what may follow a
+ * REFERENCE: the set of SQL keywords that can follow a column reference is OPEN
+ * and grows with ordinary schema work - `DROP COLUMN prov_source CASCADE`,
+ * `ON t (prov_source NULLS LAST)`, a reporting view's `GROUP BY prov_source
+ * ORDER BY ...` - and every keyword nobody thought to list would be counted as a
+ * declaration and fail this check while naming an unswept table that does not
+ * exist. The set of types a text-valued provenance column is declared as is
+ * small and CLOSED, so it cannot go stale as SQL usage around the column grows.
+ *
+ * A declaration naming a type outside this set fails the OTHER way - fewer
+ * declarations than the structural parse found - and is reported as this list
+ * having gone stale, which is a sentence an author can act on. Either direction
+ * fails; neither is a silent pass (charter #4).
+ */
+const PROVENANCE_COLUMN_TYPES = new Set(["text", "varchar", "character", "char", "citext"]);
 
 /** Both readings run on comment-free SQL, so a comment naming the column is
  * neither a declaration nor a disagreement. */
@@ -144,13 +152,13 @@ export function provenanceBearingTables(ddl: string = MIGRATION_SQL): string[] {
 }
 
 /** Every place the DDL DECLARES a `prov_source` column, counted by reading the
- * text rather than the table structure: the column name followed by what only a
- * type can be. A mention used as an expression or an index key is a reference,
- * not a declaration, and is not counted. */
+ * text rather than the table structure: the column name followed by a column
+ * TYPE. A mention used as an expression, an index key or an `ALTER` target is a
+ * reference, not a declaration, and is not counted. */
 export function provenanceDeclarationScan(ddl: string): number {
   PROV_SOURCE_DECLARED_RE.lastIndex = 0;
   return [...withoutComments(ddl).matchAll(PROV_SOURCE_DECLARED_RE)]
-    .filter((match) => !REFERENCE_FOLLOWERS.has(match[1]!.toLowerCase()))
+    .filter((match) => PROVENANCE_COLUMN_TYPES.has(match[1]!.toLowerCase()))
     .length;
 }
 
@@ -162,13 +170,24 @@ export function provenanceDeclarationScan(ddl: string): number {
  * written yet - is still counted there, so the two disagree. That disagreement
  * is reported as a PROBLEM, which fails the check: a table the derivation misses
  * must never be a table the sweep silently reports clean (charter #4).
+ *
+ * The two directions mean different things and are diagnosed separately. More
+ * declarations than the parse found is the hole this exists for: a
+ * provenance-bearing column the sweep never reads. Fewer means the text reading
+ * no longer recognizes a type the parse accepted, so it has stopped being able
+ * to see that hole at all - equally fatal, and a different repair.
  */
 export function provenanceDerivationProblems(ddl: string = MIGRATION_SQL): string[] {
   const declared = provenanceDeclarationScan(ddl);
   const parsed = provenanceColumnDeclarations(ddl).length;
   if (declared === parsed) return [];
+  if (declared > parsed) {
+    return [
+      `the shipped DDL declares prov_source ${declared} time(s) but the column parse recognized ${parsed} declaration(s) - a provenance-bearing column outside the sweep would report its table clean without ever being read (charter #4)`,
+    ];
+  }
   return [
-    `the shipped DDL declares prov_source ${declared} time(s) but the column parse recognized ${parsed} declaration(s) - a provenance-bearing column outside the sweep would report its table clean without ever being read (charter #4)`,
+    `the column parse recognized ${parsed} prov_source declaration(s) but the text scan recognized only ${declared} - a declaration names a column type the cross-check does not know, so it can no longer see a declaration the parse misses; add the type to PROVENANCE_COLUMN_TYPES (charter #4)`,
   ];
 }
 

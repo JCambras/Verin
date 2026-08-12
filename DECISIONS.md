@@ -7753,3 +7753,67 @@ domain 5,058, infrastructure 8,184, tooling 14,077 against UNCHANGED 5,150 / 8,2
 readings, the seed refusal, the reachability rule and the four proof-log entries revert together. The
 seed refusal is the one behaviour change a caller can observe: before it, a colliding load returned
 `ok` with zero counts.
+
+### D-210 · 2026-08-12 · reversible · Populated-world review round five: a freshness signal that can fire, two beneficiary questions, and a clean-slate reading off a closed set
+
+**Holding freshness was a constant wearing a measurement's clothes.** `holdingsFor` passed each
+positions observation as its OWN reference instant, so `ageDays` was always nought and every one of the
+1,815 holdings the world can emit read `high` - 895 of them, in 47 of the 100 households, sitting on a
+snapshot 6-12 days old against a `freshLiquidityWindowDays` of 5, and a lot could claim more confidence
+than the account containing it. This did not merely mislabel stored provenance: the receding treatment
+the detail surface leans on is the one trust affordance a reader does not have to ask for, and an
+affordance that cannot fire is worse than none, because a reader believes they are being warned. The
+materializer now passes the world's `asOf`, as every other record in it already did, which makes its own
+header ("a record whose observation is older than the roster's freshness window is `medium`, so the
+surfaces that recede stale values are reading a real signal rather than a constant") true for holdings
+too: 920 high, 895 medium. Proved on the SCREEN and not only in the fixture - the new suite renders the
+real surface, opens an account, and reads the opacity the browser would apply to a stale lot and to a
+same-day one, so neither "nothing fades" nor "everything fades" can pass. The world regenerates to
+digest `d684bc48…`; `pnpm world:validate` is byte-identical. PF-271.
+
+**Two beneficiary questions, so two sets.** D-208 made `BENEFICIARY_BEARING_REGISTRATIONS` the ONE
+source of truth for the health factor and the detail copy, which fixed a real defect - a fabricated
+deficiency on a third of the accounts, on every one of the hundred household pages - and then created
+its mirror image, because one set was answering two different questions. Wording the empty beneficiary
+panel from a MATERIALITY set told a reader that an individual or joint account "does not take a
+beneficiary designation" on 90 accounts across 90 pages, when a transfer-on-death designation is the
+standard mechanism on both. There are three states, not two, so there are two named sets and neither
+answers the other's question: `BENEFICIARY_CAPABLE_REGISTRATIONS` (can this registration carry a
+designation at all? every personally-titled one can; a trust or an entity account cannot) and
+`BENEFICIARY_SCORED_REGISTRATIONS` (does a missing designation count against health? only where the
+designation is how the asset actually passes). The health factor and the deficiency note read the
+second; the empty panel reads the first. The surface therefore renders three states: a designation is
+listed, the registration can carry one and none is on file (the neutral fact, never called a gap unless
+health scores it), or the registration takes none at all. The health factor's own copy stops saying
+"beneficiary-bearing" and says what it means - accounts that pass by designation. PF-272.
+
+**The clean-slate cross-check decides off a CLOSED set.** D-209's declaration-aware reading kept a
+blocklist of keywords that may follow a column reference, and that set is OPEN: `ALTER TABLE t DROP
+COLUMN prov_source CASCADE`, `CREATE INDEX … ON t (prov_source NULLS LAST)` and a reporting view's
+`GROUP BY prov_source ORDER BY prov_source` were each counted as a declaration, failing `pnpm
+fixture:check` and the blocking `world` CI job while naming a provenance-bearing column outside the
+sweep that does not exist. The set of column TYPES a provenance column is declared as is small and
+closed, so the reading is inverted to decide off that (`PROVENANCE_COLUMN_TYPES`) - and it cannot go
+quietly blind either: a declaration naming a type outside the set fails in the OTHER direction with its
+own message naming the list to widen, rather than agreeing with the structural parse by accident. Both
+directions fail; neither is a silent pass. PF-273.
+
+**Three documents that must agree now agree.** `docs/world.md` is NORMATIVE for the populated world and
+still described the second reading as "a plain count of every `prov_source` the DDL names" - the
+mention-counting reading D-209 deliberately replaced - and `docs/adr/0057-populated-world.md` carried
+the identical superseded sentence, while `AGENTS.md` had been updated in the same commit. A normative
+document describing a reading the code no longer performs is the same defect class as every other
+finding on this branch. `docs/world.md` is corrected directly and completed in the two places it had
+gone thin (the both-authors rules list gains the roster-instrument reachability rule and the holding
+freshness rule; the `pnpm db:seed` paragraph gains the written-row counting and the loud refusal); the
+ADR is amended in place through the convention it already uses, not silently rewritten.
+
+**Line budgets: no ceiling moves; three figures re-taken.** 5,150 / 8,250 / 14,200 against RE-MEASURED
+5,079 / 8,184 / 14,101 as this round lands - 71, 66 and 99 lines of correction room, named rather than
+banked. Restated in `line-budget.test.ts` and in ADR-0057 so no reader takes a superseded pairing at its
+word.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the two beneficiary sets,
+the clean-slate type reading and the three proof-log entries revert together. The observable changes are
+the world's holding confidences, the beneficiary panel's copy on individual and joint accounts, and the
+health factor's beneficiary sentence.

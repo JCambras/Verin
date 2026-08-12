@@ -13526,3 +13526,100 @@ every row, and a same-org same-digest re-run replays through the idempotency cac
 transaction is proved to have rolled back whole.
 
 **Date:** 2026-08-12 (review round four, ADR-0057 / D-209).
+
+## PF-271 · a stale positions snapshot is a real signal, not a constant · `scripts/world/materialize.ts` + `src/__tests__/unit/household-freshness.test.tsx`
+
+**Invariant:** a holding's confidence is measured against the WORLD's instant, never against its own
+observation. Comparing an observation with itself makes every lot nought days old, so the freshness
+affordance the detail surface leans on reads a constant - and a trust affordance that cannot fire is
+worse than none, because a reader believes they are being warned.
+
+**Injection - the observation as its own reference.** Restored
+`provenanceAt(observedAt, observedAt, roster.clock.freshLiquidityWindowDays)` in `holdingsFor`, the
+call this round changed, and regenerated nothing (the check reads the generator, not the tree).
+
+**Observed failure (`pnpm exec vitest run --project app household-freshness`):**
+```
+× holding confidence degrades with the age of the snapshot behind it
+AssertionError: expected [ 'abernathy-rosalind/isolde-529/VCSH: high, expected medium at 6 days', … ] to deeply equal []
+  … 895 holdings in 47 households, every one of them labeled high on an out-of-window snapshot
+ ❯ src/__tests__/unit/household-freshness.test.tsx:96:43
+Tests  1 failed | 4 passed (5)
+```
+
+**Executable companions (run on every build):** the suite refuses to assert about a world that does not
+contain both cases (47 out-of-window households and 14 same-day ones, or it fails as vacuous), renders
+the real surface and reads the opacity the browser would apply - an out-of-window lot must render below
+full strength AND at the established receded colour, and a same-day lot must render at full strength,
+so "everything is faded" cannot pass either. A lot may never claim more confidence than the account
+holding it.
+
+**Reverted:** `scripts/world/materialize.ts` restored; `Tests 5 passed`.
+
+**Date:** 2026-08-12 (review round five, ADR-0057 / D-210).
+
+## PF-272 · two beneficiary questions, two sets, and neither answers the other's · `src/app/households/build-detail.ts` + `src/domain/world/household-world.ts` + `src/__tests__/unit/household-beneficiary-copy.test.ts`
+
+**Invariant:** whether a registration CAN carry a beneficiary designation and whether a missing one
+counts against health are different questions. One set answering both got the surface wrong in both
+directions in turn - first inventing a deficiency on a third of the accounts, then denying a capability
+an individual or joint account really has.
+
+**Injection - one set answering both questions.** Pointed `beneficiaryEmptyLabel` back at
+`BENEFICIARY_SCORED_REGISTRATIONS`, the collapse this round undoes.
+
+**Observed failure (`pnpm exec vitest run --project app household-beneficiary-copy`):**
+```
+× never tells a reader a registration cannot carry a designation when it can
+AssertionError: smith-robert-elaine (joint-wros) can carry a designation: expected 'This registration does not take a ben…' to be 'None designated.'
+ ❯ src/__tests__/unit/household-beneficiary-copy.test.ts:83:107
+× state two, unscored: a joint account with nothing designated states the fact, not a gap
+ ❯ src/__tests__/unit/household-beneficiary-copy.test.ts:129:69
+Tests  2 failed | 7 passed (9)
+```
+
+**Executable companions (run on every build):** the two sets are proved to actually DIFFER (`individual`
+and `joint-wros` are capable and unscored, exactly), scored is proved a subset of capable, and each of
+the three rendered states is asserted reachable and distinct - a designation listed with nothing said
+against it, an IRA with none stated as the gap it is, a joint or individual account stating the fact
+without a gap, and a trust or entity account saying the registration takes none. The whole-world pass
+still holds the note and the health factor to the same verdict, so neither direction can drift alone.
+
+**Reverted:** `src/app/households/build-detail.ts` restored; `Tests 9 passed`.
+
+**Date:** 2026-08-12 (review round five, ADR-0057 / D-210).
+
+## PF-273 · the clean-slate cross-check reads DECLARATIONS off a closed set of types · `scripts/fixture-purge.ts` + `src/__tests__/fitness/clean-slate.test.ts`
+
+**Invariant:** the second reading recognizes a declaration by the column TYPE it names, never by a list
+of keywords that may follow a reference. That list is OPEN and grows with ordinary schema work, so every
+keyword nobody thought of fails `pnpm fixture:check` and the blocking `world` CI job while naming a
+provenance-bearing column outside the sweep that does not exist. A false alarm on the one check whose
+whole value is being unambiguous is as corrosive as a false pass.
+
+**Injection - the open blocklist.** Restored the `REFERENCE_FOLLOWERS` keyword set and its negated
+filter, the reading this round replaced.
+
+**Observed failure (`pnpm exec vitest run --project fitness clean-slate`):**
+```
+× enforces: a reference the DDL happens to write next to an unlisted keyword is still a reference
+AssertionError: seven mentions of the column, exactly one declaration: expected 5 to be 1
+ ❯ src/__tests__/fitness/clean-slate.test.ts:141:78
+× a declaration naming a type the text scan does not know fails, rather than going quietly blind
+AssertionError: expected 1 to be +0
+ ❯ src/__tests__/fitness/clean-slate.test.ts:221:46
+Tests  2 failed | 19 passed (21)
+```
+Every line in that case is ordinary schema work: `(prov_source NULLS LAST)`, `(prov_source
+text_pattern_ops)`, a view's `GROUP BY prov_source ORDER BY prov_source`, and
+`DROP COLUMN prov_source CASCADE`.
+
+**Executable companions (run on every build):** the closed set cannot go quietly blind either - a
+declaration naming a type outside it is proved to fail in the OTHER direction, naming
+`PROVENANCE_COLUMN_TYPES` rather than a phantom unswept table. PF-268's real holes still fail: an
+`ALTER TABLE … ADD COLUMN prov_source text` and a `CREATE UNLOGGED TABLE` the structural parse cannot
+read are both counted here and refused, and the shipped DDL's seven declarations still agree exactly.
+
+**Reverted:** `scripts/fixture-purge.ts` restored; `Tests 21 passed`.
+
+**Date:** 2026-08-12 (review round five, ADR-0057 / D-210).

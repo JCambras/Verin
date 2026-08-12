@@ -14,7 +14,7 @@
 import { metric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
 import {
-  BENEFICIARY_BEARING_REGISTRATIONS,
+  BENEFICIARY_CAPABLE_REGISTRATIONS, BENEFICIARY_SCORED_REGISTRATIONS,
   type WorldAccount, type WorldBankInstruction, type WorldHousehold,
 } from "@domain/world/household-world";
 import { REGISTRATION_LABELS, STATE_LABELS, buildHealthVM, formatDay, groupDigits, titleize } from "./build";
@@ -89,18 +89,16 @@ function entitiesOf(household: WorldHousehold): EntityVM[] {
 }
 
 /**
- * A beneficiary set that does not total 100% is the finding, so the surface
- * states it rather than leaving a reader to add four percentages.
- *
- * MATERIALITY IS THE SAME SET THE HEALTH FACTOR SCORES
- * (`BENEFICIARY_BEARING_REGISTRATIONS`), so the note and the score beside it
- * cannot disagree. On a registration that takes no designation - a joint account
- * passing by survivorship, a trust or an LLC passing by its own documents -
- * there is nothing to designate, and reporting that absence as a gap invents a
- * deficiency that cannot exist.
+ * The DEFICIENCY, and only a deficiency: read from
+ * `BENEFICIARY_SCORED_REGISTRATIONS`, the same set the health factor scores, so
+ * the note and the score beside it cannot disagree. On an account a designation
+ * does not govern - a joint account passing by survivorship, an individual
+ * account passing through the estate, a trust or an LLC passing by its own
+ * documents - there is no shortfall to report, and inventing one is the failure
+ * this gate exists to catch.
  */
 function beneficiaryNote(account: WorldAccount): string | null {
-  if (!BENEFICIARY_BEARING_REGISTRATIONS.has(account.registration)) return null;
+  if (!BENEFICIARY_SCORED_REGISTRATIONS.has(account.registration)) return null;
   const primaryBps = account.beneficiaries
     .filter((beneficiary) => beneficiary.tier === "primary")
     .reduce((sum, beneficiary) => sum + beneficiary.shareBps, 0);
@@ -109,11 +107,18 @@ function beneficiaryNote(account: WorldAccount): string | null {
   return `Primary designations total ${primaryBps / 100}%, not 100% - this account needs a restatement.`;
 }
 
-/** What the beneficiary panel says when the account carries none: on a
- * beneficiary-bearing registration that is a real absence, and everywhere else
- * it is the registration doing what it does. */
+/**
+ * What an EMPTY beneficiary panel says, read from
+ * `BENEFICIARY_CAPABLE_REGISTRATIONS` - a different question, so a different
+ * set. Whether an account CAN carry a designation is a fact about its titling;
+ * whether the absence of one is a deficiency is the health question above, and
+ * neither set may answer the other's. An individual or joint account takes a
+ * transfer-on-death designation as routinely as an IRA takes a beneficiary form,
+ * so telling a reader it cannot is the same false statement as calling the
+ * absence a gap, in the opposite direction.
+ */
 function beneficiaryEmptyLabel(account: WorldAccount): string {
-  return BENEFICIARY_BEARING_REGISTRATIONS.has(account.registration)
+  return BENEFICIARY_CAPABLE_REGISTRATIONS.has(account.registration)
     ? "None designated."
     : "This registration does not take a beneficiary designation.";
 }

@@ -121,6 +121,34 @@ describe("clean-slate fence", () => {
     expect(provenanceDerivationProblems(ddl)).toEqual([]);
   });
 
+  it("enforces: a reference the DDL happens to write next to an unlisted keyword is still a reference", () => {
+    // A declaration is recognized by the TYPE it names, never by listing what may
+    // follow a reference: that list is OPEN and every keyword nobody thought of
+    // would be counted as a declaration and fail the whole check while naming an
+    // unswept table that does not exist. Each line here is ordinary schema work.
+    const ddl = [
+      "CREATE TABLE IF NOT EXISTS swept (",
+      "  id text PRIMARY KEY,",
+      "  prov_source text NOT NULL",
+      ");",
+      "CREATE INDEX swept_prov ON swept (prov_source NULLS LAST);",
+      "CREATE INDEX swept_prov_ops ON swept (prov_source text_pattern_ops);",
+      "CREATE VIEW swept_by_source AS",
+      "  SELECT prov_source, count(*) FROM swept GROUP BY prov_source ORDER BY prov_source;",
+      "ALTER TABLE swept DROP COLUMN prov_source CASCADE;",
+    ].join("\n");
+    expect(provenanceBearingTables(ddl)).toEqual(["swept"]);
+    expect(provenanceDeclarationScan(ddl), "seven mentions of the column, exactly one declaration").toBe(1);
+    expect(provenanceDerivationProblems(ddl)).toEqual([]);
+  });
+
+  it("enforces: a QUOTED column with a parameterized type is a declaration", () => {
+    const ddl = 'CREATE TABLE IF NOT EXISTS widened (\n  "prov_source" varchar(32) NOT NULL\n);';
+    expect(provenanceBearingTables(ddl)).toEqual(["widened"]);
+    expect(provenanceDeclarationScan(ddl)).toBe(1);
+    expect(provenanceDerivationProblems(ddl)).toEqual([]);
+  });
+
   it("enforces: every table the world's seed writes is inside the sweep", () => {
     const tables = provenanceBearingTables();
     for (const table of ["households", "contacts", "tasks"]) {
@@ -181,6 +209,20 @@ describe("clean-slate fence", () => {
       expect(problems[0]).toContain("declares prov_source 2 time(s)");
       expect(problems[0]).toContain("recognized 1 declaration(s)");
       expect(cleanSlateViolations(sweep([{ table: "swept", rows: 0 }], problems))).toEqual(problems);
+    });
+
+    it("a declaration naming a type the text scan does not know fails, rather than going quietly blind", () => {
+      // The closed type list is what keeps a reference from being miscounted as a
+      // declaration, so a type outside it is a real risk: the second reading
+      // stops being able to see the hole it exists to see. It fails in the OTHER
+      // direction and says so, instead of agreeing with the parse by accident.
+      const ddl = "CREATE TABLE IF NOT EXISTS typed (\n  prov_source provenance_source NOT NULL\n);";
+      expect(provenanceBearingTables(ddl)).toEqual(["typed"]);
+      expect(provenanceDeclarationScan(ddl)).toBe(0);
+      const problems = provenanceDerivationProblems(ddl);
+      expect(problems.length).toBe(1);
+      expect(problems[0]).toContain("the text scan recognized only 0");
+      expect(problems[0]).toContain("PROVENANCE_COLUMN_TYPES");
     });
 
     it("the cross-check does not share the derivation's reading, so it can actually disagree", () => {

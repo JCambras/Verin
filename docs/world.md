@@ -47,9 +47,11 @@ household's file - the property the fence checks directly.
 provenance, derives holding lots, and fixes emission order. The ninety are never structurally
 thinner than the ten - only less specific, and each household says which it is on its own surface.
 
-**Rules that hold for both authors.** They are checked on the generated OUTPUT
-(`accountRuleProblems` in `scripts/world/validate.ts`), so the hand-authored ten cannot quietly
-break one the generator no longer can:
+**Rules that hold for both authors.** Every one is checked on the generated OUTPUT rather than on a
+spec file, so the hand-authored ten cannot quietly break a rule the generator no longer can. The first
+three are `accountRuleProblems` in `scripts/world/validate.ts`, the fourth is
+`instrumentReachProblems` beside it, and the fifth is asserted against the rendered surface
+(`src/__tests__/unit/household-freshness.test.tsx`):
 
 - An account never names its own owner as a beneficiary. A sole client with nobody else in the
   household simply has NO designation - which is realistic, is what the detail surface already says,
@@ -59,6 +61,12 @@ break one the generator no longer can:
   page a reader opens.
 - No account holds the same instrument twice. The only way to mint one was a model portfolio naming
   an asset class twice, which the roster schema now refuses at spec load.
+- Every instrument the roster carries is held by SOME account (`instrumentReachProblems`). A sleeve
+  derives WHICH instruments it holds, not only how many, so a roster entry no account can ever hold
+  is a world thinner than its own vocabulary claims - and it fails rather than sitting dead.
+- Every holding's confidence is measured against the world's own `asOf`, never against its own
+  observation. A lot on a positions snapshot older than `freshLiquidityWindowDays` is `medium`, so the
+  receding treatment on the detail surface is reading a real signal rather than a constant.
 
 ## The awkward cases, on purpose
 
@@ -85,14 +93,25 @@ The generator is **forbidden** from emitting a health field at all - the `world-
 fails on one. A stored score is a typed number wearing a computation's clothes; the whole point is
 that the figure is earned.
 
-**Materiality is ONE set, not two.** `BENEFICIARY_BEARING_REGISTRATIONS`
-(`src/domain/world/household-world.ts`) names the registrations on which a designation is how the
-asset actually passes - traditional, Roth, rollover and SEP IRAs, and 529s. The beneficiary factor
-scores that set and the detail surface words its note from the same set. Everywhere else the asset
-passes by survivorship or by the entity's own documents, so the surface says the registration takes
-no designation and reports no gap: an absence on a joint or an LLC account is not a deficiency, and
-stating one on a third of the accounts contradicted the health panel sitting beside it on every one
-of the hundred household pages.
+**Two questions about beneficiaries, so TWO sets, and neither answers the other's question.** Both
+live in `src/domain/world/household-world.ts`:
+
+| Set | Question | Members |
+|---|---|---|
+| `BENEFICIARY_CAPABLE_REGISTRATIONS` | CAN this registration carry a designation? | every personally-titled registration - individual and joint included |
+| `BENEFICIARY_SCORED_REGISTRATIONS` | Does a MISSING designation count against health? | traditional, Roth, rollover and SEP IRAs, and 529s |
+
+The health factor scores the second; the detail note is worded from the second, so the score and the
+sentence beside it cannot disagree. The empty beneficiary panel is worded from the FIRST. That gives
+the surface three states: a designation is listed; the registration can carry one and none is on file
+(a neutral fact, called a gap only where health scores it); the registration takes none at all.
+
+One set answering both questions got the surface wrong in both directions in turn. Scoring every
+registration invented a deficiency on a third of the accounts, on every one of the hundred household
+pages, beside a health panel that said the same household was complete. Then wording the empty panel
+from the health set told a reader that an individual or joint account cannot take a
+transfer-on-death designation - which is just as untrue, in the opposite direction. An absence is
+never reported as a gap, and a capability is never denied.
 
 ## How it reaches a surface
 
@@ -111,23 +130,49 @@ adapter is **replaced, not relabeled**, when a real `EvidenceSource` lands (ADR-
 `prov_source = 'fixture'`. It deliberately does **not** seed financial accounts: an account in the
 house CRM is the output of the account-opening flow, and custodial positions are evidence.
 
+The seed counts rows **written** (`RETURNING id`), never rows offered, and a load that offered
+households and wrote none **refuses** with a typed `CONFLICT` naming the collision. World record ids
+are derived from the world seed, so they are the same bytes in every org: only the first org to load a
+world receives it, and a second firm's silently empty household directory is the worst available
+outcome. Making a second firm actually receive its own copy needs org-scoped ids - follow-up
+`fu-world-org-scoped-ids`.
+
 ## The clean-slate guarantee
 
 ```
-pnpm fixture:check            # fails on the FIRST fixture-marked row (run against production)
-pnpm fixture:check --report   # counts them (what a seeded development store wants)
+pnpm fixture:check                          # fails on the FIRST fixture-marked row (run against production)
+pnpm fixture:check --report                 # counts them (what a seeded development store wants)
+pnpm fixture:check --report --expect-rows=n # the same count as an ASSERTION (CI uses it after the seed)
 ```
+
+`--report` exits 0 whatever it finds, which is what a developer wants and what a GATE must never be:
+`--expect-rows` is how the CI step after the seed proves the world actually landed, because a report
+that finds nothing proves nothing (charter #4).
 
 The sweep derives its table list from the shipped DDL - every table whose DDL carries a
 `prov_source` column - so a new provenance-bearing table widens the guarantee automatically. A sweep
 that finds no such table reports a problem rather than passing vacuously (charter #4).
 
 That derivation is read THREE ways, and any disagreement is a sweep problem, which fails the runner:
-a structural parse of each table's balanced body and its top-level column items; a plain count of
-every `prov_source` the DDL names, which shares no code with the parse and therefore catches a
-declaration shape the parse does not recognize; and the store's OWN column catalog, which is not a
-reading of the DDL at all and catches a provenance-bearing table created outside `MIGRATION_SQL`.
+
+1. a **structural parse** of each table's balanced body and its top-level column items;
+2. a **text scan** for every `prov_source` DECLARATION - the column name followed by a column TYPE -
+   which shares no code with the parse and therefore catches a declaration shape the parse does not
+   recognize (an `ALTER TABLE ... ADD COLUMN`, a `CREATE UNLOGGED TABLE`). It counts DECLARATIONS,
+   never mentions: a column-level `CHECK (prov_source IN (...))` names the column twice for one
+   declaration, and `CREATE INDEX ... ON t (prov_source)` is the index this cross-tenant sweep would
+   itself want. Declaration-versus-reference is decided off the closed set of column types
+   (`PROVENANCE_COLUMN_TYPES`), never off a list of keywords that may follow a reference - that list
+   is open, and every keyword nobody thought of (`DROP COLUMN prov_source CASCADE`,
+   `(prov_source NULLS LAST)`, `GROUP BY prov_source ORDER BY ...`) would fail the check while naming
+   an unswept table that does not exist. A declaration naming a type outside the closed set fails the
+   OTHER way and says so, so the reading can never go quietly blind;
+3. the store's **OWN column catalog** - base tables in `ANY(current_schemas(false))`, the search path
+   the sweep's own unqualified `SELECT` resolves through - which is not a reading of the DDL at all
+   and catches a provenance-bearing table created outside `MIGRATION_SQL`.
+
 Two readings that resolve a declaration the same way agree by construction and cross-check nothing.
+A false alarm here is as corrosive as a false pass: it is the one check that has to be unambiguous.
 The fixture adapter additionally refuses to serve anything under `APP_ENV=production`.
 Proofs PF-255, PF-260, PF-261.
 
