@@ -8290,3 +8290,66 @@ Migration 10 is additive and its `UPDATE` is `WHERE`-scoped, so a store that has
 by the code being reverted; version 9's DDL is back to its as-shipped bytes either way. Reverting the
 `record_origin` argument alone would return `decision_ledger` to reporting clean over its own seeded
 chain, so it reverts with the guarantee case that proves it.
+
+### D-218 · 2026-08-12 · reversible · Populated-world review round thirteen: the tenant scaffolding the sweep could not see, and a guarantee narrower than the guarantee
+
+**The demo org and its two demo users name their origin at the insert.** D-217 stated the rule - a
+default is a claim about rows you did not write - and applied it to `ledger-store.ts` while the two
+inserts directly above it in `scripts/seed-demo-store.ts` still took the DDL default. Both tables are
+swept, so `pnpm fixture:check` on a seeded store printed `orgs 0`, `users 0` and called the demo firm
+and the accounts carrying the publicly committed `verin-demo-pass-12345678` this firm's own records -
+the same shape as the `decision_ledger 0` D-217 had just closed, over rows that can actually
+authenticate. The org insert names `record_origin` (`scripts/seed-demo-store.ts`), and `recordOrigin`
+is now a REQUIRED input to `createUser` (`src/infrastructure/identity/identity-store.ts`) for the
+reason it is required on `recordDecision`: the caller knows which kind of identity it is minting and
+the repository never can, so silence has to be impossible rather than merely discouraged. The one
+other shipped caller (`scripts/load-smoke.ts`) names it too.
+
+**The purge now refuses `orgs` and `users`, and the case says so by name.** Marking them makes them
+visible, not removable: every append-only chain the seed writes is anchored to that org, and the
+credentials row references those users, so the store refuses both deletes. That is the honest state and
+it is what the guarantee case records - with the refusal quoted in the store's own words - rather than
+leaving the rows unmarked so the purge would appear to succeed.
+
+**The guarantee is measured over what the SEED WROTE, not over the tables carrying the marker.**
+D-217's end-to-end case derived its tables from `information_schema` where
+`column_name = 'record_origin'`, so it could only ever see the eight tables migration 9 altered. The
+same seed writes into `evidence_snapshots`, `decision_input_bundles`, `decision_input_bundle_evidence`,
+`decision_records`, `audit_log`, `audit_anchor`, `decision_ledger_anchor`, `decision_state_projection`,
+`credentials` and `crm_write_cache`, none of which carries either provenance column - so a seeded path
+writing into one of them was invisible to the very case added to catch invisible seeded paths, while
+its message claimed "everything else the seed wrote is gone". The case now snapshots every base table
+in the live catalog before and after the seed and again after the purge, and asserts that every table
+the seed grew is back to its pre-seed count OR named in `IRREVERSIBLE_SEED_RESIDUE` with the reason.
+The list is exact in both directions: a name the seed no longer earns fails as loudly as a seeded table
+missing from it. PF-289 proves it with two injections - a seed write into `sessions` (no marker at all)
+and an unnamed-origin seed write into `financial_accounts` (marker present, insert silent).
+
+**What that list actually says, and why it is not a retreat.** The demonstration seed is
+IRREVERSIBLE: the decision chain and the audit chain are append-only by DDL trigger, their replay
+sources and heads describe entries that cannot be removed, and the tenant and identities those chains
+are anchored to cannot be deleted while they exist. The clean-slate guarantee was never "the seed can
+be undone" - it is that a production instance was never seeded (`assertSeedableEnvironment` refuses
+`APP_ENV=production` before a store is opened) AND that any demonstration row is COUNTABLE if one is
+there. Stating the thirteen surviving tables by name is that guarantee written down; the previous
+wording implied a reversibility the design does not have.
+
+**`--expect-rows` outside `--report` is a usage error.** It was read only inside the `reportOnly`
+branch, so `pnpm fixture:check --expect-rows=100` silently ran the plain clean-slate assertion - the
+OPPOSITE verdict - and told the caller nothing about their ignored flag. It now exits 2 naming the
+mistake (`scripts/fixture-purge-check.ts`).
+
+**Banked, not fixed (`fu-record-origin-check-constraint`).** `RECORD_ORIGINS` is a closed list in
+TypeScript, but the column is plain `text NOT NULL DEFAULT 'firm-record'` with no `CHECK`, and neither
+`recordDecision` nor `appendDecisionEvents` parses the `recordOrigin` it is handed before binding it.
+Every current caller is type-checked, so this is not reachable today - but the sweep's predicate is
+`record_origin IN (<demonstration origins>)`, which means any unrecognized string reads as clean. That
+is the fail-open direction on the one column the whole guarantee keys on, and the type system is the
+only thing holding it. The repair is a `CHECK` constraint (necessarily a new version, since 9 and 10
+are shipped) or a `parseRecordOrigin` at the insert. Excluded here by the convergence rule: it hardens
+against a value no current caller can produce rather than closing a live fail-open.
+
+**Revert path:** revert this changeset. No DDL changes and no generator changes - `fixtures/world` is
+untouched and migrations 9 and 10 keep their shipped bytes. Reverting the `recordOrigin` argument on
+`createUser` alone would return `orgs` and `users` to reporting clean over the demo firm and its
+committed-password accounts, so it reverts with the guarantee case that proves it.

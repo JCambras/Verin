@@ -35,6 +35,7 @@ import {
   createSession,
   createUser,
 } from "../src/infrastructure/identity/identity-store";
+import { DEMO_SEED_ORIGIN, RECORD_ORIGIN_COLUMN } from "../src/infrastructure/store/record-origin";
 import { errorMessage } from "./error-message";
 
 const HOUSEHOLDS = 1000;
@@ -92,12 +93,20 @@ async function main(): Promise<void> {
   const db = await createMemoryDb();
   const advisorCredential = randomUUID();
   const t0 = "2026-01-01T00:00:00.000Z";
-  await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Load Firm',$2,'verin-crm',$2,'high')", [ORG, t0]);
+  // A scratch in-process store, but the origin is still NAMED (D-217): the gate's
+  // firm and advisor are synthetic, and a path that leaves the column to its
+  // default is the shape the clean-slate guarantee has failed open through.
+  await db.query(
+    `INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence,${RECORD_ORIGIN_COLUMN})`
+    + " VALUES ($1,'Load Firm',$2,'verin-crm',$2,'high',$3)",
+    [ORG, t0, DEMO_SEED_ORIGIN],
+  );
   await createUser(db, systemTenant("load-smoke", ORG), {
     email: "load@firm.test",
     displayName: "Load Advisor",
     role: "advisor",
     password: advisorCredential,
+    recordOrigin: DEMO_SEED_ORIGIN,
   });
   const authenticated = await authenticate(db, "load@firm.test", advisorCredential);
   if (!authenticated) throw new Error("load advisor authentication failed");

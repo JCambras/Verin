@@ -14180,3 +14180,49 @@ close.
 **Reverted:** both injections restored; `Tests 18 passed`.
 
 **Date:** 2026-08-12 (review round twelve, ADR-0057).
+
+## PF-289 · clean slate: the guarantee measured over what the SEED WROTE · `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** the clean-slate guarantee is checked over every row `pnpm db:seed` writes, not over the
+tables that happen to carry `record_origin`. PF-288's case derived its tables from the origin column,
+so it could only ever see the eight tables migration 9 altered - a seeded path writing into a table the
+marker does not cover was invisible to the very case added to catch invisible seeded paths. The case
+now snapshots every base table in the live catalog before and after, and what survives the purge is
+NAMED one table at a time with the reason (`IRREVERSIBLE_SEED_RESIDUE`).
+
+**Injection A - a seeded path writing into a table the marker does not cover.** An
+`INSERT INTO sessions` added to `seedDemoStore` (`scripts/seed-demo-store.ts`); `sessions` carries
+neither `prov_source` nor `record_origin`, so no origin-keyed count can see it.
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/integration/fixture-purge.test.ts -t "THE GUARANTEE"`):**
+```
+× THE GUARANTEE, against the COMPLETE seed: every row the seed wrote is gone, or NAMED with the reason it cannot be
+AssertionError: every table the seed grew is back to where it started, or NAMED with the reason it cannot be:
+  expected [ 'audit_anchor', 'audit_log', …(12) ] to deeply equal [ 'audit_anchor', 'audit_log', …(11) ]
++   "sessions",
+Tests  1 failed | 17 skipped (18)
+```
+
+**Injection B - a seeded row in a marker-BEARING table that names no origin.** An
+`INSERT INTO financial_accounts` added to `seedDemoStore` after the world load, taking the column's DDL
+default exactly as an unnamed insert does.
+
+**Observed failure (same command):**
+```
+× THE GUARANTEE, against the COMPLETE seed: every row the seed wrote is gone, or NAMED with the reason it cannot be
+AssertionError: every table the seed grew is back to where it started, or NAMED with the reason it cannot be:
+  expected [ 'audit_anchor', 'audit_log', …(13) ] to deeply equal [ 'audit_anchor', 'audit_log', …(11) ]
++   "financial_accounts",
+Tests  1 failed | 17 skipped (18)
+```
+
+**Executable companions (run on every build):** the named-residue list is exact in BOTH directions - an
+entry naming a table the seed no longer writes fails as loudly as a seeded table missing from it, so it
+cannot decay into a list of excuses; every refusal is quoted in the store's own words
+(`decision_ledger` append-only, `orgs`/`users` foreign key), so a table that stops refusing for a
+different reason fails; and the operator-facing `cleanSlateViolations` verdict is asserted to name
+exactly the tables that still hold countable demonstration rows and nothing else.
+
+**Reverted:** both injections restored; `Tests 18 passed`.
+
+**Date:** 2026-08-12 (review round thirteen, ADR-0057).

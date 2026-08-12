@@ -26,6 +26,14 @@ import { seedDemoStore } from "../../../scripts/seed-demo-store";
  * named no origin, a backfill appended to a migration that had already run).
  * Each of those was a path no case ran end to end.
  *
+ * That first case is measured over WHAT THE SEED ACTUALLY WROTE - every base
+ * table in the live catalog, counted before and after - never over the tables
+ * that happen to carry the origin marker. A guarantee checked only where the
+ * marker reaches cannot see a seeded path writing somewhere the marker does not,
+ * which is the same blindness, one level up: the tables holding the seed's
+ * synthetic decision chain and audit entries carry no origin column at all.
+ * What survives is NAMED, one table at a time with the reason the store gives.
+ *
  * Against a real Postgres store, not a mock:
  *   - a migrated but unseeded instance sweeps CLEAN;
  *   - loading the populated world makes it UNCLEAN, and the sweep names every
@@ -64,6 +72,69 @@ async function originBearingTablesInStore(store: SqlDb): Promise<string[]> {
   );
   return rows.rows.map((row) => row.table_name).sort();
 }
+
+/**
+ * EVERY BASE TABLE THE LIVE STORE HAS, and how many rows are in it - the reading
+ * that does not depend on the origin marker existing anywhere. A table the seed
+ * writes and the marker never reaches is invisible to every count keyed on
+ * `record_origin`, so the guarantee is measured here instead: what the seed
+ * WROTE, against what the purge gave back.
+ */
+async function rowCountsInStore(store: SqlDb): Promise<Record<string, number>> {
+  const tables = await store.query<{ table_name: string }>(
+    "SELECT table_name FROM information_schema.tables "
+    + "WHERE table_type = 'BASE TABLE' AND table_schema = ANY(current_schemas(false)) ORDER BY table_name",
+  );
+  const counts: Record<string, number> = {};
+  for (const { table_name: table } of tables.rows) {
+    const rows = await store.query<{ n: string | number }>(`SELECT COUNT(*)::int AS n FROM ${table}`);
+    counts[table] = Number(rows.rows[0]?.n ?? 0);
+  }
+  return counts;
+}
+
+/** Tables `after` holds more rows in than `before` did. */
+function grownTables(before: Record<string, number>, after: Record<string, number>): string[] {
+  return Object.keys(after).filter((table) => after[table]! > (before[table] ?? 0)).sort();
+}
+
+/**
+ * WHAT THE COMPLETE SEED LEAVES BEHIND THAT NO PURGE CAN TAKE - named one table
+ * at a time, with the reason, rather than skipped because the marker does not
+ * reach it. Two different reasons, and neither is "nobody looked":
+ *
+ *   - rows the STORE refuses to delete, because the decision chain and the audit
+ *     chain are append-only by DDL trigger (ADR-0007/0041) and the demonstration
+ *     tenant and its users are what those irreversible entries are anchored to;
+ *   - rows in tables that carry no origin column at all - the immutable replay
+ *     sources of that same chain, the heads and projections derived from it, and
+ *     the credential and idempotency rows keyed to the identities above.
+ *
+ * This is why `assertSeedableEnvironment` refuses `APP_ENV=production` before the
+ * seed opens a store, and why the instance-level answer to a seeded production
+ * database is to recreate it rather than sweep it. The clean-slate guarantee is
+ * that a production instance was never seeded AND that any demonstration row is
+ * COUNTABLE if one is - not that the seed is reversible, which it is not.
+ *
+ * The case below proves this list is exact in BOTH directions: an entry naming a
+ * table the seed no longer writes fails as loudly as a seeded table missing from
+ * it, so it cannot quietly become a list of excuses.
+ */
+const IRREVERSIBLE_SEED_RESIDUE: Readonly<Record<string, string>> = {
+  audit_anchor: "the audit chain's head, describing entries that cannot be removed",
+  audit_log: "append-only by DDL trigger (ADR-0007): the seed's audited marker cannot be deleted at all",
+  credentials: "the demo users' password hashes - no origin column of its own, and removable only with the user rows the store refuses to delete",
+  crm_write_cache: "the org-keyed idempotency cache the seed's audited write populates - no origin column",
+  decision_input_bundle_evidence: "an immutable replay source of the decision chain, append-only by the same trigger",
+  decision_input_bundles: "an immutable replay source of the decision chain, append-only by the same trigger",
+  decision_ledger: "append-only by DDL trigger (ADR-0041): the synthetic chain entries are irreversible",
+  decision_ledger_anchor: "the decision chain's head, describing entries that cannot be removed",
+  decision_records: "an immutable replay source of the decision chain, append-only by the same trigger",
+  decision_state_projection: "derived state rebuilt FROM entries that cannot be removed (ledger-rebuild.ts)",
+  evidence_snapshots: "an immutable replay source of the decision chain, append-only by the same trigger",
+  orgs: "the demonstration tenant itself - marked demo-seed and counted as such, and refused because every append-only chain above is anchored to this org",
+  users: "the two demo users, marked demo-seed and counted as such, and refused while their credentials reference them",
+};
 
 /** Demonstration-origin rows per table, counted the same way. */
 async function demonstrationRowsInStore(store: SqlDb): Promise<Record<string, number>> {
@@ -172,7 +243,7 @@ beforeEach(async () => {
 });
 
 describe("clean-slate guarantee", () => {
-  it("THE GUARANTEE, against the COMPLETE seed: every demonstration row a purge can take is taken, and what is left is what the STORE refuses", async () => {
+  it("THE GUARANTEE, against the COMPLETE seed: every row the seed wrote is gone, or NAMED with the reason it cannot be", async () => {
     // The whole of `pnpm db:seed` - the org, the users, the audited marker, the
     // synthetic decision chain and the hundred-household world - against a
     // migrated store, then a purge derived from the LIVE schema, then a count
@@ -180,40 +251,67 @@ describe("clean-slate guarantee", () => {
     // mechanism can be right while the guarantee fails, and it has, three
     // separate times (a defaulted column, an unmarked insert path, a migration
     // that never ran). This case is the guarantee itself, so it is the one that
-    // has to see every seeded path at once.
+    // has to see every seeded path at once - which means measuring it over EVERY
+    // base table in the live catalog, not over the ones carrying the marker.
+    const before = await rowCountsInStore(db);
     await seedDemoStore(db);
+    const seededTables = grownTables(before, await rowCountsInStore(db));
+    expect(seededTables.length, "the seed must actually write something to measure").toBeGreaterThan(5);
 
     const seeded = await demonstrationRowsInStore(db);
     expect(
       Object.keys(seeded).sort(),
       "every table the complete seed writes demonstration rows into must be countable as such",
-    ).toEqual(["contacts", "decision_ledger", "households", "tasks"]);
+    ).toEqual(["contacts", "decision_ledger", "households", "orgs", "tasks", "users"]);
 
     const refused = await purgeDemonstrationRecords(db);
-    const left = await demonstrationRowsInStore(db);
+    const after = await rowCountsInStore(db);
 
+    // THE GUARANTEE, stated over what the seed WROTE. A seeded path writing into
+    // a table the marker does not cover is invisible to every origin-keyed count,
+    // so it is caught here: its rows are still there, the table is still grown,
+    // and it is not one of the named ones.
+    const residue = grownTables(before, after);
+    expect(
+      residue,
+      "every table the seed grew is back to where it started, or NAMED with the reason it cannot be",
+    ).toEqual(Object.keys(IRREVERSIBLE_SEED_RESIDUE).sort());
+    // Both directions: a name that no longer describes a seeded table is a stale
+    // excuse, and an excuse nobody re-earns is how a list like this rots.
+    expect(
+      Object.keys(IRREVERSIBLE_SEED_RESIDUE).filter((table) => !seededTables.includes(table)),
+      "a named residue table the seed does not write is a stale excuse",
+    ).toEqual([]);
+    for (const table of seededTables) {
+      if (table in IRREVERSIBLE_SEED_RESIDUE) continue;
+      expect(after[table], `${table} was seeded, is not named irreversible, and must be back to its pre-seed count`)
+        .toBe(before[table] ?? 0);
+    }
+
+    // WHAT THE STORE ITSELF REFUSES, named rather than tolerated silently, and
+    // every refusal quoted in the store's own words. The decision chain is
+    // append-only by DDL trigger (ADR-0041); the demonstration tenant and its
+    // users are marked and counted, and refused because rows that cannot be
+    // deleted reference them. No purge returns that store to clean, which is why
+    // the seed refuses to run against production at all
+    // (`assertSeedableEnvironment`) and why the instance-level answer there is to
+    // recreate the store, not to sweep it.
+    expect([...refused.keys()].sort()).toEqual(["decision_ledger", "orgs", "users"]);
+    expect(refused.get("decision_ledger")).toMatch(/append-only/);
+    expect(refused.get("orgs")).toMatch(/foreign key/);
+    expect(refused.get("users")).toMatch(/foreign key/);
+    const left = await demonstrationRowsInStore(db);
     expect(
       Object.keys(left).filter((table) => !refused.has(table)).sort(),
       "a seeded path that writes a row the purge does not remove fails here",
     ).toEqual([]);
 
-    // WHAT THE STORE ITSELF REFUSES, named rather than tolerated silently. The
-    // decision ledger is append-only by DDL trigger (ADR-0041), so demonstration
-    // entries in it are IRREVERSIBLE: no purge can return that store to clean,
-    // which is why the seed refuses to run against production at all
-    // (`assertSeedableEnvironment`) and why the instance-level answer there is to
-    // recreate the store, not to sweep it.
-    expect([...refused.keys()].sort(), "only an append-only table may refuse").toEqual(["decision_ledger"]);
-    expect(refused.get("decision_ledger")).toMatch(/append-only/);
-    expect(Object.keys(left)).toEqual(["decision_ledger"]);
-
     // And the operator-facing check says so, rather than reporting clean over it.
     const violations = cleanSlateViolations(await sweepFixtureRows(db));
-    expect(violations.some((violation) => violation.startsWith("decision_ledger:"))).toBe(true);
     expect(
-      violations.filter((violation) => !violation.startsWith("decision_ledger:")),
-      "everything else the seed wrote is gone",
-    ).toEqual([]);
+      violations.map((violation) => violation.slice(0, violation.indexOf(":"))).sort(),
+      "the check names every demonstration row it can still see, and nothing it cannot",
+    ).toEqual([...refused.keys()].sort());
   });
 
   it("a migrated, unseeded instance is clean", async () => {

@@ -18,7 +18,9 @@
  * the interesting number is how much of it. `--expect-rows=<n>` turns that
  * report into an assertion for the callers that need one (CI, after the seed):
  * a store that reports fewer demonstration-origin rows than the world it just loaded
- * would fail the same way an unswept table does.
+ * would fail the same way an unswept table does. It belongs to that path only, so
+ * passing it without `--report` is a USAGE ERROR rather than a no-op - the run it
+ * would silently fall through to asserts the opposite verdict.
  */
 import { createDb } from "../src/infrastructure/store/db";
 import { getConfig } from "../src/infrastructure/config";
@@ -30,6 +32,14 @@ const EXPECT_ROWS_FLAG = "--expect-rows=";
 async function main(): Promise<void> {
   const reportOnly = process.argv.includes("--report");
   const expectRowsArg = process.argv.find((arg) => arg.startsWith(EXPECT_ROWS_FLAG));
+  // A flag that silently does nothing is a check quietly doing something other
+  // than what it was asked: `--expect-rows` is the REPORT path's floor, and
+  // outside it the run would assert clean-slate instead - the opposite verdict -
+  // while the caller believes their floor was applied.
+  if (expectRowsArg !== undefined && !reportOnly) {
+    process.stderr.write(`fixture:check: ${EXPECT_ROWS_FLAG}<n> is the --report path's floor and does nothing without --report; the default run asserts a CLEAN store, which is the opposite assertion\n`);
+    process.exit(2);
+  }
   const db = await createDb();
   const sweep = await sweepFixtureRows(db);
   await db.close();

@@ -97,16 +97,23 @@ Clean slate is COUNTED, and what it counts is the ROW's ORIGIN, never its value 
 `prov_source` moves when a human edits a value (a rename re-stamps it `user-input`, so an advisor's
 own words render un-watermarked) while `record_origin` never moves, so a seeded household somebody
 renamed is still purged - two facts, two columns, neither answering the other's question (D-201).
-EVERY path that writes a demonstration row NAMES the origin column at its insert (`world-seed.ts`,
-and `ledger-store.ts` through the REQUIRED `recordOrigin` on `recordDecision`/`appendDecisionEvents`):
-a default is a claim about rows you did not write, and an unnamed one made the sweep report
-`decision_ledger 0` over the chain `pnpm db:seed` had just written there. `demo-seed` is that chain's
-origin - not the world's, and classified in `DEMONSTRATION_ORIGINS` rather than falling into the clean
-half. The ledger is append-only by trigger, so those rows are IRREVERSIBLE and no purge takes them:
-the seed refuses `APP_ENV=production` before it opens a store, and the guarantee end to end - the
-COMPLETE `seedDemoStore`, purged and counted through the LIVE catalog - is the FIRST case in
+EVERY path that writes a demonstration row NAMES the origin column at its insert - `world-seed.ts`,
+`ledger-store.ts` through the REQUIRED `recordOrigin` on `recordDecision`/`appendDecisionEvents`, and
+the seed's own tenant scaffolding (`seed-demo-store.ts`'s org insert, and `createUser`'s REQUIRED
+`recordOrigin`): a default is a claim about rows you did not write, and an unnamed one made the sweep
+report `decision_ledger 0` over the chain `pnpm db:seed` had just written there and `orgs 0`/`users 0`
+over the demo firm and its committed-password accounts (D-217, D-218). `demo-seed` is that
+scaffolding's and that chain's origin - not the world's, and classified in `DEMONSTRATION_ORIGINS`
+rather than falling into the clean half. Marking a row makes it VISIBLE, not removable: the decision
+and audit chains are append-only by trigger and the tenant and identities they are anchored to cannot
+be deleted while they exist, so the seed is IRREVERSIBLE and the guarantee is that production was never
+seeded (`assertSeedableEnvironment` refuses `APP_ENV=production` before a store is opened) AND that any
+demonstration row is COUNTABLE if one is there. That guarantee end to end - the COMPLETE
+`seedDemoStore`, purged through the LIVE catalog, measured over EVERY base table's row count before
+and after rather than over the tables carrying the marker, with each surviving table NAMED and its
+reason given (`IRREVERSIBLE_SEED_RESIDUE`, exact in both directions) - is the FIRST case in
 `src/__tests__/integration/fixture-purge.test.ts`; the rest are optimisations of it, never
-substitutes (D-217).
+substitutes (D-217, D-218).
 `pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`),
 counts `record_origin` in them, and fails on the first demonstration-origin row; a sweep over zero
 tables is a problem, never a pass, and so is a provenance-bearing table the DDL never gives an origin

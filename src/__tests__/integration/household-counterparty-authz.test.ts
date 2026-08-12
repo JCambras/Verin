@@ -4,6 +4,7 @@ import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { systemWriteActor } from "@contracts/principal";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { runMigrations } from "@infra/store/migrations";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 import { createUser } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
 import { seedWorldIntoCrm } from "@infra/crm/world-seed";
@@ -131,6 +132,7 @@ beforeEach(async () => {
     displayName: "Counterparty Advisor",
     role: "advisor",
     password: "correct-horse-battery",
+    recordOrigin: FIRM_RECORD_ORIGIN,
   });
   await db.query(
     "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-counterparty',$1,$2,'advisor',$3,$4,NULL)",

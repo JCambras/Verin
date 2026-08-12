@@ -4,6 +4,7 @@ import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createUser, renewSession, deleteDeadSessions } from "@infra/identity/identity-store";
 import { resolveSession, resolveAndRenewSession, signSessionCookie, parseSignedCookie } from "@infra/identity/session";
 import { unwrap } from "@contracts/result";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 
 const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
@@ -29,7 +30,7 @@ async function seed(db: SqlDb): Promise<void> {
     ORG,
     new Date().toISOString(),
   ]);
-  const user = await createUser(db, TENANT, { email: "advisor@firm.test", displayName: "A Vaez", role: "advisor", password: "correct-horse-battery" });
+  const user = await createUser(db, TENANT, { email: "advisor@firm.test", displayName: "A Vaez", role: "advisor", password: "correct-horse-battery", recordOrigin: FIRM_RECORD_ORIGIN });
   userId = user.id;
 }
 
