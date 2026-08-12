@@ -263,8 +263,12 @@ jobs:
         run: pnpm exec tsx scripts/world-validate.ts
       - name: clean-slate guarantee (a fresh instance carries zero fixture-marked rows)
         run: pnpm exec tsx scripts/db-migrate.ts && pnpm exec tsx scripts/fixture-purge-check.ts
+      # The floor is the world's household count, well under the rows the seed
+      # actually writes (households + people + open items): a seed that quietly
+      # loaded nothing, or a sweep that stopped seeing the tables it lands in,
+      # fails here instead of printing zeroes and exiting 0.
       - name: the seeded world is visible to the same check (a check that finds nothing proves nothing)
-        run: pnpm exec tsx scripts/db-seed.ts && pnpm exec tsx scripts/fixture-purge-check.ts --report
+        run: pnpm exec tsx scripts/db-seed.ts && pnpm exec tsx scripts/fixture-purge-check.ts --report --expect-rows=100
 
   load-smoke:
     name: load-smoke (p95 regression gate, charter #11)

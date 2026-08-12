@@ -12,8 +12,6 @@ import { EmptyState } from "@app/presentation/ui";
 import { HouseholdDirectory } from "@app/households/directory";
 import type { DirectoryVM } from "@app/households/model";
 
-export const runtime = "nodejs";
-
 export default function HouseholdsPage() {
   const [directory, setDirectory] = useState<DirectoryVM | null>(null);
   const [error, setError] = useState<string | null>(null);

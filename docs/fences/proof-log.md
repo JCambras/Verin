@@ -13082,3 +13082,125 @@ Postgres store, including that purging fixture rows leaves the firm's own `verin
 `--report` as designed.
 
 **Date:** 2026-08-11 (front-end parity prompt 4, ADR-0057).
+
+## PF-256 · clean-slate: a provenance-bearing table the derivation misses FAILS, never passes unread · `scripts/fixture-purge.ts` + `src/__tests__/fitness/clean-slate.test.ts`
+
+**Invariant:** the sweep's table list is derived from the shipped DDL, and a derivation that misses
+a provenance-bearing table must fail rather than report that table clean without ever reading it
+(ADR-0057, charter #4). Review r-world-1 found the derivation fail-OPEN in two ways: it anchored on
+a closing paren in column 0, and its only companion iterated the tables the derivation had already
+found, so a miss was invisible to it.
+
+**Injection 1 - indent a closing paren.** Indented the `households` closing paren in
+`BASELINE_SQL` to `  );`, the shape `migrations.ts` already uses elsewhere. The previous regex
+(`CREATE TABLE IF NOT EXISTS (\w+)\s*\(([\s\S]*?)\n\);`) on that shape derives `['indented']` from a
+two-table fixture and silently swallows `after_it` into its neighbour's body; the paren-balanced
+scan derives both, and the real DDL still yields all 8 tables under the injection.
+
+**Injection 2 - put a `prov_source` column where the table walk cannot reach it.** Added
+`ALTER TABLE sessions ADD COLUMN prov_source text NOT NULL;` to version 2's SQL.
+
+**Observed failure (`pnpm exec vitest run --project fitness src/__tests__/fitness/clean-slate.test.ts`):**
+```
+× enforces: the shipped DDL's own prov_source declarations all land inside a swept table
++   "the shipped DDL declares 9 prov_source column(s) but the sweep derived 8 provenance-bearing
+     table(s) - a provenance-bearing table is outside the sweep and would report clean without
+     ever being read (charter #4)"
+Tests  1 failed | 14 passed (15)
+```
+
+**Executable companions (run on every build):** the fence derives an indented-closing-paren DDL and
+a nested-`CHECK (...)` DDL correctly, proves the two independent readings agree on the real
+`MIGRATION_SQL`, and proves the disagreement above reaches `cleanSlateViolations` as a violation -
+`sweepFixtureRows` folds `provenanceDerivationProblems()` into its problem list, so the runner exits
+non-zero rather than sweeping a short list.
+
+**Reverted:** `migrations.ts` restored (`git diff --stat` empty); `Tests 15 passed`.
+
+**Date:** 2026-08-11 (review follow-up, ADR-0057).
+
+## PF-257 · clean-slate: the `--report` path can fail · `scripts/fixture-purge-check.ts` + `src/__tests__/fitness/clean-slate.test.ts`
+
+**Invariant:** the CI step named "the seeded world is visible to the same check (a check that finds
+nothing proves nothing)" must be able to fail. As shipped it ran `--report`, which returns after
+printing whatever it found, so a seed that quietly loaded zero world rows still passed - the exact
+vacuous gate its own title claims to close (charter #4). `--expect-rows=<n>` turns the report into
+an assertion for the callers that need one; the plain `--report` a developer runs is unchanged.
+
+**Injection - run the CI command against a migrated but UNSEEDED store.**
+
+**Observed failure (`pnpm exec tsx scripts/fixture-purge-check.ts --report --expect-rows=100`, exit code 1):**
+```
+fixture:check --report: 0 fixture-marked row(s) across 8 table(s) in APP_ENV=development
+  ✗ expected at least 100 fixture-marked row(s) across 8 swept table(s), found 0 - a report that
+    finds nothing proves nothing (charter #4)
+```
+The same store under plain `--report` exits 0, and after `pnpm exec tsx scripts/db-seed.ts` the
+asserting form reports its 396 fixture-marked rows and exits 0.
+
+**Executable companions (run on every build):** the fence proves `expectedRowsViolations` fails a
+short store, passes a store at the floor, still surfaces sweep problems when the floor is met, and
+refuses a floor that is not a positive whole number (a mistyped `--expect-rows` must not wave the
+report through).
+
+**Reverted:** probe store deleted.
+
+**Date:** 2026-08-11 (review follow-up, ADR-0057).
+
+## PF-258 · households: a directory total is scoped by the same authorization its rows are · `src/app/households/build.ts` + `src/__tests__/unit/household-directory-vm.test.ts`
+
+**Invariant:** the directory is the INTERSECTION of the tenant's CRM book and what the evidence port
+can describe (ADR-0057), and the summary cards above the rows are part of that surface. Review
+r-world-1 found `buildDirectoryVM` reducing People / Accounts / Open items over every household the
+port returned while `rows` and `totalHouseholds` were the intersection - a tenant with a smaller
+book read the whole world's figures beside its own count.
+
+**Injection - reduce the totals over the port's list again.** Restored the pre-fix reduction
+(`input.worldHouseholds.reduce(...)`) while leaving the rows alone.
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/unit/household-directory-vm.test.ts`):**
+```
+× counts people and accounts over the AUTHORIZED intersection, not the whole world
+× a household the CRM does not authorize contributes NOTHING to any card
+× an empty book shows zeroes, never the world's figures
+Tests  3 failed | 1 passed (4)
+```
+
+**Executable companions (run on every build):** the intersection is computed once and both the rows
+and the totals read from it, so the fourth case proves the open-item card always equals the sum of
+the rows' own counts across three different book sizes - the two can no longer be derived apart.
+
+**Reverted:** `build.ts` restored; `Tests 4 passed`.
+
+**Date:** 2026-08-11 (review follow-up, ADR-0057).
+
+## PF-259 · households: a cross-household counterparty's NAME is authorized like the subject's · `src/app/api/households/[key]/route.ts` + `src/__tests__/integration/household-counterparty-authz.test.ts`
+
+**Invariant:** a household name is client PII and reaches a caller only through a tenant-scoped CRM
+read (v3 §15.3). The Wave 0 evidence adapter serves one world to every tenant, so that CRM read is
+the ONLY thing scoping this path; the subject went through it and each cross-household counterparty
+did not, which becomes a cross-tenant name disclosure the day the adapter is replaced by a real
+EvidenceSource (ADR-0024/0027) - the stated plan.
+
+**Injection - resolve the counterparty straight from the evidence port.** Restored
+`if (counterparty) counterpartyNames.set(counterparty.key, counterparty.displayName)`, against a
+firm whose book holds `whitfield-cordelia` but NOT the `whitfield-nathaniel` its trust account
+serves.
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/integration/household-counterparty-authz.test.ts`):**
+```
+× withholds the name of a counterparty that is NOT in this firm's book
+AssertionError: an unauthorized counterparty keeps its slug:
+  expected 'Nathaniel & Perrine Whitfield' to be 'whitfield-nathaniel'
+Tests  1 failed | 2 passed (3)
+```
+
+**Executable companions (run on every build):** the same suite proves the AUTHORIZED counterparty
+still resolves to its real name (the fix must not blank a legitimate link), that the whole response
+body contains the withheld name nowhere, and that the counterparty is itself still a 404 for this
+firm - the link is not a way around the guard. `e2e/households.spec.ts` walks the authorized link in
+a browser.
+
+**Reverted:** route restored; `Tests 3 passed`.
+
+**Date:** 2026-08-11 (review follow-up, ADR-0057).

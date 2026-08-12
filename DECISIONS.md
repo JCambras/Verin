@@ -7514,3 +7514,42 @@ of itself - and now renders one figure at large type carrying its own provenance
 
 **Revert path:** revert `src/app/households/{model,build,directory,detail}.ts(x)`; nothing outside
 the household surfaces depends on the row shape.
+
+### D-206 · 2026-08-11 · reversible · Populated-world review round one: authorization scopes totals and counterparty names, and both clean-slate checks can fail
+
+Review of ADR-0057 found four defects that share two roots, plus four local ones. Fixed here.
+
+**Authorization is the scope of the whole surface, not just its rows.** `buildDirectoryVM` reduced
+People / Accounts / Open items over every household the evidence port returned while its rows were
+the CRM-authorized intersection its own doc comment describes, so a tenant with a smaller book read
+the whole world's figures beside its own household count. The intersection is now computed once and
+the rows AND the totals both read from it; one `openItemsOf` serves the row and the card, so they
+cannot be derived apart. The same root in `/api/households/[key]`: the subject passed a
+tenant-scoped `getHouseholdById`, each cross-household counterparty did not, and its `displayName`
+(PIIBearing) went to the client unauthorized. The Wave 0 adapter serves one world to every tenant,
+so that CRM read is the ONLY thing scoping this path - the counterparty is now authorized
+identically, and an unauthorized one keeps its slug (`linksOf` already falls back to it). Neither
+builder nor route had any test; both now do (PF-258, PF-259).
+
+**A clean-slate check that cannot fail is not a check (charter #4).** `provenanceBearingTables`
+anchored on a closing paren in column 0, so a future migration indenting `  );` - a shape
+`migrations.ts` already contains - would drop that table from the sweep and, worse, attribute its
+columns to its neighbour; the companion could not see the miss because it only iterated the tables
+the derivation had already found. The scan is now paren-balanced, and a SECOND independent reading
+(counting `prov_source` column declarations across the whole DDL) must agree with it - disagreement
+is a sweep PROBLEM, which fails the runner. Separately, the CI step titled "a check that finds
+nothing proves nothing" ran `--report`, which exits 0 whatever it finds; `--expect-rows=<n>` turns
+that report into an assertion (CI passes 100, the world's household count) while the plain
+`--report` a developer runs is unchanged. PF-256, PF-257.
+
+**Local fixes.** The windowed list re-syncs its offset from the element's actual `scrollTop` on every
+clamp rather than only when it overflows: the empty state unmounts the scroll container, so a
+cleared query mounted a fresh one at the top while the remembered offset spacered every row out of
+view (reproduced in the browser at `aria-posinset="41"`, now an e2e recovery spec). Cross-household
+links key on counterparty AND kind, since the vocabulary permits two links to one household. The
+inert `export const runtime` came out of both `"use client"` pages, matching console/audit. The
+derived generator reuses its already-derived city instead of re-deriving it and drops the unused
+`surname` parameter - byte-neutral, re-proven by `pnpm world:generate && pnpm world:validate`.
+
+**Revert path:** revert this changeset; the two new test files, the three proof-log entries and the
+CI flag revert together. No generated fixture bytes and no gate semantics change.

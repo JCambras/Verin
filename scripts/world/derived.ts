@@ -116,7 +116,7 @@ function buildEntities(seed: string, path: string, archetype: Archetype, surname
 }
 
 function buildAccounts(
-  seed: string, path: string, roster: Roster, surname: string,
+  seed: string, path: string, roster: Roster,
   members: readonly DerivedMember[], entities: FeaturedHousehold["entities"], asOf: string,
 ): FeaturedHousehold["accounts"] {
   const adults = members.filter((member) => member.role === "client" || member.role === "spouse" || member.role === "signer");
@@ -174,7 +174,6 @@ function buildAccounts(
       [adults[0]?.key ?? child.key], dollars(seed, path, `${child.key}/529-balance`, 4_000, 180_000), openedOn(`${child.key}/529-opened`, 100, 2500),
       [{ partyKey: child.key, tier: "primary" as const, shareBps: 10000 }]));
   }
-  void surname;
   return accounts;
 }
 
@@ -186,7 +185,8 @@ export function derivedHousehold(
   const archetype = pick(seed, path, "archetype", ARCHETYPES);
   const members = buildMembers(seed, path, roster, surname, archetype);
   const entities = buildEntities(seed, path, archetype, surname, members);
-  const accounts = buildAccounts(seed, path, roster, surname, members, entities, asOf);
+  const accounts = buildAccounts(seed, path, roster, members, entities, asOf);
+  const city = pick(seed, path, "city", roster.cities);
   const base = `${slug(surname)}-${members[0]!.key}`;
   const key = takenKeys.has(base) ? `${base}-${slot}` : base;
   const primaryAccount = accounts[0]!;
@@ -205,9 +205,9 @@ export function derivedHousehold(
     status: pick(seed, path, "status", ["active", "active", "active", "active", "prospect", "inactive"] as const),
     advisorKey: pick(seed, path, "advisor", roster.advisors).key,
     serviceTier: pick(seed, path, "tier", roster.serviceTiers),
-    city: pick(seed, path, "city", roster.cities),
+    city,
     openedOn: dayOf(daysBefore(seed, path, "opened", asOf, 200, 5400)),
-    narrative: `${archetype.replace(/-/g, " ")} household in ${pick(seed, path, "city", roster.cities)}; ${accounts.length} accounts across ${new Set(accounts.map((account) => account.taxClass)).size} tax treatments.`,
+    narrative: `${archetype.replace(/-/g, " ")} household in ${city}; ${accounts.length} accounts across ${new Set(accounts.map((account) => account.taxClass)).size} tax treatments.`,
     members: members.map((member) => ({ ...member, relationships: [...member.relationships] })),
     entities,
     accounts,

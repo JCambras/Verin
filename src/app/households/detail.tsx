@@ -292,7 +292,7 @@ export function HouseholdDetail({ household }: { household: HouseholdDetailVM })
         <Section title="Touches another household" caption="Records here are not owned by this household alone.">
           <ul className="flex flex-col gap-3">
             {household.crossHouseholdLinks.map((link) => (
-              <li key={link.counterpartyKey} className="rounded-md border border-amber-200 bg-amber-50 p-3">
+              <li key={`${link.counterpartyKey}/${link.kindLabel}`} className="rounded-md border border-amber-200 bg-amber-50 p-3">
                 <p className="text-sm font-medium text-amber-900">{link.kindLabel}</p>
                 <p className="mt-1 text-sm text-slate-900">{link.note}</p>
                 <Link href={`/app/households/${link.counterpartyKey}`} className="mt-1 inline-block text-sm text-slate-800 underline underline-offset-2">

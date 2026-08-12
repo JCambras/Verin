@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { MIGRATION_SQL } from "@infra/store/migrations";
 import { SYNTHETIC_SOURCES } from "@contracts/provenance";
-import { cleanSlateViolations, provenanceBearingTables, type FixtureSweep } from "../../../scripts/fixture-purge";
+import {
+  cleanSlateViolations, expectedRowsViolations, provenanceBearingTables,
+  provenanceDerivationProblems, type FixtureSweep,
+} from "../../../scripts/fixture-purge";
 
 /**
  * CLEAN-SLATE FENCE (ADR-0057; charter #3/#4/#7).
@@ -44,6 +47,39 @@ describe("clean-slate fence", () => {
     }
   });
 
+  it("enforces: the shipped DDL's own prov_source declarations all land inside a swept table", () => {
+    expect(provenanceDerivationProblems()).toEqual([]);
+  });
+
+  it("enforces: a table whose closing paren is INDENTED is still swept", () => {
+    // The shape that used to escape entirely: the derivation is paren-balanced,
+    // not anchored on a `);` in column 0.
+    const ddl = [
+      "CREATE TABLE IF NOT EXISTS indented (",
+      "  id text PRIMARY KEY,",
+      "  prov_source text NOT NULL",
+      "  );",
+      "CREATE TABLE IF NOT EXISTS after_it (",
+      "  id text PRIMARY KEY,",
+      "  prov_source text NOT NULL",
+      ");",
+    ].join("\n");
+    expect(provenanceBearingTables(ddl)).toEqual(["after_it", "indented"]);
+    expect(provenanceDerivationProblems(ddl)).toEqual([]);
+  });
+
+  it("enforces: a nested paren inside a column list does not end the table early", () => {
+    const ddl = [
+      "CREATE TABLE IF NOT EXISTS checked (",
+      "  status text NOT NULL CHECK (",
+      "    status IN ('a', 'b')",
+      "  ),",
+      "  prov_source text NOT NULL",
+      ");",
+    ].join("\n");
+    expect(provenanceBearingTables(ddl)).toEqual(["checked"]);
+  });
+
   it("enforces: every table the world's seed writes is inside the sweep", () => {
     const tables = provenanceBearingTables();
     for (const table of ["households", "contacts", "tasks"]) {
@@ -84,6 +120,45 @@ describe("clean-slate fence", () => {
 
     it("a DDL with no provenance-bearing table derives nothing, so the runner reports a problem", () => {
       expect(provenanceBearingTables("CREATE TABLE IF NOT EXISTS widgets (\n  id text PRIMARY KEY\n);")).toEqual([]);
+    });
+
+    it("a prov_source column the table walk never reached is a PROBLEM, not a silent miss", () => {
+      // An ALTER that adds the column stands in for any declaration outside a
+      // parsed CREATE TABLE: the two readings disagree, so the sweep fails
+      // rather than reporting a table it never read as clean.
+      const ddl = [
+        "CREATE TABLE IF NOT EXISTS swept (",
+        "  id text PRIMARY KEY,",
+        "  prov_source text NOT NULL",
+        ");",
+        "ALTER TABLE unswept ADD COLUMN",
+        "  prov_source text NOT NULL;",
+      ].join("\n");
+      expect(provenanceBearingTables(ddl)).toEqual(["swept"]);
+      const problems = provenanceDerivationProblems(ddl);
+      expect(problems.length).toBe(1);
+      expect(problems[0]).toContain("declares 2 prov_source column(s)");
+      expect(cleanSlateViolations(sweep([{ table: "swept", rows: 0 }], problems))).toEqual(problems);
+    });
+  });
+
+  describe("detects (companion): the --report path CAN fail", () => {
+    it("a seeded store that reports fewer rows than expected fails", () => {
+      const violations = expectedRowsViolations(sweep([{ table: "households", rows: 0 }]), 100);
+      expect(violations.length).toBe(1);
+      expect(violations[0]).toContain("found 0");
+    });
+
+    it("a seeded store that meets the floor passes, and still surfaces sweep problems", () => {
+      expect(expectedRowsViolations(sweep([{ table: "households", rows: 100 }]), 100)).toEqual([]);
+      expect(expectedRowsViolations(sweep([{ table: "households", rows: 100 }], ["contacts: could not be swept"]), 100))
+        .toEqual(["contacts: could not be swept"]);
+    });
+
+    it("a floor that is not a positive whole number fails rather than waving the report through", () => {
+      for (const bad of [Number.NaN, 0, -1, 1.5]) {
+        expect(expectedRowsViolations(sweep([{ table: "households", rows: 999 }]), bad).length, `${bad} must be refused`).toBe(1);
+      }
     });
   });
 });

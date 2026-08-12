@@ -42,15 +42,17 @@ export function VirtualList<T>({
   }, []);
 
   // A filter that shortens the list must not leave the viewport scrolled past
-  // the new end, which would render as an empty list with a full scrollbar.
+  // the new end, which would render as an empty list with a full scrollbar. The
+  // element's own scrollTop is read back UNCONDITIONALLY rather than only when
+  // it exceeds the new end: an empty result unmounts this container, and the
+  // fresh one a cleared query mounts starts at zero while the remembered offset
+  // would still spacer the visible rows off the bottom of the viewport.
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
     const maxOffset = Math.max(0, items.length * rowHeight - height);
-    if (element.scrollTop > maxOffset) {
-      element.scrollTop = maxOffset;
-      setOffset(maxOffset);
-    }
+    if (element.scrollTop > maxOffset) element.scrollTop = maxOffset;
+    setOffset(element.scrollTop);
   }, [items.length, rowHeight, height]);
 
   if (items.length === 0) return <>{emptyState}</>;

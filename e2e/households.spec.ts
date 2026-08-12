@@ -85,3 +85,25 @@ test("failure path: a search that matches nothing offers a way forward, never a 
   await expect(page.getByText("No household matches that search")).toBeVisible();
   await expect(page.getByText(/Try a surname, a city, an advisor/)).toBeVisible();
 });
+
+test("recovery path: clearing a search that matched nothing returns the book, not a blank window", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/households");
+  const rows = page.getByRole("listitem").filter({ has: page.getByRole("link") });
+  await expect(rows.first()).toHaveAttribute("aria-posinset", "1");
+
+  // Scroll deep into the book, then filter it away entirely. The empty state
+  // unmounts the scroll container, so the offset the window remembers belongs
+  // to an element that no longer exists; the container a cleared query mounts
+  // starts at the top, and the two must not disagree.
+  await page.getByTestId("household-list-viewport").evaluate((element) => { element.scrollTop = 5000; });
+  await expect(rows.first()).not.toHaveAttribute("aria-posinset", "1");
+  const search = page.getByLabel("Search households");
+  await search.fill("zzzzz-no-such-household");
+  await expect(page.getByText("No household matches that search")).toBeVisible();
+
+  await search.fill("");
+  await expect(page.getByTestId("household-directory")).toContainText("Showing 100 of 100 households");
+  await expect(rows.first()).toHaveAttribute("aria-posinset", "1");
+  await expect(rows.first()).toBeInViewport();
+});

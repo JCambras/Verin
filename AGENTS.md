@@ -84,7 +84,11 @@ accounts, which the account-opening flow mints. HEALTH IS COMPUTED, NEVER STORED
 `world-provenance` fence. Vocabularies live in `src/domain/world/household-world.ts` and the generator
 IMPORTS them, so a fixture cannot carry a value the product cannot render. Clean slate is COUNTED:
 `pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`) and
-fails on the first fixture-marked row; a sweep over zero tables is a problem, never a pass.
+fails on the first fixture-marked row; a sweep over zero tables is a problem, never a pass. That
+derivation is paren-balanced AND cross-checked against an independent count of the DDL's
+`prov_source` declarations, so a table it misses fails rather than reporting clean unread; the
+`--report` path exits 0 for a developer but takes `--expect-rows=<n>` where a caller needs an
+assertion (CI uses it after the seed) - D-193.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,

@@ -34,11 +34,18 @@ export async function GET(
   const crmRow = await getHouseholdById(db, auth.value, recordId);
   if (!crmRow) return errorResponse(NOT_FOUND);
   // Counterparty names for the cross-household links, so a link reads as a
-  // household rather than a slug. Names come from the same evidence port.
+  // household rather than a slug. A counterparty name is the same client PII the
+  // subject's is, so it is authorized the SAME way - the evidence port describes
+  // it, the tenant-scoped CRM read decides whether this caller may be told it.
+  // A counterparty outside this firm's book keeps its slug and discloses nothing.
   const counterpartyNames = new Map<string, string>();
   for (const link of household.crossHouseholdLinks) {
     const counterparty = await fixtureWorldSource.getHousehold(auth.value, link.counterpartyHouseholdKey);
-    if (counterparty) counterpartyNames.set(counterparty.key, counterparty.displayName);
+    if (!counterparty) continue;
+    const counterpartyId = parseMachineRecordId("household", counterparty.id);
+    if (!counterpartyId) continue;
+    const counterpartyRow = await getHouseholdById(db, auth.value, counterpartyId);
+    if (counterpartyRow) counterpartyNames.set(counterparty.key, counterparty.displayName);
   }
   const identity = worldIdentity();
   return NextResponse.json({

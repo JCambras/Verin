@@ -98,10 +98,15 @@ const plural = (n: number, one: string, many: string): string => `${n} ${n === 1
 export const groupDigits = (whole: number): string =>
   String(Math.abs(whole)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
+/** What the directory calls an "open item": one definition, so the row's own
+ * count and the totals above it can never disagree. */
+const openItemsOf = (household: WorldHousehold): number =>
+  household.bankInstructions.filter((i) => i.state === "current" && i.verifiedAt === null).length
+  + household.pendingActions.filter((a) => a.state === "blocked" || a.state === "rejected").length;
+
 function buildRow(crmRow: Household, household: WorldHousehold, asOf: string): HouseholdRowVM {
   const totalBalanceMinor = household.accounts.reduce((sum, account) => sum + account.balanceMinor, 0);
-  const openItems = household.bankInstructions.filter((i) => i.state === "current" && i.verifiedAt === null).length
-    + household.pendingActions.filter((a) => a.state === "blocked" || a.state === "rejected").length;
+  const openItems = openItemsOf(household);
   return {
     key: household.key,
     id: crmRow.id,
@@ -147,20 +152,24 @@ export interface DirectoryInput {
 export function buildDirectoryVM(input: DirectoryInput): DirectoryVM {
   const asOf = input.identity?.asOf ?? new Date().toISOString();
   const worldById = new Map(input.worldHouseholds.map((household) => [household.id, household]));
-  const rows = input.crmHouseholds
+  // The intersection is computed ONCE and everything on the page reads from it:
+  // totals summarizing households the tenant may not list would be a disclosure
+  // dressed as a summary card.
+  const authorized = input.crmHouseholds
     .map((crmRow) => {
       const household = worldById.get(crmRow.id);
-      return household ? buildRow(crmRow, household, asOf) : null;
+      return household ? { crmRow, household } : null;
     })
-    .filter((row): row is HouseholdRowVM => row !== null)
+    .filter((pair): pair is { crmRow: Household; household: WorldHousehold } => pair !== null);
+  const rows = authorized
+    .map(({ crmRow, household }) => buildRow(crmRow, household, asOf))
     .sort((left, right) => (left.displayName < right.displayName ? -1 : left.displayName > right.displayName ? 1 : 0));
   const listProvenance: RecordProvenance = { source: "fixture", asOf, confidence: "high" };
-  const totals = input.worldHouseholds.reduce(
-    (acc, household) => ({
+  const totals = authorized.reduce(
+    (acc, { household }) => ({
       accounts: acc.accounts + household.accounts.length,
       people: acc.people + household.members.length,
-      openItems: acc.openItems + household.bankInstructions.filter((i) => i.state === "current" && i.verifiedAt === null).length
-        + household.pendingActions.filter((a) => a.state === "blocked" || a.state === "rejected").length,
+      openItems: acc.openItems + openItemsOf(household),
     }),
     { accounts: 0, people: 0, openItems: 0 },
   );

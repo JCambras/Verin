@@ -15,8 +15,6 @@ import { EmptyState } from "@app/presentation/ui";
 import { HouseholdDetail } from "@app/households/detail";
 import type { HouseholdDetailVM } from "@app/households/model";
 
-export const runtime = "nodejs";
-
 export default function HouseholdPage() {
   const params = useParams<{ key: string }>();
   const key = typeof params.key === "string" ? params.key : "";
