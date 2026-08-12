@@ -12872,3 +12872,45 @@ grouping into its collection, so the transform rule is not over-broad.
 on the restored tree.
 
 **Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - sixth review round, D-197).
+
+## PF-250 · register-sortability, amended: sortability inherited through a spread (D-198)
+
+**Invariant (amendment):** a column collection is recognized by what it IS - an array holding a
+column literal, an array annotated `TableColumn[]`, or whatever a `<Table columns={...}>` names -
+and every element of one is resolved to a literal or refused. The previous scan identified a column
+by the presence of an own `sortable` key, so `{ ...SHARED_SORTABLE, id: "when", header: "When" }`
+was not a column at all to it: the register shipped fully sortable and the enforce test saw
+nothing, which its own header promises cannot happen. Spread sources declared exactly once in the
+same file are now INLINED and reviewed like any other column; every other source - an import, a
+shadowed name, a call, a chain past the depth cap - is refused with `file:line`, whether it lives
+inside `src/app` or outside it.
+
+**Injection - a reviewed compliance register inherits sortability from an unreadable source.**
+Exported `SORTABLE_COLUMN = { sortable: true }` from `src/app/presentation/table.tsx` and rewrote
+the audit register's `When` column in `src/app/app/audit/page.tsx` as
+`{ ...SORTABLE_COLUMN, id: "when", header: "When" }`, keeping the file's registry entry intact so
+the injection also proves a review cannot buy the shape out.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/app/audit/page.tsx:10 :: 'sortable' is not a resolvable literal - a computed value, or inherited through a spread this fence cannot read - so this register's sortability cannot be reviewed (D-194)
+❯ src/__tests__/fitness/register-sortability.test.ts:417
+```
+The fence AS SHIPPED AT HEAD was run against the same injected tree for comparison: it reported
+nothing whatsoever about `src/app/app/audit/page.tsx`, passing the register as fully reviewed. (It
+did flag the shared constant's own literal in `table.tsx` as a homeless sortable column, which is
+the pre-existing transform rule from PF-249 firing on a different node, not the register.)
+
+**Executable companions (run on every build):** sortability inherited from an imported source, from
+a whole-collection `[...SHARED]` spread, and from a shadowed local name; an own `sortable: false`
+proven when it follows the spread and refused when it precedes one; a readable same-file spread
+resolved COMPLETELY - accepted when the order carrier survives the merge, and still refused when it
+does not, so the rule is resolution rather than a ban on spreads; and a `<Table columns={...}>`
+naming nothing this fence can read.
+
+**Reverted:** the injection was undone immediately; the focused fence returned to `Tests 16 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - seventh review round, D-198).

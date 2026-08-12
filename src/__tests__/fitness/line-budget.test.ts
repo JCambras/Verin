@@ -44,10 +44,11 @@ import { join, relative } from "node:path";
 // for the scoped rebuild preview, the whole-chain counted provenance, and the shared
 // decision-id extractor the dedup moved INTO contracts. MEASURED on the composed tree that
 // also carries ADR-0040's prompt-8 primitive catalog: contracts 6064/6110 (46), domain
-// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 1970/6000 (re-measured in the
-// D-197 review round, which suspends row windowing for the print pass so a compliance register
-// prints whole rather than as a cropped box of blank spacer bands, and lets a column state the
-// order it actually sorts in; 1915 at D-196, 1884 at D-195, 1840 at D-194, 1664 at D-192, 1645
+// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 2064/6000 (re-measured in the
+// D-198 review round, which gives the tier ONE stated ordering in its own `table-order.ts` -
+// banded, blanks-last, raw scalars rather than the formatted string a collator misreads - and
+// reconciles the virtual window with the element the print pass scrolled; 1970 at D-197,
+// 1915 at D-196, 1884 at D-195, 1840 at D-194, 1664 at D-192, 1645
 // as the primitives landed). D-193
 // recorded
 // 1782 for a tree that measured 1804 - the figure was taken before that round finished

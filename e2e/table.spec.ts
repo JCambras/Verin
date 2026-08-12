@@ -112,6 +112,89 @@ test("a windowed register prints its complete row set, not the window", async ({
 });
 
 /**
+ * Suspending windowing drops the height cap, so the box stops overflowing and the browser
+ * clamps its scrollTop to 0 - while the scroll handler, gated on windowing being ON,
+ * refuses that event and leaves React holding the pre-print offset. Resuming from the
+ * stale offset places the window hundreds of pixels below a box scrolled to the top and
+ * the register reads as blank. It self-heals only if the clamp's scroll event happens to
+ * land after the transition, which is a timing accident and not a guarantee.
+ */
+test("a register resumes windowing coherently after a print pass taken mid-scroll", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  const entries = Array.from({ length: 200 }, (_, index) => ({
+    sequence: 200 - index,
+    actor: "user-principal",
+    action: index % 2 === 0 ? "household.created" : "household.updated",
+    entityType: "household",
+    detail: `Fixture audit entry ${index}`,
+    createdAt: new Date(Date.UTC(2026, 7, 11, 12, 0, index % 60)).toISOString(),
+    entryHash: String(index).padStart(64, "0"),
+  }));
+  await page.route("**/api/audit", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ verdict: { ok: true, entriesChecked: entries.length, reason: null }, entries, total: entries.length }),
+    });
+  });
+
+  await page.goto("/app/audit");
+  const register = page.getByRole("region", { name: "Audit log entries, newest first" });
+  await expect(register).toHaveAttribute("data-row-count", "200");
+  const box = register.locator("[data-table-scroll]");
+
+  // Deep into the register, well past the first window.
+  const scrolledTo = await box.evaluate(async (element) => {
+    element.scrollTop = Math.floor(element.scrollHeight * 0.75);
+    element.dispatchEvent(new Event("scroll"));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return element.scrollTop;
+  });
+  expect(scrolledTo).toBeGreaterThan(0);
+
+  await page.emulateMedia({ media: "print" });
+  await expect(register).toHaveAttribute("data-rendered-row-count", "200");
+
+  // The uncapped box does not overflow, so its offset is pinned at 0 for the whole print
+  // pass. Writing that 0 back is what a print dialog, a zoom, or a resize does anyway -
+  // and it drops the offset the browser would otherwise have restored on the way out, so
+  // the disagreement this covers is FORCED rather than left to whether Chromium happens
+  // to hand the position back before React looks.
+  await box.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await page.emulateMedia({ media: null });
+  await expect
+    .poll(async () => Number(await register.getAttribute("data-rendered-row-count")))
+    .toBeLessThan(200);
+
+  // Coherent means the window the DOM holds is the window the scroll offset points at.
+  // Where the browser leaves that offset is its own business - it may keep the reader's
+  // place or clamp it away - but the rendered slice has to FOLLOW it, and the way that
+  // failure reaches a reader is a visible band of blank spacer where rows belong. So the
+  // claim is measured as coverage: rows fill the box from its top edge to its bottom one.
+  const settled = await box.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const rows = Array.from(element.querySelectorAll<HTMLElement>("tr[data-table-row]"));
+    const onScreen = rows
+      .map((row) => row.getBoundingClientRect())
+      .filter((rect) => rect.bottom > bounds.top && rect.top < bounds.bottom);
+    return {
+      rendered: rows.length,
+      onScreen: onScreen.length,
+      rowHeight: rows[0]?.getBoundingClientRect().height ?? 0,
+      topGap: onScreen.length > 0 ? onScreen[0]!.top - bounds.top : Number.POSITIVE_INFINITY,
+      bottomGap: onScreen.length > 0 ? bounds.bottom - onScreen[onScreen.length - 1]!.bottom : Number.POSITIVE_INFINITY,
+    };
+  });
+  expect(settled.rendered).toBeGreaterThan(0);
+  expect(settled.rendered).toBeLessThan(200);
+  expect(settled.onScreen).toBeGreaterThan(0);
+  expect(settled.topGap).toBeLessThanOrEqual(settled.rowHeight);
+  expect(settled.bottomGap).toBeLessThanOrEqual(settled.rowHeight);
+});
+
+/**
  * The decision-ledger register stacks an event type, a timestamp, and a provenance badge
  * in one cell, so its rows render far taller than the seeded row estimate. A window
  * derived from the estimate alone indexes past the last row at the bottom of the scroll

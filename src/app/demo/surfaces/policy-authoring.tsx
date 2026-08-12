@@ -6,24 +6,37 @@
  * result appear only in the approved state - the gate is real choreography, not
  * decoration. A number is never LLM-drafted: every figure renders through Metric.
  */
-import { formatMetricValue } from "@contracts/metric";
+import { formatMetricValue, type DisplayMetric } from "@contracts/metric";
 import { Metric } from "@app/presentation/metric";
 import { Card, StatusBadge } from "@app/presentation/ui";
 import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
+import type { TableSortValue } from "@app/presentation/table-order";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import type { ComparisonCellVM, PolicyAuthoringVM } from "../model";
 import { DEV_BADGE_TEXT, DISPOSITION_RESTRICTIVENESS } from "../model";
 import { JourneyNav, PrimaryLink, SurfaceShell, demoHref } from "./shared";
 
 const DISPOSITION_RANKS = new Map<string, number>(Object.entries(DISPOSITION_RESTRICTIVENESS));
-/** Stated by the register while either value column is the active sort, because a reader
- * cannot otherwise tell a severity order from an alphabet. */
-const SIMULATION_SORT_NOTE = "dispositions by restrictiveness, then alphabetically";
+/**
+ * Stated by the register while either value column is the active sort, because a reader
+ * cannot otherwise tell a severity order from an alphabet - nor a number read as a number
+ * from a number read as text. It names the bands `compareSortValues` actually applies, in
+ * the order it applies them; a note that describes a different ordering is the same false
+ * claim as a caption that describes a sort that never happened.
+ */
+const SIMULATION_SORT_NOTE =
+  "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order, blanks last";
 
 function comparisonText(cell: ComparisonCellVM): string {
   return [cell.badge?.label, cell.metric ? formatMetricValue(cell.metric) : null, cell.display]
     .filter((part): part is string => Boolean(part))
     .join(" ");
+}
+
+/** The number the reader SEES: money is stored in minor units, so a column mixing money
+ * with counts would otherwise rank $0.50 above 3. */
+function metricSortValue(m: DisplayMetric): number {
+  return m.format === "currency-minor" ? Number(m.value) / 100 : Number(m.value);
 }
 
 /**
@@ -32,14 +45,18 @@ function comparisonText(cell: ComparisonCellVM): string {
  * which is how both value columns came to advertise a sort that could not move a row
  * while the caption announced one had happened.
  *
- * Dispositions order by the ratified §5 restrictiveness lattice, never by label; every
- * other value falls back to the text the reader can actually see. The key names its band
- * first, so the two orders compose into one total order - the order the register states
- * out loud, in its caption and in visible text, for as long as that sort is active.
+ * Each kind yields the value the comparator's own bands are built for, so the ordering is
+ * the one the register states out loud: dispositions rank by the ratified §5
+ * restrictiveness lattice and never by label, a metric yields its NUMBER rather than the
+ * money-formatted string a collator reads as text (`$1,234.00` below `$980.00`), and
+ * anything else falls back to the text the reader can see. A cell with none of the three
+ * yields nothing, and nothing groups at the end in both directions.
  */
-export function comparisonSortValue(cell: ComparisonCellVM): string {
+export function comparisonSortValue(cell: ComparisonCellVM): TableSortValue {
   const rank = cell.badge ? DISPOSITION_RANKS.get(cell.badge.status) : undefined;
-  return rank === undefined ? `2 ${comparisonText(cell)}` : `1 ${rank}`;
+  if (rank !== undefined) return { rank };
+  if (cell.metric) return metricSortValue(cell.metric);
+  return comparisonText(cell) || null;
 }
 
 /**

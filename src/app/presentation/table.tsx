@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { flushSync } from "react-dom";
 import { Button, EmptyState, StatusBadge } from "./ui";
+import { compareSortValues, type TableSortValue } from "./table-order";
 
 export interface TableColumn {
   readonly id: string;
@@ -10,12 +11,13 @@ export interface TableColumn {
   readonly align?: "left" | "right";
   readonly sortable?: boolean;
   /**
-   * How this column orders when it is the active sort - "dispositions by
-   * restrictiveness, then alphabetically", say. Declared wherever the ordering is not
-   * the obvious one for the value on screen: a reader looking at a re-ordered column
-   * of dispositions cannot otherwise tell a severity order from an alphabet. Carried in
-   * the caption and the landmark label, and shown as visible text beside the restore
-   * control for as long as that sort is active.
+   * How this column orders when it is the active sort, in the reader's words - the rule
+   * `compareSortValues` applies to ITS values, not a generic description of the
+   * comparator. Declared wherever the ordering is not the obvious one for the value on
+   * screen: a reader looking at a re-ordered column of dispositions cannot otherwise tell
+   * a severity order from an alphabet, nor an amount ordered by value from one ordered as
+   * text. Carried in the caption and the landmark label, and shown as visible text beside
+   * the restore control for as long as that sort is active.
    */
   readonly sortNote?: string;
   readonly className?: string;
@@ -25,14 +27,14 @@ export type TableCell =
   | {
       readonly kind?: "content";
       readonly content: ReactNode;
-      readonly sortValue?: string | number | null;
+      readonly sortValue?: TableSortValue;
       readonly className?: string;
     }
   | {
       readonly kind: "status";
       readonly status: string;
       readonly label?: string;
-      readonly sortValue?: string | number | null;
+      readonly sortValue?: TableSortValue;
       readonly className?: string;
     };
 
@@ -84,25 +86,11 @@ function joinClasses(...values: Array<string | false | null | undefined>): strin
   return values.filter(Boolean).join(" ");
 }
 
-function cellSortValue(cell: TableCell | undefined): string | number {
-  if (!cell) return "";
+function cellSortValue(cell: TableCell | undefined): TableSortValue {
+  if (!cell) return null;
   if (cell.sortValue !== undefined && cell.sortValue !== null) return cell.sortValue;
   if (cell.kind === "status") return cell.label ?? cell.status;
-  return typeof cell.content === "string" || typeof cell.content === "number" ? cell.content : "";
-}
-
-/**
- * ONE collator for the whole tier. `localeCompare` only reaches its cached fast path
- * when it is called with no options; handing it an options object mints a fresh
- * collator per comparison, so the 5,000-row sort this register is built for paid for
- * ~60,000 of them on the main thread. Hoisting is order-preserving: the same numeric,
- * case-insensitive collation, constructed once.
- */
-const COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
-function compareValues(left: string | number, right: string | number): number {
-  if (typeof left === "number" && typeof right === "number") return left - right;
-  return COLLATOR.compare(String(left), String(right));
+  return typeof cell.content === "string" || typeof cell.content === "number" ? cell.content : null;
 }
 
 function TableCellContent({ cell }: { cell: TableCell | undefined }) {
@@ -141,9 +129,23 @@ export function Table({
    * is the TRANSITION into print media, which is what both `window.print()` and a print
    * preview perform; the `print:` height-cap escape below is the backstop for a context
    * that was already printing before this mounted.
+   *
+   * Both transitions READ THE OFFSET BACK off the element, because the scroll handler
+   * cannot: it is gated on windowing being ON, so every scroll the print pass causes is
+   * refused and React keeps whatever offset it held before. Dropping the cap stops the box
+   * overflowing and the browser clamps it to 0, and restoring the cap lets the browser put
+   * it back - neither of which React hears about. Resuming a window from an offset the
+   * element no longer has places the rendered slice hundreds of pixels away from the
+   * visible band, and the register reads as blank. Whatever the element settles on IS the
+   * offset, in both directions; the only thing this has to guarantee is that state agrees
+   * with it.
    */
   useEffect(() => {
-    const apply = (next: boolean) => flushSync(() => setPrinting(next));
+    const apply = (next: boolean) => {
+      flushSync(() => setPrinting(next));
+      const box = scrollRef.current;
+      flushSync(() => setScrollTop(box ? box.scrollTop : 0));
+    };
     const onBeforePrint = () => apply(true);
     const onAfterPrint = () => apply(false);
     const onMediaChange = (event: MediaQueryListEvent) => apply(event.matches);
@@ -162,12 +164,12 @@ export function Table({
     if (!sort) return rows;
     const indexed = rows.map((row, index) => ({ row, index }));
     indexed.sort((left, right) => {
-      const result = compareValues(
+      const result = compareSortValues(
         cellSortValue(left.row.cells[sort.columnId]),
         cellSortValue(right.row.cells[sort.columnId]),
+        sort.direction,
       );
-      if (result === 0) return left.index - right.index;
-      return sort.direction === "ascending" ? result : -result;
+      return result === 0 ? left.index - right.index : result;
     });
     return indexed.map(({ row }) => row);
   }, [rows, sort]);

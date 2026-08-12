@@ -7092,3 +7092,82 @@ moves, no runtime dependency was added, and nothing under `domain/`, `contracts/
 **Revert path:** revert this changeset; the no-op value-column sort, the undisclosed ordering, the
 cropped printed register, the transform-blind fence, and the duplicated app-tree walk return to
 their D-196 state.
+
+### D-198 · 2026-08-12 · reversible · Seventh review round: one stated ordering, and a window that follows the element
+
+The prompt-2 review gate returned three findings; all three are resolved here. The first is the
+same shape of dishonesty D-197 chased out of the caption, one layer down in the comparator; the
+other two harden the fence and the print pass that round introduced.
+
+**A register may not state an ordering rule it does not apply.** D-197 gave `TableColumn` a
+`sortNote` so a sighted reader could tell a severity order from an alphabet, and the simulation
+delta's read "dispositions by restrictiveness, then alphabetically". The fallback band was the
+FORMATTED cell text compared through the tier's numeric-aware collator, which is not alphabetical -
+and the divergence was reachable on the shipped firm-A rows, not in theory: ascending by "Today"
+put `$36,000.00` above `$124,000.00` under a note promising the alphabet. Worse, a money string is
+not orderable at all once a thousands separator lands, since `$1,234.00` collates below `$980.00`.
+A disclosure that describes a different ordering than the one performed is the same false claim as
+a caption describing a sort that never happened.
+
+The tier now has ONE ordering, in its own pure module `src/app/presentation/table-order.ts`, and
+it is stated in the reader's words wherever it is not obvious. `TableSortValue` is
+`string | number | boolean | { rank } | null | undefined`, and `compareSortValues` sorts by
+explicit BANDS: a domain lattice first (ranked by the ratified §5 `DISPOSITION_RESTRICTIVENESS`,
+never by label), then numbers compared as numbers, then text through the one hoisted collator
+(case-insensitive and numeric-aware, so "item 2" precedes "item 10"), then booleans false before
+true. Absent, null and empty values group at the END in BOTH directions - a blank is the absence
+of a value, not a small one, and flipping the direction to float the blanks buries the rows the
+reader asked for - which is why the comparator takes the direction rather than having its result
+negated by the caller. Ties return exactly zero, so the caller's recorded order survives and stays
+one action from restoration (D-194). Cells yield RAW typed data: a metric yields its number (money
+converted out of minor units, so a column mixing it with counts compares what the reader sees), a
+disposition yields its rank, and a cell with neither yields nothing rather than a `""` that ties
+every row silently. The simulation note now reads "dispositions by restrictiveness, then numbers
+by value, then text alphabetically with numbers in numeric order, blanks last" - the bands, in the
+order they are applied - and the caption, the landmark label and the visible text carry the same
+bytes.
+
+**A fence that identifies a column by its own `sortable` key cannot see one that inherits it.**
+`register-sortability` treated an object literal as a column only when the literal declared
+`sortable` itself, so `[{ ...SHARED_SORTABLE, id: "when", header: "When" }]` was not a column at
+all to it: the register shipped fully sortable and entirely unreviewed, and nothing was reported -
+the "passing as unnoticed rather than as unreviewed" failure its own header promises cannot
+happen, for the second round running. A column collection is now recognized by what it IS - an
+array holding a column literal, an array annotated `TableColumn[]`, or whatever a
+`<Table columns={...}>` attribute names - and every element of one is resolved to a literal or
+refused. Spread sources declared exactly once in the same file are INLINED and reviewed like any
+other column, with the last writer winning as it does at runtime; every other source (an import, a
+shadowed name, a call, a chain past the depth cap) is refused with `file:line`, and so is a
+`columns` attribute naming nothing the fence can read. Where the source LIVES decides whether it
+can be read, never whether it must be reviewed. Proven adversarially against the real tree, with
+the shipped-at-HEAD fence run on the same injected tree for comparison (PF-250).
+
+**A window resumed from an offset the element no longer has renders blank.** Suspending row
+windowing for the print pass drops the height cap, so the box stops overflowing and the browser
+clamps its `scrollTop`; restoring the cap lets the browser put an offset back. The scroll handler
+hears neither, because it is gated on windowing being ON - so React kept the pre-print offset and,
+on the way out, placed the rendered slice hundreds of pixels away from the visible band. It
+self-healed only when the clamp's scroll event happened to land after the transition, which is a
+timing accident. Both transitions now READ THE OFFSET BACK off the element inside the same
+synchronous commit: whatever the element settles on IS the offset, and the only guarantee owed is
+that state agrees with it. Trying to restore a captured offset instead was measured and rejected -
+the print media query has already dropped the cap by the time the listener runs, so the captured
+value is the clamped one, and writing it back destroys the position the browser had preserved.
+Covered TWICE, because the browser half cannot be made deterministic: an e2e regression scrolls deep
+into a 200-row register, crosses print media in both directions, and asserts rows cover the visible
+band from its top edge to its bottom one - the shape the failure takes for a reader - while a jsdom
+unit spec forces the disagreement outright and asserts the resumed window index. The e2e alone was
+NOT enough and was measured to prove it: Chromium sometimes hands the scroll position back on the
+way out, and when it does the stale window agrees with the element by accident and the broken code
+passes. jsdom performs no layout, so there the offset is what the test sets and the row height is
+the seeded estimate; the unit spec fails on the unreconciled build every time, and a companion
+asserts the reconciliation is not a rewind - an element that keeps its offset keeps its window.
+
+The ordering module is a split, not new surface area: `table.tsx` had reached 479 of its 500-line
+ceiling holding two unrelated concerns, and the comparator is pure and React-free. The presentation
+tier re-measures at 2,064/6,000 with `line-budget.test.ts`'s own algorithm on the tree as this round
+lands (1,970 at D-197); the recorded figure there is updated to match. No ceiling moves, no runtime
+dependency was added, and nothing under `domain/`, `contracts/`, or `infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the misstated ordering note, the string-sorted money, the
+spread-blind fence, and the stale post-print window return to their D-197 state.

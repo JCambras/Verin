@@ -3,10 +3,12 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { metric } from "@contracts/metric";
 import { getJourney } from "@app/demo/journey";
 import { DISPOSITION_LABELS, type DispositionKind } from "@app/demo/model";
 import { comparisonSortValue, PolicyAuthoringSurface } from "@app/demo/surfaces/policy-authoring";
 import { PolicyTraceSurface } from "@app/demo/surfaces/policy-trace";
+import { compareSortValues } from "@app/presentation/table-order";
 import { ExecutionTimeline } from "@app/presentation/execution-timeline";
 import AuditPage from "@app/app/audit/page";
 import DecisionLedgerPage from "@app/app/ledger/page";
@@ -85,8 +87,10 @@ describe("order-carrying registers", () => {
  * which is why the trace and the timeline above stay unsortable.
  */
 describe("the policy simulation delta as a set of cases", () => {
+  const PROVENANCE = { source: "verin-crm", asOf: "2026-08-05T12:00:00.000Z", confidence: "high" } as const;
   const CAPTION = "Simulated impact of the drafted policy";
-  const SORT_NOTE = "dispositions by restrictiveness, then alphabetically";
+  const SORT_NOTE =
+    "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order, blanks last";
 
   function renderSimulation() {
     const journey = getJourney("dual-approval", "firm-a");
@@ -189,7 +193,7 @@ describe("the policy simulation delta as a set of cases", () => {
     const shuffled: readonly DispositionKind[] = ["prohibited", "proceed", "blocked"];
 
     const byRestrictiveness = [...shuffled].sort((left, right) =>
-      collator.compare(comparisonSortValue(badge(left)), comparisonSortValue(badge(right))),
+      compareSortValues(comparisonSortValue(badge(left)), comparisonSortValue(badge(right)), "ascending"),
     );
     expect(byRestrictiveness).toEqual(["proceed", "blocked", "prohibited"]);
 
@@ -200,11 +204,36 @@ describe("the policy simulation delta as a set of cases", () => {
 
     // One ranking serves both value columns, so "Today" and "Under the draft" compare directly.
     for (const kind of shuffled) {
-      expect(comparisonSortValue(badge(kind))).toBe(comparisonSortValue({ badge: { status: kind, label: "anything" } }));
+      expect(comparisonSortValue(badge(kind))).toEqual(
+        comparisonSortValue({ badge: { status: kind, label: "anything" } }),
+      );
     }
     // A value outside the lattice falls back to the text the reader can see, never to nothing.
     expect(comparisonSortValue({ display: "Twelve months" })).toContain("Twelve months");
     expect(comparisonSortValue({ badge: { status: "escalated", label: "Escalated" } })).toContain("Escalated");
+    expect(comparisonSortValue({})).toBeNull();
+  });
+
+  /**
+   * The defect this replaces: a metric cell sorted on its FORMATTED string, so the
+   * ordering the note promised and the ordering the collator performed were two different
+   * things - and money written with a thousands separator does not even order correctly as
+   * text, which `$1,234.00` below `$980.00` is the shipped-shape proof of.
+   */
+  it("orders money by its value rather than by the string it is printed as", () => {
+    const money = (minor: number) => ({ metric: metric(minor, "currency-minor" as const, PROVENANCE) });
+    expect(comparisonSortValue(money(123400))).toBe(1234);
+    expect(compareSortValues(comparisonSortValue(money(123400)), comparisonSortValue(money(98000)), "ascending"))
+      .toBeGreaterThan(0);
+    expect(new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare("$1,234.00", "$980.00"))
+      .toBeLessThan(0);
+
+    // Money is stored in minor units, so a column mixing it with counts compares the
+    // numbers the reader is actually looking at.
+    const count = { metric: metric(3, "count" as const, PROVENANCE) };
+    expect(comparisonSortValue({ metric: metric(50, "currency-minor" as const, PROVENANCE) })).toBe(0.5);
+    expect(compareSortValues(comparisonSortValue(count), comparisonSortValue(money(50)), "ascending"))
+      .toBeGreaterThan(0);
   });
 
   it("reconstructs the authored order from the case column and from one restore action", async () => {

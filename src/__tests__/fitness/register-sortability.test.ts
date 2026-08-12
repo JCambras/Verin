@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Node, SyntaxKind, type ArrayLiteralExpression, type SourceFile } from "ts-morph";
+import {
+  Node,
+  SyntaxKind,
+  type ArrayLiteralExpression,
+  type ObjectLiteralExpression,
+  type SourceFile,
+} from "ts-morph";
 import { appSourceProject, inMemoryProject, relativeToRepo } from "./_fence-utils";
 
 /**
@@ -19,9 +25,23 @@ import { appSourceProject, inMemoryProject, relativeToRepo } from "./_fence-util
  * make the judgement UNSKIPPABLE, so a new sortable register fails the build until someone
  * names its order carrier.
  *
- * Anything it cannot resolve to a literal - a computed `sortable`, a spread column
- * collection, a column whose `id` is not a literal string, or a column literal built
- * anywhere OTHER than directly inside a column array (`BASE.map((c) => ({ ...c,
+ * A column collection is recognized THREE ways, so sortability cannot hide behind
+ * indirection: an array literal holding a column that declares `sortable`, an array
+ * annotated `TableColumn[]`, and whatever a `<Table columns={...}>` attribute names. A
+ * collection found only by the first test is what let `[{ ...SHARED_SORTABLE, id: "when" }]`
+ * ship a fully sortable register the fence never saw - the literal declares no `sortable`
+ * of its own, so nothing identified it as a column at all.
+ *
+ * Spreads are RESOLVED or REFUSED, never assumed harmless. An `...IDENT` naming a literal
+ * declared exactly once in the same file is inlined and reviewed like any other column;
+ * anything else - an import, a shadowed name, a call, a spread deeper than the depth cap -
+ * is refused with `file:line`. That is deliberately independent of where the source lives:
+ * a shared column definition outside `src/app` is exactly the case the fence cannot read,
+ * so it is the case it must not wave through.
+ *
+ * Anything else it cannot resolve to a literal - a computed `sortable`, a column whose
+ * `id` is not a literal string, an unresolvable `columns` attribute, or a column literal
+ * built anywhere OTHER than inside a column collection (`BASE.map((c) => ({ ...c,
  * sortable: true }))` has no sibling collection to prove an order carrier against) -
  * fails closed rather than passing as reviewed.
  */
@@ -46,66 +66,263 @@ interface DeclaredColumn {
 interface ColumnCollection {
   readonly node: Node;
   readonly columns: readonly DeclaredColumn[];
+  /** An element - or a spread source - this fence could not resolve to a column literal. */
   readonly spread: boolean;
 }
+
+/** A spread chain deeper than this is refused rather than followed indefinitely. */
+const MAX_SPREAD_DEPTH = 4;
 
 function literalString(node: Node | undefined): string | null {
   if (!node) return null;
   return Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node) ? node.getLiteralText() : null;
 }
 
-function declaredSortable(object: Node): Sortable | null {
-  if (!Node.isObjectLiteralExpression(object)) return null;
-  const property = object.getProperty("sortable");
-  if (!property) return null;
-  if (!Node.isPropertyAssignment(property)) return "unproven";
-  const initializer = property.getInitializer();
-  if (initializer?.getKind() === SyntaxKind.TrueKeyword) return "yes";
-  if (initializer?.getKind() === SyntaxKind.FalseKeyword) return "no";
-  return "unproven";
-}
-
-function declaredId(object: Node): string | null {
-  if (!Node.isObjectLiteralExpression(object)) return null;
-  const property = object.getProperty("id");
-  return property && Node.isPropertyAssignment(property) ? literalString(property.getInitializer()) : null;
-}
-
-interface ColumnScan {
-  /** Column literals declared directly inside an array literal, grouped by that array. */
-  readonly collections: readonly ColumnCollection[];
-  /** Column literals built anywhere else - a `.map` callback, a conditional arm, a helper. */
-  readonly derived: readonly DeclaredColumn[];
+function unwrapExpression(node: Node | undefined): Node | undefined {
+  let current = node;
+  while (
+    current &&
+    (Node.isAsExpression(current) ||
+      Node.isSatisfiesExpression(current) ||
+      Node.isParenthesizedExpression(current))
+  ) {
+    current = current.getExpression();
+  }
+  return current;
 }
 
 /**
- * Every column literal in the file, identified by the `sortable` key. A literal that is
- * a DIRECT element of an array literal belongs to that array's collection - which is
- * what lets the order carrier be proven against its siblings. One built anywhere else
- * has no siblings to prove anything against, so it is returned separately and refused;
- * scanning only array elements is what let a transform-produced sortable register pass
- * as unseen rather than as unreviewed.
+ * The object or array literal an expression names, or nothing. An identifier resolves
+ * only when the file declares that name EXACTLY once: a second declaration means the
+ * name could be shadowed, and a fence that guesses which one a spread meant is a fence
+ * that can be wrong silently.
  */
-function scanColumns(sf: SourceFile): ColumnScan {
-  const grouped = new Map<ArrayLiteralExpression, DeclaredColumn[]>();
-  const derived: DeclaredColumn[] = [];
-  for (const object of sf.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
-    const sortable = declaredSortable(object);
-    if (!sortable) continue;
-    const column: DeclaredColumn = { id: declaredId(object), sortable, node: object };
-    const parent = object.getParent();
-    if (parent && Node.isArrayLiteralExpression(parent)) {
-      grouped.set(parent, [...(grouped.get(parent) ?? []), column]);
-    } else {
-      derived.push(column);
+function resolveLiteral(expression: Node | undefined): Node | undefined {
+  const direct = unwrapExpression(expression);
+  if (!direct) return undefined;
+  if (Node.isObjectLiteralExpression(direct) || Node.isArrayLiteralExpression(direct)) return direct;
+  if (!Node.isIdentifier(direct)) return undefined;
+  const declarations = direct
+    .getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.VariableDeclaration)
+    .filter((declaration) => declaration.getName() === direct.getText());
+  if (declarations.length !== 1) return undefined;
+  const initializer = unwrapExpression(declarations[0]!.getInitializer());
+  return initializer && (Node.isObjectLiteralExpression(initializer) || Node.isArrayLiteralExpression(initializer))
+    ? initializer
+    : undefined;
+}
+
+interface PropertyLookup {
+  readonly value: Node | undefined;
+  readonly unresolved: boolean;
+}
+
+/**
+ * What a property finally holds, spreads included and in source order, so the LAST
+ * writer wins exactly as it does at runtime: `{ ...UNKNOWN, sortable: false }` is proven
+ * unsortable, while `{ sortable: false, ...UNKNOWN }` is not.
+ */
+function objectProperty(object: ObjectLiteralExpression, name: string, depth: number): PropertyLookup {
+  let value: Node | undefined;
+  let unresolved = false;
+  for (const property of object.getProperties()) {
+    if (Node.isSpreadAssignment(property)) {
+      const source = depth < MAX_SPREAD_DEPTH ? resolveLiteral(property.getExpression()) : undefined;
+      if (!source || !Node.isObjectLiteralExpression(source)) {
+        value = undefined;
+        unresolved = true;
+        continue;
+      }
+      const inherited = objectProperty(source, name, depth + 1);
+      if (inherited.unresolved) {
+        value = undefined;
+        unresolved = true;
+      } else if (inherited.value !== undefined) {
+        value = inherited.value;
+        unresolved = false;
+      }
+      continue;
+    }
+    if (Node.isPropertyAssignment(property)) {
+      if (property.getName() !== name) continue;
+      value = property.getInitializer();
+      unresolved = false;
+      continue;
+    }
+    if (Node.hasName(property) && property.getName() === name) {
+      value = undefined;
+      unresolved = true;
     }
   }
-  const collections = [...grouped].map(([array, columns]) => ({
-    node: array,
-    columns,
-    spread: array.getElements().some((element) => Node.isSpreadElement(element)),
-  }));
-  return { collections, derived };
+  return { value, unresolved };
+}
+
+function declaredSortable(object: ObjectLiteralExpression): Sortable | null {
+  const { value, unresolved } = objectProperty(object, "sortable", 0);
+  if (value?.getKind() === SyntaxKind.TrueKeyword) return "yes";
+  if (value?.getKind() === SyntaxKind.FalseKeyword) return "no";
+  if (unresolved || value !== undefined) return "unproven";
+  return null;
+}
+
+function declaredId(object: ObjectLiteralExpression): string | null {
+  return literalString(objectProperty(object, "id", 0).value ?? undefined);
+}
+
+/** Whether an array literal holds a column that says anything about sortability at all. */
+function holdsColumnLiteral(array: ArrayLiteralExpression): boolean {
+  return array.getElements().some((element) => {
+    const object = unwrapExpression(element);
+    return object !== undefined && Node.isObjectLiteralExpression(object) && object.getProperty("sortable") !== undefined;
+  });
+}
+
+/** Whether an array literal is DECLARED to be columns, however its elements are built. */
+function annotatedAsColumns(array: ArrayLiteralExpression): boolean {
+  let current: Node | undefined = array.getParent();
+  while (current) {
+    if (Node.isAsExpression(current) || Node.isSatisfiesExpression(current)) {
+      if (current.getTypeNode()?.getText().includes("TableColumn")) return true;
+      current = current.getParent();
+      continue;
+    }
+    if (Node.isParenthesizedExpression(current)) {
+      current = current.getParent();
+      continue;
+    }
+    return Node.isVariableDeclaration(current)
+      ? (current.getTypeNode()?.getText().includes("TableColumn") ?? false)
+      : false;
+  }
+  return false;
+}
+
+/** Every `<Table columns={...}>` in the file, paired with the array literal it names. */
+function tableColumnAttributes(sf: SourceFile): Array<{ readonly attribute: Node; readonly array: ArrayLiteralExpression | null }> {
+  const out: Array<{ attribute: Node; array: ArrayLiteralExpression | null }> = [];
+  for (const attribute of sf.getDescendantsOfKind(SyntaxKind.JsxAttribute)) {
+    if (attribute.getNameNode().getText() !== "columns") continue;
+    const owner = attribute.getFirstAncestor(
+      (node) => Node.isJsxOpeningElement(node) || Node.isJsxSelfClosingElement(node),
+    );
+    if (!owner || !(Node.isJsxOpeningElement(owner) || Node.isJsxSelfClosingElement(owner))) continue;
+    if (owner.getTagNameNode().getText() !== "Table") continue;
+    const initializer = attribute.getInitializer();
+    const expression = initializer && Node.isJsxExpression(initializer) ? initializer.getExpression() : undefined;
+    const resolved = resolveLiteral(expression);
+    out.push({ attribute, array: resolved && Node.isArrayLiteralExpression(resolved) ? resolved : null });
+  }
+  return out;
+}
+
+interface CollectionScan {
+  readonly columns: DeclaredColumn[];
+  readonly unresolved: boolean;
+}
+
+/** The columns an array literal finally holds, following resolvable spread sources. */
+function collectionColumns(
+  array: ArrayLiteralExpression,
+  depth: number,
+  fragments: Set<ArrayLiteralExpression>,
+): CollectionScan {
+  const columns: DeclaredColumn[] = [];
+  let unresolved = false;
+  for (const element of array.getElements()) {
+    if (Node.isSpreadElement(element)) {
+      const source = depth < MAX_SPREAD_DEPTH ? resolveLiteral(element.getExpression()) : undefined;
+      if (!source || !Node.isArrayLiteralExpression(source) || fragments.has(source)) {
+        unresolved = true;
+        continue;
+      }
+      fragments.add(source);
+      const inner = collectionColumns(source, depth + 1, fragments);
+      columns.push(...inner.columns);
+      unresolved = unresolved || inner.unresolved;
+      continue;
+    }
+    const object = unwrapExpression(element);
+    if (!object || !Node.isObjectLiteralExpression(object)) {
+      unresolved = true;
+      continue;
+    }
+    const sortable = declaredSortable(object);
+    if (sortable === null) continue;
+    columns.push({ id: declaredId(object), sortable, node: object });
+  }
+  return { columns, unresolved };
+}
+
+/**
+ * Every literal a spread in this file names. Such a literal is a shared FRAGMENT, read
+ * through the collections that spread it, so it is not also a homeless column of its own.
+ */
+function spreadSources(sf: SourceFile): Set<Node> {
+  const out = new Set<Node>();
+  const queue: Node[] = [
+    ...sf.getDescendantsOfKind(SyntaxKind.SpreadAssignment),
+    ...sf.getDescendantsOfKind(SyntaxKind.SpreadElement),
+  ];
+  for (const spread of queue) {
+    const resolved = Node.isSpreadAssignment(spread) || Node.isSpreadElement(spread)
+      ? resolveLiteral(spread.getExpression())
+      : undefined;
+    if (!resolved || out.has(resolved)) continue;
+    out.add(resolved);
+    queue.push(
+      ...resolved.getDescendantsOfKind(SyntaxKind.SpreadAssignment),
+      ...resolved.getDescendantsOfKind(SyntaxKind.SpreadElement),
+    );
+  }
+  return out;
+}
+
+interface ColumnScan {
+  /** Every resolved column collection in the file, each with the columns it finally holds. */
+  readonly collections: readonly ColumnCollection[];
+  /** Column literals built anywhere else - a `.map` callback, a conditional arm, a helper. */
+  readonly derived: readonly DeclaredColumn[];
+  /** `<Table columns={...}>` attributes naming nothing this fence can read. */
+  readonly unreadableTables: readonly Node[];
+}
+
+/**
+ * Every column collection in the file and every column literal that belongs to none.
+ * A column inside a collection can be proven against its siblings - which is what an
+ * order carrier is proven against. One built anywhere else has no siblings, so it is
+ * returned separately and refused; scanning only array elements that declared `sortable`
+ * themselves is what let a transform-produced and then a spread-inherited sortable
+ * register pass as unseen rather than as unreviewed.
+ */
+function scanColumns(sf: SourceFile): ColumnScan {
+  const fragments = new Set<ArrayLiteralExpression>();
+  const roots = new Set<ArrayLiteralExpression>();
+  const unreadableTables: Node[] = [];
+  for (const { attribute, array } of tableColumnAttributes(sf)) {
+    if (array) roots.add(array);
+    else unreadableTables.push(attribute);
+  }
+  for (const array of sf.getDescendantsOfKind(SyntaxKind.ArrayLiteralExpression)) {
+    if (holdsColumnLiteral(array) || annotatedAsColumns(array)) roots.add(array);
+  }
+
+  const scanned = [...roots].map((array) => ({ array, scan: collectionColumns(array, 0, fragments) }));
+  const collections = scanned
+    .filter(({ array }) => !fragments.has(array))
+    .map(({ array, scan }) => ({ node: array, columns: scan.columns, spread: scan.unresolved }));
+
+  // A column already proven against its siblings is not also a homeless one; membership
+  // is keyed on the node so a wrapped element (`[{ ... } as TableColumn]`) counts once.
+  const claimed = new Set<Node>([
+    ...scanned.flatMap(({ scan }) => scan.columns.map((column) => column.node)),
+    ...spreadSources(sf),
+  ]);
+  const derived = sf
+    .getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)
+    .filter((object) => object.getProperty("sortable") !== undefined && !claimed.has(object))
+    .map((object) => ({ id: declaredId(object), sortable: declaredSortable(object) ?? "unproven", node: object }));
+  return { collections, derived, unreadableTables };
 }
 
 /** Whether the file declares any register this fence must see reviewed. */
@@ -122,7 +339,7 @@ export function registerSortabilityViolations(
 ): string[] {
   const out: string[] = [];
   const report = (node: Node, message: string) => out.push(`${rel}:${node.getStartLineNumber()} :: ${message}`);
-  const { collections, derived } = scanColumns(sf);
+  const { collections, derived, unreadableTables } = scanColumns(sf);
 
   for (const column of derived) {
     if (column.sortable === "no") continue;
@@ -132,11 +349,27 @@ export function registerSortabilityViolations(
     );
   }
 
+  for (const attribute of unreadableTables) {
+    report(
+      attribute,
+      "a register's 'columns' attribute names no literal column collection in this file, so its sortability cannot be reviewed (D-194)",
+    );
+  }
+
   for (const collection of collections) {
     for (const column of collection.columns) {
       if (column.sortable === "unproven") {
-        report(column.node, "'sortable' is not a literal, so this register's sortability cannot be reviewed (D-194)");
+        report(
+          column.node,
+          "'sortable' is not a resolvable literal - a computed value, or inherited through a spread this fence cannot read - so this register's sortability cannot be reviewed (D-194)",
+        );
       }
+    }
+    if (collection.spread) {
+      report(
+        collection.node,
+        "column collection is spread from an unresolved source, so the columns it finally holds - and their sortability - cannot be proven (D-194)",
+      );
     }
     const sortable = collection.columns.filter((column) => column.sortable === "yes");
     if (sortable.length === 0) continue;
@@ -155,13 +388,7 @@ export function registerSortabilityViolations(
       );
       continue;
     }
-    if (collection.spread) {
-      report(
-        collection.node,
-        `column collection is spread from an unresolved source, so the visible '${orderColumn}' column cannot be proven`,
-      );
-      continue;
-    }
+    if (collection.spread) continue;
     if (!sortable.some((column) => column.id === orderColumn)) {
       report(
         collection.node,
@@ -245,13 +472,13 @@ describe("register-sortability fence", () => {
         source('const on = true; const C = [{ id: "when", header: "When", sortable: on }]; export default function P(){ return C.length; }'),
         "src/app/example/page.tsx",
       );
-      expect(found).toEqual([expect.stringContaining("'sortable' is not a literal")]);
+      expect(found).toEqual([expect.stringContaining("'sortable' is not a resolvable literal")]);
     });
 
     it("fails closed on a spread column collection and on a computed column id", () => {
       const reviewed = new Map([["src/app/example/page.tsx", "sequence"]]);
       const spread = registerSortabilityViolations(
-        source('const base: unknown[] = []; const C = [...base, { id: "when", header: "When", sortable: true }]; export default function P(){ return C.length; }'),
+        source('import { base } from "./base";\nconst C = [...base, { id: "when", header: "When", sortable: true }]; export default function P(){ return C.length; }'),
         "src/app/example/page.tsx",
         reviewed,
       );
@@ -263,6 +490,109 @@ describe("register-sortability fence", () => {
         reviewed,
       );
       expect(computed.some((entry) => entry.includes("is not a literal cannot be proven"))).toBe(true);
+    });
+
+    /**
+     * The hole this closes: a column that declares no `sortable` of its own was not a
+     * column at all to the previous scan, so `{ ...SHARED_SORTABLE, id: "when" }` shipped
+     * a fully sortable register that the fence never saw - not refused, not reported,
+     * simply invisible. Where the spread source lives decides whether it can be READ,
+     * never whether it must be reviewed.
+     */
+    it("fails closed on sortability inherited through a spread the fence cannot read", () => {
+      const reviewed = new Map([["src/app/example/page.tsx", "sequence"]]);
+      const imported = registerSortabilityViolations(
+        source(
+          'import { SHARED } from "@app/shared";\nconst C: readonly TableColumn[] = [{ ...SHARED, id: "when", header: "When" }];\nexport default function P(){ return C.length; }',
+        ),
+        "src/app/example/page.tsx",
+        reviewed,
+      );
+      expect(imported).toEqual([
+        expect.stringContaining("src/app/example/page.tsx:2 :: 'sortable' is not a resolvable literal"),
+      ]);
+
+      // The whole collection spread from an unreadable source is the same hole one level up.
+      const wholesale = registerSortabilityViolations(
+        source(
+          'import { SHARED } from "@app/shared";\nconst C: readonly TableColumn[] = [...SHARED];\nexport default function P(){ return C.length; }',
+        ),
+        "src/app/example/page.tsx",
+        reviewed,
+      );
+      expect(wholesale).toEqual([expect.stringContaining("column collection is spread from an unresolved source")]);
+
+      // And a shadowed local name is unreadable for the same reason: the fence would be guessing.
+      const shadowed = registerSortabilityViolations(
+        source(
+          'const SHARED = { sortable: true };\nfunction inner(){ const SHARED = { sortable: false }; return SHARED; }\nconst C: readonly TableColumn[] = [{ ...SHARED, id: "when", header: "When" }];\nexport default function P(){ return C.length + Number(inner().sortable); }',
+        ),
+        "src/app/example/page.tsx",
+        reviewed,
+      );
+      expect(shadowed).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("src/app/example/page.tsx:3 :: 'sortable' is not a resolvable literal"),
+        ]),
+      );
+    });
+
+    /**
+     * Resolution has to be real, or the rule above is just a ban on spreads: a source
+     * declared once in the same file is inlined and reviewed like any other column, and
+     * the LAST writer wins exactly as it does at runtime.
+     */
+    it("resolves a readable spread completely rather than refusing it", () => {
+      const reviewed = new Map([["src/app/example/page.tsx", "sequence"]]);
+      const merged = registerSortabilityViolations(
+        source(
+          'const SORTABLE = { sortable: true };\nconst SEQUENCE = [{ ...SORTABLE, id: "sequence", header: "#" }];\nconst C: readonly TableColumn[] = [...SEQUENCE, { ...SORTABLE, id: "when", header: "When" }];\nexport default function P(){ return C.length; }',
+        ),
+        "src/app/example/page.tsx",
+        reviewed,
+      );
+      expect(merged).toEqual([]);
+
+      // Resolved, and still held to the rule: without the order carrier it is refused.
+      const noCarrier = registerSortabilityViolations(
+        source(
+          'const SORTABLE = { sortable: true };\nconst C: readonly TableColumn[] = [{ ...SORTABLE, id: "when", header: "When" }];\nexport default function P(){ return C.length; }',
+        ),
+        "src/app/example/page.tsx",
+        reviewed,
+      );
+      expect(noCarrier).toEqual([expect.stringContaining("no visible sortable 'sequence' column")]);
+
+      // An own `sortable: false` after the spread is proven; before it, it is not.
+      const after = registerSortabilityViolations(
+        source(
+          'import { SHARED } from "@app/shared";\nconst C: readonly TableColumn[] = [{ ...SHARED, id: "when", header: "When", sortable: false }];\nexport default function P(){ return C.length; }',
+        ),
+        "src/app/example/page.tsx",
+      );
+      expect(after).toEqual([]);
+
+      const before = registerSortabilityViolations(
+        source(
+          'import { SHARED } from "@app/shared";\nconst C: readonly TableColumn[] = [{ sortable: false, ...SHARED, id: "when", header: "When" }];\nexport default function P(){ return C.length; }',
+        ),
+        "src/app/example/page.tsx",
+      );
+      expect(before).toEqual([expect.stringContaining("'sortable' is not a resolvable literal")]);
+    });
+
+    /** A register whose columns the fence cannot even find is not a reviewed register. */
+    it("fails closed on a Table whose 'columns' attribute names nothing readable", () => {
+      const found = registerSortabilityViolations(
+        source(
+          'import { COLUMNS } from "@app/shared";\nexport default function P(){ return <Table caption="c" columns={COLUMNS} rows={[]} />; }',
+          "/src/app/example/page.tsx",
+        ),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([
+        expect.stringContaining("src/app/example/page.tsx:2 :: a register's 'columns' attribute names no literal column collection"),
+      ]);
     });
 
     it("fails closed on a sortable column produced by a transform, review or no review", () => {
