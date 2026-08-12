@@ -221,6 +221,11 @@ rejection is a value, never a throw.
    the persisted configuration-version registry deferred to prompts 15/19 (PC-4 in
    [the gap report](./domain-config-gaps.md)).
 
+A running deployment memoizes a SUCCESSFUL load per domain id - a published version is immutable, so a
+changed file is a different version and a deployment restarts to pick one up. A FAILURE is never cached:
+a transient read error, or a document an operator has just restored, clears on the next request rather
+than disabling the configured flow for the life of the process.
+
 ## 9. A type-resolution rule this module learned the hard way
 
 Do not name a Zod schema type, or any deeply recursive type, in the signature of an EXPORTED function
@@ -229,3 +234,48 @@ generic drags its whole nested shape through dozens of method signatures, and ac
 twenty-odd composed schemas that walk exhausted a fence worker's heap - which vitest reports as a
 partial run, not a failure. Export named types and narrow ports instead (D-193, and the collapsed-export
 comments in each section module).
+
+## 10. What a configuration refusal says, and to whom
+
+A refusal of the published document has three audiences - the submitter, an external sender, and the
+operator - and each is told a different thing on purpose. The rules below are enforced by RULES I-L of
+the domain-configuration fence, which derive what they check - the mint sites, the surfaces that decide
+an instruction, the admitted diagnosis shapes - from the real modules and their real emitter output
+rather than from a hand-kept list.
+
+- **One mint.** A configuration module never mints an `AppError`. It states the typed
+  `DomainConfigError` it found, and the `ConfiguredRefusal` port (`src/domain/config/errors.ts`) turns
+  that fault into the one refusal shape through the stage arm it belongs to - `uncompilable`,
+  `unrunnableStep`, `intakeMismatch`. Nine hand-written mints saying the same thing in their own words
+  is what produced a server error with nothing to quote, an external provider holding our internal ids,
+  and no operator line at all (D-231/D-232). Pure domain code reaches no logger, which is why the
+  conversion is a port rather than a function in the module that found the fault.
+- **A retry category belongs to a CAUSE, never to a call site.** Every refusal whose cause is "this
+  deployment cannot resolve or compile its published configuration" is operator-recoverable and
+  therefore `retry-later`, wherever it arises - the load, the version guard, the compile, and a command
+  type this build has no adapter for included. The mint marks it (`operatorRecoverable`,
+  `src/contracts/client-retry.ts`) and every surface READS the instruction (`clientRetryFor`) instead of
+  choosing one, so a refusal added later inherits the classification without anyone remembering to
+  (D-228).
+- **The client is TOLD what to do next; it never infers it from a status.** The instruction is a closed
+  vocabulary - `retry-with-new-identity`, `retry-with-same-identity`, `retry-later`, `do-not-retry` -
+  and permanent-versus-transient was a false binary: a superseded version or a broken document clears on
+  an OPERATOR action, so answering it "do not retry" throws away completable work while "retry now"
+  spends a sender's budget against a condition no retry changes (D-224/D-225/D-226). The status is a
+  message to that audience about what to do: 409 / 500 / 503 with `Retry-After` / 422 to the browser
+  (`src/app/_server/refusal.ts`), one do-not-redeliver 422 or the same paced 503 to the e-sign provider
+  (`src/app/api/esign/webhook/route.ts`, D-222). It matters at the intake boundary because the journey
+  mints one request identity per form session and a fresh identity is a fresh EXECUTION: burning one on
+  a refusal the submitter cannot fix opens duplicate household, contact and application rows.
+- **No deployment internal crosses the boundary.** Dotted document paths, file names, environment
+  variable names, hashes and version ids reach neither a user-facing surface - static copy included -
+  nor the external provider. The wire carries this repo's own generic sentence plus the refusal's
+  correlation reference, which is the only thing the person staring at the failure can hand to
+  operations (D-227/D-229/D-230).
+- **The diagnosis goes to the operator, as REGISTERED STRUCTURED VALUES.** The stage and code
+  (`configStage`, `configCode`) and the document location (`configPath`) travel as registered fields on
+  the log line the same correlation id joins, never as prose, because the observability vocabulary
+  admits only registered enums and ids and degrades anything else to `[REDACTED]`. That safety property
+  is also why the admitted `configPath` shape is derived from what the emitters actually produce and
+  bounded by `MAX_CONFIGURED_VALUE_DEPTH` (§7): a path the emitter can build and the shape cannot
+  express would censor the very location the operator needs (D-233).

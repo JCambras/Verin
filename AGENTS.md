@@ -179,6 +179,15 @@ gap report. Load-bearing rules an agent trips over:
 - **Tenancy enters once,** at `bindDomainConfig(loaded, firmRegistry)`; the document may not carry a
   `firmId` anywhere. A parameter needing a tenant-scoped ref uses the one `{ $ref: { kind, class } }`
   placeholder, and never in a key-shaping parameter (D-184/D-185).
+- **A configuration refusal is minted ONCE and classified by CAUSE** (`docs/domain-config.md` §10, fence
+  RULES I-L). A config module states a typed fault; the `ConfiguredRefusal` port mints it. Every "this
+  deployment cannot resolve or compile its published configuration" refusal is operator-recoverable and
+  therefore `retry-later` wherever it arises, and a surface READS that instruction
+  (`clientRetryFor`, `src/contracts/client-retry.ts`) instead of choosing one or pattern-matching a
+  status. No deployment internal - document path, file name, env var, hash, version id - reaches
+  user-facing copy (static literals included) or the external provider: the wire gets a generic sentence
+  plus the correlation reference, and the diagnosis goes to the operator as the REGISTERED fields
+  `configStage`/`configCode`/`configPath` (D-227..D-234).
 - **Never name a Zod schema type (or any deeply recursive type) in an exported `src/domain/` signature**
   (D-193): the sealed-authority fences expand parameter types structurally and a schema generic makes
   that walk exhaust its heap - the worker DIES mid-file and vitest reports a partial run, not a failure.
@@ -260,7 +269,8 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
   (`Result<T,E>`, `AppError`, roles) plus the v3 decision-core Zod contracts
   (`contracts/decision-core/`, ADR-0029; zod is the layer's ONLY permitted external import - a
   second one needs its own ADR).
-- `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine + flow definitions.
+- `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine (`workflow/engine.ts`;
+  flow definitions are COMPILED from domain configuration, never authored here - ADR-0056).
 - `src/infrastructure/` — adapters/port implementations. `process.env` is read ONLY in
   `src/infrastructure/config` (fence: `no-process-env`).
 - `src/app/` — Next.js App Router + the presentation tier (`app/presentation/`). Any demo/UI

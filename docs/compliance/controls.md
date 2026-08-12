@@ -38,7 +38,7 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | CC6.7 | Confidentiality of data | PII boundary, secret containment | PII fences, `llm-pii-boundary`, `tokenized-factory-only`, `no-secret-fallback` | ADR-0006, ADR-0031 | scrub coverage; CI |
 | CC7.1/7.2 | Detect anomalies | OTel trace spans + pino logs | `observability-coverage`, `observability-vocabulary` | ADR-0013 | telemetry |
 | **CC7.4** | Records integrity | sibling append-only operational and decision chains | `audited-write-required`, `ledger-append-only`, `audit-chain-verify` | ADR-0007, ADR-0041 | scheduled dual-chain verification evidence |
-| CC8.1 | Change management | protected main, PR template, CODEOWNERS | CI gates block merge | this doc; `.github/` | PR/merge history; no-mistakes runs |
+| CC8.1 | Change management | protected main, PR template, CODEOWNERS; published domain configuration is versioned, hash-pinned (`config/domains/versions.json`) and carries authorship provenance | CI gates block merge; `domain-configuration` (a published version's bytes are immutable; a declared change record is checked against the computed diff) | this doc; `.github/`; ADR-0056, `docs/domain-config.md` | PR/merge history; no-mistakes runs |
 | CC9.1 | Risk mitigation (vendors/supply chain) | pinned lockfile, scanners | `secret-scan`, `sast`, `dependency-audit` | ADR-0017 | CI; SBOM on release |
 
 ## Availability

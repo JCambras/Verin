@@ -73,6 +73,8 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0055](./0055-gate-a-invariant-ordering.md) | Gate A owns invariants 1, 2, 4, 5 and requires prompt-5 guarantees 7, 8, 9; invariant 3 is gated at B | Accepted (amends ADR-0023) |
 | [0056](./0056-presentation-foundation-named-deferrals.md) | A presentation foundation primitive lands ahead of its first caller only under a named deferral that expires at the prompt it cites | Accepted (amends ADR-0012) |
 | [0057](./0057-populated-world.md) | The populated world is a deterministic fixture generated once, served as evidence through a port, and provably absent from production | Accepted (amends ADR-0018) |
+| [0056](./0056-domain-configuration-schema.md) | The domain configuration schema (v3 prompt 10): a decision domain is DATA - thirteen sections, seven-stage total loader, firm binder, plan compiler; the hand-coded account-opening flow is deleted; invariant 3 activates | Accepted (amends ADR-0010) |
+| [0057](./0057-line-budget-domain-configuration.md) | Contracts, domain, and infrastructure ceilings for the domain-configuration schema and its review rounds | Accepted (amends ADR-0054) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),
