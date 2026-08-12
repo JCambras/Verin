@@ -288,7 +288,17 @@ reject duplicate exact results.
   controls, cards, badges, pills, and empty states live in `src/app/presentation/ui.tsx`; compact sorted
   and virtualized registers live in `src/app/presentation/table.tsx`; interactive leaves stay in their
   focused siblings under `src/app/presentation/`. The `presentation-primitives` fence rejects native
-  feature buttons and repeated button, badge, or pill recipes with `file:line`.
+  feature buttons and repeated button, badge, or pill recipes with `file:line`, including ones spelled
+  as interpolated templates or exported class-string constants; an element that cannot BE a primitive
+  (a Next `Link` wearing the button recipe) takes `buttonClassName()` / `cardClassName()`. Its escape
+  list is EXACT-PATH, so renaming or splitting a primitive file fails the staleness guard rather than
+  silently exempting nothing. `Table` columns are unsortable by default and sortability is opted in
+  one column at a time: a register of a SET of cases may be sortable, a register of a SEQUENCE of
+  causes (execution timeline, precedence trace) may not (D-196). A sortable register must be reviewed
+  into `register-sortability`'s registry with the visible column that carries recorded order, must
+  declare its own short `regionName` (a caption asserting an order cannot double as a landmark name,
+  D-201), and any cell it sorts must offer RAW typed data - `compareSortValues`
+  (`presentation/table-order.ts`) is the tier's one ordering, and formatted text collates as text.
 - **Sealed security types (v3 §15, D-061) construct ONLY via their factories** - all SEVEN of
   `Tokenized<T>`, `TenantContext`, `ActionGrant`, `ActorRef`, `Principal`, `WriteActor`, `ObservabilityId`
   (`tenantOf`/`tenantFromIdentity`/`systemTenant` in `contracts/tenant.ts`;

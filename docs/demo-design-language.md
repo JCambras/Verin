@@ -35,7 +35,7 @@ and never define a color, font, radius, or keyframe anywhere else.
 |---|---|
 | [`src/app/globals.css`](../src/app/globals.css) | All tokens (OKLCH slate palette, `--surface`, `--border`, `--ring`, `--destructive`, `--success`, radii), Geist via `--font-sans` / `--font-mono`, the four keyframes (`fade-in`, `slide-down`, `check-pop`, `story-fade-in`), the darkened `slate-400/500` AA overrides, the focus-visible ring, and the reduced-motion kill-switch. Light-only by design; dark mode is deliberately not a goal. |
 | [`src/app/presentation/brand.tsx`](../src/app/presentation/brand.tsx) | The `Verin.` wordmark (the trailing period is brand). |
-| [`src/app/presentation/ui.tsx`](../src/app/presentation/ui.tsx) | The canonical control and surface grammar: `Field`, `Input`, `Select`, `Checkbox`, `Radio`, `Button`, `Card`, `Badge`, `Pill`, `StatusBadge`, and `EmptyState`. Accessible by construction; status is always text + color, never color alone. |
+| [`src/app/presentation/ui.tsx`](../src/app/presentation/ui.tsx) | The canonical control and surface grammar: `Field`, `Input`, `Select`, `Checkbox`, `Radio`, `Button`, `Card`, `Badge`, `Pill`, `StatusBadge`, and `EmptyState`. Accessible by construction; status is always text + color, never color alone. `StatusBadge` maps a status to a `Pill` TONE (`PILL_TONES` owns the classes), so a status vocabulary entry never carries its own colors. An element that cannot be a `Button` or a `Card` but must wear one - a Next `Link` acting as an empty state's on-ramp - takes `buttonClassName()` / `cardClassName()` rather than restating the recipe, which the `presentation-primitives` fence rejects. |
 | [`src/app/presentation/table.tsx`](../src/app/presentation/table.tsx) | The canonical compact register/table grammar: sticky 12px headers, 14px rows, right-aligned numeric columns, status pills, loading and actionable empty states, and a virtualized body above the bounded threshold. Sortability is per column and opted INTO by the caller (never a default); while a sort is active the caption and a one-action "Restore recorded order" control keep the register honest about the order it is showing (D-194). The landmark's accessible name is the register's SHORT, STABLE identity - `regionName` - and never the active sort or a column's ordering rule: a name is a label a reader meets on every landmark entry and in the rotor, so the sort belongs in the caption and in the visible line beside the restore control, read once by a reader who has gone in (D-200). A SORTABLE register always declares one (fenced by `register-sortability`); the default to the caption serves a register whose rows cannot move, since a caption is free to assert an order - "Audit log entries, newest first" - that the reader's next sort makes false everywhere except in the name, which cannot be re-read (D-201). "Re-sorted" is claimed only when the READER moved the rows; a caller's declared recorded order states itself as recorded order. A register of a SET of cases may be sortable; a register of a SEQUENCE of causes keeps its recorded order and stays unsortable (D-196, fenced by `register-sortability`). The `region` landmark wraps the scrolled box AND the restore control, which renders after the register, is named after that register's identity, and hands focus to a header that outlives it. A column whose ordering is not the obvious one for the value on screen declares `sortNote` - the ordering rule IN THE READER'S WORDS, carried in the caption and shown as visible text beside the restore control while that sort is active; a note that describes a different ordering than the one performed is the same false claim as a caption describing a sort that never happened (D-197, D-198). ONE note serves both directions and the direction is stated beside it, never written into it, because the direction reverses only the values inside a kind - the band layout and the blanks at the end are scaffolding and hold still (D-199). How a register OCCUPIES the page is the caller's `layout` declaration - `"scroll-region"` caps it and scrolls it inside its own box, `"auto"` grows it to its content - and never a side effect of how the body happens to be RENDERED: the cap used to ride on windowing, so a register crossing the threshold by one row collapsed from full height into a capped box, a design change nobody chose (D-202). Windowing needs a bounded viewport to be sound, so it engages inside a declared scroll region and nowhere else; within one it follows row count, `loading`, and the print pass alone, and the viewport it measures against is read off the element rather than restated as a constant. Windowing is SUSPENDED for the print pass, so a register prints its complete row set rather than a cropped box of blank spacer bands; a register never truncates a printed record silently, and every transition into or out of windowing - print, a row count crossing the threshold, a refetch, a caller's prop - reads the scroll offset back off the element so the resumed window cannot point somewhere the box no longer is (D-197, D-198, D-199). |
 | [`src/app/presentation/table-order.ts`](../src/app/presentation/table-order.ts) | The tier's ONE register ordering, pure and React-free (D-198). Cells offer RAW typed data - never formatted text or the element on screen, since `$1,234.00` collates below `$980.00` - and `compareSortValues` sorts by explicit bands: a domain lattice first (dispositions by the §5 restrictiveness lattice, never by label), then numbers as numbers, then text through the one hoisted case-insensitive numeric-aware collator ("item 2" before "item 10"), then booleans. The band layout is SCAFFOLDING and is direction-invariant: the direction reverses only the values inside a kind (booleans read false-then-true ascending and true-then-false descending), never which kind sits where (D-199). Absent, null, empty and whitespace-only values group at the END in both directions, and so does a `NaN` - including a `{ rank: NaN }` - because a value that is not a number is an absence wearing a number's type, not a small one. Ties keep the caller's recorded order. |
 | [`src/app/presentation/tabs.tsx`](../src/app/presentation/tabs.tsx), [`toast.tsx`](../src/app/presentation/toast.tsx), [`tooltip.tsx`](../src/app/presentation/tooltip.tsx), [`dialog.tsx`](../src/app/presentation/dialog.tsx), [`error-boundary.tsx`](../src/app/presentation/error-boundary.tsx) | Focused interaction primitives. State and browser APIs stay at the smallest client leaf, and each of these five IS that leaf: all five carry `"use client"` themselves, so a Server Component parent renders them without becoming one (only the props crossing that boundary must be serializable). Tooltip is among them as of D-193/D-194 and is no longer CSS-only or server-capable: WCAG 1.4.13 Dismissible is owed to pointer users as well as keyboard users, and a hover-opened panel is dismissed by an Escape that lands on the document, so visibility is state and the document listener exists exactly while the panel is shown. A control that removes the element holding focus places focus first: Toast hands it to the next remaining toast's dismiss control, else the previous one's, else back to whatever held it before focus entered the host - and never moves it at all when the toast leaving is not the one holding it, so an auto-dismiss or a pointer dismissal elsewhere on the page cannot take a reader's place (D-200). |
@@ -59,7 +59,12 @@ and never define a color, font, radius, or keyframe anywhere else.
 2. **New primitives derive.** Where the twelve contract surfaces genuinely need a primitive the
    tier lacks, it is specified in this document as **to-be-built** with its token derivation
    (§13). This doc specifies; the build prompt that first renders the surface builds it (charter
-   #5: nothing built before a real surface uses it).
+   #5: nothing built before a real surface uses it). The one exception is the shared control
+   foundation itself (`Checkbox`, `Radio`, `Tabs`, `Tooltip`, a directly composed `Pill`), which
+   landed ahead of its callers: each is a NAMED DEFERRAL in
+   [`PORT-LEDGER.md`](../PORT-LEDGER.md) carrying the front-end prompt that lands its first
+   caller, validated by unit contract tests rather than an e2e scan, and deleted rather than
+   re-deferred if that prompt lands without one (D-192).
 3. **The consolidated type scale** (cited, not invented - each entry names its source): page title
    `text-2xl font-semibold text-slate-900` (audit page); card/section title `text-base
    font-semibold text-slate-900` (StepInfoCard); body `text-sm` in `slate-600/700/800`; microcopy
@@ -67,12 +72,15 @@ and never define a color, font, radius, or keyframe anywhere else.
    text-slate-600` (StepInfoCard, audit table headers); numbers `font-semibold tabular-nums
    text-slate-900` (Metric); identifiers, hashes, policy versions, idempotency keys `font-mono
    text-xs` (audit page). One `h1` per page.
-4. **The card recipe** is StepInfoCard's: `rounded-lg border border-slate-200 bg-surface p-4`
-   (white `bg-white` when the card must sit above `bg-surface`). Page-level vertical rhythm is
-   `gap-6`; intra-card rhythm `gap-2` / `gap-3` (audit page, ProgressSteps).
+4. **The card recipe** is `Card` / `cardClassName` in `ui.tsx`, whose default `surface` variant is
+   StepInfoCard's `rounded-lg border border-slate-200 bg-surface p-4` (`white` when the card must
+   sit above `bg-surface`, `attention` for the amber panel of §5.2, `dashed` for the "not yet
+   real" idiom). A surface composes the primitive and passes layout classes; it never restates
+   the recipe. Page-level vertical rhythm is `gap-6`; intra-card rhythm `gap-2` / `gap-3` (audit
+   page, ProgressSteps).
 5. **One clear decision at a time** (PRODUCT-DIRECTION §1.5): each surface renders **exactly one
-   primary `Button`**. Everything else is `secondary` or a text link. If a design draft has two
-   primary actions, the surface is two surfaces.
+   primary `Button`**. Everything else is `secondary`, the quieter `text` / `ghost` variants, or a
+   link. If a design draft has two primary actions, the surface is two surfaces.
 
 ---
 
@@ -86,7 +94,7 @@ typography, stamp/seal metaphors, orchestrated motion set-pieces) is rejected ou
 |---|---|
 | Decision Spine as a styled persistent top rail | `DecisionSpine`, a horizontal `ProgressSteps` derivative - calm, secondary, one line (§4) |
 | Prohibited shows "the stamp" | A solid `slate-900` StatusBadge plus doctrine copy - authority, not theatrics (§5) |
-| "Ledger-register" display style | The existing audit-trail register idiom (§1 table, `src/app/app/audit/page.tsx`); `src/app/app/ledger/page.tsx` (the decision-ledger register) is the first surface derived from it and re-derives nothing |
+| "Ledger-register" display style | The audit-trail register idiom, now the canonical `Table` (§1, `src/app/presentation/table.tsx`); the audit page and `src/app/app/ledger/page.tsx` (the decision-ledger register) both compose it with typed cells and re-derive nothing |
 | Three orchestrated motion moments (evidence stagger, revalidation sweep, hash seal-and-void) | The established motion budget only: container fade, disclosure slide, check-pop, one fade at invalidation. No sweeps, no seals, no stagger choreography (§12) |
 | Disposition color coding | `StatusBadge` lineage in the established palette (§5) |
 | Approval-invalidation as "seal void" animation | A state change that lands through content and restraint, not animation (§7.3) |
@@ -109,19 +117,21 @@ same grammar stretched across a pipeline. Every one of the twelve required surfa
 | 2 | Contextual intent panel | Action (initiate) | `Field` + `Input`, one primary `Button`; anchored panel attached to the workspace, never a 50/50 chat layout (PRODUCT-DIRECTION §2, §6); the interpreted intent echoes back as typed slots, each a labeled value |
 | 3 | Evidence and conflict view | Reasoning (facts) | `EvidenceRow` (built, §6) = `FreshValue` + observed/retrieved times; conflict and missing-item variants; `WhyBubble` on derived items |
 | 4 | Recommendation and alternatives | Recommendation + Reasoning | `DispositionNotice` (built, §5), ranked alternative cards, `WhyBubble` per rejection reason, every figure a `FreshValue` |
-| 5 | Policy and precedence trace | Reasoning (rules) | Register idiom rows; policy/instruction versions in `font-mono text-xs`; `WhyBubble` per precedence step |
+| 5 | Policy and precedence trace | Reasoning (rules) | Register idiom rows, unsortable - precedence is the claim (§1, D-196); policy/instruction versions in `font-mono text-xs`; `WhyBubble` per precedence step |
 | 6 | Approval stages and actor status | Action (human gate) | `ProgressSteps` for stages, `ApprovalStagePanel` (built, §7), `StatusBadge` per actor slot |
 | 7 | Pre-execution safety check | Action → Outcome hinge | Check rows with `StatusBadge`, revalidation timestamp as a `FreshValue`-style label, reservation + conflict keys in `font-mono text-xs`; the invalidation moment (§7.3) lives here |
 | 8 | Execution timeline | Outcome | `ExecutionTimeline` (built, §8) in the register idiom; honest `StatusBadge` states; idempotency made visible in plain words |
 | 9 | Verification state | Outcome (honest) | "Proven / not yet proven" lists, next-poll label, NIGO and stuck rows first-class (§8) |
 | 10 | Firm A / Firm B comparison | Reasoning (policy difference) | `ComparisonColumns` (built, §10), difference-as-hierarchy, `WhyBubble` per differing row |
-| 11 | Policy draft and simulation impact | Recommendation + Action | Draft AST rendered as structured rows (never raw code as the primary view), LLM-drafted wording set apart (§6.5), simulation delta in the register idiom, human approval gate per §7 |
+| 11 | Policy draft and simulation impact | Recommendation + Action | Draft AST rendered as structured rows (never raw code as the primary view), LLM-drafted wording set apart (§6.5), simulation delta in the register idiom - a SET of affected cases, so it is sortable and carries a visible case number as its order carrier (§1, D-196); human approval gate per §7 |
 | 12 | Printable examiner-grade decision artifact | Outcome (proof) | Document-styled surface (§9), all reasoning expanded, hashes in full, ADR-0022 watermark rules |
 
 Two standing rules across all twelve:
 
 - **Reasoning is always one tap away, never a wall of text first** (PRODUCT-DIRECTION §7). The
   `WhyBubble` is the only reasoning disclosure; do not invent accordions, tooltips, or popovers.
+  The tier's `Tooltip` primitive does not change this: it is a short label for a control, never a
+  place reasoning lives, and it has no demo-surface caller (§1 rule 2).
 - **Every displayed value carries provenance.** Metric-class values go through `Metric` (the
   `metric-provenance` fence fails the build otherwise); other sourced values through `FreshValue`.
   There are no bare numbers anywhere in the demo.
@@ -182,17 +192,28 @@ palette.
 | `blocked` | may proceed after named conditions are satisfied | yes | no | no |
 | `prohibited` | never permitted within the stated scope | no | no | no |
 
+**The restrictiveness lattice** is that table's own order - `proceed` (1) < `blocked` (2) <
+`prohibited` (3), how far a disposition holds a request back - and it is the ONLY defensible way to
+ORDER a column of dispositions. It is stated once in code as `DISPOSITION_RESTRICTIVENESS`
+(`src/app/demo/model.ts`) and is what `compareSortValues` (§1, `table-order.ts`) ranks a
+disposition cell by. Never sort dispositions by their labels: that puts "Blocked - resolvable"
+ahead of "Proceed" ahead of "Prohibited", an alphabet a reader would read as severity and the
+product makes no claim about.
+
 ### 5.1 Badges
 
 Three entries are **added to the existing `STATUS_STYLES` map** in
-`src/app/presentation/ui.tsx` (same shape, same file - built with surface #4, D-036):
+`src/app/presentation/ui.tsx` (same shape, same file - built with surface #4, D-036). That map now
+names a `Pill` TONE per status and the tone owns the classes (`PILL_TONES`), so a semantic identity
+never merges with another and never carries its own colors:
 
-- `proceed`: `bg-green-50 text-green-800 border-green-200` (the `done` family), label
-  **"Proceed"**.
-- `blocked`: `bg-amber-50 text-amber-900 border-amber-200` (the `suspended` family - amber is
-  already this system's "waiting on a condition" color), label **"Blocked - resolvable"**.
-- `prohibited`: `bg-slate-900 text-white border-slate-900` (the `Button` primary recipe worn as a
-  badge - slate-900 is this system's voice of authority), label **"Prohibited"**.
+- `proceed`: tone `success` - `bg-green-50 text-green-800 border-green-200` (the `done` family),
+  label **"Proceed"**.
+- `blocked`: tone `attention` - `bg-amber-50 text-amber-900 border-amber-200` (the `suspended`
+  family - amber is already this system's "waiting on a condition" color), label **"Blocked -
+  resolvable"**.
+- `prohibited`: tone `authority` - `bg-slate-900 text-white border-slate-900` (the `Button` primary
+  recipe worn as a badge - slate-900 is this system's voice of authority), label **"Prohibited"**.
 
 **Red is reserved for failure** (`failed`, rejected executions, a broken chain). Prohibition is
 not a failure or an error: it is Verin working. Styling a refusal in failure-red would say the
@@ -209,8 +230,8 @@ disposition:
   stated in one sentence with every figure a `FreshValue`, then the authority requirement summary
   ("requires 2 distinct operations approvers") in body text. Its `WhyBubble` cites the governing
   policy provision and version.
-- **Blocked:** card variant `border-amber-200 bg-amber-50` (the established attention surface -
-  see the audit page's error panel), the `blocked` badge, then **each blocker as a row**: the
+- **Blocked:** `Card` variant `attention` - `border-amber-200 bg-amber-50` (the established
+  attention surface - see the audit page's error panel), the `blocked` badge, then **each blocker as a row**: the
   named condition in `text-sm text-amber-900`, followed by its **resolving affordance** - a
   `secondary` `Button` or text link whose action is derived from the blocker itself ("Request
   independent verification of the bank instruction", "Refresh liquidity evidence"). **A blocked
@@ -218,8 +239,8 @@ disposition:
   doctrine (dead ends become next steps) applied to governance. A blocked result never offers an
   approval button as a substitute for missing evidence (v3 §10.2), and never an "override" or
   "approve anyway" affordance of any kind.
-- **Prohibited:** the standard calm card (`border-slate-200 bg-surface` - deliberately NOT red,
-  NOT amber), the solid `prohibited` badge, then three things and nothing else:
+- **Prohibited:** the standard calm card (`Card` variant `surface`, `border-slate-200 bg-surface` -
+  deliberately NOT red, NOT amber), the solid `prohibited` badge, then three things and nothing else:
   1. **What is prohibited**, in one plain sentence naming the scope.
   2. **The prohibition source**: firm policy, household instruction, or regulatory, with its
      versioned reference in `font-mono text-xs` and its `source · as of` label.
@@ -311,8 +332,8 @@ hierarchy, not badges**.
 The tap-to-verify-source affordance of PRODUCT-DIRECTION §7 - the provenance of one fact (where
 it came from, which record, how fresh, how confident), one tap from the value - and the
 disclosure that §6.4, §8.1, §8.3, §11.3, and §12.2 rely on as the `TapToVerify` detail.
-The interaction derives from the WhyBubble disclosure recipe in `why-bubble.tsx`: an underlined
-`text-sm text-slate-600` text trigger reading **"Verify source"**, wired with
+The interaction derives from the WhyBubble disclosure recipe in `why-bubble.tsx`: a `Button` in the
+underlined `text` variant reading **"Verify source"**, wired with
 `aria-expanded`/`aria-controls`, opening an `animate-slide-down` panel in the `rounded-md border
 border-slate-200 bg-slate-50 p-3` recipe. The panel contains provenance metadata only - source
 system and record identifiers (`font-mono text-xs`), observed and retrieved times, the §6.4
@@ -430,7 +451,8 @@ honest-status doctrine forbids merging semantic identities that operators and fe
 distinguish. `rejected` (an outcome returned by the external system) is not `failed` (an internal
 step that errored); `stuck` (verification cannot progress and needs attention) is not `suspended`
 (a healthy wait at a human gate). Each key only borrows the visual recipe of the family named in
-its row.
+its row - as a `Pill` tone (§5.1): blue = `progress`, green = `success`, amber = `attention`,
+red = `failure`, slate = `neutral`, solid slate-900 = `authority`.
 
 ### 8.3 Idempotency, visible without jargon
 
@@ -568,8 +590,8 @@ and their renderings so no build prompt invents its own.
 
 The visible development-only badge on every fake-backed element:
 
-- **Recipe:** `inline-flex items-center whitespace-nowrap rounded border border-dashed
-  border-slate-400 px-1.5 py-0.5 text-xs text-slate-600`. The dashed border is the established
+- **Recipe:** the canonical `Badge` in the `provenance` tone (`ui.tsx`) - the shared chip shape plus
+  `border border-dashed border-slate-400 text-slate-600`. The dashed border is the established
   "not yet real" idiom (EmptyState's `border-dashed`); the chip shape follows the watermark chip
   in `metric.tsx`. The chip never breaks internally - `whitespace-nowrap` on the badge, and
   `flex-wrap` + `gap-x`/`gap-y` on the `FreshValue` and `Metric` rows that carry it, so a chip
@@ -622,14 +644,19 @@ standard is most on display.
   `safety.tsx` / `record.tsx` - sets slate-800 or darker itself rather than inheriting.
   Never fade a `StatusBadge` (a blended amber badge lands ~4.1:1).
 - **Focus**: the global `:focus-visible` ring (`globals.css`) covers every interactive element;
-  scrollable regions get `tabIndex={0}` + `aria-label` (audit-page precedent).
-- **Structure**: one `h1` per page; tables with `caption` + `scope`; the DecisionSpine's `<ol>`
+  scrollable regions are keyboard-focusable (`tabIndex={0}`) and named - for a `Table` the scroll box
+  is the focusable element and the `region` landmark wrapping it carries the name.
+- **Structure**: one `h1` per page; tables with `caption` + `scope` - the canonical `Table` owns
+  that recipe, plus `aria-sort` on every sortable header and a `region` landmark named by
+  `regionName` around the scroll box and its restore control (§1); the DecisionSpine's `<ol>`
   + `aria-current="step"`; errors with `role="alert"` attached via `aria-describedby` (`Field`);
   state changes that matter (§7.3 invalidation, chain verdicts) announced with
   `role="status"` / `role="alert"`.
 - **Forms**: only through `Field` - label association, hints, and error wiring are its recipe.
-- **Targets**: no icon-only controls on demo surfaces; `Button` padding meets target-size
-  minimums as shipped.
+- **Targets**: no icon-only controls on demo surfaces; the `default` and `compact` `Button` sizes
+  carry the padding that meets target-size minimums as shipped. The unpadded `text` and `table`
+  sizes are for inline text triggers only (a WhyBubble/TapToVerify disclosure, a dialog's Close, a
+  sortable column header) - never for a surface's primary or secondary action.
 - **Print**: the examiner artifact's screen rendering passes axe like any page (§9).
 
 ### 12.2 The motion budget - the complete inventory
@@ -676,7 +703,7 @@ first needs it (§11.3).
 | `EvidenceRow` (+ conflict, missing variants) | `FreshValue`, `Metric`, EmptyState dashed idiom | Surface 3 | §6.1-6.3 |
 | `TapToVerify` | `WhyBubble` disclosure recipe (`why-bubble.tsx`): text trigger + `animate-slide-down` `bg-slate-50` panel; distinct from `WhyBubble` per PRODUCT-DIRECTION §7 | Surfaces 3, 7-9 (and the §11.3 collapse mode) | §6.6 |
 | `ApprovalStagePanel` | Card recipe, `ProgressSteps`, `StatusBadge`, `Field` hint idiom | Surface 6 | §7.2 |
-| `ExecutionTimeline` | Audit-page register idiom | Surfaces 7-9 | §8.1 |
+| `ExecutionTimeline` | The canonical `Table` (§1) composed with unsortable columns | Surfaces 7-9 | §8.1 |
 | `ComparisonColumns` | Grid layout; type scale; `WhyBubble` | Surface 10 | §10 |
 | `DevProvenanceBadge` | Watermark chip recipe (`metric.tsx`) + EmptyState dashed border | All fake-backed surfaces during build | §11.2 |
 | `DevProvenanceBadge` collapse mode | `DevProvenanceBadge` + the `TapToVerify` provenance detail | Final-presentation surfaces (demo contract §6) | §11.3 |
@@ -706,6 +733,10 @@ A build or audit pass against this document verifies, at minimum:
       matching keys inspectable.
 - [ ] The printed artifact expands all reasoning, prints full hashes, and - when
       demonstration-derived - watermarks every page (ADR-0022); the screen rendering passes axe.
+      A windowed register prints its complete row set, never a cropped box of blank bands (§1).
+- [ ] Every register is a `Table` (§1): a sequence of causes is unsortable, a sortable set names
+      its landmark and keeps a visible order carrier, the caption states the order the rows are
+      actually in, and a non-obvious ordering declares its `sortNote`.
 - [ ] Firm A/B differences are hierarchy-marked, cause-cited by policy version, and free of
       judgment colors.
 - [ ] Every fake-backed element carries its taxonomy label; badges render inline by default and

@@ -92,8 +92,14 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
   and managed-schema virginity, then applies all pending DDL and read-only orphan preflights atomically.
 - **Design-system port (`src/app/presentation`):** OKLCH slate tokens + Geist + keyframes + reduced-motion,
   the "Verin." wordmark, WhyBubble doctrine, and the micro-components the skeleton renders — all axe-clean.
+  Now also the canonical primitive library every product surface composes: controls, cards, badges, pills
+  and empty states (`ui.tsx`), the sortable/virtualized register grammar (`table.tsx` + the pure
+  `table-order.ts`), and the client interaction leaves (toast + host, dialog, tooltip, tabs, error
+  boundary). Feature-local button, badge, and pill recipes fail the `presentation-primitives` fence;
+  primitives without a product caller yet are named deferrals in `PORT-LEDGER.md` (D-192).
 - **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey,
-  decision ledger) plus axe, green on a non-UTC clock; `pnpm test:e2e` reports the live count.
+  decision ledger, register windowing/print) plus axe, green on a non-UTC clock; `pnpm test:e2e`
+  reports the live count.
 
 **Governance:** 52 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
@@ -162,13 +168,19 @@ renumbered on rebase, see the numbering notes in the log; the prompt-7 entries c
 | `corpus-timestamps` | `recordChangedAt` / `observedAt` / `retrievedAt` stay three instants with three meanings; freshness and recent-change membership are recomputed, and local renderings come from pinned tz transitions (#1/#4, ADR-0052, D-078) | PF-207 + companions |
 | `conflict-key-families` | simultaneous requests share a conflict key by derivation, reservation identity is `(firmRef, conflictKey)`, and idempotency stays a separate decision-keyed derivation (#16, ADR-0052) | PF-208 + companions |
 | `corpus-world-sharing` | the one shared `validateCorpus()` world is rebuilt before a watch rerun collects and refuses an unpinned or UTC clock, so no fence asserts against a stale snapshot (#4/#8, D-175/D-176) | proof-log section + companions |
+| `presentation-primitives` (AST over `src/app/**`, incl. interpolated templates and exported class-string constants; EXACT-PATH primitive escapes with a staleness guard) | product surfaces have one visual path - no native feature button, no restated button/badge/pill recipe, no visual override on a canonical control (#1/#9/#10, ADR-0012, D-192) | PF-247 + companions |
+| `register-sortability` (AST: every `src/app` file declaring a sortable column is reviewed against D-194 with its order-carrying column, and a sortable register declares its own landmark name) | a register that carries meaning in row POSITION cannot acquire sortable headers unreviewed, and a caption asserting an order can never double as the landmark's name (#1/#4, D-194/D-196/D-201) | PF-248 through PF-252 + companions |
 
 **Current prompt-11 line-budget PR evidence:** contracts 6,064/6,110 (46
 headroom), domain 1,581/1,650 (69), infrastructure 7,786/7,840 (54), and
 presentation 928/6,000 (5,072) - this PR adds ZERO lines to any platform layer,
 so those are ADR-0051's ceilings measured with the fence's own algorithm on the
-tree as it lands. Two files carry a `max-file-size` pin instead of the 500-line
-default: `migrations.ts` (510/560, ADR-0049) and the ledger's sole write
+tree as it lands. The presentation tier has since grown with the canonical
+primitive library and re-measures at 2,240/6,000 (3,760 headroom) with that same
+algorithm (D-192 through D-202); its ceiling is unchanged, because ADR-0012 grows
+it only by an ADR bump and this work adds no platform lines either. Two files
+carry a `max-file-size` pin instead of the 500-line default:
+`migrations.ts` (510/560, ADR-0049) and the ledger's sole write
 chokepoint `ledger-store.ts` (502/550, ADR-0050). ADR-0052 adds the `tooling`
 envelope over `scripts/**` and tracks its re-measurements in that ADR's
 amendment section, most recently D-177: 9,053 measured against a ceiling raised

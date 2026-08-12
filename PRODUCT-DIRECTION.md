@@ -182,7 +182,8 @@ Alongside these four levels sits one parallel surface, not a fifth nesting level
 **The control-plane overlay (`⌘K` / "ask Verin")** rides above all four levels. It is how you *jump* - "open
 Delgado," "run the scan," "show me what changed" - without hunting through nav. Production chrome (nav,
 history, toasts; PORT-LEDGER #9) and the CommandPalette (PORT-LEDGER #8) are the near-term seed of this
-overlay; the assistant is its full expression. Navigation and conversation are the **same intent, two speeds**
+overlay (nav and toasts are live today; execution history and the palette are still deferred); the
+assistant is its full expression. Navigation and conversation are the **same intent, two speeds**
 - point-and-click for deliberate work, ask-Verin for velocity - and both land on the same real surfaces.
 
 ---
@@ -447,7 +448,10 @@ Per charter #5, this direction doc distinguishes plainly:
   read-only register (`/app/ledger`) - storage, verification, and replay only; no decision producer has
   landed, so it shows labeled-synthetic seeded history; the house-CRM console (`/app/console`); the
   presentation tier (`brand`, `why-bubble`, `fresh-value`, `metric`, `progress-steps`, `step-info-card`,
-  `ui`); provenance on all 9 entities; one populated org with two seeded users.
+  `ui`, the register grammar `table` + `table-order`, and the interaction leaves `toast`, `dialog`,
+  `tooltip`, `tabs`, `error-boundary` - every product surface composes these, and the ones without a
+  caller yet are named deferrals in `PORT-LEDGER.md`); provenance on all 9 entities; one populated org
+  with two seeded users.
 - **Lands in Wave 1 (the demo this doc anchors):** the populated, labeled world; the CCO persona +
   persona-select login; meeting-prep and compliance-scan flows (read models); the presentation ports the
   demo renders (tiles, chrome, NotificationCenter, one tour journey, presenter tooling); the `dataClass`
