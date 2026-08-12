@@ -369,6 +369,7 @@ const compileStep = (
     if (!plan.awaits) return { kind: "continue", patch };
     const tokenOutput = plan.capability.awaitTokenFrom;
     const token = tokenOutput === undefined ? undefined : publishedOutput(outputs, tokenOutput);
+    // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack -- a presence check against `undefined`, not a string or secret comparison: `token` is a plan-compiler correlation token this deployment just produced, compared to nothing an attacker supplies or can time.
     if (token === undefined) {
       return failure(refuse, [
         configError(

@@ -337,6 +337,7 @@ export function versionPinDrift(
         entry.version === loaded.value.document.version,
     );
     if (!pin) drift.push(`${loaded.value.domainConfigVersionId} is not a published version`);
+    // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack -- a build-time drift check inside a fitness fence: both sides are SHA-256 digests this process just computed from files on disk, there is no request, no remote caller and no timing channel to observe.
     else if (pin.configHash !== hash) {
       drift.push(`${loaded.value.domainConfigVersionId} changed without a version bump (pinned ${pin.configHash}, computed ${hash})`);
     }
