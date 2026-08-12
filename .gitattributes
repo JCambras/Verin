@@ -5,6 +5,13 @@
 fixtures/corpus/manifest.json linguist-generated=true
 fixtures/corpus/synthetic/** linguist-generated=true
 
+# The populated world is the same arrangement one artifact over: the ENFORCEMENT
+# is `pnpm world:validate`, which regenerates and byte-compares in the blocking
+# `world` CI job (ADR-0057). The hand-owned inputs under fixtures/world/spec/ are
+# deliberately NOT marked.
+fixtures/world/manifest.json linguist-generated=true
+fixtures/world/households/** linguist-generated=true
+
 # Canonical bytes are LF, everywhere, forever: the corpus digest is a hash over
 # committed bytes, so a CRLF checkout would break every signature. The repo-wide
 # default is what makes that true - the digest inputs are not only fixtures but
@@ -19,3 +26,4 @@ fixtures/corpus/synthetic/** linguist-generated=true
 fixtures/corpus/** text eol=lf
 fixtures/decision-core/** text eol=lf
 fixtures/golden/** text eol=lf
+fixtures/world/** text eol=lf
