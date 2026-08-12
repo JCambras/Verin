@@ -12837,3 +12837,38 @@ to the registry.
 on the restored tree.
 
 **Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - fifth review round, D-196).
+
+---
+
+## PF-249 · register-sortability, amended: a column built by a transform (D-197)
+
+**Invariant (amendment):** a sortable column literal that is not a DIRECT element of an array
+literal has no sibling collection to prove an order carrier against, so it is refused rather than
+skipped. The fence previously walked array literals only, which meant
+`BASE.map((c) => ({ ...c, sortable: true }))` produced a fully sortable, entirely unreviewed
+register that the enforce test never saw - the same blind spot the presentation-primitives fence
+was amended twice for, in a fence one round old.
+
+**Injection - the reviewed simulation delta acquires its sortability through `.map`.** Rewrote
+`SIMULATION_COLUMNS` in `src/app/demo/surfaces/policy-authoring.tsx` as a `SIMULATION_BASE` array
+spread through `.map((column) => ({ ...column, sortable: true }))`, keeping the file's registry
+entry intact so the injection also proves a review cannot buy the shape out.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/demo/surfaces/policy-authoring.tsx:58 :: a sortable column built outside a literal column collection has no siblings to prove an order carrier against (D-194) - declare the register's columns as one literal array
+❯ src/__tests__/fitness/register-sortability.test.ts:190
+```
+Before the amendment the same tree reported nothing at all.
+
+**Executable companions (run on every build):** a transform-produced sortable column with and
+without a registry entry, a computed `sortable` inside a transform, an explicit `sortable: false`
+opt-out inside a transform (accepted - it claims nothing), and a direct array element still
+grouping into its collection, so the transform rule is not over-broad.
+
+**Reverted:** the injection was undone immediately; the focused fence returned to `Tests 13 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - sixth review round, D-197).

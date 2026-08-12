@@ -7022,3 +7022,73 @@ moves, no runtime dependency was added, and nothing under `domain/`, `contracts/
 **Revert path:** revert this changeset; the positionally-ordered simulation delta, the unfenced
 sortability rule, the focus-stranding restore control, and its placement outside the landmark return
 to their D-195 state.
+
+### D-197 · 2026-08-12 · reversible · Sixth review round: a sort that moves nothing, and a register that prints cropped
+
+The prompt-2 review gate returned four findings; all four are resolved here. Two are the same shape
+of dishonesty in the canonical `Table` - a claim made on screen that the DOM does not support - and
+two harden the fence and the shared fence utilities the previous round introduced.
+
+**A column may not advertise a sort it cannot perform.** Both value columns of the policy-authoring
+simulation delta declared `sortable` against `sortValue: row.before.display`, and
+`ComparisonCellVM.display` is never set for a simulation row: the sort value was always `undefined`,
+`cellSortValue` fell through to a `<Cell>` ELEMENT and returned `""`, every comparison tied, and ties
+resolve to the authored index BEFORE direction is applied. So both directions left the rows exactly
+where they were while the caption, the landmark label and `aria-sort` all announced a re-sort, and
+the "Restore recorded order" control appeared to undo something that had not happened. That is
+precisely the false order claim D-194 condition (2) exists to prevent, on the surface D-196 was
+written to bring into compliance.
+
+Each cell now yields a real scalar. Dispositions rank by the ratified §5 restrictiveness lattice -
+`DISPOSITION_RESTRICTIVENESS`, proceed before blocked before prohibited - and NEVER by label, which
+would order "Blocked - resolvable" before "Proceed" before "Prohibited": an alphabet a reader would
+read as severity. Every other value falls back to the text on screen. The key names its band first,
+so one ranking serves both columns and they compare directly.
+
+**An ordering a reader cannot name is an ordering they will misread.** A column mixing dispositions,
+money and counts does not sort in the order its values suggest, so `TableColumn` gains `sortNote`:
+the ordering rule, carried in the caption and the landmark label - "(re-sorted by Today, ascending,
+dispositions by restrictiveness, then alphabetically)" - and shown as VISIBLE text beside the restore
+control while that column's sort is active, because the caption is sr-only and a sighted reader
+looking at "Proceed, Blocked, Prohibited" cannot otherwise tell severity from alphabet. It sits in
+that row rather than under the column header so a narrow column cannot wrap the sentence, and it
+prints with the register. Declared only where the order is not the obvious one for the value on
+screen; the compliance registers' sequence, actor and action columns are unchanged.
+
+**A windowed register must print whole.** Above `virtualizeAbove` the scroll box takes a height cap
+and only the current window exists in the DOM, the rest represented by two fixed-height spacer rows.
+Printing that emitted a 384px cropped box with blank bands: Chromium does not paginate content
+overflowing an `overflow: auto` container, and the off-window rows were not in the document at all.
+Both compliance registers cap at 200 entries and so exceed the 100-row threshold in ordinary use, and
+the pre-change audit register printed in full - a regression on the one artifact a compliance reader
+takes off the screen. No stylesheet closes it, because the missing rows do not exist: windowing is
+therefore SUSPENDED for the print pass (`beforeprint`/`afterprint` and the `print` media query,
+committed with `flushSync` because `window.print()` blocks before a batched update would land),
+which drops the height cap and the spacers with it. Nothing is duplicated - the same rows are
+swapped, so no screen reader meets the register twice - and the print-media CSS backstop
+(`print:max-h-none print:overflow-visible`) covers the cap even where scripting has not run. There is
+no row limit and there will not be one: if this ever needs bounding, the architecture refuses the
+print and offers an export rather than truncating a record silently.
+
+**A fence one round old already had the hole its neighbour was amended twice for.**
+`register-sortability` inspected only object literals that were DIRECT elements of an array literal,
+so `BASE.map((c) => ({ ...c, sortable: true }))` produced a fully sortable register the fence never
+saw - passing as unnoticed rather than as unreviewed, which its own header promises cannot happen. A
+column literal built anywhere else has no siblings to prove an order carrier against and is now
+refused with `file:line`, review or no review; an explicit `sortable: false` in a transform still
+passes, since it claims nothing. Proven adversarially against the real tree (PF-249).
+
+**One app-tree program, not one per fence.** `appSourceProject()` and `relativeToRepo()` move into
+`_fence-utils.ts`, the established shared home. Both new fences were building byte-identical
+ts-morph programs over all of `src/app` and repeating the repo-relative normalization four times
+between them; the fitness project runs serially, so that was the app tree parsed three times per run
+for two structural scans that only read it.
+
+The presentation tier re-measures at 1,970/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (1,915 at D-196); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the no-op value-column sort, the undisclosed ordering, the
+cropped printed register, the transform-blind fence, and the duplicated app-tree walk return to
+their D-196 state.

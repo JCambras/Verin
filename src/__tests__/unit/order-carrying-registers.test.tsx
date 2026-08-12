@@ -4,7 +4,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getJourney } from "@app/demo/journey";
-import { PolicyAuthoringSurface } from "@app/demo/surfaces/policy-authoring";
+import { DISPOSITION_LABELS, type DispositionKind } from "@app/demo/model";
+import { comparisonSortValue, PolicyAuthoringSurface } from "@app/demo/surfaces/policy-authoring";
 import { PolicyTraceSurface } from "@app/demo/surfaces/policy-trace";
 import { ExecutionTimeline } from "@app/presentation/execution-timeline";
 import AuditPage from "@app/app/audit/page";
@@ -85,6 +86,7 @@ describe("order-carrying registers", () => {
  */
 describe("the policy simulation delta as a set of cases", () => {
   const CAPTION = "Simulated impact of the drafted policy";
+  const SORT_NOTE = "dispositions by restrictiveness, then alphabetically";
 
   function renderSimulation() {
     const journey = getJourney("dual-approval", "firm-a");
@@ -128,8 +130,81 @@ describe("the policy simulation delta as a set of cases", () => {
     expect(register(sorted).querySelector("caption")).toHaveTextContent(sorted);
 
     await user.click(within(register(sorted)).getByRole("button", { name: /Under the draft/ }));
-    sorted = `${CAPTION} (re-sorted by Under the draft, ascending)`;
+    sorted = `${CAPTION} (re-sorted by Under the draft, ascending, ${SORT_NOTE})`;
     expect(register(sorted).querySelector("caption")).toHaveTextContent(sorted);
+  });
+
+  /**
+   * A value column mixes dispositions with money and counts, so the order it sorts in is
+   * not the one a reader would assume from the values on screen. The caption carries the
+   * rule, but the caption is sr-only: a SIGHTED reader looking at "Proceed, Blocked,
+   * Prohibited" has no way to tell a severity order from an alphabet unless the register
+   * says which one it applied - and only while it is applying it.
+   */
+  it("discloses the active ordering as visible text inside the landmark", async () => {
+    const user = userEvent.setup();
+    renderSimulation();
+    expect(register()).not.toHaveTextContent(SORT_NOTE);
+
+    await user.click(within(register()).getByRole("button", { name: /^Today/ }));
+    expect(register(/re-sorted by Today/)).toHaveTextContent(`Sorted by Today: ${SORT_NOTE}.`);
+
+    // A column with no declared ordering rule claims none.
+    await user.click(within(register(/re-sorted by/)).getByRole("button", { name: /Dimension/ }));
+    expect(register(/re-sorted by Dimension/)).not.toHaveTextContent(SORT_NOTE);
+  });
+
+  /**
+   * The defect this replaces: both value columns declared `sortable` against a sort
+   * value that was always `undefined`, so every comparison tied, both directions left
+   * the authored order untouched, and the caption announced a re-sort that had not
+   * happened. Asserting per column that ascending and descending differ is what catches
+   * an advertised sort with no scalar behind it, whichever column acquires one next.
+   */
+  it("moves rows in both directions for every column it advertises as sortable", async () => {
+    const user = userEvent.setup();
+    const vm = renderSimulation();
+    expect(vm.simulationDelta.length).toBeGreaterThan(2);
+
+    for (const label of ["#", "Dimension", "Today", "Under the draft"]) {
+      const name = new RegExp(`^${label}`);
+      await user.click(within(register(/^Simulated impact/)).getByRole("button", { name }));
+      const ascending = cases(/re-sorted by/);
+      await user.click(within(register(/re-sorted by/)).getByRole("button", { name }));
+      const descending = cases(/re-sorted by/);
+      expect(descending, `${label} sorts identically in both directions`).toEqual([...ascending].reverse());
+      await user.click(screen.getByRole("button", { name: `Restore recorded order: ${CAPTION}` }));
+    }
+  });
+
+  /**
+   * Dispositions order by the ratified §5 restrictiveness lattice. Their LABELS order
+   * "Blocked - resolvable" < "Proceed" < "Prohibited", an alphabet that reads as a
+   * severity claim the product never makes - so the two orders are asserted to differ,
+   * or the test would pass on the very bug it exists to prevent.
+   */
+  it("ranks dispositions by restrictiveness rather than by label, identically in both columns", () => {
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    const badge = (kind: DispositionKind) => ({ badge: { status: kind, label: DISPOSITION_LABELS[kind] } });
+    const shuffled: readonly DispositionKind[] = ["prohibited", "proceed", "blocked"];
+
+    const byRestrictiveness = [...shuffled].sort((left, right) =>
+      collator.compare(comparisonSortValue(badge(left)), comparisonSortValue(badge(right))),
+    );
+    expect(byRestrictiveness).toEqual(["proceed", "blocked", "prohibited"]);
+
+    const byLabel = [...shuffled].sort((left, right) =>
+      collator.compare(DISPOSITION_LABELS[left], DISPOSITION_LABELS[right]),
+    );
+    expect(byLabel).not.toEqual(byRestrictiveness);
+
+    // One ranking serves both value columns, so "Today" and "Under the draft" compare directly.
+    for (const kind of shuffled) {
+      expect(comparisonSortValue(badge(kind))).toBe(comparisonSortValue({ badge: { status: kind, label: "anything" } }));
+    }
+    // A value outside the lattice falls back to the text the reader can see, never to nothing.
+    expect(comparisonSortValue({ display: "Twelve months" })).toContain("Twelve months");
+    expect(comparisonSortValue({ badge: { status: "escalated", label: "Escalated" } })).toContain("Escalated");
   });
 
   it("reconstructs the authored order from the case column and from one restore action", async () => {

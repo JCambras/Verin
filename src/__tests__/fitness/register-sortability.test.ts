@@ -1,7 +1,6 @@
-import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
-import { inMemoryProject, REPO_ROOT, walk } from "./_fence-utils";
+import { Node, SyntaxKind, type ArrayLiteralExpression, type SourceFile } from "ts-morph";
+import { appSourceProject, inMemoryProject, relativeToRepo } from "./_fence-utils";
 
 /**
  * REGISTER-SORTABILITY FENCE (D-194/D-196, charter #1/#4). `Table` defaults every
@@ -21,8 +20,10 @@ import { inMemoryProject, REPO_ROOT, walk } from "./_fence-utils";
  * names its order carrier.
  *
  * Anything it cannot resolve to a literal - a computed `sortable`, a spread column
- * collection, a column whose `id` is not a literal string - fails closed rather than
- * passing as reviewed.
+ * collection, a column whose `id` is not a literal string, or a column literal built
+ * anywhere OTHER than directly inside a column array (`BASE.map((c) => ({ ...c,
+ * sortable: true }))` has no sibling collection to prove an order carrier against) -
+ * fails closed rather than passing as reviewed.
  */
 const REVIEWED_SORTABLE_REGISTERS = new Map<string, string>([
   // Compliance registers: the claim is CONTENTS and INTEGRITY, a reader legitimately
@@ -70,24 +71,48 @@ function declaredId(object: Node): string | null {
   return property && Node.isPropertyAssignment(property) ? literalString(property.getInitializer()) : null;
 }
 
-/** Every array literal that declares table columns - identified by the `sortable` key. */
-function columnCollections(sf: SourceFile): ColumnCollection[] {
-  const collections: ColumnCollection[] = [];
-  for (const array of sf.getDescendantsOfKind(SyntaxKind.ArrayLiteralExpression)) {
-    const columns: DeclaredColumn[] = [];
-    let spread = false;
-    for (const element of array.getElements()) {
-      if (Node.isSpreadElement(element)) {
-        spread = true;
-        continue;
-      }
-      const sortable = declaredSortable(element);
-      if (!sortable) continue;
-      columns.push({ id: declaredId(element), sortable, node: element });
+interface ColumnScan {
+  /** Column literals declared directly inside an array literal, grouped by that array. */
+  readonly collections: readonly ColumnCollection[];
+  /** Column literals built anywhere else - a `.map` callback, a conditional arm, a helper. */
+  readonly derived: readonly DeclaredColumn[];
+}
+
+/**
+ * Every column literal in the file, identified by the `sortable` key. A literal that is
+ * a DIRECT element of an array literal belongs to that array's collection - which is
+ * what lets the order carrier be proven against its siblings. One built anywhere else
+ * has no siblings to prove anything against, so it is returned separately and refused;
+ * scanning only array elements is what let a transform-produced sortable register pass
+ * as unseen rather than as unreviewed.
+ */
+function scanColumns(sf: SourceFile): ColumnScan {
+  const grouped = new Map<ArrayLiteralExpression, DeclaredColumn[]>();
+  const derived: DeclaredColumn[] = [];
+  for (const object of sf.getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)) {
+    const sortable = declaredSortable(object);
+    if (!sortable) continue;
+    const column: DeclaredColumn = { id: declaredId(object), sortable, node: object };
+    const parent = object.getParent();
+    if (parent && Node.isArrayLiteralExpression(parent)) {
+      grouped.set(parent, [...(grouped.get(parent) ?? []), column]);
+    } else {
+      derived.push(column);
     }
-    if (columns.length > 0) collections.push({ node: array, columns, spread });
   }
-  return collections;
+  const collections = [...grouped].map(([array, columns]) => ({
+    node: array,
+    columns,
+    spread: array.getElements().some((element) => Node.isSpreadElement(element)),
+  }));
+  return { collections, derived };
+}
+
+/** Whether the file declares any register this fence must see reviewed. */
+function declaresSortableColumn(sf: SourceFile): boolean {
+  const { collections, derived } = scanColumns(sf);
+  const sortable = (column: DeclaredColumn) => column.sortable === "yes";
+  return collections.some((collection) => collection.columns.some(sortable)) || derived.some(sortable);
 }
 
 export function registerSortabilityViolations(
@@ -97,8 +122,17 @@ export function registerSortabilityViolations(
 ): string[] {
   const out: string[] = [];
   const report = (node: Node, message: string) => out.push(`${rel}:${node.getStartLineNumber()} :: ${message}`);
+  const { collections, derived } = scanColumns(sf);
 
-  for (const collection of columnCollections(sf)) {
+  for (const column of derived) {
+    if (column.sortable === "no") continue;
+    report(
+      column.node,
+      "a sortable column built outside a literal column collection has no siblings to prove an order carrier against (D-194) - declare the register's columns as one literal array",
+    );
+  }
+
+  for (const collection of collections) {
     for (const column of collection.columns) {
       if (column.sortable === "unproven") {
         report(column.node, "'sortable' is not a literal, so this register's sortability cannot be reviewed (D-194)");
@@ -146,30 +180,13 @@ export function staleSortableRegisters(sortableFiles: Iterable<string>): string[
     .map((rel) => `${rel}:1 :: reviewed sortable register declares no sortable column in the scanned tree`);
 }
 
-function appProject(): Project {
-  const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
-  for (const file of walk(`${REPO_ROOT}src/app`, (candidate) => candidate.endsWith(".tsx") || candidate.endsWith(".ts"))) {
-    project.addSourceFileAtPath(file);
-  }
-  return project;
-}
-
-function relativeTo(sf: SourceFile): string {
-  return relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
-}
-
 describe("register-sortability fence", () => {
-  const project = appProject();
-  const sortableFiles = project
-    .getSourceFiles()
-    .filter((sf) =>
-      columnCollections(sf).some((collection) => collection.columns.some((column) => column.sortable === "yes")),
-    )
-    .map(relativeTo);
+  const appFiles = appSourceProject().getSourceFiles();
+  const sortableFiles = appFiles.filter(declaresSortableColumn).map(relativeToRepo);
 
   it("enforces: every sortable register names the visible column that carries its recorded order", () => {
     const offenders: string[] = [];
-    for (const sf of project.getSourceFiles()) offenders.push(...registerSortabilityViolations(sf, relativeTo(sf)));
+    for (const sf of appFiles) offenders.push(...registerSortabilityViolations(sf, relativeToRepo(sf)));
     expect(offenders, `unreviewed register sortability:\n${offenders.join("\n")}`).toEqual([]);
   });
 
@@ -246,6 +263,46 @@ describe("register-sortability fence", () => {
         reviewed,
       );
       expect(computed.some((entry) => entry.includes("is not a literal cannot be proven"))).toBe(true);
+    });
+
+    it("fails closed on a sortable column produced by a transform, review or no review", () => {
+      const derived =
+        'const BASE = [{ id: "when", header: "When" }];\nconst C = BASE.map((c) => ({ ...c, sortable: true }));\nexport default function P(){ return C.length; }';
+      const unreviewed = registerSortabilityViolations(source(derived), "src/app/example/page.tsx");
+      expect(unreviewed).toEqual([
+        expect.stringContaining("src/app/example/page.tsx:2 :: a sortable column built outside a literal column collection"),
+      ]);
+
+      // A registry entry cannot buy the transform out: the order carrier is still unprovable.
+      const reviewed = registerSortabilityViolations(
+        source(derived),
+        "src/app/example/page.tsx",
+        new Map([["src/app/example/page.tsx", "sequence"]]),
+      );
+      expect(reviewed).toEqual([expect.stringContaining("built outside a literal column collection")]);
+    });
+
+    it("fails closed on a computed sortable flag built by a transform, and lets an explicit opt-out through", () => {
+      const computed = registerSortabilityViolations(
+        source('const BASE: { id: string }[] = []; const on = true;\nconst C = BASE.map((c) => ({ ...c, sortable: on }));\nexport default function P(){ return C.length; }'),
+        "src/app/example/page.tsx",
+      );
+      expect(computed).toEqual([expect.stringContaining("built outside a literal column collection")]);
+
+      const optOut = registerSortabilityViolations(
+        source('const BASE: { id: string }[] = []; const C = BASE.map((c) => ({ ...c, sortable: false })); export default function P(){ return C.length; }'),
+        "src/app/example/page.tsx",
+      );
+      expect(optOut).toEqual([]);
+    });
+
+    it("still groups a column literal that IS a direct array element, so the transform rule is not over-broad", () => {
+      const found = registerSortabilityViolations(
+        source(COLUMNS('{ id: "sequence", header: "#", sortable: true }, ')),
+        "src/app/example/page.tsx",
+        new Map([["src/app/example/page.tsx", "sequence"]]),
+      );
+      expect(found).toEqual([]);
     });
 
     it("the staleness guard reports a registry entry that stopped sorting, and cannot pass vacuously", () => {

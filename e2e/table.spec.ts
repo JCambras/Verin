@@ -55,6 +55,63 @@ test("the canonical table keeps a 5,000-row register windowed while scrolling", 
 });
 
 /**
+ * A windowed register holds only its current window in the DOM behind a capped scroll
+ * box, so printing one emitted a cropped box with blank spacer bands where the rest of
+ * the record belonged. Both compliance registers exceed the windowing threshold in
+ * ordinary use (each API caps at 200 entries), and the pre-change audit register printed
+ * whole - so this is a regression on the one artifact a compliance reader takes off the
+ * screen. No stylesheet can fix it: the missing rows do not exist in the document.
+ */
+test("a windowed register prints its complete row set, not the window", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  const entries = Array.from({ length: 200 }, (_, index) => ({
+    sequence: 200 - index,
+    actor: "user-principal",
+    action: index % 2 === 0 ? "household.created" : "household.updated",
+    entityType: "household",
+    detail: `Fixture audit entry ${index}`,
+    createdAt: new Date(Date.UTC(2026, 7, 11, 12, 0, index % 60)).toISOString(),
+    entryHash: String(index).padStart(64, "0"),
+  }));
+  await page.route("**/api/audit", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ verdict: { ok: true, entriesChecked: entries.length, reason: null }, entries, total: entries.length }),
+    });
+  });
+
+  await page.goto("/app/audit");
+  const register = page.getByRole("region", { name: "Audit log entries, newest first" });
+  await expect(register).toHaveAttribute("data-row-count", "200");
+  expect(Number(await register.getAttribute("data-rendered-row-count"))).toBeLessThan(200);
+
+  await page.emulateMedia({ media: "print" });
+
+  // Every stored row is in the printable document - no subset is silently emitted.
+  await expect(register).toHaveAttribute("data-rendered-row-count", "200");
+  for (const index of [0, 100, 199]) {
+    await expect(register.getByText(`Fixture audit entry ${index}`, { exact: true })).toBeAttached();
+  }
+  // The virtual spacers are what print as blank bands, so none may survive the swap.
+  await expect(register.locator('tr[aria-hidden="true"]')).toHaveCount(0);
+
+  // And the box no longer crops: Chromium does not paginate an overflowing scroll
+  // container, so a height cap in print is the same lost record by another route.
+  const box = await register.locator("[data-table-scroll]").evaluate((element) => ({
+    maxHeight: getComputedStyle(element).maxHeight,
+    overflowY: getComputedStyle(element).overflowY,
+    overflowing: element.scrollHeight > element.clientHeight + 1,
+  }));
+  expect(box).toEqual({ maxHeight: "none", overflowY: "visible", overflowing: false });
+
+  await page.emulateMedia({ media: null });
+  await expect
+    .poll(async () => Number(await register.getAttribute("data-rendered-row-count")))
+    .toBeLessThan(200);
+});
+
+/**
  * The decision-ledger register stacks an event type, a timestamp, and a provenance badge
  * in one cell, so its rows render far taller than the seeded row estimate. A window
  * derived from the estimate alone indexes past the last row at the bottom of the scroll

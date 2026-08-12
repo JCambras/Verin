@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
+import { flushSync } from "react-dom";
 import { Button, EmptyState, StatusBadge } from "./ui";
 
 export interface TableColumn {
@@ -8,6 +9,15 @@ export interface TableColumn {
   readonly header: string;
   readonly align?: "left" | "right";
   readonly sortable?: boolean;
+  /**
+   * How this column orders when it is the active sort - "dispositions by
+   * restrictiveness, then alphabetically", say. Declared wherever the ordering is not
+   * the obvious one for the value on screen: a reader looking at a re-ordered column
+   * of dispositions cannot otherwise tell a severity order from an alphabet. Carried in
+   * the caption and the landmark label, and shown as visible text beside the restore
+   * control for as long as that sort is active.
+   */
+  readonly sortNote?: string;
   readonly className?: string;
 }
 
@@ -116,6 +126,37 @@ export function Table({
   const [sort, setSort] = useState<SortState | null>(initialSort ?? null);
   const [scrollTop, setScrollTop] = useState(0);
   const [rowHeight, setRowHeight] = useState(ESTIMATED_ROW_HEIGHT);
+  const [printing, setPrinting] = useState(false);
+
+  /**
+   * A windowed register holds only its current window in the DOM behind a capped
+   * scroll box, so printing one emits a cropped box with blank spacer bands where the
+   * rest of the record should be - and both compliance registers exceed the threshold
+   * in ordinary use. No stylesheet can fix that: the missing rows do not exist. So
+   * windowing is SUSPENDED for the print pass, which drops the height cap and the
+   * spacers with it and prints the complete sorted register.
+   *
+   * The commit is synchronous because `window.print()` blocks the main thread: a
+   * batched update would land after the page had already been captured. What drives it
+   * is the TRANSITION into print media, which is what both `window.print()` and a print
+   * preview perform; the `print:` height-cap escape below is the backstop for a context
+   * that was already printing before this mounted.
+   */
+  useEffect(() => {
+    const apply = (next: boolean) => flushSync(() => setPrinting(next));
+    const onBeforePrint = () => apply(true);
+    const onAfterPrint = () => apply(false);
+    const onMediaChange = (event: MediaQueryListEvent) => apply(event.matches);
+    window.addEventListener("beforeprint", onBeforePrint);
+    window.addEventListener("afterprint", onAfterPrint);
+    const query = typeof window.matchMedia === "function" ? window.matchMedia("print") : null;
+    query?.addEventListener("change", onMediaChange);
+    return () => {
+      window.removeEventListener("beforeprint", onBeforePrint);
+      window.removeEventListener("afterprint", onAfterPrint);
+      query?.removeEventListener("change", onMediaChange);
+    };
+  }, []);
 
   const sortedRows = useMemo(() => {
     if (!sort) return rows;
@@ -131,7 +172,7 @@ export function Table({
     return indexed.map(({ row }) => row);
   }, [rows, sort]);
 
-  const virtualized = !loading && sortedRows.length > virtualizeAbove;
+  const virtualized = !loading && !printing && sortedRows.length > virtualizeAbove;
   const visibleCount = Math.ceil(VIEWPORT_HEIGHT / rowHeight) + OVERSCAN * 2;
   const maxStart = Math.max(0, sortedRows.length - visibleCount);
   const start = virtualized
@@ -196,8 +237,9 @@ export function Table({
   }
 
   const sortedColumn = sort ? columns.find((column) => column.id === sort.columnId) : undefined;
+  const activeSortNote = sortedColumn?.sortNote;
   const sortedCaption = sort && sortedColumn
-    ? `${caption} (re-sorted by ${sortedColumn.header}, ${sort.direction})`
+    ? `${caption} (re-sorted by ${sortedColumn.header}, ${sort.direction}${activeSortNote ? `, ${activeSortNote}` : ""})`
     : caption;
 
   const register = (
@@ -208,6 +250,7 @@ export function Table({
       onScroll={handleScroll}
       className={joinClasses(
         "overflow-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600",
+        "print:max-h-none print:overflow-visible",
         virtualized && "max-h-96",
         className,
       )}
@@ -311,6 +354,12 @@ export function Table({
    * above the table pushes the header the viewer just clicked out from under their
    * pointer. Its accessible name carries the caption, so two registers on one page name
    * different controls (the visible text is the name's prefix - WCAG 2.5.3).
+   *
+   * The active column's `sortNote` shares that row as VISIBLE text. The caption carries
+   * it too, but the caption is sr-only: a sighted reader looking at dispositions ordered
+   * "Proceed, Blocked, Prohibited" has no way to tell a severity order from an alphabet
+   * unless the register says which one it applied. It sits here rather than under the
+   * header so a column's width cannot wrap a sentence, and it prints with the register.
    */
   return (
     <div
@@ -322,17 +371,23 @@ export function Table({
       className="flex flex-col gap-2"
     >
       {register}
-      {reordered ? (
-        <div className="flex justify-end print-hide">
-          <Button
-            type="button"
-            variant="secondary"
-            size="compact"
-            aria-label={`Restore recorded order: ${caption}`}
-            onClick={restoreRecordedOrder}
-          >
-            Restore recorded order
-          </Button>
+      {reordered || activeSortNote ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {activeSortNote && sortedColumn ? (
+            <p className="text-xs text-slate-600">{`Sorted by ${sortedColumn.header}: ${activeSortNote}.`}</p>
+          ) : null}
+          {reordered ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="compact"
+              className="ml-auto print-hide"
+              aria-label={`Restore recorded order: ${caption}`}
+              onClick={restoreRecordedOrder}
+            >
+              Restore recorded order
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </div>

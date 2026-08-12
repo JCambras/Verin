@@ -1,7 +1,6 @@
-import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Node, Project, SyntaxKind, type SourceFile } from "ts-morph";
-import { inMemoryProject, REPO_ROOT, walk } from "./_fence-utils";
+import { Node, SyntaxKind, type SourceFile } from "ts-morph";
+import { appSourceProject, inMemoryProject, relativeToRepo } from "./_fence-utils";
 
 /**
  * PRESENTATION-PRIMITIVES FENCE (charter #1/#9/#10). Product surfaces use the
@@ -204,11 +203,6 @@ function classRecipeCandidates(sf: SourceFile): Array<{ node: Node; text: string
   return candidates;
 }
 
-/**
- * Both extensions: a class-string constant exported from a `.ts` module under `src/app`
- * reaches the same JSX as one written inline, so scanning only `.tsx` left a styling
- * path the fence could not see.
- */
 /** An escape that points at nothing exempts nothing, and reads as coverage it no longer gives. */
 export function stalePrimitiveEscapes(scanned: Iterable<string>): string[] {
   const present = new Set(scanned);
@@ -217,25 +211,13 @@ export function stalePrimitiveEscapes(scanned: Iterable<string>): string[] {
     .map((rel) => `${rel}:1 :: reviewed primitive escape no longer resolves in the scanned tree`);
 }
 
-function appProject(): Project {
-  const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
-  for (const file of walk(`${REPO_ROOT}src/app`, (candidate) => candidate.endsWith(".tsx") || candidate.endsWith(".ts"))) {
-    project.addSourceFileAtPath(file);
-  }
-  return project;
-}
-
 describe("presentation-primitives fence", () => {
-  const scanned = appProject()
-    .getSourceFiles()
-    .map((sf) => relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/"));
+  const appFiles = appSourceProject().getSourceFiles();
+  const scanned = appFiles.map(relativeToRepo);
 
   it("enforces: product surfaces have no second button, badge, or pill styling path", () => {
     const offenders: string[] = [];
-    for (const sf of appProject().getSourceFiles()) {
-      const rel = relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
-      offenders.push(...presentationPrimitiveViolations(sf, rel));
-    }
+    for (const sf of appFiles) offenders.push(...presentationPrimitiveViolations(sf, relativeToRepo(sf)));
     expect(offenders, `ad-hoc presentation primitives:\n${offenders.join("\n")}`).toEqual([]);
   });
 
@@ -372,10 +354,10 @@ describe("presentation-primitives fence", () => {
       expect(found).toEqual([expect.stringContaining("src/app/example/styles.ts:1 :: ad-hoc button class recipe")]);
     });
 
+    // A class-string constant exported from a `.ts` module under `src/app` reaches the
+    // same JSX as one written inline, so scanning only `.tsx` left a styling path the
+    // fence could not see. The shared app project carries both extensions.
     it("scans .ts modules under src/app, not only .tsx", () => {
-      const scanned = appProject()
-        .getSourceFiles()
-        .map((sf) => relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/"));
       expect(scanned).toContain("src/app/ledger/model.ts");
       expect(scanned).toContain("src/app/presentation/ui.tsx");
     });
