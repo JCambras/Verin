@@ -10,6 +10,7 @@ import {
   rebuildDecisionProjections,
   recordDecision,
 } from "@infra/ledger/ledger-store";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 import { listDecisionProjections } from "@infra/ledger/ledger-projection-store";
 import { verifyDecisionLedgerIntegrity } from "@infra/ledger/ledger-verification";
 import { readVerifiedDecisionRegister } from "@infra/ledger/ledger-register";
@@ -95,7 +96,7 @@ async function seed(db: SqlDb): Promise<void> {
 const append = (
   db: SqlDb,
   events: Parameters<typeof appendDecisionEvents>[2],
-) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_TENANT, events, LEDGER_PROVENANCE));
+) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_TENANT, events, LEDGER_PROVENANCE, FIRM_RECORD_ORIGIN));
 
 type LedgerTable =
   | "decision_ledger"
@@ -385,6 +386,7 @@ describe("deterministic decision-ledger projections", () => {
           LEDGER_TENANT,
           [competing],
           LEDGER_PROVENANCE,
+          FIRM_RECORD_ORIGIN,
         );
       } catch {
         return;
@@ -749,6 +751,7 @@ describe("deterministic decision-ledger projections", () => {
         LEDGER_TENANT,
         repeatedEvidenceEvents,
         currentProvenance,
+        FIRM_RECORD_ORIGIN,
         first.evidenceSnapshots,
       ))).resolves.toHaveLength(first.evidenceSnapshots.length);
     const second = reusedBundleRecordingInput("dec:GC-01:0002");

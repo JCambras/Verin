@@ -14135,3 +14135,48 @@ result cannot mean the check was blind.
 **Reverted:** both renders restored; `Tests 7 passed`.
 
 **Date:** 2026-08-12 (review round eleven, ADR-0057 / D-216).
+
+## PF-288 · clean slate: the guarantee itself, over the COMPLETE seed · `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** a production instance holds zero demonstration records (charter #3/#4/#7), and every
+path that writes one names the ROW's origin at its insert rather than leaving the column's default to
+claim it is the firm's own. Seventeen cases checked one mechanism each; the guarantee - the complete
+`pnpm db:seed`, purged, counted - was checked nowhere, which is how it failed open three separate ways.
+
+**Injection A - the unmarked insert path (the shape that shipped).** `record_origin` removed from the
+sole `INSERT INTO decision_ledger` in `src/infrastructure/ledger/ledger-store.ts`, so the seeded
+decision chain takes the DDL default exactly as it did before this change.
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/integration/fixture-purge.test.ts -t "THE GUARANTEE"`):**
+```
+× THE GUARANTEE, against the COMPLETE seed: every demonstration row a purge can take is taken, and what is left is what the STORE refuses
+AssertionError: every table the complete seed writes demonstration rows into must be countable as such:
+  expected [ 'contacts', 'households', 'tasks' ] to deeply equal [ 'contacts', 'decision_ledger', …(2) ]
+Tests  1 failed | 16 skipped (17)
+```
+
+**Injection B - the backfill folded back into the migration that had already shipped.** Version 10's
+`UPDATE` appended to version 9's SQL and version 10 removed, which is the state the branch was in: a
+store that recorded `(9, record-origin)` before the backfill existed never runs it again.
+
+**Observed failure (`… -t "version 9 BEFORE the backfill"`):**
+```
+× a store that recorded version 9 BEFORE the backfill existed is repaired by the NEXT version
+AssertionError: the backfill must reach a store that already ran version 9: expected {} to deeply equal { Object (households, contacts, ...) }
+Tests  1 failed | 17 skipped (18)
+```
+
+**Executable companions (run on every build):** the guarantee case runs the COMPLETE seed - the org,
+the users, the audited marker, the synthetic decision chain and the hundred-household world - through
+the same `seedDemoStore` that `pnpm db:seed` runs, so a seeded path cannot be missing from it; the
+purge and the final count both derive their tables from the LIVE store catalog rather than from a
+hand-kept list or from `scripts/fixture-purge.ts`, so a table either derivation misses is still purged
+and still counted; the purge discovers its order by retrying refusals rather than declaring one, and a
+table that still refuses is reported with the store's own words, so `decision_ledger`'s append-only
+trigger is named rather than silently tolerated; and the pre-existing companion (`the column's DEFAULT
+alone reports a populated store CLEAN`) still proves the sweep can see the false pass it exists to
+close.
+
+**Reverted:** both injections restored; `Tests 18 passed`.
+
+**Date:** 2026-08-12 (review round twelve, ADR-0057).

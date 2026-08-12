@@ -17,8 +17,9 @@ import { loadWorldSpec, WORLD_SEED } from "../../../scripts/world/spec";
  * search-miss copy, so an empty book - a dev store before `pnpm db:seed`, a
  * tenant whose CRM book does not overlap the world, production, where the
  * fixture adapter refuses to serve - rendered "No household matches that
- * search" and offered four Smiths that are not there: two false statements in
- * one view, on the surface the app home page calls the firm's whole book.
+ * search", on the surface the app home page calls the firm's whole book. That
+ * copy also counted the Smiths in a book it was not looking at; neither state
+ * states a fact about the loaded book now.
  */
 
 vi.mock("next/link", () => ({
@@ -74,7 +75,6 @@ describe("an empty book is not a search that found nothing", () => {
       screen.queryByText(SEARCH_COPY),
       "no search was made, so nothing can have failed to match one",
     ).toBeNull();
-    expect(screen.queryByText(/share the surname Smith/), "and there are no Smiths here to offer").toBeNull();
     expect(screen.getByRole("link", { name: "Open the house-CRM console" }).getAttribute("href")).toBe("/app/console");
   });
 
@@ -95,6 +95,20 @@ describe("an empty book is not a search that found nothing", () => {
     const vm = directory([]);
     render(<HouseholdDirectory directory={{ ...vm, emptyBook: null }} />);
     expect(screen.getByText(SEARCH_COPY), "this is the state the fix distinguishes").toBeDefined();
-    expect(screen.getByText(/share the surname Smith/)).toBeDefined();
+  });
+
+  it("neither empty state states a fact about how many households share a surname", () => {
+    // A count of Smiths is a fact about whichever book is loaded. The world's
+    // roster declares four as a MINIMUM and the derived draw produced eleven, so
+    // the sentence was false even in the demonstration world - and in production
+    // this surface lists the firm's own records with no world behind them at all,
+    // where it was a claim about households the firm does not have (charter #3).
+    for (const vm of [directory([]), { ...directory([]), emptyBook: null }, directory(WORLD)]) {
+      const view = render(<HouseholdDirectory directory={vm} />);
+      fireEvent.change(screen.getByLabelText("Search households"), { target: { value: "zzzz-no-such-household" } });
+      expect(view.container.textContent).not.toMatch(/Smith/);
+      expect(view.container.textContent, "nor any other counted surname claim").not.toMatch(/\b(?:One|Two|Three|Four|Five|\d+) households (?:here )?share/);
+      view.unmount();
+    }
   });
 });

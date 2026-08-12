@@ -167,8 +167,12 @@ describe("clean-slate fence", () => {
     // `user-input`, honestly, and the demonstration record walks into production
     // behind it. So the guarantee is counted off the origin, and a
     // provenance-bearing table without one cannot be counted at all.
-    expect([...DEMONSTRATION_ORIGINS]).toEqual(["world-fixture"]);
-    expect([...RECORD_ORIGINS].sort()).toEqual(["firm-record", "world-fixture"]);
+    // Every origin a demonstration path writes is classified DEMONSTRATION here:
+    // the world's CRM projection and the synthetic decision chain the seed
+    // records are two different writers, and an origin that fell into the clean
+    // half by omission is a sweep that reports its own seed clean.
+    expect([...DEMONSTRATION_ORIGINS].sort()).toEqual(["demo-seed", "world-fixture"]);
+    expect([...RECORD_ORIGINS].sort()).toEqual(["demo-seed", "firm-record", "world-fixture"]);
     expect(recordOriginCoverageProblems()).toEqual([]);
     const origins = new Set(originBearingTables());
     for (const table of provenanceBearingTables()) {

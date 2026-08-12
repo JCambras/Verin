@@ -22,6 +22,7 @@ import {
   verifyAndListDecisionLedger,
   verifyDecisionLedgerIntegrity,
 } from "@infra/ledger/ledger-verification";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 import { computeChainHash, GENESIS_HASH } from "@infra/audit/hash-chain";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { verifyAndListOrgChain } from "@infra/audit/audit-store";
@@ -213,7 +214,7 @@ async function recordFixture(db: SqlDb): Promise<void> {
 const append = (
   db: SqlDb,
   events: Parameters<typeof appendDecisionEvents>[2],
-) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_TENANT, events, LEDGER_PROVENANCE));
+) => db.transaction((tx) => appendDecisionEvents(tx, LEDGER_TENANT, events, LEDGER_PROVENANCE, FIRM_RECORD_ORIGIN));
 
 async function sourceCounts(db: SqlDb): Promise<Record<string, number>> {
   const result: Record<string, number> = {};
@@ -784,7 +785,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
     });
     await expect(
       db.transaction((tx) =>
-        appendDecisionEvents(tx, LEDGER_TENANT, [event], provenance)),
+        appendDecisionEvents(tx, LEDGER_TENANT, [event], provenance, FIRM_RECORD_ORIGIN)),
     ).rejects.toMatchObject({ code: "VALIDATION" });
     expect((await listDecisionLedger(
       db,
@@ -1661,11 +1662,11 @@ describe("decision ledger storage and L1-L4 verification", () => {
         sql.startsWith("ROLLBACK TO SAVEPOINT")
           ? Promise.reject(new TypeError("connection lost mid-recovery"))
           : exec(sql);
-      await appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE);
+      await appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE, FIRM_RECORD_ORIGIN);
       // The same entry twice: the substrate refuses, and recovery cannot run. The
       // caller still owes its transaction a verdict it can act on.
       await expect(
-        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE),
+        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE, FIRM_RECORD_ORIGIN),
       ).rejects.toMatchObject({
         code: "STORE_CONSTRAINT",
         message: "decision ledger append violated a store constraint",
@@ -1704,7 +1705,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
           ? Promise.reject(new TypeError("lock wait timeout on the tenant row"))
           : query(sql, params)) as typeof tx.query;
       await expect(
-        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE),
+        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE, FIRM_RECORD_ORIGIN),
       ).rejects.toMatchObject({
         code: "INTERNAL",
         message: "decision ledger append failed",
@@ -1715,7 +1716,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
           ? Promise.resolve({ rows: [] })
           : query(sql, params)) as typeof tx.query;
       await expect(
-        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE),
+        appendDecisionEvents(tx, LEDGER_TENANT, [event], LEDGER_PROVENANCE, FIRM_RECORD_ORIGIN),
       ).rejects.toMatchObject({
         code: "NOT_FOUND",
         message: "decision ledger tenant does not exist",
@@ -1747,6 +1748,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       LEDGER_TENANT,
       [later.event, cited],
       LEDGER_PROVENANCE,
+      FIRM_RECORD_ORIGIN,
       [later.snapshot],
     ))).resolves.toHaveLength(2);
     const promoted = await db.query<{ evidence_snapshot_id: string | null }>(
@@ -1761,6 +1763,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       LEDGER_TENANT,
       [laterEvidenceRecording("test:evidence:status:2").event],
       LEDGER_PROVENANCE,
+      FIRM_RECORD_ORIGIN,
     ))).rejects.toMatchObject({ code: "VALIDATION" });
   });
 
@@ -1784,6 +1787,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
           LEDGER_TENANT,
           [later.event, collisionEvent],
           LEDGER_PROVENANCE,
+          FIRM_RECORD_ORIGIN,
           [later.snapshot, collision],
         );
       } catch {
@@ -1820,6 +1824,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
           LEDGER_TENANT,
           [accepted, refused],
           LEDGER_PROVENANCE,
+          FIRM_RECORD_ORIGIN,
         );
       } catch {
         // A future producer that swallows the abort must not be able to commit
@@ -1878,6 +1883,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
       LEDGER_TENANT,
       [event],
       LEDGER_PROVENANCE,
+      FIRM_RECORD_ORIGIN,
     )).rejects.toMatchObject({ code: "VALIDATION" });
     expect((await listDecisionLedger(
       db,
@@ -1908,6 +1914,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
           LEDGER_TENANT,
           [event],
           LEDGER_PROVENANCE,
+          FIRM_RECORD_ORIGIN,
         ))).resolves.toHaveLength(1);
     } finally {
       await bundledDb.close();
@@ -1934,7 +1941,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
                    $3,'synthetic-ledger-test',$3,'high')`,
           ["task-ledger-ok", LEDGER_ORG, TS],
         );
-        await appendDecisionEvents(tx, LEDGER_TENANT, [started], LEDGER_PROVENANCE);
+        await appendDecisionEvents(tx, LEDGER_TENANT, [started], LEDGER_PROVENANCE, FIRM_RECORD_ORIGIN);
         return { id: "task-ledger-ok" };
       },
     });
@@ -1968,7 +1975,7 @@ describe("decision ledger storage and L1-L4 verification", () => {
                    $3,'synthetic-ledger-test',$3,'high')`,
           ["task-ledger-refused", LEDGER_ORG, TS],
         );
-        await appendDecisionEvents(tx, LEDGER_TENANT, [unsafe], LEDGER_PROVENANCE);
+        await appendDecisionEvents(tx, LEDGER_TENANT, [unsafe], LEDGER_PROVENANCE, FIRM_RECORD_ORIGIN);
         return { id: "task-ledger-refused" };
       },
     });

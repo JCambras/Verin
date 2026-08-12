@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { MIGRATIONS, runMigrations } from "@infra/store/migrations";
-import { RECORD_ORIGIN_COLUMN } from "@infra/store/record-origin";
+import { DEMONSTRATION_ORIGINS, RECORD_ORIGIN_COLUMN } from "@infra/store/record-origin";
 import { seedWorldIntoCrm } from "@infra/crm/world-seed";
 import { updateHouseholdName } from "@infra/crm/house-crm";
 import { systemWriteActor } from "@contracts/principal";
@@ -10,9 +10,21 @@ import { canFeedComplianceDecision, provenanceLabel, syntheticBadgeLabel } from 
 import { cleanSlateViolations, originBearingTables, sweepFixtureRows } from "../../../scripts/fixture-purge";
 import { generateWorld } from "../../../scripts/world/generate";
 import { loadWorldSpec, WORLD_SEED } from "../../../scripts/world/spec";
+import { seedDemoStore } from "../../../scripts/seed-demo-store";
 
 /**
  * THE CLEAN-SLATE GUARANTEE, END TO END (ADR-0057; charter #3/#4/#7).
+ *
+ * The FIRST case is the guarantee itself: the complete `pnpm db:seed` against a
+ * migrated store, a purge derived from the LIVE schema, and a count taken from
+ * the live schema too. Everything after it exercises ONE mechanism of that
+ * guarantee - the sweep's table derivation, the migration backfill, the
+ * origin/provenance split, the world load - and every one of them is an
+ * OPTIMISATION of the first, never a substitute for it: a mechanism can be
+ * perfectly right while the guarantee fails, and it has, three separate times
+ * (a column default that answered for rows it never wrote, an insert path that
+ * named no origin, a backfill appended to a migration that had already run).
+ * Each of those was a path no case ran end to end.
  *
  * Against a real Postgres store, not a mock:
  *   - a migrated but unseeded instance sweeps CLEAN;
@@ -34,13 +46,72 @@ const HOUSEHOLDS = world.households.slice(0, 5);
 
 let db: SqlDb;
 
-/** Child rows first: the household foreign keys are real, which is exactly why a
- * purge is an ordered operation rather than a truncate. Keyed on the ROW's
- * origin, never on the provenance of the values in it. */
-async function purgeDemonstrationRecords(store: SqlDb): Promise<void> {
-  await store.query("DELETE FROM tasks WHERE record_origin = 'world-fixture'");
-  await store.query("DELETE FROM contacts WHERE record_origin = 'world-fixture'");
-  await store.query("DELETE FROM households WHERE record_origin = 'world-fixture'");
+const ORIGINS = DEMONSTRATION_ORIGINS.map((_, index) => `$${index + 1}`).join(",");
+
+/**
+ * EVERY TABLE THE LIVE STORE GIVES AN ORIGIN COLUMN - asked of the store's own
+ * catalog, not of the shipped DDL and not of `scripts/fixture-purge.ts`. The
+ * purge and the final count both read this, so neither can be right about a set
+ * of tables the store does not actually have, and a table a DDL derivation
+ * misses is still purged and still counted.
+ */
+async function originBearingTablesInStore(store: SqlDb): Promise<string[]> {
+  const rows = await store.query<{ table_name: string }>(
+    "SELECT DISTINCT c.table_name FROM information_schema.columns c "
+    + "JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name "
+    + "WHERE c.column_name = $1 AND t.table_type = 'BASE TABLE' AND c.table_schema = ANY(current_schemas(false))",
+    [RECORD_ORIGIN_COLUMN],
+  );
+  return rows.rows.map((row) => row.table_name).sort();
+}
+
+/** Demonstration-origin rows per table, counted the same way. */
+async function demonstrationRowsInStore(store: SqlDb): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  for (const table of await originBearingTablesInStore(store)) {
+    const rows = await store.query<{ n: string | number }>(
+      `SELECT COUNT(*)::int AS n FROM ${table} WHERE ${RECORD_ORIGIN_COLUMN} IN (${ORIGINS})`,
+      [...DEMONSTRATION_ORIGINS],
+    );
+    const n = Number(rows.rows[0]?.n ?? 0);
+    if (n > 0) counts[table] = n;
+  }
+  return counts;
+}
+
+/**
+ * THE PURGE, DERIVED FROM THE LIVE SCHEMA. A hand-kept list of tables is the
+ * same fail-open as a hand-kept list of swept tables: the table nobody
+ * remembered is the one holding the rows. Keyed on the ROW's origin, never on
+ * the provenance of the values in it.
+ *
+ * Order is DISCOVERED rather than declared - the household foreign keys are
+ * real, so a parent whose children are still there refuses and is retried on the
+ * next pass. A table that still refuses when no pass makes progress is REPORTED
+ * with the store's own words rather than swallowed: a purge that quietly leaves
+ * rows behind and a purge that removed them are indistinguishable to a caller
+ * who is not told.
+ */
+async function purgeDemonstrationRecords(store: SqlDb): Promise<Map<string, string>> {
+  const pending = new Set(await originBearingTablesInStore(store));
+  const refused = new Map<string, string>();
+  for (let progress = true; progress && pending.size > 0;) {
+    progress = false;
+    for (const table of [...pending]) {
+      try {
+        await store.query(
+          `DELETE FROM ${table} WHERE ${RECORD_ORIGIN_COLUMN} IN (${ORIGINS})`,
+          [...DEMONSTRATION_ORIGINS],
+        );
+        pending.delete(table);
+        refused.delete(table);
+        progress = true;
+      } catch (e) {
+        refused.set(table, e instanceof Error ? e.message : String(e));
+      }
+    }
+  }
+  return refused;
 }
 
 /** The version that introduced `record_origin`, read from the shipped plan
@@ -101,6 +172,50 @@ beforeEach(async () => {
 });
 
 describe("clean-slate guarantee", () => {
+  it("THE GUARANTEE, against the COMPLETE seed: every demonstration row a purge can take is taken, and what is left is what the STORE refuses", async () => {
+    // The whole of `pnpm db:seed` - the org, the users, the audited marker, the
+    // synthetic decision chain and the hundred-household world - against a
+    // migrated store, then a purge derived from the LIVE schema, then a count
+    // taken the same way. Every case below this one exercises ONE mechanism; a
+    // mechanism can be right while the guarantee fails, and it has, three
+    // separate times (a defaulted column, an unmarked insert path, a migration
+    // that never ran). This case is the guarantee itself, so it is the one that
+    // has to see every seeded path at once.
+    await seedDemoStore(db);
+
+    const seeded = await demonstrationRowsInStore(db);
+    expect(
+      Object.keys(seeded).sort(),
+      "every table the complete seed writes demonstration rows into must be countable as such",
+    ).toEqual(["contacts", "decision_ledger", "households", "tasks"]);
+
+    const refused = await purgeDemonstrationRecords(db);
+    const left = await demonstrationRowsInStore(db);
+
+    expect(
+      Object.keys(left).filter((table) => !refused.has(table)).sort(),
+      "a seeded path that writes a row the purge does not remove fails here",
+    ).toEqual([]);
+
+    // WHAT THE STORE ITSELF REFUSES, named rather than tolerated silently. The
+    // decision ledger is append-only by DDL trigger (ADR-0041), so demonstration
+    // entries in it are IRREVERSIBLE: no purge can return that store to clean,
+    // which is why the seed refuses to run against production at all
+    // (`assertSeedableEnvironment`) and why the instance-level answer there is to
+    // recreate the store, not to sweep it.
+    expect([...refused.keys()].sort(), "only an append-only table may refuse").toEqual(["decision_ledger"]);
+    expect(refused.get("decision_ledger")).toMatch(/append-only/);
+    expect(Object.keys(left)).toEqual(["decision_ledger"]);
+
+    // And the operator-facing check says so, rather than reporting clean over it.
+    const violations = cleanSlateViolations(await sweepFixtureRows(db));
+    expect(violations.some((violation) => violation.startsWith("decision_ledger:"))).toBe(true);
+    expect(
+      violations.filter((violation) => !violation.startsWith("decision_ledger:")),
+      "everything else the seed wrote is gone",
+    ).toEqual([]);
+  });
+
   it("a migrated, unseeded instance is clean", async () => {
     const sweep = await sweepFixtureRows(db);
     expect(sweep.problems).toEqual([]);
@@ -190,6 +305,34 @@ describe("clean-slate guarantee", () => {
     // condemning real records to the purge.
     const firm = await db.query<{ record_origin: string }>("SELECT record_origin FROM households WHERE id = 'upgrade-firm-own'");
     expect(firm.rows[0]?.record_origin).toBe("firm-record");
+  });
+
+  it("a store that recorded version 9 BEFORE the backfill existed is repaired by the NEXT version", async () => {
+    // The store the repair actually exists for: the column is there, every row
+    // took its default, and `(9, record-origin)` is already in the ledger.
+    // `runMigrations` matches on `(version, name)`, so a backfill appended to
+    // version 9's own SQL would never run again on exactly these stores - the
+    // `ALTER` is `IF NOT EXISTS` and the `UPDATE` would be dead code. Shipping it
+    // as its own version is what makes it reachable (D-016/D-029).
+    await rewindPastRecordOrigin(db);
+    await seedTheOldWay(db);
+    await runMigrations(db);
+    for (const table of ["households", "contacts", "tasks"]) {
+      await db.query(`UPDATE ${table} SET ${RECORD_ORIGIN_COLUMN} = $1`, ["firm-record"]);
+    }
+    await db.query("DELETE FROM schema_migrations WHERE version > $1", [ORIGIN_VERSION]);
+    expect(
+      Number((await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM schema_migrations WHERE version = $1", [ORIGIN_VERSION])).rows[0]!.n),
+      "version 9 stays recorded: this is a store that already applied it",
+    ).toBe(1);
+    expect((await sweepFixtureRows(db)).totalRows, "and it reports clean while the world is present").toBe(0);
+
+    await runMigrations(db);
+
+    const dirty = Object.fromEntries((await sweepFixtureRows(db)).tables.filter((entry) => entry.rows > 0).map((entry) => [entry.table, entry.rows]));
+    expect(dirty, "the backfill must reach a store that already ran version 9").toEqual({ households: 2, contacts: 2, tasks: 1 });
+    const firm = await db.query<{ record_origin: string }>("SELECT record_origin FROM households WHERE id = 'upgrade-firm-own'");
+    expect(firm.rows[0]?.record_origin, "and must not condemn the firm's own record to the purge").toBe("firm-record");
   });
 
   it("detects (companion): the column's DEFAULT alone reports a populated store CLEAN", async () => {

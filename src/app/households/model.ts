@@ -82,8 +82,8 @@ export interface NoEvidenceVM {
  * where it sends a reader next. A DIFFERENT question from "nothing matched this
  * search", and it must never be answered by the same state: an empty book
  * rendering the search-miss copy tells a reader no household matched a search
- * they never made, and names the four Smiths that are not there. `null` when
- * there is a book, so this can never become permanent furniture. */
+ * they never made. `null` when there is a book, so this can never become
+ * permanent furniture. */
 export interface EmptyBookVM {
   readonly title: string;
   readonly description: string;

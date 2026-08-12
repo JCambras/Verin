@@ -97,6 +97,16 @@ Clean slate is COUNTED, and what it counts is the ROW's ORIGIN, never its value 
 `prov_source` moves when a human edits a value (a rename re-stamps it `user-input`, so an advisor's
 own words render un-watermarked) while `record_origin` never moves, so a seeded household somebody
 renamed is still purged - two facts, two columns, neither answering the other's question (D-201).
+EVERY path that writes a demonstration row NAMES the origin column at its insert (`world-seed.ts`,
+and `ledger-store.ts` through the REQUIRED `recordOrigin` on `recordDecision`/`appendDecisionEvents`):
+a default is a claim about rows you did not write, and an unnamed one made the sweep report
+`decision_ledger 0` over the chain `pnpm db:seed` had just written there. `demo-seed` is that chain's
+origin - not the world's, and classified in `DEMONSTRATION_ORIGINS` rather than falling into the clean
+half. The ledger is append-only by trigger, so those rows are IRREVERSIBLE and no purge takes them:
+the seed refuses `APP_ENV=production` before it opens a store, and the guarantee end to end - the
+COMPLETE `seedDemoStore`, purged and counted through the LIVE catalog - is the FIRST case in
+`src/__tests__/integration/fixture-purge.test.ts`; the rest are optimisations of it, never
+substitutes (D-217).
 `pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`),
 counts `record_origin` in them, and fails on the first demonstration-origin row; a sweep over zero
 tables is a problem, never a pass, and so is a provenance-bearing table the DDL never gives an origin
@@ -258,7 +268,10 @@ reject duplicate exact results.
   A new column's DEFAULT cannot answer for rows that already exist: a marker column a GUARANTEE reads
   (`record_origin`, migration 9) BACKFILLS the rows already in the store from whatever marker they were
   written with, or the guarantee fails open on every upgraded store while CI's virgin data directory
-  walks only the bootstrap path (D-202).
+  walks only the bootstrap path (D-202). That backfill is its OWN version (10,
+  `record-origin-backfill`, `store/record-origin-migration.ts`), never an edit to the version that added
+  the column: the ledger matches `(version, name)`, so appending to a shipped version reaches every
+  store EXCEPT the upgraded ones the repair exists for (D-217).
   Adding a table? Classify it in the `org-id-required` fence (it derives from this DDL).
 - **Decision history is NOT `audit_log`.** The prompt-7 source of truth is the sibling
   `decision_ledger` plus immutable replay tables (`src/infrastructure/ledger/`, ADR-0041).

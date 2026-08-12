@@ -31,6 +31,7 @@ import {
   registerTestSystemActor,
   systemTenant,
 } from "@contracts/tenant";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 import type { RecordDecisionInput } from "@infra/ledger/ledger-store";
 import {
   registerTestLedgerIdentifier,
@@ -242,6 +243,11 @@ export function decisionRecordingInput(): RecordDecisionInput {
     decisionRecord,
     events,
     provenance: LEDGER_PROVENANCE,
+    // A test firm's own flow, so the ROW's origin is a firm record. The fixture
+    // states it rather than letting the column default answer for it: the
+    // clean-slate sweep counts this column, and a default is a claim about rows
+    // nobody wrote.
+    recordOrigin: FIRM_RECORD_ORIGIN,
   };
 }
 
@@ -267,6 +273,7 @@ export function reusedBundleRecordingInput(decisionId: string): RecordDecisionIn
   });
   return {
     evidenceSnapshots: [],
+    recordOrigin: FIRM_RECORD_ORIGIN,
     inputBundle: first.inputBundle,
     decisionRecord,
     events: [LedgerEntrySchema.parse({

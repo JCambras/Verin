@@ -8206,3 +8206,87 @@ to another firm's book - which are also exactly the two the route refuses identi
 `fixtures/world` is untouched and regenerates byte-identical, and migration 9's SQL is unchanged (only
 its comment and the module header moved). Reverting the row heights alone would reintroduce the
 overflow, so they revert with the name render they were measured for.
+
+### D-217 · 2026-08-12 · reversible · Populated-world review round twelve: a backfill that cannot run, an insert that names nothing, and the guarantee nobody tested
+
+**The backfill ships as version 10, because version 9 had already shipped.** D-215 appended the
+`record_origin` backfill to version 9's own SQL. `runMigrations` matches the ledger on
+`(version, name)`, so the stores the repair exists for - the ones that ran `pnpm db:migrate` between
+the two commits, which is every developer who followed the branch - have `(9, record-origin)` recorded
+and never run that version again: the `ALTER` is `IF NOT EXISTS` and the `UPDATE` is dead code. Those
+stores report clean with the demonstration world fully present and no repair path, since re-seeding
+conflicts on the deterministic ids and writes nothing. Version 9 is restored to its as-shipped DDL and
+the backfill is version 10, `record-origin-backfill` (`src/infrastructure/store/migrations.ts`) - the
+rule D-016/D-029 states and D-215 broke while enforcing it. A store that already recorded version 9 and
+took the default on every row is now a case, and it fails when the backfill is folded back into version
+9 (PF-288, injection B).
+
+**Every path that writes a demonstration row names the origin column at its insert.** The sole
+`INSERT INTO decision_ledger` named it zero times, so the synthetic chain `pnpm db:seed` records took
+the column's DDL default and the sweep reported `decision_ledger 0` over rows that were sitting in it -
+the guarantee failing open by construction in a table it advertises. The origin is now a REQUIRED input
+to `recordDecision` and `appendDecisionEvents` (`RecordDecisionInput.recordOrigin`,
+`src/infrastructure/ledger/ledger-store.ts`), because the producer knows which it is and the repository
+never can, and it is written at the insert rather than left to a default that answers for rows nobody
+wrote. The seeded chain states `demo-seed`, a THIRD classified origin rather than a borrowed
+`world-fixture`: it is not the world, and `DEMONSTRATION_ORIGINS` is a list precisely so a new
+demonstration writer has to be classified rather than falling into the clean half.
+
+**What that surfaced, which no mechanism check could have.** `decision_ledger` is append-only by DDL
+trigger (ADR-0041), so demonstration entries in it are IRREVERSIBLE - no purge can take them, and a
+store that has run the seed can never be swept clean again. That is now stated by the store itself
+rather than assumed: the purge reports the refusal in the store's own words, the clean-slate check
+names the table, and the instance-level answer is to recreate the store. It is not a hole in the
+guarantee, because the seed refuses to run against `APP_ENV=production` at all
+(`assertSeedableEnvironment`, checked before a connection is opened and again before any write) - but
+it is a real constraint on where that seed may ever be pointed, and it was invisible while the rows
+were unmarked.
+
+**One test that is the guarantee, not seventeen that are its mechanisms.** This guarantee has failed
+open three separate ways - a column default that answered for rows it never wrote, an insert path that
+named no origin, a backfill appended to a migration that had already run - and each time every
+mechanism check passed, because each checked one mechanism and nothing ran the whole thing. The first
+case in `src/__tests__/integration/fixture-purge.test.ts` now migrates, runs the COMPLETE `db:seed`
+through the same `seedDemoStore` the CLI runs, purges by a predicate derived from the LIVE store
+catalog, and counts what is left the same way - no hand-kept table list, and not `scripts/fixture-purge.ts`,
+whose DDL derivation is one of the things under test. The seventeen existing cases are documented as
+OPTIMISATIONS of it rather than substitutes for it. The purge helper itself is no longer a
+hand-maintained three-table `DELETE`: it derives its tables from the catalog and discovers its order by
+retrying refusals. PF-288.
+
+**The seed is a function of a store, so the guarantee can be proved against the real one.**
+`scripts/db-seed.ts` ran the whole seed at module scope against the configured store, so nothing could
+import it and a test could only re-implement part of it - which is precisely why the paths that failed
+open were never exercised. The seeding moved to `scripts/seed-demo-store.ts` (`seedDemoStore(db)`,
+production refusal included) and `scripts/db-seed.ts` is the runner that opens and closes the store.
+`pnpm db:seed` is byte-for-byte the same command and writes the same rows.
+
+**Copy states no fact about a book it is not looking at.** The search-miss empty state told every
+reader "Four households here share the surname Smith." The roster declares four as a MINIMUM and the
+path-keyed surname draw produced eleven, so it was false in the demonstration world - and in production
+`worldIsServable()` is false, so the directory lists the firm's own records and the sentence was a
+claim about households that firm does not have. It now names no count at all, only what a reader can
+do about a miss, and a unit case asserts neither empty state states such a count.
+
+**Also fixed, because the branch does not build without it.** `src/app/households/directory.tsx`
+imported `TextInput` from the presentation tier, which exports no such primitive - `pnpm typecheck` and
+`pnpm build` failed at HEAD and the directory could not render at all in jsdom. It composes the
+canonical `Input` (`src/app/presentation/ui.tsx`), unchanged in behaviour; the presentation tier itself
+is another lane's and is untouched.
+
+**Banked, not fixed (`fu-directory-summary-only-reads`).** The directory route opens all ~100 deep
+household files per server process (`fixtureWorldSource.getHousehold` does a `readFileSync` plus a full
+SHA-256 verify per file on a cold cache) even though `scripts/world/emit.ts` states the manifest exists
+specifically so a hundred-row list need not. The manifest summaries already carry
+memberCount/accountCount/totalBalanceMinor/openItemCount; the deep read is currently needed only for
+the six-factor health band and the search haystack. Warm requests are a map lookup and the row entries
+are cached by `worldDigest`, so this is first-request cost rather than per-request - but the emit
+docstring's claim no longer describes what ships. Excluded here by the convergence rule (it restates a
+cost class already addressed once on this branch); the repair is either a summary-only directory read
+or an emit docstring that describes what actually happens.
+
+**Revert path:** revert this changeset. `fixtures/world` is untouched and regenerates byte-identical.
+Migration 10 is additive and its `UPDATE` is `WHERE`-scoped, so a store that has run it is not harmed
+by the code being reverted; version 9's DDL is back to its as-shipped bytes either way. Reverting the
+`record_origin` argument alone would return `decision_ledger` to reporting clean over its own seeded
+chain, so it reverts with the guarantee case that proves it.

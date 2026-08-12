@@ -9,13 +9,16 @@
  * the `searchText` the builder composed - so what is searchable is a decision
  * recorded once in the view model, not a guess repeated in a component.
  *
- * Four households are called Smith. That is the point of the surname line under
+ * Households share surnames here. That is the point of the surname line under
  * each name: a directory that makes "Smith" look like one household is a
- * directory that will eventually route work to the wrong one.
+ * directory that will eventually route work to the wrong one. How MANY share one
+ * is a fact about whatever book is loaded, so no copy on this surface states it -
+ * the demonstration world's count is not the firm's, and in production this
+ * surface lists the firm's own records and no world at all.
  */
 import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
-import { Field, TextInput, StatusBadge, EmptyState } from "@app/presentation/ui";
+import { Field, Input, StatusBadge, EmptyState } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import type { DirectoryVM, EmptyBookVM, HouseholdRowVM, NoEvidenceVM } from "./model";
@@ -237,7 +240,7 @@ export function HouseholdDirectory({ directory }: { directory: DirectoryVM }) {
         : null}
 
       <Field label="Search households" htmlFor="household-search" hint="Matches names, people, cities, advisors, accounts, and custodians.">
-        <TextInput
+        <Input
           id="household-search"
           type="search"
           autoComplete="off"
@@ -260,14 +263,13 @@ export function HouseholdDirectory({ directory }: { directory: DirectoryVM }) {
         emptyState={
           // TWO QUESTIONS, TWO STATES. An empty book is not a search that found
           // nothing: answering both with the search copy tells a reader no
-          // household matched a search they never made, and names four Smiths
-          // that are not there - two false statements in one view. The book's
-          // own empty state comes from the builder and carries a next action.
+          // household matched a search they never made. The book's own empty
+          // state comes from the builder and carries a next action.
           directory.emptyBook !== null
             ? <BookIsEmpty empty={directory.emptyBook} />
             : <EmptyState
               title="No household matches that search"
-              description="Try a surname, a city, an advisor, or an account type. Four households here share the surname Smith, so a first name narrows it fastest."
+              description="Try fewer letters, or a first name where several households share a surname."
             />
         }
       >

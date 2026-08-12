@@ -177,7 +177,12 @@ test("failure path: a search that matches nothing offers a way forward, never a 
   await page.goto("/app/households");
   await page.getByLabel("Search households").fill("zzzzz-no-such-household");
   await expect(page.getByText("No household matches that search")).toBeVisible();
-  await expect(page.getByText(/Try a surname, a city, an advisor/)).toBeVisible();
+  await expect(page.getByText(/Try fewer letters/)).toBeVisible();
+  // The way forward may not be a claim about the book. This copy renders over
+  // the firm's own records in production, where no world is served at all, so a
+  // count of the Smiths here would be a statement about households that firm
+  // does not have (D-217).
+  await expect(page.getByText(/households (?:here )?share the surname/)).toHaveCount(0);
 });
 
 test("recovery path: clearing a search that matched nothing returns the book, not a blank window", async ({ page }) => {

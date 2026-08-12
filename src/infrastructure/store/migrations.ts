@@ -32,7 +32,7 @@ import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
-import { FIRM_RECORD_ORIGIN, RECORD_ORIGIN_COLUMN, WORLD_FIXTURE_ORIGIN } from "./record-origin";
+import { RECORD_ORIGIN_BACKFILL_SQL, RECORD_ORIGIN_SQL } from "./record-origin-migration";
 import {
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_LEDGER_HISTORY_INDEXES_SQL,
@@ -348,45 +348,6 @@ ${TENANT_EDGES.map((e) => `ALTER TABLE ${e.child}
   FOREIGN KEY (${e.childColumns.join(", ")}) REFERENCES ${e.parent}(${e.parentColumns.join(", ")});`).join("\n")}
 `;
 
-/**
- * Version 9 - the ORIGIN of a row, beside the provenance of its values
- * (ADR-0057 amendment). `prov_source` says where a VALUE came from and moves
- * when a human edits it; `record_origin` says who put the ROW here and never
- * moves, because renaming a demonstration household does not make it the firm's
- * own record. The clean-slate sweep counts THIS column, so a seeded row that has
- * since been edited is still removed - otherwise demonstration data would
- * survive into production simply because somebody typed over it.
- *
- * The table list is the provenance-bearing set AS OF THIS VERSION, frozen here
- * like every shipped migration's DDL. A provenance-bearing table added later
- * declares `record_origin` in its own `CREATE TABLE`, and the clean-slate check
- * fails on any table that carries one column without the other, so the pair
- * cannot drift apart unnoticed.
- *
- * THE DEFAULT IS A CLAIM ABOUT EVERY ROW ALREADY IN THE STORE, and here that
- * claim is false: a store carrying the demonstration world would take
- * `firm-record` on every one of those rows, and the clean-slate check would then
- * report a fully populated instance clean - the guarantee failing OPEN through
- * the very migration that enforces it, and silently, which is the one thing it
- * must never do (charter #4). Either a new column's default is provably true for
- * the rows that predate it or the migration backfills them by the condition that
- * names them; this one backfills, by the marker those rows were written with.
- * `prov_source = 'fixture'` is what the world's CRM projection wrote, in the
- * three tables it writes, and no other flow has ever written it there. Before
- * this version nothing re-stamped that column either, so at the moment this runs
- * the marker still names exactly the rows a fresh seed would give the
- * demonstration origin - which is what makes an upgraded store and a freshly
- * seeded one agree rather than diverge.
- */
-const RECORD_ORIGIN_SQL = [
-  ...[
-    "orgs", "users", "households", "contacts", "financial_accounts",
-    "account_opening_applications", "tasks", "decision_ledger",
-  ].map((table) => `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${RECORD_ORIGIN_COLUMN} text NOT NULL DEFAULT '${FIRM_RECORD_ORIGIN}';`),
-  ...["households", "contacts", "tasks"]
-    .map((table) => `UPDATE ${table} SET ${RECORD_ORIGIN_COLUMN} = '${WORLD_FIXTURE_ORIGIN}' WHERE prov_source = 'fixture';`),
-].join("\n");
-
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "baseline", sql: BASELINE_SQL },
@@ -407,6 +368,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 7, name: "decision-reservation-drop-created-sequence", sql: DECISION_LEDGER_RESERVATION_SEQUENCE_DROP_SQL },
   { version: 8, name: "decision-drop-projection-checkpoint", sql: DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL },
   { version: 9, name: "record-origin", sql: RECORD_ORIGIN_SQL },
+  { version: 10, name: "record-origin-backfill", sql: RECORD_ORIGIN_BACKFILL_SQL },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free

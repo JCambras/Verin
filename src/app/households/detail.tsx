@@ -18,7 +18,7 @@
  */
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
-import { StatusBadge } from "@app/presentation/ui";
+import { Button, StatusBadge } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
 import { FreshValue } from "@app/presentation/fresh-value";
 import type { AccountVM, HouseholdDetailVM } from "./model";
@@ -99,14 +99,14 @@ function AccountCard({ account }: { account: AccountVM }) {
       </div>
       {account.rebalanceLabel ? <p className="mt-2 text-xs text-amber-900">{account.rebalanceLabel}</p> : null}
       {account.beneficiaryNote ? <p className="mt-2 text-xs text-slate-800">{account.beneficiaryNote}</p> : null}
-      <button
-        type="button"
+      <Button
+        variant="text"
         onClick={() => setOpen((was) => !was)}
         aria-expanded={open}
-        className="mt-3 text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900"
+        className="mt-3"
       >
         {open ? "Hide" : "Show"} holdings, beneficiaries and signers
-      </button>
+      </Button>
       {open ? (
         <div className="mt-3 flex flex-col gap-4">
           <div>

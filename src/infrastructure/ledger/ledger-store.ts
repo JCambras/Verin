@@ -9,6 +9,7 @@ import { classifyErrorMetadata, log } from "@infra/observability/logger";
 import { authorityObservabilityId } from "@domain/observability/safe-values";
 import { err, ok, type Result } from "@contracts/result";
 import { parseRecordProvenance, type RecordProvenance } from "@contracts/provenance";
+import type { RecordOrigin } from "@infra/store/record-origin";
 import {
   EvidenceSnapshotRefSchema, DecisionInputBundleSchema,
   type EvidenceSnapshotRef, type DecisionInputBundle,
@@ -51,6 +52,15 @@ export interface RecordDecisionInput extends PIIBearing {
   readonly events: readonly LedgerEntry[];
   /** Provenance of the producer appending these facts (charter #4). */
   readonly provenance: RecordProvenance;
+  /**
+   * Who is putting these ROWS here, stated by the producer and written at the
+   * insert. `decision_ledger` is swept by the clean-slate check, so a row that
+   * took the column's DDL default would be counted as this firm's own record on
+   * the strength of a claim nobody made - and a demonstration chain would report
+   * clean by construction (ADR-0057, charter #4). Required, not defaulted: the
+   * caller knows which it is and this module never can.
+   */
+  readonly recordOrigin: RecordOrigin;
 }
 export interface AppendedLedgerEntry {
   readonly id: string;
@@ -147,6 +157,7 @@ async function appendPrepared(
   tenant: TenantContext,
   events: readonly PreparedEvent[],
   provenance: RecordProvenance,
+  recordOrigin: RecordOrigin,
   decisionRecord?: DecisionRecord,
   decisionProvenance?: RecordProvenance,
 ): Promise<AppendedLedgerEntry[]> {
@@ -198,15 +209,20 @@ async function appendPrepared(
       throw appError("VALIDATION", "ledger chain preimage version is unsupported");
     }
     const entryHash = computeChainHash(chainPreimage, prevHash);
+    // `record_origin` is NAMED here rather than left to the column's default.
+    // The default answers for rows this code did not write; this row it did, so
+    // the producer's own statement of where it came from is what lands - which
+    // is what lets the clean-slate sweep count a demonstration chain instead of
+    // reporting it clean by construction (ADR-0057, charter #4).
     await tx.query(
       `INSERT INTO decision_ledger
         (org_id,id,sequence,event_type,schema_version,serializer_version,
          occurred_at,recorded_at,actor_json,correlation_id,causation_id,
          decision_id,evidence_snapshot_id,triggering_entry_id,payload_json,
          reservation_creation_id,prev_hash,entry_hash,prov_source,prov_asof,
-         prov_confidence)
+         prov_confidence,record_origin)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
-               $18,$19,$20,$21)`,
+               $18,$19,$20,$21,$22)`,
       [
         orgId, event.id, sequence, event.type, event.schemaVersion,
         event.serializerVersion, event.occurredAt, event.recordedAt, actorJson,
@@ -214,7 +230,7 @@ async function appendPrepared(
         referencedDecisionId(event) ?? null, evidenceId(event),
         triggeringEntryId(event), payloadJson, reservationCreationId(event),
         prevHash, entryHash, provenance.source, provenance.asOf,
-        provenance.confidence,
+        provenance.confidence, recordOrigin,
       ],
     );
     await applyProjection(
@@ -409,6 +425,7 @@ export async function recordDecision(
         tenant,
         prepared.value.events,
         prepared.value.provenance,
+        input.recordOrigin,
         prepared.value.record,
         decisionProvenance,
       );
@@ -428,12 +445,18 @@ export async function recordDecision(
  * `evidenceSnapshots` carries evidence gathered AFTER the decision - what a
  * verification-time `StatusObserved` cites - so its promoted, foreign-keyed id is never
  * a dead reference. Recording a decision still requires `recordDecision` (the bundle).
+ *
+ * `recordOrigin` is required for the same reason it is on `RecordDecisionInput`:
+ * the caller states where the ROW comes from, because the column's default would
+ * otherwise claim these are the firm's own records and the clean-slate sweep
+ * would clear a demonstration chain without ever seeing it.
  */
 export async function appendDecisionEvents(
   tx: SqlTx,
   tenant: TenantContext,
   inputs: readonly LedgerEntry[],
   provenance: RecordProvenance,
+  recordOrigin: RecordOrigin,
   evidenceSnapshots: readonly EvidenceSnapshotRef[] = [],
 ): Promise<AppendedLedgerEntry[]> {
   assertTenantContext(tenant);
@@ -484,6 +507,7 @@ export async function appendDecisionEvents(
       tenant,
       prepared.value,
       normalizedProvenance,
+      recordOrigin,
     );
     await tx.exec("RELEASE SAVEPOINT decision_ledger_append");
     return appended;
