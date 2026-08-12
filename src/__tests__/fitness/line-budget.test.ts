@@ -121,10 +121,20 @@ import { join, relative } from "node:path";
 // 4,550 (36 lines of headroom), contracts unmoved at 6,650 against an
 // unchanged 6,602. Re-measure in any commit that
 // changes a layer; a raise is always a measured ADR amendment.
+// ADR-0057 (the populated world) raises domain, infrastructure and tooling
+// together, each against a figure RE-MEASURED on the tree as it lands rather
+// than inherited: domain 5,044 (the world model + the six-factor health
+// computation), infrastructure 8,136 (the fixture evidence adapter + the CRM
+// projection of the world's households, people and open items), tooling 13,784
+// (the world generator under `scripts/world/**`, its two runners, and the
+// clean-slate sweep). Ceilings move to 5,150 / 8,250 / 14,000 - 106, 114 and 216
+// lines of correction room, NAMED here rather than banked, so the next change to
+// any of those layers reads as the measured ADR amendment it now is. `contracts`
+// and `presentation` are untouched by that work and do not move.
 const CEILINGS = {
   contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
-  domain: 4550, // ADR-0054, on the temporal-canonicality guard (D-186; 4,514 measured)
-  infrastructure: 7840, // ADR-0051, on the scoped rebuild preview and counted provenance
+  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,044 measured)
+  infrastructure: 8250, // ADR-0057, on the fixture evidence adapter and CRM projection (8,136 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
@@ -198,7 +208,7 @@ const CEILINGS = {
   // re-took is worth. That gap is recorded
   // honestly in D-172 under follow-up key `fu-corpus-test-tree-budget`, not left
   // implicit here.
-  tooling: 12400,
+  tooling: 14000, // ADR-0057, on the populated-world generator and clean-slate sweep (13,784 measured)
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

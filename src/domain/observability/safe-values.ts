@@ -46,7 +46,7 @@ const ACTION_NAMES = [
   "application.complete", "application.create", "application.request-esign",
   "contact.create", "financial_account.create", "household.create",
   "household.update", "org.seed", "session.create", "session.login_failed",
-  "session.revoke", "task.create",
+  "session.revoke", "task.create", "world.seed",
 ] as const;
 export type ObservabilityAction = (typeof ACTION_NAMES)[number];
 const ENTITY_TYPE_NAMES = [

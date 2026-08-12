@@ -7473,3 +7473,44 @@ change touched, record what it revealed, and never let an out-of-scope discovery
 line and port bullet return to the unqualified rule, the four citing documents return to their D-202
 state, and both follow-up keys and their §4 gap rows are withdrawn. Nothing executable changes
 either way.
+
+### D-204 · 2026-08-11 · reversible · The populated world is generated fixture EVIDENCE, not nine new house-CRM tables
+
+Front-end parity prompt 4 asks for a hundred deep households so the product can be inspected rather
+than merely demonstrated. The obvious reading of the charter's "house CRM ... seeded with the
+populated world" is nine new tables (holdings, beneficiaries, signers, bank instructions, planned
+withdrawals, restrictions, pending actions, activity). That was rejected: charter #2 forbids
+speculative modeling, and every one of those records is owned by a custodian or the CRM of record -
+the v3 architecture routes them through `EvidenceSource`, so the tables would be built to be
+deleted. Instead `HouseholdWorldSource` (`src/domain/world/`) is the port, the generated fixtures are
+its Wave 0 adapter (ADR-0027), and the house CRM is projected only what it genuinely owns:
+households, their people, and their open items. The CRM stays the authority on WHICH households a
+tenant may see; the port supplies depth for an id that already passed a tenant-scoped repository
+read. Health is computed in the domain from those facts, never stored, and published through
+`deriveArtifactProvenance` so every figure is a watermarked demonstration.
+
+Generation reuses the replay corpus's derivation primitives rather than inventing a second
+mechanism, and `pnpm world:validate` regenerates and byte-compares exactly as the `corpus` gate
+does. The clean-slate guarantee is counted, not promised: every world row lands `prov_source =
+'fixture'`, and `pnpm fixture:check` derives its swept table list from the shipped DDL so a new
+provenance-bearing table cannot escape it. Three fences ship with adversarial proofs PF-253..PF-255.
+ADR-0057 records the whole decision, including the measured ADR-0018 amendment (domain 5,150,
+infrastructure 8,250, tooling 14,000 against 5,044 / 8,136 / 13,784 re-measured).
+
+**Revert path:** revert this changeset; the generator, fixtures, port, adapter, surfaces, fences,
+budget amendment and CI job revert together. Nothing outside `src/app/app/page.tsx` (one card) and
+the shared fence registries is touched, and no existing gate's semantics change.
+
+### D-205 · 2026-08-11 · reversible · The household directory shows ONE metric per row, and its counts are a composed line
+
+The first build of the directory rendered account count, open-item count and balance as three
+`<Metric>`s side by side. Each one appends "· Sample data · as of YYYY-MM-DD"; in a 768px shell that
+is three thirty-character labels in three eighty-pixel columns, and the rendered rows overlapped
+badly enough to be unreadable (caught by looking at the screenshot, not by any test). The balance is
+the only metric-class value in the data dictionary sense, so it stays a `<Metric>`; the counts are
+composed into one line by the builder, and the record they count states its provenance through the
+balance beside them. The health block had the same duplication - a large score beside a labeled copy
+of itself - and now renders one figure at large type carrying its own provenance and watermark.
+
+**Revert path:** revert `src/app/households/{model,build,directory,detail}.ts(x)`; nothing outside
+the household surfaces depends on the row shape.

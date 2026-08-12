@@ -1,0 +1,423 @@
+{
+  "specVersion": "1.0.0",
+  "note": "HAND-AUTHORED depth for the ten households the product surfaces most (front-end parity prompt 4). Structure and prose are written by hand; identifiers, holding lots, and per-lot arithmetic are DERIVED path-keyed by the generator, so depth is real where anyone will click and consistent everywhere else. These households appear FIRST in the generated world and keep their keys forever - the derived population fills the remaining slots. Every person, trust, entity, bank, and account here is author-invented; none corresponds to a real party.",
+  "households": [
+    {
+      "key": "smith-robert-elaine",
+      "displayName": "Robert & Elaine Smith",
+      "surname": "Smith",
+      "status": "active",
+      "advisorKey": "dana-ellison",
+      "serviceTier": "premier",
+      "city": "Fairhaven",
+      "openedOn": "2014-04-08",
+      "narrative": "Two-earner household approaching retirement. The revocable trust holds the taxable brokerage; both IRAs stay individually registered. A checking-account change three weeks ago is the open item on every review.",
+      "evidenceAgeDays": { "liquidity": 2, "positions": 1, "instructions": 18 },
+      "members": [
+        { "key": "robert", "displayName": "Robert Smith", "kind": "natural-person", "role": "client", "relationships": [{ "toKey": "elaine", "kind": "spouse" }, { "toKey": "nora", "kind": "parent" }] },
+        { "key": "elaine", "displayName": "Elaine Smith", "kind": "natural-person", "role": "spouse", "relationships": [{ "toKey": "robert", "kind": "spouse" }, { "toKey": "nora", "kind": "parent" }] },
+        { "key": "nora", "displayName": "Nora Smith", "kind": "natural-person", "role": "beneficiary", "relationships": [{ "toKey": "robert", "kind": "child" }, { "toKey": "elaine", "kind": "child" }] }
+      ],
+      "entities": [
+        { "key": "smith-rev-trust", "kind": "revocable-trust", "name": "Robert & Elaine Smith Revocable Trust", "formedOn": "2016-09-30", "trusteeKeys": ["robert", "elaine"], "note": "Grantor trust; both spouses serve as co-trustees and as grantors." }
+      ],
+      "accounts": [
+        { "key": "taxable", "title": "Smith Family Revocable Trust - Brokerage", "registration": "revocable-trust", "taxClass": "trust", "custodianKey": "northgate-trust", "openedOn": "2016-10-14", "balanceMinor": 42000000, "ownerKeys": ["smith-rev-trust"], "modelPortfolioKey": "balanced-60-40",
+          "beneficiaries": [], "signers": [{ "partyKey": "robert", "authorityScope": "full-trading-and-distribution", "effectiveFrom": "2016-10-14", "effectiveTo": null }, { "partyKey": "elaine", "authorityScope": "full-trading-and-distribution", "effectiveFrom": "2016-10-14", "effectiveTo": null }] },
+        { "key": "joint", "title": "Robert & Elaine Smith - Joint WROS", "registration": "joint-wros", "taxClass": "taxable", "custodianKey": "northgate-trust", "openedOn": "2014-04-22", "balanceMinor": 9500000, "ownerKeys": ["robert", "elaine"], "modelPortfolioKey": "conservative-40-60",
+          "beneficiaries": [], "signers": [] },
+        { "key": "elaine-roth", "title": "Elaine Smith - Roth IRA", "registration": "ira-roth", "taxClass": "retirement", "custodianKey": "calder-securities", "openedOn": "2015-01-20", "balanceMinor": 18500000, "ownerKeys": ["elaine"], "modelPortfolioKey": "growth-80-20",
+          "beneficiaries": [{ "partyKey": "robert", "tier": "primary", "shareBps": 10000 }, { "partyKey": "nora", "tier": "contingent", "shareBps": 10000 }], "signers": [] },
+        { "key": "robert-trad", "title": "Robert Smith - Traditional IRA", "registration": "ira-traditional", "taxClass": "retirement", "custodianKey": "calder-securities", "openedOn": "2014-06-02", "balanceMinor": 31000000, "ownerKeys": ["robert"], "modelPortfolioKey": "balanced-60-40",
+          "beneficiaries": [{ "partyKey": "elaine", "tier": "primary", "shareBps": 10000 }, { "partyKey": "nora", "tier": "contingent", "shareBps": 10000 }], "signers": [] }
+      ],
+      "bankInstructions": [
+        { "key": "chase-4417", "bank": "Harborline Bank", "lastFour": "4417", "titledTo": "Robert & Elaine Smith", "status": "superseded", "verifiedAt": "2019-02-11T15:00:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["taxable", "joint"] },
+        { "key": "harborline-8802", "bank": "Harborline Bank", "lastFour": "8802", "titledTo": "Robert & Elaine Smith", "status": "current", "verifiedAt": null, "changedAt": "2026-07-24T14:12:00.000Z", "supersedesKey": "chase-4417", "accountKeys": ["taxable", "joint"] }
+      ],
+      "plannedWithdrawals": [
+        { "key": "living", "accountKey": "taxable", "purpose": "monthly living expenses", "fromMonth": "2026-01", "monthlyMinor": 600000, "recordedAt": "2025-12-04T16:30:00.000Z" }
+      ],
+      "instructions": [
+        { "key": "third-party-destinations", "kind": "restriction", "polarity": "forbidden", "scope": "household", "subjectRef": "household", "text": "No distributions to third-party or business accounts not owned by a household member.", "sourceRef": "HH-INSTR-SMITH-004 v3", "effectiveFrom": "2021-05-06T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2021-05-06T13:20:00.000Z" },
+        { "key": "notify-both-spouses", "kind": "standing-instruction", "polarity": "required", "scope": "household", "subjectRef": "household", "text": "Both spouses are notified before any distribution over $10,000 leaves the household.", "sourceRef": "HH-INSTR-SMITH-009 v1", "effectiveFrom": "2022-11-18T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2022-11-18T18:05:00.000Z" }
+      ],
+      "pendingActions": [
+        { "key": "approved-distribution", "accountKey": "taxable", "kind": "outgoing-distribution", "amountMinor": 4000000, "state": "pending", "createdAt": "2026-08-06T17:40:00.000Z", "expectedSettleAt": "2026-08-13T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "bank-change", "occurredAt": "2026-07-24T14:12:00.000Z", "kind": "bank-instruction-changed", "summary": "Checking instruction replaced: Harborline ····4417 superseded by ····8802, awaiting independent verification.", "actorLabel": "Dana Ellison" },
+        { "key": "review", "occurredAt": "2026-06-18T15:00:00.000Z", "kind": "review-meeting", "summary": "Semi-annual review completed; retirement date moved from 2029 to 2028.", "actorLabel": "Dana Ellison" },
+        { "key": "distribution", "occurredAt": "2026-08-06T17:40:00.000Z", "kind": "distribution-settled", "summary": "Approved $40,000 renovation distribution recorded; not yet settled.", "actorLabel": "Miguel Torres" }
+      ],
+      "crossHouseholdLinks": []
+    },
+    {
+      "key": "smith-derek-yolanda",
+      "displayName": "Derek Smith & Yolanda Ochoa-Bell",
+      "surname": "Smith",
+      "status": "active",
+      "advisorKey": "marcus-underhill",
+      "serviceTier": "core",
+      "city": "Brightmoor",
+      "openedOn": "2021-08-30",
+      "narrative": "Blended household. Derek brings two children from a prior marriage; Yolanda brings one. Beneficiary designations deliberately do not mirror each other, which is the first thing a reviewer asks about.",
+      "evidenceAgeDays": { "liquidity": 3, "positions": 2, "instructions": 40 },
+      "members": [
+        { "key": "derek", "displayName": "Derek Smith", "kind": "natural-person", "role": "client", "relationships": [{ "toKey": "yolanda", "kind": "spouse" }, { "toKey": "tess", "kind": "parent" }, { "toKey": "callum", "kind": "parent" }, { "toKey": "rosalie", "kind": "step-parent" }] },
+        { "key": "yolanda", "displayName": "Yolanda Ochoa-Bell", "kind": "natural-person", "role": "spouse", "relationships": [{ "toKey": "derek", "kind": "spouse" }, { "toKey": "rosalie", "kind": "parent" }, { "toKey": "tess", "kind": "step-parent" }, { "toKey": "callum", "kind": "step-parent" }] },
+        { "key": "tess", "displayName": "Tess Smith", "kind": "natural-person", "role": "beneficiary", "relationships": [{ "toKey": "derek", "kind": "child" }] },
+        { "key": "callum", "displayName": "Callum Smith", "kind": "natural-person", "role": "beneficiary", "relationships": [{ "toKey": "derek", "kind": "child" }] },
+        { "key": "rosalie", "displayName": "Rosalie Ochoa-Bell", "kind": "natural-person", "role": "beneficiary", "relationships": [{ "toKey": "yolanda", "kind": "child" }] }
+      ],
+      "entities": [],
+      "accounts": [
+        { "key": "joint", "title": "Derek Smith & Yolanda Ochoa-Bell - Joint WROS", "registration": "joint-wros", "taxClass": "taxable", "custodianKey": "brightwell-custody", "openedOn": "2021-09-14", "balanceMinor": 21400000, "ownerKeys": ["derek", "yolanda"], "modelPortfolioKey": "growth-80-20", "beneficiaries": [], "signers": [] },
+        { "key": "derek-401k-rollover", "title": "Derek Smith - Rollover IRA", "registration": "rollover-ira", "taxClass": "retirement", "custodianKey": "brightwell-custody", "openedOn": "2021-10-01", "balanceMinor": 58700000, "ownerKeys": ["derek"], "modelPortfolioKey": "growth-80-20",
+          "beneficiaries": [{ "partyKey": "yolanda", "tier": "primary", "shareBps": 5000 }, { "partyKey": "tess", "tier": "primary", "shareBps": 2500 }, { "partyKey": "callum", "tier": "primary", "shareBps": 2500 }], "signers": [] },
+        { "key": "yolanda-roth", "title": "Yolanda Ochoa-Bell - Roth IRA", "registration": "ira-roth", "taxClass": "retirement", "custodianKey": "pemberton-clearing", "openedOn": "2022-02-11", "balanceMinor": 14300000, "ownerKeys": ["yolanda"], "modelPortfolioKey": "growth-80-20",
+          "beneficiaries": [{ "partyKey": "rosalie", "tier": "primary", "shareBps": 10000 }], "signers": [] },
+        { "key": "tess-529", "title": "Tess Smith - 529 Education Savings", "registration": "education-529", "taxClass": "education", "custodianKey": "pemberton-clearing", "openedOn": "2022-06-03", "balanceMinor": 4100000, "ownerKeys": ["derek"], "modelPortfolioKey": "balanced-60-40",
+          "beneficiaries": [{ "partyKey": "tess", "tier": "primary", "shareBps": 10000 }], "signers": [{ "partyKey": "yolanda", "authorityScope": "view-only", "effectiveFrom": "2022-06-03", "effectiveTo": null }] }
+      ],
+      "bankInstructions": [
+        { "key": "cedarcrest-2210", "bank": "Cedarcrest Savings", "lastFour": "2210", "titledTo": "Derek Smith & Yolanda Ochoa-Bell", "status": "current", "verifiedAt": "2021-09-20T14:00:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["joint"] }
+      ],
+      "plannedWithdrawals": [
+        { "key": "tuition", "accountKey": "tess-529", "purpose": "tuition", "fromMonth": "2026-09", "monthlyMinor": 285000, "recordedAt": "2026-05-22T14:10:00.000Z" }
+      ],
+      "instructions": [
+        { "key": "no-cross-lineage", "kind": "restriction", "polarity": "forbidden", "scope": "household", "subjectRef": "household", "text": "Education accounts funded for one lineage are never redirected to a child of the other lineage without written consent from both spouses.", "sourceRef": "HH-INSTR-SMITHDY-002 v2", "effectiveFrom": "2022-06-03T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2022-06-03T19:00:00.000Z" }
+      ],
+      "pendingActions": [
+        { "key": "contribution", "accountKey": "yolanda-roth", "kind": "incoming-transfer", "amountMinor": 700000, "state": "settling", "createdAt": "2026-08-08T13:05:00.000Z", "expectedSettleAt": "2026-08-12T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "beneficiary", "occurredAt": "2026-04-02T16:20:00.000Z", "kind": "beneficiary-updated", "summary": "Rollover IRA primary beneficiaries restated to 50/25/25 across spouse and two children.", "actorLabel": "Marcus Underhill" },
+        { "key": "review", "occurredAt": "2026-07-09T14:00:00.000Z", "kind": "review-meeting", "summary": "Annual review; education funding gap for the third child recorded as an open item.", "actorLabel": "Marcus Underhill" }
+      ],
+      "crossHouseholdLinks": []
+    },
+    {
+      "key": "smith-marguerite",
+      "displayName": "Marguerite Smith",
+      "surname": "Smith",
+      "status": "active",
+      "advisorKey": "dana-ellison",
+      "serviceTier": "premier",
+      "city": "Cape Alden",
+      "openedOn": "2009-11-16",
+      "narrative": "Widowed sole client with an irrevocable trust and a standing charitable pledge. Her daughter holds a durable power of attorney but is not a household member - the authority sits on the account, not the household.",
+      "evidenceAgeDays": { "liquidity": 6, "positions": 4, "instructions": 60 },
+      "members": [
+        { "key": "marguerite", "displayName": "Marguerite Smith", "kind": "natural-person", "role": "client", "relationships": [] },
+        { "key": "vivienne", "displayName": "Vivienne Smith-Harlow", "kind": "natural-person", "role": "signer", "relationships": [{ "toKey": "marguerite", "kind": "child" }] }
+      ],
+      "entities": [
+        { "key": "marguerite-ilit", "kind": "irrevocable-trust", "name": "Marguerite Smith Irrevocable Trust", "formedOn": "2011-03-22", "trusteeKeys": ["vivienne"], "note": "Vivienne serves as sole trustee; Marguerite is the grantor and cannot direct distributions." }
+      ],
+      "accounts": [
+        { "key": "ilit", "title": "Marguerite Smith Irrevocable Trust - Brokerage", "registration": "irrevocable-trust", "taxClass": "trust", "custodianKey": "northgate-trust", "openedOn": "2011-04-05", "balanceMinor": 96500000, "ownerKeys": ["marguerite-ilit"], "modelPortfolioKey": "income-25-75",
+          "beneficiaries": [], "signers": [{ "partyKey": "vivienne", "authorityScope": "trustee-full-authority", "effectiveFrom": "2011-04-05", "effectiveTo": null }] },
+        { "key": "individual", "title": "Marguerite Smith - Individual", "registration": "individual", "taxClass": "taxable", "custodianKey": "northgate-trust", "openedOn": "2009-11-30", "balanceMinor": 12800000, "ownerKeys": ["marguerite"], "modelPortfolioKey": "capital-preservation",
+          "beneficiaries": [], "signers": [{ "partyKey": "vivienne", "authorityScope": "power-of-attorney", "effectiveFrom": "2023-01-10", "effectiveTo": null }] }
+      ],
+      "bankInstructions": [
+        { "key": "willowbank-6031", "bank": "Willowbank Trust Co.", "lastFour": "6031", "titledTo": "Marguerite Smith", "status": "current", "verifiedAt": "2024-08-19T13:00:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["individual"] },
+        { "key": "willowbank-7744", "bank": "Willowbank Trust Co.", "lastFour": "7744", "titledTo": "Marguerite Smith Irrevocable Trust", "status": "current", "verifiedAt": "2024-08-19T13:00:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["ilit"] }
+      ],
+      "plannedWithdrawals": [
+        { "key": "care", "accountKey": "individual", "purpose": "long-term care premiums", "fromMonth": "2025-04", "monthlyMinor": 940000, "recordedAt": "2025-03-11T15:45:00.000Z" },
+        { "key": "pledge", "accountKey": "ilit", "purpose": "charitable pledge", "fromMonth": "2026-01", "monthlyMinor": 250000, "recordedAt": "2025-12-19T14:30:00.000Z" }
+      ],
+      "instructions": [
+        { "key": "trustee-only", "kind": "restriction", "polarity": "forbidden", "scope": "account", "subjectRef": "ilit", "text": "The grantor may not initiate, approve, or direct any distribution from the irrevocable trust account.", "sourceRef": "HH-INSTR-SMITHM-001 v4", "effectiveFrom": "2011-04-05T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2011-04-05T17:00:00.000Z" }
+      ],
+      "pendingActions": [
+        { "key": "pledge-payment", "accountKey": "ilit", "kind": "outgoing-distribution", "amountMinor": 250000, "state": "pending", "createdAt": "2026-08-03T12:00:00.000Z", "expectedSettleAt": "2026-08-14T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "statement", "occurredAt": "2026-08-01T09:00:00.000Z", "kind": "statement-published", "summary": "July statements published for both accounts.", "actorLabel": "Northgate Trust" },
+        { "key": "poa", "occurredAt": "2023-01-10T15:30:00.000Z", "kind": "document-received", "summary": "Durable power of attorney recorded against the individual account only.", "actorLabel": "Dana Ellison" }
+      ],
+      "crossHouseholdLinks": []
+    },
+    {
+      "key": "smith-alastair-june",
+      "displayName": "Alastair & June Smith",
+      "surname": "Smith",
+      "status": "prospect",
+      "advisorKey": "noor-haddadi",
+      "serviceTier": "foundational",
+      "city": "Dunmore",
+      "openedOn": "2026-06-29",
+      "narrative": "Newest of the four Smith households and the reason surname search alone is never enough. Onboarding is incomplete: one account is funded, the rest of the plan is not.",
+      "evidenceAgeDays": { "liquidity": 14, "positions": 9, "instructions": 36 },
+      "members": [
+        { "key": "alastair", "displayName": "Alastair Smith", "kind": "natural-person", "role": "client", "relationships": [{ "toKey": "june", "kind": "spouse" }] },
+        { "key": "june", "displayName": "June Smith", "kind": "natural-person", "role": "spouse", "relationships": [{ "toKey": "alastair", "kind": "spouse" }] }
+      ],
+      "entities": [],
+      "accounts": [
+        { "key": "joint", "title": "Alastair & June Smith - Joint WROS", "registration": "joint-wros", "taxClass": "taxable", "custodianKey": "calder-securities", "openedOn": "2026-07-06", "balanceMinor": 3150000, "ownerKeys": ["alastair", "june"], "modelPortfolioKey": "balanced-60-40", "beneficiaries": [], "signers": [] }
+      ],
+      "bankInstructions": [],
+      "plannedWithdrawals": [],
+      "instructions": [],
+      "pendingActions": [
+        { "key": "funding", "accountKey": "joint", "kind": "incoming-transfer", "amountMinor": 2500000, "state": "blocked", "createdAt": "2026-07-28T18:20:00.000Z", "expectedSettleAt": "2026-08-04T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "opened", "occurredAt": "2026-07-06T14:00:00.000Z", "kind": "document-received", "summary": "Joint account opened; funding transfer blocked pending a matching bank instruction.", "actorLabel": "Noor Haddadi" }
+      ],
+      "crossHouseholdLinks": []
+    },
+    {
+      "key": "whitfield-cordelia",
+      "displayName": "Cordelia Whitfield",
+      "surname": "Whitfield",
+      "status": "active",
+      "advisorKey": "priya-raghunathan",
+      "serviceTier": "premier",
+      "city": "Granite Bay",
+      "openedOn": "2012-02-27",
+      "narrative": "Cordelia is the trustee of the Whitfield Family Trust, whose brokerage account is registered in HER household but distributes to her brother Nathaniel's household. Two households therefore touch one account, and only one of them owns it.",
+      "evidenceAgeDays": { "liquidity": 1, "positions": 1, "instructions": 12 },
+      "members": [
+        { "key": "cordelia", "displayName": "Cordelia Whitfield", "kind": "natural-person", "role": "client", "relationships": [] }
+      ],
+      "entities": [
+        { "key": "whitfield-family-trust", "kind": "irrevocable-trust", "name": "Whitfield Family Trust", "formedOn": "2012-02-27", "trusteeKeys": ["cordelia"], "note": "Cordelia is sole trustee. Income beneficiaries sit in the Nathaniel Whitfield household, which has no authority over the account." }
+      ],
+      "accounts": [
+        { "key": "family-trust", "title": "Whitfield Family Trust - Brokerage", "registration": "irrevocable-trust", "taxClass": "trust", "custodianKey": "northgate-trust", "openedOn": "2012-03-15", "balanceMinor": 187300000, "ownerKeys": ["whitfield-family-trust"], "modelPortfolioKey": "balanced-60-40",
+          "beneficiaries": [], "signers": [{ "partyKey": "cordelia", "authorityScope": "trustee-full-authority", "effectiveFrom": "2012-03-15", "effectiveTo": null }] },
+        { "key": "personal", "title": "Cordelia Whitfield - Individual", "registration": "individual", "taxClass": "taxable", "custodianKey": "calder-securities", "openedOn": "2012-02-27", "balanceMinor": 33900000, "ownerKeys": ["cordelia"], "modelPortfolioKey": "growth-80-20", "beneficiaries": [], "signers": [] }
+      ],
+      "bankInstructions": [
+        { "key": "anvil-1188", "bank": "Anvil Street Bank", "lastFour": "1188", "titledTo": "Whitfield Family Trust", "status": "current", "verifiedAt": "2025-10-02T13:30:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["family-trust"] }
+      ],
+      "plannedWithdrawals": [
+        { "key": "income-distribution", "accountKey": "family-trust", "purpose": "monthly living expenses", "fromMonth": "2024-01", "monthlyMinor": 1150000, "recordedAt": "2023-12-08T16:00:00.000Z" }
+      ],
+      "instructions": [
+        { "key": "beneficiary-cannot-direct", "kind": "restriction", "polarity": "forbidden", "scope": "account", "subjectRef": "family-trust", "text": "No instruction from an income beneficiary or their household is actionable against this account; the trustee alone may direct it.", "sourceRef": "HH-INSTR-WHITC-003 v2", "effectiveFrom": "2012-03-15T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2012-03-15T18:00:00.000Z" }
+      ],
+      "pendingActions": [
+        { "key": "income", "accountKey": "family-trust", "kind": "outgoing-distribution", "amountMinor": 1150000, "state": "settling", "createdAt": "2026-08-05T12:30:00.000Z", "expectedSettleAt": "2026-08-12T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "distribution", "occurredAt": "2026-08-05T12:30:00.000Z", "kind": "distribution-settled", "summary": "August trust income distribution released to the Nathaniel Whitfield household.", "actorLabel": "Priya Raghunathan" }
+      ],
+      "crossHouseholdLinks": [
+        { "kind": "trust-owned-account-serving-another-household", "counterpartyHouseholdKey": "whitfield-nathaniel", "partyKey": "whitfield-family-trust", "note": "This household OWNS the trust account; the counterparty household receives its distributions and holds no authority over it." }
+      ]
+    },
+    {
+      "key": "whitfield-nathaniel",
+      "displayName": "Nathaniel & Perrine Whitfield",
+      "surname": "Whitfield",
+      "status": "active",
+      "advisorKey": "priya-raghunathan",
+      "serviceTier": "core",
+      "city": "Granite Bay",
+      "openedOn": "2015-05-19",
+      "narrative": "Receives the Whitfield Family Trust income stream but cannot direct the account that pays it. Their liquidity picture only makes sense once the external distribution is read as income rather than a balance.",
+      "evidenceAgeDays": { "liquidity": 4, "positions": 3, "instructions": 22 },
+      "members": [
+        { "key": "nathaniel", "displayName": "Nathaniel Whitfield", "kind": "natural-person", "role": "client", "relationships": [{ "toKey": "perrine", "kind": "spouse" }] },
+        { "key": "perrine", "displayName": "Perrine Whitfield", "kind": "natural-person", "role": "spouse", "relationships": [{ "toKey": "nathaniel", "kind": "spouse" }] }
+      ],
+      "entities": [],
+      "accounts": [
+        { "key": "joint", "title": "Nathaniel & Perrine Whitfield - Joint WROS", "registration": "joint-wros", "taxClass": "taxable", "custodianKey": "northgate-trust", "openedOn": "2015-06-02", "balanceMinor": 7650000, "ownerKeys": ["nathaniel", "perrine"], "modelPortfolioKey": "conservative-40-60", "beneficiaries": [], "signers": [] },
+        { "key": "nathaniel-ira", "title": "Nathaniel Whitfield - Traditional IRA", "registration": "ira-traditional", "taxClass": "retirement", "custodianKey": "northgate-trust", "openedOn": "2015-06-02", "balanceMinor": 22400000, "ownerKeys": ["nathaniel"], "modelPortfolioKey": "balanced-60-40",
+          "beneficiaries": [{ "partyKey": "perrine", "tier": "primary", "shareBps": 10000 }], "signers": [] }
+      ],
+      "bankInstructions": [
+        { "key": "harborline-3390", "bank": "Harborline Bank", "lastFour": "3390", "titledTo": "Nathaniel & Perrine Whitfield", "status": "current", "verifiedAt": "2025-04-14T15:20:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["joint"] }
+      ],
+      "plannedWithdrawals": [],
+      "instructions": [
+        { "key": "external-income", "kind": "standing-instruction", "polarity": "required", "scope": "household", "subjectRef": "household", "text": "Trust income received from the Whitfield Family Trust is treated as external income, never as household liquidity, when sizing a distribution.", "sourceRef": "HH-INSTR-WHITN-001 v1", "effectiveFrom": "2016-01-04T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2016-01-04T14:00:00.000Z" }
+      ],
+      "pendingActions": [
+        { "key": "incoming-trust-income", "accountKey": "joint", "kind": "incoming-credit", "amountMinor": 1150000, "state": "settling", "createdAt": "2026-08-05T12:30:00.000Z", "expectedSettleAt": "2026-08-12T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "income", "occurredAt": "2026-08-05T12:30:00.000Z", "kind": "contribution-received", "summary": "August trust income credited from an account this household does not control.", "actorLabel": "Northgate Trust" }
+      ],
+      "crossHouseholdLinks": [
+        { "kind": "receives-distribution-from-external-trust", "counterpartyHouseholdKey": "whitfield-cordelia", "partyKey": "whitfield-family-trust", "note": "Income arrives from a trust account registered in the counterparty household; no authority flows back." }
+      ]
+    },
+    {
+      "key": "nakagawa-hideo-naomi",
+      "displayName": "Hideo & Naomi Nakagawa",
+      "surname": "Nakagawa",
+      "status": "active",
+      "advisorKey": "gwen-okonkwo",
+      "serviceTier": "premier",
+      "city": "Highmarsh",
+      "openedOn": "2010-07-12",
+      "narrative": "Three generations under one household record: the clients, an adult child who is a signer on the operating entity, and a grandchild with a 529. The LLC account is the reason registration type is never cosmetic here.",
+      "evidenceAgeDays": { "liquidity": 2, "positions": 2, "instructions": 26 },
+      "members": [
+        { "key": "hideo", "displayName": "Hideo Nakagawa", "kind": "natural-person", "role": "client", "relationships": [{ "toKey": "naomi", "kind": "spouse" }, { "toKey": "kenji", "kind": "parent" }] },
+        { "key": "naomi", "displayName": "Naomi Nakagawa", "kind": "natural-person", "role": "spouse", "relationships": [{ "toKey": "hideo", "kind": "spouse" }, { "toKey": "kenji", "kind": "parent" }] },
+        { "key": "kenji", "displayName": "Kenji Nakagawa", "kind": "natural-person", "role": "signer", "relationships": [{ "toKey": "hideo", "kind": "child" }, { "toKey": "mira", "kind": "parent" }] },
+        { "key": "mira", "displayName": "Mira Nakagawa", "kind": "natural-person", "role": "beneficiary", "relationships": [{ "toKey": "kenji", "kind": "child" }] }
+      ],
+      "entities": [
+        { "key": "hm-holdings", "kind": "llc", "name": "H&M Nakagawa Holdings LLC", "formedOn": "2013-04-18", "trusteeKeys": ["hideo", "kenji"], "note": "Operating entity; Hideo is managing member and Kenji is an authorized signer with a capped scope." }
+      ],
+      "accounts": [
+        { "key": "llc", "title": "H&M Nakagawa Holdings LLC - Corporate", "registration": "llc-entity", "taxClass": "entity", "custodianKey": "pemberton-clearing", "openedOn": "2013-05-06", "balanceMinor": 74200000, "ownerKeys": ["hm-holdings"], "modelPortfolioKey": "conservative-40-60",
+          "beneficiaries": [], "signers": [{ "partyKey": "hideo", "authorityScope": "managing-member-full-authority", "effectiveFrom": "2013-05-06", "effectiveTo": null }, { "partyKey": "kenji", "authorityScope": "trading-only-no-distribution", "effectiveFrom": "2019-02-01", "effectiveTo": null }] },
+        { "key": "joint", "title": "Hideo & Naomi Nakagawa - Joint WROS", "registration": "joint-wros", "taxClass": "taxable", "custodianKey": "brightwell-custody", "openedOn": "2010-07-26", "balanceMinor": 41800000, "ownerKeys": ["hideo", "naomi"], "modelPortfolioKey": "balanced-60-40", "beneficiaries": [], "signers": [] },
+        { "key": "naomi-roth", "title": "Naomi Nakagawa - Roth IRA", "registration": "ira-roth", "taxClass": "retirement", "custodianKey": "brightwell-custody", "openedOn": "2011-01-14", "balanceMinor": 26900000, "ownerKeys": ["naomi"], "modelPortfolioKey": "growth-80-20",
+          "beneficiaries": [{ "partyKey": "hideo", "tier": "primary", "shareBps": 10000 }, { "partyKey": "kenji", "tier": "contingent", "shareBps": 10000 }], "signers": [] },
+        { "key": "mira-529", "title": "Mira Nakagawa - 529 Education Savings", "registration": "education-529", "taxClass": "education", "custodianKey": "brightwell-custody", "openedOn": "2020-09-08", "balanceMinor": 6300000, "ownerKeys": ["naomi"], "modelPortfolioKey": "growth-80-20",
+          "beneficiaries": [{ "partyKey": "mira", "tier": "primary", "shareBps": 10000 }], "signers": [] }
+      ],
+      "bankInstructions": [
+        { "key": "fairmont-5520", "bank": "Fairmont Mutual", "lastFour": "5520", "titledTo": "H&M Nakagawa Holdings LLC", "status": "current", "verifiedAt": "2025-06-11T14:45:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["llc"] },
+        { "key": "fairmont-9014", "bank": "Fairmont Mutual", "lastFour": "9014", "titledTo": "Hideo & Naomi Nakagawa", "status": "current", "verifiedAt": "2025-06-11T14:45:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["joint"] }
+      ],
+      "plannedWithdrawals": [
+        { "key": "property-tax", "accountKey": "joint", "purpose": "property taxes", "fromMonth": "2026-01", "monthlyMinor": 410000, "recordedAt": "2025-12-02T15:15:00.000Z" }
+      ],
+      "instructions": [
+        { "key": "entity-separation", "kind": "restriction", "polarity": "forbidden", "scope": "account", "subjectRef": "llc", "text": "Entity funds are never distributed to a personal account of any member; entity distributions settle to the entity's own bank instruction.", "sourceRef": "HH-INSTR-NAKA-005 v3", "effectiveFrom": "2013-05-06T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2013-05-06T17:30:00.000Z" },
+        { "key": "kenji-cap", "kind": "restriction", "polarity": "forbidden", "scope": "party", "subjectRef": "kenji", "text": "Kenji Nakagawa may place trades on the entity account but may not initiate or approve any distribution.", "sourceRef": "HH-INSTR-NAKA-011 v1", "effectiveFrom": "2019-02-01T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2019-02-01T13:00:00.000Z" }
+      ],
+      "pendingActions": [
+        { "key": "rebalance-cash", "accountKey": "llc", "kind": "outgoing-debit", "amountMinor": 1800000, "state": "pending", "createdAt": "2026-08-10T11:00:00.000Z", "expectedSettleAt": "2026-08-14T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "rebalance", "occurredAt": "2026-08-10T11:00:00.000Z", "kind": "model-rebalanced", "summary": "Entity account rebalanced to Conservative 40/60; cash raised for the quarterly draw.", "actorLabel": "Gwen Okonkwo" },
+        { "key": "review", "occurredAt": "2026-05-14T15:00:00.000Z", "kind": "review-meeting", "summary": "Succession review; Kenji's signer scope reconfirmed as trading-only.", "actorLabel": "Gwen Okonkwo" }
+      ],
+      "crossHouseholdLinks": []
+    },
+    {
+      "key": "fairweather-colette",
+      "displayName": "Colette Fairweather",
+      "surname": "Fairweather",
+      "status": "active",
+      "advisorKey": "tomas-arbelaez",
+      "serviceTier": "core",
+      "city": "Ellisfield",
+      "openedOn": "2018-10-04",
+      "narrative": "Single client, concentrated position, and an active legal hold on one account. The health breakdown is deliberately uncomfortable here: the evidence is stale and the instruction set conflicts.",
+      "evidenceAgeDays": { "liquidity": 71, "positions": 54, "instructions": 96 },
+      "members": [
+        { "key": "colette", "displayName": "Colette Fairweather", "kind": "natural-person", "role": "client", "relationships": [] }
+      ],
+      "entities": [],
+      "accounts": [
+        { "key": "individual", "title": "Colette Fairweather - Individual", "registration": "individual", "taxClass": "taxable", "custodianKey": "calder-securities", "openedOn": "2018-10-18", "balanceMinor": 63400000, "ownerKeys": ["colette"], "modelPortfolioKey": "growth-80-20", "beneficiaries": [], "signers": [] },
+        { "key": "sep-ira", "title": "Colette Fairweather - SEP IRA", "registration": "sep-ira", "taxClass": "retirement", "custodianKey": "calder-securities", "openedOn": "2019-03-01", "balanceMinor": 19700000, "ownerKeys": ["colette"], "modelPortfolioKey": "balanced-60-40",
+          "beneficiaries": [{ "partyKey": "colette", "tier": "primary", "shareBps": 10000 }], "signers": [] }
+      ],
+      "bankInstructions": [
+        { "key": "cedarcrest-7781", "bank": "Cedarcrest Savings", "lastFour": "7781", "titledTo": "Colette Fairweather", "status": "current", "verifiedAt": null, "changedAt": "2026-08-02T16:40:00.000Z", "supersedesKey": null, "accountKeys": ["individual"] }
+      ],
+      "plannedWithdrawals": [
+        { "key": "mortgage", "accountKey": "individual", "purpose": "mortgage servicing", "fromMonth": "2025-07", "monthlyMinor": 520000, "recordedAt": "2025-06-16T14:20:00.000Z" }
+      ],
+      "instructions": [
+        { "key": "legal-hold", "kind": "restriction", "polarity": "forbidden", "scope": "account", "subjectRef": "individual", "text": "Account is subject to a legal hold; no distribution or position change may settle until counsel releases it.", "sourceRef": "HH-INSTR-FAIRC-007 v1", "effectiveFrom": "2026-06-30T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2026-06-30T20:10:00.000Z" },
+        { "key": "quarterly-draw", "kind": "standing-instruction", "polarity": "required", "scope": "account", "subjectRef": "individual", "text": "The mortgage draw is released on the first business day of each month without further approval.", "sourceRef": "HH-INSTR-FAIRC-002 v2", "effectiveFrom": "2025-07-01T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2025-06-16T14:25:00.000Z" }
+      ],
+      "pendingActions": [
+        { "key": "held-draw", "accountKey": "individual", "kind": "outgoing-distribution", "amountMinor": 520000, "state": "blocked", "createdAt": "2026-08-03T09:00:00.000Z", "expectedSettleAt": "2026-08-04T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "hold", "occurredAt": "2026-06-30T20:10:00.000Z", "kind": "document-received", "summary": "Legal hold recorded against the individual account; the standing monthly draw now conflicts with it.", "actorLabel": "Tomás Arbeláez" },
+        { "key": "bank", "occurredAt": "2026-08-02T16:40:00.000Z", "kind": "bank-instruction-changed", "summary": "Checking instruction changed and not yet independently verified.", "actorLabel": "Colette Fairweather" }
+      ],
+      "crossHouseholdLinks": []
+    },
+    {
+      "key": "larkspur-ridge-partners",
+      "displayName": "Larkspur Ridge Partners LP",
+      "surname": "Larkspur",
+      "status": "active",
+      "advisorKey": "tomas-arbelaez",
+      "serviceTier": "premier",
+      "city": "Ashford Hill",
+      "openedOn": "2017-01-23",
+      "narrative": "A household with no natural-person client at its head: the entity is the client, and the two general partners appear only as signers. Every surface that assumes a household is a family has to survive this record.",
+      "evidenceAgeDays": { "liquidity": 5, "positions": 3, "instructions": 31 },
+      "members": [
+        { "key": "imani", "displayName": "Imani Larkspur", "kind": "natural-person", "role": "signer", "relationships": [{ "toKey": "wendell", "kind": "sibling" }] },
+        { "key": "wendell", "displayName": "Wendell Larkspur", "kind": "natural-person", "role": "signer", "relationships": [{ "toKey": "imani", "kind": "sibling" }] }
+      ],
+      "entities": [
+        { "key": "larkspur-lp", "kind": "limited-partnership", "name": "Larkspur Ridge Partners LP", "formedOn": "2016-11-09", "trusteeKeys": ["imani", "wendell"], "note": "Two general partners; either may act alone below the entity's own approval threshold." }
+      ],
+      "accounts": [
+        { "key": "partnership", "title": "Larkspur Ridge Partners LP - Investment", "registration": "partnership", "taxClass": "entity", "custodianKey": "pemberton-clearing", "openedOn": "2017-02-08", "balanceMinor": 412600000, "ownerKeys": ["larkspur-lp"], "modelPortfolioKey": "balanced-60-40",
+          "beneficiaries": [], "signers": [{ "partyKey": "imani", "authorityScope": "general-partner-full-authority", "effectiveFrom": "2017-02-08", "effectiveTo": null }, { "partyKey": "wendell", "authorityScope": "general-partner-full-authority", "effectiveFrom": "2017-02-08", "effectiveTo": "2026-03-31" }] },
+        { "key": "reserve", "title": "Larkspur Ridge Partners LP - Reserve", "registration": "partnership", "taxClass": "entity", "custodianKey": "pemberton-clearing", "openedOn": "2019-08-19", "balanceMinor": 58900000, "ownerKeys": ["larkspur-lp"], "modelPortfolioKey": "capital-preservation", "beneficiaries": [], "signers": [] }
+      ],
+      "bankInstructions": [
+        { "key": "anvil-4402", "bank": "Anvil Street Bank", "lastFour": "4402", "titledTo": "Larkspur Ridge Partners LP", "status": "current", "verifiedAt": "2026-01-15T14:00:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["partnership", "reserve"] }
+      ],
+      "plannedWithdrawals": [
+        { "key": "partner-draw", "accountKey": "partnership", "purpose": "monthly living expenses", "fromMonth": "2026-01", "monthlyMinor": 3200000, "recordedAt": "2025-12-15T13:00:00.000Z" }
+      ],
+      "instructions": [
+        { "key": "expired-authority", "kind": "restriction", "polarity": "forbidden", "scope": "party", "subjectRef": "wendell", "text": "Wendell Larkspur's signing authority lapsed on 31 March 2026 and has not been renewed; instructions bearing only his authority are not actionable.", "sourceRef": "HH-INSTR-LARK-004 v1", "effectiveFrom": "2026-04-01T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2026-04-01T12:00:00.000Z" }
+      ],
+      "pendingActions": [
+        { "key": "draw", "accountKey": "partnership", "kind": "outgoing-distribution", "amountMinor": 3200000, "state": "pending", "createdAt": "2026-08-01T13:00:00.000Z", "expectedSettleAt": "2026-08-12T20:00:00.000Z" }
+      ],
+      "activity": [
+        { "key": "lapse", "occurredAt": "2026-04-01T12:00:00.000Z", "kind": "document-received", "summary": "General partner authority lapsed for one of two signers; single-signer instructions now require renewal.", "actorLabel": "Tomás Arbeláez" }
+      ],
+      "crossHouseholdLinks": []
+    },
+    {
+      "key": "delacroix-simone",
+      "displayName": "Simone & Osei Delacroix",
+      "surname": "Delacroix",
+      "status": "active",
+      "advisorKey": "noor-haddadi",
+      "serviceTier": "core",
+      "city": "Ashford Hill",
+      "openedOn": "2020-03-11",
+      "narrative": "Dual-income household mid-accumulation with the cleanest record in the book: verified instructions, fresh evidence, no conflicts. It exists so the health score has something to be compared against.",
+      "evidenceAgeDays": { "liquidity": 1, "positions": 1, "instructions": 8 },
+      "members": [
+        { "key": "simone", "displayName": "Simone Delacroix", "kind": "natural-person", "role": "client", "relationships": [{ "toKey": "osei", "kind": "spouse" }, { "toKey": "elowen", "kind": "parent" }] },
+        { "key": "osei", "displayName": "Osei Delacroix", "kind": "natural-person", "role": "spouse", "relationships": [{ "toKey": "simone", "kind": "spouse" }, { "toKey": "elowen", "kind": "parent" }] },
+        { "key": "elowen", "displayName": "Elowen Delacroix", "kind": "natural-person", "role": "beneficiary", "relationships": [{ "toKey": "simone", "kind": "child" }, { "toKey": "osei", "kind": "child" }] }
+      ],
+      "entities": [],
+      "accounts": [
+        { "key": "joint", "title": "Simone & Osei Delacroix - Joint WROS", "registration": "joint-wros", "taxClass": "taxable", "custodianKey": "brightwell-custody", "openedOn": "2020-03-25", "balanceMinor": 15200000, "ownerKeys": ["simone", "osei"], "modelPortfolioKey": "growth-80-20", "beneficiaries": [], "signers": [] },
+        { "key": "simone-roth", "title": "Simone Delacroix - Roth IRA", "registration": "ira-roth", "taxClass": "retirement", "custodianKey": "brightwell-custody", "openedOn": "2020-04-08", "balanceMinor": 9800000, "ownerKeys": ["simone"], "modelPortfolioKey": "growth-80-20",
+          "beneficiaries": [{ "partyKey": "osei", "tier": "primary", "shareBps": 10000 }, { "partyKey": "elowen", "tier": "contingent", "shareBps": 10000 }], "signers": [] },
+        { "key": "osei-401k", "title": "Osei Delacroix - Rollover IRA", "registration": "rollover-ira", "taxClass": "retirement", "custodianKey": "brightwell-custody", "openedOn": "2021-11-30", "balanceMinor": 27600000, "ownerKeys": ["osei"], "modelPortfolioKey": "growth-80-20",
+          "beneficiaries": [{ "partyKey": "simone", "tier": "primary", "shareBps": 10000 }, { "partyKey": "elowen", "tier": "contingent", "shareBps": 10000 }], "signers": [] },
+        { "key": "elowen-529", "title": "Elowen Delacroix - 529 Education Savings", "registration": "education-529", "taxClass": "education", "custodianKey": "brightwell-custody", "openedOn": "2022-01-19", "balanceMinor": 3400000, "ownerKeys": ["simone"], "modelPortfolioKey": "growth-80-20",
+          "beneficiaries": [{ "partyKey": "elowen", "tier": "primary", "shareBps": 10000 }], "signers": [] }
+      ],
+      "bankInstructions": [
+        { "key": "harborline-2277", "bank": "Harborline Bank", "lastFour": "2277", "titledTo": "Simone & Osei Delacroix", "status": "current", "verifiedAt": "2026-07-30T14:00:00.000Z", "changedAt": null, "supersedesKey": null, "accountKeys": ["joint"] }
+      ],
+      "plannedWithdrawals": [],
+      "instructions": [
+        { "key": "annual-rebalance", "kind": "standing-instruction", "polarity": "required", "scope": "household", "subjectRef": "household", "text": "Every account is rebalanced to its model each January without a separate approval.", "sourceRef": "HH-INSTR-DELA-001 v1", "effectiveFrom": "2021-01-04T00:00:00.000Z", "effectiveTo": null, "recordedAt": "2021-01-04T14:00:00.000Z" }
+      ],
+      "pendingActions": [],
+      "activity": [
+        { "key": "contribution", "occurredAt": "2026-08-01T13:00:00.000Z", "kind": "contribution-received", "summary": "Monthly automatic contributions credited across three accounts.", "actorLabel": "Brightwell Custody" },
+        { "key": "review", "occurredAt": "2026-07-21T15:00:00.000Z", "kind": "review-meeting", "summary": "Annual review completed; no open items.", "actorLabel": "Noor Haddadi" }
+      ],
+      "crossHouseholdLinks": []
+    }
+  ]
+}

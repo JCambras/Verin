@@ -3481,6 +3481,18 @@ describe("axe-required fence", () => {
         path: "/app/account-opening",
         readySelector: 'input[name="householdName"]',
       },
+      // ADR-0057: the household directory and one household in depth. The
+      // detail route is pinned to a HAND-AUTHORED household, because that is
+      // the one whose surface renders every section - a derived household with
+      // no cross-household link would scan a page the product also has.
+      {
+        path: "/app/households",
+        readySelector: '[data-testid="household-directory"]',
+      },
+      {
+        path: "/app/households/smith-robert-elaine",
+        readySelector: '[data-testid="household-detail"]',
+      },
       {
         path: "/app/console",
         readySelector: '[data-testid="household-count"]',

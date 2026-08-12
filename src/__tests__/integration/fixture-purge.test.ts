@@ -1,0 +1,91 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { createMemoryDb, type SqlDb } from "@infra/store/db";
+import { runMigrations } from "@infra/store/migrations";
+import { seedWorldIntoCrm } from "@infra/crm/world-seed";
+import { systemWriteActor } from "@contracts/principal";
+import { cleanSlateViolations, sweepFixtureRows } from "../../../scripts/fixture-purge";
+import { generateWorld } from "../../../scripts/world/generate";
+import { loadWorldSpec, WORLD_SEED } from "../../../scripts/world/spec";
+
+/**
+ * THE CLEAN-SLATE GUARANTEE, END TO END (ADR-0057; charter #3/#4/#7).
+ *
+ * Against a real Postgres store, not a mock:
+ *   - a migrated but unseeded instance sweeps CLEAN;
+ *   - loading the populated world makes it UNCLEAN, and the sweep names every
+ *     table the world touched (a check that cannot see the rows it is meant to
+ *     find is the false-pass class this repository exists to prevent);
+ *   - purging the fixture-marked rows returns it to clean, while the firm's own
+ *     `verin-crm` rows survive - the marker is what is purged, not the table.
+ */
+
+const ORG = "org-clean-slate";
+const TS = "2026-01-01T00:00:00.000Z";
+const world = generateWorld(loadWorldSpec(), WORLD_SEED);
+const DIGEST = String((world.manifest.value as Record<string, unknown>).worldDigest);
+// A slice keeps the store small; the sweep counts rows, so five households
+// prove the same property a hundred do.
+const HOUSEHOLDS = world.households.slice(0, 5);
+
+let db: SqlDb;
+
+beforeEach(async () => {
+  db = await createMemoryDb();
+  await runMigrations(db);
+  await db.query(
+    "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Clean Slate Firm',$2,'verin-crm',$2,'high')",
+    [ORG, TS],
+  );
+});
+
+describe("clean-slate guarantee", () => {
+  it("a migrated, unseeded instance is clean", async () => {
+    const sweep = await sweepFixtureRows(db);
+    expect(sweep.problems).toEqual([]);
+    expect(sweep.tables.length, "the sweep must actually cover tables").toBeGreaterThan(5);
+    expect(cleanSlateViolations(sweep)).toEqual([]);
+  });
+
+  it("loading the world makes the instance unclean, and the sweep names every table it touched", async () => {
+    const loaded = await seedWorldIntoCrm(db, systemWriteActor("seed", ORG), HOUSEHOLDS, DIGEST);
+    expect(loaded.ok).toBe(true);
+    const sweep = await sweepFixtureRows(db);
+    const dirty = sweep.tables.filter((entry) => entry.rows > 0).map((entry) => entry.table).sort();
+    expect(dirty).toEqual(["contacts", "households", "tasks"]);
+    const violations = cleanSlateViolations(sweep);
+    expect(violations.length, "a populated instance must fail the clean-slate check").toBeGreaterThan(0);
+    expect(violations.every((violation) => violation.includes("must contain none"))).toBe(true);
+  });
+
+  it("purging the fixture-marked rows restores clean and leaves the firm's own records alone", async () => {
+    await seedWorldIntoCrm(db, systemWriteActor("seed", ORG), HOUSEHOLDS, DIGEST);
+    await db.query(
+      "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('real-hh',$1,'A Real Household',NULL,NULL,'active',$2,'verin-crm',$2,'high')",
+      [ORG, TS],
+    );
+    // Child rows first: the household foreign keys are real, which is exactly
+    // why a purge is an ordered operation rather than a truncate.
+    await db.query("DELETE FROM tasks WHERE prov_source = 'fixture'");
+    await db.query("DELETE FROM contacts WHERE prov_source = 'fixture'");
+    await db.query("DELETE FROM households WHERE prov_source = 'fixture'");
+    const sweep = await sweepFixtureRows(db);
+    expect(cleanSlateViolations(sweep)).toEqual([]);
+    const survivors = await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(survivors.rows[0]!.n), "purging fixtures must not touch the firm's own records").toBe(1);
+  });
+
+  it("the sweep FAILS rather than reporting clean when it cannot read a table (charter #4)", async () => {
+    const sweep = await sweepFixtureRows(db, ["households", "table_that_does_not_exist"]);
+    expect(sweep.problems.length).toBe(1);
+    expect(cleanSlateViolations(sweep)[0]).toContain("table_that_does_not_exist");
+  });
+
+  it("the world load is idempotent: a second run adds no rows", async () => {
+    const actor = systemWriteActor("seed", ORG);
+    await seedWorldIntoCrm(db, actor, HOUSEHOLDS, DIGEST);
+    const first = await sweepFixtureRows(db);
+    await seedWorldIntoCrm(db, actor, HOUSEHOLDS, DIGEST);
+    const second = await sweepFixtureRows(db);
+    expect(second.totalRows).toBe(first.totalRows);
+  });
+});

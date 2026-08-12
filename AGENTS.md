@@ -69,6 +69,23 @@ generic subjects, exact kind/subject/source evidence, exact-integer aggregate se
 actions bound to the request and selected account, and threshold treatment selected by signed comparator
 policy. Regeneration invalidates signoff, and agents never sign.
 
+The POPULATED WORLD (front-end parity prompt 4, ADR-0057) is a THIRD generated artifact, disjoint from
+both: [`docs/world.md`](./docs/world.md) is normative, hand-owned input is
+`fixtures/world/spec/{roster,featured}.json`, and `fixtures/world/{manifest.json,households/}` are
+GENERATED - never hand-edit them; `pnpm world:validate` regenerates and byte-compares (CI job `world`).
+It reuses the corpus's derivation primitives (`scripts/corpus/{seed,clock}.ts`) rather than a second
+mechanism; featured households are addressed by KEY, derived ones by SLOT, and one materializer serves
+both so the ninety are as deep as the ten. Household DEPTH is EVIDENCE behind a port
+(`HouseholdWorldSource`, `src/domain/world/`) whose Wave 0 fixture adapter refuses production and is
+REPLACED, not relabeled, when a real EvidenceSource lands (ADR-0024/0027); the house CRM is projected
+only what it owns (households, people, open items) at `prov_source='fixture'` - never financial
+accounts, which the account-opening flow mints. HEALTH IS COMPUTED, NEVER STORED
+(`src/domain/world/health.ts`, six weighted factors); the generator emitting a health field fails the
+`world-provenance` fence. Vocabularies live in `src/domain/world/household-world.ts` and the generator
+IMPORTS them, so a fixture cannot carry a value the product cannot render. Clean slate is COUNTED:
+`pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`) and
+fails on the first fixture-marked row; a sweep over zero tables is a problem, never a pass.
+
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
 branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces under

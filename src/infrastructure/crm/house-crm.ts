@@ -110,6 +110,27 @@ export async function listHouseholds(
   return res.rows.map(toHousehold);
 }
 
+/**
+ * One household by its record id, scoped to the grant's org. The household
+ * surface authorizes through THIS read rather than through the world fixture:
+ * the CRM is the authority on which households a tenant may see, and the
+ * evidence port only ever supplies depth for an id that already passed here.
+ */
+export async function getHouseholdById(
+  db: SqlDb,
+  grant: ActionGrant<"pii.view">,
+  id: MachineRecordId<"household">,
+): Promise<Household | null> {
+  assertActionGrant(grant, "pii.view");
+  const tenant = grant.tenant;
+  assertTenantContext(tenant);
+  const res = await db.query<HouseholdRow>(
+    "SELECT * FROM households WHERE id = $1 AND org_id = $2",
+    [id, tenant.orgId],
+  );
+  return res.rows.length === 1 ? toHousehold(res.rows[0]!) : null;
+}
+
 export async function createContact(
   db: SqlDb, a: WriteActor, input: { householdId: string; firstName: string; lastName: string; email?: string | null; phone?: string | null }, idempotencyKey?: string,
 ): Promise<Result<Contact>> {

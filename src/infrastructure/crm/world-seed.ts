@@ -1,0 +1,142 @@
+/**
+ * POPULATED-WORLD CRM PROJECTION (ADR-0057).
+ *
+ * Loads the generated world's households, their people, and their open items
+ * into the house CRM so no product surface renders empty in development. Rows
+ * land labeled `prov_source = 'fixture'` - NOT `verin-crm` - because that is
+ * what they are (charter #3), and because the clean-slate guarantee is proved
+ * by counting fixture-marked rows: a marker only means something if the
+ * synthetic rows actually carry it.
+ *
+ * What is DELIBERATELY not projected: financial accounts and their positions.
+ * An account in the house CRM is the OUTPUT of the account-opening flow, minted
+ * with the open date its e-signature carries; custodial positions, beneficiary
+ * designations, and bank instructions are EVIDENCE that arrives through the
+ * evidence port (`HouseholdWorldSource`), not records this firm owns. Seeding
+ * them here would put rows in the store that no flow produced and no custodian
+ * confirmed - the "shadow world" the charter's DO-NOT-PORT list names.
+ *
+ * One audited write covers the whole load: it is one operation, and one entry
+ * carrying honest counts is a better audit record than five thousand.
+ */
+import type { SqlDb } from "@infra/store/db";
+import { auditedWrite } from "@infra/audit/audited-write";
+import { assertWriteActor, type WriteActor } from "@contracts/principal";
+import type { Result } from "@contracts/result";
+import type { WorldHousehold } from "@domain/world/household-world";
+
+export interface WorldSeedCounts {
+  readonly households: number;
+  readonly contacts: number;
+  readonly tasks: number;
+}
+
+/** Rows carry the world's own observation instant, so a seeded record's
+ * provenance is the evidence date rather than the moment the seed ran. */
+const FIXTURE_CONFIDENCE = "medium";
+
+/** A display name split into the store's two columns. A single-token name keeps
+ * the whole token as the family name rather than inventing an empty one. */
+function splitName(displayName: string): { first: string; last: string } {
+  const parts = displayName.trim().split(/\s+/);
+  return parts.length === 1
+    ? { first: "", last: parts[0]! }
+    : { first: parts.slice(0, -1).join(" "), last: parts[parts.length - 1]! };
+}
+
+/** The open items a person has to clear, projected as real CRM tasks so the
+ * work surfaces are populated by the same facts the health breakdown reads. */
+function openItemTasks(household: WorldHousehold): { id: string; subject: string; createdAt: string }[] {
+  const tasks: { id: string; subject: string; createdAt: string }[] = [];
+  for (const instruction of household.bankInstructions) {
+    if (instruction.state !== "current" || instruction.verifiedAt !== null) continue;
+    tasks.push({
+      id: instruction.id,
+      subject: `Independently verify the ${instruction.bank} ····${instruction.lastFour} instruction`,
+      createdAt: instruction.changedAt ?? instruction.observedAt,
+    });
+  }
+  for (const action of household.pendingActions) {
+    if (action.state !== "blocked" && action.state !== "rejected") continue;
+    tasks.push({
+      id: action.id,
+      subject: `Clear the ${action.state} ${action.kind.replace(/-/g, " ")} on ${household.displayName}`,
+      createdAt: action.createdAt,
+    });
+  }
+  return tasks;
+}
+
+/**
+ * Load the world into the house CRM. Idempotent twice over: the audited write's
+ * idempotency key replays a completed load, and every insert is
+ * `ON CONFLICT DO NOTHING` on deterministic ids, so a partially-applied load
+ * completes rather than duplicating.
+ */
+export async function seedWorldIntoCrm(
+  db: SqlDb,
+  actor: WriteActor,
+  households: readonly WorldHousehold[],
+  worldDigest: string,
+): Promise<Result<WorldSeedCounts>> {
+  assertWriteActor(actor);
+  const orgId = actor.tenant.orgId;
+  return auditedWrite<WorldSeedCounts>({
+    db,
+    actor,
+    action: "world.seed",
+    entityType: "Org",
+    entityId: orgId,
+    idempotencyKey: `world-seed:${orgId}:${worldDigest}`,
+    // PII-minimized: counts and the world digest, never a household name.
+    detail: `Loaded the labeled fixture world (${households.length} households, digest ${worldDigest.slice(0, 12)})`,
+    buildAfter: (counts) => ({ ...counts, worldDigest }),
+    perform: async (tx) => {
+      const householdRows = households.map((household) => [
+        household.id, orgId, household.displayName, null, null, household.state,
+        household.provenance.asOf, "fixture", household.provenance.asOf, FIXTURE_CONFIDENCE,
+      ] as const);
+      const contactRows = households.flatMap((household) =>
+        household.members
+          .filter((member) => member.kind === "natural-person")
+          .map((member) => {
+            const { first, last } = splitName(member.displayName);
+            return [
+              member.id, orgId, household.id, first, last, null, null,
+              member.provenance.asOf, "fixture", member.provenance.asOf, FIXTURE_CONFIDENCE,
+            ] as const;
+          }),
+      );
+      const taskRows = households.flatMap((household) =>
+        openItemTasks(household).map((task) => [
+          task.id, orgId, household.id, task.subject, "not-started", null, null,
+          task.createdAt, "fixture", task.createdAt, FIXTURE_CONFIDENCE,
+        ] as const),
+      );
+      // One row per statement, every statement a LITERAL. A multi-row VALUES
+      // list would have to be assembled from a variable, and SQL assembled from
+      // a variable is SQL no static analysis can attribute to a table - which is
+      // exactly what the append-only fences read. The whole projection is a few
+      // hundred rows inside one transaction, so the trade costs nothing real.
+      for (const row of householdRows) {
+        await tx.query(
+          "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING",
+          [...row],
+        );
+      }
+      for (const row of contactRows) {
+        await tx.query(
+          "INSERT INTO contacts (id,org_id,household_id,first_name,last_name,email,phone,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING",
+          [...row],
+        );
+      }
+      for (const row of taskRows) {
+        await tx.query(
+          "INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING",
+          [...row],
+        );
+      }
+      return { households: householdRows.length, contacts: contactRows.length, tasks: taskRows.length };
+    },
+  });
+}
