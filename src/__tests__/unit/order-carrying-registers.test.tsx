@@ -89,6 +89,9 @@ describe("order-carrying registers", () => {
 describe("the policy simulation delta as a set of cases", () => {
   const PROVENANCE = { source: "verin-crm", asOf: "2026-08-05T12:00:00.000Z", confidence: "high" } as const;
   const CAPTION = "Simulated impact of the drafted policy";
+  /** The landmark's name is the register's identity, not its sentence (D-200). */
+  const REGION = "Simulation delta";
+  const RESTORE = `Restore recorded order: ${REGION}`;
   const SORT_NOTE =
     "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order; that grouping is fixed, the direction reverses the values inside each group, and blanks stay last";
 
@@ -105,9 +108,10 @@ describe("the policy simulation delta as a set of cases", () => {
     return journey.policyAuthoring;
   }
 
-  const register = (name: string | RegExp = CAPTION) => screen.getByRole("region", { name });
-  const cases = (name?: string | RegExp) =>
-    within(register(name))
+  const register = () => screen.getByRole("region", { name: REGION });
+  const caption = () => register().querySelector("caption")?.textContent ?? "";
+  const cases = () =>
+    within(register())
       .getAllByRole("row")
       .slice(1)
       .map((row) => row.querySelector("td")?.textContent);
@@ -125,17 +129,25 @@ describe("the policy simulation delta as a set of cases", () => {
     expect(cases()).toEqual(vm.simulationDelta.map((_, index) => String(index + 1)));
   });
 
-  it("keeps the caption and the landmark true through several sorts", async () => {
+  /**
+   * The caption states the active sort; the landmark's NAME states which register this
+   * is and holds still while it does. A name is met on every landmark entry and again in
+   * the rotor, so splicing a 209-character ordering rule into it made the reader hear an
+   * essay to learn where they were standing (D-200).
+   */
+  it("keeps the caption true through several sorts while the landmark name holds still", async () => {
     const user = userEvent.setup();
     renderSimulation();
-    await user.click(within(register()).getByRole("button", { name: /Dimension/ }));
-    let sorted = `${CAPTION} (re-sorted by Dimension, ascending)`;
-    expect(screen.queryByRole("region", { name: CAPTION })).not.toBeInTheDocument();
-    expect(register(sorted).querySelector("caption")).toHaveTextContent(sorted);
+    expect(caption()).toBe(CAPTION);
 
-    await user.click(within(register(sorted)).getByRole("button", { name: /Under the draft/ }));
-    sorted = `${CAPTION} (re-sorted by Under the draft, ascending, ${SORT_NOTE})`;
-    expect(register(sorted).querySelector("caption")).toHaveTextContent(sorted);
+    await user.click(within(register()).getByRole("button", { name: /Dimension/ }));
+    expect(caption()).toBe(`${CAPTION} (re-sorted by Dimension, ascending)`);
+    expect(register().getAttribute("aria-label")).toBe(REGION);
+
+    await user.click(within(register()).getByRole("button", { name: /Under the draft/ }));
+    expect(caption()).toBe(`${CAPTION} (re-sorted by Under the draft, ascending, ${SORT_NOTE})`);
+    expect(register().getAttribute("aria-label")).toBe(REGION);
+    expect(screen.getAllByRole("region", { name: REGION })).toHaveLength(1);
   });
 
   /**
@@ -151,16 +163,17 @@ describe("the policy simulation delta as a set of cases", () => {
     expect(register()).not.toHaveTextContent(SORT_NOTE);
 
     await user.click(within(register()).getByRole("button", { name: /^Today/ }));
-    expect(register(/re-sorted by Today/)).toHaveTextContent(`Sorted by Today, ascending: ${SORT_NOTE}.`);
+    expect(register()).toHaveTextContent(`Sorted by Today, ascending: ${SORT_NOTE}.`);
 
     // ONE note for both directions, with the direction stated beside it - a reader cannot
     // check a rule against the rows without knowing which way the sort is running.
-    await user.click(within(register(/re-sorted by/)).getByRole("button", { name: /^Today/ }));
-    expect(register(/re-sorted by Today/)).toHaveTextContent(`Sorted by Today, descending: ${SORT_NOTE}.`);
+    await user.click(within(register()).getByRole("button", { name: /^Today/ }));
+    expect(register()).toHaveTextContent(`Sorted by Today, descending: ${SORT_NOTE}.`);
 
     // A column with no declared ordering rule claims none.
-    await user.click(within(register(/re-sorted by/)).getByRole("button", { name: /Dimension/ }));
-    expect(register(/re-sorted by Dimension/)).not.toHaveTextContent(SORT_NOTE);
+    await user.click(within(register()).getByRole("button", { name: /Dimension/ }));
+    expect(register()).not.toHaveTextContent(SORT_NOTE);
+    expect(caption()).toContain("re-sorted by Dimension");
   });
 
   /**
@@ -178,14 +191,14 @@ describe("the policy simulation delta as a set of cases", () => {
 
     for (const label of ["#", "Dimension", "Today", "Under the draft"]) {
       const name = new RegExp(`^${label}`);
-      await user.click(within(register(/^Simulated impact/)).getByRole("button", { name }));
-      const ascending = cases(/re-sorted by/);
-      await user.click(within(register(/re-sorted by/)).getByRole("button", { name }));
-      const descending = cases(/re-sorted by/);
+      await user.click(within(register()).getByRole("button", { name }));
+      const ascending = cases();
+      await user.click(within(register()).getByRole("button", { name }));
+      const descending = cases();
       expect(descending, `${label} sorts identically in both directions`).not.toEqual(ascending);
       expect(descending, `${label} descending leaves the authored order`).not.toEqual(authored);
       expect([...descending].sort()).toEqual([...authored].sort());
-      await user.click(screen.getByRole("button", { name: `Restore recorded order: ${CAPTION}` }));
+      await user.click(screen.getByRole("button", { name: RESTORE }));
     }
   });
 
@@ -204,16 +217,16 @@ describe("the policy simulation delta as a set of cases", () => {
 
     for (const label of ["Today", "Under the draft"]) {
       const name = new RegExp(`^${label}`);
-      await user.click(within(register(/^Simulated impact/)).getByRole("button", { name }));
-      const ascending = cases(/re-sorted by/);
-      await user.click(within(register(/re-sorted by/)).getByRole("button", { name }));
-      const descending = cases(/re-sorted by/);
+      await user.click(within(register()).getByRole("button", { name }));
+      const ascending = cases();
+      await user.click(within(register()).getByRole("button", { name }));
+      const descending = cases();
 
       expect(ascending[0], `${label} ascending buries the disposition`).toBe(disposition);
       expect(descending[0], `${label} descending buries the disposition`).toBe(disposition);
       // Everything below it is the numeric band, and THAT is what the direction reverses.
       expect(descending.slice(1)).toEqual([...ascending.slice(1)].reverse());
-      await user.click(screen.getByRole("button", { name: `Restore recorded order: ${CAPTION}` }));
+      await user.click(screen.getByRole("button", { name: RESTORE }));
     }
   });
 
@@ -278,14 +291,16 @@ describe("the policy simulation delta as a set of cases", () => {
     const authored = vm.simulationDelta.map((_, index) => String(index + 1));
 
     await user.click(within(register()).getByRole("button", { name: /Dimension/ }));
-    expect(cases(/re-sorted by Dimension/)).not.toEqual(authored);
+    expect(cases()).not.toEqual(authored);
 
-    await user.click(within(register(/re-sorted by/)).getByRole("button", { name: /#/ }));
-    expect(cases(/re-sorted by #/)).toEqual(authored);
-
-    await user.click(within(register(/re-sorted by/)).getByRole("button", { name: /Dimension/ }));
-    await user.click(screen.getByRole("button", { name: `Restore recorded order: ${CAPTION}` }));
+    await user.click(within(register()).getByRole("button", { name: /#/ }));
     expect(cases()).toEqual(authored);
+    expect(caption()).toContain("re-sorted by #");
+
+    await user.click(within(register()).getByRole("button", { name: /Dimension/ }));
+    await user.click(screen.getByRole("button", { name: RESTORE }));
+    expect(cases()).toEqual(authored);
+    expect(caption()).toBe(CAPTION);
     expect(screen.queryByRole("button", { name: /Restore recorded order/ })).not.toBeInTheDocument();
   });
 });
@@ -392,15 +407,16 @@ describe("sortable compliance registers", () => {
       expect(sequences(register)).toEqual(["3", "2", "1"]);
     });
 
-    it(`keeps the ${surface.name} caption and landmark true to the active sort`, async () => {
+    it(`keeps the ${surface.name} caption true to the active sort under a stable landmark name`, async () => {
       const user = userEvent.setup();
       const register = await openRegister(surface);
+      expect(register.querySelector("caption")).toHaveTextContent(surface.caption);
       await user.click(within(register).getByRole("button", { name: new RegExp(surface.sortBy) }));
 
       const sorted = `${surface.caption} (re-sorted by ${surface.sortBy}, ascending)`;
-      expect(screen.queryByRole("region", { name: surface.caption })).not.toBeInTheDocument();
-      expect(screen.getByRole("region", { name: sorted })).toBeInTheDocument();
-      expect(screen.getByRole("region", { name: sorted }).querySelector("caption")).toHaveTextContent(sorted);
+      // The name identifies the register and holds still; the caption carries the sort.
+      expect(screen.getByRole("region", { name: surface.caption })).toBe(register);
+      expect(register.querySelector("caption")).toHaveTextContent(sorted);
     });
 
     it(`restores the ${surface.name}'s recorded order in one action`, async () => {
@@ -410,12 +426,11 @@ describe("sortable compliance registers", () => {
       expect(screen.queryByRole("button", { name: restoreName })).not.toBeInTheDocument();
 
       await user.click(within(register).getByRole("button", { name: new RegExp(surface.sortBy) }));
-      const sorted = screen.getByRole("region", { name: new RegExp(surface.sortBy) });
-      expect(sequences(sorted)).not.toEqual(["3", "2", "1"]);
+      expect(sequences(register)).not.toEqual(["3", "2", "1"]);
 
       // The control is INSIDE its own register's landmark, so a reader who enters the
       // landmark meets the one action that owes them the recorded order back.
-      const restore = within(sorted).getByRole("button", { name: restoreName });
+      const restore = within(register).getByRole("button", { name: restoreName });
       restore.focus();
       await user.keyboard("{Enter}");
 

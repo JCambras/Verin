@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent,
   type ReactNode,
 } from "react";
 import { Button, Card, StatusBadge } from "./ui";
@@ -47,7 +48,13 @@ export function Toast({ toast, onDismiss }: { toast: ToastMessage; onDismiss: (i
         </div>
         {toast.description ? <p className="mt-1 text-sm text-slate-600">{toast.description}</p> : null}
       </div>
-      <Button type="button" variant="text" onClick={() => onDismiss(toast.id)} aria-label={`Dismiss ${toast.title}`}>
+      <Button
+        type="button"
+        variant="text"
+        data-toast-dismiss=""
+        onClick={() => onDismiss(toast.id)}
+        aria-label={`Dismiss ${toast.title}`}
+      >
         Dismiss
       </Button>
     </Card>
@@ -65,8 +72,54 @@ export function ToastHost({
   onHold?: (id: string) => void;
   onRelease?: (id: string) => void;
 }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+
+  /**
+   * Where focus came from, so a dismissal that empties the host can hand it back -
+   * `<body>` excluded, since handing focus back to it is the stranding this exists to
+   * prevent rather than a place to return to.
+   */
+  function rememberOrigin(event: FocusEvent<HTMLDivElement>) {
+    const previous = event.relatedTarget;
+    if (!(previous instanceof HTMLElement) || previous === document.body) return;
+    if (!hostRef.current?.contains(previous)) returnFocus.current = previous;
+  }
+
+  /**
+   * A toast's own Dismiss control REMOVES the element holding focus, dropping a keyboard
+   * user on <body> and losing their place in the tab order - the same stranding the
+   * restore control and the auto-dismiss hold already answer, by the one path a hold
+   * cannot cover (the reader asked for this toast to go). Focus is placed BEFORE the
+   * removal and ONLY when the toast being removed is the one holding it, so an
+   * auto-dismiss, or a pointer dismissal with focus elsewhere, never takes it. It goes to
+   * the next remaining toast's dismiss control, else the previous one's, else back to
+   * whatever held focus before it entered the host, else the host itself - never <body>.
+   */
+  function dismiss(id: string) {
+    const host = hostRef.current;
+    const entries = host ? Array.from(host.children).filter((node): node is HTMLElement => node instanceof HTMLElement) : [];
+    const index = toasts.findIndex((toast) => toast.id === id);
+    const leaving = index >= 0 ? entries[index] : undefined;
+    const focused = document.activeElement;
+    if (host && leaving && focused instanceof HTMLElement && leaving.contains(focused)) {
+      const sibling = entries[index + 1] ?? entries[index - 1];
+      const control = sibling?.querySelector<HTMLElement>("[data-toast-dismiss]") ?? null;
+      const origin = returnFocus.current;
+      (control ?? (origin?.isConnected ? origin : null) ?? host).focus();
+    }
+    onDismiss(id);
+  }
+
   return (
-    <div aria-live="polite" aria-relevant="additions" className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2">
+    <div
+      ref={hostRef}
+      tabIndex={-1}
+      onFocusCapture={rememberOrigin}
+      aria-live="polite"
+      aria-relevant="additions"
+      className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2"
+    >
       {toasts.map((toast) => (
         <div
           key={toast.id}
@@ -77,7 +130,7 @@ export function ToastHost({
           onFocusCapture={() => onHold?.(toast.id)}
           onBlurCapture={() => onRelease?.(toast.id)}
         >
-          <Toast toast={toast} onDismiss={onDismiss} />
+          <Toast toast={toast} onDismiss={dismiss} />
         </div>
       ))}
     </div>

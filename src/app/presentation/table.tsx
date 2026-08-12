@@ -16,8 +16,8 @@ export interface TableColumn {
    * comparator. Declared wherever the ordering is not the obvious one for the value on
    * screen: a reader looking at a re-ordered column of dispositions cannot otherwise tell
    * a severity order from an alphabet, nor an amount ordered by value from one ordered as
-   * text. Carried in the caption and the landmark label, and shown as visible text beside
-   * the restore control for as long as that sort is active.
+   * text. Carried in the caption and shown as visible text beside the restore control for
+   * as long as that sort is active - never in the landmark's name, which is a label.
    *
    * ONE note, true in both directions - the direction is stated alongside it rather than
    * written into it. `compareSortValues` reverses only the values inside a kind, never the
@@ -63,6 +63,16 @@ export interface TableEmptyState {
 
 export interface TableProps {
   readonly caption: string;
+  /**
+   * The name of the landmark and of the control that restores its order: a SHORT,
+   * STABLE identifier for this register, defaulting to the caption. An accessible name
+   * is a label, not a paragraph - a reader meets it on every landmark entry and again in
+   * the landmark rotor, so the active sort and a column's `sortNote` belong in the
+   * caption and in the visible line beside the restore control, where they are read once
+   * and only by a reader who has gone into the register. Declared wherever the caption is
+   * a sentence rather than a name.
+   */
+  readonly regionName?: string;
   readonly columns: readonly TableColumn[];
   readonly rows: readonly TableRow[];
   readonly loading?: boolean;
@@ -105,6 +115,7 @@ function TableCellContent({ cell }: { cell: TableCell | undefined }) {
 
 export function Table({
   caption,
+  regionName,
   columns,
   rows,
   loading = false,
@@ -260,10 +271,20 @@ export function Table({
     if (virtualized) setScrollTop(event.currentTarget.scrollTop);
   }
 
+  const registerName = regionName ?? caption;
   const sortedColumn = sort ? columns.find((column) => column.id === sort.columnId) : undefined;
   const activeSortNote = sortedColumn?.sortNote;
+  /**
+   * "Re-sorted" is a claim about the READER having moved the rows, so it is gated on
+   * exactly that. A caller that declares a recorded order seeds the sort from it, and
+   * saying the register had been re-sorted before anything was touched is the same false
+   * order claim D-194 condition (2) exists to prevent - the restore control, correctly
+   * absent in that state, disagreed with the caption in the same render. The declared
+   * order still states ITSELF, so a reader who never touches a header still learns which
+   * column the rows are in and by what rule.
+   */
   const sortedCaption = sort && sortedColumn
-    ? `${caption} (re-sorted by ${sortedColumn.header}, ${sort.direction}${activeSortNote ? `, ${activeSortNote}` : ""})`
+    ? `${caption} (${reordered ? "re-sorted by" : "in recorded order, by"} ${sortedColumn.header}, ${sort.direction}${activeSortNote ? `, ${activeSortNote}` : ""})`
     : caption;
   /**
    * The same words as the caption, and the DIRECTION with them: a note is one rule, not an
@@ -384,8 +405,8 @@ export function Table({
    * because a reader who navigates by landmark into the register must meet the control
    * that owes them their recorded order back; after, because a control that appears
    * above the table pushes the header the viewer just clicked out from under their
-   * pointer. Its accessible name carries the caption, so two registers on one page name
-   * different controls (the visible text is the name's prefix - WCAG 2.5.3).
+   * pointer. Its accessible name carries the register's name, so two registers on one
+   * page name different controls (the visible text is the name's prefix - WCAG 2.5.3).
    *
    * The active column's `sortNote` shares that row as VISIBLE text. The caption carries
    * it too, but the caption is sr-only: a sighted reader looking at dispositions ordered
@@ -396,7 +417,7 @@ export function Table({
   return (
     <div
       role="region"
-      aria-label={sortedCaption}
+      aria-label={registerName}
       aria-busy={loading || undefined}
       data-row-count={rows.length}
       data-rendered-row-count={visibleRows.length}
@@ -412,7 +433,7 @@ export function Table({
               variant="secondary"
               size="compact"
               className="ml-auto print-hide"
-              aria-label={`Restore recorded order: ${caption}`}
+              aria-label={`Restore recorded order: ${registerName}`}
               onClick={restoreRecordedOrder}
             >
               Restore recorded order

@@ -7236,3 +7236,70 @@ moves, no runtime dependency was added, and nothing under `domain/`, `contracts/
 
 **Revert path:** revert this changeset; the direction-negated band layout, the unguarded `NaN`, and
 the print-only window reconciliation return to their D-198 state.
+
+### D-200 · 2026-08-12 · reversible · Ninth review round: a name is a label, and a claim is about the reader
+
+The prompt-2 review gate returned four findings; all four are resolved here. Two are the register
+saying more than a reader asked for or less than is true, one corrects a normative doc row the
+previous round left behind, and one closes the half of toast focus the auto-dismiss hold never
+covered.
+
+**An accessible name identifies; it does not explain.** `Table` spliced the active sort AND the
+active column's `sortNote` into the landmark's `aria-label`, so the simulation delta's landmark was
+named "Simulated impact of the drafted policy (re-sorted by Under the draft, ascending, dispositions
+by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order;
+that grouping is fixed, the direction reverses the values inside each group, and blanks stay last)" -
+291 characters, heard on every landmark entry, again in the landmark rotor, and again from the
+caption on traversing the table, for a four-row demo comparison. Nothing about that was false; it was
+in the wrong place. A name is met before a reader has decided to go in, so it answers WHICH REGISTER
+this is and stops.
+
+`TableProps` therefore gains `regionName`: the register's short, stable identity, defaulting to the
+caption for a caller whose caption already is one (both compliance registers), and declared where the
+caption is a sentence - the simulation delta is "Simulation delta". It names the landmark and the
+restore control, and it does not move when the sort does. The disclosure is unchanged in substance
+and stays exactly where a reader who has gone in meets it: the sr-only `<caption>` carries
+`caption (re-sorted by <column>, <direction>, <note>)`, and the visible line beside the restore
+control carries `Sorted by <column>, <direction>: <note>` for a sighted reader who cannot hear either.
+No `aria-describedby` was added: the caption already says these words to a screen reader traversing
+the table, and describing the table with the same sentence would announce it a third time - the
+verbosity this entry is about.
+
+**"Re-sorted" is a claim about the READER having moved the rows.** The caption composed
+`... (re-sorted by ...)` whenever a sort was active, and a caller's `initialSort` seeds one, so a
+register that declared a recorded order opened by asserting it had been re-sorted while the restore
+control - correctly absent, since nothing had moved - disagreed with it in the same render. That is
+D-194 condition (2)'s false order claim on first paint. The caption now says "(in recorded order, by
+Amount, descending)" until the reader touches a header and reverts to it when the restore control
+returns them, so the declared order still states itself and its ordering rule; only a departure from
+it is called a re-sort. No shipped surface passes `initialSort` today - the prop is public and will
+acquire callers, which is the whole reason to settle it before it has any.
+
+**A control that removes the element holding focus places focus first.** The round-1 toast fix held
+the auto-dismiss timer while a toast had focus or the pointer, which cannot cover the one path where
+the reader has asked for the toast to go: pressing its own Dismiss unmounted the focused button and
+dropped them on `<body>`, losing their place in the tab order - the same stranding the restore
+control answers one file over, on a shipped path (console create and rename both raise toasts).
+`ToastHost` now places focus before the removal, and ONLY when the toast leaving is the one holding
+it: the next remaining toast's dismiss control, else the previous one's, else back to whatever held
+focus before it entered the host (`<body>` excluded - handing focus back to it is the stranding, not
+a destination), else the host. An auto-dismiss, or a pointer dismissal while focus is elsewhere on
+the page, moves nothing: taking focus a reader did not offer is its own defect.
+
+**And the normative row for the comparator was left a round behind.** `docs/demo-design-language.md`
+still stated D-198's band enumeration flat - "booleans false before true. Absent, null and empty
+values group at the END in both directions" - which D-199 made true only ascending, and it did not
+carry `NaN`. AGENTS.md makes that file normative and says UI prompts read it first, so the next agent
+adopting the comparator would have read a direction-specific claim as the rule. The row now mirrors
+the sibling row it sits beside: the band layout is scaffolding and is direction-invariant, the
+direction reverses only the values inside a kind, and `NaN` - a `{ rank: NaN }` as much as a bare
+one - groups with the blanks at the end in both directions.
+
+The presentation tier re-measures at 2,193/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (2,119 at D-199); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the paragraph-length landmark name, the caption that claimed
+a re-sort on first paint, the toast dismissal that stranded focus, and the stale ordering row return
+to their D-199 state.

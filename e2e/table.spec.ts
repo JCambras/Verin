@@ -39,17 +39,22 @@ test("the canonical table keeps a 5,000-row register windowed while scrolling", 
   await expect(table.getByText("Fixture audit entry 4999")).toBeVisible();
 
   await table.getByRole("button", { name: /^#/ }).click();
-  const sorted = page.getByRole("region", { name: "Audit log entries, newest first (re-sorted by #, ascending)" });
-  await expect(sorted).toBeVisible();
+  // The landmark's NAME is the register's identity and holds still through the sort
+  // (D-200); the caption is what states the sort a reader has applied.
+  await expect(table).toHaveCount(1);
+  await expect(table.locator("caption")).toHaveText(
+    "Audit log entries, newest first (re-sorted by #, ascending)",
+  );
 
   // A sortable register owes its recorded order back in ONE action (D-194); repeat
   // header clicks are not a restoration a compliance reader can rely on. The control
   // is named after its own register, sits inside that landmark, and hands focus to a
   // header that outlives it rather than dropping the keyboard user on <body>.
-  const restore = sorted.getByRole("button", { name: "Restore recorded order: Audit log entries, newest first" });
+  const restore = table.getByRole("button", { name: "Restore recorded order: Audit log entries, newest first" });
   await restore.focus();
   await restore.press("Enter");
   await expect(page.getByRole("region", { name: "Audit log entries, newest first" })).toBeVisible();
+  await expect(table.locator("caption")).toHaveText("Audit log entries, newest first");
   await expect(page.getByRole("button", { name: /^Restore recorded order/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^#/ })).toBeFocused();
 });

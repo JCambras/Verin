@@ -234,6 +234,91 @@ describe("canonical presentation primitives", () => {
       vi.useRealTimers();
     }
   });
+
+  /**
+   * The hold above covers the AUTO path; the reader's own Dismiss is the one a hold
+   * cannot cover, because the toast is meant to go. It still removes the element holding
+   * focus, so focus is placed first - on the next remaining toast's control, else the
+   * previous one's, else back where it came from. Never <body>.
+   */
+  function ToastHarness() {
+    const { showToast } = useToast();
+    const issued = useRef(0);
+    return (
+      <>
+        <Button
+          onClick={() => {
+            issued.current += 1;
+            showToast({ title: `Saved ${issued.current}`, durationMs: 0 });
+          }}
+        >
+          Save
+        </Button>
+        <Button variant="secondary">Elsewhere</Button>
+      </>
+    );
+  }
+
+  async function raiseToasts(count: number) {
+    render(<ToastProvider><ToastHarness /></ToastProvider>);
+    const save = screen.getByRole("button", { name: "Save" });
+    for (let index = 0; index < count; index += 1) fireEvent.click(save);
+    return save;
+  }
+
+  it("moves focus to a neighbouring toast when the one holding focus is dismissed", async () => {
+    const user = userEvent.setup();
+    await raiseToasts(4);
+    const dismissControl = (title: string) => screen.getByRole("button", { name: `Dismiss ${title}` });
+
+    // Middle: the next toast takes focus, so the reader keeps reading forward.
+    dismissControl("Saved 2").focus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByText("Saved 2")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(dismissControl("Saved 3"));
+
+    // First: the same forward step, from the head of the stack.
+    dismissControl("Saved 1").focus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByText("Saved 1")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(dismissControl("Saved 3"));
+
+    // Last: there is no next, so the previous one takes it.
+    dismissControl("Saved 4").focus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByText("Saved 4")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(dismissControl("Saved 3"));
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it("hands focus back to where it came from when the last toast is dismissed", async () => {
+    const user = userEvent.setup();
+    const save = await raiseToasts(1);
+    save.focus();
+
+    screen.getByRole("button", { name: "Dismiss Saved 1" }).focus();
+    await user.keyboard("{Enter}");
+    expect(screen.queryByText("Saved 1")).not.toBeInTheDocument();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(save);
+  });
+
+  it("leaves focus alone when the dismissed toast is not the one holding it", async () => {
+    await raiseToasts(2);
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    elsewhere.focus();
+
+    // A pointer dismissal from outside the toast, and an auto-dismiss, may not take a
+    // reader's place in the tab order - only a dismissal of the toast that HOLDS focus
+    // owes them a new one.
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss Saved 1" }));
+    expect(screen.queryByText("Saved 1")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(elsewhere);
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss Saved 2" }));
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(elsewhere);
+  });
 });
 
 describe("Table", () => {
@@ -302,15 +387,80 @@ describe("Table", () => {
     ]);
   });
 
-  it("keeps the region landmark label true to the active sort", async () => {
+  /**
+   * An accessible name is a LABEL: a reader meets it on every landmark entry and again
+   * in the landmark rotor. Splicing the active sort and a column's ordering rule into it
+   * made a 291-character name for a four-row register. The name is therefore the
+   * register's short, stable identity, and the sort - which a reader needs once, inside -
+   * lives in the caption and in the visible line beside the restore control.
+   */
+  it("keeps the landmark name short and stable while the caption states the active sort", async () => {
+    const user = userEvent.setup();
+    const note = "dispositions by restrictiveness, then numbers by value; blanks stay last";
+    render(
+      <Table
+        caption="Households, newest first, one row per household"
+        regionName="Households"
+        columns={[{ id: "name", header: "Name", sortable: true, sortNote: note }, ...columns.slice(1)]}
+        rows={[row(2), row(1)]}
+      />,
+    );
+    const region = () => screen.getByRole("region", { name: "Households" });
+    expect(region()).toBeInTheDocument();
+
+    for (const direction of ["ascending", "descending"]) {
+      await user.click(screen.getByRole("button", { name: /Name/ }));
+      const sorted = `Households, newest first, one row per household (re-sorted by Name, ${direction}, ${note})`;
+      expect(region().querySelector("caption")).toHaveTextContent(sorted);
+      expect(region()).toHaveTextContent(`Sorted by Name, ${direction}: ${note}.`);
+      // The name never grows with the sort, and never carries the rule.
+      expect(screen.getByRole("region", { name: "Households" })).toBe(region());
+      expect(region().getAttribute("aria-label")).toBe("Households");
+    }
+    expect(within(region()).getByRole("button", { name: "Restore recorded order: Households" })).toBeVisible();
+  });
+
+  it("names the landmark after the caption when the caller declares no shorter name", async () => {
     const user = userEvent.setup();
     render(<Table caption="Households, newest first" columns={columns} rows={[row(2), row(1)]} />);
     expect(screen.getByRole("region", { name: "Households, newest first" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Name/ }));
-    expect(screen.queryByRole("region", { name: "Households, newest first" })).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("region", { name: "Households, newest first (re-sorted by Name, ascending)" }),
-    ).toBeInTheDocument();
+    const region = screen.getByRole("region", { name: "Households, newest first" });
+    expect(region.querySelector("caption")).toHaveTextContent(
+      "Households, newest first (re-sorted by Name, ascending)",
+    );
+  });
+
+  /**
+   * "Re-sorted" is a claim about the reader having moved the rows. A caller's declared
+   * recorded order seeds the sort, so the caption asserted a re-sort on first paint while
+   * the restore control - correctly absent - said nothing had moved.
+   */
+  it("says recorded order, not re-sorted, until the reader moves the rows", async () => {
+    const user = userEvent.setup();
+    render(
+      <Table
+        caption="Households"
+        columns={columns}
+        rows={[row(2), row(1)]}
+        initialSort={{ columnId: "amount", direction: "descending" }}
+      />,
+    );
+    const region = screen.getByRole("region", { name: "Households" });
+    expect(region.querySelector("caption")).toHaveTextContent(
+      "Households (in recorded order, by Amount, descending)",
+    );
+    expect(region.textContent).not.toContain("re-sorted");
+    expect(screen.queryByRole("button", { name: /Restore recorded order/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Name/ }));
+    expect(region.querySelector("caption")).toHaveTextContent("Households (re-sorted by Name, ascending)");
+    expect(screen.getByRole("button", { name: "Restore recorded order: Households" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /Restore recorded order/ }));
+    expect(region.querySelector("caption")).toHaveTextContent(
+      "Households (in recorded order, by Amount, descending)",
+    );
   });
 
   it("aligns each sortable header with its column, indexes the header row, and prints its labels", () => {

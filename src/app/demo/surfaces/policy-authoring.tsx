@@ -27,6 +27,11 @@ const DISPOSITION_RANKS = new Map<string, number>(Object.entries(DISPOSITION_RES
  * ONE sentence for both directions, which is only honest because the comparator reverses
  * the values inside a kind and nothing else: the grouping and the blanks hold still, so
  * the sentence says so rather than enumerating an order that inverts underneath it.
+ *
+ * It reaches the reader through the caption and the visible line beside the restore
+ * control, never through the landmark's name - which is why this register declares a
+ * `regionName`: a name is a label, and a reader should not have to hear a paragraph to
+ * find out which landmark they are standing in.
  */
 const SIMULATION_SORT_NOTE =
   "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order; that grouping is fixed, the direction reverses the values inside each group, and blanks stay last";
@@ -142,7 +147,12 @@ export function PolicyAuthoringSurface({
           Simulation impact
           <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
         </h2>
-        <Table caption="Simulated impact of the drafted policy" columns={SIMULATION_COLUMNS} rows={simulationRows} />
+        <Table
+          caption="Simulated impact of the drafted policy"
+          regionName="Simulation delta"
+          columns={SIMULATION_COLUMNS}
+          rows={simulationRows}
+        />
       </section>
 
       {approved ? (
