@@ -69,8 +69,13 @@ export interface TableProps {
    * is a label, not a paragraph - a reader meets it on every landmark entry and again in
    * the landmark rotor, so the active sort and a column's `sortNote` belong in the
    * caption and in the visible line beside the restore control, where they are read once
-   * and only by a reader who has gone into the register. Declared wherever the caption is
-   * a sentence rather than a name.
+   * and only by a reader who has gone into the register.
+   *
+   * A SORTABLE register declares one, always (fenced by `register-sortability`): its rows
+   * can be re-ordered, so a name inherited from a caption that asserts an order - "Audit
+   * log entries, newest first" - goes on making that claim in the rotor and on every
+   * landmark entry over rows the reader has since ordered by actor. The default serves an
+   * unsortable register, whose caption cannot come apart from its rows (D-201).
    */
   readonly regionName?: string;
   readonly columns: readonly TableColumn[];

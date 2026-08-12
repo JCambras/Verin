@@ -22,7 +22,7 @@ test("the canonical table keeps a 5,000-row register windowed while scrolling", 
   });
 
   await page.goto("/app/audit");
-  const table = page.getByRole("region", { name: "Audit log entries, newest first" });
+  const table = page.getByRole("region", { name: "Audit log" });
   await expect(table).toHaveAttribute("data-row-count", "5000");
   const renderedBefore = Number(await table.getAttribute("data-rendered-row-count"));
   expect(renderedBefore).toBeLessThan(40);
@@ -38,23 +38,27 @@ test("the canonical table keeps a 5,000-row register windowed while scrolling", 
   expect(renderedAfter).toBeLessThan(40);
   await expect(table.getByText("Fixture audit entry 4999")).toBeVisible();
 
+  // The declared recorded order states ITSELF, and says so as recorded order rather than
+  // as a re-sort nobody performed (D-200) - the landmark's name carries none of it (D-201).
+  await expect(table.locator("caption")).toHaveText("Audit log entries (in recorded order, by #, descending)");
+
   await table.getByRole("button", { name: /^#/ }).click();
   // The landmark's NAME is the register's identity and holds still through the sort
   // (D-200); the caption is what states the sort a reader has applied.
   await expect(table).toHaveCount(1);
   await expect(table.locator("caption")).toHaveText(
-    "Audit log entries, newest first (re-sorted by #, ascending)",
+    "Audit log entries (re-sorted by #, ascending)",
   );
 
   // A sortable register owes its recorded order back in ONE action (D-194); repeat
   // header clicks are not a restoration a compliance reader can rely on. The control
   // is named after its own register, sits inside that landmark, and hands focus to a
   // header that outlives it rather than dropping the keyboard user on <body>.
-  const restore = table.getByRole("button", { name: "Restore recorded order: Audit log entries, newest first" });
+  const restore = table.getByRole("button", { name: "Restore recorded order: Audit log" });
   await restore.focus();
   await restore.press("Enter");
-  await expect(page.getByRole("region", { name: "Audit log entries, newest first" })).toBeVisible();
-  await expect(table.locator("caption")).toHaveText("Audit log entries, newest first");
+  await expect(page.getByRole("region", { name: "Audit log" })).toBeVisible();
+  await expect(table.locator("caption")).toHaveText("Audit log entries (in recorded order, by #, descending)");
   await expect(page.getByRole("button", { name: /^Restore recorded order/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^#/ })).toBeFocused();
 });
@@ -87,7 +91,7 @@ test("a windowed register prints its complete row set, not the window", async ({
   });
 
   await page.goto("/app/audit");
-  const register = page.getByRole("region", { name: "Audit log entries, newest first" });
+  const register = page.getByRole("region", { name: "Audit log" });
   await expect(register).toHaveAttribute("data-row-count", "200");
   expect(Number(await register.getAttribute("data-rendered-row-count"))).toBeLessThan(200);
 
@@ -144,7 +148,7 @@ test("a register resumes windowing coherently after a print pass taken mid-scrol
   });
 
   await page.goto("/app/audit");
-  const register = page.getByRole("region", { name: "Audit log entries, newest first" });
+  const register = page.getByRole("region", { name: "Audit log" });
   await expect(register).toHaveAttribute("data-row-count", "200");
   const box = register.locator("[data-table-scroll]");
 
@@ -250,7 +254,7 @@ test("a register of tall rows still renders its tail at the bottom of the scroll
   });
 
   await page.goto("/app/ledger");
-  const register = page.getByRole("region", { name: "Decision ledger entries, newest first" });
+  const register = page.getByRole("region", { name: "Decision ledger" });
   await expect(register).toHaveAttribute("data-row-count", "200");
   const rowHeight = await register
     .locator("tr[data-table-row]")

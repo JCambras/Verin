@@ -310,9 +310,14 @@ describe("the policy simulation delta as a set of cases", () => {
  * decision ledger are the two that are - a compliance reader legitimately re-orders by
  * actor or action. The permission is conditional, so each condition is asserted on the
  * shipped surface rather than on a fixture: the sequence column that carries recorded
- * order is visible and sortable, the caption and the landmark both disclose the active
- * sort instead of still promising "newest first", and ONE action puts the recorded
- * order back.
+ * order is visible and sortable, the CAPTION states whatever order the rows are in right
+ * now - the declared recorded order until the reader moves them, the active sort after -
+ * while the LANDMARK's name identifies the register and holds still, and ONE action puts
+ * the recorded order back.
+ *
+ * Both registers used to caption themselves "…entries, newest first" and let the landmark
+ * default to that sentence, so the name a screen-reader user meets on every entry and in
+ * the rotor went on promising newest-first over rows they had ordered by actor (D-201).
  */
 describe("sortable compliance registers", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -371,24 +376,29 @@ describe("sortable compliance registers", () => {
   const SURFACES = [
     {
       name: "audit trail",
-      caption: "Audit log entries, newest first",
+      region: "Audit log",
+      caption: "Audit log entries",
       element: <AuditPage />,
       body: { verdict: { ok: true, entriesChecked: 3, reason: null }, entries: AUDIT_ENTRIES, total: 3 },
       sortBy: "Actor",
     },
     {
       name: "decision ledger",
-      caption: "Decision ledger entries, newest first",
+      region: "Decision ledger",
+      caption: "Decision ledger entries",
       element: <DecisionLedgerPage />,
       body: LEDGER_MODEL,
       sortBy: "Event",
     },
   ] as const;
 
+  /** Newest first IS the sequence column descending, and each register declares it. */
+  const RECORDED = ", by #, descending";
+
   async function openRegister(surface: (typeof SURFACES)[number]) {
     stubFetch(surface.body);
     render(surface.element);
-    return screen.findByRole("region", { name: surface.caption });
+    return screen.findByRole("region", { name: surface.region });
   }
 
   const sequences = (register: HTMLElement) =>
@@ -402,27 +412,45 @@ describe("sortable compliance registers", () => {
       const register = await openRegister(surface);
       const sequence = within(register).getAllByRole("columnheader")[0]!;
       expect(sequence).toHaveTextContent("#");
-      expect(sequence).toHaveAttribute("aria-sort", "none");
+      // The recorded order is DECLARED, so the column carrying it says so from first paint.
+      expect(sequence).toHaveAttribute("aria-sort", "descending");
       expect(within(sequence).getByRole("button", { name: /#/ })).toBeVisible();
       expect(sequences(register)).toEqual(["3", "2", "1"]);
     });
 
+    /**
+     * The landmark's name may not carry an order claim, because it is the one place the
+     * register speaks BEFORE a reader has gone in - and it cannot be re-read after a sort.
+     * So it names the register, the caption states the order, and the two are asserted
+     * apart: the name is stable and free of the words the sort makes false, and the
+     * caption moves from the declared recorded order to the reader's own.
+     */
     it(`keeps the ${surface.name} caption true to the active sort under a stable landmark name`, async () => {
       const user = userEvent.setup();
       const register = await openRegister(surface);
-      expect(register.querySelector("caption")).toHaveTextContent(surface.caption);
-      await user.click(within(register).getByRole("button", { name: new RegExp(surface.sortBy) }));
+      expect(register.getAttribute("aria-label")).toBe(surface.region);
+      // Rendered, not declared: the name claims nothing about the order of the rows.
+      expect(register.getAttribute("aria-label")).not.toMatch(/newest|first|order|sorted/i);
+      expect(register.querySelector("caption")).toHaveTextContent(
+        `${surface.caption} (in recorded order${RECORDED})`,
+      );
 
-      const sorted = `${surface.caption} (re-sorted by ${surface.sortBy}, ascending)`;
-      // The name identifies the register and holds still; the caption carries the sort.
-      expect(screen.getByRole("region", { name: surface.caption })).toBe(register);
-      expect(register.querySelector("caption")).toHaveTextContent(sorted);
+      for (const direction of ["ascending", "descending"]) {
+        await user.click(within(register).getByRole("button", { name: new RegExp(surface.sortBy) }));
+        expect(register.querySelector("caption")).toHaveTextContent(
+          `${surface.caption} (re-sorted by ${surface.sortBy}, ${direction})`,
+        );
+        // The name identifies the register and holds still; the caption carries the sort.
+        expect(screen.getByRole("region", { name: surface.region })).toBe(register);
+        expect(register.getAttribute("aria-label")).toBe(surface.region);
+      }
+      expect(screen.getAllByRole("region", { name: surface.region })).toHaveLength(1);
     });
 
     it(`restores the ${surface.name}'s recorded order in one action`, async () => {
       const user = userEvent.setup();
       const register = await openRegister(surface);
-      const restoreName = `Restore recorded order: ${surface.caption}`;
+      const restoreName = `Restore recorded order: ${surface.region}`;
       expect(screen.queryByRole("button", { name: restoreName })).not.toBeInTheDocument();
 
       await user.click(within(register).getByRole("button", { name: new RegExp(surface.sortBy) }));
@@ -434,11 +462,44 @@ describe("sortable compliance registers", () => {
       restore.focus();
       await user.keyboard("{Enter}");
 
-      const restored = screen.getByRole("region", { name: surface.caption });
+      const restored = screen.getByRole("region", { name: surface.region });
       expect(sequences(restored)).toEqual(["3", "2", "1"]);
+      expect(restored.querySelector("caption")).toHaveTextContent(
+        `${surface.caption} (in recorded order${RECORDED})`,
+      );
       expect(screen.queryByRole("button", { name: restoreName })).not.toBeInTheDocument();
       expect(document.activeElement).not.toBe(document.body);
       expect(restored.contains(document.activeElement)).toBe(true);
     });
   }
+
+  /**
+   * Not every ledger event belongs to a decision, and those rows have nothing to order by:
+   * they group at the END whichever way the sort runs, which is not what a reader expects
+   * from a column that otherwise reverses. So the register says so - in the caption and,
+   * for a sighted reader who cannot hear it, as visible text while that sort is active.
+   */
+  it("says that events with no decision id stay last, and they do, in both directions", async () => {
+    const user = userEvent.setup();
+    const note =
+      "decision ids alphabetically, with numbers in numeric order; an event that belongs to no decision has nothing to order by, so those rows stay last in both directions";
+    stubFetch({
+      ...LEDGER_MODEL,
+      entries: LEDGER_MODEL.entries.map((entry) =>
+        entry.sequence === 3 ? { ...entry, decisionId: null } : entry,
+      ),
+    });
+    render(<DecisionLedgerPage />);
+    const register = await screen.findByRole("region", { name: "Decision ledger" });
+    expect(register).not.toHaveTextContent(note);
+
+    for (const direction of ["ascending", "descending"]) {
+      await user.click(within(register).getByRole("button", { name: /^Decision$/ }));
+      expect(register.querySelector("caption")).toHaveTextContent(
+        `Decision ledger entries (re-sorted by Decision, ${direction}, ${note})`,
+      );
+      expect(register).toHaveTextContent(`Sorted by Decision, ${direction}: ${note}.`);
+      expect(sequences(register).at(-1)).toBe("3");
+    }
+  });
 });

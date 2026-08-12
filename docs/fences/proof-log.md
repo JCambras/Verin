@@ -12914,3 +12914,41 @@ naming nothing this fence can read.
 on the restored tree.
 
 **Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - seventh review round, D-198).
+
+---
+
+## PF-251 · register-sortability, amended: a sortable register names its own landmark (D-201)
+
+**Invariant (amendment):** a rendered `<Table>` whose resolved columns include a sortable one must
+declare a literal `regionName`. `regionName` defaults to the caption, which is right for a register
+whose rows cannot move and wrong for one whose rows can: both compliance registers were captioned
+"…entries, newest first", so their landmarks - met on every landmark entry, again in the rotor, and
+never re-announced after a sort - went on promising newest-first over rows a reader had ordered by
+actor, while the caption underneath correctly said otherwise. Unreadable is REFUSED, not assumed
+harmless: an empty or whitespace name, a computed one, a shadowed constant, and a `{...spread}` that
+could carry the prop or could not all fail with `file:line`. An unsortable register keeps the
+default.
+
+**Injection - a shipped compliance register inherits its landmark name from an order-asserting
+caption.** Deleted the `regionName="Audit log"` attribute from the `<Table>` in
+`src/app/app/audit/page.tsx`, leaving the register fully sortable and its registry entry intact, so
+the injection also proves a review cannot buy the shape out.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/app/audit/page.tsx:123 :: a sortable register must name its own landmark: declare a literal 'regionName' rather than inheriting a caption, which is free to assert an order the reader can sort away (D-201)
+❯ src/__tests__/fitness/register-sortability.test.ts:484
+```
+
+**Executable companions (run on every build):** a sortable register with no `regionName` at all, one
+whose name is the empty string, one whose name is a non-literal expression, and one carrying a JSX
+spread that could supply it - each refused; a literal name and an unshadowed same-file string
+constant - each accepted; and an unsortable register left to the caption default, so the rule is a
+requirement on registers whose rows can move rather than a blanket ban on the default.
+
+**Reverted:** the injection was undone immediately; the focused fence returned to `Tests 18 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - tenth review round, D-201).

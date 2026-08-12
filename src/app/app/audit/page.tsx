@@ -14,6 +14,16 @@ const COLUMNS: readonly TableColumn[] = [
   { id: "hash", header: "Hash", sortable: true },
 ];
 
+/**
+ * The recorded order DECLARED rather than left implicit: `/api/audit` returns the latest
+ * entries newest first, which is this register's own sequence column descending. Declaring
+ * it is what lets the caption state the order the rows are actually in and stop stating it
+ * the moment a reader re-orders them - the claim used to live in the caption's own words
+ * ("newest first"), which the landmark then borrowed as its name and went on asserting
+ * over actor-ordered rows (D-201).
+ */
+const RECORDED_ORDER = { columnId: "sequence", direction: "descending" } as const;
+
 interface Verdict {
   ok: boolean;
   entriesChecked: number;
@@ -111,10 +121,12 @@ export default function AuditPage() {
             </p>
           ) : null}
           <Table
-            caption="Audit log entries, newest first"
+            caption="Audit log entries"
+            regionName="Audit log"
             columns={COLUMNS}
             rows={rows}
             loading={loading}
+            initialSort={RECORDED_ORDER}
             emptyState={{
               title: "No audit events yet",
               description: "Run a governed action to create the first tamper-evident entry.",

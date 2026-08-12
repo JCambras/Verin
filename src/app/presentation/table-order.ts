@@ -1,10 +1,11 @@
 /**
  * The canonical register's ONE ordering (D-198). Pure, no React, no DOM: a column may
  * mix a disposition with an amount with a phrase, so the comparator needs a total order
- * it can state out loud - and the register does state it, in the caption, the landmark
- * label and visible text. An ordering the caption cannot name is one the reader will
- * misread, and an ordering the caption names WRONGLY is the same false claim as a sort
- * that never happened.
+ * it can state out loud - and the register does state it, in the caption that carries the
+ * active sort and in the visible line beside the restore control. Never in the landmark's
+ * name, which is a label for the register itself (D-200). An ordering the caption cannot
+ * name is one the reader will misread, and an ordering the caption names WRONGLY is the
+ * same false claim as a sort that never happened.
  */
 
 /**

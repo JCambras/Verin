@@ -3,6 +3,8 @@ import {
   Node,
   SyntaxKind,
   type ArrayLiteralExpression,
+  type JsxOpeningElement,
+  type JsxSelfClosingElement,
   type ObjectLiteralExpression,
   type SourceFile,
 } from "ts-morph";
@@ -44,6 +46,14 @@ import { appSourceProject, inMemoryProject, relativeToRepo } from "./_fence-util
  * built anywhere OTHER than inside a column collection (`BASE.map((c) => ({ ...c,
  * sortable: true }))` has no sibling collection to prove an order carrier against) -
  * fails closed rather than passing as reviewed.
+ *
+ * A sortable register also declares its landmark's NAME (D-201). `regionName` defaults to
+ * the caption, which is right for a register whose rows cannot move - and wrong for one
+ * whose rows can: both compliance registers were captioned "…entries, newest first", so
+ * the landmark went on promising newest-first in the rotor and on every entry over rows a
+ * reader had since ordered by actor, while the caption underneath correctly said
+ * otherwise. A name is a label; where the rows are sortable it is the caller who must
+ * choose one, and a literal is what makes that choice reviewable here.
  */
 const REVIEWED_SORTABLE_REGISTERS = new Map<string, string>([
   // Compliance registers: the claim is CONTENTS and INTEGRITY, a reader legitimately
@@ -198,9 +208,46 @@ function annotatedAsColumns(array: ArrayLiteralExpression): boolean {
   return false;
 }
 
+/** The string an expression finally is, or nothing - an identifier only when unshadowed. */
+function resolvedString(expression: Node | undefined): string | null {
+  const direct = unwrapExpression(expression);
+  if (!direct) return null;
+  const literal = literalString(direct);
+  if (literal !== null) return literal;
+  if (!Node.isIdentifier(direct)) return null;
+  const declarations = direct
+    .getSourceFile()
+    .getDescendantsOfKind(SyntaxKind.VariableDeclaration)
+    .filter((declaration) => declaration.getName() === direct.getText());
+  return declarations.length === 1 ? literalString(unwrapExpression(declarations[0]!.getInitializer())) : null;
+}
+
+/**
+ * The landmark name a `<Table>` declares, or nothing. A spread attribute makes the whole
+ * element unreadable: `{...props}` could carry a `regionName` or could not, and a fence
+ * that assumes which is a fence that is silently wrong.
+ */
+function declaredRegionName(owner: JsxOpeningElement | JsxSelfClosingElement): string | null {
+  let name: string | null = null;
+  for (const attribute of owner.getAttributes()) {
+    if (Node.isJsxSpreadAttribute(attribute)) return null;
+    if (!Node.isJsxAttribute(attribute) || attribute.getNameNode().getText() !== "regionName") continue;
+    const initializer = attribute.getInitializer();
+    const expression = initializer && Node.isJsxExpression(initializer) ? initializer.getExpression() : initializer;
+    name = resolvedString(expression);
+  }
+  return name !== null && name.trim().length > 0 ? name : null;
+}
+
+interface TableElement {
+  readonly attribute: Node;
+  readonly owner: JsxOpeningElement | JsxSelfClosingElement;
+  readonly array: ArrayLiteralExpression | null;
+}
+
 /** Every `<Table columns={...}>` in the file, paired with the array literal it names. */
-function tableColumnAttributes(sf: SourceFile): Array<{ readonly attribute: Node; readonly array: ArrayLiteralExpression | null }> {
-  const out: Array<{ attribute: Node; array: ArrayLiteralExpression | null }> = [];
+function tableColumnAttributes(sf: SourceFile): TableElement[] {
+  const out: TableElement[] = [];
   for (const attribute of sf.getDescendantsOfKind(SyntaxKind.JsxAttribute)) {
     if (attribute.getNameNode().getText() !== "columns") continue;
     const owner = attribute.getFirstAncestor(
@@ -211,7 +258,7 @@ function tableColumnAttributes(sf: SourceFile): Array<{ readonly attribute: Node
     const initializer = attribute.getInitializer();
     const expression = initializer && Node.isJsxExpression(initializer) ? initializer.getExpression() : undefined;
     const resolved = resolveLiteral(expression);
-    out.push({ attribute, array: resolved && Node.isArrayLiteralExpression(resolved) ? resolved : null });
+    out.push({ attribute, owner, array: resolved && Node.isArrayLiteralExpression(resolved) ? resolved : null });
   }
   return out;
 }
@@ -285,6 +332,8 @@ interface ColumnScan {
   readonly derived: readonly DeclaredColumn[];
   /** `<Table columns={...}>` attributes naming nothing this fence can read. */
   readonly unreadableTables: readonly Node[];
+  /** Sortable registers rendered in this file whose landmark name is not a literal. */
+  readonly unnamedSortableTables: readonly Node[];
 }
 
 /**
@@ -299,7 +348,9 @@ function scanColumns(sf: SourceFile): ColumnScan {
   const fragments = new Set<ArrayLiteralExpression>();
   const roots = new Set<ArrayLiteralExpression>();
   const unreadableTables: Node[] = [];
-  for (const { attribute, array } of tableColumnAttributes(sf)) {
+  const unnamedSortableTables: Node[] = [];
+  const tables = tableColumnAttributes(sf);
+  for (const { attribute, array } of tables) {
     if (array) roots.add(array);
     else unreadableTables.push(attribute);
   }
@@ -322,7 +373,16 @@ function scanColumns(sf: SourceFile): ColumnScan {
     .getDescendantsOfKind(SyntaxKind.ObjectLiteralExpression)
     .filter((object) => object.getProperty("sortable") !== undefined && !claimed.has(object))
     .map((object) => ({ id: declaredId(object), sortable: declaredSortable(object) ?? "unproven", node: object }));
-  return { collections, derived, unreadableTables };
+
+  // A rendered register whose columns are sortable owes its landmark a name of its own:
+  // the caption it would otherwise inherit is free to assert an order the sort undoes.
+  for (const { owner, array } of tables) {
+    if (!array) continue;
+    const columns = collectionColumns(array, 0, new Set()).columns;
+    if (!columns.some((column) => column.sortable === "yes")) continue;
+    if (declaredRegionName(owner) === null) unnamedSortableTables.push(owner);
+  }
+  return { collections, derived, unreadableTables, unnamedSortableTables };
 }
 
 /** Whether the file declares any register this fence must see reviewed. */
@@ -339,7 +399,14 @@ export function registerSortabilityViolations(
 ): string[] {
   const out: string[] = [];
   const report = (node: Node, message: string) => out.push(`${rel}:${node.getStartLineNumber()} :: ${message}`);
-  const { collections, derived, unreadableTables } = scanColumns(sf);
+  const { collections, derived, unreadableTables, unnamedSortableTables } = scanColumns(sf);
+
+  for (const owner of unnamedSortableTables) {
+    report(
+      owner,
+      "a sortable register must name its own landmark: declare a literal 'regionName' rather than inheriting a caption, which is free to assert an order the reader can sort away (D-201)",
+    );
+  }
 
   for (const column of derived) {
     if (column.sortable === "no") continue;
@@ -579,6 +646,54 @@ describe("register-sortability fence", () => {
         "src/app/example/page.tsx",
       );
       expect(before).toEqual([expect.stringContaining("'sortable' is not a resolvable literal")]);
+    });
+
+    /**
+     * The hole this closes: `regionName` defaults to the caption, and both compliance
+     * registers were captioned "…entries, newest first" - so their landmarks went on
+     * promising newest-first over rows a reader had ordered by actor, in the one place a
+     * screen-reader user meets on every entry and cannot sort. A name is the caller's to
+     * choose wherever the rows can move.
+     */
+    it("requires a sortable register to name its own landmark", () => {
+      const reviewed = new Map([["src/app/example/page.tsx", "sequence"]]);
+      const table = (attributes: string) =>
+        source(
+          `const C: readonly TableColumn[] = [{ id: "sequence", header: "#", sortable: true }];\nexport default function P(){ return <Table caption="Entries, newest first" ${attributes}columns={C} rows={[]} />; }`,
+        );
+
+      expect(registerSortabilityViolations(table(""), "src/app/example/page.tsx", reviewed)).toEqual([
+        expect.stringContaining("src/app/example/page.tsx:2 :: a sortable register must name its own landmark"),
+      ]);
+      // An empty name is not a name, and neither is one this fence cannot read.
+      expect(registerSortabilityViolations(table('regionName="" '), "src/app/example/page.tsx", reviewed)).toEqual([
+        expect.stringContaining("must name its own landmark"),
+      ]);
+      expect(
+        registerSortabilityViolations(table("regionName={name} "), "src/app/example/page.tsx", reviewed),
+      ).toEqual([expect.stringContaining("must name its own landmark")]);
+      // A spread could carry the name or could not, so it is refused rather than assumed.
+      expect(
+        registerSortabilityViolations(table('{...rest} regionName="Audit log" '), "src/app/example/page.tsx", reviewed),
+      ).toEqual([expect.stringContaining("must name its own landmark")]);
+
+      // Declared, directly or through an unshadowed constant: reviewed and accepted.
+      expect(registerSortabilityViolations(table('regionName="Audit log" '), "src/app/example/page.tsx", reviewed)).toEqual([]);
+      const named = source(
+        'const NAME = "Audit log";\nconst C: readonly TableColumn[] = [{ id: "sequence", header: "#", sortable: true }];\nexport default function P(){ return <Table caption="Entries, newest first" regionName={NAME} columns={C} rows={[]} />; }',
+      );
+      expect(registerSortabilityViolations(named, "src/app/example/page.tsx", reviewed)).toEqual([]);
+    });
+
+    /** An unsortable register keeps the default: its caption cannot come apart from its rows. */
+    it("leaves an unsortable register's landmark name to the caption", () => {
+      const found = registerSortabilityViolations(
+        source(
+          'const C: readonly TableColumn[] = [{ id: "step", header: "Step" }];\nexport default function P(){ return <Table caption="Execution timeline" columns={C} rows={[]} />; }',
+        ),
+        "src/app/example/page.tsx",
+      );
+      expect(found).toEqual([]);
     });
 
     /** A register whose columns the fence cannot even find is not a reviewed register. */

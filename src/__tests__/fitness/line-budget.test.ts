@@ -44,8 +44,10 @@ import { join, relative } from "node:path";
 // for the scoped rebuild preview, the whole-chain counted provenance, and the shared
 // decision-id extractor the dedup moved INTO contracts. MEASURED on the composed tree that
 // also carries ADR-0040's prompt-8 primitive catalog: contracts 6064/6110 (46), domain
-// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 2193/6000 (re-measured in the
-// D-200 review round, which separated a register's landmark NAME from the sort disclosure
+// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 2199/6000 (re-measured in the
+// D-201 review round, which took the landmark name off the two compliance captions that
+// assert an order and made a sortable register declare its own; 2193 at
+// D-200, which separated a register's landmark NAME from the sort disclosure
 // it had been carrying, gated "re-sorted" on the reader having moved the rows, and placed
 // focus before an explicitly dismissed toast removes the control holding it; 2119 at D-199,
 // where the direction stopped reversing the ordering's SCAFFOLDING - the

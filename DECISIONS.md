@@ -7303,3 +7303,58 @@ moves, no runtime dependency was added, and nothing under `domain/`, `contracts/
 **Revert path:** revert this changeset; the paragraph-length landmark name, the caption that claimed
 a re-sort on first paint, the toast dismissal that stranded focus, and the stale ordering row return
 to their D-199 state.
+
+### D-201 · 2026-08-12 · reversible · Tenth review round: a sortable register names its own landmark
+
+The prompt-2 review gate returned three findings; all three are resolved here. One is the landmark
+name D-200 fixed for the demo register and left inherited on the two compliance registers, and two
+are records - a normative doc row and a charter-#5 ledger - that stopped matching the tree.
+
+**A name a reader cannot re-read may not carry a claim the reader can undo.** D-200 made
+`regionName` the register's short, stable identity and defaulted it to the caption, on the reading
+that both compliance captions already WERE names. They were not: "Audit log entries, newest first"
+and "Decision ledger entries, newest first" assert an ORDER. Sorting by Actor left the sr-only
+`<caption>` correctly reading "(re-sorted by Actor, ascending)" while the landmark - met on every
+entry, again in the rotor, and never re-announced after a sort - went on promising newest-first over
+actor-ordered rows. That is D-194 condition (2)'s false order claim in the one place a reader has no
+way to check it, and it is the round-1 finding `table-region-label-stale-after-sort` re-opened for
+the two surfaces that ship it.
+
+The three tiers are now separated on both registers. The LANDMARK is "Audit log" and "Decision
+ledger": identity, nothing else. The CAPTION states whatever order the rows are in right now - and
+because "newest first" IS the sequence column descending, each register DECLARES that as its
+`initialSort` rather than asserting it in prose, so the caption opens "(in recorded order, by #,
+descending)", becomes "(re-sorted by Actor, ascending)" when the reader moves the rows, and returns
+when the one-action restore does. The declared order is the API's own (`/api/audit` and `/api/ledger`
+both emit their capped window newest first), so nothing is re-ordered on first paint; what changes is
+that the claim now lives where it can be kept. The ledger's `Decision` column additionally declares a
+`sortNote`: not every event belongs to a decision, and those rows group LAST whichever way the sort
+runs, which is not what a reader expects of a column that otherwise reverses.
+
+**And the default is now fenced rather than trusted.** A caller-by-caller fix leaves the next
+sortable register free to inherit the next order-asserting caption, so `register-sortability` - which
+already reviews every sortable register in `src/app` - requires a rendered sortable `<Table>` to
+declare a literal `regionName`. Unreadable is refused, not assumed: an empty name, a computed one, a
+shadowed constant, and a `{...spread}` that could carry the prop all fail with `file:line`. An
+UNSORTABLE register keeps the default, because a caption whose rows cannot move cannot come apart
+from them. Proven adversarially against the shipped tree (PF-251): removing `regionName` from the
+audit register fails the fence at `src/app/app/audit/page.tsx:123`.
+
+**Two records that had stopped being true.** `PORT-LEDGER.md` - the charter-#5 register that
+separates shipped from deferred - listed Tabs, Tooltip, Checkbox and Radio among the built primitives
+and then asserted all of them are "rendered by the login / account-opening / console / audit / ledger
+/ demo screens and are axe-clean". None of the four has a product caller; an e2e axe scan cannot
+reach a component no route renders, so that clause was unbacked for exactly them. They are named
+deferrals with a first-caller prompt each (D-192's table), and the paragraph now says so and points
+at the unit spec that DOES validate them. And `table-order.ts`'s module header still named the
+landmark label as one of the three places the register states its ordering, which D-200 had already
+taken away from it; the header now names the caption and the visible line beside the restore control.
+
+The presentation tier re-measures at 2,199/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (2,193 at D-200); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the two compliance landmarks return to their captions,
+"newest first" returns to those captions as prose, the fence stops requiring a name, and both records
+return to their D-200 state.

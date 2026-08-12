@@ -12,9 +12,24 @@ const COLUMNS: readonly TableColumn[] = [
   { id: "sequence", header: "#", align: "right", sortable: true },
   { id: "event", header: "Event", sortable: true },
   { id: "actor", header: "Actor", sortable: true },
-  { id: "decision", header: "Decision", sortable: true },
+  {
+    id: "decision",
+    header: "Decision",
+    sortable: true,
+    sortNote:
+      "decision ids alphabetically, with numbers in numeric order; an event that belongs to no decision has nothing to order by, so those rows stay last in both directions",
+  },
   { id: "hash", header: "Hash", sortable: true },
 ];
+
+/**
+ * The recorded order DECLARED rather than left implicit: `/api/ledger` returns the latest
+ * stored events newest first, which is this register's own sequence column descending. The
+ * caption then states the order the rows are in while they are in it, instead of a
+ * "newest first" the landmark borrowed as its name and kept asserting once a reader had
+ * re-ordered the rows by event (D-201).
+ */
+const RECORDED_ORDER = { columnId: "sequence", direction: "descending" } as const;
 
 /**
  * An empty register means two different things, and a compliance surface may not conflate
@@ -240,9 +255,11 @@ export default function DecisionLedgerPage() {
             </p>
           ) : (
             <Table
-              caption="Decision ledger entries, newest first"
+              caption="Decision ledger entries"
+              regionName="Decision ledger"
               columns={COLUMNS}
               rows={entryRows}
+              initialSort={RECORDED_ORDER}
               emptyState={registerEmptyState}
             />
           )}

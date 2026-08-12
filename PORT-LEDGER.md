@@ -21,11 +21,24 @@ tier (`src/app/presentation/`, ADR-0012) rather than waiting for a trigger. WhyB
 > the `Verin.` wordmark (`brand.tsx`), the full OKLCH slate tokens + Geist + keyframes + reduced-motion
 > (`src/app/globals.css`), and the micro-components the skeleton renders — WhyBubble (`why-bubble.tsx`),
 > StepInfoCard, ProgressSteps, FreshValue (`fresh-value.tsx`, with provenance labels), StatusBadge,
-> EmptyState, Field/Input/Select/Checkbox/Radio/Button/Card/Badge/Pill (`ui.tsx`), the register grammar
-> (`table.tsx`), and the focused interaction leaves Tabs, Toast + host, Tooltip, Dialog, and
-> ErrorBoundary. All are rendered by the login /
-> account-opening / console / audit / ledger / demo screens and are axe-clean (WCAG 2.2 AA, enforced in
-> CI). Everything below in the deferred table is NOT built (charter #5) — catalogued here, pulled on
+> EmptyState, Field/Input/Select/Button/Card/Badge/Pill (`ui.tsx`), the register grammar
+> (`table.tsx` + `table-order.ts`), and the focused interaction leaves Toast + host, Dialog, and
+> ErrorBoundary. **Those** are rendered by the login / account-opening / console / audit / ledger /
+> demo screens and are axe-clean (WCAG 2.2 AA, enforced in CI — a scan reaches a component only
+> through a route that renders it).
+>
+> **Built, and honestly not yet rendered:** `Checkbox` and `Radio` (`ui.tsx`), `Tabs` (`tabs.tsx`),
+> `Tooltip` (`tooltip.tsx`), and a DIRECTLY composed `Pill` have no product caller — the prompt-2
+> brief asked for the complete primitive foundation, and inventing a workflow to showcase a control
+> is a worse failure than naming the gap. They are NAMED DEFERRALS with a first-caller prompt each
+> (D-192's table: Tooltip at prompt 3, Pill at 5, Tabs at 7, Checkbox at 8, Radio at 11; a primitive
+> still callerless after its prompt lands is deleted rather than re-deferred). Their contracts are
+> validated directly by `src/__tests__/unit/presentation-primitives.test.tsx`, NOT by an e2e axe
+> scan, which cannot reach a component no route renders. (`Pill` and `Badge` do reach the screens
+> through `StatusBadge`, `Metric`, and `DevProvenanceBadge`; what is deferred is a caller composing
+> `Pill` itself.)
+>
+> Everything below in the deferred table is NOT built (charter #5) — catalogued here, pulled on
 > first real use — EXCEPT where a row below says LIVE, which names the part that has since shipped and
 > the part that is still deferred.
 
