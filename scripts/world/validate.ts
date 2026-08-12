@@ -146,6 +146,47 @@ export function instrumentReachProblems(world: GeneratedWorld, spec: LoadedWorld
     .map((instrument) => `instrument ${instrument.symbol} (${instrument.assetClass}) is in the roster but held by no account - a roster entry the world can never render`);
 }
 
+/** Every word a household publishes as its OWN identity, lowercased. */
+function identityWords(household: WorldHousehold, people: boolean): Set<string> {
+  const strings = [household.displayName, ...household.members.map((member) => member.displayName)];
+  if (!people) {
+    strings.push(household.surname, household.key, household.city, household.advisorName,
+      ...household.entities.map((entity) => entity.name),
+      ...household.accounts.flatMap((account) => [account.title, account.custodian]),
+      ...household.bankInstructions.map((instruction) => `${instruction.bank} ${instruction.titledTo}`));
+  }
+  return new Set(strings.flatMap((value) => value.toLowerCase().split(/[^\p{L}]+/u)).filter((word) => word.length > 2));
+}
+
+/**
+ * A household's own prose never names a PERSON from the household on the other
+ * side of a cross-household link. The surface withholds an unauthorized
+ * counterparty's name because a firm that does not hold that household may not
+ * be told who is in it - and a narrative, an entity note or an activity line
+ * that names them anyway discloses exactly the same thing through a field the
+ * guard does not read. Words the household itself publishes (the shared surname
+ * two Whitfield households both carry, an entity paying it income that its own
+ * statements name) discriminate nothing and are excluded.
+ */
+export function crossHouseholdProseProblems(household: WorldHousehold, counterparty: WorldHousehold): string[] {
+  const own = identityWords(household, false);
+  const discriminating = [...identityWords(counterparty, true)].filter((word) => !own.has(word));
+  const prose: { where: string; text: string }[] = [
+    { where: "narrative", text: household.narrative },
+    ...household.entities.map((entity) => ({ where: `entity/${entity.key}`, text: entity.note })),
+    ...household.instructions.map((row) => ({ where: `instruction/${row.key}`, text: row.text })),
+    ...household.activity.map((row) => ({ where: `activity/${row.key}`, text: row.summary })),
+    ...household.crossHouseholdLinks.map((link) => ({ where: `link/${link.kind}`, text: link.note })),
+    ...household.plannedWithdrawals.map((row) => ({ where: `withdrawal/${row.key}`, text: row.purpose })),
+  ];
+  return prose.flatMap(({ where, text }) => {
+    const words = new Set(text.toLowerCase().split(/[^\p{L}]+/u));
+    return discriminating
+      .filter((word) => words.has(word))
+      .map((word) => `${household.key}/${where}: names "${word}", who belongs to the linked household ${counterparty.key} - a reader without that household in their book learns a party they may not be told about`);
+  });
+}
+
 function structureProblems(world: GeneratedWorld, spec: LoadedWorldSpec): string[] {
   const problems: string[] = [...instrumentReachProblems(world, spec)];
   const byKey = new Map(world.households.map((household) => [household.key, household]));
@@ -169,6 +210,8 @@ function structureProblems(world: GeneratedWorld, spec: LoadedWorldSpec): string
         problems.push(`${household.key}: cross-household link to unknown "${link.counterpartyHouseholdKey}"`);
       } else if (!counterparty.crossHouseholdLinks.some((back) => back.counterpartyHouseholdKey === household.key)) {
         problems.push(`${household.key}: cross-household link to ${link.counterpartyHouseholdKey} is not acknowledged from the other side`);
+      } else {
+        problems.push(...crossHouseholdProseProblems(household, counterparty));
       }
     }
   }

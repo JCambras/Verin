@@ -181,13 +181,13 @@
       "serviceTier": "premier",
       "city": "Granite Bay",
       "openedOn": "2012-02-27",
-      "narrative": "Cordelia is the trustee of the Whitfield Family Trust, whose brokerage account is registered in HER household but distributes to her brother Nathaniel's household. Two households therefore touch one account, and only one of them owns it.",
+      "narrative": "Cordelia is the trustee of the Whitfield Family Trust, whose brokerage account is registered in HER household but distributes to her brother's household. Two households therefore touch one account, and only one of them owns it.",
       "evidenceAgeDays": { "liquidity": 1, "positions": 1, "instructions": 12 },
       "members": [
         { "key": "cordelia", "displayName": "Cordelia Whitfield", "kind": "natural-person", "role": "client", "relationships": [] }
       ],
       "entities": [
-        { "key": "whitfield-family-trust", "kind": "irrevocable-trust", "name": "Whitfield Family Trust", "formedOn": "2012-02-27", "trusteeKeys": ["cordelia"], "note": "Cordelia is sole trustee. Income beneficiaries sit in the Nathaniel Whitfield household, which has no authority over the account." }
+        { "key": "whitfield-family-trust", "kind": "irrevocable-trust", "name": "Whitfield Family Trust", "formedOn": "2012-02-27", "trusteeKeys": ["cordelia"], "note": "Cordelia is sole trustee. Income beneficiaries sit in her brother's household, which has no authority over the account." }
       ],
       "accounts": [
         { "key": "family-trust", "title": "Whitfield Family Trust - Brokerage", "registration": "irrevocable-trust", "taxClass": "trust", "custodianKey": "northgate-trust", "openedOn": "2012-03-15", "balanceMinor": 187300000, "ownerKeys": ["whitfield-family-trust"], "modelPortfolioKey": "balanced-60-40",
@@ -207,7 +207,7 @@
         { "key": "income", "accountKey": "family-trust", "kind": "outgoing-distribution", "amountMinor": 1150000, "state": "settling", "createdAt": "2026-08-05T12:30:00.000Z", "expectedSettleAt": "2026-08-12T20:00:00.000Z" }
       ],
       "activity": [
-        { "key": "distribution", "occurredAt": "2026-08-05T12:30:00.000Z", "kind": "distribution-settled", "summary": "August trust income distribution released to the Nathaniel Whitfield household.", "actorLabel": "Priya Raghunathan" }
+        { "key": "distribution", "occurredAt": "2026-08-05T12:30:00.000Z", "kind": "distribution-settled", "summary": "August trust income distribution released to the beneficiary household.", "actorLabel": "Priya Raghunathan" }
       ],
       "crossHouseholdLinks": [
         { "kind": "trust-owned-account-serving-another-household", "counterpartyHouseholdKey": "whitfield-nathaniel", "partyKey": "whitfield-family-trust", "note": "This household OWNS the trust account; the counterparty household receives its distributions and holds no authority over it." }

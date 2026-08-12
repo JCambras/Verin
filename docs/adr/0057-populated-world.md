@@ -90,6 +90,14 @@ regeneration anyone made. The refusal now tests the CONDITION: a conflicting hou
 DIFFERENT org refuses loudly and by name; a same-org re-offer writes whatever is genuinely new and
 reports honest counts.
 
+**Amended by D-199** (review round). A cross-household link's counterparty is authorized through the
+same tenant-scoped read as the subject, and an unauthorized one is now withheld WHOLE: the view model
+receives no entry for it and emits an opaque page-local ordinal in place of the name, the world key
+and the link. A world key is `<surname>-<given name>`, so the earlier fallback disclosed the party at
+lower fidelity while the test that guarded it - the exact display name is absent - still passed. The
+hand-written prose that named the same party in three other fields is corrected with it, and
+`crossHouseholdProseProblems` holds both authors to that for good.
+
 ### 4. Health is computed, never stored
 
 `computeHouseholdHealth` (`src/domain/world/health.ts`) is a pure, clock-free, integer-only

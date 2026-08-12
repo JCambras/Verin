@@ -257,16 +257,43 @@ function activityOf(household: WorldHousehold): ActivityVM[] {
   }));
 }
 
+/**
+ * A cross-household link, and what a WITHHELD counterparty is allowed to look
+ * like. A world key is `<surname>-<given name>` by construction, so passing it
+ * through as a fallback label - or as an href - discloses precisely what
+ * withholding exists to prevent, at lower fidelity than the display name and
+ * with the same reader reaching the same conclusion. A withheld counterparty
+ * therefore reaches the client as an ORDINAL over this household's own link
+ * list: opaque, stable for the page, and a function of nothing about who the
+ * counterparty is. The link is dropped with it, since an affordance that can
+ * only land on a refusal is not one.
+ */
 function linksOf(
   household: WorldHousehold,
   counterpartyNames: ReadonlyMap<string, string>,
 ): CrossHouseholdLinkVM[] {
-  return household.crossHouseholdLinks.map((link) => ({
-    kindLabel: LINK_KIND_LABELS[link.kind] ?? titleize(link.kind),
-    counterpartyKey: link.counterpartyHouseholdKey,
-    counterpartyName: counterpartyNames.get(link.counterpartyHouseholdKey) ?? link.counterpartyHouseholdKey,
-    note: link.note,
-  }));
+  const references = new Map<string, number>();
+  const ordinalOf = (counterpartyKey: string): number => {
+    const seen = references.get(counterpartyKey);
+    if (seen !== undefined) return seen;
+    references.set(counterpartyKey, references.size + 1);
+    return references.size;
+  };
+  const several = new Set(household.crossHouseholdLinks.map((link) => link.counterpartyHouseholdKey)).size > 1;
+  return household.crossHouseholdLinks.map((link) => {
+    const name = counterpartyNames.get(link.counterpartyHouseholdKey) ?? null;
+    const ordinal = ordinalOf(link.counterpartyHouseholdKey);
+    return {
+      kindLabel: LINK_KIND_LABELS[link.kind] ?? titleize(link.kind),
+      note: link.note,
+      reference: `counterparty-${ordinal}`,
+      counterpartyKey: name === null ? null : link.counterpartyHouseholdKey,
+      counterpartyLabel: name
+        ?? (several
+          ? `Counterparty ${ordinal} is not in this firm's book.`
+          : "That household is not in this firm's book."),
+    };
+  });
 }
 
 /**

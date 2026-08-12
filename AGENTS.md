@@ -116,10 +116,15 @@ instrument is held by some account - the sleeve derives WHICH instruments, not o
 hand-authored ten and the derived ninety alike (`accountRuleProblems`): an account never names its own
 owner as a beneficiary, never holds one instrument twice, and is never titled to someone the household
 records only as an authorized signer (the enforced form of "an entity household's people hold no
-personal accounts inside it" - a generator filter is not a check). A household's `evidence` block
+personal accounts inside it" - a generator filter is not a check), and a household's own prose names
+no PERSON from a household it links to (`crossHouseholdProseProblems`), because a firm that cannot see
+that household may not be told who is in it. A household's `evidence` block
 carries each class's PROVENANCE rather than a bare instant, measured once against the world's `asOf`,
-so no surface can mint a second confidence for the same observation. The directory's world-derived
-rows are built once per worldDigest, not once per request.
+so no surface can mint a second confidence for the same observation. An unauthorized cross-household
+counterparty is withheld WHOLE - an opaque page-local ordinal, never the world key, which is
+`<surname>-<given name>` - and a figure folded over NO records is labeled synthetic rather than taking
+the `computed`/`high`/not-a-demonstration standing an empty derivation reports (`fu-empty-fold-provenance`).
+The directory's world-derived rows are built once per worldDigest, not once per request.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,

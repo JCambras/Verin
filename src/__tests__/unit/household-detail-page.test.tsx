@@ -87,6 +87,25 @@ describe("the household page across a key change", () => {
     await heading(second.displayName);
   });
 
+  it("renders a withheld counterparty as plain text: no name, no key, nothing to click", async () => {
+    // `vmOf` resolves no counterparty names, which is what the route hands the
+    // view model for a household outside this firm's book. What must not appear
+    // is an affordance that can only land on a refusal, or an identifier the
+    // reader can read a name out of.
+    const linked = WORLD.find((household) => household.crossHouseholdLinks.length > 0)!;
+    const counterparty = WORLD.find((household) => household.key === linked.crossHouseholdLinks[0]!.counterpartyHouseholdKey)!;
+    nav.key = linked.key;
+    render(<HouseholdPage />);
+    await heading(linked.displayName);
+
+    await screen.findByText("That household is not in this firm's book.");
+    expect(screen.queryByRole("link", { name: /^Open / })).toBeNull();
+    const rendered = document.body.textContent ?? "";
+    for (const form of [counterparty.key, counterparty.displayName, counterparty.members[0]!.displayName.split(" ")[0]!]) {
+      expect(rendered.toLowerCase(), `"${form}" reached the screen`).not.toContain(form.toLowerCase());
+    }
+  });
+
   it("shows the refusal as a sentence with a way back, not a bare failure", async () => {
     nav.key = WITHHELD.key;
     render(<HouseholdPage />);

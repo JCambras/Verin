@@ -97,16 +97,19 @@ async function conflictingIdsNotHeldBy(
   orgId: string,
   offeredIds: readonly string[],
 ): Promise<string[]> {
-  const foreign: string[] = [];
-  for (const id of offeredIds) {
-    // Asked inside this org's scope: reading another tenant's row to name its
-    // owner would widen a tenant-isolation escape for a diagnostic. A row that
-    // exists (the insert conflicted) and is not in this org's book is held by
-    // some other org, which is all this needs to know.
-    const mine = await tx.query("SELECT id FROM households WHERE id = $1 AND org_id = $2", [id, orgId]);
-    if (mine.rows.length === 0) foreign.push(id);
-  }
-  return foreign;
+  // Asked inside this org's scope: reading another tenant's row to name its
+  // owner would widen a tenant-isolation escape for a diagnostic. A row that
+  // exists (the insert conflicted) and is not in this org's book is held by
+  // some other org, which is all this needs to know. ONE statement, because the
+  // ordinary case this runs on is a re-offered world that conflicts on every
+  // household: a per-id probe is a hundred sequential round-trips on a
+  // connection that serializes them, inside the seed's own transaction.
+  const mine = await tx.query<{ id: string }>(
+    "SELECT id FROM households WHERE id = ANY($1::text[]) AND org_id = $2",
+    [[...offeredIds], orgId],
+  );
+  const held = new Set(mine.rows.map((row) => row.id));
+  return offeredIds.filter((id) => !held.has(id));
 }
 
 function collisionRefusal(orgId: string, foreign: readonly string[], offered: number): never {

@@ -185,9 +185,19 @@ export interface ActivityVM {
 
 export interface CrossHouseholdLinkVM {
   readonly kindLabel: string;
-  readonly counterpartyKey: string;
-  readonly counterpartyName: string;
   readonly note: string;
+  /** Page-local and OPAQUE: an ordinal over this household's own links, so two
+   * counterparties stay distinguishable across rows without anything about
+   * either one being derivable from it. Never a world key: those are
+   * `<surname>-<given name>`. */
+  readonly reference: string;
+  /** The world key to open, present ONLY when this firm's book holds the
+   * counterparty. `null` withholds the link itself, because the key names the
+   * party as surely as the name does. */
+  readonly counterpartyKey: string | null;
+  /** The counterparty's name when this caller may be told it; otherwise a
+   * sentence that names no party. */
+  readonly counterpartyLabel: string;
 }
 
 export interface HouseholdDetailVM {

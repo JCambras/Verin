@@ -13742,3 +13742,86 @@ person writes that person.
 **Reverted:** `src/infrastructure/crm/world-seed.ts` restored; `Tests 12 passed`.
 
 **Date:** 2026-08-12 (review round six, ADR-0057 / D-211).
+
+## PF-277 · a count with no evidence behind it claims nothing · `src/app/households/build.ts` + `src/__tests__/unit/household-directory-vm.test.ts`
+
+**Invariant:** the directory's four summary cards fold over the records they count, and a fold over NO
+records is labeled synthetic, watermarked, and refused a compliance decision. `foldStoredProvenance`
+returns `null` for an empty fold on purpose; the fallback beneath it must not hand the zeroes a
+standing the counted case cannot reach.
+
+**Injection - fold over nothing again.** Restored
+`foldStoredProvenance(inputs) ?? deriveArtifactProvenance([], asOf)`, the shipped expression.
+
+**Observed failure (`pnpm exec vitest run --project app household-directory-vm`):**
+```
+× the zeroes of an empty book are labeled, watermarked, and refused a compliance decision
+AssertionError: a figure with no evidence behind it is not evidence: expected true to be false
+  ❯ src/__tests__/unit/household-directory-vm.test.ts:84:113
+Tests  1 failed | 6 passed (7)
+```
+`deriveArtifactProvenance([])` has no input to be less confident than, so it reports `computed`,
+`high`, `demonstration: false` - and `canFeedComplianceDecision` admits it. The empty book is reachable
+in a dev store before `pnpm db:seed`, for any org whose CRM book does not overlap the world, and in
+PRODUCTION, where the fixture adapter refuses to serve and the intersection is always empty.
+
+**Executable companions (run on every build):** all four cards on the empty book are asserted for
+refusal, watermark, synthetic badge and low confidence; a counted book is asserted to carry the same
+standing, so the cards do not change class with their input; and a companion pins what an empty
+derivation WOULD grant them (`canFeedComplianceDecision` true, `high`, no badge), so the guard cannot
+be removed and read as unnecessary.
+
+**Reverted:** `src/app/households/build.ts` restored; `Tests 7 passed`.
+
+**Date:** 2026-08-12 (review round seven, ADR-0057 / D-212).
+
+## PF-278 · a withheld counterparty discloses nothing, in any field · `src/app/households/build-detail.ts` + `scripts/world/validate.ts` + `src/__tests__/integration/household-counterparty-authz.test.ts`
+
+**Invariant:** when the tenant-scoped CRM read refuses a cross-household counterparty, NO part of that
+household's identity reaches the client - not its display name, not a party's given name, not its world
+key (which is `<surname>-<given name>`), not a link built from any of them, and not through the
+subject's own hand-written prose. The test asserts that CONDITION over the whole serialized response
+rather than one symptom of it.
+
+**Injection A - hand the withheld link its world key again.** Restored
+`counterpartyKey: link.counterpartyHouseholdKey` and `counterpartyLabel: name ?? link.counterpartyHouseholdKey`.
+
+**Observed failure (`pnpm exec vitest run --project app household-counterparty-authz`):**
+```
+× withholds every part of the counterparty's identity from whitfield-cordelia
+× withholds every part of the counterparty's identity from whitfield-nathaniel
+AssertionError: a withheld counterparty is not linkable: expected 'whitfield-nathaniel' to be null
+```
+
+**Injection B - the disclosure the guarded field does not carry.** With the link shape correct, put
+the counterparty's given name back into the subject's hand-authored narrative
+(`distributes to her brother Nathaniel's household`) and regenerate the world. This is the case that
+proves the test reads the CONDITION: every assertion about the link itself passes.
+
+**Observed failure (`pnpm exec vitest run --project app household-counterparty-authz`):**
+```
+× withholds every part of the counterparty's identity from whitfield-cordelia
+AssertionError: these parts of whitfield-nathaniel reached the client:
+nathaniel: expected [ 'nathaniel' ] to deeply equal []
+```
+and the world fence refuses the same bytes (`pnpm exec vitest run --project fitness world-provenance`):
+```
+× (a) enforces: the whole world regenerates and every rule in validateWorld holds
+× (d) enforces: no household's prose names a person from the household it links to
+AssertionError: whitfield-cordelia/narrative: names "nathaniel", who belongs to the linked household
+  whitfield-nathaniel - a reader without that household in their book learns a party they may not be
+  told about
+```
+
+**Executable companions (run on every build):** the scan is proved to CATCH the shape that shipped (a
+key-labeled payload) and proved NOT to fire on the surname two Whitfield households share, so it is
+neither vacuous nor a false alarm; the discriminating-form set is asserted non-empty before it is used,
+because a scan over nothing proves nothing (charter #4); the rule is walked over every linked household
+and the count of linked households is asserted, so a world that stopped containing the case fails
+rather than passes; and the rendered surface is asserted directly - a withheld counterparty renders as
+plain text with no link and no fragment of the party's name in the DOM.
+
+**Reverted:** `src/app/households/build-detail.ts` restored, the narrative restored and the world
+regenerated byte-identical (digest `8f9859b4…`); `Tests 5 passed` and `Tests 20 passed`.
+
+**Date:** 2026-08-12 (review round seven, ADR-0057 / D-212).

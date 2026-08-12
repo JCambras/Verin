@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { metricWatermark, type DisplayMetric } from "@contracts/metric";
+import {
+  canFeedComplianceDecision, deriveArtifactProvenance, syntheticBadgeLabel,
+} from "@contracts/provenance";
 import { buildDirectoryVM } from "@app/households/build";
 import type { Household } from "@domain/schema/entities";
 import type { WorldHousehold } from "@domain/world/household-world";
@@ -63,6 +67,43 @@ describe("directory view model authorization scope", () => {
     for (const card of [vm.totalHouseholds, vm.totalPeople, vm.totalAccounts, vm.totalOpenItems]) {
       expect(card.value).toBe(0);
     }
+  });
+
+  /**
+   * A COUNT OF NOTHING CLAIMS NOTHING (charter #3, ADR-0022). The empty book is
+   * reachable on the shipped surface - a dev store before `pnpm db:seed`, a
+   * tenant whose CRM book does not overlap the world, and production, where the
+   * fixture adapter refuses to serve at all - so the four cards render there on
+   * every one of those paths.
+   */
+  const cards = (vm: ReturnType<typeof directory>): DisplayMetric[] =>
+    [vm.totalHouseholds, vm.totalPeople, vm.totalAccounts, vm.totalOpenItems];
+
+  it("the zeroes of an empty book are labeled, watermarked, and refused a compliance decision", () => {
+    for (const card of cards(directory([]))) {
+      expect(canFeedComplianceDecision(card.provenance), "a figure with no evidence behind it is not evidence").toBe(false);
+      expect(metricWatermark(card)).toBe("Demonstration - not a compliance record");
+      expect(syntheticBadgeLabel(card.provenance)).toBe("synthetic fixture");
+      expect(card.provenance.confidence, "nothing was read, so nothing is confident").toBe("low");
+    }
+  });
+
+  it("a counted book is labeled the same way, so the cards do not change standing with their input", () => {
+    for (const card of cards(directory(WORLD))) {
+      expect(canFeedComplianceDecision(card.provenance)).toBe(false);
+      expect(metricWatermark(card)).toBe("Demonstration - not a compliance record");
+    }
+  });
+
+  it("detects (companion): folding over NOTHING would hand the zeroes the strongest standing there is", () => {
+    // What the empty case used to publish. `deriveArtifactProvenance` has no
+    // input to be less confident than, so it reports high confidence and no
+    // demonstration - and `canFeedComplianceDecision` ADMITS it, on a surface a
+    // dev store reaches before its first seed.
+    const overNothing = deriveArtifactProvenance([], "2026-08-12T00:00:00.000Z");
+    expect(canFeedComplianceDecision(overNothing)).toBe(true);
+    expect(overNothing.confidence).toBe("high");
+    expect(syntheticBadgeLabel(overNothing)).toBeNull();
   });
 
   it("the open-item total is the sum of the rows' own counts, so the two cannot disagree", () => {

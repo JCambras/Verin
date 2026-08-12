@@ -95,12 +95,24 @@ const count = (value: number, provenance: RecordProvenance | DerivedProvenance):
   metric(value, "count", provenance);
 
 /**
+ * What a figure with NO evidence behind it is worth. A derivation over an empty
+ * input list has nothing to be less confident than, so it reports `computed`,
+ * `high`, `demonstration: false` - the strongest standing the vocabulary has,
+ * granted to a count of nothing - and `canFeedComplianceDecision` ADMITS it.
+ * That is why the fold below is never handed an empty list: an empty book still
+ * has one true origin, which is that this surface reads fixture rows and read
+ * none, so its zeroes carry the weakest standing rather than the strongest and
+ * refuse compliance use exactly as a counted row would.
+ */
+const nothingRead = (asOf: string): RecordProvenance => ({ source: "fixture", asOf, confidence: "low" });
+
+/**
  * The summary strip is a FOLD over the very records it counts, so its confidence
  * and its as-of are the weakest and the newest of those records rather than a
  * confidence typed beside them - the same rule every folded figure in this
  * repository follows, and the reason a card can never claim to be surer than the
  * evidence behind it. An empty book has no record to read, so the zeroes fold
- * over nothing and say so.
+ * over the fact that nothing was read and say so.
  */
 function totalsProvenance(households: readonly WorldHousehold[], asOf: string): DerivedProvenance {
   const inputs = households.flatMap((household) => [
@@ -109,7 +121,7 @@ function totalsProvenance(households: readonly WorldHousehold[], asOf: string): 
     ...household.bankInstructions.map((instruction) => instruction.provenance),
     ...household.pendingActions.map((action) => action.provenance),
   ]);
-  return foldStoredProvenance(inputs) ?? deriveArtifactProvenance([], asOf);
+  return foldStoredProvenance(inputs) ?? deriveArtifactProvenance([nothingRead(asOf)], asOf);
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;

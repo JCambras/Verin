@@ -7879,3 +7879,73 @@ banked. Restated in `line-budget.test.ts` so no reader takes a superseded pairin
 shape, the third account rule, the ownership-keyed refusal and the three proof-log entries revert
 together. The observable changes are the confidence carried by each household's evidence lines, the
 provenance label on the directory's four summary cards, and a same-org re-seed succeeding.
+
+### D-212 · 2026-08-12 · reversible · Populated-world review round seven: a count of nothing claims nothing, a withheld counterparty is withheld whole, and one statement instead of a hundred
+
+**A figure with no evidence behind it took the strongest standing in the vocabulary.** The directory's
+four summary cards fold over the records they count, and an empty book folds over none - which
+`foldStoredProvenance` deliberately answers with `null`, because "a figure with no inputs has no
+origin". The fallback beneath it, `deriveArtifactProvenance([], asOf)`, has no input to be less
+confident than, so it reports `source: "computed"`, `confidence: "high"`, `demonstration: false`, and
+`canFeedComplianceDecision` ADMITS it: the cards rendered `0 · Computed · as of <today>` with no
+synthetic badge and no watermark. That is not a hypothetical path - it is a dev store before
+`pnpm db:seed`, any org whose CRM book does not overlap the world, and PRODUCTION, where the fixture
+adapter refuses to serve at all and the authorized intersection is therefore ALWAYS empty. The fold is
+no longer handed an empty list: an empty book still has one true origin - this surface reads fixture
+rows and read none - so the zeroes carry a labeled, low-confidence fixture origin, watermark, and
+refuse compliance use exactly as a counted row does. The unit test asserts all four cards on the
+empty book AND keeps a companion showing what an empty derivation would have granted them. PF-277.
+
+**Follow-up `fu-empty-fold-provenance`.** The ROOT of the paragraph above is
+`deriveArtifactProvenance` in `src/contracts/provenance.ts`: an empty input list yields a
+compliance-eligible, non-demonstration provenance wherever anyone derives from nothing. `src/contracts/**`
+is owned by another lane and is not edited by this branch, so the guard here is at the caller - the
+one call site this branch owns never folds an empty list. The contracts-level fix (an empty derivation
+returning a demonstration, or the function refusing an empty list the way `foldStoredProvenance`
+already does) closes the class, and there is at least one other live site it would cover:
+`src/app/app/console/page.tsx` derives a household count from `households.map(h => h.provenance)`,
+which is empty for a book with no households. **Un-defer trigger:** the next change to
+`contracts/provenance.ts`, or any new caller deriving a figure from a list that can be empty.
+
+**A withheld counterparty that still emits its slug is not withheld.** `/api/households/[key]`
+authorizes each cross-household counterparty exactly as it authorizes the subject, and then handed the
+client the counterparty's WORLD KEY as the label when that read refused. World keys are
+`<surname>-<given name>` (`whitfield-nathaniel`, `smith-robert-elaine`), so the reader learned the
+party at lower fidelity, the route comment claimed the opposite, and the test certified the claim by
+checking one SYMPTOM - the exact display name is absent - which passes while the key ships. A withheld
+counterparty now reaches the client as an opaque page-local ordinal (`counterparty-1`) and nothing
+else: no name, no key, no link, and a neutral sentence rendered as plain text rather than an
+affordance that can only land on a refusal. The same disclosure was ALSO shipping through three
+hand-authored fields on the same page - Cordelia's narrative, her trust's note and an activity line
+each named her brother - so the world's cross-household prose is corrected to match its own link
+notes, which were already neutral, and `crossHouseholdProseProblems` holds both authors to it: a
+household's prose names no PERSON from a household it links to, excluding words the household itself
+publishes (two Whitfields share a surname on purpose). The test now asserts the CONDITION over the
+WHOLE serialized response - every word of every party in the withheld household, as a fragment, in any
+casing, in reversed order and with every separator - and both directions of the one linked pair.
+PF-278.
+
+**A test must assert the CONDITION the guard exists to establish.** Recorded beside D-211's lesson,
+because this is the same defect one file over: the guard was real, and its test checked a property the
+guard did not have. The condition is "no part of a withheld party's identity reaches the client"; the
+symptom checked was "the exact display name string is absent", which the world key, the given name in
+a narrative, and any other lower-fidelity rendering all pass.
+
+**One statement, not a hundred.** `conflictingIdsNotHeldBy` asked ownership with one single-row
+`SELECT` per conflicted id. The case it exists to serve is the ordinary development loop D-211
+unblocked - regenerate the world, re-seed an existing store - which conflicts on every household, so
+it was a hundred sequential round-trips inside the seed transaction on a connection that serializes
+them. One `= ANY($1::text[])` answers the same question with the same tenant scoping and the same
+literal-SQL shape the append-only fences read.
+
+**Line budgets: no ceiling moves; three figures re-taken.** 5,150 / 8,250 / 14,200 against RE-MEASURED
+5,086 / 8,200 / 14,168 as this round lands - 64, 50 and 32 lines of correction room, named rather than
+banked. Tooling is the narrowest it has run since D-176; the next change to `scripts/**` should read
+that as the ADR amendment it now is rather than discovering it in a failing build.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree (digest `8f9859b4…`), the
+withheld-counterparty view model, the prose rule and the two proof-log entries revert together. The
+observable changes are the four summary cards on an empty book carrying a synthetic label and
+watermark, an unauthorized cross-household link rendering as plain text instead of a slug-labeled
+link, and one Whitfield household's narrative, entity note and activity line naming the other
+household neutrally.

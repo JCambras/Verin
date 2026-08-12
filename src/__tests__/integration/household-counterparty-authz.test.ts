@@ -12,30 +12,94 @@ import { generateWorld } from "../../../scripts/world/generate";
 import { loadWorldSpec, WORLD_SEED } from "../../../scripts/world/spec";
 
 /**
- * A COUNTERPARTY'S NAME IS AUTHORIZED LIKE ANY OTHER (ADR-0057, v3 §15.3).
+ * A COUNTERPARTY'S NAME IS AUTHORIZED LIKE ANY OTHER, AND A WITHHELD ONE IS
+ * WITHHELD WHOLE (ADR-0057, v3 §15.3).
  *
  * A cross-household link names a second household, and that name is the same
  * client PII the subject's is. The Wave 0 evidence adapter serves one world to
  * everyone - the tenant-scoped CRM read is the ONLY thing scoping this path - so
  * a counterparty resolved straight from the port would hand a caller a household
  * name from outside its book the day that adapter becomes a real EvidenceSource.
- * The subject is authorized; the counterparty is authorized identically, and an
- * unauthorized one keeps its slug rather than disclosing a name.
+ *
+ * The assertion below is the CONDITION, not one symptom of it. Checking that the
+ * counterparty's exact display name was absent passed while its world KEY -
+ * `<surname>-<given name>` by construction - shipped in the name's place, which
+ * discloses the same party at lower fidelity to the same reader. So the whole
+ * serialized response is scanned for every word of every party in the withheld
+ * household, as a fragment and in any casing, plus each party's words in
+ * reversed order and with every separator - minus the words the SUBJECT itself
+ * publishes, because two Whitfield households share that surname on purpose and
+ * a word the reader is already authorized to see discriminates nothing.
  */
 const cookieStore = { set: vi.fn() };
 vi.mock("next/headers", () => ({ cookies: () => Promise.resolve(cookieStore) }));
 
 const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 const ORG = "org-counterparty";
-const SUBJECT = "whitfield-cordelia";
-const COUNTERPARTY = "whitfield-nathaniel";
-const COUNTERPARTY_NAME = "Nathaniel & Perrine Whitfield";
 const globalStore = globalThis as unknown as { __verinDb?: Promise<SqlDb> };
 
 const world = generateWorld(loadWorldSpec(), WORLD_SEED);
 const DIGEST = String((world.manifest.value as Record<string, unknown>).worldDigest);
 const byKey = (key: string): WorldHousehold =>
   world.households.find((household) => household.key === key)!;
+
+/** The two hand-authored households the world deliberately links to each other. */
+const CORDELIA = byKey("whitfield-cordelia");
+const NATHANIEL = byKey("whitfield-nathaniel");
+
+const wordsOf = (value: string): string[] =>
+  value.toLowerCase().split(/[^\p{L}]+/u).filter((word) => word.length > 2);
+
+/** Every name a household publishes for a PARTY of its own: the household, its
+ * people, and whoever is designated or authorized on its accounts. */
+const partyNames = (household: WorldHousehold): string[] => [
+  household.displayName,
+  household.key,
+  ...household.members.flatMap((member) => [member.displayName, member.key]),
+  ...household.accounts.flatMap((account) => [
+    ...account.beneficiaries.map((beneficiary) => beneficiary.displayName),
+    ...account.signers.map((signer) => signer.displayName),
+  ]),
+];
+
+/** What the SUBJECT household publishes about itself - words a reader holding
+ * this household is authorized to see, whoever else happens to share them. */
+const subjectWords = (household: WorldHousehold): Set<string> =>
+  new Set([
+    ...partyNames(household),
+    household.surname, household.city, household.advisorName,
+    ...household.entities.map((entity) => entity.name),
+    ...household.accounts.flatMap((account) => [account.title, account.custodian]),
+    ...household.bankInstructions.flatMap((instruction) => [instruction.bank, instruction.titledTo]),
+  ].flatMap(wordsOf));
+
+/** Words that could only have come from the WITHHELD household. */
+function discriminatingWords(withheld: WorldHousehold, subject: WorldHousehold): string[] {
+  const authorized = subjectWords(subject);
+  return [...new Set(partyNames(withheld).flatMap(wordsOf))].filter((word) => !authorized.has(word));
+}
+
+/** Each withheld party's words in order and REVERSED, joined every way an
+ * identifier in this world is joined. */
+function discriminatingForms(withheld: WorldHousehold, subject: WorldHousehold): string[] {
+  const discriminating = new Set(discriminatingWords(withheld, subject));
+  const forms = [...discriminating];
+  for (const name of partyNames(withheld)) {
+    const words = wordsOf(name);
+    if (words.length < 2 || !words.some((word) => discriminating.has(word))) continue;
+    for (const ordered of [words, [...words].reverse()]) {
+      forms.push(ordered.join(" "), ordered.join("-"), ordered.join(""));
+    }
+  }
+  return [...new Set(forms)];
+}
+
+/** Every withheld form the payload actually carries - a fragment match, so a
+ * lower-fidelity rendering is caught rather than only the exact string. */
+const disclosuresIn = (payload: string, forms: readonly string[]): string[] => {
+  const haystack = payload.toLowerCase();
+  return forms.filter((form) => haystack.includes(form));
+};
 
 let db: SqlDb;
 
@@ -75,28 +139,50 @@ beforeEach(async () => {
 });
 
 describe("GET /api/households/[key] cross-household counterparties", () => {
-  it("names a counterparty that IS in this firm's book", async () => {
-    await seedBook([byKey(SUBJECT), byKey(COUNTERPARTY)]);
-    const { status, body } = await detail(SUBJECT);
+  it("names a counterparty that IS in this firm's book, and links to it", async () => {
+    await seedBook([CORDELIA, NATHANIEL]);
+    const { status, body } = await detail(CORDELIA.key);
     expect(status).toBe(200);
     const link = JSON.parse(body).household.crossHouseholdLinks[0];
-    expect(link.counterpartyKey).toBe(COUNTERPARTY);
-    expect(link.counterpartyName).toBe(COUNTERPARTY_NAME);
+    expect(link.counterpartyKey).toBe(NATHANIEL.key);
+    expect(link.counterpartyLabel).toBe(NATHANIEL.displayName);
   });
 
-  it("withholds the name of a counterparty that is NOT in this firm's book", async () => {
-    await seedBook([byKey(SUBJECT)]);
-    const { status, body } = await detail(SUBJECT);
-    expect(status).toBe(200);
-    const link = JSON.parse(body).household.crossHouseholdLinks[0];
-    expect(link.counterpartyKey).toBe(COUNTERPARTY);
-    expect(link.counterpartyName, "an unauthorized counterparty keeps its slug").toBe(COUNTERPARTY);
-    expect(body, "no unauthorized household name may reach the client").not.toContain(COUNTERPARTY_NAME);
+  for (const [subject, withheld] of [[CORDELIA, NATHANIEL], [NATHANIEL, CORDELIA]] as const) {
+    it(`withholds every part of the counterparty's identity from ${subject.key}`, async () => {
+      await seedBook([subject]);
+      const { status, body } = await detail(subject.key);
+      expect(status).toBe(200);
+
+      const link = JSON.parse(body).household.crossHouseholdLinks[0];
+      expect(link.counterpartyKey, "a withheld counterparty is not linkable").toBeNull();
+      expect(link.counterpartyLabel, "the copy names no party").toBe("That household is not in this firm's book.");
+      expect(link.reference, "the stand-in is an opaque ordinal, never a name").toMatch(/^counterparty-\d+$/);
+
+      const forms = discriminatingForms(withheld, subject);
+      expect(forms.length, "nothing distinguishes the withheld household - the scan would prove nothing")
+        .toBeGreaterThan(1);
+      const disclosed = disclosuresIn(body, forms);
+      expect(disclosed, `these parts of ${withheld.key} reached the client:\n${disclosed.join("\n")}`).toEqual([]);
+    });
+  }
+
+  it("detects (companion): the scan CATCHES the world key it used to pass through", async () => {
+    // The shape this route shipped: the counterparty's key as its label. It is
+    // `<surname>-<given name>`, so a reader learns the party at lower fidelity -
+    // and the display-name check that guarded this path never fired.
+    const forms = discriminatingForms(NATHANIEL, CORDELIA);
+    const asShipped = JSON.stringify({ counterpartyKey: NATHANIEL.key, counterpartyName: NATHANIEL.key });
+    expect(disclosuresIn(asShipped, forms).length, "a key-shaped disclosure must fail the scan").toBeGreaterThan(0);
+    expect(disclosuresIn(asShipped, forms)).toContain(NATHANIEL.key);
+    // ...and the shared surname alone is NOT treated as a disclosure, because
+    // the subject household publishes it too.
+    expect(forms).not.toContain(CORDELIA.surname.toLowerCase());
   });
 
   it("the counterparty itself is still a 404 for this firm, so the link is not a way around the guard", async () => {
-    await seedBook([byKey(SUBJECT)]);
-    const { status } = await detail(COUNTERPARTY);
+    await seedBook([CORDELIA]);
+    const { status } = await detail(NATHANIEL.key);
     expect(status).toBe(404);
   });
 });

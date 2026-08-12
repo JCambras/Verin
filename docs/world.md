@@ -50,8 +50,8 @@ thinner than the ten - only less specific, and each household says which it is o
 **Rules that hold for both authors.** Every one is checked on the generated OUTPUT rather than on a
 spec file, so the hand-authored ten cannot quietly break a rule the generator no longer can. The first
 three are `accountRuleProblems` in `scripts/world/validate.ts`, the fourth is
-`instrumentReachProblems` beside it, and the fifth is asserted against the rendered surface
-(`src/__tests__/unit/household-freshness.test.tsx`):
+`instrumentReachProblems` beside it, the fifth is `crossHouseholdProseProblems` beside those, and the
+sixth is asserted against the rendered surface (`src/__tests__/unit/household-freshness.test.tsx`):
 
 - An account never names its own owner as a beneficiary. A sole client with nobody else in the
   household simply has NO designation - which is realistic, is what the detail surface already says,
@@ -66,9 +66,24 @@ three are `accountRuleProblems` in `scripts/world/validate.ts`, the fourth is
 - Every instrument the roster carries is held by SOME account (`instrumentReachProblems`). A sleeve
   derives WHICH instruments it holds, not only how many, so a roster entry no account can ever hold
   is a world thinner than its own vocabulary claims - and it fails rather than sitting dead.
+- A household's own prose names no PERSON from a household it links to
+  (`crossHouseholdProseProblems`). A firm that does not hold the counterparty may not be told who is
+  in it, and a narrative, an entity note or an activity line that names them anyway discloses through
+  a field no authorization guard reads. Words the household itself publishes - the surname two
+  Whitfield households share on purpose, an entity paying it income that its own statements name -
+  discriminate nothing and are excluded.
 - Every holding's confidence is measured against the world's own `asOf`, never against its own
   observation. A lot on a positions snapshot older than `freshLiquidityWindowDays` is `medium`, so the
   receding treatment on the detail surface is reading a real signal rather than a constant.
+
+**A withheld counterparty is withheld WHOLE.** A cross-household link names a second household, and
+that name is the same client PII the subject's is: `/api/households/[key]` authorizes it identically,
+through the tenant-scoped CRM read. A counterparty outside this firm's book is then resolved to
+NOTHING - the view model receives no entry for it and emits an opaque page-local ordinal
+(`counterparty-1`) in place of a name, a world key and a link. The key is `<surname>-<given name>` by
+construction, so passing it through as a fallback would disclose the party at lower fidelity rather
+than withhold it, and the surface renders the neutral sentence as plain text: an affordance that can
+only land on a refusal is not one.
 
 **One instant, one confidence.** A household's `evidence` block carries the PROVENANCE of each class
 (`liquidity`, `positions`, `instructions`), not a bare instant: the materializer measures the

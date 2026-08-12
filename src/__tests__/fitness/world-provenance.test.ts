@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { canFeedComplianceDecision, deriveArtifactProvenance, isDemonstration, type RecordProvenance } from "@contracts/provenance";
 import { computeHouseholdHealth } from "@domain/world/health";
 import type { WorldHousehold } from "@domain/world/household-world";
-import { accountRuleProblems, instrumentReachProblems, validateWorld } from "../../../scripts/world/validate";
+import {
+  accountRuleProblems, crossHouseholdProseProblems, instrumentReachProblems, validateWorld,
+} from "../../../scripts/world/validate";
 import { RosterSchema } from "../../../scripts/world/spec";
 
 /**
@@ -140,6 +142,17 @@ describe("world-provenance fence", () => {
     expect(held.size, "every roster instrument must reach a real account").toBe(world.spec.roster.instruments.length);
   });
 
+  it("(d) enforces: no household's prose names a person from the household it links to", () => {
+    const linked = households.filter((household) => household.crossHouseholdLinks.length > 0);
+    expect(linked.length, "no household links to another - the rule walks nothing").toBeGreaterThan(1);
+    const problems = linked.flatMap((household) =>
+      household.crossHouseholdLinks.flatMap((link) => {
+        const counterparty = households.find((candidate) => candidate.key === link.counterpartyHouseholdKey)!;
+        return crossHouseholdProseProblems(household, counterparty);
+      }));
+    expect(problems, problems.join("\n")).toEqual([]);
+  });
+
   it("(d) enforces: every account's holdings sum to its balance", () => {
     const problems = households.flatMap((household) =>
       household.accounts
@@ -237,6 +250,27 @@ describe("world-provenance fence", () => {
       };
       expect(RosterSchema.safeParse(duplicated).success).toBe(false);
       expect(RosterSchema.safeParse(roster).success, "the shipped roster must still parse").toBe(true);
+    });
+
+    it("a narrative naming someone from the linked household is caught, and a shared surname is not", () => {
+      // The shape this world shipped: Cordelia's narrative, entity note and
+      // activity line each named her brother by name, so a firm holding only her
+      // household was told who is in a household it may not open - the very
+      // thing the surface withholds one field over.
+      const [subject, counterparty] = [
+        households.find((household) => household.key === "whitfield-cordelia")!,
+        households.find((household) => household.key === "whitfield-nathaniel")!,
+      ];
+      const person = counterparty.members[0]!.displayName.split(" ")[0]!;
+      const broken = { ...subject, narrative: `Distributes to her brother ${person}'s household.` };
+      expect(crossHouseholdProseProblems(broken, counterparty)).toEqual([
+        `${subject.key}/narrative: names "${person.toLowerCase()}", who belongs to the linked household ${counterparty.key}`
+        + " - a reader without that household in their book learns a party they may not be told about",
+      ]);
+      // Both households are Whitfields on purpose; the shared surname tells a
+      // reader holding this household nothing it does not already hold.
+      const shared = { ...subject, narrative: `The ${subject.surname} family trust pays it.` };
+      expect(crossHouseholdProseProblems(shared, counterparty)).toEqual([]);
     });
 
     it("a household whose account holdings do not reconcile is caught", () => {
