@@ -15797,3 +15797,46 @@ name it remembered.
 **Reverted:** the derived read restored; `Tests 63 passed (63)`.
 
 **Date:** 2026-08-12 (v3 prompt 10, ADR-0057; review ruling `p10-diagnosis-shape-and-demo-honesty`).
+
+## PF-300 - a location whose two limits are one sentinel
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE M (new). The REAL parameter emitters
+are driven into BOTH ways a location can end, under a binding path read from a document this repository
+really publishes: `path-too-long` with ORDINARY camelCase keys inside the ALLOWED
+`MAX_CONFIGURED_VALUE_DEPTH` (the keys proven nameable through `childConfigPath` itself, so nothing here
+could be the naming cause wearing another name), and `unnameable-segment` with a key carrying whitespace.
+Each cause must be reported as ITSELF, the two probes must disagree, every limit must survive
+`isSafeObservabilityPrimitive("configPathLimit", …)`, and `configError` must never report a truncated
+location as an exact one.
+
+**Injection.** Collapsed the two limits back into one answer in `src/domain/config/errors.ts` -
+`childConfigPath`'s ceiling arm returning `limit: "unnameable-segment"`, which is the D-250 sentinel with
+a name on it.
+
+**Observed failure:**
+```
+× (M) enforces: a location the CEILING ended is reported as a length cause, not a naming one
+AssertionError: reported as unnameable-segment: 1 name(s) here are not ones the operator's fault
+channel can carry as one segment, so a fault below them would have no location to report:
+expected 'unnameable-segment' to be 'path-too-long'
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:1852:10
+× (M) enforces: the two limits are told APART, and each survives the operator's channel
+AssertionError: path-too-long is reported as something else: expected [ 'unnameable-segment' ] to
+deeply equal [ 'path-too-long' ]
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:1874:76
+× (M) catches the sentinel this rule was written for: one answer meaning two causes
+× (M) catches a truncating constructor that reports its location as an exact one
+```
+
+**Companion.** The `detects` block replays the shipped bug against the real emitters: both probes report at
+an ANCESTOR, so the `at === path` test both callers used provably cannot separate them and only the named
+limit can; a second case proves an unregistered cause is refused by the log formatter (the dead-diagnosis
+class one field over from RULE L); a third proves the constructor inherits the limit its OWN truncation hit
+when the emitter states none, and reports no limit for a location it carried whole. The enforcing rules
+carry their own anti-vacuity: the probe path must name a real shipped binding, the length probe's keys must
+be nameable segments and must not trip the depth refusal, each emitter must be reached at all, and the
+constructor sample must contain both truncated and exact outcomes.
+
+**Reverted:** the ceiling arm restored; `Tests 69 passed (69)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0057; review ruling `config-path-cause-conflation`).

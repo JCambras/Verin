@@ -26,7 +26,9 @@ import { err, ok, type Result } from "@contracts/result";
 import {
   childConfigPath,
   configError,
+  MAX_CONFIG_DIAGNOSIS_LENGTH,
   MAX_CONFIGURED_VALUE_DEPTH,
+  type ConfigPathLimit,
   type DomainConfigError,
 } from "./errors";
 
@@ -112,18 +114,27 @@ export type RefResolver = (ref: ParameterRef["$ref"]) => unknown | null;
  * value graph this schema deliberately does not shape (the primitive's own schema
  * is the judge). Both are therefore author-chosen, and both are refused HERE: this
  * walk MIRRORS that descent - same containers, same placeholder short-circuit - and
- * refuses at the bound or at the first unnameable key, naming the deepest ADMITTED
- * path rather than the offending one. Reporting a path the channel cannot carry
- * censors the very location the refusal exists to state; reporting one that JOINS a
- * dotted key into it invents a node the document does not have, which is worse
- * (D-246/D-250).
+ * refuses at the depth bound, at an unnameable key, or at the channel's length
+ * ceiling, naming the deepest ADMITTED path rather than the offending one, and the
+ * limit it hit. Reporting a path the channel cannot carry censors the very location
+ * the refusal exists to state; reporting one that JOINS a dotted key into it invents
+ * a node the document does not have, which is worse (D-246/D-250).
  *
  * Refusing at admission is what makes the diagnosis shape a consequence of these
  * constants instead of a second opinion about them, the same way the policy loader
  * bounds document nesting before parsing rather than after (D-181) - and it is what
  * lets `substitute` append keys unconditionally, since every key it can reach has
  * already been proven nameable.
+ *
+ * WHICH limit stopped it is reported as itself (D-252): renaming a key and
+ * flattening a graph are opposite repairs, and telling an operator to do the first
+ * about ordinary camelCase keys at the ALLOWED depth is a confidently wrong answer.
  */
+const unreportableNames = (limit: ConfigPathLimit, count: number): string =>
+  limit === "unnameable-segment"
+    ? `${count} name(s) here are not ones the operator's fault channel can carry as one segment, so a fault below them would have no location to report`
+    : `this location has reached the ${MAX_CONFIG_DIAGNOSIS_LENGTH} characters the operator's fault channel carries, so a fault below ${count} otherwise-nameable name(s) here would have no location to report`;
+
 const depthOverruns = (
   value: unknown,
   path: string,
@@ -131,27 +142,21 @@ const depthOverruns = (
   errors: DomainConfigError[],
 ): void => {
   if (isParameterRef(value)) return;
-  const unnameable: string[] = [];
+  const stopped = new Map<ConfigPathLimit, number>();
   const entries: (readonly [string, unknown])[] = Array.isArray(value)
     ? value.map((entry, index) => [`${path}[${index}]`, entry] as const)
     : typeof value === "object" && value !== null
     ? Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
-        const at = childConfigPath(path, key);
-        if (at === path) {
-          unnameable.push(key);
+        const step = childConfigPath(path, key);
+        if (!step.carried) {
+          stopped.set(step.limit, (stopped.get(step.limit) ?? 0) + 1);
           return [];
         }
-        return [[at, entry] as const];
+        return [[step.path, entry] as const];
       })
     : [];
-  if (unnameable.length > 0) {
-    errors.push(
-      configError(
-        "type-mismatch",
-        path,
-        `a configured parameter value may only carry keys the operator's fault channel can name as one segment, so ${unnameable.length} key(s) below this point could not be reported`,
-      ),
-    );
+  for (const [limit, count] of stopped) {
+    errors.push(configError("type-mismatch", path, unreportableNames(limit, count), limit));
   }
   if (entries.length === 0) return;
   if (remaining === 0) {
@@ -299,16 +304,19 @@ export const resolveParameters = (
 ): Result<ResolvedParameters, readonly DomainConfigError[]> => {
   const errors: DomainConfigError[] = [];
   // A parameter NAME is author-chosen too, so the location it is reported at is
-  // built rather than interpolated: a name the channel cannot carry as one segment
-  // is refused AT the parameters node, which is a location the document has.
+  // built rather than interpolated: a name the channel cannot report is refused AT
+  // the parameters node, which is a location the document has, and the refusal names
+  // the limit it hit rather than asserting the name is undeclared - at the ceiling
+  // the name is usually one the primitive declares perfectly well.
   for (const name of Object.keys(parameters)) {
-    const at = childConfigPath(path, name);
-    if (at === path) {
+    const step = childConfigPath(path, name);
+    if (!step.carried) {
       errors.push(
         configError(
-          "unknown-reference",
-          path,
-          `primitive ${primitive.id} declares no parameter of that name, and the name is not one the operator's fault channel can report`,
+          step.limit === "unnameable-segment" ? "unknown-reference" : "type-mismatch",
+          step.path,
+          unreportableNames(step.limit, 1),
+          step.limit,
         ),
       );
       continue;
@@ -317,7 +325,7 @@ export const resolveParameters = (
       errors.push(
         configError(
           "unknown-reference",
-          at,
+          step.path,
           `primitive ${primitive.id} declares no parameter named ${JSON.stringify(name)}`,
         ),
       );
@@ -328,8 +336,8 @@ export const resolveParameters = (
   // rather than walked, and so every recursion below is bounded by an admission
   // this call has already proven.
   for (const [name, value] of Object.entries(parameters)) {
-    const at = childConfigPath(path, name);
-    if (at !== path) depthOverruns(value, at, MAX_CONFIGURED_VALUE_DEPTH, errors);
+    const step = childConfigPath(path, name);
+    if (step.carried) depthOverruns(value, step.path, MAX_CONFIGURED_VALUE_DEPTH, errors);
   }
   if (errors.length > 0) return err(errors);
   for (const shaping of primitive.keyShapingParameters) {

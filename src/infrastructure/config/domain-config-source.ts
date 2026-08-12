@@ -50,6 +50,7 @@ import type { IntakeForm } from "@domain/config/intake-view";
 import { domainLabelsOf, type DomainLabels } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
 import type {
+  ConfigPathLimit,
   ConfiguredRefusal,
   DomainConfigError,
   DomainConfigErrorCode,
@@ -167,6 +168,12 @@ interface ConfigurationDiagnosis {
    * "[REDACTED]" an operator reads as "a value was withheld for safety".
    */
   readonly path?: string;
+  /**
+   * WHY `path` is the deepest ancestor the channel could carry rather than the
+   * exact node, when it is one. An operator reading a truncated location without
+   * it cannot tell a key that needs renaming from a graph that needs flattening.
+   */
+  readonly limit?: ConfigPathLimit;
   /** WHICH of the loader's eight faults it is - the most diagnostic single bit. */
   readonly code?: DomainConfigErrorCode;
   readonly version?: string;
@@ -199,7 +206,7 @@ const configurationRefusal = (
   diagnosis: ConfigurationDiagnosis = {},
 ): AppError => {
   const correlationId = generatedObservabilityId("correlationId", randomUUID());
-  const { path, code, version, pinnedHash, readHash } = diagnosis;
+  const { path, limit, code, version, pinnedHash, readHash } = diagnosis;
   // Each mint names its field as a LITERAL: the observability fence derives the
   // id vocabulary from exactly that argument, so routing these through a helper
   // that forwards the field would leave the whole diagnosis underivable.
@@ -209,6 +216,7 @@ const configurationRefusal = (
     configCode: code,
     domainConfigId: configurationDiagnosisId("domainConfigId", domainConfigId),
     configPath: path === undefined ? undefined : configurationDiagnosisId("configPath", path),
+    configPathLimit: limit,
     configVersion: version === undefined ? undefined : configurationDiagnosisId("configVersion", version),
     configHashPinned: pinnedHash === undefined ? undefined : configurationDiagnosisId("configHashPinned", pinnedHash),
     configHashRead: readHash === undefined ? undefined : configurationDiagnosisId("configHashRead", readHash),
@@ -330,7 +338,9 @@ export const loadPublishedDomainConfig = (
 const firstFault = (errors: readonly DomainConfigError[]): ConfigurationDiagnosis => {
   const first = errors[0];
   if (first === undefined) return {};
-  return first.path === "" ? { code: first.code } : { path: first.path, code: first.code };
+  return first.path === ""
+    ? { code: first.code, limit: first.limit }
+    : { path: first.path, code: first.code, limit: first.limit };
 };
 
 /**

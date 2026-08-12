@@ -8,6 +8,7 @@ import {
 import { appError, isErrorCode } from "@contracts/errors";
 import { CLIENT_RETRY } from "@contracts/client-retry";
 import {
+  CONFIG_PATH_LIMITS,
   CONFIG_PATH_SEGMENT_SOURCE,
   DOMAIN_CONFIG_ERROR_CODES,
   MAX_CONFIG_DIAGNOSIS_LENGTH,
@@ -138,6 +139,11 @@ const ENUMS = new Map<string, ReadonlySet<string>>([
   // arm below is: a stage and a path with no statement of the fault leaves the
   // most common refusal ("invalid") saying only that something, somewhere, is.
   ["configCode", new Set<string>(DOMAIN_CONFIG_ERROR_CODES)],
+  // WHY the location is an ANCESTOR rather than the exact node, when it is - read
+  // off the emitter's own closed vocabulary for the reason above. Without it a key
+  // the channel cannot name and a path that outgrew it are the same log line, and
+  // the two ask an operator for opposite repairs (D-252).
+  ["configPathLimit", new Set<string>(CONFIG_PATH_LIMITS)],
   ["configStage", new Set<string>(CONFIGURATION_STAGE_NAMES)],
   ["code", new Set([
     "AUTH_EXPIRED", "AUTH_FAILED", "CONFLICT", "FLOW_SUSPENDED", "FORBIDDEN",

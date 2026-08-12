@@ -9698,3 +9698,41 @@ reference <id>." while the operator's line carries `configStage=unpublished`,
 
 **Revert path.** Restore the throws and the two-argument `getJourney`; the fence's route rule then fails
 until its vocabulary clauses are deleted too.
+
+## D-252 - Prompt 10 review: one sentinel meaning two causes is a confidently wrong diagnosis
+
+**Decision.** `childConfigPath` returns a TYPED step - `{ carried: true, path }` or
+`{ carried: false, path, limit }` - naming which of the two limits ended the location: `unnameable-segment`
+(the author's key is not one segment the operator's channel can carry) or `path-too-long` (a perfectly
+nameable key whose accumulated path reached `MAX_CONFIG_DIAGNOSIS_LENGTH`). Both callers in
+`src/domain/config/parameters.ts` report the cause they actually got, `configError` inherits the limit its
+own truncation hit when the emitter states none, `DomainConfigError` carries it, and the composition root
+logs it as the registered enum `configPathLimit` beside `configStage`/`configCode`/`configPath`. The two
+truncation walks that had drifted apart (`configPathOf` and `childConfigPath`) are now ONE step rule.
+
+**Why.** D-250 ended a location by returning the parent for BOTH limits, and both callers discriminated
+with the same `at === path` test - one sentinel meaning two things. So a LENGTH truncation was reported as
+a NAMING problem, and it is reachable with ordinary camelCase keys inside the ALLOWED
+`MAX_CONFIGURED_VALUE_DEPTH`: `primitiveBindings.identity-reconciliation.parameters` is already 52
+characters, so a plausible `sourcesToReconcile.candidateThreshold…` graph crosses 128 and `depthOverruns`
+refused it with "a configured parameter value may only carry keys the operator's fault channel can name as
+one segment", while `resolveParameters` told the author the primitive "declares no parameter of that name"
+about a parameter it declares perfectly well. Both are hard refusals, so `/app/account-opening` shows the
+cannot-start screen and `/app/demo/[station]` renders `DemoUnavailable` - and the operator is sent to
+rename keys that are fine. This is the same class D-246/D-250 exist to close (an operator sent to a cause
+the document does not have), reintroduced by the helper that closed it.
+
+**What it costs, stated plainly.** A length overrun is still a REFUSAL, not a silent degradation: the
+loader continues to enforce a location ceiling alongside the documented depth bound, and that ceiling is
+now stated in `docs/domain-config.md` §7 rather than left implicit. What changes is that the refusal names
+the repair - flatten the graph - instead of naming the wrong one.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE M: the REAL emitters are driven
+into BOTH causes under a binding path read from a shipped document, the length probe's keys are proven
+nameable and inside the depth bound, each cause must be reported as itself, the two probes must disagree,
+every limit must survive `isSafeObservabilityPrimitive("configPathLimit", …)`, and the constructor must
+never report a truncated location as an exact one. `src/__tests__/unit/domain-config-source.test.ts` proves
+the operator's REAL log line carries it. Proof PF-300.
+
+**Revert path.** Collapse the step back to a bare string; RULE M's companion then fails on the two probes
+agreeing.

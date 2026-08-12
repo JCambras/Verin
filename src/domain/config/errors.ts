@@ -12,7 +12,7 @@
  * faults; the one consumer that flattened it into a sentence put dotted document
  * paths into an `AppError` message the e-sign webhook returns verbatim to the
  * EXTERNAL provider. A fault reaches an operator as REGISTERED STRUCTURED VALUES
- * (`configCode`, `configPath`) on the log line the client's correlation id joins
+ * (`configCode`, `configPath`, `configPathLimit`) on the log line the correlation id joins
  * to, which is also the only shape this repository's log formatter carries.
  *
  * `ConfiguredRefusal` below is the ONE conversion from a fault to an `AppError`,
@@ -113,25 +113,59 @@ const isCarriableConfigSegment = (segment: string): boolean =>
   CONFIG_PATH_SEGMENT_RE.test(segment);
 
 /**
- * The deepest prefix of a location the channel can carry, built from SEGMENTS -
- * which is the only way the two halves of an author's key can be told apart.
+ * WHY A LOCATION STOPS WHERE IT DOES. TWO limits end one, and to an operator they
+ * are opposite instructions: a name the channel cannot carry as one segment is a KEY
+ * TO RENAME, while a perfectly nameable key whose accumulated path outgrows the
+ * ceiling is a GRAPH TO FLATTEN. Ending both by returning the parent left every
+ * caller discriminating on `at === path`, which is one sentinel meaning two things -
+ * so a length truncation was reported as a naming problem, and an operator sent to
+ * rename an ordinary camelCase key at the ALLOWED depth (D-252).
+ */
+export const CONFIG_PATH_LIMITS = ["unnameable-segment", "path-too-long"] as const;
+export type ConfigPathLimit = (typeof CONFIG_PATH_LIMITS)[number];
+type ConfigPathStep =
+  | { readonly carried: true; readonly path: string }
+  | { readonly carried: false; readonly path: string; readonly limit: ConfigPathLimit };
+
+/**
+ * One step deeper into a location, or the deepest carriable prefix and the limit
+ * that ended it. The caller that appends an author-chosen key uses this and REFUSES
+ * rather than descending past it, so a fault below an unreportable key is reported
+ * at the deepest node that can be named instead of at a fabricated one.
  *
  * A key carrying a `.` is not one segment: reporting `presentation.copy.slots` +
  * `"Household.Name"` joined would SHAPE perfectly and address a node the document
  * does not contain, and an operator cannot tell a confidently wrong location from a
- * right one (the same failure `presentation.form.fields.<trigger field>` was). So a
- * name that is not one carriable segment ENDS the location rather than contributing
- * to it, and everything below it ends with it.
+ * right one (the same failure `presentation.form.fields.<trigger field>` was).
  */
-export const configPathOf = (segments: readonly string[]): string => {
-  const carried: string[] = [];
-  for (const segment of segments) {
-    if (!isCarriableConfigSegment(segment)) break;
-    if ([...carried, segment].join(".").length > MAX_CONFIG_DIAGNOSIS_LENGTH) break;
-    carried.push(segment);
+export const childConfigPath = (parent: string, key: string): ConfigPathStep => {
+  if (!isCarriableConfigSegment(key)) {
+    return { carried: false, path: parent, limit: "unnameable-segment" };
   }
-  return carried.join(".");
+  const joined = parent === "" ? key : `${parent}.${key}`;
+  return joined.length <= MAX_CONFIG_DIAGNOSIS_LENGTH
+    ? { carried: true, path: joined }
+    : { carried: false, path: parent, limit: "path-too-long" };
 };
+
+/**
+ * The deepest prefix of a location the channel can carry, built from SEGMENTS -
+ * which is the only way the two halves of an author's key can be told apart - and
+ * the limit that ended it. ONE step rule, applied here and at every emitter that
+ * descends, so a second copy cannot come to a different verdict.
+ */
+const carriedConfigPath = (segments: readonly string[]): ConfigPathStep => {
+  let at: ConfigPathStep = { carried: true, path: "" };
+  for (const segment of segments) {
+    const step = childConfigPath(at.path, segment);
+    if (!step.carried) return step;
+    at = step;
+  }
+  return at;
+};
+
+export const configPathOf = (segments: readonly string[]): string =>
+  carriedConfigPath(segments).path;
 
 /**
  * The deepest prefix of an already-joined dotted path the channel can carry. A
@@ -141,29 +175,34 @@ export const configPathOf = (segments: readonly string[]): string => {
  */
 export const carriableConfigPath = (path: string): string => configPathOf(path.split("."));
 
-/**
- * One step deeper into a location, or the location itself when the step is a name
- * the channel cannot carry. The caller that appends an author-chosen key uses this
- * and REFUSES rather than descending past it, so a fault below an unnameable key is
- * reported at the deepest node that can be named instead of at a fabricated one.
- */
-export const childConfigPath = (parent: string, key: string): string =>
-  isCarriableConfigSegment(key) && `${parent}.${key}`.length <= MAX_CONFIG_DIAGNOSIS_LENGTH
-    ? (parent === "" ? key : `${parent}.${key}`)
-    : parent;
-
 export type DomainConfigError = {
   readonly code: DomainConfigErrorCode;
   /** Dotted document path (`intents.open-account.slots.email`), never a line offset. */
   readonly path: string;
   readonly message: string;
+  /**
+   * Present exactly when `path` is the deepest ancestor the channel could carry
+   * rather than the exact node, naming WHICH limit ended it. Absent means the path
+   * IS the location, so an operator never has to infer truncation from its shape.
+   */
+  readonly limit?: ConfigPathLimit;
 };
 
+/**
+ * THE ONE CONSTRUCTOR OF EVERY FAULT. It carries only what the channel can express,
+ * and when that is less than it was asked to report it says so: an emitter that
+ * already knows why it stopped states its own limit, and one handing over a raw
+ * dotted path inherits the limit this truncation hit.
+ */
 export const configError = (
   code: DomainConfigErrorCode,
   path: string,
   message: string,
-): DomainConfigError => ({ code, path: carriableConfigPath(path), message });
+  limit?: ConfigPathLimit,
+): DomainConfigError => {
+  const at = path === "" ? { carried: true as const, path: "" } : carriedConfigPath(path.split("."));
+  return { code, path: at.path, message, limit: limit ?? (at.carried ? undefined : at.limit) };
+};
 
 /**
  * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-244).

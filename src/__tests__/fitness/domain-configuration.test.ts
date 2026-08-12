@@ -27,15 +27,19 @@ import { resolveParameters, type ParameterOwner } from "@domain/config/parameter
 import { compileFlowDefinition } from "@domain/config/plan-compiler";
 import {
   carriableConfigPath,
+  childConfigPath,
   configError,
+  CONFIG_PATH_LIMITS,
   MAX_CONFIG_DIAGNOSIS_LENGTH,
   MAX_CONFIGURED_VALUE_DEPTH,
+  type ConfigPathLimit,
   type ConfiguredRefusal,
   type DomainConfigError,
 } from "@domain/config/errors";
 import {
   CONFIGURATION_DIAGNOSIS_FIELDS,
   configurationDiagnosisId,
+  isSafeObservabilityPrimitive,
   readObservabilityId,
   type ConfigurationDiagnosisField,
 } from "@domain/observability/safe-values";
@@ -180,6 +184,22 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    flow data, and every path either produces must survive the channel. The other
  *    five fields are checked the same way, against the version ids, the pinned
  *    hashes and the canonical-byte digests the shipped adapter really computes.
+ *
+ *  RULE M - A LOCATION THAT COULD NOT GO DEEPER SAYS WHICH LIMIT STOPPED IT.
+ *    RULE L makes the channel able to carry what the emitters build; this makes
+ *    what it carries TRUE. Two limits end a path - a name the channel cannot carry
+ *    as one segment, and a nameable name whose accumulated path outgrows the
+ *    ceiling - and to an operator they are opposite repairs: rename the key, or
+ *    flatten the graph. Both used to end by returning the parent, and both callers
+ *    discriminated on `at === path`, so ordinary camelCase keys at the ALLOWED depth
+ *    were refused with a message about keys the channel cannot name - a confidently
+ *    wrong diagnosis, which this branch refuses everywhere else (D-252).
+ *
+ *    So the step NAMES its limit, and this rule drives the REAL emitters into BOTH
+ *    causes and requires each to be reported as itself, requires the two probes to
+ *    disagree (a sentinel meaning two things passes nothing here), and requires the
+ *    limit to survive the registered diagnosis channel - since a cause the log line
+ *    degrades to "[REDACTED]" is exactly the dead channel RULE L exists to prevent.
  *
  * NAMED DEFERRALS. `policyRegistriesFor` derives prompt 9's four pinned
  * registries from a loaded configuration and has no SHIPPED caller yet: nothing
@@ -1289,6 +1309,39 @@ export function parameterDepthPaths(levels: number): {
 }
 
 /**
+ * THE TWO WAYS A LOCATION ENDS, driven through the REAL parameter emitters.
+ *
+ * The `path-too-long` probe is the case that shipped mis-diagnosed: ORDINARY
+ * camelCase keys, every one of them a segment the channel carries perfectly, inside
+ * the ALLOWED depth, under a binding path read from a document this repository
+ * really publishes. Nothing about it is a naming problem, so a fence that cannot
+ * tell the two apart is a fence reporting the wrong repair to an operator.
+ */
+const NAMEABLE_NESTED_KEY = "candidateThreshold";
+/** `primitiveBindings.<the longest binding a shipped document declares>.parameters`. */
+export function shippedBindingParametersPath(): string {
+  const bindings = DOMAIN_FILES.flatMap((file) => {
+    const section = (parsed(file) as JsonNode)["primitiveBindings"];
+    return Array.isArray(section) ? section.map((entry) => String((entry as JsonNode)["id"])) : [];
+  });
+  const longest = bindings.reduce((widest, id) => (id.length > widest.length ? id : widest), "");
+  return `primitiveBindings.${longest}.parameters`;
+}
+export function parameterLimitFaults(limit: ConfigPathLimit): readonly DomainConfigError[] {
+  const nested = (levels: number): unknown =>
+    levels === 0 ? { leaf: 1 } : { [NAMEABLE_NESTED_KEY]: nested(levels - 1) };
+  const resolved = resolveParameters(
+    PROBE_PRIMITIVE,
+    limit === "path-too-long"
+      ? { p: nested(MAX_CONFIGURED_VALUE_DEPTH - 1) }
+      : { p: { "tolerance level": 1 } },
+    () => null,
+    shippedBindingParametersPath(),
+  );
+  return resolved.ok ? [] : resolved.error;
+}
+
+/**
  * DOES THIS PATH ADDRESS A NODE THE DOCUMENT REALLY HAS?
  *
  * Shape-matching is what let `presentation.form.fields.householdName` ship: it
@@ -1785,6 +1838,78 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     }
   });
 
+  it("(M) enforces: a location the CEILING ended is reported as a length cause, not a naming one", () => {
+    // The document the shipped diagnosis got wrong: ordinary camelCase keys, inside
+    // the ALLOWED depth, under a binding path a shipped document really declares.
+    const base = shippedBindingParametersPath();
+    const bindingId = base.split(".")[1] ?? "";
+    expect(bindingId.length, "no shipped document declares a binding to build the probe path from").toBeGreaterThan(8);
+    expect(DOMAIN_FILES.some((file) => readFileSync(join(REPO_ROOT, CONFIG_DIRECTORY, file), "utf8")
+      .includes(`id: ${bindingId}`)), "the probe path must name a REAL shipped binding").toBe(true);
+    expect(childConfigPath("", NAMEABLE_NESTED_KEY).carried, "the probe's keys must be perfectly nameable").toBe(true);
+    const faults = parameterLimitFaults("path-too-long");
+    expect(faults.length, "the ceiling must be reachable at the ALLOWED depth at all").toBeGreaterThan(0);
+    for (const fault of faults) {
+      expect(fault.limit, `reported as ${fault.limit ?? "no cause at all"}: ${fault.message}`)
+        .toBe("path-too-long");
+      // ...and the message an author reads must not send them after their keys.
+      expect(fault.message).not.toMatch(/as one segment/);
+      // The location degrades to the deepest ADMITTED ancestor, never past it.
+      expect(fault.path).toBe(carriableConfigPath(fault.path));
+      expect(fault.path.startsWith(`${base}.p.${NAMEABLE_NESTED_KEY}`)).toBe(true);
+      expect(fault.path.length).toBeLessThanOrEqual(MAX_CONFIG_DIAGNOSIS_LENGTH);
+    }
+    // ANTI-VACUITY: the probe stays inside the DEPTH bound, so nothing here could
+    // have been the depth refusal wearing a new name.
+    expect(faults.every((fault) => !fault.message.includes("levels"))).toBe(true);
+  });
+
+  it("(M) enforces: the two limits are told APART, and each survives the operator's channel", () => {
+    const reported = new Map(
+      CONFIG_PATH_LIMITS.map((limit) => [limit, parameterLimitFaults(limit).map((fault) => fault.limit)]),
+    );
+    // A sentinel meaning two things passes nothing here: each probe must reach its
+    // OWN cause, and the two must disagree.
+    for (const limit of CONFIG_PATH_LIMITS) {
+      const seen = reported.get(limit) ?? [];
+      expect(seen.length, `the ${limit} emitter was never reached`).toBeGreaterThan(0);
+      expect([...new Set(seen)], `${limit} is reported as something else`).toEqual([limit]);
+    }
+    expect(new Set(CONFIG_PATH_LIMITS).size).toBe(CONFIG_PATH_LIMITS.length);
+    // AND THE OPERATOR ACTUALLY SEES IT. A cause the log formatter degrades to
+    // "[REDACTED]" is the dead channel RULE L exists to prevent, one field over.
+    for (const limit of CONFIG_PATH_LIMITS) {
+      expect(isSafeObservabilityPrimitive("configPathLimit", limit), `${limit} would log as "[REDACTED]"`).toBe(true);
+    }
+    expect(isSafeObservabilityPrimitive("configPathLimit", "some-other-cause")).toBe(false);
+  });
+
+  it("(M) enforces: the ONE fault constructor never reports a truncated location as an exact one", () => {
+    // Every fault in the system is built there, and it truncates whatever it is
+    // handed - so a path that came back shorter than it went in owes its cause,
+    // whether or not the emitter that built it knew one.
+    const truncated: string[] = [];
+    for (const path of [
+      Array.from({ length: 40 }, (_, index) => `segment${index}`).join("."),
+      "presentation.copy.slots.Household Name",
+      "intents.open-account.slots.a.b c.type",
+      `x.${"y".repeat(200)}`,
+      "presentation.copy.slots.household",
+      "",
+    ]) {
+      const fault = configError("grammar", path, "probe");
+      const carried = fault.path === path;
+      if (!carried) truncated.push(path);
+      expect(
+        carried ? fault.limit === undefined : CONFIG_PATH_LIMITS.includes(fault.limit!),
+        `${JSON.stringify(path)} -> ${JSON.stringify(fault.path)} with limit ${JSON.stringify(fault.limit)}`,
+      ).toBe(true);
+    }
+    // ANTI-VACUITY: the sample really contains BOTH outcomes, or this asserts nothing.
+    expect(truncated.length).toBeGreaterThan(2);
+    expect(configError("grammar", `x.${"y".repeat(200)}`, "probe").limit).toBe("unnameable-segment");
+  });
+
   it("enforces: every named deferral still has no shipped caller", () => {
     const stale: string[] = [];
     for (const [entry, reason] of Object.entries(NAMED_DEFERRALS)) {
@@ -2200,6 +2325,41 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
       // The EMPTY path is a fact the loader never had, not a censored one - the
       // adapter omits it rather than sealing it, so the rule skips it too.
       expect(sealedDiagnosisValues("configPath", [""])).toEqual([]);
+    });
+
+    it("(M) catches the sentinel this rule was written for: one answer meaning two causes", () => {
+      // The shipped bug, replayed against the REAL emitters. Both probes report at
+      // the PARENT, so the `at === path` test every caller used cannot separate
+      // them - only the named limit can, which is why the sentinel had to go.
+      const byLimit = CONFIG_PATH_LIMITS.map((limit) => parameterLimitFaults(limit));
+      expect(byLimit.every((faults) => faults.length > 0)).toBe(true);
+      const parents = byLimit.map((faults) => faults.every((fault) => fault.path !== ""));
+      expect(parents, "the probes must both report at an ancestor, or this proves nothing").toEqual([true, true]);
+      const limits = byLimit.map((faults) => [...new Set(faults.map((fault) => fault.limit))]);
+      expect(limits).toEqual([["unnameable-segment"], ["path-too-long"]]);
+      // ...and the wrong repair reads as a distinct sentence, not as the same one.
+      const messages = byLimit.map((faults) => faults.map((fault) => fault.message).join(" "));
+      expect(messages[0]).not.toBe(messages[1]);
+    });
+
+    it("(M) catches a limit the operator's channel would degrade to [REDACTED]", () => {
+      // A cause the log formatter does not admit is a cause nobody reads, which is
+      // the dead-diagnosis class one field over from RULE L.
+      expect(isSafeObservabilityPrimitive("configPathLimit", "unnameable-segment")).toBe(true);
+      expect(isSafeObservabilityPrimitive("configPathLimit", "truncated")).toBe(false);
+      expect(isSafeObservabilityPrimitive("configPathLimit", "")).toBe(false);
+    });
+
+    it("(M) catches a truncating constructor that reports its location as an exact one", () => {
+      // The residual case: an emitter that hands over a raw dotted path knows no
+      // limit, so the constructor inherits the one its own truncation hit.
+      const long = Array.from({ length: 40 }, (_, index) => `segment${index}`).join(".");
+      expect(configError("grammar", long, "probe").limit).toBe("path-too-long");
+      expect(configError("grammar", "presentation.copy.slots.household", "probe").limit).toBeUndefined();
+      expect(configError("grammar", "", "probe").limit).toBeUndefined();
+      // An emitter that DOES know states its own, and the constructor keeps it.
+      expect(configError("type-mismatch", "presentation.copy", "probe", "path-too-long").limit)
+        .toBe("path-too-long");
     });
 
     it("catches a domain-named evaluator branch inside decision-core", () => {

@@ -309,10 +309,25 @@ const CEILINGS = {
 // RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,765 / 9,830 (65),
 // infrastructure 8,792 / 8,815 (23), presentation 2,240 / 6,000, tooling 12,154 /
 // 12,400.
+//
+// ADR-0058 amendment (review round 19) raises `domain` and `infrastructure` for a
+// fault location that NAMES the limit that ended it: `domain` carries the two-limit
+// vocabulary, the typed step both parameter walks now discriminate on, one message
+// per cause, and the limit `configError` inherits from its own truncation (the two
+// drifted truncation walks collapse into one step rule, which is the deleted half);
+// `infrastructure` carries that limit on the shared mint's diagnosis and the
+// registered `configPathLimit` on the operator's line. Ending a location for two
+// reasons with one answer reported a LENGTH truncation as a NAMING problem, at the
+// ALLOWED depth, with ordinary camelCase keys (D-252). Both layers were left with
+// twelve and thirteen lines - the zero-headroom condition this header exists to
+// prevent - so both move; the other three did not move and are RE-TAKEN.
+// RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,818 / 9,880 (62),
+// infrastructure 8,802 / 8,850 (48), presentation 2,240 / 6,000, tooling 12,154 /
+// 12,400.
 const CEILINGS = {
   contracts: 6810, // ADR-0058 as amended six times, on the cause reader (6,771 measured)
-  domain: 9830, // ADR-0058 as amended thirteen times, on the built fault location (9,765 measured)
-  infrastructure: 8815, // ADR-0058 as amended six times, on the adapter mint (8,792 measured)
+  domain: 9880, // ADR-0058 as amended fourteen times, on the named path limit (9,818 measured)
+  infrastructure: 8850, // ADR-0058 as amended seven times, on the named path limit (8,802 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

@@ -568,3 +568,37 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 | `infrastructure` | 8,792 | 8,815 | 23 (unchanged) |
 | `presentation` | 2,240 | 6,000 | (ADR-0012 envelope, unchanged; re-taken) |
 | `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+## Amendment (2026-08-12, review round 19): `domain` and `infrastructure` raised for the named path limit
+
+The round-18 amendment made a fault LOCATION built rather than interpolated, and it ended one for two
+different reasons with the same answer: `childConfigPath` returned the parent both when the author's key
+was not a segment the channel can carry and when the accumulated path reached the 128-character ceiling,
+and both callers discriminated on `at === path`. So a LENGTH truncation was reported as a NAMING problem -
+reachable with ordinary camelCase keys inside the ALLOWED `MAX_CONFIGURED_VALUE_DEPTH`, since
+`primitiveBindings.identity-reconciliation.parameters` alone is 52 characters - and an operator was sent to
+rename keys that were fine, or told a primitive declares no parameter it declares perfectly well. A
+diagnosis channel whose whole justification is that what it says is what happened cannot ship a
+confidently wrong cause.
+
+`domain` gains the two-limit vocabulary and the typed step that names which one ended a location, one
+message per cause in the parameter walks, and the limit on `DomainConfigError` so `configError` can inherit
+the one its own truncation hit; the two truncation walks that had drifted apart collapse into ONE step
+rule, which is the deleted half. `infrastructure` gains the limit on the diagnosis the shared mint carries
+and the registered `configPathLimit` field on the operator's line, so the cause reaches the person who acts
+on it rather than living in a message the wire never sees (D-252).
+
+Both layers had TWELVE and THIRTEEN lines of headroom after the change - the zero-headroom condition this
+ADR's header argues against, where the next one-line correction fails an unrelated ceiling and the only
+remedy is an amendment nobody planned. `contracts`, `presentation` and `tooling` did not move and are
+RE-TAKEN unchanged rather than raised for company.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,771 | 6,810 | 39 (unchanged) |
+| `domain` | 9,818 | **9,880** | 62 |
+| `infrastructure` | 8,802 | **8,850** | 48 |
+| `presentation` | 2,240 | 6,000 | (ADR-0012 envelope, unchanged; re-taken) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |

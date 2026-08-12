@@ -148,7 +148,11 @@ rejection is a value, never a throw.
   whose fault path grows with the DOCUMENT rather than with the schema. `MAX_CONFIGURED_VALUE_DEPTH`
   (`src/domain/config/errors.ts`) is refused at admission, and the operator channel's `configPath` shape
   reads its per-segment subscript cap from that same constant - so a graph the loader admits always has
-  a location the channel can carry, and neither side is an opinion about the other (D-246).
+  a location the channel can carry, and neither side is an opinion about the other (D-246). The channel's
+  `MAX_CONFIG_DIAGNOSIS_LENGTH` ceiling is the SECOND bound on the same graph, and it binds independently:
+  a graph inside the depth bound whose accumulated path outgrows 128 characters is refused too, and the
+  refusal says so - `path-too-long`, meaning FLATTEN THE GRAPH, never the `unnameable-segment` cause,
+  which means RENAME THE KEY (D-252).
 - **Command types name commands, never domains.** What a command DOES - its span, its SQL, its audit
   action - lives in `src/infrastructure/execution-adapters.ts`, as static literals the observability
   vocabulary fence can still derive from real call sites. What it REFUSES is a fact about the document,
@@ -300,6 +304,12 @@ rather than from a hand-kept list.
   parameter name or graph key the channel cannot name as one segment is refused at ADMISSION beside the
   depth bound, and every fault reports the deepest NAMEABLE ancestor rather than a fabricated node
   (D-250).
+- **A location that could not go deeper says WHICH limit stopped it.** `childConfigPath` answers with a
+  typed step rather than the parent, so the two limits are distinguishable by construction instead of by
+  a sentinel each caller re-interprets: `unnameable-segment` and `path-too-long` reach the operator as
+  the registered enum `configPathLimit`, beside `configStage`/`configCode`/`configPath`, and a fault whose
+  `path` IS its exact location carries no limit at all. Reporting a length truncation as a naming problem
+  sent an operator to rename ordinary camelCase keys that were fine (D-252).
 - **A surface that reads configured copy fails as a VALUE.** The demo station page renders on the
   server from the published document, so it resolves its vocabulary before building anything and renders
   the refusal - generic sentence, correlation reference, no internals - when this deployment cannot

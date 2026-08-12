@@ -45,7 +45,9 @@ vi.mock("@infra/observability/logger", async (importOriginal) => {
  * never had. Injected here because `config/domains/` is content-hash pinned: a
  * document authored to fail this way cannot be published.
  */
-const injected = vi.hoisted(() => ({ fault: null as null | { code: string; path: string; message: string } }));
+const injected = vi.hoisted(() => ({
+  fault: null as null | { code: string; path: string; message: string; limit?: string },
+}));
 
 vi.mock("@domain/config/load", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@domain/config/load")>();
@@ -152,6 +154,30 @@ describe("the domain-configuration source refuses without leaking its diagnosis"
     expect(line["configCode"]).toBe("unknown-reference");
     expect(line["configPath"]).toBe("intents.open-account.slots.email");
     expect(Object.values(line)).not.toContain(REDACTED);
+  });
+
+  it.each([
+    ["a key the channel cannot name as one segment", "unnameable-segment"],
+    ["a nameable key whose accumulated path outgrew the ceiling", "path-too-long"],
+  ])("says WHY a location is an ancestor - %s", (_case, limit) => {
+    // A truncated location with no cause reads as an exact one, and the two causes
+    // ask an operator for opposite repairs: rename the key, or flatten the graph.
+    injected.fault = {
+      code: "type-mismatch",
+      path: "primitiveBindings.identity-reconciliation.parameters",
+      message: "a fault below this point has no location to report",
+      limit,
+    };
+    refusalOf(UNMEMOIZED_DOMAIN);
+    const line = lastLogLine();
+    expect(line["configPathLimit"]).toBe(limit);
+    expect(Object.values(line)).not.toContain(REDACTED);
+  });
+
+  it("reports an EXACT location as exact, never as a truncated one", () => {
+    injected.fault = { code: "unknown-reference", path: "intents.open-account.slots.email", message: "no such slot" };
+    refusalOf(UNMEMOIZED_DOMAIN);
+    expect(lastLogLine()).not.toHaveProperty("configPathLimit");
   });
 
   it.each([
