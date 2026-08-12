@@ -32,7 +32,10 @@ tier (`src/app/presentation/`, ADR-0012) rather than waiting for a trigger. WhyB
 > brief asked for the complete primitive foundation, and inventing a workflow to showcase a control
 > is a worse failure than naming the gap. They are NAMED DEFERRALS with a first-caller prompt each
 > (D-192's table: Tooltip at prompt 3, Pill at 5, Tabs at 7, Checkbox at 8, Radio at 11; a primitive
-> still callerless after its prompt lands is deleted rather than re-deferred). Their contracts are
+> still callerless after its prompt lands is deleted rather than re-deferred). **ADR-0056 is the
+> authority** - it amends ADR-0012's "port on first use only" rule with exactly this exception, states
+> its five conditions, and carries the same table with each row's expiry; a sixth row is another ADR
+> amendment, never an edit here. Their contracts are
 > validated directly by `src/__tests__/unit/presentation-primitives.test.tsx`, NOT by an e2e axe
 > scan, which cannot reach a component no route renders. (`Pill` and `Badge` do reach the screens
 > through `StatusBadge`, `Metric`, and `DevProvenanceBadge`; what is deferred is a caller composing

@@ -64,7 +64,10 @@ and never define a color, font, radius, or keyframe anywhere else.
    landed ahead of its callers: each is a NAMED DEFERRAL in
    [`PORT-LEDGER.md`](../PORT-LEDGER.md) carrying the front-end prompt that lands its first
    caller, validated by unit contract tests rather than an e2e scan, and deleted rather than
-   re-deferred if that prompt lands without one (D-192).
+   re-deferred if that prompt lands without one (D-192). That exception is granted by
+   [ADR-0056](./adr/0056-presentation-foundation-named-deferrals.md), which amends ADR-0012 and
+   states its five conditions; it is NOT a licence to build a primitive ahead of the surface that
+   needs it, and it covers no primitive outside the table there.
 3. **The consolidated type scale** (cited, not invented - each entry names its source): page title
    `text-2xl font-semibold text-slate-900` (audit page); card/section title `text-base
    font-semibold text-slate-900` (StepInfoCard); body `text-sm` in `slate-600/700/800`; microcopy

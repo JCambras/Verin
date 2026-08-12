@@ -299,6 +299,10 @@ reject duplicate exact results.
   declare its own short `regionName` (a caption asserting an order cannot double as a landmark name,
   D-201), and any cell it sorts must offer RAW typed data - `compareSortValues`
   (`presentation/table-order.ts`) is the tier's one ordering, and formatted text collates as text.
+  A foundation primitive may sit callerless ONLY as a named deferral in `PORT-LEDGER.md` citing the
+  front-end prompt that lands its first caller, and that prompt is its EXPIRY - a real caller or a
+  deletion, never a re-deferral (ADR-0056 amends ADR-0012's port-on-first-use rule this narrowly and
+  no wider; the five current rows are in D-192). Nothing else may land ahead of its surface.
 - **Sealed security types (v3 §15, D-061) construct ONLY via their factories** - all SEVEN of
   `Tokenized<T>`, `TenantContext`, `ActionGrant`, `ActorRef`, `Principal`, `WriteActor`, `ObservabilityId`
   (`tenantOf`/`tenantFromIdentity`/`systemTenant` in `contracts/tenant.ts`;

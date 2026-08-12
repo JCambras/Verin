@@ -96,12 +96,13 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
   and empty states (`ui.tsx`), the sortable/virtualized register grammar (`table.tsx` + the pure
   `table-order.ts`), and the client interaction leaves (toast + host, dialog, tooltip, tabs, error
   boundary). Feature-local button, badge, and pill recipes fail the `presentation-primitives` fence;
-  primitives without a product caller yet are named deferrals in `PORT-LEDGER.md` (D-192).
+  primitives without a product caller yet are named deferrals in `PORT-LEDGER.md` that expire at the
+  front-end prompt each cites (D-192, granted by ADR-0056's narrow amendment to ADR-0012).
 - **Playwright spec files** (smoke, happy walkthrough, failure/access-control, console CRUD, demo journey,
   decision ledger, register windowing/print) plus axe, green on a non-UTC clock; `pnpm test:e2e`
   reports the live count.
 
-**Governance:** 52 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 56 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
@@ -178,7 +179,16 @@ so those are ADR-0051's ceilings measured with the fence's own algorithm on the
 tree as it lands. The presentation tier has since grown with the canonical
 primitive library and re-measures at 2,240/6,000 (3,760 headroom) with that same
 algorithm (D-192 through D-202); its ceiling is unchanged, because ADR-0012 grows
-it only by an ADR bump and this work adds no platform lines either. Two files
+it only by an ADR bump and this work adds no platform lines either. The three
+PLATFORM figures above are left exactly as that prompt-11 PR measured them and
+are deliberately NOT re-taken here: this branch touches no platform layer, and a
+measurement of a layer a diff never opened does not belong in it. Two of them
+have gone stale since - ADR-0054 replaced the contracts and domain ceilings
+quoted here - as has the infrastructure figure recorded in
+`line-budget.test.ts`'s own header, and each is named for re-measurement against
+its authoritative current ceiling under follow-up key
+`fu-platform-budget-remeasure` (D-203, §4), to be taken in the platform-budget
+work that next changes that layer. Two files
 carry a `max-file-size` pin instead of the 500-line default:
 `migrations.ts` (510/560, ADR-0049) and the ledger's sole write
 chokepoint `ledger-store.ts` (502/550, ADR-0050). ADR-0052 adds the `tooling`
@@ -268,6 +278,8 @@ date/trigger), never omitted:
 | Managed-Postgres (`node-postgres`) store adapter | — | founder | production deploy (D-006; PGlite is dev/CI) |
 | Mutation-testing harness for fence efficacy (Vale V9) | CC5 | founder | add a check that a gutted fence fails |
 | `src/__tests__/**` sits in no line-budget bucket while `scripts/**` now does (ADR-0052 amendment; D-172/D-173, follow-up `fu-corpus-test-tree-budget`) | CC5 | founder | the next structural test-tree work (a fence-file split, a shared-fixture extraction, any move of fence code between trees) |
+| Recorded platform line-budget figures have gone stale: `FOUNDATION.md` §2's prompt-11 snapshot (contracts 6,064/6,110, domain 1,581/1,650) predates ADR-0054's ceilings, and `line-budget.test.ts`'s header records infrastructure 7,780 against 7,786 measured (D-203, follow-up `fu-platform-budget-remeasure`) | CC5 | founder | the next commit that changes `src/contracts/**`, `src/domain/**`, or `src/infrastructure/**` re-measures that layer and re-takes its figure in both places |
+| A presentation primitive's named deferral expires by REVIEW, not by a fence - nothing fails the build if a named prompt lands without retiring its row (ADR-0056; D-203, follow-up `fu-primitive-deferral-expiry-fence`) | CC5 | founder | the first expiry (prompt 3, `Tooltip`) - the first retirement a fence can be proven against |
 | Dead-export exemption for `domain/schema` vocabulary (Vale V11 / D-013) | CC5 | founder | remove when entities gain runtime consumers / a 2nd source lands |
 | Displayed-metric→source provenance trace (Vale V12) — **CLOSED** (Wave-1 prereq: ADR-0022, `metric-provenance` + `derived-provenance` fences in the `provenance-trace` gate; D-025/D-026) | #3 | — | done |
 | Scheduled outbox drainer (Vale V14; dead-letter parking landed, D-024) | CC7.1 | founder | deploy-target selection |

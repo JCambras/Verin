@@ -7413,3 +7413,63 @@ moves, no runtime dependency was added, and nothing under `domain/`, `contracts/
 
 **Revert path:** revert this changeset; the cap returns to riding on windowing, the fence returns to
 comparing tag text, and the boundary returns to a path-only reset key.
+
+### D-203 · 2026-08-12 · reversible · Documentation round: the ADR says what the tree does, and a stale measurement is recorded rather than quietly fixed
+
+The prompt-2 documentation gate returned two findings that a documentation edit could not settle on
+its own authority; the recorded ruling (`document-ask-user`, 2026-08-12) resolves both. This round
+changes documents only - no runtime code, no test, no fence, and no ceiling - so the presentation
+tier still measures 2,240/6,000 as D-202 recorded it, and `line-budget.test.ts` is untouched.
+
+**An accepted ADR is amended by an ADR, not by the docs that cite it.** ADR-0012 states "Port on
+first use only ... pulled when a real surface needs it (charter #5: no dead components)" without
+qualification, while the tree ships five foundation primitives that have no product caller
+(`Checkbox`, `Radio`, `Tabs`, `Tooltip`, a directly composed `Pill`). D-191/D-192 recorded them as
+named deferrals, `PORT-LEDGER.md` lists them, and the design language stated the exception - but all
+three are subordinate records, so the governing text still read as an absolute rule the repository
+contradicts. That is D-195's split-authority failure at constitutional scale: the next author obeys
+whichever half they read first, and both available readings (delete the foundation, or treat "port
+on first use" as advisory) are wrong.
+
+[ADR-0056](./docs/adr/0056-presentation-foundation-named-deferrals.md) amends ADR-0012 with the
+NARROW rule and nothing wider, on the ADR-0031 precedent: a presentation foundation primitive an
+explicit ratified brief asked for **as a set** may land ahead of its first product caller only when
+it is a named deferral in `PORT-LEDGER.md` and `DECISIONS.md` citing the SPECIFIC front-end prompt
+that lands its first honest caller; that citation is its EXPIRY, so at that prompt the primitive
+acquires a real caller or is deleted in the same work, never re-deferred; its contract is executable
+now as a unit test, because an axe scan cannot reach a component no route renders (D-201); and no
+caller is manufactured to satisfy a gate. It is stated in the ADR itself that this is not a blanket
+exemption and not permission to build ahead generally - convenience code never qualifies (ADR-0031),
+the five-row table is the complete list, and a sixth row is another amendment. Charter #5 is not
+weakened: it keeps meaning what D-116's ledger-export deferrals already made it mean, which is that
+a capability has a caller or a named, expiring deferral a reviewer can check against a prompt number.
+ADR-0012's status line and its port bullet name the amendment, the ADR index carries the row, and the
+four documents an author actually reads first - `PORT-LEDGER.md`, `FOUNDATION.md`,
+`docs/demo-design-language.md` §1 rule 2, and `AGENTS.md`'s presentation-primitives rule - now cite
+ADR-0056 as the authority instead of citing a decision entry for a rule only an ADR can grant.
+
+The ADR also says plainly that this rule is enforced by REVIEW, not by a fence: `knip` cannot see the
+class (every primitive has a unit test, which is a reference) and nothing fails the build today if an
+expiry passes unretired. Recorded as follow-up key `fu-primitive-deferral-expiry-fence`. **Un-defer
+trigger:** the first expiry - prompt 3, `Tooltip` - which is the first prompt that must retire a row
+and therefore the first that can prove a fence against a real retirement rather than a fixture.
+
+**A measurement of a layer this diff never opened does not belong in this diff.** `FOUNDATION.md`'s
+"Current prompt-11 line-budget PR evidence" paragraph still reports contracts 6,064/6,110 and domain
+1,581/1,650, both against ceilings ADR-0054 has since replaced (6,650 and 4,550) on a tree that
+measures 6,602 and 4,514 today; `line-budget.test.ts`'s own header records infrastructure at
+7,780/7,840 against a tree that measures 7,786. None of the three is re-taken here. This branch adds
+zero lines to any platform layer, and the fence's own discipline is that a figure is re-measured in
+the commit that changes that layer - re-taking three unrelated layers inside a UI documentation
+commit is how a measurement stops belonging to the work that proved it. The historical snapshot
+wording stands, and the gap is recorded rather than lost: follow-up key
+`fu-platform-budget-remeasure`, named in `FOUNDATION.md` beside the snapshot it qualifies and owned
+in the §4 gap table. **Un-defer trigger:** the next commit that changes `src/contracts/**`,
+`src/domain/**`, or `src/infrastructure/**` re-measures that layer with `line-budget.test.ts`'s own
+algorithm and re-takes its figure in both places. The rule this round applies generally: fix what the
+change touched, record what it revealed, and never let an out-of-scope discovery disappear.
+
+**Revert path:** revert this changeset; ADR-0056 and the ADR index row go with it, ADR-0012's status
+line and port bullet return to the unqualified rule, the four citing documents return to their D-202
+state, and both follow-up keys and their §4 gap rows are withdrawn. Nothing executable changes
+either way.
