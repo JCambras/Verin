@@ -104,3 +104,16 @@ pre-rebase branch EVERY identifier in the ranges below originated here.
 | ADR | ADR-0057 | ADR-0058 |
 | ADR-FILE | 0056-domain-configuration-schema | 0057-domain-configuration-schema |
 | ADR-FILE | 0057-line-budget-domain-configuration | 0058-line-budget-domain-configuration |
+
+## Residual found afterwards, and what it says about the check
+
+The ADR rows key on the string `ADR-0056` and on the file stem `0056-domain-configuration-schema`. A
+markdown link whose LABEL is the BARE number `0056` and whose target is the file stem therefore had its
+target rewritten and its label left behind, pointing a reader at ADR-0057 under ADR-0056's name. Per-id
+count invariance could not see it either: a bare `0056` is not one of the 90 ids it counts, so the
+vacated-id scan read clean.
+
+One occurrence existed, in `docs/v3/README.md`'s ADR index, and it is corrected to `[0057]`. A sweep of
+every ADR link in the repository - label digits against target digits - finds no other disagreement. The
+lesson is the mapping's, not the method's: an id space whose members appear in more than one SPELLING
+owes a row per spelling, or a check that reads the reference rather than the string.

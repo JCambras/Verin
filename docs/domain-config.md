@@ -207,10 +207,12 @@ rejection is a value, never a throw.
   under the engine's merge order - which is how a finalized account would take its open date from what
   the advisor typed (proofs PF-266, PF-269).
 - **A label id a surface asks for must exist.** The demo reads its slot, evidence-kind and action labels
-  through `src/app/demo/vocabulary.ts`, which throws on an undeclared id. RULE F of the
+  through `src/app/demo/vocabulary.ts`, which resolves every id it renders ONCE as a `Result` and states
+  an undeclared one as a typed fault the shared mint turns into the `undeclaredCopy` refusal (§10) -
+  never a throw, because that path is server-rendered (D-251). RULE F of the
   domain-configuration fence binds every id the shipped tree asks for to the published copy - resolved
-  by symbol, failing closed on a non-literal id - so a rename is a BUILD failure rather than a 500 on
-  the demo journey (proof PF-258).
+  by symbol, failing closed on a non-literal id - so a rename is a BUILD failure rather than a refusal
+  screen on the demo journey (proof PF-258).
 - **An enum slot that feeds a typed store column is FENCED equal to it.** `registration-type`'s declared
   `values` and `ACCOUNT_TYPES` (`src/domain/schema/entities.ts`, the union the house-CRM's account-type
   column accepts) are two copies of one vocabulary, and CD-1 leaves the shipped copy unrenamed - so RULE G
@@ -253,7 +255,7 @@ comments in each section module).
 ## 10. What a configuration refusal says, and to whom
 
 A refusal of the published document has three audiences - the submitter, an external sender, and the
-operator - and each is told a different thing on purpose. The rules below are enforced by RULES I-L of
+operator - and each is told a different thing on purpose. The rules below are enforced by RULES I-M of
 the domain-configuration fence, which derive what they check - the mint sites, the surfaces that decide
 an instruction, the admitted diagnosis shapes - from the real modules and their real emitter output
 rather than from a hand-kept list.
@@ -274,7 +276,10 @@ rather than from a hand-kept list.
   type this build has no adapter for included. The mint marks it (`operatorRecoverable`,
   `src/contracts/client-retry.ts`) and every surface READS the instruction (`clientRetryFor`) instead of
   choosing one, so a refusal added later inherits the classification without anyone remembering to
-  (D-241).
+  (D-241). A surface whose OTHER arm carries no instruction at all - the intake accessor answers a
+  submitter's own omission with a plain VALIDATION, which has no `retry` field - asks `causeRetryFor`,
+  which answers what the cause dictates or `null`. `clientRetryFor` is defined in terms of it, so the two
+  can never disagree and no call site invents a fallback it could never send (D-249).
 - **The client is TOLD what to do next; it never infers it from a status.** The instruction is a closed
   vocabulary - `retry-with-new-identity`, `retry-with-same-identity`, `retry-later`, `do-not-retry` -
   and permanent-versus-transient was a false binary: a superseded version or a broken document clears on

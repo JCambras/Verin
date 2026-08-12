@@ -602,3 +602,27 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 | `infrastructure` | 8,802 | **8,850** | 48 |
 | `presentation` | 2,240 | 6,000 | (ADR-0012 envelope, unchanged; re-taken) |
 | `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+## Re-measure (2026-08-12, review round 20): NO ceiling moves
+
+Carrying a fault location and the limit that ended it as ONE value (`ConfigPath`, D-253) spent 50 of the
+62 lines of correction headroom the round-19 amendment had just named: the typed step both container
+kinds now take, the subscript step that puts a list POSITION under the same ceiling as a key, and a
+constructor with no limit argument left for an emitter to overrule. That is exactly what correction
+headroom is for, so no ceiling moves - a ceiling raised without a finding of its own is a ceiling nobody
+is holding, and the other four layers did not move at all.
+
+The figure is RE-TAKEN rather than carried forward, because this ADR's header says a measurement left
+stale is the same ceiling with a number nobody re-took. `domain` is now TWELVE lines from its ceiling.
+That is the zero-headroom condition this ADR argues against, and it is NAMED here rather than banked: the
+next change to `src/domain/**` re-measures and, on this evidence, arrives with an amendment.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,771 | 6,810 | 39 (unchanged) |
+| `domain` | 9,868 | 9,880 | 12 (unchanged ceiling) |
+| `infrastructure` | 8,802 | 8,850 | 48 (unchanged ceiling) |
+| `presentation` | 2,240 | 6,000 | (ADR-0012 envelope, unchanged; re-taken) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |

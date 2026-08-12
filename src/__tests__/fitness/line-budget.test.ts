@@ -324,9 +324,23 @@ const CEILINGS = {
 // RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,818 / 9,880 (62),
 // infrastructure 8,802 / 8,850 (48), presentation 2,240 / 6,000, tooling 12,154 /
 // 12,400.
+//
+// ADR-0058 re-measure (review round 20): carrying a fault location and its limit as
+// ONE value (`ConfigPath`, D-253) spent 50 of `domain`'s 62 lines of correction
+// headroom - the typed step both container kinds now take, the subscript step that
+// puts a list POSITION under the same ceiling as a key, and a constructor with no
+// limit argument left to overrule. NO ceiling moves: every layer is inside the one
+// it already had, and a ceiling raised without its own finding is a ceiling nobody
+// is holding. `domain` is now TWELVE lines from its ceiling, which is the
+// zero-headroom condition the header above argues against - named here rather than
+// banked, so the next change to `src/domain/**` reads it as the ADR amendment it now
+// is.
+// RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,868 / 9,880 (12),
+// infrastructure 8,802 / 8,850 (48), presentation 2,240 / 6,000, tooling 12,154 /
+// 12,400.
 const CEILINGS = {
   contracts: 6810, // ADR-0058 as amended six times, on the cause reader (6,771 measured)
-  domain: 9880, // ADR-0058 as amended fourteen times, on the named path limit (9,818 measured)
+  domain: 9880, // ADR-0058 as amended fourteen times, on the named path limit (9,868 measured)
   infrastructure: 8850, // ADR-0058 as amended seven times, on the named path limit (8,802 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until

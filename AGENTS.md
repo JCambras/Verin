@@ -181,7 +181,7 @@ gap report. Load-bearing rules an agent trips over:
   `firmId` anywhere. A parameter needing a tenant-scoped ref uses the one `{ $ref: { kind, class } }`
   placeholder, and never in a key-shaping parameter (D-184/D-185).
 - **A configuration refusal is minted ONCE and classified by CAUSE** (`docs/domain-config.md` §10, fence
-  RULES I-L). A config module states a typed fault; the `ConfiguredRefusal` port mints it. Every "this
+  RULES I-M). A config module states a typed fault; the `ConfiguredRefusal` port mints it. Every "this
   deployment cannot resolve or compile its published configuration" refusal is operator-recoverable and
   therefore `retry-later` wherever it arises, and a surface READS that instruction
   (`clientRetryFor`, `src/contracts/client-retry.ts`) instead of choosing one or pattern-matching a
@@ -193,7 +193,14 @@ gap report. Load-bearing rules an agent trips over:
   from segments, never interpolated: `src/domain/config/errors.ts` states the channel's segment grammar
   and length ceiling once, `configError` carries only the deepest prefix that statement can express, and
   an author-chosen key it cannot name is refused at admission - so a fault reports the deepest nameable
-  ancestor instead of `[REDACTED]` or a node the document does not have (D-250). A surface that renders
+  ancestor instead of `[REDACTED]` or a node the document does not have (D-250). A location and the
+  limit that ended it are ONE value, `ConfigPath`: build it with `configPathFrom`/`configPathOfText`,
+  step it with `childConfigPath` (a key) or `childConfigSubscript` (a list position, under the SAME
+  ceiling), and hand `configError` the STEP - it takes no limit argument, and passing the step's `.path`
+  instead drops the limit and reports a truncated location as an exact one, which the fence rejects with
+  `file:line`. The two limits reach the operator as the registered `configPathLimit`
+  (`unnameable-segment` means RENAME THE KEY, `path-too-long` means FLATTEN THE GRAPH); no limit at all
+  means the path IS the location (D-252/D-253). A surface that renders
   configured copy resolves it up front and renders the refusal when it cannot: the demo station page is
   server-rendered, so deleting the published document must break that journey visibly, never as a stack
   trace (D-251).
@@ -214,7 +221,9 @@ branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces 
 `src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
 the exact twelve surface identities in the SHA-pinned ratified demo contract, the typed manifest, each
 route case's imported component and exact journey view model, its resolved identifier spread without
-overrides, the dynamic page's reachable return, and policy authoring's query-derived approval input,
+overrides, the dynamic page's reachable return, its resolution of `demoVocabulary` for the SAME firm the
+URL resolved with the rendered refusal as the ONLY admitted early exit and the resolved value driving
+`getJourney` (D-251), and policy authoring's query-derived approval input,
 the exact ordered clickable journey controls without registered Playwright hooks, and screenshots that
 verify the corresponding URL and loaded marker. CI then runs
 `scripts/demo-screen-artifacts.ts` to require every canonical artifact to exist and be non-empty, and

@@ -122,9 +122,10 @@ fails.
   VOCABULARY: the demo journey renders its intent slots and evidence rows from the document, bound for
   the branch's firm.
 - `yaml` moves from `devDependencies` to `dependencies`: it is now read at runtime by exactly one adapter.
-- Nine gaps and corrections are recorded in `docs/domain-config-gaps.md`, classified as the ratified
-  prompt requires. Two are corrections to this repo's own earlier design report, and one is a real
-  constraint handed to prompt 25.
+- The gaps and corrections are recorded in `docs/domain-config-gaps.md`, classified as the ratified
+  prompt requires: no missing primitive, twelve rows of missing platform capability, and eight of
+  mistaken requirement. Two of the latter are corrections to this repo's own earlier design report, and
+  one is a real constraint handed to prompt 25.
 
 ## Amendment to ADR-0010
 
