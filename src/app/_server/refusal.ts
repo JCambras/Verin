@@ -2,7 +2,7 @@
  * WHAT A BROWSER IS TOLD WHEN THE ACCOUNT-OPENING FLOW ITSELF REFUSES.
  *
  * The status and the body are a MESSAGE TO THE SUBMITTER ABOUT WHAT TO DO NEXT,
- * never a window into our error taxonomy (D-224). Forwarding the flow's own
+ * never a window into our error taxonomy (D-237). Forwarding the flow's own
  * `AppError` made the journey's behavior depend on which code a step happened to
  * raise: `accountTypeOf` raises a VALIDATION from INSIDE `application.create`,
  * after `household.create` and `contact.create` have committed, and a client
@@ -11,7 +11,7 @@
  * the status and the sentence, and WHICH failure it was goes to the log line
  * beside it, where an operator actually looks.
  *
- * SHARED (D-228) because the demo's simulate-sign affordance drives the very same
+ * SHARED (D-241) because the demo's simulate-sign affordance drives the very same
  * flow and used to forward the raw `AppError` - so a superseded configuration
  * version answered 409 with the internal message and no typed instruction on the
  * one surface the shipped journey actually clicks. One taxonomy, one shape, every
@@ -58,7 +58,7 @@ const referenceOf = (error: AppError | undefined): string | undefined => {
  *
  * The SENTENCE is always this module's, never the refusal's: an `AppError`'s
  * message is written for whoever raised it and has carried dotted document paths
- * and SHA-256 digests across this boundary before (D-227/D-229).
+ * and SHA-256 digests across this boundary before (D-240/D-242).
  */
 export function refusalResponse(retry: ClientRetry, error?: AppError): NextResponse {
   const status = REFUSAL_STATUS[retry];

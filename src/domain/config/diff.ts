@@ -1,6 +1,6 @@
 /**
  * A CONFIGURATION VERSION'S CHANGE AS DATA (captain direction, 2026-08-11;
- * ADR-0056).
+ * ADR-0057).
  *
  * A candidate version must be able to state its change against a parent version
  * as DATA, not as prose, because the planned genesis-interview onboarding

@@ -1,6 +1,6 @@
 /**
  * THE DEMO'S DOMAIN VOCABULARY, READ FROM CONFIGURATION (v3 prompt 10;
- * ADR-0056).
+ * ADR-0057).
  *
  * The walking skeleton used to carry money-movement's slot labels and evidence
  * row labels as literals inside its builders. They now come from

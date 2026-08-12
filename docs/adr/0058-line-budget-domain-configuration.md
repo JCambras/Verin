@@ -1,15 +1,15 @@
-# ADR-0057: Line-budget amendment for the domain configuration schema
+# ADR-0058: Line-budget amendment for the domain configuration schema
 
 **Status:** Accepted
 **Date:** 2026-08-11
 **Deciders:** Founding architect
 **Relates to:** ADR-0018 (per-layer line budgets), ADR-0029, ADR-0033, ADR-0048, ADR-0049, ADR-0050,
-ADR-0051, ADR-0052, ADR-0054; charter non-negotiables #1 and #10; v3 prompt 10 (ADR-0056)
+ADR-0051, ADR-0052, ADR-0054; charter non-negotiables #1 and #10; v3 prompt 10 (ADR-0057)
 **Amends:** ADR-0054's ceilings for `contracts`, `domain`, and `infrastructure`
 
 ## Context
 
-v3 prompt 10 (ADR-0056) lands the domain-configuration schema: the whole thirteen-section grammar, a
+v3 prompt 10 (ADR-0057) lands the domain-configuration schema: the whole thirteen-section grammar, a
 seven-stage loader, the firm binder, the prompt-9 registry derivation, the plan compiler, the version
 diff, and the label and intake projections. It is the largest single addition to the `domain` layer of
 this build, and deliberately so - the point of the prompt is that a decision DOMAIN stops being code.
@@ -290,7 +290,7 @@ version-disagreeing report - real persisted status and resume token, awaited rul
 than answering `failed`, which corrects the round-9 refusal on that same path. Refusing to DRIVE a stale
 positional cursor and refusing to REPORT an execution that plainly exists are different acts, and the
 `failed` answer told a browser its submission never happened, whose client then minted a fresh request
-id and opened a duplicate execution (D-224). The two paths that drive steps still refuse, unchanged.
+id and opened a duplicate execution (D-237). The two paths that drive steps still refuse, unchanged.
 
 `contracts`, `domain` and `presentation` are re-taken and unchanged. The round's other two corrections
 are app code in no measured bucket: the intake route reports a configured field this deployment cannot
@@ -441,7 +441,7 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 ## Amendment (2026-08-12, review round 15): `domain` and `infrastructure` raised for the derived refusal class
 
 `infrastructure` grows past its ceiling and `domain` reaches its own exactly, answering this round's
-findings in code (D-231).
+findings in code (D-244).
 
 `infrastructure` gains `config/configured-flow.ts` - the compile of the published document, moved out of
 the composition root because everything it refuses is a fact about the DOCUMENT, and because holding it

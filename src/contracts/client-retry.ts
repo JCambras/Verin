@@ -1,5 +1,5 @@
 /**
- * WHAT A SUBMITTER SHOULD DO NEXT - the browser's half of D-224 (a status or code
+ * WHAT A SUBMITTER SHOULD DO NEXT - the browser's half of D-237 (a status or code
  * is an instruction to a NAMED audience, never a view of the internal taxonomy).
  *
  * No error CODE can carry this, which is why it is its own closed vocabulary. The
@@ -23,7 +23,7 @@
  * good, which on the e-sign callback path means a client signs and their account
  * never opens; answering it "retry now" spends the sender's retry budget against
  * a condition no retry can change. Both audiences need the same third arm, so
- * both read it from HERE (D-226).
+ * both read it from HERE (D-239).
  */
 import type { AppError } from "@contracts/errors";
 
@@ -50,7 +50,7 @@ export const CLIENT_RETRY = Object.freeze({
 export type ClientRetry = (typeof CLIENT_RETRY)[keyof typeof CLIENT_RETRY];
 
 /**
- * THE CLASSIFICATION RULE, STATED WHERE THE CATEGORIES ARE (D-228).
+ * THE CLASSIFICATION RULE, STATED WHERE THE CATEGORIES ARE (D-241).
  *
  * A category belongs to a CAUSE, not to a call site. Assigning it per call site
  * is what produced the inconsistency this rule closes: the version guard and the

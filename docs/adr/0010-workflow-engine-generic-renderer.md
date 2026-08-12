@@ -1,6 +1,6 @@
 # ADR-0010: A generic workflow engine + generic renderer, not bespoke screens
 
-**Status:** Accepted (amended 2026-08-11 by ADR-0056 - see the amendment at the end of this file)
+**Status:** Accepted (amended 2026-08-11 by ADR-0057 - see the amendment at the end of this file)
 **Date:** 2026-07-18
 **Deciders:** Founding architect
 **Relates to:** Charter non-negotiables #5, #10; deliverable E
@@ -49,9 +49,9 @@ registry lands with the second flow. Presentation-tier budget is separate (ADR-0
 A workflow cannot be expressed as a `FlowDefinition` without hacks — extend the engine, do not bypass it
 (and if a surface needs bespoke richness, give it an ADR-fenced budget, ADR-0018).
 
-## Amendment (2026-08-11, ADR-0056 - v3 prompt 10)
+## Amendment (2026-08-11, ADR-0057 - v3 prompt 10)
 
-**Status:** Amended by [ADR-0056](./0056-domain-configuration-schema.md), under the captain's
+**Status:** Amended by [ADR-0057](./0057-domain-configuration-schema.md), under the captain's
 `account-opening-migration-depth` ruling (2026-07-28).
 
 This ADR's mechanism is UNCHANGED: a flow is still a declarative `FlowDefinition` executed by the generic
@@ -67,7 +67,7 @@ configuration document (`config/domains/<domain>.yaml`) by `src/domain/config/pl
 - `src/infrastructure/wire.ts` composes rather than describes: it compiles the published configuration
   and dispatches configured command types to adapters that own spans, SQL and audit codes;
 - deleting `config/domains/account-opening.yaml` breaks the shipped `/app/account-opening` journey, which
-  is the honesty check the migration exists to pass (proof log PF-251).
+  is the honesty check the migration exists to pass (proof log PF-257).
 
 This ADR's budget claim gets STRONGER, not weaker: a workflow now costs a configuration file and no
 TypeScript at all. Its "Revisit When" trigger also sharpens - a workflow that cannot be expressed as a

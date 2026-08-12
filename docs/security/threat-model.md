@@ -111,7 +111,7 @@ e-sign → webhook (verify signature); operator → house-CRM console (RBAC + au
   (`ConfiguredRefusal`), the wire gets a generic sentence plus a correlation reference, and the stage,
   code and document location travel to the operator as the registered `configStage`/`configCode`/
   `configPath` log fields, whose admitted shapes derive from what the emitters produce
-  (D-227/D-229/D-230/D-233). No deployment internal (document path, file name, environment variable,
+  (D-240/D-242/D-243/D-246). No deployment internal (document path, file name, environment variable,
   hash, or version id) reaches user-facing copy, static surface literals included.
   *Fence:* `domain-configuration` RULES I-L.
 - **T-I4 (High): a secret is committed or a live org domain ships in a doc.** *Control:* gitleaks + the

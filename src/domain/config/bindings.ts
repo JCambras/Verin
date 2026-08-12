@@ -1,6 +1,6 @@
 /**
  * PRIMITIVE BINDINGS AND THE EVALUATION DAG (v3 prompt 10 deliverable 4;
- * ADR-0056).
+ * ADR-0057).
  *
  * A binding is "this domain uses THIS catalog primitive with THESE parameters".
  * It carries no `publishes` field on purpose: the published key space is DERIVED
@@ -113,7 +113,7 @@ export const orderBindings = (
 };
 
 /**
- * COLLAPSED EXPORT (D-193). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -122,6 +122,6 @@ export const orderBindings = (
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-193)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
 export interface PrimitiveBinding extends z.infer<typeof primitiveBindingSchemaImpl> {}
 export const PrimitiveBindingSchema: z.ZodType<PrimitiveBinding> = primitiveBindingSchemaImpl;

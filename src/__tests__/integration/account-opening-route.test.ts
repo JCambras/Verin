@@ -6,7 +6,7 @@ import { createUser } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
 
 /**
- * THE ACCOUNT-OPENING REQUEST BOUNDARY (regression, prompt 10 / ADR-0056).
+ * THE ACCOUNT-OPENING REQUEST BOUNDARY (regression, prompt 10 / ADR-0057).
  *
  * This is the assertion that stops one specific regression recurring. The
  * migration to configuration briefly moved the registration-vocabulary check out
@@ -41,7 +41,7 @@ const injected = vi.hoisted(() => ({
   /**
    * The same real refusal, but reaching only the FLOW: the form still projects,
    * so the request passes the boundary and the START PATH is the thing that
-   * refuses. That is the layer whose instruction was wrong (D-228).
+   * refuses. That is the layer whose instruction was wrong (D-241).
    */
   unrunnableFlow: false,
 }));
@@ -139,7 +139,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
   });
 
   /**
-   * A DEPLOYMENT DEFECT IS CLASSIFIED BY ITS CAUSE (D-228), not by which layer
+   * A DEPLOYMENT DEFECT IS CLASSIFIED BY ITS CAUSE (D-241), not by which layer
    * noticed it. A configured field the fixed start input cannot carry is caused by
    * the published document, cleared by an operator rolling that document back, and
    * fixable by nobody submitting the form - so it takes the operator-recoverable
@@ -148,7 +148,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
    * with no typed instruction at all, which was this boundary deciding locally what
    * the shared rule already decides.
    *
-   * And the configured field id stays OFF THE WIRE (D-229): it reaches the
+   * And the configured field id stays OFF THE WIRE (D-242): it reaches the
    * operator's log line as a registered document path instead.
    */
   it("answers a configured field this deployment cannot carry as retry-later, committing NOTHING", async () => {
@@ -165,7 +165,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
   });
 
   /**
-   * THE EDITED-RESUBMIT PATH IS REACHABLE AND IT CLEARS (D-225).
+   * THE EDITED-RESUBMIT PATH IS REACHABLE AND IT CLEARS (D-238).
    *
    * D-027 refuses a request id replayed with DIFFERENT input rather than silently
    * writing the stale values - the right refusal, and one the submitter clears by
@@ -197,7 +197,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
   });
 
   /**
-   * A DEPLOYMENT AN OPERATOR CAN REPAIR IS NOT A DEAD END (D-226/D-227).
+   * A DEPLOYMENT AN OPERATOR CAN REPAIR IS NOT A DEAD END (D-239/D-240).
    *
    * The published configuration could not be resolved, which is neither the
    * submitter's fault nor permanent: an operator restores the document and the
@@ -223,7 +223,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
   });
 
   /**
-   * THE SAME CAUSE ANSWERS THE SAME WAY ONE LAYER IN (D-228).
+   * THE SAME CAUSE ANSWERS THE SAME WAY ONE LAYER IN (D-241).
    *
    * The boundary case above and this one are the SAME broken document; the only
    * difference is which layer notices. This one gets past the intake projection
@@ -245,7 +245,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
   });
 
   /**
-   * THE REFERENCE SURVIVES THE WHOLE WAY TO THE BODY (D-231).
+   * THE REFERENCE SURVIVES THE WHOLE WAY TO THE BODY (D-244).
    *
    * The refusal narrows its own message to a generic sentence precisely so it can
    * carry a correlation id instead of dotted document paths, and the reporting

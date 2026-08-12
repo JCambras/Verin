@@ -1,4 +1,4 @@
-# ACCOUNT OPENING, EXPRESSED AS DATA (v3 prompt 10; ADR-0056).
+# ACCOUNT OPENING, EXPRESSED AS DATA (v3 prompt 10; ADR-0057).
 #
 # This file IS the shipped /app/account-opening flow. It replaces the hand-coded
 # FlowDefinition ADR-0010 introduced: delete this file and the flow stops working

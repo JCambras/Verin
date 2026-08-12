@@ -1,6 +1,6 @@
 /**
  * PRIMITIVE PARAMETER VALUES, AND THE ONE PLACE TENANCY IS DEFERRED (v3 prompt
- * 10; ADR-0056).
+ * 10; ADR-0057).
  *
  * A domain configuration is firm-NEUTRAL: it contains no firmId, which is what
  * makes invariant 26 ("Firm B differs only through configuration") a property
@@ -110,7 +110,7 @@ export type RefResolver = (ref: ParameterRef["$ref"]) => unknown | null;
  * state.
  *
  * Refusing at admission is what makes the diagnosis shape a consequence of this
- * constant instead of a second opinion about it (D-233), the same way the policy
+ * constant instead of a second opinion about it (D-246), the same way the policy
  * loader bounds document nesting before parsing rather than after (D-181).
  */
 const depthOverruns = (
@@ -242,7 +242,7 @@ export type ParameterParse =
  * walk expands a parameter's type structurally, skipping members that are
  * callable and recursing into members that are not; a `z.ZodType` carries deep
  * non-callable internals, so naming one in an exported `src/domain/` signature
- * made that walk exponential and killed a fence worker outright (D-193). The
+ * made that walk exponential and killed a fence worker outright (D-206). The
  * adapter that turns a catalog primitive into this shape therefore lives beside
  * the loader, unexported, where no signature exposes it.
  */

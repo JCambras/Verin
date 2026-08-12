@@ -1,6 +1,6 @@
 /**
  * Typed load/bind failures for the domain-configuration system (v3 prompt 10,
- * ADR-0056). Loading is TOTAL: every rejection is a value, never a throw, so a
+ * ADR-0057). Loading is TOTAL: every rejection is a value, never a throw, so a
  * malformed configuration file cannot become an unenveloped 500 (charter #2,
  * the no-bare-throw fence).
  *
@@ -8,7 +8,7 @@
  * caller can tell "this document is not inert" from "this firm does not supply
  * that approval template" without parsing prose.
  *
- * AND NO PROSE RENDERING LIVES HERE (D-231). The accumulator is a list of typed
+ * AND NO PROSE RENDERING LIVES HERE (D-244). The accumulator is a list of typed
  * faults; the one consumer that flattened it into a sentence put dotted document
  * paths into an `AppError` message the e-sign webhook returns verbatim to the
  * EXTERNAL provider. A fault reaches an operator as REGISTERED STRUCTURED VALUES
@@ -50,7 +50,7 @@ export type DomainConfigErrorCode = (typeof DOMAIN_CONFIG_ERROR_CODES)[number];
  * travels admits a declared SHAPE (`configPath` in `domain/observability`), so a
  * path the emitter can build and the shape cannot express degrades to
  * "[REDACTED]" - a stage reported with its location censored, which is the dead
- * diagnosis channel D-229 exists to prevent.
+ * diagnosis channel D-242 exists to prevent.
  *
  * Every other emitted path is bounded by the SCHEMA: the document's own sections
  * nest a fixed number of levels. One is not. A primitive's `parameters` value is
@@ -64,7 +64,7 @@ export type DomainConfigErrorCode = (typeof DOMAIN_CONFIG_ERROR_CODES)[number];
  * and the diagnosis shape derives its per-segment subscript cap from this same
  * constant. Bounding admission once is what keeps the two from being two
  * opinions - the shape is a CONSEQUENCE of the bound rather than a second guess
- * at it, which is the mistake that shipped twice (D-233).
+ * at it, which is the mistake that shipped twice (D-246).
  *
  * Raising it is a deliberate edit here; the shape follows automatically.
  */
@@ -84,9 +84,9 @@ export const configError = (
 ): DomainConfigError => ({ code, path, message });
 
 /**
- * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-231).
+ * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-244).
  *
- * Classifying a refusal by its CAUSE (D-228) only holds if the classification is a
+ * Classifying a refusal by its CAUSE (D-241) only holds if the classification is a
  * MECHANISM. Marking each mint `operatorRecoverable` by hand was a convention:
  * nine refusals across the plan compiler, the intake view and the composition root
  * each said the same thing in their own words, so the wire got a server error with

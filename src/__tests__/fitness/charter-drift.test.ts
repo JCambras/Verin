@@ -251,7 +251,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["policy-ast-closed", "fitness", "src/__tests__/fitness/policy-ast.test.ts", "", "enforced"],
   ["policy-ast-closed", "config", "fixtures/policy/migration-1.0.0.json", "", "enforced"],
   ["policy-ast-closed", "adr", "docs/adr/0053-policy-ast-and-interpreter.md", "", "enforced"],
-  // v3 prompt 10 (ADR-0056): a decision domain is DATA. The fence, both
+  // v3 prompt 10 (ADR-0057): a decision domain is DATA. The fence, both
   // published documents, their version pin file, and the two governing
   // documents are all load-bearing - removing any one of them is how this
   // capability would quietly become a document nobody reads.
@@ -259,7 +259,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["domain-config-as-data", "config", "config/domains/account-opening.yaml", "", "enforced"],
   ["domain-config-as-data", "config", "config/domains/money-movement.yaml", "", "enforced"],
   ["domain-config-as-data", "config", "config/domains/versions.json", "", "enforced"],
-  ["domain-config-as-data", "adr", "docs/adr/0056-domain-configuration-schema.md", "", "enforced"],
+  ["domain-config-as-data", "adr", "docs/adr/0057-domain-configuration-schema.md", "", "enforced"],
   ["domain-config-as-data", "procedure", "docs/domain-config.md", "", "enforced"],
 ] as const satisfies readonly EnforcedMechanismTuple[];
 

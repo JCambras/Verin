@@ -1,5 +1,5 @@
 /**
- * UI PRESENTATION METADATA (v3 prompt 10 deliverable 13; ADR-0056).
+ * UI PRESENTATION METADATA (v3 prompt 10 deliverable 13; ADR-0057).
  *
  * Three rules make this section inert and fenceable:
  *
@@ -158,7 +158,7 @@ const presentationSchemaImpl = z
   });
 
 /**
- * COLLAPSED EXPORT (D-193). The schema above stays the single source of truth;
+ * COLLAPSED EXPORT (D-206). The schema above stays the single source of truth;
  * what leaves this module is a NAMED type plus a `z.ZodType` view of it. The
  * repo's type-resolving fences materialize the type of EVERY exported value
  * under `src/domain/`, and a `ZodObject` generic instantiation drags its whole
@@ -167,6 +167,6 @@ const presentationSchemaImpl = z
  * fence that stops running is worse than one that fails. Naming the output type
  * is what keeps the exported surface small.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-193)
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- named alias for the inferred shape (D-206)
 export interface Presentation extends z.infer<typeof presentationSchemaImpl> {}
 export const PresentationSchema: z.ZodType<Presentation> = presentationSchemaImpl;

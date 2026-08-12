@@ -1374,7 +1374,7 @@ describe("v3 gate-ordering fence", () => {
     });
 
     it("holds Gate B below green while an un-mechanised evidence clause remains, and green once it is REPLACED by a real check", () => {
-      // Prompt 10 (ADR-0056) replaced Gate B's own prompt-10 evidence clause with
+      // Prompt 10 (ADR-0057) replaced Gate B's own prompt-10 evidence clause with
       // the executable domain-configuration fence, which is exactly what this
       // companion demands: an outcome clause with no mechanism can never read
       // green, and the only honest way to clear it is to land the proof.

@@ -44,7 +44,7 @@ A **primitive** is a named, versioned, **pure** function:
   ratified money-movement configuration already does: it binds `candidate-selection`
   twice, at the bind stage for `target-record` (GC-08) and at the evaluate stage for
   `source-account` (GC-01). **This is NOT checked today - deferred as
-  `fu-binding-multiplicity-check`, owned by prompt 16 (D-235).** Prompt 10's config load
+  `fu-binding-multiplicity-check`, owned by prompt 16 (D-248).** Prompt 10's config load
   was to reject both halves with a precise error naming the primitive and both bindings,
   and it does not: nothing in `src/domain/config/` groups bindings by `primitiveId`. What
   ships is narrower and incidental - `deriveContextKeys` refuses two bindings whose
@@ -264,7 +264,7 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   without restriction lists screens clean by construction. A domain configuration that
   binds `restriction-screen` MUST therefore declare its restriction-source evidence kinds
   as required evidence. **That obligation is NOT checked today - deferred as
-  `fu-restriction-evidence-required`, owned by prompt 15 (D-235).** Prompt 10 was to
+  `fu-restriction-evidence-required`, owned by prompt 15 (D-248).** Prompt 10 was to
   enforce it at config load, fail-closed, and did not, because the linkage the check must
   read is not expressible: a `restrictionKinds[]` entry carries `kind` and `polarity` and
   nothing else, so no document can name the evidence kind that supplies a bound

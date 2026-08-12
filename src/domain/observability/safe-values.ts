@@ -16,7 +16,7 @@ export const OBSERVABILITY_ID_FIELDS = [
   "actor",
   "applicationId",
   /**
-   * THE CONFIGURATION DIAGNOSIS (D-229), as STRUCTURE rather than prose. This
+   * THE CONFIGURATION DIAGNOSIS (D-242), as STRUCTURE rather than prose. This
    * repository has no prose channel by design - the formatter admits registered
    * enums and sealed ids precisely so an unregistered value degrades to
    * "[REDACTED]" - so a diagnosis routed at a free-form `detail` string went
@@ -32,7 +32,7 @@ export const OBSERVABILITY_ID_FIELDS = [
   /**
    * The reference a refused request carries on the WIRE and the operator's log
    * line carries beside the diagnosis, so narrowing a client-facing message to a
-   * generic sentence never costs the ability to diagnose it (D-227).
+   * generic sentence never costs the ability to diagnose it (D-240).
    */
   "correlationId",
   "domainConfigId",
@@ -74,7 +74,7 @@ const ACTION_NAMES = [
 export type ObservabilityAction = (typeof ACTION_NAMES)[number];
 /**
  * WHICH stage of resolving a published domain configuration refused (v3 prompt 10,
- * ADR-0056). The client is told a generic sentence and a reference, because a
+ * ADR-0057). The client is told a generic sentence and a reference, because a
  * dotted document path and a pair of SHA-256 hashes are deployment internals; this
  * is the half that reaches the OPERATOR, in the log line the reference joins to.
  * Exported as a TYPE for the same reason as the audit vocabularies above: a
@@ -135,7 +135,7 @@ const ENUMS = new Map<string, ReadonlySet<string>>([
   ])],
   ["entityType", new Set<string>(ENTITY_TYPE_NAMES)],
   ["flow", new Set(["account-opening"])],
-  // What a surface TOLD its client to do next (D-224/D-225). Read off the closed
+  // What a surface TOLD its client to do next (D-237/D-238). Read off the closed
   // contract rather than spelled again, so widening the vocabulary can never leave
   // the instruction an operator needs degraded to "[REDACTED]" in the log line
   // that explains why a submission was refused.
@@ -274,7 +274,7 @@ export function authorityObservabilityId(
 }
 
 /**
- * WHICH facts a configuration refusal states to the operator (D-229). Each is a
+ * WHICH facts a configuration refusal states to the operator (D-242). Each is a
  * value the DEPLOYMENT'S OWN published document (or its version pin file) carries,
  * never a request value, so the provenance rule is a declared SHAPE per field
  * rather than a mint ceremony: an alphabet with no whitespace plus a length cap is
@@ -308,7 +308,7 @@ const CONFIG_VERSION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*@[0-9A-Za-z][0-9A-Za-z._-]{0
  * So the cap is not chosen here at all. It is `MAX_CONFIGURED_VALUE_DEPTH`, the
  * bound that emitter is REFUSED AT (`resolveParameters`), read from the module
  * that states it: the shape cannot be narrower than its emitter without the
- * loader having admitted a graph it declared inadmissible (D-233).
+ * loader having admitted a graph it declared inadmissible (D-246).
  *
  * The SEGMENT COUNT carries no cap of its own for the same reason - any number
  * written here would be a third opinion. The 128-character ceiling in

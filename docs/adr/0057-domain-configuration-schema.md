@@ -1,4 +1,4 @@
-# ADR-0056: The domain configuration schema - a decision domain is data
+# ADR-0057: The domain configuration schema - a decision domain is data
 
 **Status:** Accepted
 **Date:** 2026-08-11
@@ -149,7 +149,7 @@ execution may only be driven by the version it started on - a fact the compositi
 engine cannot. `resumeFlow` therefore takes an optional `ResumeGuard`, evaluated against the state the
 engine has just loaded and tenant-checked, and only for the two DRIVEABLE states; returning an `AppError`
 refuses the drive, returning `null` proceeds. Checking the version in the caller instead would load the
-row twice, and the version checked would not provably be the version driven (D-217/D-226). A MISSING
+row twice, and the version checked would not provably be the version driven (D-230/D-239). A MISSING
 version is LEGACY and resumes - it predates the pinning, so refusing it would strand every in-flight
 execution on deploy; a KNOWN and DIFFERENT one refuses, and a recorded value that is not a version string
 fails closed as its own stage. Those refusals are operator-recoverable, so they reach the provider as

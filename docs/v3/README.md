@@ -1,7 +1,7 @@
 # docs/v3 - the ratified Verin v3 architecture direction
 
 **Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
-**ADR-0023 through ADR-0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, ADR-0055, and ADR-0056** (`docs/adr/`). The ratified documents in the table below are committed
+**ADR-0023 through ADR-0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, ADR-0055, and ADR-0057** (`docs/adr/`). The ratified documents in the table below are committed
 **verbatim** from the ratified sources; the arch-version fence
 (`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
 [`v3-invariants.json`](../../v3-invariants.json) against their SHA-256 pins, so build work can never
@@ -48,7 +48,7 @@ on its own and is subordinate to the ratified documents below.
 | [0052](../adr/0052-synthetic-corpus-and-provenance-split.md) | Prompt 11 landed: the §2.4 replay corpus as a deterministic synthetic substrate in `fixtures/corpus/` + `scripts/corpus/`, with a fenced provenance split, an honestly empty real-derived partition (deferred, no `detectionRate`), and digest-bound per-version captain signoff; `scripts/**` becomes a measured `tooling` budget (amends ADR-0018); no invariant is activated |
 | [0053](../adr/0053-policy-ast-and-interpreter.md) | Prompt 9 landed: the §6.1 constrained policy AST as a CLOSED grammar in `src/contracts/decision-core/policy.ts` (grammar 1.0.0 active; 1.1.0 adds only the reserved `elapsed` op, refused by the loader as grammar-only) plus the pure deterministic interpreter `src/domain/policy/` (seven-check loader, conservative effect-conflict rejection, four-phase fail-closed evaluator); invariant 16 activates; contracts and domain ceilings re-baselined by [ADR-0054](../adr/0054-line-budget-policy-ast.md) (amends ADR-0041 and ADR-0051) |
 | [0055](../adr/0055-gate-a-invariant-ordering.md) | Gate A owns invariants 1, 2, 4, and 5 and requires prompt-5 guarantees 7, 8, and 9; invariant 3 is gated at **B** (its prerequisite is prompt 10) |
-| [0056](../adr/0056-domain-configuration-schema.md) | Prompt 10 landed: a decision domain is DATA - the thirteen-section grammar, the seven-stage total loader, the firm binder and the plan compiler in `src/domain/config/`, the documents at `config/domains/` (contract: [`docs/domain-config.md`](../domain-config.md); gap report: [`docs/domain-config-gaps.md`](../domain-config-gaps.md)); the hand-coded account-opening flow definition is DELETED and the shipped journey compiles from its document (amends ADR-0010); invariant 3 activates; contracts, domain and infrastructure ceilings re-baselined by [ADR-0057](../adr/0057-line-budget-domain-configuration.md) (amends ADR-0054) |
+| [0056](../adr/0057-domain-configuration-schema.md) | Prompt 10 landed: a decision domain is DATA - the thirteen-section grammar, the seven-stage total loader, the firm binder and the plan compiler in `src/domain/config/`, the documents at `config/domains/` (contract: [`docs/domain-config.md`](../domain-config.md); gap report: [`docs/domain-config-gaps.md`](../domain-config-gaps.md)); the hand-coded account-opening flow definition is DELETED and the shipped journey compiles from its document (amends ADR-0010); invariant 3 activates; contracts, domain and infrastructure ceilings re-baselined by [ADR-0058](../adr/0058-line-budget-domain-configuration.md) (amends ADR-0054) |
 
 ## The 30 invariants, phase-gated
 
@@ -85,7 +85,7 @@ Per **ADR-0055**, `verin-prompt-sequence-v3.md:186`
 4, and 5 and also requires prompt-5 structural guarantees 7, 8, and 9 at their earliest proof point**;
 invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, where account
 opening becomes domain configuration - is in Wave B. Invariant 3 was not weakened or waived while it
-waited: prompt 10 has since landed (ADR-0056), and the registry records invariant 3 `active` on the
+waited: prompt 10 has since landed (ADR-0057), and the registry records invariant 3 `active` on the
 domain-configuration fence with both published documents as its activation artifacts. The registry, not
 this page, is what says so.
 

@@ -1,6 +1,6 @@
 /**
  * `loadDomainConfig` - the deterministic load-time gate for a domain
- * configuration (v3 prompt 10; ADR-0056). Seven ordered stages, every failure a
+ * configuration (v3 prompt 10; ADR-0057). Seven ordered stages, every failure a
  * VALUE, and a document loads only when the error list is EMPTY:
  *
  *  1. inert document   - a plain data record (the YAML adapter refuses tags,
@@ -102,7 +102,7 @@ export const shippedConfigEnvironment = (): DomainConfigEnvironment => ({
  * Adapt a catalog primitive to the narrow shape parameter resolution needs.
  * UNEXPORTED on purpose: it is the one place a Zod schema type is touched, and
  * keeping it out of every exported signature is what keeps the repo's
- * type-resolving fences able to walk this module at all (D-193).
+ * type-resolving fences able to walk this module at all (D-206).
  */
 const parameterOwnerOf = (primitive: CatalogPrimitive): ParameterOwner => ({
   id: primitive.id as string,

@@ -15,11 +15,11 @@ import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
  * superseded configuration version answered 409 with the internal message and no
  * typed instruction, on the one screen a person is watching.
  *
- * It now answers in the shared refusal shape (D-228), and this asserts the two
+ * It now answers in the shared refusal shape (D-241), and this asserts the two
  * halves that kept going missing: the typed instruction with its pacing, and the
  * REFERENCE the refusal minted - which is the only thing the advisor can hand to
  * operations, and which the reporting surfaces discarded for three rounds while
- * the refusal, the log line and the fence all agreed it existed (D-231).
+ * the refusal, the log line and the fence all agreed it existed (D-244).
  */
 const cookieStore = { set: vi.fn() };
 vi.mock("next/headers", () => ({ cookies: () => Promise.resolve(cookieStore) }));
@@ -93,7 +93,7 @@ describe("POST /api/esign/simulate-sign answers a refusal in the shared shape", 
     // The taxonomy stays in the log line, and the reference comes to the screen.
     expect(body.error?.code).toBeUndefined();
     expect(body.error?.message).toMatch(/Quote reference [0-9a-f-]{36}\./);
-    // The two configuration version ids are deployment internals (D-229), and the
+    // The two configuration version ids are deployment internals (D-242), and the
     // sentence is this deployment's, not the refusal's own.
     expect(body.error?.message).not.toContain("2026.09.0");
     expect(body.error?.message).toContain("operations team");

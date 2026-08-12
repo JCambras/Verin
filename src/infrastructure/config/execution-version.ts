@@ -1,6 +1,6 @@
 /**
  * WHICH PUBLISHED CONFIGURATION VERSION A PERSISTED EXECUTION IS BOUND TO
- * (v3 prompt 10; ADR-0056).
+ * (v3 prompt 10; ADR-0057).
  *
  * One rule, in one place, because three paths ask it and they must not answer
  * differently: the start path's re-drive of a failed execution, the e-sign
@@ -85,7 +85,7 @@ const VERSION_REFUSALS: Readonly<Record<"superseded" | "unreadable", {
  * versions. Resuming against the PINNED document rather than refusing is the end
  * state and stays owned by PC-4 (prompts 15/19, docs/domain-config-gaps.md).
  *
- * THE TWO VERSION IDS ARE DEPLOYMENT INTERNALS (D-229). This refusal is the one
+ * THE TWO VERSION IDS ARE DEPLOYMENT INTERNALS (D-242). This refusal is the one
  * the e-sign webhook most commonly emits, and its message was returned verbatim
  * to the EXTERNAL provider and to the browser - the same trust-boundary leak the
  * configuration source closed. So the wire gets a generic sentence carrying a
@@ -96,7 +96,7 @@ const VERSION_REFUSALS: Readonly<Record<"superseded" | "unreadable", {
  * by a client phoning to ask why nothing happened, so this is the operator-visible
  * line for the refusal, on every path that can raise it. WHAT THE REFUSAL MEANS TO
  * WHOEVER SENT THE REQUEST is carried by the cause, not chosen by the caller
- * (D-228): it clears when an operator rolls the published document back, so it is
+ * (D-241): it clears when an operator rolls the published document back, so it is
  * neither permanent nor a transient fault, and the CONFLICT code cannot say that.
  */
 export function versionMismatch(
@@ -126,7 +126,7 @@ export function versionMismatch(
     configVersionStarted: verdict.kind === "superseded"
       ? configurationDiagnosisId("configVersionStarted", verdict.started)
       : undefined,
-    // READ OFF THE REFUSAL, never stated here (D-228): the instruction an operator
+    // READ OFF THE REFUSAL, never stated here (D-241): the instruction an operator
     // sees on this line is then provably the one the surfaces will give, rather
     // than a second copy of the classification that can drift from it.
     retry: clientRetryFor(error, CLIENT_RETRY.sameIdentity),

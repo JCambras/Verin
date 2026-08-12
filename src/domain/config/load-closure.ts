@@ -1,6 +1,6 @@
 /**
  * REFERENCE CLOSURE AND TYPE CHECK - stages 3 and 4 of the seven-stage load
- * (v3 prompt 10; ADR-0056).
+ * (v3 prompt 10; ADR-0057).
  *
  * Every lookup here is an own-property Map lookup against a registry built from
  * the document itself, so `__proto__` and `constructor.prototype` are not

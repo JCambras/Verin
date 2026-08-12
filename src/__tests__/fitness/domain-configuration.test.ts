@@ -46,7 +46,7 @@ import { ACCOUNT_TYPES } from "@domain/schema/entities";
 import { inertnessProblems } from "@infra/config/domain-config-source";
 
 /**
- * DOMAIN-CONFIGURATION FENCE (v3 prompt 10, ADR-0056; the PINNED activation
+ * DOMAIN-CONFIGURATION FENCE (v3 prompt 10, ADR-0057; the PINNED activation
  * mechanism of v3 invariant 3 - "no core module, directory, or evaluator branch
  * is named for a decision domain").
  *
@@ -59,7 +59,7 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    the decision-core modules, per the captain's `invariant-3-scope` ruling
  *    (2026-07-28): shipped house-CRM record vocabulary, table names, audit
  *    codes, public routes and established observability names stay, on a small
- *    enumerated allow-list justified in ADR-0056. An anti-vacuity companion
+ *    enumerated allow-list justified in ADR-0057. An anti-vacuity companion
  *    proves an EMPTIED vocabulary fails rather than silently passing.
  *
  *  RULE B - BOTH DOCUMENTS LOAD AND BIND THROUGH THE SHARED ENGINE. File
@@ -115,7 +115,7 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *  RULE I - A CONFIGURATION REFUSAL IS MINTED IN ONE SHAPE, IN ONE PLACE. Every
  *    refusal meaning "this deployment cannot resolve or compile its published
  *    configuration" is operator-recoverable, so it carries `operatorRecoverable`
- *    at the mint (D-228). Unmarked, it reads green everywhere and then tells an
+ *    at the mint (D-241). Unmarked, it reads green everywhere and then tells an
  *    advisor to stop trying about a document an operator rollback repairs. The
  *    candidates are DERIVED from the configuration MODULES - every mint in one is
  *    a candidate, exempted only by its own `VALIDATION` code - because listing
@@ -129,7 +129,7 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    capability, slot or trigger field it concerned, so the browser got a server
  *    error with nothing to quote, the external e-sign provider got those ids
  *    verbatim, and the operator got no line at all. So a marked mint ALSO owes the
- *    two halves of the D-229 channel, structurally: a `correlationId` in its own
+ *    two halves of the D-242 channel, structurally: a `correlationId` in its own
  *    context (what `refusalResponse` appends for the caller to quote) and an
  *    operator log line in the same function (what that reference joins to). A
  *    module that states a fault through the shared PORT instead mints nothing and
@@ -146,8 +146,8 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    hand-listed surface set is the same per-site bookkeeping moved into the fence.
  *
  *  RULE K - NO DEPLOYMENT INTERNAL REACHES A USER-FACING SURFACE OR THE WIRE
- *    (D-230). The screen that told an advisor to restore a YAML path survived
- *    D-227 only because it was a STATIC LITERAL rather than a generated message,
+ *    (D-243). The screen that told an advisor to restore a YAML path survived
+ *    D-240 only because it was a STATIC LITERAL rather than a generated message,
  *    so the rule is stated about copy generally - AND about every `AppError`
  *    message, wherever minted, since `toResponse` returns those verbatim to a
  *    browser and to the external e-sign provider. The condition is the whole class
@@ -204,7 +204,7 @@ const DECISION_CORE_ROOTS = [
 
 /**
  * The SMALL, ENUMERATED allow-list the ruling requires, every entry justified in
- * ADR-0056. These are shipped, externally-visible names the ruling explicitly
+ * ADR-0057. These are shipped, externally-visible names the ruling explicitly
  * refuses to rename: a public route, a persisted table, audit action codes, and
  * established span names. Growth here is an ADR amendment, and the companion
  * below proves an entry that suppresses nothing fails.
@@ -214,7 +214,7 @@ const REVIEWED_DOMAIN_NAME_USES: ReadonlyArray<{ file: string; token: string; wh
     file: "src/contracts/primitives/quantity.ts",
     token:
       "A real reserve or commitment rule needing non-sum aggregation (largest monthly gap, inflation-adjusted projection) or irregular schedules the forward horizon-sum cannot express. Hard kill criterion from the captain's OQ-4 ruling: if no second domain (trading cash-needs, life-event required-distribution projection) has bound this primitive by the trading wave, it was a money-movement one-off.",
-    why: "prompt 8's FALSIFICATION CRITERION for horizon-projection: the sentence that says this primitive is WRONG if only one domain ever binds it. Naming that domain is the whole content of the criterion - deleting the name would delete the test. It is prose in a data field, never a branch, never a module name (ADR-0056, invariant-3-scope ruling)",
+    why: "prompt 8's FALSIFICATION CRITERION for horizon-projection: the sentence that says this primitive is WRONG if only one domain ever binds it. Naming that domain is the whole content of the criterion - deleting the name would delete the test. It is prose in a data field, never a branch, never a module name (ADR-0057, invariant-3-scope ruling)",
   },
 ];
 
@@ -577,7 +577,7 @@ export function storeVocabularyDrift(
  *
  * Everything these roots refuse means "this deployment cannot use the document it
  * publishes", which is operator-recoverable by cause and therefore owes
- * `operatorRecoverable` at the mint (D-228). Listing INCLUSIONS is what let
+ * `operatorRecoverable` at the mint (D-241). Listing INCLUSIONS is what let
  * `plan-compiler.ts :: failure` ship unmarked: the old registry keyed on the
  * OWNING FUNCTION's name, so a refusal minted in an unlisted function of a
  * REGISTERED FILE was invisible to a rule whose own docstring claimed a new
@@ -769,7 +769,7 @@ export function unmarkedConfigurationRefusals(
       }
       // ...AND IN THE ONE SHAPE. A marked mint with no reference hands the caller a
       // sentence nothing can be quoted from; one with no operator line leaves that
-      // reference joining to nothing. Either half missing is the channel D-229
+      // reference joining to nothing. Either half missing is the channel D-242
       // exists to keep alive, so both are structural rather than conventional.
       if (!carriesReference(mint)) {
         out.push(`${at}: a configuration refusal is minted with no correlationId for the caller to quote`);
@@ -922,7 +922,7 @@ const REVIEWED_WIRE_INTERNALS: ReadonlyArray<{ file: string; token: string; why:
   {
     file: "src/infrastructure/store/db.ts",
     token: "VERIN_STORE_DRIVER",
-    why: "a BOOT diagnostic for the deferred managed-Postgres adapter, raised where the store is constructed and read by an operator running `pnpm audit-chain-verify` - `scripts/error-message.ts` states the convention that such a failure carries one line naming the fix. It reaches no submitter's screen and no external sender, and the env var IS the action, which is the opposite of the unactionable path D-230 closed",
+    why: "a BOOT diagnostic for the deferred managed-Postgres adapter, raised where the store is constructed and read by an operator running `pnpm audit-chain-verify` - `scripts/error-message.ts` states the convention that such a failure carries one line naming the fix. It reaches no submitter's screen and no external sender, and the env var IS the action, which is the opposite of the unactionable path D-243 closed",
   },
 ];
 
@@ -2041,7 +2041,7 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
       }))).toEqual([]);
       // A message naming the file is not ACCESS, so this rule stays silent on it.
       // RULE K is what forbids it, and for the other reason: a user cannot act on
-      // a path, and naming one crosses the same trust boundary D-227 closed.
+      // a path, and naming one crosses the same trust boundary D-240 closed.
       expect(configDirectoryReaders(inMemoryProject({
         "/src/app/page.ts": `export const help = "Restore config/domains/account-opening.yaml and reload.";`,
       }))).toEqual([]);

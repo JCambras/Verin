@@ -36,7 +36,7 @@ Practice intelligence for registered investment advisers. The third and final bu
     a port, and held to a clean-slate guarantee that is COUNTED (`pnpm world:validate`,
     `pnpm fixture:check`).
 13. **[`docs/domain-config.md`](./docs/domain-config.md)** - the normative domain-configuration contract
-    (ADR-0056): a decision domain is DATA, published as
+    (ADR-0057): a decision domain is DATA, published as
     [`config/domains/`](./config/domains/) and loaded by `src/domain/config/`. Its required gap report is
     [`docs/domain-config-gaps.md`](./docs/domain-config-gaps.md).
 

@@ -17,7 +17,7 @@ import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
  * behind it.
  *
  * PERMANENT VERSUS TRANSIENT WAS A FALSE BINARY, and the configuration-version
- * conflict is the case that proves it (D-226): it is neither, because it clears
+ * conflict is the case that proves it (D-239): it is neither, because it clears
  * the moment an operator rolls the published document back. Answering it "never
  * redeliver" DISCARDS A SIGNATURE the client already gave - the client signs and
  * their account never opens - which is strictly worse than the unbounded

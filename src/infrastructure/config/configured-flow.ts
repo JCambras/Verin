@@ -1,14 +1,14 @@
 /**
  * THE PUBLISHED CONFIGURATION, COMPILED INTO THE FLOW THIS DEPLOYMENT RUNS
- * (v3 prompt 10; ADR-0056).
+ * (v3 prompt 10; ADR-0057).
  *
  * It lives beside the configuration source rather than in the composition root
  * because everything it can refuse is a fact about the DOCUMENT - it cannot be
  * resolved, this build has no adapter for a command it names, or it does not
- * compile - and every one of those is operator-recoverable by cause (D-228). Held
+ * compile - and every one of those is operator-recoverable by cause (D-241). Held
  * in the composition root, it was the one configuration refusal outside the
  * configuration modules, which cost the domain-configuration fence its ability to
- * derive the whole class from the modules that own it (D-231).
+ * derive the whole class from the modules that own it (D-244).
  */
 import type { AppError } from "@contracts/errors";
 import { err, type Result } from "@contracts/result";
@@ -41,7 +41,7 @@ export function configuredFlow(): Result<CompiledFlow, AppError> {
   const config = sourced.value.config;
   const refuse = configuredRefusal(ACCOUNT_OPENING_DOMAIN);
   // A document naming a command this build has no adapter for is the same
-  // operator-recoverable cause as one that fails to load or compile (D-228):
+  // operator-recoverable cause as one that fails to load or compile (D-241):
   // rolling the document back clears it, and no submission can. It is stated
   // through the SAME mint rather than in its own words, which is what gets it a
   // correlation reference on the wire and a log line at all - it had neither, so

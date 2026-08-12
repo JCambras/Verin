@@ -159,6 +159,7 @@ demonstration-derived score carries no watermark (D-200). The directory's world-
 household's folded origin are built once per worldDigest; only the fold over the caller's own
 authorized book is per request.
 The domain configuration schema (v3 prompt 10, ADR-0056) makes a decision DOMAIN data:
+The domain configuration schema (v3 prompt 10, ADR-0057) makes a decision DOMAIN data:
 `src/domain/config/` holds the thirteen-section grammar, the seven-stage loader (inert -> grammar ->
 reference closure -> type check -> coherence -> completeness -> identity; every failure a value, never a
 throw), the firm binder, the prompt-9 registry derivation, the plan compiler, the version diff, and the
@@ -174,7 +175,7 @@ gap report. Load-bearing rules an agent trips over:
   ONLY interpolation in the system is `{slot:…}`/`{context:…}`; any other brace is a load error.
 - **A domain is DATA, never a module.** `src/domain/workflow/flows/account-opening.ts` is DELETED
   (ADR-0010 amended); the shipped `/app/account-opening` flow and its form are COMPILED from the YAML, so
-  deleting that file breaks the live journey (X-9; proof log PF-251). Invariant 3 is active on the
+  deleting that file breaks the live journey (X-9; proof log PF-257). Invariant 3 is active on the
   `domain-configuration` fence, whose forbidden vocabulary DERIVES from the published documents' own ids.
 - **Tenancy enters once,** at `bindDomainConfig(loaded, firmRegistry)`; the document may not carry a
   `firmId` anywhere. A parameter needing a tenant-scoped ref uses the one `{ $ref: { kind, class } }`
@@ -187,9 +188,9 @@ gap report. Load-bearing rules an agent trips over:
   status. No deployment internal - document path, file name, env var, hash, version id - reaches
   user-facing copy (static literals included) or the external provider: the wire gets a generic sentence
   plus the correlation reference, and the diagnosis goes to the operator as the REGISTERED fields
-  `configStage`/`configCode`/`configPath` (D-227..D-234).
+  `configStage`/`configCode`/`configPath` (D-240..D-247).
 - **Never name a Zod schema type (or any deeply recursive type) in an exported `src/domain/` signature**
-  (D-193): the sealed-authority fences expand parameter types structurally and a schema generic makes
+  (D-206): the sealed-authority fences expand parameter types structurally and a schema generic makes
   that walk exhaust its heap - the worker DIES mid-file and vitest reports a partial run, not a failure.
   Export named types and narrow ports; each section module carries a collapsed-export note.
 - Editing a published document without bumping its `version` fails the build; update `versions.json` and
@@ -270,7 +271,7 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
   (`contracts/decision-core/`, ADR-0029; zod is the layer's ONLY permitted external import - a
   second one needs its own ADR).
 - `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine (`workflow/engine.ts`;
-  flow definitions are COMPILED from domain configuration, never authored here - ADR-0056).
+  flow definitions are COMPILED from domain configuration, never authored here - ADR-0057).
 - `src/infrastructure/` — adapters/port implementations. `process.env` is read ONLY in
   `src/infrastructure/config` (fence: `no-process-env`).
 - `src/app/` — Next.js App Router + the presentation tier (`app/presentation/`). Any demo/UI

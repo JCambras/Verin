@@ -1,5 +1,5 @@
 /**
- * THE CONFIGURED INTAKE FORM (v3 prompt 10; ADR-0056).
+ * THE CONFIGURED INTAKE FORM (v3 prompt 10; ADR-0057).
  *
  * The generic renderer (charter #10) collects a domain's trigger-supplied slots
  * from a declarative field list. That list used to be a hand-written constant
@@ -15,7 +15,7 @@
  * rail cannot disagree with the document either.
  *
  * The projected TYPES live in `./intake-view`, the leaf module a screen and a
- * route handler import without reaching this module's document graph (D-193).
+ * route handler import without reaching this module's document graph (D-206).
  */
 import { err, ok, type Result } from "@contracts/result";
 import { configError, type DomainConfigError } from "./errors";

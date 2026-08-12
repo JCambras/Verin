@@ -365,12 +365,12 @@ export type AllowedSelectionStrategy = z.infer<typeof AllowedSelectionStrategySc
 export const EvidenceKindSchema = brandedString<"EvidenceKind">();
 export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
 
-// ── Domain-configuration vocabulary (v3 §5/§16; prompt 10, ADR-0056) ────────────
+// ── Domain-configuration vocabulary (v3 §5/§16; prompt 10, ADR-0057) ────────────
 //
 // ONE brand, not the configuration schema's whole identifier vocabulary. The
 // rest of that vocabulary (domain config id, execution capability id, command
 // type, conflict-key template id, plan template id) is minted where the schema
-// that uses it lives, in `src/domain/config/` (D-191): a second declaration here
+// that uses it lives, in `src/domain/config/` (D-204): a second declaration here
 // had no contracts consumer, and the two disagreed at RUNTIME while agreeing at
 // compile time - `brandedString` admits any non-empty string, `kebabId` does
 // not - so a value one layer parsed the other would refuse under the same type.
@@ -382,7 +382,7 @@ export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
 // against the document's intents. Aligning the two is a real narrowing, not a
 // comment fix - `src/__tests__/unit/decision-core.test.ts` parses an `Intent`
 // whose action is `"primitive:distribute-cash"`, a value left over from the
-// PrimitiveId this field used to carry (D-192) - so it is recorded as the named
+// PrimitiveId this field used to carry (D-205) - so it is recorded as the named
 // obligation PC-3a in docs/domain-config-gaps.md, owned by prompt 14, the prompt
 // that first CONSTRUCTS an Intent and therefore first has real values to narrow
 // against. Nothing constructs one today, so the disagreement is unreachable now.

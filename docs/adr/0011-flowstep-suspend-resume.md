@@ -24,7 +24,7 @@ The `FlowStep` / execution model has a first-class **suspended** state and a per
   `TenantContext`, token, and payload. The engine validates the runtime seal before the capability-keyed
   load, then compares organization ownership before it runs a step or writes.
 - Resume is **idempotent** (ADR-0009): resuming with the same token/payload twice yields exactly-once effect.
-- **Amended by ADR-0056 (D-217/D-226):** `resumeFlow` takes an optional caller-supplied **`ResumeGuard`** -
+- **Amended by ADR-0057 (D-230/D-239):** `resumeFlow` takes an optional caller-supplied **`ResumeGuard`** -
   a veto on DRIVING the loaded continuation, judged against the very snapshot the drive will use. The
   composition root has preconditions the engine cannot know (a persisted execution may only be driven
   under the configuration version it started on), and it used to check them by loading the row ITSELF
@@ -54,7 +54,7 @@ a simulated e-sign **webhook** resumes it, and the finalize write is audited + e
 ## Consequences
 
 Fence: `flowstep-suspend-resume` proves the engine has a suspended state and a resume path (not a stub),
-and (D-226) that a `ResumeGuard` judges the ONE snapshot the drive would use - it counts token loads and
+and (D-239) that a `ResumeGuard` judges the ONE snapshot the drive would use - it counts token loads and
 ships a passing-guard sibling so the refusal stays conditional. Pairs with ADR-0009 (idempotent resume)
 and ADR-0007 (audited finalize). Charter-map id 6.
 

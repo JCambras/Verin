@@ -76,6 +76,8 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 | [0056](./0056-domain-configuration-schema.md) | The domain configuration schema (v3 prompt 10): a decision domain is DATA - thirteen sections, seven-stage total loader, firm binder, plan compiler; the hand-coded account-opening flow is deleted; invariant 3 activates | Accepted (amends ADR-0010) |
 | [0056](./0056-domain-configuration-schema.md) | The domain configuration schema (v3 prompt 10): a decision domain is DATA - thirteen sections, seven-stage total loader, firm binder, plan compiler; the hand-coded account-opening flow is deleted; invariant 3 activates | Accepted (amends ADR-0010, ADR-0011) |
 | [0057](./0057-line-budget-domain-configuration.md) | Contracts, domain, and infrastructure ceilings for the domain-configuration schema and its review rounds | Accepted (amends ADR-0054) |
+| [0057](./0057-domain-configuration-schema.md) | The domain configuration schema (v3 prompt 10): a decision domain is DATA - thirteen sections, seven-stage total loader, firm binder, plan compiler; the hand-coded account-opening flow is deleted; invariant 3 activates | Accepted (amends ADR-0010, ADR-0011) |
+| [0058](./0058-line-budget-domain-configuration.md) | Contracts, domain, and infrastructure ceilings for the domain-configuration schema and its review rounds | Accepted (amends ADR-0054) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),

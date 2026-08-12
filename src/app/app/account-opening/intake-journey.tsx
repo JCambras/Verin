@@ -85,7 +85,7 @@ export function IntakeJourney({ view }: { view: IntakeForm }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // BURN THE SESSION'S IDENTITY IF AND ONLY IF THE SERVER SAYS TO (D-225).
+        // BURN THE SESSION'S IDENTITY IF AND ONLY IF THE SERVER SAYS TO (D-238).
         // A fresh id is a fresh EXECUTION and the per-write idempotency keys are
         // execution-scoped, so re-minting one after a refusal the user cannot fix
         // turns one intended account opening into duplicate household, contact and
