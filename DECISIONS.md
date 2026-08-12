@@ -8158,3 +8158,51 @@ introduces the column, so a store that already applied version 9 without it keep
 `firm-record` - re-running is not possible by design, and the honest repair on such a store is to
 re-stamp the three tables by hand or start from a fresh data directory. Nothing here reaches the
 generator: `fixtures/world` is untouched and regenerates byte-identical.
+
+### D-216 · 2026-08-12 · reversible · Populated-world review round eleven: a default is a claim about history, the name says where the name came from, and copy names only causes that exist
+
+**A default on a new column is a claim about every row already in the store.** D-215 backfilled
+migration 9 and explained why; the rule itself lived only in that version's own paragraph, where the
+next author adding a column will not read it. It is now stated where migration rules are stated - the
+module header - as the general form: a default answers for the rows that predate it, so either the
+claim is provably true for all of them or the migration backfills them by the condition that actually
+identifies them, and a column some guarantee reads makes that load-bearing. Version 9's paragraph keeps
+the worked example. The backfill's condition is unchanged and is a positive test rather than a default
+(`prov_source = 'fixture'`, the marker the world's CRM projection wrote, in the three tables it
+writes), and the upgrade is proved on a store seeded before the column existed
+(`src/__tests__/integration/fixture-purge.test.ts`, PF-284), with the companion showing the default
+alone reporting a populated store clean.
+
+**The name now states where the name came from, on both surfaces.** D-214 pointed both view models at
+`crmRow.provenance` and wrote comments saying the surfaces state it; neither surface read the field.
+So the household name - a seeded value, `prov_source = 'fixture'` at medium confidence - reached two
+authenticated screens as bare text with no source, no as-of and no receded treatment, while
+`/app/console` rendered the same value inside `<FreshValue>`. Worse, it made the D-214 split
+unobservable: origin and value provenance were separated precisely so a reader could see that a
+renamed demonstration household is still demonstration-originated while its NAME is the advisor's own
+words, and the one place that difference shows is the name. Both surfaces now render it through
+`FreshValue`, so a seeded name reads `· Sample data · as of <date>` and recedes with age and a renamed
+one reads `· Entered · as of <date>` at full strength. PF-287.
+
+**What that cost the row, measured rather than reasoned about.** The directory's reserved row heights
+are constants a virtualized list commits to before it draws anything, and the name's label made both
+too small. They were re-measured in a real browser at nine widths: 132px two-column (128px of content
+at its worst, at 640-700px) and 176px stacked (170px, at 360-414px). The previous pair had never been
+measured below 640px, where the stacked row was already overflowing its own box by 40px and running
+into the next row's name - a pre-existing defect this re-measure closes. The name also takes the whole
+line now, so the badges start the next one on every row rather than wherever that household's name
+happened to end, and the weight sits on the name rather than the heading so the label keeps the size
+and colour it carries everywhere else.
+
+**Copy may not name a cause that cannot produce the outcome.** The detail page's 404 read "It may have
+been renamed, or the link may be from another firm." The URL carries the world's stable household key
+and identity is the record store's, so `updateHouseholdName` changes `households.name` and nothing the
+link resolves through: a rename can never produce that page. With renaming a real, e2e-exercised flow,
+the advisor most likely to meet the message was being pointed at the one impossible explanation. It now
+names the two causes that do produce it - no household answers to the key, or one does and it belongs
+to another firm's book - which are also exactly the two the route refuses identically on purpose.
+
+**Revert path:** revert this changeset. Nothing here reaches the generator or the schema's DDL:
+`fixtures/world` is untouched and regenerates byte-identical, and migration 9's SQL is unchanged (only
+its comment and the module header moved). Reverting the row heights alone would reintroduce the
+overflow, so they revert with the name render they were measured for.

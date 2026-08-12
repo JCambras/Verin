@@ -171,7 +171,18 @@ export function HouseholdDetail({ household }: { household: HouseholdDetailVM })
         <Link href="/app/households" className="text-sm text-slate-700 underline underline-offset-2 hover:text-slate-900">
           ← All households
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">{household.displayName}</h1>
+        {/* The NAME's own provenance, which is the record store's row rather
+            than the fixture's: a seeded household reads as sample data, and the
+            moment somebody renames it the same heading reads as user-entered and
+            stops receding. That is the whole point of holding record origin and
+            value provenance apart - so a reader can see which is which.
+            The weight sits on the NAME rather than the heading, so the label
+            keeps the size and colour it carries on every other surface. */}
+        <h1 className="mt-2 text-2xl font-normal text-slate-900">
+          <FreshValue provenance={household.provenance}>
+            <span className="font-semibold">{household.displayName}</span>
+          </FreshValue>
+        </h1>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
           <StatusBadge status={household.state === "active" ? "proceed" : "unknown"} label={household.stateLabel} />
           <span>{household.advisorLabel}</span>

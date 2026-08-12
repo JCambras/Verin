@@ -187,9 +187,13 @@ custodial positions are evidence.
 
 **Two facts, two columns, and neither answers the other's question.** `prov_source` is where a VALUE
 came from and it MOVES: an advisor who renames a seeded household has entered that name, so the
-rename re-stamps `prov_source = 'user-input'` and the console renders their own words un-watermarked
-rather than receded under "Sample data". `record_origin` is where the ROW came from and it NEVER
-moves, because editing a demonstration record does not make it the firm's own. The clean-slate sweep
+rename re-stamps `prov_source = 'user-input'` and their own words render un-watermarked rather than
+receded under "Sample data". Every surface that shows the name shows that fact - the console, the
+directory row and the household page all render `households.name` through `FreshValue`, because the
+one place the split between origin and value is visible at all is the name itself, and a view model
+that carries the provenance while the component drops it states nothing. `record_origin` is where the
+ROW came from and it NEVER moves, because editing a demonstration record does not make it the firm's
+own. The clean-slate sweep
 counts the ORIGIN: keyed on `prov_source` it would leave a seeded household in production the moment
 somebody typed over it.
 

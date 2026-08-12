@@ -58,8 +58,13 @@ export default function HouseholdPage() {
             key,
             outcome: {
               status: "failed",
+              // The two causes that can actually produce this: no household
+              // answers to the key, or one does and it is another firm's. A
+              // rename cannot - the URL carries the world's stable key and
+              // identity is the record store's, so renaming changes the name
+              // and nothing the link resolves through.
               message: cause.message === "not-found"
-                ? "That household is not in this firm's book. It may have been renamed, or the link may be from another firm."
+                ? "No household here answers to that link. Either the address is wrong, or the household belongs to another firm's book."
                 : "This household could not be loaded. Check your connection and reload.",
             },
           });

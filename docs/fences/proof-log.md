@@ -14095,3 +14095,43 @@ shipped defect stated as a test.
 **Reverted:** the branch restored; `Tests 5 passed`.
 
 **Date:** 2026-08-12 (review round ten, ADR-0057 / D-215).
+
+## PF-287 · households: the name states where the name came from · `src/app/households/{detail,directory}.tsx` + `src/__tests__/unit/household-name-provenance.test.tsx`
+
+**Invariant:** a displayed seeded value carries its provenance (charter #3), and the household's name
+is the value both surfaces lead with. D-214 split record ORIGIN from value PROVENANCE so a reader could
+see which is which - the row is demonstration-originated forever, the name becomes the advisor's own
+words the moment they type them - and then both view models carried `crmRow.provenance` with a comment
+claiming the surface "states where the name came from" while no component read the field.
+
+**Injection - the shape that actually shipped.** Both renders restored from this branch's HEAD
+(`git show 26c83881:src/app/households/detail.tsx` and `:src/app/households/directory.tsx`): the bare
+`<h1 className="mt-2 text-2xl font-semibold text-slate-900">{household.displayName}</h1>` and the bare
+`<span className="truncate text-sm font-semibold text-slate-900">{row.displayName}</span>`, not an
+approximation of them.
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/unit/household-name-provenance.test.tsx`):**
+```
+× the detail heading states the source and the date, and recedes with age
+× the directory row states it too - the same name on two surfaces, labelled once each
+× the detail heading reads as entered, un-watermarked and un-faded
+× the directory row does the same, so the two surfaces cannot disagree
+× the row a rename cannot reach - no evidence on file - is labelled the same way
+× a bare row name has none either, and the shipped one does
+AssertionError: "Robert & Elaine Smith" is rendered with no provenance at all: expected null not to be null
+Tests  6 failed | 1 passed (7)
+```
+
+**Executable companions (run on every build):** the check reads the value's OWN titled span and the
+label beside it rather than searching the page for a string, so a label that names some other value
+cannot satisfy it; the same household is rendered from two CRM rows differing only in provenance and
+the two must read differently (`· Sample data · as of <seed date>` versus `· Entered · as of <edit
+date>`), which is a rename asserted end to end rather than a label asserted once; the seeded name is
+asserted to RECEDE (opacity below 1) and the renamed one not to, so the treatment is proven and not
+just the text; a household with no world entry at all is covered, since the CRM row is the whole record
+there; and two companions render the pre-fix bare markup and assert the check REPORTS it, so a green
+result cannot mean the check was blind.
+
+**Reverted:** both renders restored; `Tests 7 passed`.
+
+**Date:** 2026-08-12 (review round eleven, ADR-0057 / D-216).

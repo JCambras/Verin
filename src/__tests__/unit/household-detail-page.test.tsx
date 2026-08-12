@@ -38,8 +38,11 @@ const IN_BOOK = WORLD[0]!;
 const WITHHELD = WORLD[1]!;
 
 /** The household's own name, as the page's H1 - a display name also appears as
- * a person inside the household, so the heading is what identifies the page. */
-const heading = (name: string) => screen.findByRole("heading", { level: 1, name });
+ * a person inside the household, so the heading is what identifies the page.
+ * The heading also states the name's provenance, so the match is on the name it
+ * opens with rather than the whole accessible name. */
+const named = (name: string) => (accessible: string) => accessible.startsWith(name);
+const heading = (name: string) => screen.findByRole("heading", { level: 1, name: named(name) });
 
 const vmOf = (key: string): HouseholdDetailVM => {
   const household = WORLD.find((candidate) => candidate.key === key)!;
@@ -84,7 +87,7 @@ describe("the household page across a key change", () => {
     nav.key = second.key;
     rerender(<HouseholdPage />);
     // Synchronously after the key changes, before the fetch resolves.
-    expect(screen.queryByRole("heading", { level: 1, name: IN_BOOK.displayName })).toBeNull();
+    expect(screen.queryByRole("heading", { level: 1, name: named(IN_BOOK.displayName) })).toBeNull();
     await heading(second.displayName);
   });
 
@@ -110,7 +113,7 @@ describe("the household page across a key change", () => {
   it("shows the refusal as a sentence with a way back, not a bare failure", async () => {
     nav.key = WITHHELD.key;
     render(<HouseholdPage />);
-    await screen.findByText(/not in this firm's book/);
+    await screen.findByText(/No household here answers to that link/);
     await waitFor(() => expect(screen.getByRole("link", { name: "Back to all households" })).toBeTruthy());
   });
 });

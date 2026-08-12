@@ -17,17 +17,25 @@ import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { Field, TextInput, StatusBadge, EmptyState } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
+import { FreshValue } from "@app/presentation/fresh-value";
 import type { DirectoryVM, EmptyBookVM, HouseholdRowVM, NoEvidenceVM } from "./model";
 import { VirtualList } from "./virtual-list";
 
 // The window has to know how tall a row is before it renders one, so the height
 // is a number rather than a class - and ONE number cannot serve both layouts.
-// Above `sm` the row is two columns and 108px holds it; below, the same content
-// stacks (a name whose badges wrap, meta, counts, and a balance carrying its
-// provenance label and its demonstration watermark) and 108px overlapped the
-// next row's title. Measured against the widest row the world produces.
-const TWO_COLUMN_ROW = 108;
-const STACKED_ROW = 148;
+// Above `sm` the row is two columns; below, the same content stacks (a name and
+// its provenance, the badges, meta, counts, and a balance carrying its own
+// provenance label and its demonstration watermark), and the two-column height
+// overlapped the next row's title.
+//
+// MEASURED IN A BROWSER, not reasoned about: the tallest row the world produces,
+// at 1280 / 768 / 700 / 640 px two-column (128px of content) and 639 / 500 / 414
+// / 375 / 360 px stacked (170px). Both figures grew when the household's name
+// started carrying its own provenance, and the previous pair had never been
+// measured below 640px - where the stacked row already overflowed by 40px.
+// Anything that changes what a row renders re-measures these.
+const TWO_COLUMN_ROW = 132;
+const STACKED_ROW = 176;
 const VIEWPORT_HEIGHT = 648;
 
 // Tailwind's `sm`, the breakpoint the row's own classes switch on: the two must
@@ -65,6 +73,29 @@ const BAND_STATUS: Record<string, string> = {
 };
 
 /**
+ * The household's name AND where that name came from - the record store's row,
+ * not the fixture's. A seeded name reads as sample data and recedes with age; a
+ * renamed one reads as user-entered and does neither, which is the only place a
+ * reader can see the difference the two provenance facts exist to keep apart.
+ *
+ * It takes the WHOLE line (`basis-full`), so the badges after it start the next
+ * one on every row. Sharing a line with them made the wrap point depend on how
+ * long the name happened to be, and a hundred rows whose badges each sit
+ * somewhere else is a list a reader has to re-find their place in. Only the name
+ * is bold: the label is the same weight and colour it carries everywhere else,
+ * because a provenance label that shouts competes with the value it describes.
+ */
+function HouseholdName({ row }: { row: HouseholdRowVM }) {
+  return (
+    <span className="min-w-0 basis-full text-sm font-normal text-slate-900">
+      <FreshValue provenance={row.provenance}>
+        <span className="font-semibold">{row.displayName}</span>
+      </FreshValue>
+    </span>
+  );
+}
+
+/**
  * One row. The balance is the only metric-class value here, so it is the only
  * `<Metric>`: three of them side by side put three "· Sample data · as of …"
  * labels into eighty pixels each and the row became unreadable (D-192). The
@@ -87,7 +118,7 @@ function HouseholdRow({ row }: { row: HouseholdRowVM }) {
     >
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="truncate text-sm font-semibold text-slate-900">{row.displayName}</span>
+          <HouseholdName row={row} />
           <StatusBadge status={BAND_STATUS[evidence.health.band] ?? "pending"} label={evidence.health.bandLabel} />
           {row.state !== "active" ? <StatusBadge status="unknown" label={row.stateLabel} /> : null}
         </span>
@@ -126,7 +157,7 @@ function UnevidencedRow({ row }: { row: HouseholdRowVM & { noEvidence: NoEvidenc
   return (
     <div className="flex h-full flex-col justify-center gap-1 px-4 py-3">
       <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="truncate text-sm font-semibold text-slate-900">{row.displayName}</span>
+        <HouseholdName row={row} />
         <StatusBadge status="unknown" label={row.noEvidence.badgeLabel} />
         {row.state !== "active" ? <StatusBadge status="unknown" label={row.stateLabel} /> : null}
       </span>

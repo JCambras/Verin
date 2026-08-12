@@ -117,7 +117,7 @@ test("a trust in one household is visibly touching another, and the link navigat
 test("failure path: an unknown household key is refused as a sentence, with a way back", async ({ page }) => {
   await login(page, PRINCIPAL);
   await page.goto("/app/households/not-a-real-household");
-  await expect(page.getByText("That household is not in this firm's book.")).toBeVisible();
+  await expect(page.getByText("No household here answers to that link.", { exact: false })).toBeVisible();
   await page.getByRole("link", { name: "Back to all households" }).click();
   await expect(page.getByTestId("household-directory")).toBeVisible();
 });
@@ -138,7 +138,7 @@ test("failure path: a refused counterparty does not follow you back to the house
   await page.goto("/app/households/whitfield-cordelia");
   await expect(page.getByRole("heading", { name: "Cordelia Whitfield" })).toBeVisible();
   await page.getByRole("link", { name: /Open Nathaniel & Perrine Whitfield/ }).click();
-  await expect(page.getByText("That household is not in this firm's book.")).toBeVisible();
+  await expect(page.getByText("No household here answers to that link.", { exact: false })).toBeVisible();
 
   // Back is a CLIENT-SIDE navigation inside the same dynamic segment. What a
   // reader must never meet is a household that loads perfectly well rendered as

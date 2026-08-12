@@ -7,6 +7,13 @@
  * that already recorded that version will never re-run it, so the edit reaches new
  * stores only and the two silently diverge.
  *
+ * A DEFAULT ON A NEW COLUMN IS A CLAIM ABOUT HISTORY. It answers for every row
+ * already in the store, not only the ones written afterwards, so either that claim
+ * is provably true for all of them or the migration BACKFILLS them by the condition
+ * that actually identifies them. A column some guarantee reads makes this
+ * load-bearing: version 9 is the worked example, where the default alone would have
+ * told a fully seeded store it held no demonstration data.
+ *
  * TEMPORAL COLUMNS ARE `timestamptz`, BUT THE APPLICATION BOUNDARY STAYS ISO STRINGS
  * IN BOTH DIRECTIONS. Writers emit `toISOString()`; a read parser in `db.ts`
  * (OID 1184, `new Date(v).toISOString()`) normalizes every read back to canonical UTC
@@ -356,12 +363,14 @@ ${TENANT_EDGES.map((e) => `ALTER TABLE ${e.child}
  * fails on any table that carries one column without the other, so the pair
  * cannot drift apart unnoticed.
  *
- * THE COLUMN'S DEFAULT CANNOT ANSWER FOR ROWS THAT ALREADY EXIST. A store
- * carrying the demonstration world would take `firm-record` on every one of
- * those rows, and the clean-slate check would then report a fully populated
- * instance clean - the guarantee failing OPEN through the very migration that
- * enforces it, and silently, which is the one thing it must never do (charter
- * #4). So the rows are carried forward by the marker they were written with:
+ * THE DEFAULT IS A CLAIM ABOUT EVERY ROW ALREADY IN THE STORE, and here that
+ * claim is false: a store carrying the demonstration world would take
+ * `firm-record` on every one of those rows, and the clean-slate check would then
+ * report a fully populated instance clean - the guarantee failing OPEN through
+ * the very migration that enforces it, and silently, which is the one thing it
+ * must never do (charter #4). Either a new column's default is provably true for
+ * the rows that predate it or the migration backfills them by the condition that
+ * names them; this one backfills, by the marker those rows were written with.
  * `prov_source = 'fixture'` is what the world's CRM projection wrote, in the
  * three tables it writes, and no other flow has ever written it there. Before
  * this version nothing re-stamped that column either, so at the moment this runs
