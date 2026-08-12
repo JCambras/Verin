@@ -4,6 +4,7 @@ import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createUser } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 
 /**
  * THE ACCOUNT-OPENING REQUEST BOUNDARY (regression, prompt 10 / ADR-0058).
@@ -120,6 +121,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
       email: "advisor-route@firm.test",
       displayName: "Route Advisor",
       role: "advisor",
+      recordOrigin: FIRM_RECORD_ORIGIN,
       password: "correct-horse-battery",
     });
     await db.query(
