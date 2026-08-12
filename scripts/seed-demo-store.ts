@@ -28,19 +28,15 @@ import { systemTenant } from "../src/contracts/tenant";
 import { systemWriteActor } from "../src/contracts/principal";
 import { seedWorldIntoCrm } from "../src/infrastructure/crm/world-seed";
 import { DEMO_SEED_ORIGIN, RECORD_ORIGIN_COLUMN } from "../src/infrastructure/store/record-origin";
+import { DEMO_ORG_ID, DEMO_USERS } from "../src/infrastructure/store/demo-tenant";
 import type { SqlDb } from "../src/infrastructure/store/db";
 import type { WriteActor } from "../src/contracts/principal";
 import { generateWorld } from "./world/generate";
 import { loadWorldSpec, WORLD_SEED } from "./world/spec";
 import { seedDecisionLedger } from "./seed-decision-ledger";
 
-export const DEMO_ORG_ID = "org-verin-demo";
 // DEMO ONLY (labeled local/CI seed) — not a production secret.
 export const DEMO_PASSWORD = "verin-demo-pass-12345678"; // nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_password
-export const DEMO_USERS = [
-  { email: "principal@verin.test", displayName: "Priya Nair (Principal)", role: "principal" as const },
-  { email: "advisor@verin.test", displayName: "Alex Rivera (Advisor)", role: "advisor" as const },
-];
 
 /**
  * The seed's demo credential is publicly committed, and the decision chain it

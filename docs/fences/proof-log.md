@@ -14226,3 +14226,64 @@ exactly the tables that still hold countable demonstration rows and nothing else
 **Reverted:** both injections restored; `Tests 18 passed`.
 
 **Date:** 2026-08-12 (review round thirteen, ADR-0057).
+
+## PF-290 · clean slate: the corrective migration reaches the stores that already exist · `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** a demonstration row is COUNTABLE wherever it is (charter #3/#4/#7), including on a store
+seeded BEFORE the insert that writes it named an origin. D-218 closed the fail-open at the org and user
+inserts, which repairs every store created afterwards and none of the ones the fix was written for:
+version 10 keys on the world's `prov_source = 'fixture'` marker, and the demonstration tenant and its
+two committed-password accounts are `verin-crm` rows. Migration 11 (`demo-tenant-record-origin`) is the
+identity-keyed repair.
+
+**Injection A - no version 11 at all (the state the branch shipped in).** The
+`{version: 11, name: "demo-tenant-record-origin"}` entry removed from `MIGRATIONS`
+(`src/infrastructure/store/migrations.ts`).
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/integration/fixture-purge.test.ts -t "repaired by version 11"`):**
+```
+× the demo FIRM and its two demo accounts, seeded before the insert named an origin, are repaired by version 11
+AssertionError: the demonstration tenant and both demonstration accounts are countable after the upgrade:
+  expected {} to deeply equal { orgs: 1, users: 2 }
+Tests  1 failed | 18 skipped (19)
+```
+
+**Injection B - the repair folded back into the version that had already shipped.** Version 11's
+`UPDATE`s appended to version 10's SQL and version 11 removed - the same mistake D-217 had to correct
+once already: a store that recorded `(10, record-origin-backfill)` never runs it again.
+
+**Observed failure (same command):**
+```
+× the demo FIRM and its two demo accounts, seeded before the insert named an origin, are repaired by version 11
+AssertionError: the demonstration tenant and both demonstration accounts are countable after the upgrade:
+  expected {} to deeply equal { orgs: 1, users: 2 }
+Tests  1 failed | 18 skipped (19)
+```
+
+**Injection C - the condition widened from identity to org membership.** The `AND email IN (…)` clause
+dropped from version 11's `users` update, so every account in the demonstration org is condemned.
+
+**Observed failure (same command):**
+```
+× the demo FIRM and its two demo accounts, seeded before the insert named an origin, are repaired by version 11
+AssertionError: the demonstration tenant and both demonstration accounts are countable after the upgrade:
+  expected { orgs: 1, users: 3 } to deeply equal { orgs: 1, users: 2 }
+Tests  1 failed | 18 skipped (19)
+```
+
+**Executable companions (run on every build):** the case states the fail-open BEFORE it states the
+repair - with the ledger rewound to its last pre-11 entry it asserts the sweep reports the seeded store
+CLEAN, so a version that stopped running would fail on the repair while the false pass it exists to
+close is still proved to be a false pass; the migration versions are read from the shipped plan by NAME
+(`MIGRATIONS.find(…)`), so appending a version cannot silently point the rewind at the wrong one; and a
+real account inside the demonstration org and another firm's org row are both asserted to survive as
+`firm-record`, so a repair that marked everything would pass the count and fail here.
+
+**End-to-end, outside the suite:** `pnpm db:seed` against a real PGlite store, the demonstration rows
+reset to `firm-record` with `(11, demo-tenant-record-origin)` deleted from `schema_migrations`, then
+`pnpm fixture:check --report`: `orgs 0`/`users 0` before the version runs, `orgs 1`/`users 2` after
+reopening the store applies it.
+
+**Reverted:** all three injections restored; `Tests 19 passed`.
+
+**Date:** 2026-08-12 (review round fourteen, ADR-0057).

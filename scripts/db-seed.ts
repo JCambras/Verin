@@ -8,8 +8,9 @@
  * belongs here.
  */
 import { createDb } from "../src/infrastructure/store/db";
+import { DEMO_ORG_ID, DEMO_USERS } from "../src/infrastructure/store/demo-tenant";
 import { errorMessage } from "./error-message";
-import { assertSeedableEnvironment, DEMO_ORG_ID, DEMO_USERS, seedDemoStore } from "./seed-demo-store";
+import { assertSeedableEnvironment, seedDemoStore } from "./seed-demo-store";
 
 async function main(): Promise<string> {
   // Before a connection is opened, not after: opening the configured store runs

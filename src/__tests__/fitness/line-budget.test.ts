@@ -143,11 +143,22 @@ import { join, relative } from "node:path";
 // 5,093. That leaves 117, 118 and 57 lines of correction room, NAMED rather than
 // banked - tooling had 32 left, which is the "the next one-line correction fails
 // an unrelated ceiling" condition this header argues against.
+// D-219 (ADR-0057 amendment, review round fourteen) raises infrastructure alone
+// to 8,600 against a RE-MEASURED 8,489: the corrective migration that reaches
+// stores seeded before the demonstration inserts named an origin, the
+// demonstration identity both the seed and that migration key on, and the
+// statement of where each data-correcting version's reach STOPS - which is
+// documentation the ceiling must absorb rather than be paid for by deleting
+// (ADR-0048/0050). That is 111 lines of correction room, named rather than
+// banked. RE-MEASURED and unmoved in the same round: contracts 6,602/6,650,
+// domain 5,093/5,150, presentation 2,240/6,000, tooling 14,311/14,350 - tooling
+// has 39 lines left, which is again the condition this header argues against and
+// is stated here so the next change to `scripts/**` reads it before spending it.
 // `contracts` and `presentation` are untouched by that work and do not move.
 const CEILINGS = {
   contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
   domain: 5150, // ADR-0057, on the populated world's model and health computation (5,093 re-measured, D-214)
-  infrastructure: 8400, // ADR-0057, on the fixture adapter, the CRM projection and the record-origin fact (8,283 re-measured, D-214)
+  infrastructure: 8600, // ADR-0057, on the fixture adapter, the CRM projection and the record-origin fact (8,489 re-measured, D-219)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

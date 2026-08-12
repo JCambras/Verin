@@ -32,7 +32,7 @@ import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
-import { RECORD_ORIGIN_BACKFILL_SQL, RECORD_ORIGIN_SQL } from "./record-origin-migration";
+import { DEMO_TENANT_ORIGIN_BACKFILL_SQL, RECORD_ORIGIN_BACKFILL_SQL, RECORD_ORIGIN_SQL } from "./record-origin-migration";
 import {
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_LEDGER_HISTORY_INDEXES_SQL,
@@ -369,6 +369,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 8, name: "decision-drop-projection-checkpoint", sql: DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL },
   { version: 9, name: "record-origin", sql: RECORD_ORIGIN_SQL },
   { version: 10, name: "record-origin-backfill", sql: RECORD_ORIGIN_BACKFILL_SQL },
+  { version: 11, name: "demo-tenant-record-origin", sql: DEMO_TENANT_ORIGIN_BACKFILL_SQL },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free

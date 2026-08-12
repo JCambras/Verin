@@ -214,6 +214,15 @@ and its own reading of the DDL - while `domain` HOLDS at 5,150 against a re-meas
 117, 118 and 57 lines of correction room; `tooling` had 32 left, which is precisely the condition
 ADR-0018's commentary names.
 
+**Amended by D-219** (review round). `infrastructure` moves to 8,600 against a re-measured 8,489 - the
+corrective migration that reaches stores seeded before the demonstration inserts named an origin
+(version 11), the demonstration identity both the seed and that migration key on, and the statement of
+where each data-correcting version's reach STOPS. That statement is documentation, and this ADR does
+not buy a ceiling by deleting it. That is 111 lines of correction room. Re-measured and unmoved in the
+same round: `contracts` 6,602/6,650, `domain` 5,093/5,150, `presentation` 2,240/6,000 and `tooling`
+14,311/14,350 - `tooling` has 39 lines left, which is the condition ADR-0018's commentary names, stated
+here rather than discovered by whoever next touches `scripts/**`.
+
 `contracts` and `presentation` are unmoved. Headroom is *named* rather than banked, so the next change
 to any of these layers reads as the measured amendment it is. No ceiling here was paid for by deleting
 documentation or folding readable code onto fewer lines (ADR-0048/0049/0050).

@@ -275,10 +275,15 @@ reject duplicate exact results.
   A new column's DEFAULT cannot answer for rows that already exist: a marker column a GUARANTEE reads
   (`record_origin`, migration 9) BACKFILLS the rows already in the store from whatever marker they were
   written with, or the guarantee fails open on every upgraded store while CI's virgin data directory
-  walks only the bootstrap path (D-202). That backfill is its OWN version (10,
-  `record-origin-backfill`, `store/record-origin-migration.ts`), never an edit to the version that added
-  the column: the ledger matches `(version, name)`, so appending to a shipped version reaches every
-  store EXCEPT the upgraded ones the repair exists for (D-217).
+  walks only the bootstrap path (D-202). Each backfill is its OWN version (10,
+  `record-origin-backfill`, for the world's rows; 11, `demo-tenant-record-origin`, for the demonstration
+  org and its two demo users, which no provenance condition can name and which re-seeding skips), never
+  an edit to a version that shipped: the ledger matches `(version, name)`, so appending to a shipped
+  version reaches every store EXCEPT the upgraded ones the repair exists for (D-217, D-219). Those two
+  and their limits - including `decision_ledger`, which the append-only trigger puts beyond ANY
+  backfill - are stated in `store/record-origin-migration.ts`; a data-correcting version says where its
+  reach stops. The demonstration identity both the seed and migration 11 key on is named once in
+  `store/demo-tenant.ts`.
   Adding a table? Classify it in the `org-id-required` fence (it derives from this DDL).
 - **Decision history is NOT `audit_log`.** The prompt-7 source of truth is the sibling
   `decision_ledger` plus immutable replay tables (`src/infrastructure/ledger/`, ADR-0041).

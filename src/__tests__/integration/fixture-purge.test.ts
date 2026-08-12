@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { MIGRATIONS, runMigrations } from "@infra/store/migrations";
 import { DEMONSTRATION_ORIGINS, RECORD_ORIGIN_COLUMN } from "@infra/store/record-origin";
+import { DEMO_ORG_ID, DEMO_USERS } from "@infra/store/demo-tenant";
 import { seedWorldIntoCrm } from "@infra/crm/world-seed";
 import { updateHouseholdName } from "@infra/crm/house-crm";
 import { systemWriteActor } from "@contracts/principal";
@@ -185,10 +186,11 @@ async function purgeDemonstrationRecords(store: SqlDb): Promise<Map<string, stri
   return refused;
 }
 
-/** The version that introduced `record_origin`, read from the shipped plan
- * rather than typed, so appending a migration cannot silently point the upgrade
- * test at the wrong one. */
+/** The versions that introduced `record_origin` and each corrective backfill,
+ * read from the shipped plan rather than typed, so appending a migration cannot
+ * silently point the upgrade tests at the wrong one. */
 const ORIGIN_VERSION = MIGRATIONS.find((migration) => migration.name === "record-origin")!.version;
+const WORLD_BACKFILL_VERSION = MIGRATIONS.find((migration) => migration.name === "record-origin-backfill")!.version;
 
 /** The store as it stood BEFORE the origin column existed: the column gone from
  * every table the shipped DDL gives one, and the ledger recording the versions
@@ -231,6 +233,27 @@ async function seedTheOldWay(store: SqlDb): Promise<void> {
     "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('upgrade-firm-own',$1,'A Real Household',NULL,NULL,'active',$2,'verin-crm',$2,'high')",
     [ORG, TS],
   );
+}
+
+/** The demonstration FIRM and its two demonstration accounts as the seed wrote
+ * them before either insert named an origin, beside a real account of the same
+ * org - the developer whose own user lives in the demo tenant, and whose record
+ * a repair that keyed on org membership would condemn to the purge. Literal
+ * columns, because the point is that this store's `orgs`/`users` have no
+ * `record_origin` to write. */
+const DEMO_FIRM_OWN_USER = "demo-firm-own-user";
+
+async function seedTheDemoFirmTheOldWay(store: SqlDb): Promise<void> {
+  await store.query(
+    "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Verin Demo Firm',$2,'verin-crm',$2,'high')",
+    [DEMO_ORG_ID, TS],
+  );
+  const insertUser = "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence)"
+    + " VALUES ($1,$2,$3,$4,$5,'active',$6,'verin-crm',$6,'high')";
+  for (const [index, user] of DEMO_USERS.entries()) {
+    await store.query(insertUser, [`upgrade-demo-user-${index}`, DEMO_ORG_ID, user.email, user.displayName, user.role, TS]);
+  }
+  await store.query(insertUser, [DEMO_FIRM_OWN_USER, DEMO_ORG_ID, "real.advisor@example.test", "A Real Advisor", "advisor", TS]);
 }
 
 beforeEach(async () => {
@@ -431,6 +454,42 @@ describe("clean-slate guarantee", () => {
     expect(dirty, "the backfill must reach a store that already ran version 9").toEqual({ households: 2, contacts: 2, tasks: 1 });
     const firm = await db.query<{ record_origin: string }>("SELECT record_origin FROM households WHERE id = 'upgrade-firm-own'");
     expect(firm.rows[0]?.record_origin, "and must not condemn the firm's own record to the purge").toBe("firm-record");
+  });
+
+  it("the demo FIRM and its two demo accounts, seeded before the insert named an origin, are repaired by version 11", async () => {
+    // The other half of the same upgrade, and the half version 10 cannot reach:
+    // the demonstration tenant and its two publicly-passworded accounts are
+    // `prov_source = 'verin-crm'` rows like every record this firm's own flows
+    // write, so the world's value-provenance marker names nothing here. Nor can
+    // re-seeding repair them - the org insert is ON CONFLICT DO NOTHING and the
+    // seed skips a user `findUserByEmail` already resolves - so without an
+    // IDENTITY-keyed version they keep the `firm-record` version 9 handed them
+    // forever, on exactly the stores the fix was written for.
+    await rewindPastRecordOrigin(db);
+    await seedTheDemoFirmTheOldWay(db);
+    await runMigrations(db);
+
+    // Rewound to the state a store sat in between version 10 and version 11:
+    // the column is there, every row took its default, and the ledger's last
+    // entry is the world backfill.
+    for (const table of ["orgs", "users"]) {
+      await db.query(`UPDATE ${table} SET ${RECORD_ORIGIN_COLUMN} = $1`, ["firm-record"]);
+    }
+    await db.query("DELETE FROM schema_migrations WHERE version > $1", [WORLD_BACKFILL_VERSION]);
+    expect(
+      (await sweepFixtureRows(db)).totalRows,
+      "the false pass version 11 closes: the demo firm and its committed-password accounts read as this firm's own",
+    ).toBe(0);
+
+    await runMigrations(db);
+
+    const dirty = Object.fromEntries((await sweepFixtureRows(db)).tables.filter((entry) => entry.rows > 0).map((entry) => [entry.table, entry.rows]));
+    expect(dirty, "the demonstration tenant and both demonstration accounts are countable after the upgrade")
+      .toEqual({ orgs: 1, users: DEMO_USERS.length });
+    const own = await db.query<{ record_origin: string }>("SELECT record_origin FROM users WHERE id = $1", [DEMO_FIRM_OWN_USER]);
+    expect(own.rows[0]?.record_origin, "a real account inside the demo org must not be condemned to the purge").toBe("firm-record");
+    const other = await db.query<{ record_origin: string }>("SELECT record_origin FROM orgs WHERE id = $1", [ORG]);
+    expect(other.rows[0]?.record_origin, "and neither must another firm's org row").toBe("firm-record");
   });
 
   it("detects (companion): the column's DEFAULT alone reports a populated store CLEAN", async () => {

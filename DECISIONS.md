@@ -8353,3 +8353,85 @@ against a value no current caller can produce rather than closing a live fail-op
 untouched and migrations 9 and 10 keep their shipped bytes. Reverting the `recordOrigin` argument on
 `createUser` alone would return `orgs` and `users` to reporting clean over the demo firm and its
 committed-password accounts, so it reverts with the guarantee case that proves it.
+
+### D-219 · 2026-08-12 · reversible · Populated-world review round fourteen: the corrective sweep reaches the stores that already exist, and says where it stops
+
+**Migration 11 stamps the demonstration tenant and its two demonstration accounts.** D-218 named
+`record_origin` at the org and user INSERTs, which fixes every store created afterwards and nothing
+else. On any store seeded before that commit - every developer who followed this branch, and the only
+kind of store the repair exists for - `org-verin-demo` and the two accounts carrying the publicly
+committed `verin-demo-pass-12345678` took version 9's `firm-record` default, so `pnpm fixture:check`
+printed `orgs 0` and `users 0` over the demo firm and the rows that can actually authenticate. Version
+10 could not reach them: it keys on `prov_source = 'fixture'`, the world's CRM projection marker, and
+those are `verin-crm` rows like every record this firm's own flows write. Re-seeding could not either -
+the org insert is `ON CONFLICT (id) DO NOTHING` and `seedDemoStore` skips a user `findUserByEmail`
+already resolves - so both paths wrote nothing and the fail-open survived on precisely the stores it
+was written for. This is the third shape of the same failure (a defaulted column, an unmarked insert
+path, a migration that never ran on the store it was for), so the correction is a NEW version rather
+than an edit: `{version: 11, name: "demo-tenant-record-origin"}`
+(`DEMO_TENANT_ORIGIN_BACKFILL_SQL`, `src/infrastructure/store/record-origin-migration.ts`).
+`runMigrations` matches the ledger on `(version, name)`, so an `UPDATE` appended to 9 or 10 is dead
+code on every store that already recorded it (D-016/D-029).
+
+**The condition is IDENTITY, and it is the two demonstration accounts rather than the org's
+membership.** No value-provenance condition can name a row whose values the firm's own flows wrote, so
+version 11 keys on `orgs.id` and on `users.org_id` plus the two demonstration emails. A developer's own
+account inside the demo org is a real record, and condemning it to the purge is the same false claim in
+the other direction - so that account is asserted to survive the upgrade as `firm-record`.
+
+**The demonstration identity is named ONCE** (`src/infrastructure/store/demo-tenant.ts`). The seed
+WRITES those rows and the migration RE-STAMPS them, so both need one answer to "which org, and which
+users?"; a second copy would let a repair key on an org id the seed no longer writes and report success
+over rows nobody has. It lives under `src/infrastructure/` because a shipped migration cannot import
+from `scripts/`, which no deployment carries. `DEMO_PASSWORD` stays in the seed - the store layer has no
+use for it.
+
+**Every data-correcting fix on this branch now says WHERE ITS REACH STOPS.** The module docstring of
+`record-origin-migration.ts` states all three limits rather than leaving them to be rediscovered:
+version 10 reaches the three tables the world's projection writes and no others; the demonstration
+tenant and identities take an identity condition because no provenance condition can name them; and
+NEITHER reaches `decision_ledger`, where no version ever can - `decision_ledger_no_update` is a BEFORE
+UPDATE trigger that refuses every update on that table (ADR-0041), so a store that seeded its synthetic
+chain before `recordOrigin` became required reports `decision_ledger 0` over that chain permanently and
+the only remedy is recreating the store. That is the same answer `IRREVERSIBLE_SEED_RESIDUE` gives, and
+it is why the guarantee is "production was never seeded", never "the seed can be undone".
+
+**Proved end to end, on the store the repair is for.** A new case in
+`src/__tests__/integration/fixture-purge.test.ts` seeds the demo firm and its two accounts the way a
+pre-D-218 store holds them, rewinds the ledger to its last pre-11 entry, asserts the sweep reports the
+store CLEAN (the fail-open, stated rather than assumed), runs the upgrade, and asserts `orgs 1`,
+`users 2`, with the demo org's real account and another firm's org row still `firm-record`. PF-290
+records three injections. The same sequence was walked against a real seeded PGlite store through
+`pnpm db:seed` / `pnpm db:migrate` / `pnpm fixture:check --report`: `orgs 0`/`users 0` before the
+version runs, `orgs 1`/`users 2` after.
+
+**ADR-0057 is amended for the budget this costs.** `infrastructure` moves to 8,600 against a
+re-measured 8,489 - 111 lines of correction room - because the reach statement is documentation and
+ADR-0048/0050 forbid paying for a ceiling by deleting it or folding code onto fewer lines. Every other
+layer is re-measured and unmoved, `tooling` at 14,311 against 14,350: 39 lines, which is the condition
+ADR-0018's own commentary names, stated in both the ADR and the fence header rather than left for
+whoever next touches `scripts/**`.
+
+**Banked, not fixed (`fu-detail-link-file-reads`).** The household detail route
+(`src/app/api/households/[key]/route.ts`) resolves each cross-household link by loading the
+counterparty's FULL household file (`readFileSync` plus a SHA-256 verify on a cold cache) plus a
+per-link tenant-scoped CRM query, to obtain one name. It is bounded by link count and warm requests are
+map lookups, so it is first-request cost - but it is the same cost class already banked as
+`fu-directory-summary-only-reads`, and the manifest summaries the directory needs already carry
+`displayName`, so a summary-only counterparty resolution would cover both.
+
+**Banked, not fixed (`fu-residue-reason-assertions`).** Only the KEYS of `IRREVERSIBLE_SEED_RESIDUE`
+are asserted (exact in both directions). The reason strings are asserted for exactly the three refused
+tables; for the ten excused on "no origin column of its own" the claimed mechanism is never checked, so
+a reason can rot into an excuse while the key stays earned. The exclusions are schema-grounded today -
+`credentials.user_id REFERENCES users(id)` and `users.org_id`/`decision_ledger.org_id REFERENCES
+orgs(id)`, mechanisms the store itself enforces - so this is hardening rather than a fail-open. A cheap
+strengthening is to assert from the live catalog that each of those tables genuinely has no
+`record_origin` column.
+
+**Revert path:** revert this changeset. Migration 11 is additive and both its `UPDATE`s are
+`WHERE`-scoped to the demonstration identity, so a store that has run it is not harmed by the code being
+reverted; versions 9 and 10 keep their shipped bytes and `fixtures/world` is untouched. Reverting
+`src/infrastructure/store/demo-tenant.ts` alone would leave the seed and the migration free to disagree
+about which org is the demonstration one, so it reverts with the seed's imports and the upgrade case
+that proves the repair.
