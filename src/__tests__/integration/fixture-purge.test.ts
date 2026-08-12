@@ -241,19 +241,19 @@ async function seedTheOldWay(store: SqlDb): Promise<void> {
  * a repair that keyed on org membership would condemn to the purge. Literal
  * columns, because the point is that this store's `orgs`/`users` have no
  * `record_origin` to write. */
-const DEMO_FIRM_OWN_USER = "demo-firm-own-user";
+const FIRM_OWN_ADVISOR_ROW = "demo-firm-own-user";
 
 async function seedTheDemoFirmTheOldWay(store: SqlDb): Promise<void> {
   await store.query(
     "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Verin Demo Firm',$2,'verin-crm',$2,'high')",
     [DEMO_ORG_ID, TS],
   );
-  const insertUser = "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence)"
+  const insertStaffRow = "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence)"
     + " VALUES ($1,$2,$3,$4,$5,'active',$6,'verin-crm',$6,'high')";
   for (const [index, user] of DEMO_USERS.entries()) {
-    await store.query(insertUser, [`upgrade-demo-user-${index}`, DEMO_ORG_ID, user.email, user.displayName, user.role, TS]);
+    await store.query(insertStaffRow, [`upgrade-demo-user-${index}`, DEMO_ORG_ID, user.email, user.displayName, user.role, TS]);
   }
-  await store.query(insertUser, [DEMO_FIRM_OWN_USER, DEMO_ORG_ID, "real.advisor@example.test", "A Real Advisor", "advisor", TS]);
+  await store.query(insertStaffRow, [FIRM_OWN_ADVISOR_ROW, DEMO_ORG_ID, "real.advisor@example.test", "A Real Advisor", "advisor", TS]);
 }
 
 beforeEach(async () => {
@@ -486,7 +486,7 @@ describe("clean-slate guarantee", () => {
     const dirty = Object.fromEntries((await sweepFixtureRows(db)).tables.filter((entry) => entry.rows > 0).map((entry) => [entry.table, entry.rows]));
     expect(dirty, "the demonstration tenant and both demonstration accounts are countable after the upgrade")
       .toEqual({ orgs: 1, users: DEMO_USERS.length });
-    const own = await db.query<{ record_origin: string }>("SELECT record_origin FROM users WHERE id = $1", [DEMO_FIRM_OWN_USER]);
+    const own = await db.query<{ record_origin: string }>("SELECT record_origin FROM users WHERE id = $1", [FIRM_OWN_ADVISOR_ROW]);
     expect(own.rows[0]?.record_origin, "a real account inside the demo org must not be condemned to the purge").toBe("firm-record");
     const other = await db.query<{ record_origin: string }>("SELECT record_origin FROM orgs WHERE id = $1", [ORG]);
     expect(other.rows[0]?.record_origin, "and neither must another firm's org row").toBe("firm-record");

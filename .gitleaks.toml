@@ -44,4 +44,25 @@ regexes = [
   # a sibling branch, not from HEAD: the CI job checks out with fetch-depth 0 and scans
   # every ref, so an inline `gitleaks:allow` in the fixture cannot cover it.
   '''79ac0f487563da1a''',
+  # Populated-world fixture KEYS (fixtures/world/**, ADR-0057). Each is a
+  # human-readable slug that identifies a record inside the generated
+  # demonstration world - a household, a bank instruction, a model portfolio -
+  # and none carries secret entropy or grants access to anything:
+  #   garibaldi-thandiwe-22 : a derived household key, <surname>-<given name>-<slot>
+  #   fairmont-5520 / fairmont-9014 / willowbank-6031 : bank-instruction keys,
+  #                          <bank slug>-<the masked last four already shown on screen>
+  #   conservative-40-60   : a model-portfolio key, hand-owned in spec/roster.json
+  # generic-api-key fires only because the JSON field holding them is named "key"
+  # and a hyphenated slug clears the entropy bar - the same reason
+  # mm-smiths-renovation-aug15-4c7f above is listed. Allowlisted by the EXACT
+  # LITERAL rather than by the fixtures/world path, so a genuine secret added to a
+  # world file is still caught, and so a regenerated world re-proves its own keys
+  # here rather than inheriting a blanket path escape. An inline `gitleaks:allow`
+  # cannot cover them: the CI job checks out with fetch-depth 0 and scans every
+  # ref, so the values reach the scan from commits other than HEAD.
+  '''garibaldi-thandiwe-22''',
+  '''fairmont-5520''',
+  '''fairmont-9014''',
+  '''willowbank-6031''',
+  '''conservative-40-60''',
 ]
