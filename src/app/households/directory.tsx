@@ -17,7 +17,7 @@ import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { Field, TextInput, StatusBadge, EmptyState } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
-import type { DirectoryVM, HouseholdRowVM, NoEvidenceVM } from "./model";
+import type { DirectoryVM, EmptyBookVM, HouseholdRowVM, NoEvidenceVM } from "./model";
 import { VirtualList } from "./virtual-list";
 
 // The window has to know how tall a row is before it renders one, so the height
@@ -144,6 +144,23 @@ function UnevidencedRow({ row }: { row: HouseholdRowVM & { noEvidence: NoEvidenc
   );
 }
 
+function BookIsEmpty({ empty }: { empty: EmptyBookVM }) {
+  return (
+    <EmptyState
+      title={empty.title}
+      description={empty.description}
+      action={
+        <Link
+          href={empty.actionHref}
+          className="text-sm text-slate-800 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+        >
+          {empty.actionLabel}
+        </Link>
+      }
+    />
+  );
+}
+
 function SummaryCard({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -210,10 +227,17 @@ export function HouseholdDirectory({ directory }: { directory: DirectoryVM }) {
         keyOf={(row) => row.key}
         label="Households"
         emptyState={
-          <EmptyState
-            title="No household matches that search"
-            description="Try a surname, a city, an advisor, or an account type. Four households here share the surname Smith, so a first name narrows it fastest."
-          />
+          // TWO QUESTIONS, TWO STATES. An empty book is not a search that found
+          // nothing: answering both with the search copy tells a reader no
+          // household matched a search they never made, and names four Smiths
+          // that are not there - two false statements in one view. The book's
+          // own empty state comes from the builder and carries a next action.
+          directory.emptyBook !== null
+            ? <BookIsEmpty empty={directory.emptyBook} />
+            : <EmptyState
+              title="No household matches that search"
+              description="Try a surname, a city, an advisor, or an account type. Four households here share the surname Smith, so a first name narrows it fastest."
+            />
         }
       >
         {(row) => <HouseholdRow row={row} />}

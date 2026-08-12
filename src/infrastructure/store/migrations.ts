@@ -25,7 +25,7 @@ import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
-import { FIRM_RECORD_ORIGIN, RECORD_ORIGIN_COLUMN } from "./record-origin";
+import { FIRM_RECORD_ORIGIN, RECORD_ORIGIN_COLUMN, WORLD_FIXTURE_ORIGIN } from "./record-origin";
 import {
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_LEDGER_HISTORY_INDEXES_SQL,
@@ -355,13 +355,28 @@ ${TENANT_EDGES.map((e) => `ALTER TABLE ${e.child}
  * declares `record_origin` in its own `CREATE TABLE`, and the clean-slate check
  * fails on any table that carries one column without the other, so the pair
  * cannot drift apart unnoticed.
+ *
+ * THE COLUMN'S DEFAULT CANNOT ANSWER FOR ROWS THAT ALREADY EXIST. A store
+ * carrying the demonstration world would take `firm-record` on every one of
+ * those rows, and the clean-slate check would then report a fully populated
+ * instance clean - the guarantee failing OPEN through the very migration that
+ * enforces it, and silently, which is the one thing it must never do (charter
+ * #4). So the rows are carried forward by the marker they were written with:
+ * `prov_source = 'fixture'` is what the world's CRM projection wrote, in the
+ * three tables it writes, and no other flow has ever written it there. Before
+ * this version nothing re-stamped that column either, so at the moment this runs
+ * the marker still names exactly the rows a fresh seed would give the
+ * demonstration origin - which is what makes an upgraded store and a freshly
+ * seeded one agree rather than diverge.
  */
 const RECORD_ORIGIN_SQL = [
-  "orgs", "users", "households", "contacts", "financial_accounts",
-  "account_opening_applications", "tasks", "decision_ledger",
-]
-  .map((table) => `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${RECORD_ORIGIN_COLUMN} text NOT NULL DEFAULT '${FIRM_RECORD_ORIGIN}';`)
-  .join("\n");
+  ...[
+    "orgs", "users", "households", "contacts", "financial_accounts",
+    "account_opening_applications", "tasks", "decision_ledger",
+  ].map((table) => `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${RECORD_ORIGIN_COLUMN} text NOT NULL DEFAULT '${FIRM_RECORD_ORIGIN}';`),
+  ...["households", "contacts", "tasks"]
+    .map((table) => `UPDATE ${table} SET ${RECORD_ORIGIN_COLUMN} = '${WORLD_FIXTURE_ORIGIN}' WHERE prov_source = 'fixture';`),
+].join("\n");
 
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */
 export const MIGRATIONS: readonly Migration[] = [

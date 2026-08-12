@@ -255,6 +255,10 @@ reject duplicate exact results.
   `timestamptz`, but the app boundary stays ISO strings BOTH ways: writers emit `toISOString()`; a read
   parser in `db.ts` (OID 1184 → `new Date(v).toISOString()`) normalizes reads to canonical UTC ISO - do
   NOT expect `Date` objects, and the byte-exact round-trip is what keeps the audit hash chain verifiable.
+  A new column's DEFAULT cannot answer for rows that already exist: a marker column a GUARANTEE reads
+  (`record_origin`, migration 9) BACKFILLS the rows already in the store from whatever marker they were
+  written with, or the guarantee fails open on every upgraded store while CI's virgin data directory
+  walks only the bootstrap path (D-202).
   Adding a table? Classify it in the `org-id-required` fence (it derives from this DDL).
 - **Decision history is NOT `audit_log`.** The prompt-7 source of truth is the sibling
   `decision_ledger` plus immutable replay tables (`src/infrastructure/ledger/`, ADR-0041).

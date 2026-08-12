@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, within } from "@testing-library/react";
 import { metricWatermark } from "@contracts/metric";
 import { Metric } from "@app/presentation/metric";
+import { StatusBadge } from "@app/presentation/ui";
 import { canFeedComplianceDecision, isDemonstration } from "@contracts/provenance";
 import { buildDirectoryVM } from "@app/households/build";
 import { buildHouseholdDetailVM } from "@app/households/build-detail";
@@ -114,7 +115,19 @@ function nakedRendersOf(scope: HTMLElement, figure: number, accounted: readonly 
 
 describe("the health score is a figure, so it renders like one", () => {
   const vm = directoryOf(SAMPLE);
-  const rowScore = (row: (typeof vm.rows)[number]) => Number(row.evidence!.health.score.value);
+  /** The figure the row must NOT show, taken from the domain rather than from
+   * the row: the row no longer carries a score at all, which is the point - a
+   * list that renders the band word ships the band word. */
+  const byKey = new Map(SAMPLE.map((household) => [household.key, household]));
+  const rowScore = (row: (typeof vm.rows)[number]) => computeHouseholdHealth(byKey.get(row.key)!, AS_OF).score;
+
+  it("the row carries what the row renders, and no breakdown it cannot show", () => {
+    for (const row of vm.rows) {
+      expect(Object.keys(row.evidence!.health).sort(), `${row.key}: the row ships more health than it renders`)
+        .toEqual(["band", "bandLabel"]);
+    }
+    expect(vm.rows.length).toBeGreaterThan(3);
+  });
 
   it("the directory row's badge carries the BAND WORD and no figure", () => {
     const { container } = render(<HouseholdDirectory directory={vm} />);
@@ -124,21 +137,31 @@ describe("the health score is a figure, so it renders like one", () => {
       const link = within(list).queryByRole("link", { name: new RegExp(escape(row.displayName)) });
       if (!link) continue;
       checked += 1;
-      const badge = within(link).getByText(row.evidence!.health.bandLabel);
-      expect(badge.textContent, `${row.key}: the band badge names a figure`).toBe(row.evidence!.health.bandLabel);
+      // The DETECTOR first, and on the whole row: it is what has to catch a
+      // figure wherever it reaches the screen, including welded to a label. The
+      // exact-text assertion below is narrower - it says the badge is the band
+      // word and nothing else - and running it first would fail before the
+      // detector was ever asked, which is how the check went unproven.
       expect(
         nakedRendersOf(link, rowScore(row), [row.evidence!.countsLabel]),
         `${row.key}: a bare health score reached the row`,
       ).toEqual([]);
+      const badge = within(link).getByText(row.evidence!.health.bandLabel);
+      expect(badge.textContent, `${row.key}: the band badge names a figure`).toBe(row.evidence!.health.bandLabel);
     }
     expect(checked, "no row was mounted - the assertion above proved nothing").toBeGreaterThan(3);
   });
 
   it("detects (companion): the shape this row used to ship IS caught, and the shipped one is not", () => {
     const row = vm.rows[0]!;
+    const household = byKey.get(row.key)!;
     const score = rowScore(row);
+    // The badge as it actually shipped, taken from this branch's own history
+    // (`git show 2af33672:src/app/households/directory.tsx`): the same
+    // `StatusBadge`, the same label expression. A hand-built `<span>` would be a
+    // statement about a shape nobody wrote (PF-278).
     const asShipped = render(
-      <span>{`${row.evidence!.health.bandLabel} · ${row.evidence!.health.score.value}`}</span>,
+      <StatusBadge status="proceed" label={`${row.evidence!.health.bandLabel} · ${score}`} />,
     );
     expect(
       nakedRendersOf(asShipped.container, score),
@@ -146,7 +169,7 @@ describe("the health score is a figure, so it renders like one", () => {
     ).toEqual([`${row.evidence!.health.bandLabel} · ${score}`]);
     // ...and the sanctioned rendering of the SAME figure is not a finding, so
     // the assertion above is a statement about the shape rather than the number.
-    const throughMetric = render(<Metric metric={row.evidence!.health.score} />);
+    const throughMetric = render(<Metric metric={buildHouseholdDetailVM(household, crmRow(household), AS_OF).health.score} />);
     expect(nakedRendersOf(throughMetric.container, score)).toEqual([]);
   });
 

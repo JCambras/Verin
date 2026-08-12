@@ -8098,3 +8098,63 @@ revert together. `fixtures/world` is untouched - nothing in this round reaches t
 world regenerates byte-identical. The observable changes are a household directory that renders the
 firm's own names, lists households with no evidence yet, and says when its counts read only part of
 the book.
+
+### D-215 · 2026-08-12 · reversible · Populated-world review round ten: a column's default cannot answer for rows that already exist, a row carries what it renders, and an empty book is not a failed search
+
+**Migration 9's default was a silent false pass on every store that already held the world.**
+`record_origin` shipped as `ADD COLUMN ... DEFAULT 'firm-record'` with no backfill, so every row that
+already existed became the firm's own - and the ordinary development loop reaches that state (`pnpm
+db:seed`, pull, `pnpm db:migrate`). `pnpm fixture:check` then printed "clean - zero
+demonstration-origin rows" while a hundred households rendered at `/app/households`, and re-seeding
+could not repair it: the ids conflict, the ownership probe correctly finds them held by this same org,
+and the load writes nothing. That is the clean-slate guarantee failing OPEN through the migration
+added to enforce it, on the one check whose whole value is that it cannot (charter #4). CI never saw
+it because the `world` job's data directory is always virgin, so only the bootstrap path is walked.
+
+Version 9 now carries the backfill, and the route matters: migration 9 was introduced by this branch's
+own HEAD commit and has shipped nowhere - the base commit has no `record_origin` at all - so the
+correction belongs IN it rather than in a version 10 that a virgin store would apply against a column
+it just created. D-016/D-029's rule is about SHIPPED entries, and this one is not.
+
+**What identifies a demonstration row at migration time is the marker it was written with.**
+`prov_source = 'fixture'` is what the world's CRM projection writes, in the three tables it writes
+(`households`, `contacts`, `tasks`), and nothing else has ever written it there; before this version
+nothing re-stamped that column either, so at the moment the migration runs the marker names exactly
+the rows a fresh seed gives the demonstration origin. Backfilling those three - rather than every
+provenance-bearing table - is what makes an upgraded store and a freshly seeded one AGREE: the decision
+ledger's own seeded rows carry `prov_source = 'fixture'` too and take `firm-record` on a fresh store,
+so a blanket update would have made the upgrade path mean something different from the bootstrap path.
+The alternative on the table - identifying the rows by the generator's deterministic ids - was
+rejected twice over: it would put a build-time fixture generator inside the shipped schema module, and
+a migration whose bytes are computed from a spec is a shipped migration that edits itself. PF-284.
+
+**The row carries what the row renders.** D-213 made the directory badge show the band WORD, and the
+payload kept shipping the composite `DisplayMetric`, the summary sentence and six factors each with a
+label, a bar width, a weight, a statement and its read records - about a kilobyte of unrendered text
+per row, a hundred kilobytes across the book, on the surface a viewer hits first. `HouseholdRowVM`
+now carries `HealthBandVM` (band and word); the breakdown stays on the detail path, where the figure
+renders once through `<Metric>` with its watermark.
+
+**The corrected detector was run against the shape that actually shipped.** D-214 fixed a companion
+that asserted the detector found NOTHING in the defective row. The proof this round is not a
+hand-built approximation of that row: the badge line was recovered from this branch's history
+(`git show 2af33672:src/app/households/directory.tsx`), put back into the shipped component together
+with the row payload it needed, and the detector reported `Watch · 77` on a real row. The executable
+companion renders the same `StatusBadge` with the same label expression, so the catch stays a
+statement about the shape rather than about one number. PF-285.
+
+**An empty book is not a search that found nothing.** `VirtualList` renders its one `emptyState`
+whenever the list is empty, whatever emptied it, and the directory passed only the search-miss copy -
+so a book with nothing in it announced "No household matches that search" for a search nobody made and
+offered the four Smiths that were not there. Two false statements in one view, reachable in dev before
+`pnpm db:seed`, for any org whose CRM book does not overlap the world, and in production, where the
+fixture adapter refuses to serve. The builder now states the BOOK's empty state - an honest sentence
+and the console on-ramp, `null` whenever there is a book, so it cannot become furniture - and the
+search copy is reached only when a search emptied a list that has rows. One state may not answer two
+questions; this is the fourth time that shape has been corrected on this lane. PF-286.
+
+**Revert path:** revert this changeset. Migration 9's backfill is an `UPDATE` inside the version that
+introduces the column, so a store that already applied version 9 without it keeps its rows marked
+`firm-record` - re-running is not possible by design, and the honest repair on such a store is to
+re-stamp the three tables by hand or start from a fresh data directory. Nothing here reaches the
+generator: `fixtures/world` is untouched and regenerates byte-identical.

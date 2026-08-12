@@ -3,9 +3,11 @@
  * audited seed marker, so the audit-chain-verify gate has a real chain entry to
  * verify (charter #4: a gate that verifies zero entries is vacuous) — and then
  * the POPULATED WORLD (ADR-0057): a hundred named households and their people,
- * every row labeled source=fixture so the clean-slate check can count them.
- * The firm's own rows stay source=verin-crm; the world's do not pretend to be
- * records this firm produced (charter #3). The demo password is a sacrificial
+ * every row carrying record_origin=world-fixture, which is what the clean-slate
+ * check counts - the ROW's origin never moves, while the provenance of a value
+ * in it does the moment somebody edits it. Their values land source=fixture
+ * while the firm's own rows stay source=verin-crm; the world's do not pretend to
+ * be records this firm produced (charter #3). The demo password is a sacrificial
  * DEMO credential (ADR-0020), never a production secret. Idempotent throughout.
  */
 import { createDb } from "../src/infrastructure/store/db";

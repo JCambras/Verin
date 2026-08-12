@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
-import { runMigrations } from "@infra/store/migrations";
+import { MIGRATIONS, runMigrations } from "@infra/store/migrations";
+import { RECORD_ORIGIN_COLUMN } from "@infra/store/record-origin";
 import { seedWorldIntoCrm } from "@infra/crm/world-seed";
 import { updateHouseholdName } from "@infra/crm/house-crm";
 import { systemWriteActor } from "@contracts/principal";
 import { parseMachineRecordId } from "@contracts/record-id";
 import { canFeedComplianceDecision, provenanceLabel, syntheticBadgeLabel } from "@contracts/provenance";
-import { cleanSlateViolations, sweepFixtureRows } from "../../../scripts/fixture-purge";
+import { cleanSlateViolations, originBearingTables, sweepFixtureRows } from "../../../scripts/fixture-purge";
 import { generateWorld } from "../../../scripts/world/generate";
 import { loadWorldSpec, WORLD_SEED } from "../../../scripts/world/spec";
 
@@ -40,6 +41,54 @@ async function purgeDemonstrationRecords(store: SqlDb): Promise<void> {
   await store.query("DELETE FROM tasks WHERE record_origin = 'world-fixture'");
   await store.query("DELETE FROM contacts WHERE record_origin = 'world-fixture'");
   await store.query("DELETE FROM households WHERE record_origin = 'world-fixture'");
+}
+
+/** The version that introduced `record_origin`, read from the shipped plan
+ * rather than typed, so appending a migration cannot silently point the upgrade
+ * test at the wrong one. */
+const ORIGIN_VERSION = MIGRATIONS.find((migration) => migration.name === "record-origin")!.version;
+
+/** The store as it stood BEFORE the origin column existed: the column gone from
+ * every table the shipped DDL gives one, and the ledger recording the versions
+ * up to that point - which is what makes the next `runMigrations` a real upgrade
+ * rather than a virgin bootstrap. `createMemoryDb` migrates on creation, so this
+ * is how a pre-version-9 store is reached at all. The table list is DERIVED from
+ * the DDL, so a table added to that migration cannot be left behind here. */
+async function rewindPastRecordOrigin(store: SqlDb): Promise<void> {
+  for (const table of originBearingTables()) {
+    await store.exec(`ALTER TABLE ${table} DROP COLUMN ${RECORD_ORIGIN_COLUMN}`);
+  }
+  await store.query("DELETE FROM schema_migrations WHERE version >= $1", [ORIGIN_VERSION]);
+  const columns = await store.query<{ n: number }>(
+    "SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE column_name = $1 AND table_schema = ANY(current_schemas(false))",
+    [RECORD_ORIGIN_COLUMN],
+  );
+  expect(Number(columns.rows[0]!.n), "the rewind must actually remove the column").toBe(0);
+}
+
+/** World rows as they were written before the origin column existed: labeled
+ * `prov_source = 'fixture'` and nothing else, beside one row the firm's own
+ * console wrote. Literal columns, because the point is that this store's
+ * `households` has no `record_origin` to write. */
+async function seedTheOldWay(store: SqlDb): Promise<void> {
+  for (const [id, name] of [["upgrade-hh-1", "Seeded Household One"], ["upgrade-hh-2", "Seeded Household Two"]]) {
+    await store.query(
+      "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,NULL,NULL,'active',$4,'fixture',$4,'medium')",
+      [id, ORG, name, TS],
+    );
+    await store.query(
+      "INSERT INTO contacts (id,org_id,household_id,first_name,last_name,email,phone,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,'Seeded','Person',NULL,NULL,$4,'fixture',$4,'medium')",
+      [`${id}-contact`, ORG, id, TS],
+    );
+  }
+  await store.query(
+    "INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,'upgrade-hh-1','Verify the seeded instruction','not-started',NULL,NULL,$3,'fixture',$3,'medium')",
+    ["upgrade-task-1", ORG, TS],
+  );
+  await store.query(
+    "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('upgrade-firm-own',$1,'A Real Household',NULL,NULL,'active',$2,'verin-crm',$2,'high')",
+    [ORG, TS],
+  );
 }
 
 beforeEach(async () => {
@@ -117,6 +166,46 @@ describe("clean-slate guarantee", () => {
     expect(cleanSlateViolations(await sweepFixtureRows(db))).toEqual([]);
     const left = await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM households WHERE org_id = $1", [ORG]);
     expect(Number(left.rows[0]!.n), "a renamed demonstration household must not survive the purge").toBe(0);
+  });
+
+  it("a store seeded BEFORE the origin column existed is still counted after the upgrade", async () => {
+    // The upgrade path, which CI's fresh data directory never walks. A store
+    // that already holds the world takes the column's default on every existing
+    // row, so without a backfill the sweep reports a fully populated instance
+    // clean - the guarantee failing open through the migration that enforces it,
+    // and re-seeding cannot repair it (the ids conflict and nothing is written).
+    await rewindPastRecordOrigin(db);
+    await seedTheOldWay(db);
+
+    await runMigrations(db);
+
+    const sweep = await sweepFixtureRows(db);
+    expect(sweep.problems).toEqual([]);
+    const dirty = Object.fromEntries(sweep.tables.filter((entry) => entry.rows > 0).map((entry) => [entry.table, entry.rows]));
+    expect(dirty, "every world row written before the column existed is still a demonstration record")
+      .toEqual({ households: 2, contacts: 2, tasks: 1 });
+    expect(cleanSlateViolations(sweep).length, "a populated instance must not report clean").toBeGreaterThan(0);
+    // ...and the firm's OWN pre-existing row is not swept up by the backfill: a
+    // migration that marked everything would pass the assertion above while
+    // condemning real records to the purge.
+    const firm = await db.query<{ record_origin: string }>("SELECT record_origin FROM households WHERE id = 'upgrade-firm-own'");
+    expect(firm.rows[0]?.record_origin).toBe("firm-record");
+  });
+
+  it("detects (companion): the column's DEFAULT alone reports a populated store CLEAN", async () => {
+    // What version 9 without its backfill did, proved rather than asserted: the
+    // same store, the same rows, every origin taken from the DDL default.
+    await rewindPastRecordOrigin(db);
+    await seedTheOldWay(db);
+    await runMigrations(db);
+    for (const table of ["households", "contacts", "tasks"]) {
+      await db.query(`UPDATE ${table} SET ${RECORD_ORIGIN_COLUMN} = $1`, ["firm-record"]);
+    }
+    const sweep = await sweepFixtureRows(db);
+    expect(sweep.totalRows, "nothing is counted").toBe(0);
+    expect(cleanSlateViolations(sweep), "this is the silent false pass the backfill exists to close").toEqual([]);
+    const present = await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM households WHERE prov_source = 'fixture'");
+    expect(Number(present.rows[0]!.n), "while the demonstration world is fully present").toBe(2);
   });
 
   it("a provenance-bearing table the shipped DDL never declared is caught by the store's own catalog", async () => {

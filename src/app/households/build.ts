@@ -25,7 +25,8 @@ import {
 import type { WorldHousehold } from "@domain/world/household-world";
 import type { WorldIdentity } from "@infra/world/fixture-world-source";
 import type {
-  DirectoryVM, HealthVM, HouseholdRowEvidenceVM, HouseholdRowVM, NoEvidenceVM,
+  DirectoryVM, EmptyBookVM, HealthBandVM, HealthVM, HouseholdRowEvidenceVM,
+  HouseholdRowVM, NoEvidenceVM,
 } from "./model";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -175,6 +176,16 @@ interface WorldRowEntry {
   readonly totalsInput: DerivedProvenance;
 }
 
+/** The band a row shows, computed from the same six factors the panel reports.
+ * The row takes the WORD and stops there: the composite figure renders once, on
+ * the household's own page, through `<Metric>` with its watermark - so shipping
+ * the breakdown to a list that cannot render it is a hundred kilobytes nobody
+ * reads and thirty fields to display two. */
+function buildRowHealth(household: WorldHousehold, asOf: string): HealthBandVM {
+  const band = computeHouseholdHealth(household, asOf).band;
+  return { band, bandLabel: BAND_LABELS[band] };
+}
+
 function buildWorldRowEvidence(household: WorldHousehold, asOf: string): HouseholdRowEvidenceVM {
   const totalBalanceMinor = household.accounts.reduce((sum, account) => sum + account.balanceMinor, 0);
   const openItems = openItemsOf(household);
@@ -195,7 +206,7 @@ function buildWorldRowEvidence(household: WorldHousehold, asOf: string): Househo
     // have - and claim it beside four cards that fold correctly, which makes the
     // pair actively misleading rather than merely wrong.
     totalBalance: metric(totalBalanceMinor, "currency-minor", foldAccountBalances(household, asOf)),
-    health: buildHealthVM(household, asOf),
+    health: buildRowHealth(household, asOf),
   };
 }
 
@@ -264,6 +275,18 @@ const NO_EVIDENCE: NoEvidenceVM = {
   badgeLabel: "No evidence on file",
   note: "Nothing has arrived for this household yet - only the firm's own record of it.",
   actionLabel: "Open it in the house-CRM console",
+  actionHref: "/app/console",
+};
+
+/** A book with nothing in it is not a search that found nothing. This directory
+ * lists what the firm's record store holds, so an empty one says exactly that
+ * and points at the place a household is created - the same on-ramp the
+ * no-evidence row carries, because an empty state a reader can do nothing about
+ * is a dead end. */
+const EMPTY_BOOK: EmptyBookVM = {
+  title: "No households in this firm's book yet",
+  description: "This directory lists the households the firm's record store holds, and it holds none yet. Create the first one in the house-CRM console and it appears here.",
+  actionLabel: "Open the house-CRM console",
   actionHref: "/app/console",
 };
 
@@ -340,6 +363,8 @@ export function buildDirectoryVM(input: DirectoryInput): DirectoryVM {
     totalAccounts: count(totals.accounts, listProvenance),
     totalPeople: count(totals.people, listProvenance),
     totalOpenItems: count(totals.openItems, listProvenance),
+    // Whether the BOOK is empty, which a search that matches nothing is not.
+    emptyBook: rows.length === 0 ? EMPTY_BOOK : null,
     // Every household is listed, so a figure that reads only some of them says
     // so rather than letting a reader take it for the whole book. The
     // none-described case is the one production reaches, where the fixture

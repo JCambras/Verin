@@ -95,7 +95,15 @@ cards that folded correctly. And no metric-class figure reaches a screen outside
 directory row's health badge carries the BAND WORD and the panel's factor cards a band, a bar and a
 sentence, because a score extracted from its `DisplayMetric` renders with no provenance and no
 "demonstration - not a compliance record" watermark - a hundred and six times a page respectively,
-and exactly the number a reader would screenshot.
+and exactly the number a reader would screenshot. The row CARRIES what the row renders: a directory
+row holds the band and its word, and the composite figure and the six-factor breakdown belong to the
+detail path, where the figure renders once, labeled.
+
+**An empty book is not a search that found nothing.** Those are two questions, and one empty state may
+not answer both: the book's own empty state is an honest sentence and the console on-ramp, and it is
+`null` whenever there is a book, so the search-miss copy is reached only when a search emptied a list
+that has rows. Passing one state for both told a reader that no household matched a search nobody
+made, and offered the four Smiths that were not there.
 
 **One instant, one confidence.** A household's `evidence` block carries the PROVENANCE of each class
 (`liquidity`, `positions`, `instructions`), not a bare instant: the materializer measures the
@@ -184,6 +192,14 @@ rather than receded under "Sample data". `record_origin` is where the ROW came f
 moves, because editing a demonstration record does not make it the firm's own. The clean-slate sweep
 counts the ORIGIN: keyed on `prov_source` it would leave a seeded household in production the moment
 somebody typed over it.
+
+A column's DEFAULT cannot answer for rows that already exist, so the migration that introduced
+`record_origin` also **backfills** it: a store that already held the world would otherwise stamp every
+one of those rows `firm-record` and report clean while a hundred households rendered - the guarantee
+failing open through the migration that enforces it. The backfill carries the marker those rows were
+written with (`prov_source = 'fixture'`, in the three tables the projection writes), which at that
+version names exactly the rows a fresh seed gives the demonstration origin, so an upgraded store and a
+freshly seeded one agree rather than diverge.
 
 The seed counts rows **written** (`RETURNING id`), never rows offered, and **refuses** with a typed
 `CONFLICT` naming the collision when a conflicting household is held by ANOTHER org. World record ids

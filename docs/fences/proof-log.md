@@ -13999,3 +13999,99 @@ mounted none would pass every per-row assertion in it.
 **Reverted:** the detector restored; `Tests 11 passed`.
 
 **Date:** 2026-08-12 (review round nine, ADR-0057 / D-214).
+
+## PF-284 · clean slate: a store seeded BEFORE the origin column is still counted after the upgrade · `src/infrastructure/store/migrations.ts` + `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** charter #3/#7 - a production instance contains zero demonstration records, counted
+rather than promised. Migration 9 added `record_origin` with `DEFAULT 'firm-record'`, so every row a
+store already held became the firm's own: a store carrying the world (the ordinary `db:seed` -> pull
+-> `db:migrate` loop) reported CLEAN while a hundred households rendered, and re-seeding could not
+repair it because the ids conflict and nothing is written.
+
+**Injection - remove the backfill.** Deleted the three `UPDATE <table> SET record_origin =
+'world-fixture' WHERE prov_source = 'fixture';` statements from version 9, leaving the `ALTER TABLE`s
+exactly as they shipped.
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/integration/fixture-purge.test.ts`):**
+```
+× a store seeded BEFORE the origin column existed is still counted after the upgrade
+AssertionError: every world row written before the column existed is still a demonstration record:
+  expected {} to deeply equal { Object (households, contacts, ...) }
+Tests  1 failed | 15 passed (16)
+```
+
+**Executable companions (run on every build):** the same store, migrated and then re-stamped
+`firm-record` on the three tables, is asserted to sweep clean with the world fully present - which is
+the silent false pass stated as a test rather than as prose; the firm's OWN pre-existing
+`verin-crm` household is asserted to keep `firm-record`, so a migration that marked everything would
+fail rather than pass the first assertion; and the rewind derives the tables it drops the column from
+via `originBearingTables()`, so a table added to that migration cannot be left behind by the test.
+
+**Reverted:** the backfill restored; `Tests 16 passed`.
+
+**Date:** 2026-08-12 (review round ten, ADR-0057 / D-215).
+
+## PF-285 · households: the naked-figure detector, run against the shape that actually shipped · `src/app/households/{build,model,directory}.tsx` + `src/__tests__/unit/household-metric-provenance.test.tsx`
+
+**Invariant:** charter #3 (no metric-class figure reaches a screen outside `<Metric>`) proved under
+charter #4 against the REAL defect rather than a reconstruction of it, and the row carries only what
+the row renders.
+
+**Injection - the badge line from this branch's own history.** Recovered with
+`git show 2af33672:src/app/households/directory.tsx` and put back verbatim -
+``label={`${evidence.health.bandLabel} · ${evidence.health.score.value}`}`` - together with the row
+payload it needs (`HouseholdRowEvidenceVM.health` back to `HealthVM`, `buildHealthVM` back in
+`buildWorldRowEvidence`).
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/unit/household-metric-provenance.test.tsx`):**
+```
+× the row carries what the row renders, and no breakdown it cannot show
+AssertionError: whitfield-anneke: the row ships more health than it renders:
+  expected [ Array(5) ] to deeply equal [ 'band', 'bandLabel' ]
++   "factors", "score", "summary",
+
+× the directory row's badge carries the BAND WORD and no figure
+AssertionError: whitfield-anneke: a bare health score reached the row:
+  expected [ 'Watch · 77' ] to deeply equal []
+Tests  2 failed | 10 passed (12)
+```
+
+**Executable companions (run on every build):** the companion renders the same `StatusBadge` with the
+same label expression and asserts the detector FINDS the figure, then asserts it does NOT find the
+identical figure rendered through `<Metric>`, so the catch is a statement about the shape rather than
+about one number; the detector assertion runs on the whole row BEFORE the narrower exact-text badge
+assertion, because running the narrow one first is what let the detector go unexercised; and the row
+test counts the rows actually mounted before it is trusted.
+
+**Reverted:** all three files restored; `Tests 12 passed`.
+
+**Date:** 2026-08-12 (review round ten, ADR-0057 / D-215).
+
+## PF-286 · households: an empty book is not a search that found nothing · `src/app/households/{build,model,directory}.tsx` + `src/__tests__/unit/household-directory-empty-states.test.tsx`
+
+**Invariant:** a surface states what is true of the state it is in. `VirtualList` renders its one
+`emptyState` whenever the list is empty, whatever emptied it, so an empty book announced "No household
+matches that search" for a search nobody made and offered four Smiths that were not there.
+
+**Injection - one empty state for both questions.** Forced the directory's branch to the search-miss
+copy, the single state it passed before this round.
+
+**Observed failure (`pnpm exec vitest run --project app src/__tests__/unit/household-directory-empty-states.test.tsx`):**
+```
+× renders the book's empty state and NOT the search copy when no search was made
+TestingLibraryElementError: Unable to find an element with the text:
+  No households in this firm's book yet
+Tests  1 failed | 4 passed (5)
+```
+
+**Executable companions (run on every build):** a book that HAS households and a search matching
+nothing is asserted to render the search copy and NOT the book's empty state, so the fix is a
+distinction rather than a replacement; the empty book is asserted to offer a real next action
+(`/app/console`) rather than dead-ending; a non-empty book is asserted to publish no `emptyBook` at
+all, so the state cannot become permanent furniture; and a companion renders the directory with
+`emptyBook` forced to `null` and asserts the search copy and the Smith sentence appear, which is the
+shipped defect stated as a test.
+
+**Reverted:** the branch restored; `Tests 5 passed`.
+
+**Date:** 2026-08-12 (review round ten, ADR-0057 / D-215).

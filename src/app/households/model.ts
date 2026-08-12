@@ -30,10 +30,19 @@ export interface HealthFactorVM {
   readonly bandLabel: string;
 }
 
-export interface HealthVM {
-  readonly score: DisplayMetric;
+/** How a household's health reaches a LIST: the band and the word for it, which
+ * is the whole of what a row renders. The composite figure and the six-factor
+ * breakdown belong to the household's own page, where the figure renders once
+ * through `<Metric>` carrying its watermark - so a row that cannot show them
+ * does not carry them either, and a hundred-row response does not ship a
+ * kilobyte of breakdown per row for two words. */
+export interface HealthBandVM {
   readonly band: HealthBand;
   readonly bandLabel: string;
+}
+
+export interface HealthVM extends HealthBandVM {
+  readonly score: DisplayMetric;
   readonly summary: string;
   readonly factors: readonly HealthFactorVM[];
 }
@@ -56,7 +65,7 @@ export interface HouseholdRowEvidenceVM {
   readonly countsLabel: string;
   readonly openItemCount: number;
   readonly totalBalance: DisplayMetric;
-  readonly health: HealthVM;
+  readonly health: HealthBandVM;
 }
 
 /** What a household with no evidence on file says, and where it sends a reader
@@ -65,6 +74,19 @@ export interface HouseholdRowEvidenceVM {
 export interface NoEvidenceVM {
   readonly badgeLabel: string;
   readonly note: string;
+  readonly actionLabel: string;
+  readonly actionHref: string;
+}
+
+/** What the surface says when the firm's book holds NO household at all, and
+ * where it sends a reader next. A DIFFERENT question from "nothing matched this
+ * search", and it must never be answered by the same state: an empty book
+ * rendering the search-miss copy tells a reader no household matched a search
+ * they never made, and names the four Smiths that are not there. `null` when
+ * there is a book, so this can never become permanent furniture. */
+export interface EmptyBookVM {
+  readonly title: string;
+  readonly description: string;
   readonly actionLabel: string;
   readonly actionHref: string;
 }
@@ -116,6 +138,9 @@ export interface DirectoryVM {
    * evidence yet: the households are all listed, so a figure that reads only
    * some of them has to say which (null when every row has evidence). */
   readonly evidenceCoverageNote: string | null;
+  /** Present ONLY when the book itself is empty; a search that matches nothing
+   * is the component's own state and reads different copy. */
+  readonly emptyBook: EmptyBookVM | null;
   readonly worldVersion: string | null;
   readonly worldDigest: string | null;
   readonly provenanceNote: string;
