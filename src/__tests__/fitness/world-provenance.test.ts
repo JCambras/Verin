@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { canFeedComplianceDecision, deriveArtifactProvenance, isDemonstration, type RecordProvenance } from "@contracts/provenance";
 import { computeHouseholdHealth } from "@domain/world/health";
 import type { WorldHousehold } from "@domain/world/household-world";
-import { accountRuleProblems, validateWorld } from "../../../scripts/world/validate";
+import { accountRuleProblems, instrumentReachProblems, validateWorld } from "../../../scripts/world/validate";
 import { RosterSchema } from "../../../scripts/world/spec";
 
 /**
@@ -124,6 +124,17 @@ describe("world-provenance fence", () => {
     expect(problems, problems.join("\n")).toEqual([]);
   });
 
+  it("(d) enforces: every instrument the roster carries is actually held somewhere", () => {
+    // A sleeve that always took the first entries of its asset class left four
+    // of the roster's twelve instruments unreachable BY CONSTRUCTION, so the
+    // world was thinner than its own vocabulary claimed - and nothing said so.
+    const problems = instrumentReachProblems(world.world, world.spec);
+    expect(problems, problems.join("\n")).toEqual([]);
+    const held = new Set(households.flatMap((household) =>
+      household.accounts.flatMap((account) => account.holdings.map((holding) => holding.symbol))));
+    expect(held.size, "every roster instrument must reach a real account").toBe(world.spec.roster.instruments.length);
+  });
+
   it("(d) enforces: every account's holdings sum to its balance", () => {
     const problems = households.flatMap((household) =>
       household.accounts
@@ -172,6 +183,21 @@ describe("world-provenance fence", () => {
       const broken = { ...household, accounts: [{ ...account, beneficiaries: [], holdings: [holding, holding] }] };
       expect(accountRuleProblems(broken)).toEqual([
         `${household.key}/account/${account.key}: holds ${holding.symbol} more than once - one lot rendered twice`,
+      ]);
+    });
+
+    it("a roster instrument no account can hold is caught", () => {
+      // The failure mode the check exists for: a hand-owned roster addition the
+      // selection cannot reach, sitting dead in a file nobody re-reads.
+      const spec = {
+        ...world.spec,
+        roster: {
+          ...world.spec.roster,
+          instruments: [...world.spec.roster.instruments, { symbol: "VDEAD", description: "Unreachable", assetClass: "equity" as const }],
+        },
+      };
+      expect(instrumentReachProblems(world.world, spec)).toEqual([
+        "instrument VDEAD (equity) is in the roster but held by no account - a roster entry the world can never render",
       ]);
     });
 

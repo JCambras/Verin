@@ -109,8 +109,26 @@ export function accountRuleProblems(household: WorldHousehold): string[] {
   return problems;
 }
 
+/**
+ * Every instrument the hand-owned roster carries is held somewhere. The roster
+ * is input a person edits, and an entry no account can ever hold is a world
+ * thinner than its own vocabulary claims - the exact "looks capable until you
+ * inspect it" failure this world exists to prevent. Checked on the OUTPUT, so a
+ * future roster addition the selection cannot reach fails here rather than
+ * sitting dead and unnoticed.
+ */
+export function instrumentReachProblems(world: GeneratedWorld, spec: LoadedWorldSpec): string[] {
+  const held = new Set(
+    world.households.flatMap((household) =>
+      household.accounts.flatMap((account) => account.holdings.map((holding) => holding.symbol))),
+  );
+  return spec.roster.instruments
+    .filter((instrument) => !held.has(instrument.symbol))
+    .map((instrument) => `instrument ${instrument.symbol} (${instrument.assetClass}) is in the roster but held by no account - a roster entry the world can never render`);
+}
+
 function structureProblems(world: GeneratedWorld, spec: LoadedWorldSpec): string[] {
-  const problems: string[] = [];
+  const problems: string[] = [...instrumentReachProblems(world, spec)];
   const byKey = new Map(world.households.map((household) => [household.key, household]));
   if (world.households.length !== spec.roster.householdCount) {
     problems.push(`generated ${world.households.length} households, roster declares ${spec.roster.householdCount}`);

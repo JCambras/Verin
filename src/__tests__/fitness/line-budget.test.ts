@@ -127,14 +127,19 @@ import { join, relative } from "node:path";
 // computation), infrastructure 8,136 (the fixture evidence adapter + the CRM
 // projection of the world's households, people and open items), tooling 13,784
 // (the world generator under `scripts/world/**`, its two runners, and the
-// clean-slate sweep). Ceilings move to 5,150 / 8,250 / 14,000 - 106, 114 and 216
-// lines of correction room, NAMED here rather than banked, so the next change to
-// any of those layers reads as the measured ADR amendment it now is. `contracts`
-// and `presentation` are untouched by that work and do not move.
+// clean-slate sweep). Ceilings moved to 5,150 / 8,250 / 14,000 - 106, 114 and 216
+// lines of correction room, NAMED rather than banked. Those are NOT the figures
+// this file enforces today: the review rounds beneath this branch moved the
+// tooling ceiling again (D-194, 14,200) and moved all three measurements, so the
+// current pairing is 5,150 / 8,250 / 14,200 against RE-MEASURED 5,058 / 8,184 /
+// 14,077 (D-196) - 92, 66 and 123 lines of correction room. A summary paragraph
+// carrying a superseded ceiling is the same defect as a ceiling carrying a stale
+// measurement, so it is re-stated here rather than left for a reader to catch.
+// `contracts` and `presentation` are untouched by that work and do not move.
 const CEILINGS = {
   contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
-  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,045 re-measured, D-207)
-  infrastructure: 8250, // ADR-0057, on the fixture evidence adapter and CRM projection (8,144 re-measured, D-207)
+  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,058 re-measured, D-209)
+  infrastructure: 8250, // ADR-0057, on the fixture evidence adapter and CRM projection (8,184 re-measured, D-209)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
@@ -214,8 +219,11 @@ const CEILINGS = {
   // to, and the roster's asset-class uniqueness refinement. 216 lines of named
   // headroom became 15, which is the exact "next one-line correction fails an
   // unrelated ceiling" condition the paragraph above argues against - so the
-  // figure is re-taken and 195 lines are named again rather than banked.
-  tooling: 14200, // D-207 (ADR-0057), on the world review round (14,005 measured)
+  // figure is re-taken and 195 lines are named again rather than banked. D-209
+  // KEEPS 14,200 and re-measures 14,077 after the declaration-aware clean-slate
+  // cross-check, the derived instrument selection and its reachability rule -
+  // 123 lines of real headroom, re-taken rather than inherited.
+  tooling: 14200, // D-209 (ADR-0057), on the world review round (14,077 re-measured)
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

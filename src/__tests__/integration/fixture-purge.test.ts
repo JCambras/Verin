@@ -107,16 +107,32 @@ describe("clean-slate guarantee", () => {
     expect(sweep.problems).toEqual([]);
   });
 
+  it("a table the sweep's unqualified SELECT resolves through the search path is READ by the catalog too", async () => {
+    // The fail-open direction. Unqualified DDL creates in the first creatable
+    // schema, but an unqualified read resolves through the WHOLE search path -
+    // so on a deployment running `search_path = app, public` a provenance-bearing
+    // table in `public` is swept while a catalog reading pinned to
+    // `current_schema()` cannot see it, and the sweep reports clean for a table
+    // it never checked against the derivation.
+    await db.exec("CREATE SCHEMA app");
+    await db.exec("SET search_path TO app, public");
+    await db.exec("CREATE TABLE public.late_evidence (id text PRIMARY KEY, prov_source text NOT NULL)");
+    const sweep = await sweepFixtureRows(db);
+    expect(sweep.problems.some((problem) => problem.startsWith("late_evidence:"))).toBe(true);
+  });
+
   it("the sweep FAILS rather than reporting clean when it cannot read a table (charter #4)", async () => {
     const sweep = await sweepFixtureRows(db, ["households", "table_that_does_not_exist"]);
     expect(sweep.problems.length).toBe(1);
     expect(cleanSlateViolations(sweep)[0]).toContain("table_that_does_not_exist");
   });
 
-  it("a second firm seeding the same world reports the rows it WROTE, not the rows it offered", async () => {
+  it("a second firm seeding the same world is REFUSED, by name, rather than handed an empty directory", async () => {
     // World ids are derived from the world seed, so they are identical in every
-    // org: the second load conflicts on every key and writes nothing. A count
-    // taken from the input length would book an audit entry claiming otherwise.
+    // org: the second load conflicts on every key and writes nothing. Returning
+    // `ok` there books an audit entry for a load that never happened and leaves
+    // the second firm's household directory empty with no explanation - the
+    // worst available outcome. The refusal names the collision instead.
     const other = "org-second-firm";
     await db.query(
       "INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,'Second Firm',$2,'verin-crm',$2,'high')",
@@ -125,8 +141,31 @@ describe("clean-slate guarantee", () => {
     const first = await seedWorldIntoCrm(db, systemWriteActor("seed", ORG), HOUSEHOLDS, DIGEST);
     const second = await seedWorldIntoCrm(db, systemWriteActor("seed", other), HOUSEHOLDS, DIGEST);
     expect(first.ok && first.value.households).toBe(HOUSEHOLDS.length);
-    expect(second.ok && second.value.households, "the second firm wrote no households").toBe(0);
-    expect(second.ok && second.value.contacts).toBe(0);
+    expect(second.ok, "the second firm's load must not report success").toBe(false);
+    const message = second.ok ? "" : second.error.message;
+    expect(second.ok ? "" : second.error.code).toBe("CONFLICT");
+    expect(message, "the refusal names the org it refused").toContain(other);
+    expect(message, "the refusal names the ids that collided").toContain(HOUSEHOLDS[0]!.id);
+    expect(message, "the refusal names how many collided").toContain(`all ${HOUSEHOLDS.length} household id(s)`);
+    expect(message, "the refusal names WHY the ids collide").toContain("derived from the world seed rather than scoped to an org");
+    expect(message, "the refusal names the follow-up that makes a second firm work").toContain("fu-world-org-scoped-ids");
+    expect(message, "a collision from another firm is not the same as this firm's own earlier load")
+      .toContain(`held by an org other than ${other}`);
+    // The refused load wrote nothing: the transaction rolled back whole.
+    const rows = await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM households WHERE org_id = $1", [other]);
+    expect(Number(rows.rows[0]!.n)).toBe(0);
+  });
+
+  it("the SAME firm re-offered a changed world is told so, rather than told it loaded one", async () => {
+    // Ids are derived from the world SEED and the digest from the world's bytes,
+    // so regenerating the world keeps every id and changes the idempotency key:
+    // the load runs again, conflicts away to nothing, and used to report a
+    // hundred households written. It now says which store it is looking at.
+    const actor = systemWriteActor("seed", ORG);
+    await seedWorldIntoCrm(db, actor, HOUSEHOLDS, DIGEST);
+    const again = await seedWorldIntoCrm(db, actor, HOUSEHOLDS, "a".repeat(64));
+    expect(again.ok).toBe(false);
+    expect(again.ok ? "" : again.error.message).toContain(`org ${ORG} already holds them from an earlier load`);
   });
 
   it("the world load is idempotent: a second run adds no rows", async () => {

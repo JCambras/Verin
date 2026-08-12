@@ -13410,3 +13410,119 @@ on another schema keeps the reading instead of silently losing it.
 **Reverted:** `scripts/fixture-purge.ts` restored; `Tests 9 passed`.
 
 **Date:** 2026-08-12 (review round three, ADR-0057 / D-208).
+
+## PF-267 · clean slate: the second reading counts DECLARATIONS, not mentions · `scripts/fixture-purge.ts` + `src/__tests__/fitness/clean-slate.test.ts`
+
+**Invariant:** the cross-check on the DDL derivation must disagree only where a real declaration sits
+outside the sweep. Ordinary schema work - a column-level `CHECK (prov_source IN (...))`, an index over
+the column - names the column more than once for one declaration, and a check that counts mentions
+fails on all of it while reporting an unswept table that does not exist.
+
+**Injection - the mention count.** Restored `provenanceDeclarationScan` to
+`[...withoutComments(ddl).matchAll(/\bprov_source\b/gi)].length`, against a DDL carrying one
+declaration plus a column CHECK, two indexes over the column, a partial-index predicate and an
+`ALTER COLUMN ... SET NOT NULL`.
+
+**Observed failure (`pnpm exec vitest run --project fitness clean-slate`):**
+```
+× enforces: a CHECK, an INDEX and an ALTER over prov_source are USES, not declarations
+AssertionError: six mentions, one declaration: expected 6 to be 1
+ ❯ src/__tests__/fitness/clean-slate.test.ts:120:77
+Tests  1 failed | 17 passed (18)
+```
+
+**Executable companions (run on every build):** the reading stays INDEPENDENT of the structural parse
+rather than being narrowed into agreement with it - PF-260's `ALTER TABLE unswept ADD COLUMN
+prov_source text` and the `CREATE UNLOGGED TABLE` case both still count a declaration the parse cannot
+reach, so the two still disagree and the sweep still refuses. Narrowing bought precision, not quiet.
+
+**Reverted:** `scripts/fixture-purge.ts` restored; `Tests 18 passed`.
+
+**Date:** 2026-08-12 (review round four, ADR-0057 / D-209).
+
+## PF-268 · clean slate: the catalog reads the search path the sweep reads · `scripts/fixture-purge.ts` + `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** the third reading must cover every table the sweep's own unqualified `SELECT` can
+reach. Unqualified DDL creates in the first creatable schema; an unqualified read resolves through the
+whole `search_path`. Pinning the catalog to `current_schema()` makes it NARROWER than the sweep, which
+is the fail-open direction this module exists to refuse.
+
+**Injection - the current_schema() predicate.** Restored `AND c.table_schema = current_schema()`,
+against a migrated store running `search_path = app, public` with a provenance-bearing table created
+in `public` and no table of that name in `app`.
+
+**Observed failure (`pnpm exec vitest run --project app fixture-purge`):**
+```
+× a table the sweep's unqualified SELECT resolves through the search path is READ by the catalog too
+AssertionError: expected false to be true
+ ❯ src/__tests__/integration/fixture-purge.test.ts:121:84
+Tests  1 failed | 10 passed (11)
+```
+
+**Executable companions (run on every build):** widening the schema predicate did NOT reopen PF-266's
+false alarms - the view case and the `other_app` case both still sweep clean, because the view is
+excluded by the `BASE TABLE` join and `other_app` is not on the search path. PF-261's rogue base table
+still reaches `cleanSlateViolations`.
+
+**Reverted:** `scripts/fixture-purge.ts` restored; `Tests 11 passed`.
+
+**Date:** 2026-08-12 (review round four, ADR-0057 / D-209).
+
+## PF-269 · the world holds its whole roster · `scripts/world/materialize.ts` + `scripts/world/validate.ts` + `src/__tests__/fitness/world-provenance.test.ts`
+
+**Invariant:** an instrument the hand-owned roster carries is held by some account. A roster entry no
+account can ever hold is a world thinner than its own vocabulary claims, and nothing said so.
+
+**Injection - the fixed slice.** Restored `const chosen = available.slice(0, lots)` in `holdingsFor`,
+which takes the first entries of each asset class for every account on every model.
+
+**Observed failure (`pnpm exec vitest run --project fitness world-provenance`):**
+```
+× (a) enforces: the whole world regenerates and every rule in validateWorld holds
+× (d) enforces: every instrument the roster carries is actually held somewhere
+× a roster instrument no account can hold is caught
+AssertionError: instrument VSCP (equity) is in the roster but held by no account - a roster entry the world can never render
+instrument VEMK (equity) ... instrument VTIP (fixed-income) ... instrument VSHT (fixed-income) ...
+ ❯ src/__tests__/fitness/world-provenance.test.ts:81:55
+Tests  3 failed | 14 passed (17)
+```
+Four of twelve instruments were unreachable BY CONSTRUCTION - `lots` never exceeds 2, so no account
+could ever reach index 2 of a class - which is exactly the silent thinness the check now names.
+
+**Executable companions (run on every build):** the fence feeds `instrumentReachProblems` a roster
+carrying one extra instrument (`VDEAD`) and proves the unreachable entry is reported, so the rule
+cannot pass by seeing nothing; the shipped world additionally asserts that the number of distinct held
+symbols equals the roster's own instrument count.
+
+**Reverted:** `scripts/world/materialize.ts` restored; `Tests 17 passed`.
+
+**Date:** 2026-08-12 (review round four, ADR-0057 / D-209).
+
+## PF-270 · a world load that wrote nothing refuses rather than reporting success · `src/infrastructure/crm/world-seed.ts` + `src/__tests__/integration/fixture-purge.test.ts`
+
+**Invariant:** a load that offered households and wrote none of them must not return `ok`. World
+record ids are derived from the world seed, so a second firm's inserts conflict away to nothing and
+that firm's household directory renders empty with no explanation - the worst available outcome.
+
+**Injection - the missing guard.** Removed the
+`if (householdRows.length > 0 && written.households === 0) await collisionRefusal(...)` check, so the
+load returns honest zero counts and `ok`, exactly as it did before this round.
+
+**Observed failure (`pnpm exec vitest run --project app fixture-purge`):**
+```
+× a second firm seeding the same world is REFUSED, by name, rather than handed an empty directory
+AssertionError: the second firm's load must not report success: expected true to be false
+ ❯ src/__tests__/integration/fixture-purge.test.ts:144:73
+× the SAME firm re-offered a changed world is told so, rather than told it loaded one
+ ❯ src/__tests__/integration/fixture-purge.test.ts:167:22
+Tests  2 failed | 9 passed (11)
+```
+
+**Executable companions (run on every build):** the refusal is asserted on its CONTENT, not merely on
+its failure - the org it refused, the ids that collided, the count, the reason (`derived from the
+world seed rather than scoped to an org`) and the follow-up key `fu-world-org-scoped-ids` must each
+appear, and the two callers that must NOT be refused still pass: the first load of a world writes
+every row, and a same-org same-digest re-run replays through the idempotency cache. The refused load's
+transaction is proved to have rolled back whole.
+
+**Date:** 2026-08-12 (review round four, ADR-0057 / D-209).

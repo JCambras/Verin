@@ -50,10 +50,16 @@ function holdingsFor(
   model.targets.forEach((target, index) => {
     const available = roster.instruments.filter((instrument) => instrument.assetClass === target.assetClass);
     if (available.length === 0) throw new Error(`world materialize: no instrument for asset class "${target.assetClass}"`);
-    // Cash sits in one sweep vehicle; a risk sleeve holds one or two lots, which
-    // is what makes two accounts on the same model look like two accounts.
+    // Cash sits in one sweep vehicle; a risk sleeve holds one or two lots. WHICH
+    // instruments it holds is derived the same way the count is: taking a fixed
+    // `slice(0, lots)` would give every account on every model the same first
+    // tickers, leave every instrument past the second unreachable, and make two
+    // accounts on one model differ only by whether a second lot is present.
+    // Walking from a derived start keeps the lots distinct and uses the whole
+    // roster, which is what makes two accounts look like two accounts.
     const lots = target.assetClass === "cash" ? 1 : Math.min(available.length, intBetween(seed, path, `lots/${target.assetClass}`, 1, 2));
-    const chosen = available.slice(0, lots);
+    const start = intBetween(seed, path, `lot-start/${target.assetClass}`, 0, available.length - 1);
+    const chosen = Array.from({ length: lots }, (_, lot) => available[(start + lot) % available.length]!);
     const values = splitMinor(classValues[index]!, chosen.map((_, lot) => 1 + lot));
     chosen.forEach((instrument, lot) => {
       const marketValueMinor = values[lot]!;

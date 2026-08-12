@@ -89,15 +89,21 @@ note and the score beside it cannot disagree (D-195). Clean slate is COUNTED:
 `pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`) and
 fails on the first fixture-marked row; a sweep over zero tables is a problem, never a pass. That
 derivation is read THREE ways that share no code - a structural parse of each table's balanced body
-and its top-level column items, a plain count of every `prov_source` the DDL names, and the STORE's
-own column catalog (base TABLES in `current_schema()`, so a view or another app's schema is not a
-false alarm) - because two readings that resolve a declaration the same way agree by
+and its top-level column items, a text scan for every `prov_source` DECLARATION (the name followed by
+what only a type can be, so a `CHECK`, an index or an `ALTER ... SET` is a use and not a false alarm),
+and the STORE's own column catalog (base TABLES in `ANY(current_schemas(false))`, the same resolution
+the sweep's unqualified `SELECT` uses, so a view or another app's schema is not a false alarm either) -
+because two readings that resolve a declaration the same way agree by
 construction and cross-check nothing; any disagreement is a sweep problem, so a table one reading
-misses fails rather than reporting clean unread (D-206, D-207, D-208). The
+misses fails rather than reporting clean unread (D-206, D-207, D-208, D-209). The
 `--report` path exits 0 for a developer but takes `--expect-rows=<n>` where a caller needs an
 assertion (CI uses it after the seed). `seedWorldIntoCrm` counts rows WRITTEN (`RETURNING id`), never
-rows offered: world ids are seed-derived and identical across orgs, so a second firm's load conflicts
-away to nothing. Two account rules hold for the hand-authored ten and the derived ninety alike
+rows offered, and REFUSES (`CONFLICT`, naming the collision) a load that offered households and wrote
+none: world ids are seed-derived and identical across orgs, so only the first org to load a world
+receives it and a second firm's silent empty directory is the worst available outcome
+(`fu-world-org-scoped-ids`). Every roster instrument is held by some account - the sleeve derives
+WHICH instruments, not only how many, and `validateWorld` fails on a roster entry the world can never
+render. Two account rules hold for the hand-authored ten and the derived ninety alike
 (`accountRuleProblems`): an account never names its own owner as a beneficiary and never holds one
 instrument twice, and an entity household's signers hold no personal accounts inside it. The
 directory's world-derived rows are built once per worldDigest, not once per request.

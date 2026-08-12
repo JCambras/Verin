@@ -32,15 +32,30 @@ const CREATE_TABLE_RE = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-
 /** `prov_source` in the position a database reads a column name from: the first
  * identifier of a top-level item in a table's column list, quoted or not. */
 const PROV_SOURCE_DECLARATION_RE = /^"?prov_source"?[\s(]/i;
-/** The SECOND reading, and deliberately a DIFFERENT KIND of one: every mention
- * of the column name anywhere in the DDL, sharing no code with the structural
+/** The SECOND reading, and deliberately a DIFFERENT KIND of one: the column name
+ * wherever the DDL DECLARES it - `prov_source <type>` - anywhere in the text,
+ * inside a parsed `CREATE TABLE` or not, sharing no code with the structural
  * parse above. Two readings that resolve a declaration the same way agree by
- * construction and cannot cross-check anything - a shape the structural parse
+ * construction and cannot cross-check anything; a shape the structural parse
  * fails to recognize still lands in this count, and the disagreement is what
- * makes the miss visible. */
-const PROV_SOURCE_TOKEN_RE = /\bprov_source\b/gi;
-
-const matchCount = (text: string, pattern: RegExp): number => [...text.matchAll(pattern)].length;
+ * makes the miss visible.
+ *
+ * It counts DECLARATIONS, not mentions. A count of mentions is defeated by
+ * ordinary schema work - a column-level `CHECK (prov_source IN (...))` names the
+ * column twice for one declaration, and `CREATE INDEX ... ON t (prov_source)` is
+ * the index this very sweep would want - and every one of those would fail the
+ * check while naming an unswept table that does not exist. A false alarm on the
+ * one check that has to be unambiguous is as corrosive as a false pass. */
+const PROV_SOURCE_DECLARED_RE = /(?<![.\w])"?prov_source"?\s+([a-z][a-z0-9_]*)/gi;
+/** What can follow a REFERENCE to the column but never its type, so a use is not
+ * miscounted as a declaration: `CHECK (prov_source IS NOT NULL)`,
+ * `ALTER COLUMN prov_source SET NOT NULL`, `ORDER BY prov_source DESC`. An
+ * operator (`prov_source = 'fixture'`) or a delimiter (`(prov_source)`,
+ * `prov_source,`) is not an identifier at all, so it never reaches this list. */
+const REFERENCE_FOLLOWERS = new Set([
+  "and", "as", "asc", "between", "collate", "desc", "drop", "from", "ilike", "in",
+  "is", "like", "not", "on", "or", "set", "similar", "then", "to", "type", "using", "when", "where",
+]);
 
 /** Both readings run on comment-free SQL, so a comment naming the column is
  * neither a declaration nor a disagreement. */
@@ -52,8 +67,11 @@ const withoutComments = (sql: string): string => sql.replace(/--[^\n]*/g, "");
  * table whose closing paren is indented as running on into the next table, which
  * both loses that table and attributes its columns to its neighbour - a silent
  * hole in a sweep whose whole purpose is that it cannot fail open.
+ *
+ * Exported so the fence checks the derivation against THIS parse rather than
+ * re-matching the DDL with the line-anchored pattern it exists to replace.
  */
-function createTableBodies(ddl: string): { name: string; body: string }[] {
+export function createTableBodies(ddl: string): { name: string; body: string }[] {
   const bodies: { name: string; body: string }[] = [];
   CREATE_TABLE_RE.lastIndex = 0;
   for (let match = CREATE_TABLE_RE.exec(ddl); match !== null; match = CREATE_TABLE_RE.exec(ddl)) {
@@ -125,21 +143,32 @@ export function provenanceBearingTables(ddl: string = MIGRATION_SQL): string[] {
   return [...new Set(provenanceColumnDeclarations(ddl))].sort();
 }
 
+/** Every place the DDL DECLARES a `prov_source` column, counted by reading the
+ * text rather than the table structure: the column name followed by what only a
+ * type can be. A mention used as an expression or an index key is a reference,
+ * not a declaration, and is not counted. */
+export function provenanceDeclarationScan(ddl: string): number {
+  PROV_SOURCE_DECLARED_RE.lastIndex = 0;
+  return [...withoutComments(ddl).matchAll(PROV_SOURCE_DECLARED_RE)]
+    .filter((match) => !REFERENCE_FOLLOWERS.has(match[1]!.toLowerCase()))
+    .length;
+}
+
 /**
  * The structural parse checked against a reading that shares nothing with it:
- * how many times the DDL names `prov_source` at all. A declaration the parse
- * never recognized - one written in a `CREATE TABLE` shape this does not read,
- * an `ALTER TABLE ... ADD COLUMN prov_source`, a form nobody has written yet -
- * is still counted here, so the two disagree. That disagreement is reported as a
- * PROBLEM, which fails the check: a table the derivation misses must never be a
- * table the sweep silently reports clean (charter #4).
+ * how many `prov_source` DECLARATIONS the DDL text carries at all. A declaration
+ * the parse never recognized - one written in a `CREATE TABLE` shape this does
+ * not read, an `ALTER TABLE ... ADD COLUMN prov_source`, a form nobody has
+ * written yet - is still counted there, so the two disagree. That disagreement
+ * is reported as a PROBLEM, which fails the check: a table the derivation misses
+ * must never be a table the sweep silently reports clean (charter #4).
  */
 export function provenanceDerivationProblems(ddl: string = MIGRATION_SQL): string[] {
-  const named = matchCount(withoutComments(ddl), PROV_SOURCE_TOKEN_RE);
+  const declared = provenanceDeclarationScan(ddl);
   const parsed = provenanceColumnDeclarations(ddl).length;
-  if (named === parsed) return [];
+  if (declared === parsed) return [];
   return [
-    `the shipped DDL names prov_source ${named} time(s) but the column parse recognized ${parsed} declaration(s) - a provenance-bearing column outside the sweep would report its table clean without ever being read (charter #4)`,
+    `the shipped DDL declares prov_source ${declared} time(s) but the column parse recognized ${parsed} declaration(s) - a provenance-bearing column outside the sweep would report its table clean without ever being read (charter #4)`,
   ];
 }
 
@@ -151,15 +180,20 @@ export function provenanceDerivationProblems(ddl: string = MIGRATION_SQL): strin
  * shared managed database, would be reported as a table the derivation missed.
  * A false alarm on the clean-slate check is as corrosive as a false pass - it is
  * the one check that has to be unambiguous - so the reading is pinned to
- * `current_schema()`, the schema the shipped DDL's unqualified `CREATE TABLE`
- * writes into and the sweep's unqualified `SELECT` reads back from.
+ * `current_schemas(false)`: the search path the sweep's own unqualified
+ * `SELECT` resolves through. `current_schema()` alone would be NARROWER than the
+ * sweep, because unqualified DDL creates in the first creatable schema while an
+ * unqualified read resolves through the whole path - so on a deployment running
+ * `search_path = app, public` a provenance-bearing table the sweep really does
+ * read would be invisible here, which is the fail-open direction this module
+ * exists to refuse.
  */
 const CATALOG_SQL =
   "SELECT DISTINCT c.table_name FROM information_schema.columns c "
   + "JOIN information_schema.tables t "
   + "ON t.table_schema = c.table_schema AND t.table_name = c.table_name "
   + "WHERE c.column_name = 'prov_source' AND t.table_type = 'BASE TABLE' "
-  + "AND c.table_schema = current_schema()";
+  + "AND c.table_schema = ANY(current_schemas(false))";
 
 /**
  * The THIRD reading, and the only one that is not a reading of the DDL: the

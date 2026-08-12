@@ -7622,6 +7622,13 @@ providing a second key rewrites the counted-double contract of `corpus-world-sha
 shared with other in-flight work. Measured cost of the anti-pattern here is one extra
 `validateWorld()` per run (~0.3s of a ~134s suite) against a 1.5MB injected payload transferred twice,
 so forcing it would also be a poor trade. It needs a governance decision, not an agent edit.
+**Keyed as `fu-world-shared-test-seam` (added by D-196 on the supervisor's ruling).** The exact escape
+that must widen is `CORPUS_WORLD_VITEST_SEAM` in the charter-drift fence, held by captain ruling
+`g8-relight-askuser 1a`; the OWNER of widening it is the captain, through an ADR-0055-class governance
+amendment, not this lane. Until that lands the two world fences keep building their world at module
+scope, and the ruled escape, `_corpus-world-setup.ts`, `_corpus-world.ts` and
+`corpus-world-sharing.test.ts` are not touched. **Un-defer trigger:** a THIRD fence needing the shared
+world, or any change that reopens `CORPUS_WORLD_VITEST_SEAM` for another reason.
 
 **Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the featured-spec
 correction, the fences, the budget amendment and the four proof-log entries revert together. No gate
@@ -7669,3 +7676,80 @@ PF-266.
 **Revert path:** revert this changeset. `fixtures/world` is unchanged (the shared set is read by the
 surface and the health factor, not by the generator; `pnpm world:validate` regenerates
 byte-identical). No gate semantics change.
+
+### D-209 · 2026-08-12 · reversible · Populated-world review round four: declarations not mentions, the whole roster, and a seed that refuses rather than pretends
+
+**The clean-slate cross-check counts DECLARATIONS, and reads the search path the sweep reads.**
+The second of the three readings counted every MENTION of `prov_source` in the shipped DDL. Today's
+DDL names it exactly seven times in seven declarations, so the readings agreed - but a column-level
+`CHECK (prov_source IN (...))` names it twice for one declaration, and `CREATE INDEX ... ON t
+(prov_source)` is the index this cross-tenant sweep would itself want. Either one fails the check
+while reporting that a provenance-bearing column sits outside the sweep, sending the author to hunt
+for an unswept table that does not exist. A false alarm on the one check whose entire value is being
+unambiguous is as corrosive as a false pass. The reading now scans for the column name followed by
+what only a type can be, and stays independent of the structural parse: an `ALTER TABLE ... ADD
+COLUMN prov_source text` and a `CREATE UNLOGGED TABLE` the parse cannot read are still counted, so
+the two still disagree where it matters. The THIRD reading moves from `current_schema()` to
+`ANY(current_schemas(false))`: unqualified DDL creates in the first creatable schema, but the sweep's
+own unqualified `SELECT` resolves through the WHOLE search path, so on a deployment running
+`search_path = app, public` a table the sweep really does read was invisible to the catalog - the
+fail-open direction this module exists to refuse. The view and other-schema false alarms stay closed:
+the view exclusion is carried by the `BASE TABLE` join, not by the schema predicate. PF-267, PF-268.
+
+**The fence reads the DDL the way the module it fences reads it.** The clean-slate fence's own "both
+directions" assertion still located each derived table with the closing-paren-in-column-0 pattern that
+`createTableBodies` was rewritten (PF-262) to stop using - and that the case three below it
+deliberately proves wrong. A migration with an indented `);` would have failed the fence naming a
+derivation bug that is not there. It now reads back through the shipped paren-balanced parse.
+
+**The world holds its whole roster.** `holdingsFor` derived how MANY lots a sleeve holds but never
+WHICH: `available.slice(0, lots)` always took the first entries of the asset class, so every one of
+the 335 accounts held VWLD, VAGG and VCSH, four of the roster's twelve instruments were unreachable by
+construction, and two accounts on one model differed only by whether a second lot was present - while
+the comment beside it claimed that difference "is what makes two accounts on the same model look like
+two accounts". A comment asserting variety the code does not produce is the same defect class as every
+other one on this lane. The starting instrument is now derived path-keyed the same way the count is,
+the comment says what the code does, and `validateWorld` holds the OUTPUT to the rule: an instrument
+the roster carries and no account holds fails, so a future roster addition cannot go dead silently.
+All twelve instruments are now held (VALT 82 accounts, VSHT 115, ..., VCSH 335). The world regenerates
+to digest `c803e8c7…`; `pnpm world:validate` is byte-identical. PF-269.
+
+**A seed that wrote nothing says so, by name.** World record ids are derived from the world seed, so
+they are the same bytes in every org and every insert is `ON CONFLICT DO NOTHING` on them: only the
+FIRST org to load a world receives it. A second firm's load conflicted on every key, wrote zero rows,
+returned `ok`, booked an audit entry, and left that firm's household directory rendering empty with no
+explanation - the worst available outcome for a product whose headline claim is that another firm
+differs only by configuration. The load now refuses with a typed `CONFLICT` naming how many ids were
+offered, which ones, whose book holds them, and that world ids are seed-derived rather than
+org-scoped. **Reported honestly:** the supervisor asked the message to name WHICH org holds the world.
+Reading that org's row is an unscoped cross-tenant `SELECT`, which needs a reviewed escape in the
+`org-id-required` fence - widening a tenant-isolation control for a diagnostic. The refusal instead
+asks the question inside this org's scope and distinguishes the two cases that need different
+remedies: "org X already holds them from an earlier load of this world" (the same firm re-offered a
+regenerated world) versus "held by an org other than X, which loaded this world first". Every other
+element of the ruling is carried verbatim. PF-270.
+
+**Follow-up `fu-world-org-scoped-ids`.** The refusal above is a LOUD REFUSAL, not a fix. Making a
+second firm actually receive its own copy of the world requires org-scoping the derived record ids
+(`uuidFor(seed, path, field)` gaining the org as a derivation input, or the CRM projection minting
+per-org ids over the world's keys), which changes every seeded id and is a schema-shaped decision
+rather than a review-round edit. **Un-defer trigger:** the first demo or test that seeds a second
+firm. Recorded on the supervisor's explicit instruction to "record the org-scoped identifier work as
+the follow-up that makes it actually work".
+
+**Follow-up `fu-world-shared-test-seam`.** D-207's stop-and-report is now keyed, with the exact escape
+(`CORPUS_WORLD_VITEST_SEAM`, captain ruling `g8-relight-askuser 1a`) and its owner (the captain,
+through an ADR-0055-class governance amendment) named in that entry. The ruled escape,
+`_corpus-world-setup.ts`, `_corpus-world.ts` and `corpus-world-sharing.test.ts` are untouched.
+
+**Line budgets: no ceiling moves; three figures re-taken.** ADR-0057's own amendment paragraph in
+`line-budget.test.ts` still summarized the superseded 5,150 / 8,250 / 14,000 pairing while the
+constant beneath it enforced D-207's 14,200 - a summary carrying a stale ceiling is the same defect as
+a ceiling carrying a stale measurement. All three are re-measured on the tree as this round lands:
+domain 5,058, infrastructure 8,184, tooling 14,077 against UNCHANGED 5,150 / 8,250 / 14,200 ceilings -
+92, 66 and 123 lines of correction room, named rather than banked.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the two clean-slate
+readings, the seed refusal, the reachability rule and the four proof-log entries revert together. The
+seed refusal is the one behaviour change a caller can observe: before it, a colliding load returned
+`ok` with zero counts.

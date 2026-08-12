@@ -20,9 +20,10 @@
  * carrying honest counts - rows WRITTEN, never rows offered - is a better audit
  * record than five thousand.
  */
-import type { SqlDb } from "@infra/store/db";
+import type { SqlDb, SqlTx } from "@infra/store/db";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { assertWriteActor, type WriteActor } from "@contracts/principal";
+import { appError } from "@contracts/errors";
 import type { Result } from "@contracts/result";
 import type { WorldHousehold } from "@domain/world/household-world";
 
@@ -71,6 +72,42 @@ function openItemTasks(household: WorldHousehold): { id: string; subject: string
     });
   }
   return tasks;
+}
+
+/**
+ * A load that offered households and wrote NONE of them is refused, loudly and
+ * by name. World record ids are derived from the world seed, so they are the
+ * same bytes in every org: the FIRST org to load a world takes those ids, and
+ * every later firm's insert conflicts away to nothing. Returning `ok` there
+ * hands a second firm a household directory that renders empty with no
+ * explanation - the worst available outcome for a product whose headline claim
+ * is that another firm differs only by configuration. Making a second firm
+ * actually receive its own copy needs org-scoped identifiers, which is a
+ * schema-shaped change recorded as follow-up `fu-world-org-scoped-ids`; until it
+ * lands this refuses instead of pretending.
+ */
+async function collisionRefusal(
+  tx: SqlTx,
+  orgId: string,
+  offered: readonly (readonly [string, ...unknown[]])[],
+): Promise<never> {
+  const ids = offered.map(([id]) => id);
+  // WHOSE book holds them is asked inside this org's scope: "another firm got
+  // here first" and "this firm already holds an earlier load of the same world"
+  // need different remedies, and reading another tenant's row to name it would
+  // widen a tenant-isolation escape for a diagnostic.
+  const mine = await tx.query("SELECT id FROM households WHERE id = $1 AND org_id = $2", [ids[0]!, orgId]);
+  const holder = mine.rows.length > 0
+    ? `org ${orgId} already holds them from an earlier load of this world`
+    : `they are held by an org other than ${orgId}, which loaded this world first`;
+  throw appError(
+    "CONFLICT",
+    `world seed refused: all ${ids.length} household id(s) offered to org ${orgId} already exist and none were written`
+    + ` (${ids.slice(0, 3).join(", ")}${ids.length > 3 ? ", ..." : ""}); ${holder}.`
+    + " World record ids are derived from the world seed rather than scoped to an org, so only the first org to load a world receives it."
+    + " Reporting success here would leave this firm's household directory rendering empty with no explanation"
+    + " (org-scoped world identifiers are follow-up fu-world-org-scoped-ids).",
+  );
 }
 
 /**
@@ -135,6 +172,9 @@ export async function seedWorldIntoCrm(
           [...row],
         );
         written.households += rows.rows.length;
+      }
+      if (householdRows.length > 0 && written.households === 0) {
+        await collisionRefusal(tx, orgId, householdRows);
       }
       for (const row of contactRows) {
         const rows = await tx.query(

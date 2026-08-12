@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { MIGRATION_SQL } from "@infra/store/migrations";
 import { SYNTHETIC_SOURCES } from "@contracts/provenance";
 import {
-  cleanSlateViolations, expectedRowsViolations, provenanceBearingTables,
-  provenanceDerivationProblems, type FixtureSweep,
+  cleanSlateViolations, createTableBodies, expectedRowsViolations, provenanceBearingTables,
+  provenanceDeclarationScan, provenanceDerivationProblems, type FixtureSweep,
 } from "../../../scripts/fixture-purge";
 
 /**
@@ -39,11 +39,16 @@ describe("clean-slate fence", () => {
     for (const table of REQUIRED) {
       expect(tables, `${table} carries prov_source in the DDL but is not swept`).toContain(table);
     }
-    // Both directions: every derived table really does carry the column.
+    // Both directions: every derived table really does carry the column - read
+    // back through the SHIPPED paren-balanced parse, never the line-anchored
+    // pattern that parse exists to replace (a table whose closing paren is
+    // indented would otherwise fail here naming a derivation bug that is not
+    // there; the case three below proves the derivation handles it).
+    const bodies = new Map(createTableBodies(MIGRATION_SQL).map((entry) => [entry.name, entry.body]));
     for (const table of tables) {
-      const ddl = MIGRATION_SQL.match(new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\s*\\([\\s\\S]*?\\n\\);`))?.[0] ?? "";
-      expect(ddl, `${table} was derived but its DDL could not be found`).not.toBe("");
-      expect(ddl).toContain("prov_source");
+      const body = bodies.get(table);
+      expect(body, `${table} was derived but its DDL body could not be found`).toBeDefined();
+      expect(body!).toContain("prov_source");
     }
   });
 
@@ -92,6 +97,28 @@ describe("clean-slate fence", () => {
       ");",
     ].join("\n");
     expect(provenanceBearingTables(ddl)).toEqual(["checked"]);
+  });
+
+  it("enforces: a CHECK, an INDEX and an ALTER over prov_source are USES, not declarations", () => {
+    // The cross-check counts DECLARATIONS. Counting mentions instead fails the
+    // whole check on ordinary schema work - a column constraint names the column
+    // twice for one declaration, and an index over it is the index this
+    // cross-tenant sweep would itself want - and each failure names an unswept
+    // table that does not exist. A false alarm here is as corrosive as a false
+    // pass: it teaches a reader to discount the one unambiguous verdict.
+    const ddl = [
+      "CREATE TABLE IF NOT EXISTS constrained (",
+      "  id text PRIMARY KEY,",
+      "  prov_source text NOT NULL CHECK (prov_source IN ('verin-crm', 'fixture'))",
+      ");",
+      "CREATE INDEX constrained_prov ON constrained (prov_source);",
+      "CREATE INDEX constrained_prov_id ON constrained (prov_source, id);",
+      "CREATE INDEX constrained_fixture ON constrained (id) WHERE prov_source = 'fixture';",
+      "ALTER TABLE constrained ALTER COLUMN prov_source SET NOT NULL;",
+    ].join("\n");
+    expect(provenanceBearingTables(ddl)).toEqual(["constrained"]);
+    expect(provenanceDeclarationScan(ddl), "six mentions, one declaration").toBe(1);
+    expect(provenanceDerivationProblems(ddl)).toEqual([]);
   });
 
   it("enforces: every table the world's seed writes is inside the sweep", () => {
@@ -151,7 +178,7 @@ describe("clean-slate fence", () => {
       expect(provenanceBearingTables(ddl)).toEqual(["swept"]);
       const problems = provenanceDerivationProblems(ddl);
       expect(problems.length).toBe(1);
-      expect(problems[0]).toContain("names prov_source 2 time(s)");
+      expect(problems[0]).toContain("declares prov_source 2 time(s)");
       expect(problems[0]).toContain("recognized 1 declaration(s)");
       expect(cleanSlateViolations(sweep([{ table: "swept", rows: 0 }], problems))).toEqual(problems);
     });
