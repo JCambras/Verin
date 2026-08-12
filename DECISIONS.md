@@ -7473,3 +7473,965 @@ change touched, record what it revealed, and never let an out-of-scope discovery
 line and port bullet return to the unqualified rule, the four citing documents return to their D-202
 state, and both follow-up keys and their §4 gap rows are withdrawn. Nothing executable changes
 either way.
+
+### D-204 · 2026-08-11 · reversible · The populated world is generated fixture EVIDENCE, not nine new house-CRM tables
+
+Front-end parity prompt 4 asks for a hundred deep households so the product can be inspected rather
+than merely demonstrated. The obvious reading of the charter's "house CRM ... seeded with the
+populated world" is nine new tables (holdings, beneficiaries, signers, bank instructions, planned
+withdrawals, restrictions, pending actions, activity). That was rejected: charter #2 forbids
+speculative modeling, and every one of those records is owned by a custodian or the CRM of record -
+the v3 architecture routes them through `EvidenceSource`, so the tables would be built to be
+deleted. Instead `HouseholdWorldSource` (`src/domain/world/`) is the port, the generated fixtures are
+its Wave 0 adapter (ADR-0027), and the house CRM is projected only what it genuinely owns:
+households, their people, and their open items. The CRM stays the authority on WHICH households a
+tenant may see; the port supplies depth for an id that already passed a tenant-scoped repository
+read. Health is computed in the domain from those facts, never stored, and published through
+`deriveArtifactProvenance` so every figure is a watermarked demonstration.
+
+Generation reuses the replay corpus's derivation primitives rather than inventing a second
+mechanism, and `pnpm world:validate` regenerates and byte-compares exactly as the `corpus` gate
+does. The clean-slate guarantee is counted, not promised: every world row lands `prov_source =
+'fixture'`, and `pnpm fixture:check` derives its swept table list from the shipped DDL so a new
+provenance-bearing table cannot escape it. Three fences ship with adversarial proofs PF-253..PF-255.
+ADR-0057 records the whole decision, including the measured ADR-0018 amendment (domain 5,150,
+infrastructure 8,250, tooling 14,000 against 5,044 / 8,136 / 13,784 re-measured).
+
+**Revert path:** revert this changeset; the generator, fixtures, port, adapter, surfaces, fences,
+budget amendment and CI job revert together. Nothing outside `src/app/app/page.tsx` (one card) and
+the shared fence registries is touched, and no existing gate's semantics change.
+
+### D-205 · 2026-08-11 · reversible · The household directory shows ONE metric per row, and its counts are a composed line
+
+The first build of the directory rendered account count, open-item count and balance as three
+`<Metric>`s side by side. Each one appends "· Sample data · as of YYYY-MM-DD"; in a 768px shell that
+is three thirty-character labels in three eighty-pixel columns, and the rendered rows overlapped
+badly enough to be unreadable (caught by looking at the screenshot, not by any test). The balance is
+the only metric-class value in the data dictionary sense, so it stays a `<Metric>`; the counts are
+composed into one line by the builder, and the record they count states its provenance through the
+balance beside them. The health block had the same duplication - a large score beside a labeled copy
+of itself - and now renders one figure at large type carrying its own provenance and watermark.
+
+**Revert path:** revert `src/app/households/{model,build,directory,detail}.ts(x)`; nothing outside
+the household surfaces depends on the row shape.
+
+### D-206 · 2026-08-11 · reversible · Populated-world review round one: authorization scopes totals and counterparty names, and both clean-slate checks can fail
+
+Review of ADR-0057 found four defects that share two roots, plus four local ones. Fixed here.
+
+**Authorization is the scope of the whole surface, not just its rows.** `buildDirectoryVM` reduced
+People / Accounts / Open items over every household the evidence port returned while its rows were
+the CRM-authorized intersection its own doc comment describes, so a tenant with a smaller book read
+the whole world's figures beside its own household count. The intersection is now computed once and
+the rows AND the totals both read from it; one `openItemsOf` serves the row and the card, so they
+cannot be derived apart. The same root in `/api/households/[key]`: the subject passed a
+tenant-scoped `getHouseholdById`, each cross-household counterparty did not, and its `displayName`
+(PIIBearing) went to the client unauthorized. The Wave 0 adapter serves one world to every tenant,
+so that CRM read is the ONLY thing scoping this path - the counterparty is now authorized
+identically, and an unauthorized one keeps its slug (`linksOf` already falls back to it). Neither
+builder nor route had any test; both now do (PF-258, PF-259).
+
+**A clean-slate check that cannot fail is not a check (charter #4).** `provenanceBearingTables`
+anchored on a closing paren in column 0, so a future migration indenting `  );` - a shape
+`migrations.ts` already contains - would drop that table from the sweep and, worse, attribute its
+columns to its neighbour; the companion could not see the miss because it only iterated the tables
+the derivation had already found. The scan is now paren-balanced, and a SECOND independent reading
+(counting `prov_source` column declarations across the whole DDL) must agree with it - disagreement
+is a sweep PROBLEM, which fails the runner. Separately, the CI step titled "a check that finds
+nothing proves nothing" ran `--report`, which exits 0 whatever it finds; `--expect-rows=<n>` turns
+that report into an assertion (CI passes 100, the world's household count) while the plain
+`--report` a developer runs is unchanged. PF-256, PF-257.
+
+**Local fixes.** The windowed list re-syncs its offset from the element's actual `scrollTop` on every
+clamp rather than only when it overflows: the empty state unmounts the scroll container, so a
+cleared query mounted a fresh one at the top while the remembered offset spacered every row out of
+view (reproduced in the browser at `aria-posinset="41"`, now an e2e recovery spec). Cross-household
+links key on counterparty AND kind, since the vocabulary permits two links to one household. The
+inert `export const runtime` came out of both `"use client"` pages, matching console/audit. The
+derived generator reuses its already-derived city instead of re-deriving it and drops the unused
+`surname` parameter - byte-neutral, re-proven by `pnpm world:generate && pnpm world:validate`.
+
+**Revert path:** revert this changeset; the two new test files, the three proof-log entries and the
+CI flag revert together. No generated fixture bytes and no gate semantics change.
+
+### D-207 · 2026-08-12 · reversible · Populated-world review round two: three readings of the DDL, counts of rows written, and a world that survives its own prose
+
+Round two of the ADR-0057 review, plus four defects the supervisor had already ruled on.
+
+**A cross-check that agrees by construction is not a cross-check (charter #4).** Round one gave
+`provenanceBearingTables` a paren-balanced table walk and a "second, independent" reading - but both
+resolved a declaration through the SAME `PROV_SOURCE_COLUMN_RE`, so a column shape the regex did not
+recognize (`id text PRIMARY KEY, prov_source text NOT NULL` on one line, `"prov_source" text NOT
+NULL`) was invisible to the derivation AND to the check meant to catch it, and the table reported
+clean without ever being read. The derivation is now a STRUCTURAL parse - balanced table bodies split
+on top-level commas, the item's leading identifier, quoted or not - and it is checked against two
+readings that share no code with it: a plain count of every `prov_source` the DDL names, and the
+STORE's own column catalog (`information_schema.columns`), which is not a reading of the DDL at all
+and therefore also catches a provenance-bearing table created outside `MIGRATION_SQL`. Any
+disagreement is a sweep problem, which fails the runner. PF-260, PF-261.
+
+**An audit entry states what was written, not what was offered.** `seedWorldIntoCrm` returned
+`householdRows.length`, and its audited `detail` said the same. Every insert is `ON CONFLICT DO
+NOTHING` on ids derived from the world seed, so they are identical in every org: a SECOND firm
+seeding the same world conflicts on every key, writes nothing, and booked an entry claiming it had
+loaded a hundred households (the idempotency key is per-org, so the replay guard never covered this).
+The inserts now carry `RETURNING id` and the counts are rows written; the detail states the households
+OFFERED, because it is fixed before the write runs, and the after-snapshot carries both. PF-262.
+
+**The world has to survive being read.** Three rules now hold for the hand-authored ten and the
+derived ninety alike, checked on the generated OUTPUT by `accountRuleProblems` so neither author can
+break one the other cannot: an account never names its own OWNER as a beneficiary (23 derived
+retirement accounts and one hand-authored SEP IRA did, which rendered as "Naomi Ashcombe - Primary -
+100%" on her own IRA and scored the beneficiary health factor complete); an entity household's people
+hold no PERSONAL accounts inside it (ten LLC households carried a Joint WROS and two IRAs titled to
+people their own entity note describes as appearing "only as signers"); and no account holds one
+instrument twice - mintable only by a model portfolio naming an asset class twice, which the roster
+schema now refuses at spec load. The world regenerates to 335 accounts from 362 and a new
+`worldDigest`. PF-263.
+
+**The directory stops re-deriving the world per request.** `/api/households` opened every household
+in the world and built a hundred six-factor health breakdowns and a hundred search haystacks for
+every caller. The health figure STAYS - it is the "numbers feel earned" point of the surface - so
+instead the world-derived half of each row is built once per `worldDigest` and cached (nothing
+tenant-scoped is cached; the CRM still decides per request which rows a caller may see), and the
+route now intersects on the MANIFEST's summaries before opening any deep file, which is the role the
+manifest was built for and which nothing had been reading.
+
+**Three prose corrections the regenerated world made visible.** An entity household now holds one
+account, so `1 accounts across 1 tax treatments` became prose a reader meets rather than an
+unreachable case, and its bank instruction was titled to a SIGNER while the account it pays belongs
+to the entity - it is now titled to the primary account's owner, which also correctly retitles the
+trust households. A household may carry two instructions of the same polarity, and the text was
+chosen by polarity alone, so one sentence appeared twice under two source references and read as a
+rendering bug; the two texts per polarity are now indexed. All three were found by looking at the
+rendered pages, not by a test.
+
+**Line budgets re-measured (ADR-0057 amendment).** `tooling` had 15 lines of headroom left, which is
+the ADR-0018 condition where the next one-line correction fails an unrelated ceiling: raised to
+14,200 against a re-measured 14,005 (195 lines of named headroom). `domain` (5,045) and `infrastructure` (8,144) are unmoved and
+merely re-taken.
+
+**Not done, reported rather than forced.** The supervisor also ruled that the two world fences should
+stop calling `validateWorld()` at module scope and read the injected shared world the corpus fences
+use (D-175/D-176). Adopting that seam is NOT mechanical here: `inject` is the only channel, and
+charter-drift permits exactly ONE non-entry module to import the Vitest runtime
+(`CORPUS_WORLD_VITEST_SEAM`, captain ruling g8-relight-askuser 1a), so a world reader needs that
+captain-ruled escape widened. Sharing the existing module instead would make a corpus failure take the
+world fences down with it - the property `_corpus-world-setup.ts` is explicitly built to avoid - and
+providing a second key rewrites the counted-double contract of `corpus-world-sharing.test.ts`, a seam
+shared with other in-flight work. Measured cost of the anti-pattern here is one extra
+`validateWorld()` per run (~0.3s of a ~134s suite) against a 1.5MB injected payload transferred twice,
+so forcing it would also be a poor trade. It needs a governance decision, not an agent edit.
+**Keyed as `fu-world-shared-test-seam` (added by D-196 on the supervisor's ruling).** The exact escape
+that must widen is `CORPUS_WORLD_VITEST_SEAM` in the charter-drift fence, held by captain ruling
+`g8-relight-askuser 1a`; the OWNER of widening it is the captain, through an ADR-0055-class governance
+amendment, not this lane. Until that lands the two world fences keep building their world at module
+scope, and the ruled escape, `_corpus-world-setup.ts`, `_corpus-world.ts` and
+`corpus-world-sharing.test.ts` are not touched. **Un-defer trigger:** a THIRD fence needing the shared
+world, or any change that reopens `CORPUS_WORLD_VITEST_SEAM` for another reason.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the featured-spec
+correction, the fences, the budget amendment and the four proof-log entries revert together. No gate
+semantics change.
+
+### D-208 · 2026-08-12 · reversible · Populated-world review round three: one materiality set, a page that answers for its own key, and a catalog reading of real tables
+
+**An absence is not a gap, and the copy reads the same set the score does.** `beneficiaryNote`
+stated "No beneficiary is designated on this account." for every account carrying none, while the
+beneficiary health factor scored only IRAs, rollovers, SEPs and 529s. The two disagreed on 137 of
+362 accounts before the round-two regeneration and on every one of the hundred household pages: a
+joint account passes by survivorship and an LLC account by its own documents, so the surface invented
+a deficiency that cannot exist and put it beside a panel correctly reporting the household complete.
+`BENEFICIARY_BEARING_REGISTRATIONS` now lives in the shared world vocabulary
+(`src/domain/world/household-world.ts`, where the other registration vocabularies already are) and
+BOTH read it. Where a registration takes no designation the panel says so plainly rather than
+reporting an absence. PF-264.
+
+**A household page answers for the key in its URL, and for no other.** The route is one component
+serving every household, and it held the loaded household and the failure as two independent values,
+so they could describe different keys: open a household, follow a cross-household link this firm's
+book does not contain, come back, and the refetch that succeeds still rendered "Household
+unavailable". The outcome is now TAGGED with the key it answers for and an outcome whose key is not
+the key on screen is not shown, which also removes the window where one family's balances and health
+render under another family's URL. Reported honestly: on Next 16.3.0 the App Router REMOUNTS this
+page across a dynamic-param change, so the browser never exhibited it - proven by a probe showing
+the navigation is client-side (a `window` marker survives it) while the page still gets fresh state.
+The defect is the component's, not the framework's, and a framework detail is not a guarantee, so it
+is asserted where it can be: `src/__tests__/unit/household-detail-page.test.tsx` re-renders ONE
+instance across the key change and fails on the shipped code. The two browser specs added beside it
+pin the reader-facing contract and pass either way today - said here rather than left to be
+discovered. PF-265.
+
+**The clean-slate catalog reading reads TABLES, in this application's schema.** The third reading
+selected from `information_schema.columns` excluding only the two system schemas, so a reporting view
+over a provenance-bearing table, or another application's table in a shared managed-Postgres
+database, would have been reported as a table the derivation missed - a false alarm on the one check
+that has to be unambiguous, and as corrosive as a false pass because it teaches a reader to discount
+the verdict. It now joins `information_schema.tables` for `table_type = 'BASE TABLE'` and pins
+`current_schema()` - the schema the shipped DDL's unqualified `CREATE TABLE` writes into and the
+sweep's unqualified `SELECT` reads back from, so a deployment on a non-public schema keeps the
+reading rather than silently losing it to a hardcoded `'public'`. The rogue-table case still fails.
+PF-266.
+
+**Revert path:** revert this changeset. `fixtures/world` is unchanged (the shared set is read by the
+surface and the health factor, not by the generator; `pnpm world:validate` regenerates
+byte-identical). No gate semantics change.
+
+### D-209 · 2026-08-12 · reversible · Populated-world review round four: declarations not mentions, the whole roster, and a seed that refuses rather than pretends
+
+**The clean-slate cross-check counts DECLARATIONS, and reads the search path the sweep reads.**
+The second of the three readings counted every MENTION of `prov_source` in the shipped DDL. Today's
+DDL names it exactly seven times in seven declarations, so the readings agreed - but a column-level
+`CHECK (prov_source IN (...))` names it twice for one declaration, and `CREATE INDEX ... ON t
+(prov_source)` is the index this cross-tenant sweep would itself want. Either one fails the check
+while reporting that a provenance-bearing column sits outside the sweep, sending the author to hunt
+for an unswept table that does not exist. A false alarm on the one check whose entire value is being
+unambiguous is as corrosive as a false pass. The reading now scans for the column name followed by
+what only a type can be, and stays independent of the structural parse: an `ALTER TABLE ... ADD
+COLUMN prov_source text` and a `CREATE UNLOGGED TABLE` the parse cannot read are still counted, so
+the two still disagree where it matters. The THIRD reading moves from `current_schema()` to
+`ANY(current_schemas(false))`: unqualified DDL creates in the first creatable schema, but the sweep's
+own unqualified `SELECT` resolves through the WHOLE search path, so on a deployment running
+`search_path = app, public` a table the sweep really does read was invisible to the catalog - the
+fail-open direction this module exists to refuse. The view and other-schema false alarms stay closed:
+the view exclusion is carried by the `BASE TABLE` join, not by the schema predicate. PF-267, PF-268.
+
+**The fence reads the DDL the way the module it fences reads it.** The clean-slate fence's own "both
+directions" assertion still located each derived table with the closing-paren-in-column-0 pattern that
+`createTableBodies` was rewritten (PF-262) to stop using - and that the case three below it
+deliberately proves wrong. A migration with an indented `);` would have failed the fence naming a
+derivation bug that is not there. It now reads back through the shipped paren-balanced parse.
+
+**The world holds its whole roster.** `holdingsFor` derived how MANY lots a sleeve holds but never
+WHICH: `available.slice(0, lots)` always took the first entries of the asset class, so every one of
+the 335 accounts held VWLD, VAGG and VCSH, four of the roster's twelve instruments were unreachable by
+construction, and two accounts on one model differed only by whether a second lot was present - while
+the comment beside it claimed that difference "is what makes two accounts on the same model look like
+two accounts". A comment asserting variety the code does not produce is the same defect class as every
+other one on this lane. The starting instrument is now derived path-keyed the same way the count is,
+the comment says what the code does, and `validateWorld` holds the OUTPUT to the rule: an instrument
+the roster carries and no account holds fails, so a future roster addition cannot go dead silently.
+All twelve instruments are now held (VALT 82 accounts, VSHT 115, ..., VCSH 335). The world regenerates
+to digest `c803e8c7…`; `pnpm world:validate` is byte-identical. PF-269.
+
+**A seed that wrote nothing says so, by name.** World record ids are derived from the world seed, so
+they are the same bytes in every org and every insert is `ON CONFLICT DO NOTHING` on them: only the
+FIRST org to load a world receives it. A second firm's load conflicted on every key, wrote zero rows,
+returned `ok`, booked an audit entry, and left that firm's household directory rendering empty with no
+explanation - the worst available outcome for a product whose headline claim is that another firm
+differs only by configuration. The load now refuses with a typed `CONFLICT` naming how many ids were
+offered, which ones, whose book holds them, and that world ids are seed-derived rather than
+org-scoped. **Reported honestly:** the supervisor asked the message to name WHICH org holds the world.
+Reading that org's row is an unscoped cross-tenant `SELECT`, which needs a reviewed escape in the
+`org-id-required` fence - widening a tenant-isolation control for a diagnostic. The refusal instead
+asks the question inside this org's scope and distinguishes the two cases that need different
+remedies: "org X already holds them from an earlier load of this world" (the same firm re-offered a
+regenerated world) versus "held by an org other than X, which loaded this world first". Every other
+element of the ruling is carried verbatim. PF-270.
+
+**Follow-up `fu-world-org-scoped-ids`.** The refusal above is a LOUD REFUSAL, not a fix. Making a
+second firm actually receive its own copy of the world requires org-scoping the derived record ids
+(`uuidFor(seed, path, field)` gaining the org as a derivation input, or the CRM projection minting
+per-org ids over the world's keys), which changes every seeded id and is a schema-shaped decision
+rather than a review-round edit. **Un-defer trigger:** the first demo or test that seeds a second
+firm. Recorded on the supervisor's explicit instruction to "record the org-scoped identifier work as
+the follow-up that makes it actually work".
+
+**Follow-up `fu-world-shared-test-seam`.** D-207's stop-and-report is now keyed, with the exact escape
+(`CORPUS_WORLD_VITEST_SEAM`, captain ruling `g8-relight-askuser 1a`) and its owner (the captain,
+through an ADR-0055-class governance amendment) named in that entry. The ruled escape,
+`_corpus-world-setup.ts`, `_corpus-world.ts` and `corpus-world-sharing.test.ts` are untouched.
+
+**Line budgets: no ceiling moves; three figures re-taken.** ADR-0057's own amendment paragraph in
+`line-budget.test.ts` still summarized the superseded 5,150 / 8,250 / 14,000 pairing while the
+constant beneath it enforced D-207's 14,200 - a summary carrying a stale ceiling is the same defect as
+a ceiling carrying a stale measurement. All three are re-measured on the tree as this round lands:
+domain 5,058, infrastructure 8,184, tooling 14,077 against UNCHANGED 5,150 / 8,250 / 14,200 ceilings -
+92, 66 and 123 lines of correction room, named rather than banked.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the two clean-slate
+readings, the seed refusal, the reachability rule and the four proof-log entries revert together. The
+seed refusal is the one behaviour change a caller can observe: before it, a colliding load returned
+`ok` with zero counts.
+
+### D-210 · 2026-08-12 · reversible · Populated-world review round five: a freshness signal that can fire, two beneficiary questions, and a clean-slate reading off a closed set
+
+**Holding freshness was a constant wearing a measurement's clothes.** `holdingsFor` passed each
+positions observation as its OWN reference instant, so `ageDays` was always nought and every one of the
+1,815 holdings the world can emit read `high` - 895 of them, in 47 of the 100 households, sitting on a
+snapshot 6-12 days old against a `freshLiquidityWindowDays` of 5, and a lot could claim more confidence
+than the account containing it. This did not merely mislabel stored provenance: the receding treatment
+the detail surface leans on is the one trust affordance a reader does not have to ask for, and an
+affordance that cannot fire is worse than none, because a reader believes they are being warned. The
+materializer now passes the world's `asOf`, as every other record in it already did, which makes its own
+header ("a record whose observation is older than the roster's freshness window is `medium`, so the
+surfaces that recede stale values are reading a real signal rather than a constant") true for holdings
+too: 920 high, 895 medium. Proved on the SCREEN and not only in the fixture - the new suite renders the
+real surface, opens an account, and reads the opacity the browser would apply to a stale lot and to a
+same-day one, so neither "nothing fades" nor "everything fades" can pass. The world regenerates to
+digest `d684bc48…`; `pnpm world:validate` is byte-identical. PF-271.
+
+**Two beneficiary questions, so two sets.** D-208 made `BENEFICIARY_BEARING_REGISTRATIONS` the ONE
+source of truth for the health factor and the detail copy, which fixed a real defect - a fabricated
+deficiency on a third of the accounts, on every one of the hundred household pages - and then created
+its mirror image, because one set was answering two different questions. Wording the empty beneficiary
+panel from a MATERIALITY set told a reader that an individual or joint account "does not take a
+beneficiary designation" on 90 accounts across 90 pages, when a transfer-on-death designation is the
+standard mechanism on both. There are three states, not two, so there are two named sets and neither
+answers the other's question: `BENEFICIARY_CAPABLE_REGISTRATIONS` (can this registration carry a
+designation at all? every personally-titled one can; a trust or an entity account cannot) and
+`BENEFICIARY_SCORED_REGISTRATIONS` (does a missing designation count against health? only where the
+designation is how the asset actually passes). The health factor and the deficiency note read the
+second; the empty panel reads the first. The surface therefore renders three states: a designation is
+listed, the registration can carry one and none is on file (the neutral fact, never called a gap unless
+health scores it), or the registration takes none at all. The health factor's own copy stops saying
+"beneficiary-bearing" and says what it means - accounts that pass by designation. PF-272.
+
+**The clean-slate cross-check decides off a CLOSED set.** D-209's declaration-aware reading kept a
+blocklist of keywords that may follow a column reference, and that set is OPEN: `ALTER TABLE t DROP
+COLUMN prov_source CASCADE`, `CREATE INDEX … ON t (prov_source NULLS LAST)` and a reporting view's
+`GROUP BY prov_source ORDER BY prov_source` were each counted as a declaration, failing `pnpm
+fixture:check` and the blocking `world` CI job while naming a provenance-bearing column outside the
+sweep that does not exist. The set of column TYPES a provenance column is declared as is small and
+closed, so the reading is inverted to decide off that (`PROVENANCE_COLUMN_TYPES`) - and it cannot go
+quietly blind either: a declaration naming a type outside the set fails in the OTHER direction with its
+own message naming the list to widen, rather than agreeing with the structural parse by accident. Both
+directions fail; neither is a silent pass. PF-273.
+
+**Three documents that must agree now agree.** `docs/world.md` is NORMATIVE for the populated world and
+still described the second reading as "a plain count of every `prov_source` the DDL names" - the
+mention-counting reading D-209 deliberately replaced - and `docs/adr/0057-populated-world.md` carried
+the identical superseded sentence, while `AGENTS.md` had been updated in the same commit. A normative
+document describing a reading the code no longer performs is the same defect class as every other
+finding on this branch. `docs/world.md` is corrected directly and completed in the two places it had
+gone thin (the both-authors rules list gains the roster-instrument reachability rule and the holding
+freshness rule; the `pnpm db:seed` paragraph gains the written-row counting and the loud refusal); the
+ADR is amended in place through the convention it already uses, not silently rewritten.
+
+**Line budgets: no ceiling moves; three figures re-taken.** 5,150 / 8,250 / 14,200 against RE-MEASURED
+5,079 / 8,184 / 14,101 as this round lands - 71, 66 and 99 lines of correction room, named rather than
+banked. Restated in `line-budget.test.ts` and in ADR-0057 so no reader takes a superseded pairing at its
+word.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the two beneficiary sets,
+the clean-slate type reading and the three proof-log entries revert together. The observable changes are
+the world's holding confidences, the beneficiary panel's copy on individual and joint accounts, and the
+health factor's beneficiary sentence.
+
+### D-211 · 2026-08-12 · reversible · Populated-world review round six: a rule the documents claimed, provenance nothing re-decides, and a guard that tests its condition
+
+**A rule four documents claimed and no gate could fail on.** `DECISIONS.md`, `docs/world.md`, PF-263's
+own title and `AGENTS.md` all stated that `accountRuleProblems` holds both authors to the rule that an
+entity household's people hold no PERSONAL accounts inside it. It held two rules. The third existed
+only as a filter inside the derived generator (`adults` selects role `client`/`spouse`), which is not a
+check: the byte-compare proves the committed tree equals a fresh generation, so it fires for any
+generator change and for no spec change, and a hand-authored featured household could title a personal
+account to an entity household's signer with every gate green. The rule is now ENFORCED, as the
+predicate an output can actually be held to - nobody the household records ONLY as an authorized signer
+appears in any account's `ownerKeys` - and it holds the hand-authored ten exactly as it holds the
+derived ninety. It passes the committed world unchanged (12 households carry signer-only people, none
+of them owns an account), so no byte moves for it. The four documents now state what is enforced rather
+than what was intended, and the fence counts the households the rule walks, so a world that stopped
+containing the case would fail rather than pass by describing nothing (charter #4). PF-274.
+
+**Provenance is measured once, by the layer that owns the measurement.** `buildHouseholdDetailVM`
+COMPOSED the provenance of its three "Evidence behind this page" lines - `{ source: "fixture", asOf:
+observedAt, confidence: "high" }` - so on most of the hundred pages the instructions line claimed `high`
+beside a household provenance the materializer had computed, from the very same instant, as `medium`.
+That is exactly the defect D-210 fixed one layer down for holdings, reappearing in the view model,
+which is the signal that the fix belonged in the SHAPE rather than in either call site. A household's
+`evidence` block now carries each class's PROVENANCE (`liquidity`, `positions`, `instructions`) instead
+of a bare instant: the materializer measures it once against the world's `asOf`, and the account
+balance, the lots inside it, the beneficiary designation and the surface's evidence line all carry that
+same value. Nothing outside the materializer can mint a world provenance, so one instant cannot produce
+two confidences. Measured on the regenerated world: liquidity 20 high / 79 medium / 1 low, positions 53
+/ 47, instructions 28 / 72 - a label that varies because it is a measurement. The directory's four
+summary cards stop asserting `high` too: their totals FOLD over the very records they count
+(`foldStoredProvenance`, the repository's one rule for a figure folded from stored rows), so a card can
+never claim to be surer than the evidence behind it, and the fold's watermark is the charter #3 / ADR-0022
+consequence of counting fixture rows. The world regenerates to digest `de05af94…`; `pnpm world:validate`
+is byte-identical. PF-275.
+
+**A guard must test the CONDITION, not a symptom the condition happens to share with safe cases.**
+D-209's loud refusal for the cross-org world collision keyed on `written.households === 0`. The
+condition it was ruled for is "a conflicting row owned by a different organisation"; the symptom it
+keyed on is produced just as reliably by a perfectly benign case - this same org already holds an
+earlier load of the same world. Household ids are `uuidFor(seed, path, "id")` and are STABLE across
+world content, while the digest, and therefore the idempotency key, is not - so after ANY world
+regeneration, including the one in this very entry, `pnpm db:seed` against an existing store performed
+the inserts, wrote nothing, and threw `CONFLICT` at a diagnostic that named a follow-up which was not
+the remedy. It also quietly falsified this module's documented property, that a partially-applied load
+completes rather than duplicating: a person added to a household could never land. The refusal now
+reads the OWNERSHIP of the rows that actually conflicted, inside this org's own scope (reading another
+tenant's row to name it would widen a tenant-isolation escape for a diagnostic): a conflicting
+household held by another org refuses loudly and by name, exactly as ruled, and a same-org re-offer is
+a quiet no-op that writes whatever is genuinely new and reports honest counts. Both paths are tested,
+including the one that was broken - regenerate the world, re-seed an existing store, assert it no-ops -
+and a third asserts the new person lands. This is the durable lesson, recorded plainly: the condition
+was "a conflicting row owned by a different organisation" and the symptom keyed on was "zero rows
+written", which the dangerous case and a benign re-seed both produce. PF-276.
+
+**Line budgets: no ceiling moves; three figures re-taken.** 5,150 / 8,250 / 14,200 against RE-MEASURED
+5,086 / 8,197 / 14,125 as this round lands - 64, 53 and 75 lines of correction room, named rather than
+banked. Restated in `line-budget.test.ts` so no reader takes a superseded pairing at its word.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree, the evidence-clock
+shape, the third account rule, the ownership-keyed refusal and the three proof-log entries revert
+together. The observable changes are the confidence carried by each household's evidence lines, the
+provenance label on the directory's four summary cards, and a same-org re-seed succeeding.
+
+### D-212 · 2026-08-12 · reversible · Populated-world review round seven: a count of nothing claims nothing, a withheld counterparty is withheld whole, and one statement instead of a hundred
+
+**A figure with no evidence behind it took the strongest standing in the vocabulary.** The directory's
+four summary cards fold over the records they count, and an empty book folds over none - which
+`foldStoredProvenance` deliberately answers with `null`, because "a figure with no inputs has no
+origin". The fallback beneath it, `deriveArtifactProvenance([], asOf)`, has no input to be less
+confident than, so it reports `source: "computed"`, `confidence: "high"`, `demonstration: false`, and
+`canFeedComplianceDecision` ADMITS it: the cards rendered `0 · Computed · as of <today>` with no
+synthetic badge and no watermark. That is not a hypothetical path - it is a dev store before
+`pnpm db:seed`, any org whose CRM book does not overlap the world, and PRODUCTION, where the fixture
+adapter refuses to serve at all and the authorized intersection is therefore ALWAYS empty. The fold is
+no longer handed an empty list: an empty book still has one true origin - this surface reads fixture
+rows and read none - so the zeroes carry a labeled, low-confidence fixture origin, watermark, and
+refuse compliance use exactly as a counted row does. The unit test asserts all four cards on the
+empty book AND keeps a companion showing what an empty derivation would have granted them. PF-277.
+
+**Follow-up `fu-empty-fold-provenance`.** The ROOT of the paragraph above is
+`deriveArtifactProvenance` in `src/contracts/provenance.ts`: an empty input list yields a
+compliance-eligible, non-demonstration provenance wherever anyone derives from nothing. `src/contracts/**`
+is owned by another lane and is not edited by this branch, so the guard here is at the caller - the
+one call site this branch owns never folds an empty list. The contracts-level fix (an empty derivation
+returning a demonstration, or the function refusing an empty list the way `foldStoredProvenance`
+already does) closes the class, and there is at least one other live site it would cover:
+`src/app/app/console/page.tsx` derives a household count from `households.map(h => h.provenance)`,
+which is empty for a book with no households. **Un-defer trigger:** the next change to
+`contracts/provenance.ts`, or any new caller deriving a figure from a list that can be empty.
+
+**A withheld counterparty that still emits its slug is not withheld.** `/api/households/[key]`
+authorizes each cross-household counterparty exactly as it authorizes the subject, and then handed the
+client the counterparty's WORLD KEY as the label when that read refused. World keys are
+`<surname>-<given name>` (`whitfield-nathaniel`, `smith-robert-elaine`), so the reader learned the
+party at lower fidelity, the route comment claimed the opposite, and the test certified the claim by
+checking one SYMPTOM - the exact display name is absent - which passes while the key ships. A withheld
+counterparty now reaches the client as an opaque page-local ordinal (`counterparty-1`) and nothing
+else: no name, no key, no link, and a neutral sentence rendered as plain text rather than an
+affordance that can only land on a refusal. The same disclosure was ALSO shipping through three
+hand-authored fields on the same page - Cordelia's narrative, her trust's note and an activity line
+each named her brother - so the world's cross-household prose is corrected to match its own link
+notes, which were already neutral, and `crossHouseholdProseProblems` holds both authors to it: a
+household's prose names no PERSON from a household it links to, excluding words the household itself
+publishes (two Whitfields share a surname on purpose). The test now asserts the CONDITION over the
+WHOLE serialized response - every word of every party in the withheld household, as a fragment, in any
+casing, in reversed order and with every separator - and both directions of the one linked pair.
+PF-278.
+
+**A test must assert the CONDITION the guard exists to establish.** Recorded beside D-211's lesson,
+because this is the same defect one file over: the guard was real, and its test checked a property the
+guard did not have. The condition is "no part of a withheld party's identity reaches the client"; the
+symptom checked was "the exact display name string is absent", which the world key, the given name in
+a narrative, and any other lower-fidelity rendering all pass.
+
+**One statement, not a hundred.** `conflictingIdsNotHeldBy` asked ownership with one single-row
+`SELECT` per conflicted id. The case it exists to serve is the ordinary development loop D-211
+unblocked - regenerate the world, re-seed an existing store - which conflicts on every household, so
+it was a hundred sequential round-trips inside the seed transaction on a connection that serializes
+them. One `= ANY($1::text[])` answers the same question with the same tenant scoping and the same
+literal-SQL shape the append-only fences read.
+
+**Line budgets: no ceiling moves; three figures re-taken.** 5,150 / 8,250 / 14,200 against RE-MEASURED
+5,086 / 8,200 / 14,168 as this round lands - 64, 50 and 32 lines of correction room, named rather than
+banked. Tooling is the narrowest it has run since D-176; the next change to `scripts/**` should read
+that as the ADR amendment it now is rather than discovering it in a failing build.
+
+**Revert path:** revert this changeset; the regenerated `fixtures/world` tree (digest `8f9859b4…`), the
+withheld-counterparty view model, the prose rule and the two proof-log entries revert together. The
+observable changes are the four summary cards on an empty book carrying a synthetic label and
+watermark, an unauthorized cross-household link rendering as plain text instead of a slug-labeled
+link, and one Whitfield household's narrative, entity note and activity line naming the other
+household neutrally.
+
+### D-213 · 2026-08-12 · reversible · Populated-world review round eight: a watermarked figure that renders naked is not watermarked, a sum is labeled by what it sums, and a reference counts what a reader can see
+
+**The scores this branch watermarks were reaching the screen bare.** `model.ts` states the contract -
+"every displayed number is a `DisplayMetric`, so it reaches the screen only through `<Metric>` with its
+provenance attached; the health figures carry DERIVED provenance, which watermarks them" - and two
+renders broke it. The directory row's band badge read `${bandLabel} · ${score.value}`, extracting the
+composite out of its `DisplayMetric` on all hundred rows, and the health panel rendered
+`{factor.score.value}` on each of the six factor cards, directly beneath the composite that DOES carry
+its watermark. `deriveArtifactProvenance` had done its work and the surface undid it: a
+demonstration-derived number with no source, no as-of and no "not a compliance record" beside it, in
+the two places a reader is most likely to screenshot. The badge now carries the BAND WORD alone -
+never a second copy of the score beside it, which is the duplication D-205 deliberately removed - and a
+factor card carries its band, its bar and its sentence. `HealthFactorVM` no longer holds a
+`DisplayMetric` at all: it publishes `barWidth` (`"73%"`), so nothing is left to extract, and the
+figure itself renders once per page through `<Metric>`. The band word rather than nothing, because the
+bar alone says nothing to a reader who never sees it. PF-279.
+
+**A sum across accounts is labeled by every account it sums.** `totalBalance` - the headline figure on
+a directory row and on the household's own page - published `accounts[0].provenance`, one contributing
+record's own origin, for a figure derived from all of them. After D-212 the four summary cards beside
+it fold correctly, which made the pair actively misleading rather than merely wrong: two figures on
+one screen, folded from the same records, labeled by two different rules. Both surfaces now call one
+function, `foldAccountBalances`, so a sum cannot be labeled two ways. The visible consequence is the
+honest one - the balance is `computed`, carries the demonstration watermark, and takes the newest
+as-of of the accounts behind it rather than the first account's.
+
+**The row had to make room for the truth it now tells.** The watermark is thirty-nine characters, and
+a 208px column wrapped it across two lines on every row while the stacked layout below `sm` ran the
+next household's name into it. The two-column row's balance column widens to 256px, and the row height
+is now the height of the layout that is actually on screen - `useSyncExternalStore` over the same
+`sm` breakpoint the row's own classes switch on, 108px in two columns and 148px stacked. Found by
+screenshotting the real pages at 1280px and at 390px, not by a test; the test that keeps it honest
+asserts the stacked row reserves more height than the two-column one.
+
+**A page-local reference counts the things the page shows.** The withheld-counterparty ordinal was
+assigned across ALL counterparties, named and withheld alike, but only a withheld one ever renders it:
+a household holding one named counterparty and one withheld one opened at "Counterparty 2" with no
+first anywhere on the page. It is numbered across the withheld alone. The plural copy it feeds was
+also unreachable in the shipped world - the two linked households carry exactly one link each, so
+`several` was always false and the branch had never been produced or asserted. It is now exercised
+directly from a constructed household rather than through world content, together with the
+one-counterparty-two-kinds case that keeps the render keys distinct. PF-280.
+
+**One fold per world, one fold per caller.** `totalsProvenance` flat-mapped every household, account,
+bank-instruction and pending-action provenance in the authorized book on EVERY request - about 1,500
+objects for the hundred-household world - to produce four identical values, immediately beneath the
+row cache introduced to remove exactly that cost. Each household's own origin is now folded ONCE per
+`worldDigest` alongside its row, and only the fold over the caller's authorized subset is per request,
+which is the half that must stay uncached: caching it by digest would hand a firm with two households
+the whole world's origin. Asserted both ways - a smaller book takes its own as-of, and two callers of
+the same book read identical figures.
+
+**Verification item (C) from the round, checked rather than assumed.** D-212's empty-fold guard is in
+place with its companion: `household-directory-vm.test.ts` asserts all four cards on an empty book are
+refused a compliance decision, watermarked, badged and low-confidence, and a companion pins what
+`deriveArtifactProvenance([])` WOULD grant them (`canFeedComplianceDecision` true, `high`, no badge) so
+the guard cannot be removed and read as unnecessary. The contracts-level root remains recorded as
+`fu-empty-fold-provenance`, naming `deriveArtifactProvenance` in `src/contracts/provenance.ts`, which
+this branch does not own. No change needed.
+
+**Line budgets: nothing moves and nothing is re-measured, because no budgeted tree changed.** The
+whole change lives in `src/app/households/**` and `src/__tests__/**`, neither of which is in a bucket
+(the test tree's gap is `fu-corpus-test-tree-budget`, D-172). D-212's figures stand: 5,150 / 8,250 /
+14,200 against 5,086 / 8,200 / 14,168.
+
+**Revert path:** revert this changeset. `fixtures/world` is untouched (the world regenerates
+byte-identical, digest `8f9859b4…`); the view models, the two component surfaces, the responsive row
+height, the two new unit suites and the two proof-log entries revert together. The observable changes
+are a directory badge showing "Healthy" instead of "Healthy · 88", factor cards showing a band word
+instead of a number, every total balance carrying the demonstration watermark, and a wider, taller
+row to hold it.
+
+### D-214 · 2026-08-12 · reversible · Populated-world review round nine: two facts need two columns, the record store owns identity, and a companion that cannot see the defect is not a companion
+
+**The provenance of a VALUE and the origin of a RECORD are two facts, and one flag was carrying
+both.** `seedWorldIntoCrm` writes a hundred households at `prov_source = 'fixture'`, and `/app/console`
+renames any of them through a governed audited write that touched only `name`. So an advisor's own
+words rendered receded under a "Sample data · as of <the world's instant>" label - charter #3's
+mislabel in the direction nobody watches - and the only alternative on the table, re-stamping the row
+`user-input`, would have exempted it from the clean-slate purge, which is how demonstration data
+survives into production because somebody typed over it. Both readings are wrong because the question
+is two questions. Migration 9 adds `record_origin` to every provenance-bearing table (`world-fixture`
+for the projection, `firm-record` by DDL default for everything the firm's own flows write);
+`updateHouseholdName` now moves `prov_source` to `user-input` with the edit's instant and LEAVES the
+origin alone; and the clean-slate sweep counts the ORIGIN. A renamed demonstration household therefore
+reads as user-entered, un-watermarked, and is still removed by the purge - proved as one test, because
+the two halves are only interesting together. The vocabulary lives in
+`src/infrastructure/store/record-origin.ts` so the seed, the sweep and the fence read one list.
+PF-281.
+
+**A table that can hold a demonstration row and has no origin to count it by cannot be cleared.** The
+swept table LIST is still derived from `prov_source` declarations and still read the three ways D-207
+through D-210 built, because that question - which tables can hold a labeled row - has not changed.
+What changed is the predicate, so the two columns must exist together, and that pairing is now checked
+twice with no shared code: `recordOriginCoverageProblems` reads it off the shipped DDL (seeing a column
+declared in a `CREATE TABLE` or added by a later `ALTER TABLE`, or version 9 would read as no coverage
+at all), and the catalog reading answers it again from the store's live columns. Either way it is a
+sweep problem, which fails `pnpm fixture:check` and the blocking `world` job.
+
+**The record store owns IDENTITY; the evidence port supplies DEPTH.** The household surfaces took
+`crmRow.id` from the CRM and everything else from the fixture, so a household renamed in the console
+kept its fixture name on `/app/households` and `/app/households/[key]` indefinitely, with nothing on
+either page to say the two disagreed. Both now render `households.name` and the CRM's status, and a
+cross-household link renders the counterparty's CRM name for the same reason. **And a CRM household
+with no world entry is no longer dropped.** That is what every household looks like for the first
+minutes of its life - somebody created it in the console - and the surface the app home page calls
+"the firm's whole book" was quietly omitting it; households-with-evidence is a distinction nobody asked
+for and nobody can see. It is listed, says plainly that nothing has arrived for it yet, and carries a
+link to the console rather than dead-ending. The row is deliberately NOT a link: its own page would
+have nothing on it. The three record cards still read only the described households, so the directory
+now says which - `evidenceCoverageNote` - because a figure counting a subset of the list beside it is
+the quiet kind of wrong. PF-282.
+
+**A companion that cannot see the defect it names is worse than no companion.** The round-eight check
+for "no metric-class figure reaches a screen outside `<Metric>`" matched an element whose ENTIRE text
+equalled the figure. The defect it was written for was `Healthy · 87`, which that rule cannot see - so
+the companion titled "the shape this row used to ship WOULD be caught" asserted, correctly for the
+helper and backwards for the reader, that the detector found NOTHING. The green result is what stops
+anyone looking. The detector now matches a whole-number TOKEN inside a text node and excuses two
+things it can name: a figure inside the element carrying its provenance label (which is exactly
+`<Metric>`, since `FreshValue` puts the value in a titled span beside the source/as-of line) and a
+digit inside a sentence the view model composed. The companion asserts the old shape IS caught and the
+sanctioned rendering of the same number is not. PF-283.
+
+**The band thresholds are the domain's, imported rather than copied.** `bandOf` in the view model
+restated `>= 80 / >= 55` because `health.ts` did not export them, so the composite badge and the six
+factor badges were graded on two independently-maintained scales - and after D-213 made the band WORD
+the whole per-factor signal, a divergence would be visible on the screen rather than buried in a
+number. `healthBand` is exported and read.
+
+**The row-height snapshot reserves the taller row.** `useRowHeight`'s comment said no row is measured
+against a height it never had, while `getServerSnapshot` returned "two column" unconditionally - the
+one frame where the claim is false is exactly the narrow layout the second constant was added for. The
+server snapshot now returns the STACKED height: too much reserved space is a gap for one frame, too
+little is an overlap, and only one of those is a defect. The comment states what actually holds.
+
+**Line budgets: `infrastructure` to 8,400 and `tooling` to 14,350, `domain` held, all three
+re-measured.** 8,283 / 14,232 / 5,093 as this round lands, so 117, 118 and 57 lines of correction room
+are NAMED rather than banked. `tooling` had 32 lines left after D-212, which is the exact condition
+ADR-0018's commentary argues against. ADR-0057 §6 carries the amendment.
+
+**Revert path:** revert this changeset. Migration 9 is append-only and additive (`ADD COLUMN IF NOT
+EXISTS` with a default), so a store that already ran it keeps a column nothing reads after a revert;
+the sweep, the seed, the rename, the view models, the two surfaces and the three proof-log entries
+revert together. `fixtures/world` is untouched - nothing in this round reaches the generator, and the
+world regenerates byte-identical. The observable changes are a household directory that renders the
+firm's own names, lists households with no evidence yet, and says when its counts read only part of
+the book.
+
+### D-215 · 2026-08-12 · reversible · Populated-world review round ten: a column's default cannot answer for rows that already exist, a row carries what it renders, and an empty book is not a failed search
+
+**Migration 9's default was a silent false pass on every store that already held the world.**
+`record_origin` shipped as `ADD COLUMN ... DEFAULT 'firm-record'` with no backfill, so every row that
+already existed became the firm's own - and the ordinary development loop reaches that state (`pnpm
+db:seed`, pull, `pnpm db:migrate`). `pnpm fixture:check` then printed "clean - zero
+demonstration-origin rows" while a hundred households rendered at `/app/households`, and re-seeding
+could not repair it: the ids conflict, the ownership probe correctly finds them held by this same org,
+and the load writes nothing. That is the clean-slate guarantee failing OPEN through the migration
+added to enforce it, on the one check whose whole value is that it cannot (charter #4). CI never saw
+it because the `world` job's data directory is always virgin, so only the bootstrap path is walked.
+
+Version 9 now carries the backfill, and the route matters: migration 9 was introduced by this branch's
+own HEAD commit and has shipped nowhere - the base commit has no `record_origin` at all - so the
+correction belongs IN it rather than in a version 10 that a virgin store would apply against a column
+it just created. D-016/D-029's rule is about SHIPPED entries, and this one is not.
+
+**What identifies a demonstration row at migration time is the marker it was written with.**
+`prov_source = 'fixture'` is what the world's CRM projection writes, in the three tables it writes
+(`households`, `contacts`, `tasks`), and nothing else has ever written it there; before this version
+nothing re-stamped that column either, so at the moment the migration runs the marker names exactly
+the rows a fresh seed gives the demonstration origin. Backfilling those three - rather than every
+provenance-bearing table - is what makes an upgraded store and a freshly seeded one AGREE: the decision
+ledger's own seeded rows carry `prov_source = 'fixture'` too and take `firm-record` on a fresh store,
+so a blanket update would have made the upgrade path mean something different from the bootstrap path.
+The alternative on the table - identifying the rows by the generator's deterministic ids - was
+rejected twice over: it would put a build-time fixture generator inside the shipped schema module, and
+a migration whose bytes are computed from a spec is a shipped migration that edits itself. PF-284.
+
+**The row carries what the row renders.** D-213 made the directory badge show the band WORD, and the
+payload kept shipping the composite `DisplayMetric`, the summary sentence and six factors each with a
+label, a bar width, a weight, a statement and its read records - about a kilobyte of unrendered text
+per row, a hundred kilobytes across the book, on the surface a viewer hits first. `HouseholdRowVM`
+now carries `HealthBandVM` (band and word); the breakdown stays on the detail path, where the figure
+renders once through `<Metric>` with its watermark.
+
+**The corrected detector was run against the shape that actually shipped.** D-214 fixed a companion
+that asserted the detector found NOTHING in the defective row. The proof this round is not a
+hand-built approximation of that row: the badge line was recovered from this branch's history
+(`git show 2af33672:src/app/households/directory.tsx`), put back into the shipped component together
+with the row payload it needed, and the detector reported `Watch · 77` on a real row. The executable
+companion renders the same `StatusBadge` with the same label expression, so the catch stays a
+statement about the shape rather than about one number. PF-285.
+
+**An empty book is not a search that found nothing.** `VirtualList` renders its one `emptyState`
+whenever the list is empty, whatever emptied it, and the directory passed only the search-miss copy -
+so a book with nothing in it announced "No household matches that search" for a search nobody made and
+offered the four Smiths that were not there. Two false statements in one view, reachable in dev before
+`pnpm db:seed`, for any org whose CRM book does not overlap the world, and in production, where the
+fixture adapter refuses to serve. The builder now states the BOOK's empty state - an honest sentence
+and the console on-ramp, `null` whenever there is a book, so it cannot become furniture - and the
+search copy is reached only when a search emptied a list that has rows. One state may not answer two
+questions; this is the fourth time that shape has been corrected on this lane. PF-286.
+
+**Revert path:** revert this changeset. Migration 9's backfill is an `UPDATE` inside the version that
+introduces the column, so a store that already applied version 9 without it keeps its rows marked
+`firm-record` - re-running is not possible by design, and the honest repair on such a store is to
+re-stamp the three tables by hand or start from a fresh data directory. Nothing here reaches the
+generator: `fixtures/world` is untouched and regenerates byte-identical.
+
+### D-216 · 2026-08-12 · reversible · Populated-world review round eleven: a default is a claim about history, the name says where the name came from, and copy names only causes that exist
+
+**A default on a new column is a claim about every row already in the store.** D-215 backfilled
+migration 9 and explained why; the rule itself lived only in that version's own paragraph, where the
+next author adding a column will not read it. It is now stated where migration rules are stated - the
+module header - as the general form: a default answers for the rows that predate it, so either the
+claim is provably true for all of them or the migration backfills them by the condition that actually
+identifies them, and a column some guarantee reads makes that load-bearing. Version 9's paragraph keeps
+the worked example. The backfill's condition is unchanged and is a positive test rather than a default
+(`prov_source = 'fixture'`, the marker the world's CRM projection wrote, in the three tables it
+writes), and the upgrade is proved on a store seeded before the column existed
+(`src/__tests__/integration/fixture-purge.test.ts`, PF-284), with the companion showing the default
+alone reporting a populated store clean.
+
+**The name now states where the name came from, on both surfaces.** D-214 pointed both view models at
+`crmRow.provenance` and wrote comments saying the surfaces state it; neither surface read the field.
+So the household name - a seeded value, `prov_source = 'fixture'` at medium confidence - reached two
+authenticated screens as bare text with no source, no as-of and no receded treatment, while
+`/app/console` rendered the same value inside `<FreshValue>`. Worse, it made the D-214 split
+unobservable: origin and value provenance were separated precisely so a reader could see that a
+renamed demonstration household is still demonstration-originated while its NAME is the advisor's own
+words, and the one place that difference shows is the name. Both surfaces now render it through
+`FreshValue`, so a seeded name reads `· Sample data · as of <date>` and recedes with age and a renamed
+one reads `· Entered · as of <date>` at full strength. PF-287.
+
+**What that cost the row, measured rather than reasoned about.** The directory's reserved row heights
+are constants a virtualized list commits to before it draws anything, and the name's label made both
+too small. They were re-measured in a real browser at nine widths: 132px two-column (128px of content
+at its worst, at 640-700px) and 176px stacked (170px, at 360-414px). The previous pair had never been
+measured below 640px, where the stacked row was already overflowing its own box by 40px and running
+into the next row's name - a pre-existing defect this re-measure closes. The name also takes the whole
+line now, so the badges start the next one on every row rather than wherever that household's name
+happened to end, and the weight sits on the name rather than the heading so the label keeps the size
+and colour it carries everywhere else.
+
+**Copy may not name a cause that cannot produce the outcome.** The detail page's 404 read "It may have
+been renamed, or the link may be from another firm." The URL carries the world's stable household key
+and identity is the record store's, so `updateHouseholdName` changes `households.name` and nothing the
+link resolves through: a rename can never produce that page. With renaming a real, e2e-exercised flow,
+the advisor most likely to meet the message was being pointed at the one impossible explanation. It now
+names the two causes that do produce it - no household answers to the key, or one does and it belongs
+to another firm's book - which are also exactly the two the route refuses identically on purpose.
+
+**Revert path:** revert this changeset. Nothing here reaches the generator or the schema's DDL:
+`fixtures/world` is untouched and regenerates byte-identical, and migration 9's SQL is unchanged (only
+its comment and the module header moved). Reverting the row heights alone would reintroduce the
+overflow, so they revert with the name render they were measured for.
+
+### D-217 · 2026-08-12 · reversible · Populated-world review round twelve: a backfill that cannot run, an insert that names nothing, and the guarantee nobody tested
+
+**The backfill ships as version 10, because version 9 had already shipped.** D-215 appended the
+`record_origin` backfill to version 9's own SQL. `runMigrations` matches the ledger on
+`(version, name)`, so the stores the repair exists for - the ones that ran `pnpm db:migrate` between
+the two commits, which is every developer who followed the branch - have `(9, record-origin)` recorded
+and never run that version again: the `ALTER` is `IF NOT EXISTS` and the `UPDATE` is dead code. Those
+stores report clean with the demonstration world fully present and no repair path, since re-seeding
+conflicts on the deterministic ids and writes nothing. Version 9 is restored to its as-shipped DDL and
+the backfill is version 10, `record-origin-backfill` (`src/infrastructure/store/migrations.ts`) - the
+rule D-016/D-029 states and D-215 broke while enforcing it. A store that already recorded version 9 and
+took the default on every row is now a case, and it fails when the backfill is folded back into version
+9 (PF-288, injection B).
+
+**Every path that writes a demonstration row names the origin column at its insert.** The sole
+`INSERT INTO decision_ledger` named it zero times, so the synthetic chain `pnpm db:seed` records took
+the column's DDL default and the sweep reported `decision_ledger 0` over rows that were sitting in it -
+the guarantee failing open by construction in a table it advertises. The origin is now a REQUIRED input
+to `recordDecision` and `appendDecisionEvents` (`RecordDecisionInput.recordOrigin`,
+`src/infrastructure/ledger/ledger-store.ts`), because the producer knows which it is and the repository
+never can, and it is written at the insert rather than left to a default that answers for rows nobody
+wrote. The seeded chain states `demo-seed`, a THIRD classified origin rather than a borrowed
+`world-fixture`: it is not the world, and `DEMONSTRATION_ORIGINS` is a list precisely so a new
+demonstration writer has to be classified rather than falling into the clean half.
+
+**What that surfaced, which no mechanism check could have.** `decision_ledger` is append-only by DDL
+trigger (ADR-0041), so demonstration entries in it are IRREVERSIBLE - no purge can take them, and a
+store that has run the seed can never be swept clean again. That is now stated by the store itself
+rather than assumed: the purge reports the refusal in the store's own words, the clean-slate check
+names the table, and the instance-level answer is to recreate the store. It is not a hole in the
+guarantee, because the seed refuses to run against `APP_ENV=production` at all
+(`assertSeedableEnvironment`, checked before a connection is opened and again before any write) - but
+it is a real constraint on where that seed may ever be pointed, and it was invisible while the rows
+were unmarked.
+
+**One test that is the guarantee, not seventeen that are its mechanisms.** This guarantee has failed
+open three separate ways - a column default that answered for rows it never wrote, an insert path that
+named no origin, a backfill appended to a migration that had already run - and each time every
+mechanism check passed, because each checked one mechanism and nothing ran the whole thing. The first
+case in `src/__tests__/integration/fixture-purge.test.ts` now migrates, runs the COMPLETE `db:seed`
+through the same `seedDemoStore` the CLI runs, purges by a predicate derived from the LIVE store
+catalog, and counts what is left the same way - no hand-kept table list, and not `scripts/fixture-purge.ts`,
+whose DDL derivation is one of the things under test. The seventeen existing cases are documented as
+OPTIMISATIONS of it rather than substitutes for it. The purge helper itself is no longer a
+hand-maintained three-table `DELETE`: it derives its tables from the catalog and discovers its order by
+retrying refusals. PF-288.
+
+**The seed is a function of a store, so the guarantee can be proved against the real one.**
+`scripts/db-seed.ts` ran the whole seed at module scope against the configured store, so nothing could
+import it and a test could only re-implement part of it - which is precisely why the paths that failed
+open were never exercised. The seeding moved to `scripts/seed-demo-store.ts` (`seedDemoStore(db)`,
+production refusal included) and `scripts/db-seed.ts` is the runner that opens and closes the store.
+`pnpm db:seed` is byte-for-byte the same command and writes the same rows.
+
+**Copy states no fact about a book it is not looking at.** The search-miss empty state told every
+reader "Four households here share the surname Smith." The roster declares four as a MINIMUM and the
+path-keyed surname draw produced eleven, so it was false in the demonstration world - and in production
+`worldIsServable()` is false, so the directory lists the firm's own records and the sentence was a
+claim about households that firm does not have. It now names no count at all, only what a reader can
+do about a miss, and a unit case asserts neither empty state states such a count.
+
+**Also fixed, because the branch does not build without it.** `src/app/households/directory.tsx`
+imported `TextInput` from the presentation tier, which exports no such primitive - `pnpm typecheck` and
+`pnpm build` failed at HEAD and the directory could not render at all in jsdom. It composes the
+canonical `Input` (`src/app/presentation/ui.tsx`), unchanged in behaviour; the presentation tier itself
+is another lane's and is untouched.
+
+**Banked, not fixed (`fu-directory-summary-only-reads`).** The directory route opens all ~100 deep
+household files per server process (`fixtureWorldSource.getHousehold` does a `readFileSync` plus a full
+SHA-256 verify per file on a cold cache) even though `scripts/world/emit.ts` states the manifest exists
+specifically so a hundred-row list need not. The manifest summaries already carry
+memberCount/accountCount/totalBalanceMinor/openItemCount; the deep read is currently needed only for
+the six-factor health band and the search haystack. Warm requests are a map lookup and the row entries
+are cached by `worldDigest`, so this is first-request cost rather than per-request - but the emit
+docstring's claim no longer describes what ships. Excluded here by the convergence rule (it restates a
+cost class already addressed once on this branch); the repair is either a summary-only directory read
+or an emit docstring that describes what actually happens.
+
+**Revert path:** revert this changeset. `fixtures/world` is untouched and regenerates byte-identical.
+Migration 10 is additive and its `UPDATE` is `WHERE`-scoped, so a store that has run it is not harmed
+by the code being reverted; version 9's DDL is back to its as-shipped bytes either way. Reverting the
+`record_origin` argument alone would return `decision_ledger` to reporting clean over its own seeded
+chain, so it reverts with the guarantee case that proves it.
+
+### D-218 · 2026-08-12 · reversible · Populated-world review round thirteen: the tenant scaffolding the sweep could not see, and a guarantee narrower than the guarantee
+
+**The demo org and its two demo users name their origin at the insert.** D-217 stated the rule - a
+default is a claim about rows you did not write - and applied it to `ledger-store.ts` while the two
+inserts directly above it in `scripts/seed-demo-store.ts` still took the DDL default. Both tables are
+swept, so `pnpm fixture:check` on a seeded store printed `orgs 0`, `users 0` and called the demo firm
+and the accounts carrying the publicly committed `verin-demo-pass-12345678` this firm's own records -
+the same shape as the `decision_ledger 0` D-217 had just closed, over rows that can actually
+authenticate. The org insert names `record_origin` (`scripts/seed-demo-store.ts`), and `recordOrigin`
+is now a REQUIRED input to `createUser` (`src/infrastructure/identity/identity-store.ts`) for the
+reason it is required on `recordDecision`: the caller knows which kind of identity it is minting and
+the repository never can, so silence has to be impossible rather than merely discouraged. The one
+other shipped caller (`scripts/load-smoke.ts`) names it too.
+
+**The purge now refuses `orgs` and `users`, and the case says so by name.** Marking them makes them
+visible, not removable: every append-only chain the seed writes is anchored to that org, and the
+credentials row references those users, so the store refuses both deletes. That is the honest state and
+it is what the guarantee case records - with the refusal quoted in the store's own words - rather than
+leaving the rows unmarked so the purge would appear to succeed.
+
+**The guarantee is measured over what the SEED WROTE, not over the tables carrying the marker.**
+D-217's end-to-end case derived its tables from `information_schema` where
+`column_name = 'record_origin'`, so it could only ever see the eight tables migration 9 altered. The
+same seed writes into `evidence_snapshots`, `decision_input_bundles`, `decision_input_bundle_evidence`,
+`decision_records`, `audit_log`, `audit_anchor`, `decision_ledger_anchor`, `decision_state_projection`,
+`credentials` and `crm_write_cache`, none of which carries either provenance column - so a seeded path
+writing into one of them was invisible to the very case added to catch invisible seeded paths, while
+its message claimed "everything else the seed wrote is gone". The case now snapshots every base table
+in the live catalog before and after the seed and again after the purge, and asserts that every table
+the seed grew is back to its pre-seed count OR named in `IRREVERSIBLE_SEED_RESIDUE` with the reason.
+The list is exact in both directions: a name the seed no longer earns fails as loudly as a seeded table
+missing from it. PF-289 proves it with two injections - a seed write into `sessions` (no marker at all)
+and an unnamed-origin seed write into `financial_accounts` (marker present, insert silent).
+
+**What that list actually says, and why it is not a retreat.** The demonstration seed is
+IRREVERSIBLE: the decision chain and the audit chain are append-only by DDL trigger, their replay
+sources and heads describe entries that cannot be removed, and the tenant and identities those chains
+are anchored to cannot be deleted while they exist. The clean-slate guarantee was never "the seed can
+be undone" - it is that a production instance was never seeded (`assertSeedableEnvironment` refuses
+`APP_ENV=production` before a store is opened) AND that any demonstration row is COUNTABLE if one is
+there. Stating the thirteen surviving tables by name is that guarantee written down; the previous
+wording implied a reversibility the design does not have.
+
+**`--expect-rows` outside `--report` is a usage error.** It was read only inside the `reportOnly`
+branch, so `pnpm fixture:check --expect-rows=100` silently ran the plain clean-slate assertion - the
+OPPOSITE verdict - and told the caller nothing about their ignored flag. It now exits 2 naming the
+mistake (`scripts/fixture-purge-check.ts`).
+
+**Banked, not fixed (`fu-record-origin-check-constraint`).** `RECORD_ORIGINS` is a closed list in
+TypeScript, but the column is plain `text NOT NULL DEFAULT 'firm-record'` with no `CHECK`, and neither
+`recordDecision` nor `appendDecisionEvents` parses the `recordOrigin` it is handed before binding it.
+Every current caller is type-checked, so this is not reachable today - but the sweep's predicate is
+`record_origin IN (<demonstration origins>)`, which means any unrecognized string reads as clean. That
+is the fail-open direction on the one column the whole guarantee keys on, and the type system is the
+only thing holding it. The repair is a `CHECK` constraint (necessarily a new version, since 9 and 10
+are shipped) or a `parseRecordOrigin` at the insert. Excluded here by the convergence rule: it hardens
+against a value no current caller can produce rather than closing a live fail-open.
+
+**Revert path:** revert this changeset. No DDL changes and no generator changes - `fixtures/world` is
+untouched and migrations 9 and 10 keep their shipped bytes. Reverting the `recordOrigin` argument on
+`createUser` alone would return `orgs` and `users` to reporting clean over the demo firm and its
+committed-password accounts, so it reverts with the guarantee case that proves it.
+
+### D-219 · 2026-08-12 · reversible · Populated-world review round fourteen: the corrective sweep reaches the stores that already exist, and says where it stops
+
+**Migration 11 stamps the demonstration tenant and its two demonstration accounts.** D-218 named
+`record_origin` at the org and user INSERTs, which fixes every store created afterwards and nothing
+else. On any store seeded before that commit - every developer who followed this branch, and the only
+kind of store the repair exists for - `org-verin-demo` and the two accounts carrying the publicly
+committed `verin-demo-pass-12345678` took version 9's `firm-record` default, so `pnpm fixture:check`
+printed `orgs 0` and `users 0` over the demo firm and the rows that can actually authenticate. Version
+10 could not reach them: it keys on `prov_source = 'fixture'`, the world's CRM projection marker, and
+those are `verin-crm` rows like every record this firm's own flows write. Re-seeding could not either -
+the org insert is `ON CONFLICT (id) DO NOTHING` and `seedDemoStore` skips a user `findUserByEmail`
+already resolves - so both paths wrote nothing and the fail-open survived on precisely the stores it
+was written for. This is the third shape of the same failure (a defaulted column, an unmarked insert
+path, a migration that never ran on the store it was for), so the correction is a NEW version rather
+than an edit: `{version: 11, name: "demo-tenant-record-origin"}`
+(`DEMO_TENANT_ORIGIN_BACKFILL_SQL`, `src/infrastructure/store/record-origin-migration.ts`).
+`runMigrations` matches the ledger on `(version, name)`, so an `UPDATE` appended to 9 or 10 is dead
+code on every store that already recorded it (D-016/D-029).
+
+**The condition is IDENTITY, and it is the two demonstration accounts rather than the org's
+membership.** No value-provenance condition can name a row whose values the firm's own flows wrote, so
+version 11 keys on `orgs.id` and on `users.org_id` plus the two demonstration emails. A developer's own
+account inside the demo org is a real record, and condemning it to the purge is the same false claim in
+the other direction - so that account is asserted to survive the upgrade as `firm-record`.
+
+**The demonstration identity is named ONCE** (`src/infrastructure/store/demo-tenant.ts`). The seed
+WRITES those rows and the migration RE-STAMPS them, so both need one answer to "which org, and which
+users?"; a second copy would let a repair key on an org id the seed no longer writes and report success
+over rows nobody has. It lives under `src/infrastructure/` because a shipped migration cannot import
+from `scripts/`, which no deployment carries. `DEMO_PASSWORD` stays in the seed - the store layer has no
+use for it.
+
+**Every data-correcting fix on this branch now says WHERE ITS REACH STOPS.** The module docstring of
+`record-origin-migration.ts` states all three limits rather than leaving them to be rediscovered:
+version 10 reaches the three tables the world's projection writes and no others; the demonstration
+tenant and identities take an identity condition because no provenance condition can name them; and
+NEITHER reaches `decision_ledger`, where no version ever can - `decision_ledger_no_update` is a BEFORE
+UPDATE trigger that refuses every update on that table (ADR-0041), so a store that seeded its synthetic
+chain before `recordOrigin` became required reports `decision_ledger 0` over that chain permanently and
+the only remedy is recreating the store. That is the same answer `IRREVERSIBLE_SEED_RESIDUE` gives, and
+it is why the guarantee is "production was never seeded", never "the seed can be undone".
+
+**Proved end to end, on the store the repair is for.** A new case in
+`src/__tests__/integration/fixture-purge.test.ts` seeds the demo firm and its two accounts the way a
+pre-D-218 store holds them, rewinds the ledger to its last pre-11 entry, asserts the sweep reports the
+store CLEAN (the fail-open, stated rather than assumed), runs the upgrade, and asserts `orgs 1`,
+`users 2`, with the demo org's real account and another firm's org row still `firm-record`. PF-290
+records three injections. The same sequence was walked against a real seeded PGlite store through
+`pnpm db:seed` / `pnpm db:migrate` / `pnpm fixture:check --report`: `orgs 0`/`users 0` before the
+version runs, `orgs 1`/`users 2` after.
+
+**ADR-0057 is amended for the budget this costs.** `infrastructure` moves to 8,600 against a
+re-measured 8,489 - 111 lines of correction room - because the reach statement is documentation and
+ADR-0048/0050 forbid paying for a ceiling by deleting it or folding code onto fewer lines. Every other
+layer is re-measured and unmoved, `tooling` at 14,311 against 14,350: 39 lines, which is the condition
+ADR-0018's own commentary names, stated in both the ADR and the fence header rather than left for
+whoever next touches `scripts/**`.
+
+**Banked, not fixed (`fu-detail-link-file-reads`).** The household detail route
+(`src/app/api/households/[key]/route.ts`) resolves each cross-household link by loading the
+counterparty's FULL household file (`readFileSync` plus a SHA-256 verify on a cold cache) plus a
+per-link tenant-scoped CRM query, to obtain one name. It is bounded by link count and warm requests are
+map lookups, so it is first-request cost - but it is the same cost class already banked as
+`fu-directory-summary-only-reads`, and the manifest summaries the directory needs already carry
+`displayName`, so a summary-only counterparty resolution would cover both.
+
+**Banked, not fixed (`fu-residue-reason-assertions`).** Only the KEYS of `IRREVERSIBLE_SEED_RESIDUE`
+are asserted (exact in both directions). The reason strings are asserted for exactly the three refused
+tables; for the ten excused on "no origin column of its own" the claimed mechanism is never checked, so
+a reason can rot into an excuse while the key stays earned. The exclusions are schema-grounded today -
+`credentials.user_id REFERENCES users(id)` and `users.org_id`/`decision_ledger.org_id REFERENCES
+orgs(id)`, mechanisms the store itself enforces - so this is hardening rather than a fail-open. A cheap
+strengthening is to assert from the live catalog that each of those tables genuinely has no
+`record_origin` column.
+
+**Revert path:** revert this changeset. Migration 11 is additive and both its `UPDATE`s are
+`WHERE`-scoped to the demonstration identity, so a store that has run it is not harmed by the code being
+reverted; versions 9 and 10 keep their shipped bytes and `fixtures/world` is untouched. Reverting
+`src/infrastructure/store/demo-tenant.ts` alone would leave the seed and the migration free to disagree
+about which org is the demonstration one, so it reverts with the seed's imports and the upgrade case
+that proves the repair.

@@ -23,6 +23,7 @@ import {
   type Principal,
 } from "@contracts/principal";
 import { appError } from "@contracts/errors";
+import { RECORD_ORIGIN_COLUMN, type RecordOrigin } from "@infra/store/record-origin";
 import { hashPassword, verifyPassword } from "./password";
 
 /** PIIBearing: carries the user's raw email and display name. */
@@ -98,10 +99,18 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+/**
+ * `recordOrigin` is REQUIRED for the same reason `recordDecision` requires it
+ * (D-217): the column's DDL default is a claim about rows this call did not
+ * write, so a provisioning path that stays silent hands the clean-slate sweep a
+ * `firm-record` it never asserted - and a demonstration user with a publicly
+ * committed password then reads as this firm's own. The caller knows which it is
+ * minting; nothing else does.
+ */
 export async function createUser(
   db: SqlDb,
   tenant: TenantContext,
-  input: { email: string; displayName: string; role: Role; password: string },
+  input: { email: string; displayName: string; role: Role; password: string; recordOrigin: RecordOrigin },
 ): Promise<UserRow> {
   assertTenantContext(tenant);
   const id = randomUUID();
@@ -109,8 +118,9 @@ export async function createUser(
   const now = new Date().toISOString();
   await db.transaction(async (tx) => {
     await tx.query(
-      "INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,'active',$6,'verin-crm',$6,'high')",
-      [id, tenant.orgId, email, input.displayName, input.role, now],
+      `INSERT INTO users (id,org_id,email,display_name,role,status,created_at,prov_source,prov_asof,prov_confidence,${RECORD_ORIGIN_COLUMN})`
+      + " VALUES ($1,$2,$3,$4,$5,'active',$6,'verin-crm',$6,'high',$7)",
+      [id, tenant.orgId, email, input.displayName, input.role, now, input.recordOrigin],
     );
     await tx.query("INSERT INTO credentials (user_id, password_hash) VALUES ($1,$2)", [id, await hashPassword(input.password)]);
   });

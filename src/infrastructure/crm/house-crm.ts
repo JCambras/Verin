@@ -68,6 +68,18 @@ export async function createHousehold(
   });
 }
 
+/**
+ * Rename a household - and re-stamp the VALUE's provenance, because a human just
+ * typed it. A seeded demonstration household carries `prov_source = 'fixture'`,
+ * and leaving it there would render the advisor's own words receded under a
+ * "Sample data" label: the mislabel charter #3 exists to prevent, in the
+ * direction nobody watches.
+ *
+ * `record_origin` is deliberately NOT touched. Where a row came from is a
+ * different fact from where its values came from, and editing a demonstration
+ * record does not make it the firm's own - if it did, demo data would survive a
+ * clean-slate purge simply because somebody renamed it.
+ */
 export async function updateHouseholdName(
   db: SqlDb,
   a: WriteActor,
@@ -78,6 +90,7 @@ export async function updateHouseholdName(
   // The before-snapshot is read INSIDE the write transaction (FOR UPDATE row
   // lock), so the audited pre-image can never race a concurrent rename.
   let oldName: string | null = null;
+  const entered: RecordProvenance = { source: "user-input", asOf: nowIso(), confidence: "high" };
   return auditedWrite<Household>({
     db, actor: a, action: "household.update", entityType: "Household", entityId: id,
     buildBefore: () => (oldName == null ? undefined : { name: oldName }),
@@ -90,8 +103,8 @@ export async function updateHouseholdName(
       if (existing.rows.length !== 1) throw { code: "NOT_FOUND", message: "Household not found." };
       oldName = existing.rows[0]!.name;
       const res = await tx.query<HouseholdRow>(
-        "UPDATE households SET name = $3 WHERE id = $1 AND org_id = $2 RETURNING *",
-        [id, a.tenant.orgId, name],
+        "UPDATE households SET name = $3, prov_source = $4, prov_asof = $5, prov_confidence = $6 WHERE id = $1 AND org_id = $2 RETURNING *",
+        [id, a.tenant.orgId, name, entered.source, entered.asOf, entered.confidence],
       );
       if (res.rows.length !== 1) throw { code: "NOT_FOUND", message: "Household not found." };
       return toHousehold(res.rows[0]!);
@@ -108,6 +121,27 @@ export async function listHouseholds(
   assertTenantContext(tenant);
   const res = await db.query<HouseholdRow>("SELECT * FROM households WHERE org_id = $1 ORDER BY created_at DESC", [tenant.orgId]);
   return res.rows.map(toHousehold);
+}
+
+/**
+ * One household by its record id, scoped to the grant's org. The household
+ * surface authorizes through THIS read rather than through the world fixture:
+ * the CRM is the authority on which households a tenant may see, and the
+ * evidence port only ever supplies depth for an id that already passed here.
+ */
+export async function getHouseholdById(
+  db: SqlDb,
+  grant: ActionGrant<"pii.view">,
+  id: MachineRecordId<"household">,
+): Promise<Household | null> {
+  assertActionGrant(grant, "pii.view");
+  const tenant = grant.tenant;
+  assertTenantContext(tenant);
+  const res = await db.query<HouseholdRow>(
+    "SELECT * FROM households WHERE id = $1 AND org_id = $2",
+    [id, tenant.orgId],
+  );
+  return res.rows.length === 1 ? toHousehold(res.rows[0]!) : null;
 }
 
 export async function createContact(

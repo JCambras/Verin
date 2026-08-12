@@ -87,10 +87,10 @@ const TRUSTED_FACTORY_CALLS = [
     allowed: [
       { file: "scripts/audit-chain-verify.ts", owner: "main" },
       { file: "scripts/backup-restore-drill.ts", owner: "main" },
-      { file: "scripts/db-seed.ts", owner: "seed" },
       { file: "scripts/ledger-rebuild.ts", owner: "main" },
       { file: "scripts/load-smoke.ts", owner: "main" },
       { file: "scripts/seed-decision-ledger.ts", owner: "seedDecisionLedger" },
+      { file: "scripts/seed-demo-store.ts", owner: "seedDemoStore" },
       { file: "src/contracts/principal.ts", owner: "systemWriteActor" },
       { file: "src/infrastructure/audit/audit-store.ts", owner: "discardedAuditEventWork" },
     ],
@@ -100,7 +100,7 @@ const TRUSTED_FACTORY_CALLS = [
     declaration: "src/contracts/principal.ts",
     allowed: [
       { file: "scripts/backup-restore-drill.ts", owner: "main" },
-      { file: "scripts/db-seed.ts", owner: "seed" },
+      { file: "scripts/seed-demo-store.ts", owner: "seedDemoStore" },
       { file: "src/app/login/actions.ts", owner: "loginAction" },
       { file: "src/infrastructure/wire.ts", owner: "resumeAccountOpeningByToken" },
     ],

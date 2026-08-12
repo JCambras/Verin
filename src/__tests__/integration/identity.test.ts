@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createUser, findUserByEmail, authenticate, createSession } from "@infra/identity/identity-store";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 
 const TEST_SYSTEM_ACTOR = registerTestSystemActor("test");
 
@@ -16,7 +17,7 @@ describe("identity store email canonicalization (integration)", () => {
   });
 
   it("a user registered with a mixed-case email signs in with any casing (stored and matched canonically)", async () => {
-    const created = await createUser(db, TENANT, { email: "Alex@Firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery" });
+    const created = await createUser(db, TENANT, { email: "Alex@Firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery", recordOrigin: FIRM_RECORD_ORIGIN });
     expect(created.email).toBe("alex@firm.test");
 
     const found = await findUserByEmail(db, "ALEX@FIRM.TEST");
@@ -27,18 +28,18 @@ describe("identity store email canonicalization (integration)", () => {
   });
 
   it("a case-variant of an existing mailbox cannot register a second identity in the org", async () => {
-    await createUser(db, TENANT, { email: "alex@firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery" });
+    await createUser(db, TENANT, { email: "alex@firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery", recordOrigin: FIRM_RECORD_ORIGIN });
     await expect(
-      createUser(db, TENANT, { email: "ALEX@Firm.test", displayName: "Case Variant", role: "advisor", password: "another-password" }),
+      createUser(db, TENANT, { email: "ALEX@Firm.test", displayName: "Case Variant", role: "advisor", password: "another-password", recordOrigin: FIRM_RECORD_ORIGIN }),
     ).rejects.toThrow();
   });
 
   it("session minting verifies the authenticated user belongs to the sealed tenant", async () => {
     await db.query("INSERT INTO orgs (id,name,created_at,prov_source,prov_asof,prov_confidence) VALUES ('org-2','Other',$1,'verin-crm',$1,'high')", [new Date().toISOString()]);
-    await createUser(db, TENANT, { email: "alex@firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery" });
+    await createUser(db, TENANT, { email: "alex@firm.test", displayName: "Alex Rivera", role: "advisor", password: "correct-horse-battery", recordOrigin: FIRM_RECORD_ORIGIN });
     const user = await authenticate(db, "alex@firm.test", "correct-horse-battery");
     expect(user).not.toBeNull();
-    await createUser(db, TENANT, { email: "other@firm.test", displayName: "Other User", role: "advisor", password: "another-correct-password" });
+    await createUser(db, TENANT, { email: "other@firm.test", displayName: "Other User", role: "advisor", password: "another-correct-password", recordOrigin: FIRM_RECORD_ORIGIN });
     const other = await authenticate(db, "other@firm.test", "another-correct-password");
     expect(other).not.toBeNull();
     await expect(

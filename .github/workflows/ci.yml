@@ -244,6 +244,32 @@ jobs:
       - name: corpus measurement report (split by provenance; refuses to blend)
         run: pnpm exec tsx scripts/corpus-report.ts
 
+  world:
+    name: world (populated-world regeneration + clean-slate guarantee)
+    runs-on: ubuntu-latest
+    # Everything else (TZ, APP_ENV, secrets, driver) comes from the workflow env
+    # above; only the store path is this job's own, so two jobs never share one.
+    env:
+      VERIN_DATA_DIR: .verin-data-ci-world
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: world validation (regenerate + byte-compare; provenance, reconciliation, awkward cases)
+        run: pnpm exec tsx scripts/world-validate.ts
+      - name: clean-slate guarantee (a fresh instance carries zero demonstration-origin rows)
+        run: pnpm exec tsx scripts/db-migrate.ts && pnpm exec tsx scripts/fixture-purge-check.ts
+      # The floor is the world's household count, well under the rows the seed
+      # actually writes (households + people + open items): a seed that quietly
+      # loaded nothing, or a sweep that stopped seeing the tables it lands in,
+      # fails here instead of printing zeroes and exiting 0.
+      - name: the seeded world is visible to the same check (a check that finds nothing proves nothing)
+        run: pnpm exec tsx scripts/db-seed.ts && pnpm exec tsx scripts/fixture-purge-check.ts --report --expect-rows=100
+
   load-smoke:
     name: load-smoke (p95 regression gate, charter #11)
     runs-on: ubuntu-latest

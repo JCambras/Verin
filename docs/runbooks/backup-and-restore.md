@@ -43,7 +43,9 @@ the procedure the adapter must satisfy, not as commands to run against a product
 1. **Backup:** managed Postgres automated backups + PITR (RPO ≤ 24h). Verify the latest backup timestamp.
 2. **Restore:** provision a fresh instance from the target snapshot/PITR point (RTO ≤ 4h).
 3. **Verify:** run `pnpm audit:chain` against the restored store; confirm both per-org chains verify and row
-   counts match expectations. Confirm `/ready` returns ready.
+   counts match expectations. Confirm `/ready` returns ready. Also run `pnpm fixture:check` against the
+   restored store: it fails on the first demonstration-origin row, so a restore that pulled in a seeded
+   snapshot is caught here rather than discovered in the book (ADR-0057, `docs/world.md`).
 4. **Repair derived state (only if needed):** if the restore predates a decision-projection write, run
    `pnpm ledger:rebuild <org-id>` to preview the replay for the affected tenant, then
    `pnpm ledger:rebuild <org-id> --apply` to commit it. The repair is per-tenant and opt-in: there is no

@@ -32,6 +32,9 @@
     "corpus:generate": "tsx scripts/corpus-generate.ts",
     "corpus:validate": "tsx scripts/corpus-validate.ts",
     "corpus:report": "tsx scripts/corpus-report.ts",
+    "world:generate": "tsx scripts/world-generate.ts",
+    "world:validate": "tsx scripts/world-validate.ts",
+    "fixture:check": "tsx scripts/fixture-purge-check.ts",
     "sbom": "cdxgen -t pnpm --no-install-deps -o sbom.json ."
   },
   "dependencies": {

@@ -6,6 +6,7 @@ import { createUser } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
 import { log } from "@infra/observability/logger";
 import { readObservabilityId } from "@domain/observability/safe-values";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 
 const cookieStore = { set: vi.fn() };
 vi.mock("next/headers", () => ({ cookies: () => Promise.resolve(cookieStore) }));
@@ -46,6 +47,7 @@ describe("PATCH /api/crm/households record identity", () => {
       displayName: "Household Operator",
       role: "ops",
       password: "correct-horse-battery",
+      recordOrigin: FIRM_RECORD_ORIGIN,
     });
     await db.query(
       "INSERT INTO sessions (id,user_id,org_id,role,created_at,expires_at,revoked_at) VALUES ('s-household-route',$1,$2,'ops',$3,$4,NULL)",

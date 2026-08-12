@@ -56,6 +56,7 @@ Verin is built by a solo founder with AI agents. The compensating control for "n
 | C1.x | Confidential data protected | PII boundary, sealed tenant scoping, tenant-qualified foreign keys | PII + `org-id-required` + `tenant-context-required`; tenant-isolation and migration-preflight integration tests | ADR-0004, ADR-0006 | CI |
 | P1-P8 | Privacy (notice, retention, disposal) | retention hold, DSAR contract | retention design | ADR-0019 | retention schedule (design contract) |
 | P1-P8 | De-identification before real defect history enters fixtures | closed-vocabulary intake schemas + required `scrubAttestation` (reviewer ≠ scrubber) | `corpus-intake-attestation`, `corpus-provenance-split`; `corpus` CI gate | ADR-0052, `docs/corpus-scrub-procedure.md` | partition deferred and EMPTY; the contract runs over it every CI run |
+| P1-P8 | Demonstration data never reaches a production instance | `record_origin` named at every demonstration insert (never a DDL default), `assertSeedableEnvironment` refusing `APP_ENV=production`, and the fixture evidence adapter refusing to serve there | `clean-slate` fence + `pnpm fixture:check`; `world` CI gate | ADR-0057, `docs/world.md` | `fixture:check` on a fresh store, and again with a row floor after `pnpm db:seed`; the seed is irreversible, so the guarantee is "never seeded", not "swept clean" |
 
 ## Explicit gaps (owner + date)
 

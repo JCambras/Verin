@@ -4,6 +4,7 @@ import { registerTestSystemActor, systemTenant } from "@contracts/tenant";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { createUser } from "@infra/identity/identity-store";
 import { signSessionCookie, SESSION_COOKIE } from "@infra/identity/session";
+import { FIRM_RECORD_ORIGIN } from "@infra/store/record-origin";
 
 /**
  * THE AUDIT ROUTE'S TWO GRANTS, ACROSS A SESSION ROTATION (D-073 correction).
@@ -45,6 +46,7 @@ async function seed(): Promise<void> {
     displayName: "O Ops",
     role: "ops",
     password: "correct-horse-battery",
+    recordOrigin: FIRM_RECORD_ORIGIN,
   });
   userId = user.id;
 }

@@ -451,11 +451,14 @@ Per charter #5, this direction doc distinguishes plainly:
   `ui`, the register grammar `table` + `table-order`, and the interaction leaves `toast`, `dialog`,
   `tooltip`, `tabs`, `error-boundary` - every product surface composes these, and the ones without a
   caller yet are named deferrals in `PORT-LEDGER.md`); provenance on all 9 entities; one populated org
-  with two seeded users.
-- **Lands in Wave 1 (the demo this doc anchors):** the populated, labeled world; the CCO persona +
-  persona-select login; meeting-prep and compliance-scan flows (read models); the presentation ports the
-  demo renders (tiles, chrome, NotificationCenter, one tour journey, presenter tooling); the `dataClass`
-  clean-slate marker.
+  with two seeded users; and, since ADR-0057, **the populated, labeled world** - a hundred generated named
+  households with their people, accounts, holdings, beneficiaries, instructions and a computed health
+  score, browsable at `/app/households`, served as evidence behind a port rather than modeled into the
+  house CRM. The clean-slate marker shipped as `record_origin` beside `prov_source` (the origin of a ROW
+  and the provenance of a VALUE are two facts), counted by `pnpm fixture:check` - see `docs/world.md`.
+- **Lands in Wave 1 (the demo this doc anchors):** the CCO persona + persona-select login; meeting-prep
+  and compliance-scan flows (read models); the presentation ports the demo renders (tiles, chrome,
+  NotificationCenter, one tour journey, presenter tooling).
 - **Directional (built later, under the same discipline):** the full conversational assistant; the operations
   home and money-movement (Wave 2, human-gate + step-up); the examiner-export path and onboarding depth
   (Wave 3); Salesforce as a second adapter; scheduled/event-driven flows.

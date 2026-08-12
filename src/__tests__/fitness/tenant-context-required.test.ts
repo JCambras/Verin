@@ -77,6 +77,18 @@ const PORT_ESCAPES = new Set([
   // (the policy-ast fence bans IO/clock/randomness across the module). A
   // TenantContext parameter here would be ambient authority a pure function
   // cannot honor - the same reasoning as foldDecisionProjection above.
+  // The household health computation (ADR-0057) is PURE ARITHMETIC over one
+  // already-authorized household: its caller reached the world through the
+  // `pii.view`-governed evidence port, so the tenant scope was decided before
+  // this function saw anything. A TenantContext parameter here would be ambient
+  // authority a pure function cannot honor - the same reasoning as
+  // foldDecisionProjection and the policy interpreter below.
+  "src/domain/world/health.ts :: computeHouseholdHealth.<call>",
+  // `healthBand` is that computation's own band cut-offs, exported so the
+  // surface grades the six factor cards on the SAME scale it grades the
+  // composite with rather than keeping a second copy of the thresholds. It
+  // takes a number and returns a word: there is nothing here to scope.
+  "src/domain/world/health.ts :: healthBand.<call>",
   "src/domain/policy/conflict.ts :: predicateDnf.<call>",
   "src/domain/policy/conflict.ts :: proveDisjoint.<call>",
   "src/domain/policy/evaluate.ts :: evaluatePolicy.<call>",

@@ -1,7 +1,8 @@
 # ADR-0012: The presentation tier is a first-class product surface with its own budget; demo world deferred
 
 **Status:** Accepted (amended by ADR-0056: the "port on first use only" bullet carries ONE narrow,
-expiring named-deferral exception for the shared control foundation)
+expiring named-deferral exception for the shared control foundation; and by ADR-0057, which un-defers
+the populated demo world as a GENERATED one, leaving the engines and personas deferred)
 **Date:** 2026-07-18
 **Deciders:** Founding architect; captain (D-005)
 **Relates to:** Charter non-negotiable #10; deliverable D
@@ -40,6 +41,12 @@ growable by an ADR bump — so richness is planned, not sprawling, while platfor
   milestone** — the same milestone that un-defers the engines above. Until then, only minimal, clearly-labeled
   functional seed exists (`source=verin-crm`, `asOf`, visible provenance) for the skeleton, its specs, the
   console, and the load gate. All deferred items are enumerated with `file:line` + trigger in `PORT-LEDGER.md`.
+  **Un-deferred by ADR-0057 (2026-08-11):** this trigger has fired for the world alone. It is not a port
+  of Meridian's world but a generated one - a hundred named households derived from a hand-owned spec and
+  a seed, labeled `source=fixture` end to end, served as EVIDENCE behind `HouseholdWorldSource` rather
+  than modeled into the house CRM, health COMPUTED rather than stored, and provably absent from
+  production (`docs/world.md`). The persona system and the demo-choreography engines above stay deferred
+  to the demo milestone.
 
 ## Alternatives Rejected
 
@@ -62,5 +69,6 @@ Budget fence (ADR-0018) gives presentation its own envelope. WhyBubble ships liv
 
 ## Revisit When
 
-**The first demo milestone** (un-defers: the populated world, the tour/narration/recorder engines, and the
-presenter tooling). Or the presentation budget needs raising (an explicit ADR bump — never a silent edit).
+**The first demo milestone** (un-defers: the tour/narration/recorder engines, the persona system, and the
+presenter tooling - the populated world left this list with ADR-0057). Or the presentation budget needs
+raising (an explicit ADR bump - never a silent edit).

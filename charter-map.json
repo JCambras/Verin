@@ -107,6 +107,14 @@
           "type": "ci-gate",
           "ref": "provenance-trace",
           "command": "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/world-provenance.test.ts"
+        },
+        {
+          "type": "adr",
+          "ref": "docs/adr/0057-populated-world.md"
         }
       ]
     },
@@ -119,6 +127,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/detection-not-verification.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/world-determinism.test.ts"
         }
       ]
     },
@@ -192,6 +204,10 @@
         {
           "type": "fitness",
           "ref": "src/__tests__/fitness/ledger-pii-vocabulary.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/clean-slate.test.ts"
         }
       ]
     },

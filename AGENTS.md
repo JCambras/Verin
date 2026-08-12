@@ -69,6 +69,96 @@ generic subjects, exact kind/subject/source evidence, exact-integer aggregate se
 actions bound to the request and selected account, and threshold treatment selected by signed comparator
 policy. Regeneration invalidates signoff, and agents never sign.
 
+The POPULATED WORLD (front-end parity prompt 4, ADR-0057) is a THIRD generated artifact, disjoint from
+both: [`docs/world.md`](./docs/world.md) is normative, hand-owned input is
+`fixtures/world/spec/{roster,featured}.json`, and `fixtures/world/{manifest.json,households/}` are
+GENERATED - never hand-edit them; `pnpm world:validate` regenerates and byte-compares (CI job `world`).
+It reuses the corpus's derivation primitives (`scripts/corpus/{seed,clock}.ts`) rather than a second
+mechanism; featured households are addressed by KEY, derived ones by SLOT, and one materializer serves
+both so the ninety are as deep as the ten. Household DEPTH is EVIDENCE behind a port
+(`HouseholdWorldSource`, `src/domain/world/`) whose Wave 0 fixture adapter refuses production and is
+REPLACED, not relabeled, when a real EvidenceSource lands (ADR-0024/0027); the house CRM is projected
+only what it owns (households, people, open items) at `prov_source='fixture'` and
+`record_origin='world-fixture'` - never financial accounts, which the account-opening flow mints. The
+RECORD STORE owns IDENTITY (the surfaces render `households.name`, and a CRM household no evidence
+describes is LISTED with an honest no-evidence state and a real on-ramp); the port supplies DEPTH
+(D-201). HEALTH IS COMPUTED, NEVER STORED
+(`src/domain/world/health.ts`, six weighted factors); the generator emitting a health field fails the
+`world-provenance` fence. Vocabularies live in `src/domain/world/household-world.ts` and the generator
+IMPORTS them, so a fixture cannot carry a value the product cannot render;
+the TWO beneficiary sets live there too and NEITHER answers the other's question -
+`BENEFICIARY_SCORED_REGISTRATIONS` (does a missing designation count against health?) is read by the
+health factor AND the deficiency note, so the two cannot disagree; `BENEFICIARY_CAPABLE_REGISTRATIONS`
+(can this registration carry one at all?) is read by the empty panel, because an individual or joint
+account takes a transfer-on-death designation and telling a reader it cannot is the same false claim
+as calling the absence a gap (D-195, D-197). Holding confidence is measured against the world's `asOf`,
+never against the observation itself, so the receding treatment reads a real signal (D-197).
+Clean slate is COUNTED, and what it counts is the ROW's ORIGIN, never its value provenance:
+`prov_source` moves when a human edits a value (a rename re-stamps it `user-input`, so an advisor's
+own words render un-watermarked) while `record_origin` never moves, so a seeded household somebody
+renamed is still purged - two facts, two columns, neither answering the other's question (D-201).
+EVERY path that writes a demonstration row NAMES the origin column at its insert - `world-seed.ts`,
+`ledger-store.ts` through the REQUIRED `recordOrigin` on `recordDecision`/`appendDecisionEvents`, and
+the seed's own tenant scaffolding (`seed-demo-store.ts`'s org insert, and `createUser`'s REQUIRED
+`recordOrigin`): a default is a claim about rows you did not write, and an unnamed one made the sweep
+report `decision_ledger 0` over the chain `pnpm db:seed` had just written there and `orgs 0`/`users 0`
+over the demo firm and its committed-password accounts (D-217, D-218). `demo-seed` is that
+scaffolding's and that chain's origin - not the world's, and classified in `DEMONSTRATION_ORIGINS`
+rather than falling into the clean half. Marking a row makes it VISIBLE, not removable: the decision
+and audit chains are append-only by trigger and the tenant and identities they are anchored to cannot
+be deleted while they exist, so the seed is IRREVERSIBLE and the guarantee is that production was never
+seeded (`assertSeedableEnvironment` refuses `APP_ENV=production` before a store is opened) AND that any
+demonstration row is COUNTABLE if one is there. That guarantee end to end - the COMPLETE
+`seedDemoStore`, purged through the LIVE catalog, measured over EVERY base table's row count before
+and after rather than over the tables carrying the marker, with each surviving table NAMED and its
+reason given (`IRREVERSIBLE_SEED_RESIDUE`, exact in both directions) - is the FIRST case in
+`src/__tests__/integration/fixture-purge.test.ts`; the rest are optimisations of it, never
+substitutes (D-217, D-218).
+`pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`),
+counts `record_origin` in them, and fails on the first demonstration-origin row; a sweep over zero
+tables is a problem, never a pass, and so is a provenance-bearing table the DDL never gives an origin
+column (checked from the DDL and again from the store's catalog). That
+derivation is read THREE ways that share no code - a structural parse of each table's balanced body
+and its top-level column items, a text scan for every `prov_source` DECLARATION (the name followed by
+one of a CLOSED set of column TYPES - never a list of keywords that may follow a reference, which is
+open, so a `CHECK`, an index, an `ALTER ... SET`, a `DROP COLUMN ... CASCADE`, a `NULLS LAST` or a
+view's `GROUP BY` is a use and not a false alarm; an unknown TYPE fails the other way and says so),
+and the STORE's own column catalog (base TABLES in `ANY(current_schemas(false))`, the same resolution
+the sweep's unqualified `SELECT` uses, so a view or another app's schema is not a false alarm either) -
+because two readings that resolve a declaration the same way agree by
+construction and cross-check nothing; any disagreement is a sweep problem, so a table one reading
+misses fails rather than reporting clean unread, and a false alarm on this check is as corrosive as a
+false pass (D-206, D-207, D-208, D-209, D-210). The
+`--report` path exits 0 for a developer but takes `--expect-rows=<n>` where a caller needs an
+assertion (CI uses it after the seed). `seedWorldIntoCrm` counts rows WRITTEN (`RETURNING id`), never
+rows offered, and REFUSES (`CONFLICT`, naming the collision) on the CONDITION - a conflicting
+household held by ANOTHER org - never on the symptom it shares with a safe case: world ids are
+seed-derived and identical across orgs, so only the first org to load a world receives it and a second
+firm's silent empty directory is the worst available outcome (`fu-world-org-scoped-ids`), while the
+SAME firm re-offered a regenerated world quietly writes whatever is new (D-198). Every roster
+instrument is held by some account - the sleeve derives WHICH instruments, not only how many, and
+`validateWorld` fails on a roster entry the world can never render. THREE account rules hold for the
+hand-authored ten and the derived ninety alike (`accountRuleProblems`): an account never names its own
+owner as a beneficiary, never holds one instrument twice, and is never titled to someone the household
+records only as an authorized signer (the enforced form of "an entity household's people hold no
+personal accounts inside it" - a generator filter is not a check), and a household's own prose names
+no PERSON from a household it links to (`crossHouseholdProseProblems`), because a firm that cannot see
+that household may not be told who is in it. A household's `evidence` block
+carries each class's PROVENANCE rather than a bare instant, measured once against the world's `asOf`,
+so no surface can mint a second confidence for the same observation. An unauthorized cross-household
+counterparty is withheld WHOLE - an opaque page-local ordinal numbered across the WITHHELD
+counterparties alone (a number that counted named ones too opened a page at "Counterparty 2"), never
+the world key, which is `<surname>-<given name>` - and a figure folded over NO records is labeled
+synthetic rather than taking the `computed`/`high`/not-a-demonstration standing an empty derivation
+reports (`fu-empty-fold-provenance`). Every figure summarizing MORE than one record folds over all of
+them (`foldAccountBalances`, the four summary cards): a total that publishes one contributor's record
+provenance claims a cleanliness the sum does not have, so both surfaces label one sum one way. No
+metric-class figure reaches a screen outside `<Metric>` - the directory's health badge carries the
+BAND WORD and the panel's factor cards a band, a bar and a sentence, because a bare
+demonstration-derived score carries no watermark (D-200). The directory's world-derived rows AND each
+household's folded origin are built once per worldDigest; only the fold over the caller's own
+authorized book is per request.
+
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
 branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces under
@@ -154,7 +244,10 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
 `pnpm test` (unit+integration+fitness, **non-UTC clock**) · `pnpm test:fitness` · `pnpm test:e2e`
 (Playwright + axe) · `pnpm knip` · `pnpm v3:invariants` (three-state v3 invariant report) ·
 `pnpm golden:validate` (16-case golden truth set) ·
-`pnpm corpus:{generate,validate,report}` (replay corpus; `validate` is the blocking `corpus` gate). All gates
+`pnpm corpus:{generate,validate,report}` (replay corpus; `validate` is the blocking `corpus` gate) ·
+`pnpm world:{generate,validate}` (populated world; `validate` is the blocking `world` gate) ·
+`pnpm fixture:check` (clean slate; the same `world` job runs it on a fresh store and again with
+`--report --expect-rows` after `pnpm db:seed`). All gates
 also run in `.github/workflows/ci.yml` (blocking, never advisory). Node 22 in CI (`engines` floor ≥20);
 the house-CRM store is PGlite (real Postgres) in dev/CI behind the store interface (`SqlDb` in
 `src/infrastructure/store/db.ts`), managed Postgres in prod.
@@ -182,6 +275,18 @@ reject duplicate exact results.
   `timestamptz`, but the app boundary stays ISO strings BOTH ways: writers emit `toISOString()`; a read
   parser in `db.ts` (OID 1184 → `new Date(v).toISOString()`) normalizes reads to canonical UTC ISO - do
   NOT expect `Date` objects, and the byte-exact round-trip is what keeps the audit hash chain verifiable.
+  A new column's DEFAULT cannot answer for rows that already exist: a marker column a GUARANTEE reads
+  (`record_origin`, migration 9) BACKFILLS the rows already in the store from whatever marker they were
+  written with, or the guarantee fails open on every upgraded store while CI's virgin data directory
+  walks only the bootstrap path (D-202). Each backfill is its OWN version (10,
+  `record-origin-backfill`, for the world's rows; 11, `demo-tenant-record-origin`, for the demonstration
+  org and its two demo users, which no provenance condition can name and which re-seeding skips), never
+  an edit to a version that shipped: the ledger matches `(version, name)`, so appending to a shipped
+  version reaches every store EXCEPT the upgraded ones the repair exists for (D-217, D-219). Those two
+  and their limits - including `decision_ledger`, which the append-only trigger puts beyond ANY
+  backfill - are stated in `store/record-origin-migration.ts`; a data-correcting version says where its
+  reach stops. The demonstration identity both the seed and migration 11 key on is named once in
+  `store/demo-tenant.ts`.
   Adding a table? Classify it in the `org-id-required` fence (it derives from this DDL).
 - **Decision history is NOT `audit_log`.** The prompt-7 source of truth is the sibling
   `decision_ledger` plus immutable replay tables (`src/infrastructure/ledger/`, ADR-0041).

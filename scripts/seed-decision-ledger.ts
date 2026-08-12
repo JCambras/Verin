@@ -18,6 +18,7 @@ import {
   decisionHashPreimage,
 } from "../src/contracts/decision-core/serialization";
 import { recordDecision } from "../src/infrastructure/ledger/ledger-store";
+import { DEMO_SEED_ORIGIN } from "../src/infrastructure/store/record-origin";
 import { retainedTextReference } from "../src/infrastructure/ledger/ledger-pii";
 import { unwrap } from "../src/contracts/result";
 import { systemTenant } from "../src/contracts/tenant";
@@ -152,6 +153,11 @@ export async function seedDecisionLedger(
       asOf: inputBundle.asOf,
       confidence: "high",
     },
+    // The two facts, stated apart at the one insert that writes them. The values
+    // are fixture values; the ROWS were put here by the demonstration seed, and
+    // saying so is what lets `pnpm fixture:check` count this chain instead of
+    // taking the column's default and reporting it as the firm's own work.
+    recordOrigin: DEMO_SEED_ORIGIN,
   });
   if (!result.ok) {
     throw new Error(

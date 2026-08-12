@@ -125,6 +125,10 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["3", "fitness", "src/__tests__/fitness/metric-provenance.test.ts", "", "enforced"],
   ["3", "fitness", "src/__tests__/fitness/derived-provenance.test.ts", "", "enforced"],
   ["3", "adr", "docs/adr/0022-derived-compliance-artifacts-demonstration.md", "", "enforced"],
+  // ADR-0057: the populated world is the largest body of synthetic data this
+  // repository holds, so charter #3 is fenced over it directly.
+  ["3", "fitness", "src/__tests__/fitness/world-provenance.test.ts", "", "enforced"],
+  ["3", "adr", "docs/adr/0057-populated-world.md", "", "enforced"],
   ["3", "fitness", "src/__tests__/fitness/corpus-provenance-split.test.ts", "", "enforced"],
   ["3", "fitness", "src/__tests__/fitness/corpus-provenance-inventory.test.ts", "", "enforced"],
   ["3", "fitness", "src/__tests__/fitness/corpus-synthetic-case-semantics.test.ts", "", "enforced"],
@@ -140,6 +144,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["3", "fitness", "src/__tests__/fitness/corpus-vocabulary-binding.test.ts", "", "enforced"],
   ["3", "ci-gate", "provenance-trace", "pnpm exec vitest run src/__tests__/fitness/provenance-required.test.ts src/__tests__/fitness/no-unlabeled-synthetic.test.ts src/__tests__/fitness/metric-provenance.test.ts src/__tests__/fitness/derived-provenance.test.ts src/__tests__/fitness/no-pii-in-audit-store.test.ts", "enforced"],
   ["4", "fitness", "src/__tests__/fitness/detection-not-verification.test.ts", "", "enforced"],
+  ["4", "fitness", "src/__tests__/fitness/world-determinism.test.ts", "", "enforced"],
   ["5", "ci-gate", "knip", "pnpm exec knip", "enforced"],
   ["5", "config", "knip.json", "", "enforced"],
   ["5", "fitness", "src/__tests__/fitness/ledger-reachability.test.ts", "", "enforced"],
@@ -152,6 +157,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["7", "fitness", "src/__tests__/fitness/no-client-role-header.test.ts", "", "enforced"],
   ["7", "fitness", "src/__tests__/fitness/tenant-context-required.test.ts", "", "enforced"],
   ["7", "fitness", "src/__tests__/fitness/ledger-pii-vocabulary.test.ts", "", "enforced"],
+  ["7", "fitness", "src/__tests__/fitness/clean-slate.test.ts", "", "enforced"],
   ["8", "ci-gate", "e2e", "pnpm exec playwright test", "enforced"],
   ["8", "config", "playwright.config.ts", "", "enforced"],
   ["9", "ci-gate", "e2e", "pnpm exec playwright test", "enforced"],

@@ -119,8 +119,8 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-235, then the titled ADR-0052 corpus
-rounds that follow them; every PF id names exactly one proof — the prompt-6 and prompt-11 entries were
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-290, with the titled ADR-0052 corpus
+and ADR-0053 policy rounds interleaved among them; every PF id names exactly one proof — the prompt-6 and prompt-11 entries were
 renumbered on rebase, see the numbering notes in the log; the prompt-7 entries carry a separate
 `(D-1xx)` citation drift the log records at its own tail).
 
@@ -171,6 +171,9 @@ renumbered on rebase, see the numbering notes in the log; the prompt-7 entries c
 | `corpus-world-sharing` | the one shared `validateCorpus()` world is rebuilt before a watch rerun collects and refuses an unpinned or UTC clock, so no fence asserts against a stale snapshot (#4/#8, D-175/D-176) | proof-log section + companions |
 | `presentation-primitives` (AST over `src/app/**`, incl. interpolated templates and exported class-string constants; EXACT-PATH primitive escapes with a staleness guard) | product surfaces have one visual path - no native feature button, no restated button/badge/pill recipe, no visual override on a canonical control (#1/#9/#10, ADR-0012, D-192) | PF-247 + companions |
 | `register-sortability` (AST: every `src/app` file declaring a sortable column is reviewed against D-194 with its order-carrying column, and a sortable register declares its own landmark name) | a register that carries meaning in row POSITION cannot acquire sortable headers unreviewed, and a caption asserting an order can never double as the landmark's name (#1/#4, D-194/D-196/D-201) | PF-248 through PF-252 + companions |
+| `world-determinism` (byte identity against the committed tree, seed sensitivity, order independence, the corpus AST ban on clocks/randomness/locale/env pointed at `scripts/world/`, timezone independence) | the populated world's committed bytes are provably the generator's and reproduce forever from spec + seed - a hand edit is drift, not data (#1/#4, ADR-0057) | PF-253 + companions |
+| `world-provenance` (every world record labeled `source: "fixture"` and refused by `canFeedComplianceDecision`; no generated health field; holdings reconcile; the account, instrument-reach and cross-household-prose rules `validateWorld` holds BOTH authors to) | the largest body of synthetic data in the repo is labeled mechanically, and its health figure is computed rather than typed (#3/#4, ADR-0022, ADR-0057) | PF-254, PF-263, PF-269, PF-274 + companions |
+| `clean-slate` (the swept table list DERIVED from the shipped DDL and read three ways that share no code, plus the store's own catalog; fail-closed on an empty sweep or a provenance-bearing table with no origin column) | a production instance carries zero demonstration-origin rows, counted on the ROW's origin rather than its value provenance, and a check that verifies nothing never reports clean (#3/#4/#7, ADR-0057, D-201/D-217/D-218/D-219) | PF-255 through PF-257, PF-260/261, PF-266 through PF-268, PF-273, PF-281, PF-284, PF-288 through PF-290 |
 
 **Current prompt-11 line-budget PR evidence:** contracts 6,064/6,110 (46
 headroom), domain 1,581/1,650 (69), infrastructure 7,786/7,840 (54), and
@@ -299,7 +302,8 @@ date/trigger), never omitted:
 
 Full journal: [`DECISIONS.md`](./DECISIONS.md). Captain decisions (D-001..D-005): PostgreSQL behind the
 store port; build real auth behind an identity port; container hosting; keep "Verin."; port the feel but
-DEFER the populated demo world (un-defer trigger = first demo milestone). Reversible decisions (D-006..D-013)
+DEFER the populated demo world (un-defer trigger = first demo milestone; that trigger has since fired for
+the world alone - ADR-0057). Reversible decisions (D-006..D-013)
 logged with rationale + revert path. Review-round captain decisions (D-014..D-021): audit/OTel actor =
 opaque userId; failed-login auditing now with rate limiting deferred; schema versioning, persistent-store
 chain verification, nightly load scale-up, action/image pinning, and CSP recorded as triggered deferrals;
@@ -323,5 +327,7 @@ read-back gate (production DB → PostgreSQL; auth → build behind identity por
 - **Separation-of-duties for a solo founder** — is the compensating control (protected main + no-mistakes
   independent gate + persona fresh-context rule + Part-2 falsification) sufficient, or is a human reviewer
   required in the loop? (controls.md CC8.1 gap.)
-- **Demo milestone scope** — when to un-defer the populated world + tour/narration/recorder engines
+- **Demo milestone scope** - the populated world half is ANSWERED: ADR-0057 un-defers it (a hundred
+  generated, labeled households behind an evidence port, with a counted clean-slate guarantee). What
+  remains open is when to un-defer the tour/narration/recorder engines and the presenter tooling
   (PORT-LEDGER + ADR-0012).

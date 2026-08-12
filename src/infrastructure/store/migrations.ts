@@ -7,6 +7,13 @@
  * that already recorded that version will never re-run it, so the edit reaches new
  * stores only and the two silently diverge.
  *
+ * A DEFAULT ON A NEW COLUMN IS A CLAIM ABOUT HISTORY. It answers for every row
+ * already in the store, not only the ones written afterwards, so either that claim
+ * is provably true for all of them or the migration BACKFILLS them by the condition
+ * that actually identifies them. A column some guarantee reads makes this
+ * load-bearing: version 9 is the worked example, where the default alone would have
+ * told a fully seeded store it held no demonstration data.
+ *
  * TEMPORAL COLUMNS ARE `timestamptz`, BUT THE APPLICATION BOUNDARY STAYS ISO STRINGS
  * IN BOTH DIRECTIONS. Writers emit `toISOString()`; a read parser in `db.ts`
  * (OID 1184, `new Date(v).toISOString()`) normalizes every read back to canonical UTC
@@ -25,6 +32,7 @@ import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
+import { DEMO_TENANT_ORIGIN_BACKFILL_SQL, RECORD_ORIGIN_BACKFILL_SQL, RECORD_ORIGIN_SQL } from "./record-origin-migration";
 import {
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_LEDGER_HISTORY_INDEXES_SQL,
@@ -359,6 +367,9 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 6, name: "decision-ledger-history-indexes", sql: DECISION_LEDGER_HISTORY_INDEXES_SQL },
   { version: 7, name: "decision-reservation-drop-created-sequence", sql: DECISION_LEDGER_RESERVATION_SEQUENCE_DROP_SQL },
   { version: 8, name: "decision-drop-projection-checkpoint", sql: DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL },
+  { version: 9, name: "record-origin", sql: RECORD_ORIGIN_SQL },
+  { version: 10, name: "record-origin-backfill", sql: RECORD_ORIGIN_BACKFILL_SQL },
+  { version: 11, name: "demo-tenant-record-origin", sql: DEMO_TENANT_ORIGIN_BACKFILL_SQL },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free
