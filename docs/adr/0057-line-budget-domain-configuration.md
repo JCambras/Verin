@@ -310,6 +310,43 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 `infrastructure` runs 15 lines from its ceiling, the narrowest this layer has held. That is recorded, not
 relieved: a ceiling raised without a measurement beside it is a ceiling nobody is holding.
 
+## Amendment (2026-08-12, review round 12): `contracts` and `infrastructure` raised for the client instruction
+
+The account-opening endpoint answers two different `CONFLICT`s whose remedies are OPPOSITE: a spent
+request identity (an edited resubmit) clears the moment the client mints a new one, while an execution
+bound to a superseded configuration version can never be cleared by resubmitting. A client that infers
+its next move from the error CODE must get one of the two wrong, and the two mistakes are not symmetric -
+minting a fresh identity is minting a fresh EXECUTION, and the per-write idempotency keys are
+execution-scoped, so the wrong burn writes duplicate household, contact and application rows. So the
+inference is replaced by an INSTRUCTION the server decides where it knows.
+
+`contracts` gains that closed vocabulary (`client-retry.ts`, three members and the argument for why it
+cannot be an error code). It is RAISED here rather than ratcheted down as in review round 4: that ratchet
+paid for deleted code with no consumer, and this is added code consumed in three layers - the composition
+root that decides, the route that answers, and the client that obeys.
+
+`infrastructure` gains, in `wire.ts`, one instruction per refusal, decided at the point where the reason
+is still known: a spent identity says mint a new one, a superseded configuration version says stop, and
+every mid-flow step failure says resubmit unchanged - because that re-drives the SAME execution and its
+committed writes replay under their existing idempotency keys.
+
+`domain` moved and stayed inside its ceiling: one registered log message and one registered attribute
+vocabulary in `observability/safe-values.ts`, so the diagnosis the browser no longer receives is not lost
+but relocated to the log line, un-degraded. The route and the journey are app code in no measured bucket.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,682 | **6,710** | 28 |
+| `domain` | 9,183 | 9,240 | 57 (unchanged ceiling) |
+| `infrastructure` | 8,380 | **8,400** | 20 |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+Both ceilings move as far as their own measurement plus the correction headroom a review round needs and
+no further - 28 and 20 lines, the same order as every figure above them.
+
 ## Consequences
 
 - A further increase remains a measured ADR amendment, never a silent fence edit.

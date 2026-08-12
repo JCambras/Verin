@@ -23,6 +23,7 @@ import {
   type GovernedOutput,
 } from "@contracts/authz";
 import { assertSameTenant, type TenantContext } from "@contracts/tenant";
+import { CLIENT_RETRY, type ClientRetry } from "@contracts/client-retry";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, normalizeAppError, type AppError } from "@contracts/errors";
@@ -97,9 +98,34 @@ export interface StartAccountOpeningInput extends PIIBearing {
   clientRequestId?: string;
 }
 
+/**
+ * The start outcome, plus WHAT THE SUBMITTER SHOULD DO NEXT on a failure (D-224).
+ * Every refusal below names its own instruction where the reason is still known;
+ * by the time a surface holds the result, the code that produced it no longer
+ * answers the question - two CONFLICTs from this function have opposite remedies.
+ */
 type AccountOpeningStartResult =
   & FlowRunResult
-  & GovernedOutput<"execution.initiate">;
+  & GovernedOutput<"execution.initiate">
+  & { readonly retry?: ClientRetry };
+
+/** A refusal that carries its own instruction, decided at the point of knowledge. */
+function refused(executionId: string, error: AppError, retry: ClientRetry): AccountOpeningStartResult {
+  return { executionId, status: "failed", error, retry, data: {} };
+}
+
+/**
+ * The outcome of actually DRIVING steps. A step that failed did so after the
+ * execution row committed, so the submitter's next move is to resubmit UNCHANGED:
+ * that re-drives this same execution from its saved cursor and the per-write
+ * idempotency keys replay the committed writes, where a fresh identity would open
+ * a second execution and duplicate them. Which internal code the step raised does
+ * not change that answer - and is exactly what must not reach the browser as if it
+ * did, since an adapter can raise a VALIDATION long after a step has committed.
+ */
+function drivenOutcome(outcome: FlowRunResult): AccountOpeningStartResult {
+  return outcome.status === "failed" ? { ...outcome, retry: CLIENT_RETRY.sameIdentity } : outcome;
+}
 
 /**
  * Report an already-started execution's current state (double-submit replay).
@@ -195,14 +221,17 @@ function versionMismatch(flow: CompiledFlow, state: ExecutionState): AppError | 
   );
 }
 
-/** Typed refusal of an edited replay: the client must mint a new request id (D-027). */
-function editedReplayConflict(executionId: string): FlowRunResult {
-  return {
+/**
+ * Typed refusal of an edited replay: the client must mint a new request id (D-027).
+ * This is the one refusal here whose remedy IS a fresh identity, so it says so
+ * structurally rather than in message text a client cannot act on.
+ */
+function editedReplayConflict(executionId: string): AccountOpeningStartResult {
+  return refused(
     executionId,
-    status: "failed",
-    error: appError("CONFLICT", "This request id was already used with different input; mint a new request id and resubmit."),
-    data: {},
-  };
+    appError("CONFLICT", "This request id was already used with different input; mint a new request id and resubmit."),
+    CLIENT_RETRY.newIdentity,
+  );
 }
 
 /**
@@ -240,17 +269,18 @@ function canonicalExecutionId(
 }
 
 /** Re-drive a failed start; a storage throw surfaces as a typed failure, never an unenveloped 500. */
-async function retryFailedStart(flow: CompiledFlow, store: ExecutionStore, deps: ExecutionAdapters, existing: ExecutionState, tenant: TenantContext): Promise<FlowRunResult> {
+async function retryFailedStart(flow: CompiledFlow, store: ExecutionStore, deps: ExecutionAdapters, existing: ExecutionState, tenant: TenantContext): Promise<AccountOpeningStartResult> {
   // The re-drive resumes from the SAVED cursor, so it carries the same
-  // positional hazard a webhook resume does.
+  // positional hazard a webhook resume does. No resubmission clears it - only a
+  // configuration change an operator makes - so the submitter is told to stop.
   const stale = versionMismatch(flow, existing);
-  if (stale) return { executionId: existing.id, status: "failed", error: stale, data: {} };
+  if (stale) return refused(existing.id, stale, CLIENT_RETRY.none);
   try {
-    return await retryFlow(flow.definition, store, deps, existing, tenant);
+    return drivenOutcome(await retryFlow(flow.definition, store, deps, existing, tenant));
   } catch (e) {
     const error = normalizeAppError(e) ??
       appError("INTERNAL", "The account-opening flow could not be retried.");
-    return { executionId: existing.id, status: "failed", error, data: {} };
+    return refused(existing.id, error, CLIENT_RETRY.sameIdentity);
   }
 }
 
@@ -266,13 +296,15 @@ export async function startAccountOpening(
   const tenant = grant.tenant;
   const canonical = canonicalExecutionId(input.clientRequestId, tenant);
   if (!canonical.ok) {
-    return { executionId: "", status: "failed", error: canonical.error, data: {} };
+    // The identity itself is the thing refused, so a fresh one is the remedy.
+    return refused("", canonical.error, CLIENT_RETRY.newIdentity);
   }
   // The configuration IS the flow: a missing or unrunnable document fails the
-  // request before any write, rather than silently falling back to code.
+  // request before any write, rather than silently falling back to code. No
+  // submission can fix a document, so the submitter is told not to keep trying.
   const flow = configuredFlow();
   if (!flow.ok) {
-    return { executionId: canonical.value.id, status: "failed", error: flow.error, data: {} };
+    return refused(canonical.value.id, flow.error, CLIENT_RETRY.none);
   }
   const store = makeExecutionStore(db);
   const executionId = canonical.value.id;
@@ -316,9 +348,9 @@ export async function startAccountOpening(
     orgId: authorityObservabilityId("orgId", tenant),
     actor: authorityObservabilityId("actor", tenant),
   }, async () => {
-    let result: FlowRunResult;
+    let result: AccountOpeningStartResult;
     try {
-      result = await startFlow(flow.value.definition, store, deps, {
+      result = drivenOutcome(await startFlow(flow.value.definition, store, deps, {
         executionId,
         tenant,
         data: {
@@ -332,7 +364,7 @@ export async function startAccountOpening(
           // its stored cursor can prove it is still the same plan.
           [CONFIG_VERSION_KEY]: flow.value.domainConfigVersionId,
         },
-      });
+      }));
     } catch (e) {
       // Two concurrent submits can both miss the pre-check; ONLY the loser's
       // INSERT hitting the flow_executions PK (SQLSTATE 23505) resolves as the
@@ -349,9 +381,12 @@ export async function startAccountOpening(
           ? await retryFailedStart(flow.value, store, deps, raced, tenant)
           : replayedRunResult(flow.value, raced);
       } else {
+        // A storage failure at the very first write: whether the row landed is
+        // exactly what is unknown here, so the submitter keeps the identity - a
+        // resubmit that finds the row replays it, and one that does not starts it.
         const error = metadata.appError ??
           appError("INTERNAL", "The account-opening flow could not be started.");
-        result = { executionId, status: "failed", error, data: {} };
+        result = refused(executionId, error, CLIENT_RETRY.sameIdentity);
       }
     }
     // Structured log — no PII (orgId + status only), scrubbed by the pino redactor.

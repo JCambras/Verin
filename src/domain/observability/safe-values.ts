@@ -6,6 +6,7 @@ import {
   REDACTED,
 } from "@contracts/pii";
 import { appError, isErrorCode } from "@contracts/errors";
+import { CLIENT_RETRY } from "@contracts/client-retry";
 import { isMachineRecordId } from "@contracts/record-id";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
@@ -64,10 +65,16 @@ const ENUMS = new Map<string, ReadonlySet<string>>([
   ])],
   ["entityType", new Set<string>(ENTITY_TYPE_NAMES)],
   ["flow", new Set(["account-opening"])],
+  // What a surface TOLD its client to do next (D-224/D-225). Read off the closed
+  // contract rather than spelled again, so widening the vocabulary can never leave
+  // the instruction an operator needs degraded to "[REDACTED]" in the log line
+  // that explains why a submission was refused.
+  ["retry", new Set<string>(Object.values(CLIENT_RETRY))],
   ["status", new Set(["completed", "failed", "running", "suspended"])],
 ]);
 const NUMERIC_FIELDS = new Set(["attempts", "outboxPending"]);
 const LOG_MESSAGES = new Set([
+  "account-opening flow start failed",
   "audit outbox row parked after repeated delivery failures (dead-letter; requires operator intervention)",
   "audited write failed",
   "constant-work audit mirror failed",

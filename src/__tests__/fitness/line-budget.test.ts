@@ -229,10 +229,24 @@ const CEILINGS = {
 // algorithm: contracts 6,649 / 6,680 (31), domain 9,085 / 9,150 (65),
 // infrastructure 8,341 / 8,360 (19), presentation 928 / 6,000, tooling 12,154 /
 // 12,400.
+//
+// ADR-0057 AMENDMENT (review round 12): `contracts` and `infrastructure` grow
+// past their ceilings answering this round's finding in code. In `contracts`: the
+// closed client-retry vocabulary, which exists because no error CODE can carry
+// what a submitter should do next - this endpoint answers two CONFLICTs whose
+// remedies are opposite. In `infrastructure`: every start refusal now names its
+// own instruction at the point where the reason is still known. `contracts` is
+// RAISED, not ratcheted down as in round 4: that ratchet paid for deleted code,
+// and this is added code with a live consumer in three layers. `domain` moved
+// (one registered log message, one registered attribute vocabulary) but stayed
+// inside, so its ceiling is left alone rather than raised for company.
+// RE-MEASURED with this file's own algorithm: contracts 6,682 / 6,710 (28),
+// domain 9,183 / 9,240 (57), infrastructure 8,380 / 8,400 (20), presentation
+// 928 / 6,000, tooling 12,154 / 12,400.
 const CEILINGS = {
-  contracts: 6680, // ADR-0057 as amended twice, RATCHETED DOWN after the dead brands were deleted (6,649 measured)
-  domain: 9240, // ADR-0057 as amended seven times, on the prompt-10 configuration schema (9,176 measured)
-  infrastructure: 8360, // ADR-0057 as amended once, on the version-bound resume guard (8,345 measured after the replay degrade)
+  contracts: 6710, // ADR-0057 as amended three times, on the client-retry instruction vocabulary (6,682 measured)
+  domain: 9240, // ADR-0057 as amended seven times, on the prompt-10 configuration schema (9,183 measured)
+  infrastructure: 8400, // ADR-0057 as amended twice, on the instruction-bearing start refusals (8,380 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

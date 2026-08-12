@@ -140,6 +140,38 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
     expect(await rowCounts()).toEqual({ households: 0, contacts: 0, applications: 0, executions: 0 });
   });
 
+  /**
+   * THE EDITED-RESUBMIT PATH IS REACHABLE AND IT CLEARS (D-225).
+   *
+   * D-027 refuses a request id replayed with DIFFERENT input rather than silently
+   * writing the stale values - the right refusal, and one the submitter clears by
+   * sending the corrected details under a fresh identity. It is also the exact
+   * case a code-keyed client rule got wrong: the refusal is a CONFLICT, and so is
+   * the version-mismatch refusal that must NOT re-mint, so no rule reading the
+   * code could serve both. This asserts the instruction, not the code, and then
+   * asserts that FOLLOWING it succeeds - a refusal with no remedy would otherwise
+   * read green.
+   */
+  it("tells an edited resubmit to mint a new identity, and that identity opens the corrected account", async () => {
+    expect((await post(SUBMISSION)).status).toBe(200);
+
+    const edited = { ...SUBMISSION, householdName: "Corrected Household" };
+    const refused = await post(edited);
+    expect(refused.status).toBe(409);
+    const body = (await refused.json()) as { retry?: string; error?: { code?: string; message?: string } };
+    expect(body.retry).toBe("retry-with-new-identity");
+    // The internal taxonomy stays in the log, never the browser's copy of it.
+    expect(body.error?.code).toBeUndefined();
+    expect(body.error?.message).toContain("Submit again");
+    // The refused resubmit wrote nothing: the first submission still stands alone.
+    expect(await rowCounts()).toEqual({ households: 1, contacts: 1, applications: 1, executions: 1 });
+
+    const followed = await post({ ...edited, clientRequestId: "9c1e7b40-2d63-4f18-9a55-8e0b1c2d3f4a" });
+    expect(followed.status).toBe(200);
+    expect(((await followed.json()) as { status?: string }).status).toBe("suspended");
+    expect(await rowCounts()).toEqual({ households: 2, contacts: 2, applications: 2, executions: 2 });
+  });
+
   it("still starts the flow for a registration the configuration DOES declare", async () => {
     const response = await post(SUBMISSION);
     expect(response.status).toBe(200);

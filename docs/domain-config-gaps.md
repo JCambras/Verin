@@ -124,20 +124,19 @@ that exists to be consumed later (the named-deferral idiom `ledger-reachability`
 shape). Recorded so the trade-off is owned rather than rediscovered: today, an unused `contracts/` export
 is caught only by review.
 
-### `fu-intake-spent-id-recovery` - a spent request identity has no in-page remedy
+### `fu-intake-spent-id-recovery` - a spent request identity has no in-page remedy - CLOSED (D-225)
 
-The account-opening journey mints one client request id per form session and now burns it ONLY on a
-VALIDATION, because a fresh id is a fresh EXECUTION and the per-write idempotency keys are
-execution-scoped: re-minting one in answer to a refusal the user cannot fix converts that refusal into
-duplicate household, contact and application rows (D-224).
+The account-opening journey mints one client request id per form session, and a fresh id is a fresh
+EXECUTION whose per-write idempotency keys are execution-scoped: re-minting one in answer to a refusal
+the user cannot fix converts that refusal into duplicate household, contact and application rows (D-224).
+Burning the id on a VALIDATION and keeping it otherwise avoided that, but it left the other direction
+open - a user whose id is KEPT, who then EDITS the form and resubmits, met the D-027 edited-replay
+`CONFLICT` with no way forward but a reload.
 
-The residual is the other direction. A user whose id is KEPT after a permanent refusal, who then EDITS
-the form and resubmits, meets the D-027 edited-replay `CONFLICT` - correctly, since the id is bound to a
-different submission - and the page offers no way forward but a reload, which mints a new session id.
-The server knows the identity is spent; the client learns it only from message text it cannot safely
-parse.
-
-**NOT FIXED, and deliberately not signalled by string matching.** Owned by **prompt 12** with the generic
-intake pipeline, which is the first thing to own the transport shape a structured "this identity is
-spent, mint another" signal would ride on. Until then the honest failure (a refusal the user resolves by
-reloading) is preferred over the dishonest recovery (a duplicate execution).
+That residual was banked for prompt 12 on the reasoning that a structured "this identity is spent, mint
+another" signal needed the generic intake pipeline's transport. It did not: this endpoint answers two
+different `CONFLICT`s whose remedies are OPPOSITE (a spent identity clears with a new one, a superseded
+configuration version never clears), so no rule reading the error CODE could ever serve both, and no
+amount of later transport work makes one possible. **CLOSED by D-225**: the response carries a typed
+`retry` instruction from the closed `CLIENT_RETRY` vocabulary, decided server-side where the reason is
+still known, and the client burns its identity if and only if it is told to.

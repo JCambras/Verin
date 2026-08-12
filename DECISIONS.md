@@ -9136,3 +9136,36 @@ server knows the identity is spent and the client should be told structurally, n
 
 **Revert path.** One code literal in the intake route, one condition in `intake-journey.tsx`, and one
 branch in `replayedRunResult`.
+
+## D-225 - Prompt 10 review: the browser is TOLD what to do next, it never infers it
+
+**What.** The account-opening start response carries an explicit typed instruction - `retry`, from the
+closed `CLIENT_RETRY` vocabulary in `src/contracts/client-retry.ts`: mint a NEW request identity, resubmit
+under the SAME one, or do not retry at all. Every refusal `startAccountOpening` can return names its own
+instruction at the point where the reason is still known (a spent identity, a superseded configuration
+version, a step that failed after its writes committed). The route answers the instruction plus one human
+sentence, with a status chosen for what the submitter should DO (409 / 500 / 422), and stops forwarding
+the flow's own `AppError` code to the browser; the internal code goes to the log line beside it at the
+level the taxonomy assigns. `intake-journey.tsx` burns its per-session request id if and only if it is
+told to, and reads nothing else. This is D-224 at its third call site - provider, operator, browser - and
+it CLOSES `fu-intake-spent-id-recovery`.
+
+**Why.** The previous rule keyed on the error CODE, which is a different axis from the question that
+matters: can the submitter clear this by editing and resubmitting? The two `CONFLICT`s this endpoint
+answers prove they are different - an edited resubmit IS clearable (the refusal's own message says "mint a
+new request id and resubmit") while a version mismatch is NOT - so a code-keyed rule had to get one of
+them wrong, and it made the D-027 edited-resubmit escape hatch a permanent dead end: refused, id kept,
+same refusal on every further submit, no in-page remedy. Forwarding the flow's error was the same defect
+one layer down: `accountTypeOf` raises a VALIDATION from inside `application.create`, after
+`household.create` and `contact.create` have committed, so the client's rule silently depended on the
+domain-configuration fence's RULE G holding the registration vocabularies equal. The asymmetry is what
+settles the default: a wrong burn writes duplicate records, a missed burn costs a retry, so an absent or
+unrecognised instruction keeps the identity.
+
+**Fenced by.** `src/__tests__/integration/account-opening-route.test.ts` drives the edited-resubmit path
+end to end - submit, edit, resubmit under the same id, assert the mint-a-new-identity instruction and that
+no internal code reaches the body, then FOLLOW the instruction and assert it opens the corrected account.
+Asserting the refusal alone would have read green on the dead end it replaced.
+
+**Revert path.** Delete `contracts/client-retry.ts`, the `retry` field on the start result, and the route's
+instruction mapping; the client falls back to a code-keyed rule with the dead end this entry closes.
