@@ -15650,3 +15650,14 @@ requires the intake emitters to produce at least one path to check.
 **Reverted:** the slot-keyed path restored; `Tests 61 passed (61)`.
 
 **Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-adapter-mint-and-emitter-bounds`).
+
+**Correction, 2026-08-12 (label only, no behavior change).** The companion paragraph above says "the intake
+emitters" plural; only ONE of the two is driven to a fault. `emittedIntakePaths` withholds each field in
+turn from the carried set, so `unmappedIntakeFault` really refuses and its slot-keyed
+`presentation.form.fields.<slot>` paths are OBSERVED - which is the disagreement this proof is about, so
+nothing here is weakened. Its second call passes `requiredIntakeValue` a field the document declares and
+the admitted map carries, so that call returns ok every time and `undeclared` - the only emitter of the
+bare `presentation.form.fields` parent - never runs. That parent path is ASSERTED to address a real node,
+as the prefix the resolver walks through on the way to each collected child; it is not observed from an
+emitter, and no comment, name or line here may say it is. Driving it for real is banked as
+`fu-intake-probe-drives-emitter`.

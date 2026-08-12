@@ -43,10 +43,16 @@ A **primitive** is a named, versioned, **pure** function:
   configuration, but every binding MUST carry a distinct key scope. That is what the
   ratified money-movement configuration already does: it binds `candidate-selection`
   twice, at the bind stage for `target-record` (GC-08) and at the evaluate stage for
-  `source-account` (GC-01). Prompt 10's config load owes the fail-closed check on both
-  halves - a second binding of an unscoped primitive, or two bindings of a scoped one
-  sharing a key scope, is rejected with a precise error naming the primitive and both
-  bindings; last-write-wins is not an option. Falsification path: a real configuration that
+  `source-account` (GC-01). **This is NOT checked today - deferred as
+  `fu-binding-multiplicity-check`, owned by prompt 16 (D-235).** Prompt 10's config load
+  was to reject both halves with a precise error naming the primitive and both bindings,
+  and it does not: nothing in `src/domain/config/` groups bindings by `primitiveId`. What
+  ships is narrower and incidental - `deriveContextKeys` refuses two bindings whose
+  published keys COLLIDE within ONE intent, reported against the colliding key and worded
+  as a slot-versus-primitive clash, so it names neither the primitive nor the two bindings
+  and says nothing about bindings attached to different intents. Both shipped documents
+  satisfy the rule by authorship, not by enforcement; last-write-wins is still not an
+  option, it is simply not yet refused. Falsification path: a real configuration that
   needs one UNSCOPED primitive twice (a reserve floor AND a per-transaction cap, both
   `sufficiency-check`) forces binding-namespaced published keys under a set version bump.
 - **Key-shaping parameters are configuration-only, never policy-writable** (ruling
@@ -257,13 +263,19 @@ domains. Six, not fifteen: the razor removes everything the AST already owns.
   NEVER means "the restriction evidence was verified present", so a bundle assembled
   without restriction lists screens clean by construction. A domain configuration that
   binds `restriction-screen` MUST therefore declare its restriction-source evidence kinds
-  as required evidence, and prompt 10's config-load cross-check of that obligation is
-  BINDING and fail-closed: a configuration binding the screen without a restriction-source
-  evidence requirement for every bound restriction kind is a config load error naming the
-  primitive and the undeclared kinds, so validation blocks before evaluation can publish a
-  clear screen over evidence nobody assembled. Falsification path: if prompt 10 cannot
-  express that linkage, `restrictionKinds[]` entries gain `sourceEvidenceKinds` under a
-  primitive-set version bump.
+  as required evidence. **That obligation is NOT checked today - deferred as
+  `fu-restriction-evidence-required`, owned by prompt 15 (D-235).** Prompt 10 was to
+  enforce it at config load, fail-closed, and did not, because the linkage the check must
+  read is not expressible: a `restrictionKinds[]` entry carries `kind` and `polarity` and
+  nothing else, so no document can name the evidence kind that supplies a bound
+  restriction kind's list. `config/domains/account-opening.yaml` binds the screen for
+  `jurisdiction-restriction` while declaring no restriction-source evidence, and it loads
+  clean. Until the check exists, nothing stops a governed action clearing over
+  restrictions nobody assembled; that both shipped documents' decision halves are
+  validated-not-yet-evaluated bounds today's exposure but does not remove the hole.
+  Falsification path, now the REQUIRED path rather than a contingency: `restrictionKinds[]`
+  entries gain `sourceEvidenceKinds` under a primitive-set version bump, and the
+  validation-stage evidence-sufficiency contract (prompt 15) reads them.
 - **Falsification test:** a restriction whose applicability requires computation, not
   matching - "no more than two distributions per quarter" is an aggregate-based
   restriction, and forcing it through the screen would smuggle aggregation into

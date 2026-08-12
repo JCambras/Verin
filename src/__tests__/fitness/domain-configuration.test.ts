@@ -174,7 +174,6 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    five fields are checked the same way, against the version ids, the pinned
  *    hashes and the canonical-byte digests the shipped adapter really computes.
  *
-
  * NAMED DEFERRALS. `policyRegistriesFor` derives prompt 9's four pinned
  * registries from a loaded configuration and has no SHIPPED caller yet: nothing
  * authors a firm policy until the policy lifecycle lands (prompt 20). It is
@@ -1198,9 +1197,20 @@ export function resolvesInDocument(document: unknown, path: string): boolean {
 }
 
 /**
- * Every dotted path the REAL intake emitters produce for one published document,
- * from the REAL projected form: the disagreement this catches is between two
- * emitters that address the SAME node, so both must be driven for real.
+ * Every dotted path this probe COLLECTS for one published document, from the REAL
+ * projected form.
+ *
+ * ONLY ONE of the two intake emitters is driven to a fault here, and the label may
+ * not say otherwise. `unmappedIntakeFault` really refuses - each field in turn is
+ * withheld from the carried set - so its slot-keyed
+ * `presentation.form.fields.<slot>` paths are OBSERVED, and they are the
+ * disagreement RULE L was written to catch (the projection keys by trigger field,
+ * the document by slot). `requiredIntakeValue` is called with a field the document
+ * declares and the admitted map carries, so it returns ok every time: `undeclared`,
+ * the only emitter of the bare `presentation.form.fields` parent, never runs. That
+ * parent path is therefore ASSERTED to address a real node - it is the prefix the
+ * resolver walks on the way to each collected child - and is NOT observed from an
+ * emitter. Driving it for real is banked as `fu-intake-probe-drives-emitter`.
  */
 export function emittedIntakePaths(form: IntakeForm): string[] {
   const faults: DomainConfigError[] = [];
@@ -1215,7 +1225,8 @@ export function emittedIntakePaths(form: IntakeForm): string[] {
   for (const field of form.fields) {
     // The document declares a field this deployment's fixed input cannot carry...
     unmappedIntakeFault(form, admitted, form.fields.filter((other) => other !== field).map((other) => other.field), refuse);
-    // ...and the deployment reads back a field the document declares.
+    // ...and the deployment reads back a field the document DOES declare, which
+    // succeeds: this call records no fault, so it contributes no path (see above).
     requiredIntakeValue(form, admitted, field.field, refuse);
   }
   return [...new Set(faults.map((fault) => fault.path))].sort();
@@ -1515,6 +1526,10 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     if (!projected.ok) return; // a domain declaring no form emits no intake path
     const emitted = emittedIntakePaths(projected.value);
     expect(emitted.length, "the intake emitters must produce a path to check").toBeGreaterThan(0);
+    // SCOPE: these are the paths `unmappedIntakeFault` really produced. The bare
+    // `presentation.form.fields` parent that `undeclared` emits is checked only as
+    // the prefix of each of them - asserted, never observed from that emitter
+    // (`fu-intake-probe-drives-emitter`).
     // SHAPE IS NOT ENOUGH. `presentation.form.fields.householdName` matched the
     // declared shape and addressed nothing: the document keys that list by SLOT.
     const document = parsed(file);

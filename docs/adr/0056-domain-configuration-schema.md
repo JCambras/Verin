@@ -4,9 +4,11 @@
 **Date:** 2026-08-11
 **Deciders:** Founding architect (implementation), captain (the two rulings this ADR executes)
 **Relates to:** v3 prompt 10; v3 §5, §6, §8, §10, §13, §14, §16; invariant 3 (activation), invariant 20,
-invariant 26; charter non-negotiables #1, #2, #4, #5, #10; ADR-0010 (amended below), ADR-0023, ADR-0026,
-ADR-0029, ADR-0039, ADR-0053, ADR-0055
-**Amends:** ADR-0010 (the hand-coded account-opening flow definition is deleted; see "Amendment to ADR-0010")
+invariant 26; charter non-negotiables #1, #2, #4, #5, #10; ADR-0010 (amended below), ADR-0011 (amended
+below), ADR-0023, ADR-0026, ADR-0029, ADR-0039, ADR-0053, ADR-0055
+**Amends:** ADR-0010 (the hand-coded account-opening flow definition is deleted; see "Amendment to
+ADR-0010"); ADR-0011 (`resumeFlow` takes an optional caller-supplied `ResumeGuard`; see "Amendment to
+ADR-0011")
 
 ## Context
 
@@ -135,6 +137,23 @@ code; they are COMPILED from a domain configuration document. `accountOpeningFlo
 `accountOpeningView` are deleted, and `FlowFieldSpec` is replaced by the configuration's own intake
 projection. ADR-0010's budget claim ("a workflow costs ~200 lines") becomes stronger, not weaker: a
 workflow now costs a configuration file and no TypeScript at all.
+
+## Amendment to ADR-0011
+
+ADR-0011 decided the suspend / await-external / resume contract: a step suspends, an external event calls
+`resumeFlow` with a sealed `TenantContext`, token and payload, and resume is idempotent. That mechanism is
+unchanged.
+
+What this ADR adds is a caller PRECONDITION on the drive. A configuration is versioned, so a persisted
+execution may only be driven by the version it started on - a fact the composition root knows and the
+engine cannot. `resumeFlow` therefore takes an optional `ResumeGuard`, evaluated against the state the
+engine has just loaded and tenant-checked, and only for the two DRIVEABLE states; returning an `AppError`
+refuses the drive, returning `null` proceeds. Checking the version in the caller instead would load the
+row twice, and the version checked would not provably be the version driven (D-217/D-226). A MISSING
+version is LEGACY and resumes - it predates the pinning, so refusing it would strand every in-flight
+execution on deploy; a KNOWN and DIFFERENT one refuses, and a recorded value that is not a version string
+fails closed as its own stage. Those refusals are operator-recoverable, so they reach the provider as
+`retry-later` (503 plus `Retry-After`) rather than as a discarded signature.
 
 ## Alternatives considered
 

@@ -123,7 +123,16 @@ rejection is a value, never a throw.
   failure on a screen that cannot recover from one.
 - **A suspended execution is bound to the version it started under.** The engine's cursor is POSITIONAL
   and the plan is versioned data, so `startFlow` persists `domainConfigVersionId` and the composition
-  root refuses to drive a stored cursor under a different one (D-217). Resuming against the PINNED
+  root refuses to drive a stored cursor under a different one (D-217). It states that precondition as a
+  `ResumeGuard` the ENGINE calls against the state IT loaded, rather than loading the row itself first:
+  one round trip instead of two, and the version checked is provably the version driven (D-226,
+  ADR-0011 as amended by ADR-0056). A MISSING version is LEGACY and resumes - it predates the pinning,
+  and refusing it would make the guard's first act on deployment the stranding of every in-flight
+  execution. A KNOWN and DIFFERENT one refuses as `superseded-version`, and a recorded value that is not
+  a version string is neither, so it fails closed as `unreadable-version` - separate registered stages
+  because an absent `configVersionStarted` is also what a shape violation produces, and one stage could
+  not tell the operator which it was (D-231). Both refusals are operator-recoverable, so they reach the
+  provider as `retry-later` (§10) rather than as a discarded signature. Resuming against the PINNED
   document is the end state and stays owned by PC-4 (prompts 15/19); until then the refusal is loud
   rather than silently resuming at the wrong step.
 - **Evaluation order is derived, not authored.** Prompt 8's parameters bind context keys directly, so the

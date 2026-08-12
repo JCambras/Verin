@@ -408,13 +408,19 @@ captured for the ADR (AutopilotScene, native-setter typing, audio await-`ended` 
 Obligations a landed PR states but cannot fence yet, because their subject belongs to a later prompt,
 are recorded in `DECISIONS.md` by owning prompt and become fences in the PR that builds that subject.
 
-- **D-104** - the four prompt-8 primitive-catalog obligations: prompt 10 owes the fail-closed
-  config-load cross-check that a `restriction-screen` binding declares its restriction-source evidence
-  kinds as required evidence, and the fail-closed binding-multiplicity check (unscoped primitives at
-  most once, scoped ones only with distinct key scopes); prompt 14 owes the evidence assembler's claim
-  de-duplication and the per-`(claimKind, snapshotRef)` aggregation question; prompt 15 owes the
-  validation-stage evidence-sufficiency contract that covers `evidence-reconciliation` bindings, whose
-  `consistent` fact is vacuously true below two assertions.
+- **D-104** - the four prompt-8 primitive-catalog obligations. **Its two prompt-10 obligations DID NOT
+  LAND and are re-owned by D-235**: the fail-closed config-load cross-check that a `restriction-screen`
+  binding declares its restriction-source evidence kinds as required evidence is deferred to prompt 15
+  as `fu-restriction-evidence-required` (the linkage is not expressible until `restrictionKinds[]`
+  entries gain `sourceEvidenceKinds` under a primitive-set version bump), and the fail-closed
+  binding-multiplicity check (unscoped primitives at most once, scoped ones only with distinct key
+  scopes) is deferred to prompt 16 as `fu-binding-multiplicity-check` - expressible today, simply not
+  built, with only `deriveContextKeys`' per-intent published-key collision standing in for it. Unlike
+  the ledger and policy deferrals below, neither is fenced: a missing CHECK gives a registry no symbol
+  to key on, so D-235's un-defer triggers are the whole mechanism. Still owed as originally recorded:
+  prompt 14 owes the evidence assembler's claim de-duplication and the per-`(claimKind, snapshotRef)`
+  aggregation question; prompt 15 owes the validation-stage evidence-sufficiency contract that covers
+  `evidence-reconciliation` bindings, whose `consistent` fact is vacuously true below two assertions.
 - **D-116 / D-119 / D-121** - the prompt-7 ledger deferrals. Prompt 7 deliberately ships the
   post-decision append boundary (`appendDecisionEvents`) and `preflightEvidenceSnapshots` with no shipped
   caller: the storage and verification foundation lands now, the first producer arrives with prompt 18

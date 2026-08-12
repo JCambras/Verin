@@ -3336,7 +3336,8 @@ Each becomes a fence in the PR that builds its subject; none is a
 `not-yet-active` v3-invariants row, because that registry tracks the ratified
 v3 invariant set and these are implementation obligations under ADR-0039.
 
-1. **Prompt 10 - restriction evidence must be declared required.**
+1. **Prompt 10 - restriction evidence must be declared required.** *(NOT LANDED - see the
+   status correction below.)*
    `restriction-screen` is fail-open on absent evidence by design:
    `restrictions.matched.<kind> = false` means "screened against everything
    supplied", never "the evidence was verified present", so a bundle assembled
@@ -3347,7 +3348,8 @@ v3 invariant set and these are implementation obligations under ADR-0039.
    error naming the primitive and the undeclared kinds. Until that check exists,
    nothing stops a governed action clearing over regulatory holds nobody
    assembled (docs/primitive-rationale.md, `restriction-screen`).
-2. **Prompt 10 - binding multiplicity is a fail-closed load check.** The four
+2. **Prompt 10 - binding multiplicity is a fail-closed load check.** *(NOT LANDED -
+   see the status correction below.)* The four
    unscoped-key primitives (`net-availability`, `horizon-projection`,
    `sufficiency-check`, `restriction-screen`) are bound AT MOST ONCE per domain
    configuration, and the two parameter-scoped ones (`candidate-selection` by
@@ -3379,6 +3381,16 @@ v3 invariant set and these are implementation obligations under ADR-0039.
    assembled; `sourcesToReconcile` (min 2) already names the sources the
    requirement is derived from (docs/primitive-rationale.md,
    `evidence-reconciliation`).
+
+**Status correction, 2026-08-12 (prompt 10 shipped; see D-235).** Obligations 1 and
+2 were owed by prompt 10 and DID NOT LAND. Prompt 10 built their subject - the
+config loader is `src/domain/config/` - so neither is an unfenceable obligation
+any more; both are unmet ones. They are re-owned by name in D-235
+(`fu-restriction-evidence-required` to prompt 15,
+`fu-binding-multiplicity-check` to prompt 16), and the documents that asserted
+them as binding and fail-closed have been corrected to say what is true today.
+Obligations 3 and 4 are unchanged: their subjects (prompts 14 and 15) still do
+not exist.
 
 **Alternatives rejected:** `not-yet-active` v3-invariants rows (that registry is
 the ratified 30-invariant v3 set, not a scratchpad for per-ADR implementation
@@ -9512,3 +9524,68 @@ PF-287.
 
 **Revert path.** Mint in the adapter again; PF-286 records the exact three violations the derivation
 reports.
+
+---
+
+## D-235 - Two D-104 obligations prompt 10 owed did not land, and are re-owned as NAMED deferrals
+
+**Date:** 2026-08-12 · **Reversible** · Relates to: ADR-0039, ADR-0056, D-104, charter #2/#4, v3
+prompts 15 and 16
+
+**What.** D-104 obligations 1 and 2 were owed by prompt 10 and are NOT implemented. They are recorded
+here as named deferrals, each with an owning prompt and an un-defer trigger, and every document that
+asserted them as binding and fail-closed (`docs/primitive-rationale.md`, `PLAN.md` appendix 4,
+`docs/domain-config-gaps.md`, D-104 itself) now states what is true today.
+
+1. **`fu-restriction-evidence-required` - owned by prompt 15 (validation and input-bundle assembly).**
+   A configuration binding `restriction-screen` must declare a restriction-source evidence kind as
+   REQUIRED evidence for every bound restriction kind. No such check exists: `src/domain/config/`
+   never special-cases a primitive id, and `config/domains/account-opening.yaml` binds the screen for
+   `jurisdiction-restriction` with no restriction-source evidence and loads clean. The reason it did
+   not land is structural, not an oversight in review: a `restrictionKinds[]` entry carries `kind` and
+   `polarity` only, so no document can NAME the evidence kind that supplies a bound kind's list and
+   the cross-check has no subject to read. Landing it means the falsification path prompt 8 already
+   declared - `sourceEvidenceKinds` on `restrictionKinds[]`, under a primitive-set version bump -
+   which is a catalog change, and the contract that then consumes it is prompt 15's, alongside
+   obligation 4 (the two are the same fail-open-on-absent-evidence shape).
+   **Un-defer trigger:** the first configuration whose restriction lists are actually assembled and
+   evaluated, or the primitive-set version bump that adds `sourceEvidenceKinds` - whichever is first;
+   at the latest, prompt 15's evidence-sufficiency contract.
+2. **`fu-binding-multiplicity-check` - owned by prompt 16 (evaluator and explanation trace).**
+   An unscoped-key primitive is bound at most once per configuration; a parameter-scoped one repeats
+   only with distinct key scopes; both halves are load errors naming the primitive and both bindings.
+   Nothing groups `primitiveBindings` by `primitiveId`. Unlike obligation 1 this one IS expressible
+   today - it simply did not land, which is why it is recorded as an unmet obligation rather than a
+   blocked one. What ships is narrower and incidental: `deriveContextKeys` refuses two bindings whose
+   published keys collide within ONE intent, reported against the colliding key and worded as a
+   slot-versus-primitive clash, so it names neither the primitive nor the two bindings and does not
+   see bindings attached to different intents. Both shipped documents satisfy the rule by authorship.
+   **Un-defer trigger:** the third domain configuration, any configuration that binds one primitive
+   twice, or the first evaluator that reads a published fact - at the latest, prompt 16, which must
+   not evaluate a configuration this check has never seen.
+
+**Why record rather than implement.** This round is documentation-only under a budget constraint, and
+the failure being closed is the one that matters most: a published document asserting a fail-closed
+check that does not exist is worse than no claim, because every later reader trusts it and stops
+looking. Charter #2's "detection is not verification" has a mirror - a guarantee believed but never
+built - and the cheapest protection is refusing to let a document overstate what shipped.
+
+**Weaker than the deferrals it imitates, deliberately stated.** `ledger-reachability` and the
+`policy-ast` fence hold their named deferrals in a REGISTRY that fails both when an entry gains a
+caller and when an orphan appears. Neither idiom applies here: these are MISSING CHECKS, not orphan
+exports, so there is no symbol for a fence to key on and no build failure the day one lands. These two
+deferrals are therefore doc-recorded only, and the un-defer triggers above are the whole mechanism.
+That gap is the honest cost of recording them at all, and it is the argument for landing both checks
+in the next prompt that opens `src/domain/config/`.
+
+**Fenced by.** Nothing - and that is the point of the paragraph above. The only enforcement today is
+that `docs/primitive-rationale.md`, `PLAN.md`, `docs/domain-config-gaps.md` and D-104 now describe the
+absence rather than a guarantee.
+
+**The two OWNERS are proposed, not ruled.** The obligations themselves and their absence are facts;
+which prompt lands each is a scheduling call, and the reasoning is stated above so a captain can
+re-own either by editing this entry and the four pointers to it. What may not be reverted without a
+replacement is the honesty: no document goes back to asserting a fail-closed check nothing performs.
+
+**Revert path.** Delete this entry and restore the four documents' previous wording; the obligations
+then read as shipped guarantees again, which is the state this entry exists to end.
