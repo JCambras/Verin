@@ -87,7 +87,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // deciding for itself that a bare server error with no retry arm would do - and
   // the field the document declares reaches the operator's log line as a
   // registered path instead of the browser as prose (D-229).
-  const unmapped = unmappedIntakeFault(supplied, START_INPUT_FIELDS, refuse);
+  const unmapped = unmappedIntakeFault(form.value, supplied, START_INPUT_FIELDS, refuse);
   if (unmapped !== null) {
     return refusalResponse(clientRetryFor(unmapped, CLIENT_RETRY.sameIdentity), unmapped);
   }

@@ -48,6 +48,7 @@ export const intakeFormOf = (
       ]);
     }
     fields.push({
+      slot: field.slot,
       field: slot.triggerField,
       label,
       type: field.input,

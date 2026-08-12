@@ -7,7 +7,7 @@ import {
 } from "@contracts/pii";
 import { appError, isErrorCode } from "@contracts/errors";
 import { CLIENT_RETRY } from "@contracts/client-retry";
-import { DOMAIN_CONFIG_ERROR_CODES } from "@domain/config/errors";
+import { DOMAIN_CONFIG_ERROR_CODES, MAX_CONFIGURED_VALUE_DEPTH } from "@domain/config/errors";
 import { isMachineRecordId } from "@contracts/record-id";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
@@ -292,23 +292,38 @@ export type ConfigurationDiagnosisField = Extract<
 >;
 /** `${domainConfigId}@${version}` - the identity every golden fixture already pins. */
 const CONFIG_VERSION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*@[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/;
+/**
+ * ONE SEGMENT of a dotted document path, SUBSCRIPTED AS DEEPLY AS ITS EMITTER
+ * CAN SUBSCRIPT IT.
+ *
+ * Schema keys are legitimately camelCase, so the person-name shape `isOpaqueId`
+ * keys on would refuse `execution.planTemplates`; the closed alphabet, the digit
+ * cap and the caller's 128-character ceiling are what bound this instead. None of
+ * those is what went wrong twice. The SUBSCRIPT count was, because it was written
+ * as an opinion about what the emitters produce: the loader builds `${path}[i]`
+ * wherever it walks a declared LIST, and the one walk over a value graph the
+ * SCHEMA does not shape - the deferred-reference substitution inside a
+ * primitive's `parameters` - can subscript a single segment once per array level.
+ *
+ * So the cap is not chosen here at all. It is `MAX_CONFIGURED_VALUE_DEPTH`, the
+ * bound that emitter is REFUSED AT (`resolveParameters`), read from the module
+ * that states it: the shape cannot be narrower than its emitter without the
+ * loader having admitted a graph it declared inadmissible (D-233).
+ *
+ * The SEGMENT COUNT carries no cap of its own for the same reason - any number
+ * written here would be a third opinion. The 128-character ceiling in
+ * `configurationDiagnosisId` bounds it, and the closed alphabet (no whitespace,
+ * no punctuation beyond `.`/`_`/`-`/subscripts) is what makes a value of any
+ * length incapable of carrying prose or a person's name.
+ */
+const CONFIG_PATH_SEGMENT_SOURCE =
+  String.raw`[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,${MAX_CONFIGURED_VALUE_DEPTH}}`;
 const CONFIGURATION_DIAGNOSIS_SHAPES: Readonly<Record<ConfigurationDiagnosisField, RegExp>> = {
   configHashPinned: /^[0-9a-f]{64}$/,
   configHashRead: /^[0-9a-f]{64}$/,
-  // A dotted document path (`intents.open-account.slots.email`). Schema keys are
-  // legitimately camelCase, so the person-name shape isOpaqueId keys on would
-  // refuse `execution.planTemplates` - the closed alphabet and the segment cap
-  // are what bound this instead.
-  //
-  // A SEGMENT MAY BE SUBSCRIPTED, because the emitters subscript them: the loader
-  // builds `${path}[${index}]` wherever it walks a declared LIST (a key segment,
-  // a conflict-key segment, a parameter array), which is exactly the position
-  // `unrunnable-step` reports from. Admitting only dots sealed those paths to
-  // "[REDACTED]" and left the most likely run-time fault with a stage and no
-  // location - the dead diagnosis channel D-229 exists to prevent. Bounded like
-  // every other part of the shape: a nesting cap, a digit cap, no other
-  // punctuation, and the caller's 128-character ceiling above all of it.
-  configPath: /^[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,3}(?:\.[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,3}){0,15}$/,
+  configPath: new RegExp(
+    `^${CONFIG_PATH_SEGMENT_SOURCE}(?:\\.${CONFIG_PATH_SEGMENT_SOURCE})*$`,
+  ),
   configVersion: CONFIG_VERSION_RE,
   configVersionStarted: CONFIG_VERSION_RE,
   domainConfigId: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
@@ -318,7 +333,9 @@ const CONFIGURATION_DIAGNOSIS_SHAPES: Readonly<Record<ConfigurationDiagnosisFiel
  * emitters produce, rather than against examples someone wrote next to the regex.
  * The `configPath` shape admitted only dot-separated segments while the loader
  * subscripted every list it walked, so the most likely run-time fault logged a
- * stage and "[REDACTED]" where its location should have been.
+ * stage and "[REDACTED]" where its location should have been. THEN it admitted
+ * three subscripts while its own emitter descended without a bound at all, which
+ * is why the bound now lives with the emitter and this shape reads it.
  */
 export const CONFIGURATION_DIAGNOSIS_FIELDS = Object.freeze(
   Object.keys(CONFIGURATION_DIAGNOSIS_SHAPES).sort(),

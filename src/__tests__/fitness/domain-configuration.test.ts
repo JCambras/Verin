@@ -18,8 +18,18 @@ import {
 import { canonicalConfigJson, type DomainConfigDocument } from "@domain/config/document";
 import { loadDomainConfig } from "@domain/config/load";
 import { intakeFormOf } from "@domain/config/intake";
+import {
+  requiredIntakeValue,
+  unmappedIntakeFault,
+  type IntakeForm,
+} from "@domain/config/intake-view";
+import { resolveParameters, type ParameterOwner } from "@domain/config/parameters";
 import { compileFlowDefinition } from "@domain/config/plan-compiler";
-import type { ConfiguredRefusal, DomainConfigError } from "@domain/config/errors";
+import {
+  MAX_CONFIGURED_VALUE_DEPTH,
+  type ConfiguredRefusal,
+  type DomainConfigError,
+} from "@domain/config/errors";
 import {
   CONFIGURATION_DIAGNOSIS_FIELDS,
   configurationDiagnosisId,
@@ -581,6 +591,60 @@ const CONFIGURATION_MODULE_ROOTS = [
 ] as const;
 
 /**
+ * ...AND EVERY MODULE THAT ANSWERS FOR A COMPILED COMMAND, WHICH THE DIRECTORY
+ * ROOTS ALONE COULD NOT SEE.
+ *
+ * The command adapters live outside both roots and were the last place a
+ * published-configuration defect was answered in its own words: a payload field
+ * the compiled command did not carry, a registration outside the store's
+ * vocabulary, a command type with no runner. Each is operator-recoverable by the
+ * same cause as every load and compile refusal, and each shipped as a bare
+ * `appError` - no marker, no reference, no operator line - because a rule derived
+ * from two directories cannot see a third.
+ *
+ * Widening to "any module that imports from the configuration layer" would sweep
+ * in the composition root, whose storage failures are not configuration refusals
+ * at all, and an exemption list there is the drifting registry this rule replaced.
+ * So the derivation keys on the ONE type a module must hold to answer for a
+ * configured command - the type the port's own `invoke` declares - read from that
+ * declaration rather than spelled here, and recognised by the IMPORTED NAME so an
+ * alias cannot evade it. A module that merely CONSUMES the port (`deps:
+ * ExecutionAdapters`) never holds one and is correctly left out.
+ */
+const EXECUTION_PORT_FILE = "src/domain/config/plan-compiler.ts";
+const EXECUTION_PORT = "ExecutionAdapters";
+const EXECUTION_PORT_METHOD = "invoke";
+
+export function compiledCommandType(project: Project): string | null {
+  const sourceFile = project.getSourceFiles()
+    .find((candidate) => normalizedPath(candidate.getFilePath()) === EXECUTION_PORT_FILE);
+  const parameter = sourceFile?.getInterface(EXECUTION_PORT)
+    ?.getMethod(EXECUTION_PORT_METHOD)
+    ?.getParameters()[0]
+    ?.getTypeNode()
+    ?.getText();
+  return parameter ?? null;
+}
+
+export function configurationModuleRoots(
+  project: Project,
+  declared: readonly string[],
+  commandType: string | null,
+): string[] {
+  const roots = new Set<string>(declared);
+  if (commandType === null) return [...roots].sort();
+  for (const sourceFile of project.getSourceFiles()) {
+    const file = normalizedPath(sourceFile.getFilePath());
+    if (file.includes("/__tests__/") || declared.some((root) => file.startsWith(root))) continue;
+    const holds = sourceFile.getImportDeclarations()
+      .flatMap((declaration) => declaration.getNamedImports())
+      .some((named) => named.getName() === commandType);
+    if (holds) roots.add(file);
+  }
+  return [...roots].sort();
+}
+
+/**
  * The ONE derived exemption, taken from the mint's own error CODE rather than from
  * a list of blessed functions: a `VALIDATION` is by construction a refusal of the
  * SUBMISSION, and marking one operator-recoverable would tell a user to wait for
@@ -877,11 +941,15 @@ const WIRE_MESSAGE_MINTS: Readonly<Record<string, number>> = { appError: 1, vali
 const WIRE_MESSAGE_ROOTS = ["src/app/", "src/domain/", "src/infrastructure/"] as const;
 
 /**
- * The LOADER FAULT type whose values carry dotted document paths. A message that
- * interpolates one puts those paths on the wire at run time, which no scan of the
- * authored literals can see - the exact hole the plan compiler shipped through.
+ * The types whose VALUES are deployment internals: a loader fault carries dotted
+ * document paths, and a compiled command carries the configured command type,
+ * capability id and payload field names. A message that interpolates either puts
+ * those on the wire at run time, which no scan of the authored literals can see -
+ * the hole the plan compiler shipped through, and then the command adapters,
+ * whose `The configured command "${command.commandType}" resolved no ${field}`
+ * went verbatim to the external e-sign provider.
  */
-const LOADER_FAULT_TYPE = "DomainConfigError";
+const CONFIGURATION_VALUE_TYPES = ["DomainConfigError", "CommandInvocation"] as const;
 
 /**
  * The AUTHORED spans of a literal node - never the raw source of a template, whose
@@ -915,19 +983,21 @@ function literalSpans(node: Node): string[] {
   ];
 }
 
-/** Does this message BUILD itself from a loader fault, whatever its literals say? */
-function interpolatesLoaderFault(node: Node): boolean {
+/** Which configuration VALUE this message builds itself from, whatever its literals say. */
+function interpolatedConfigurationValue(node: Node): string | null {
   // A message with no interpolation carries no run-time value, and resolving
   // every identifier of every plain sentence in three layers is what turned this
   // fence from twenty seconds into two minutes.
   const spans = node.getDescendantsOfKind(SyntaxKind.TemplateSpan);
-  if (spans.length === 0 && !Node.isTemplateExpression(node) && !Node.isCallExpression(node)) return false;
+  if (spans.length === 0 && !Node.isTemplateExpression(node) && !Node.isCallExpression(node)) return null;
   for (const identifier of node.getDescendantsOfKind(SyntaxKind.Identifier)) {
     for (const definition of identifier.getDefinitionNodes()) {
-      if (definition.getText().includes(LOADER_FAULT_TYPE)) return true;
+      const text = definition.getText();
+      const named = CONFIGURATION_VALUE_TYPES.find((type) => text.includes(type));
+      if (named !== undefined) return named;
     }
   }
-  return false;
+  return null;
 }
 
 /**
@@ -977,8 +1047,9 @@ export function copyNamingDeploymentInternals(project: Project, roots: readonly 
       const message = index === undefined ? undefined : mint.getArguments()[index];
       if (message === undefined) continue;
       for (const span of literalSpans(message)) report(file, message, span, "a client-facing message");
-      if (interpolatesLoaderFault(message)) {
-        out.push(`${file}:${message.getStartLineNumber()}: a client-facing message is built from a ${LOADER_FAULT_TYPE}, whose paths reach the wire at run time`);
+      const built = interpolatedConfigurationValue(message);
+      if (built !== null) {
+        out.push(`${file}:${message.getStartLineNumber()}: a client-facing message is built from a ${built}, whose values reach the wire at run time`);
       }
     }
     for (const node of sourceFile.getDescendants()) {
@@ -1043,6 +1114,111 @@ export function emittedConfigurationPaths(documents: readonly JsonNode[]): strin
     }
   }
   return [...paths].sort();
+}
+
+/**
+ * WHAT THE LEAF SWEEP ABOVE STRUCTURALLY CANNOT REACH: a path whose DEPTH comes
+ * from the document's SHAPE rather than from its schema.
+ *
+ * The probes replace string LEAVES, so every path they provoke is as deep as the
+ * schema already is. One emitter is not bounded by the schema at all: a
+ * primitive's `parameters` value is opaque by design, and the walk that
+ * substitutes deferred references there appends a segment or a subscript per
+ * container level of a graph the author nests freely. That is how the shape came
+ * to admit three subscripts against an emitter with no bound at all.
+ *
+ * So the bound now lives with the emitter (`MAX_CONFIGURED_VALUE_DEPTH`, refused
+ * at admission) and the shape derives from it, and this drives the REAL
+ * `resolveParameters` at exactly that bound and one level past it. Fault paths at
+ * the bound must survive the channel; a graph past it must be REFUSED, because
+ * that refusal is the only reason the shape can be a consequence of the constant
+ * rather than a second opinion about it.
+ */
+const PROBE_PRIMITIVE: ParameterOwner = {
+  id: "probe-primitive",
+  keyShapingParameters: [],
+  declaredParameters: new Set(["p"]),
+  parseParameters: (value) => ({ ok: true, parameters: value as Readonly<Record<string, unknown>> }),
+};
+/** A `$ref` no vocabulary admits, so the substitution walk reports the position it sits at. */
+const UNRESOLVABLE_REF = Object.freeze({ $ref: { kind: "no-such-kind", class: "probe" } });
+const nestedInArrays = (levels: number): unknown =>
+  levels === 0 ? UNRESOLVABLE_REF : [nestedInArrays(levels - 1)];
+
+export function parameterDepthPaths(levels: number): {
+  readonly paths: string[];
+  readonly refused: boolean;
+} {
+  const resolved = resolveParameters(
+    PROBE_PRIMITIVE,
+    { p: nestedInArrays(levels) },
+    () => null,
+    "primitiveBindings.probe.parameters",
+  );
+  return {
+    paths: resolved.ok ? [] : resolved.error.map((fault) => fault.path),
+    refused: !resolved.ok,
+  };
+}
+
+/**
+ * DOES THIS PATH ADDRESS A NODE THE DOCUMENT REALLY HAS?
+ *
+ * Shape-matching is what let `presentation.form.fields.householdName` ship: it
+ * satisfied the declared shape perfectly and pointed at nothing, which is worse
+ * than the "[REDACTED]" the shape was widened to avoid - an operator cannot tell a
+ * confidently wrong location from a right one.
+ *
+ * The addressing convention is the loader's own: a segment indexes a record by
+ * key, and a LIST by the id its entries are keyed on (`id` for the document's
+ * sections, `slot` for the form's field list) or by an explicit subscript.
+ */
+export function resolvesInDocument(document: unknown, path: string): boolean {
+  let node: unknown = document;
+  for (const segment of path.split(".")) {
+    const [name = "", ...subscripts] = segment.split("[");
+    const step = (key: string): unknown => {
+      if (Array.isArray(node)) {
+        return node.find((entry) =>
+          typeof entry === "object" && entry !== null &&
+          ((entry as JsonNode)["id"] === key || (entry as JsonNode)["slot"] === key));
+      }
+      return typeof node === "object" && node !== null && Object.hasOwn(node, key)
+        ? (node as JsonNode)[key]
+        : undefined;
+    };
+    node = step(name);
+    for (const subscript of subscripts) {
+      const index = Number(subscript.replace("]", ""));
+      node = Array.isArray(node) ? node[index] : undefined;
+    }
+    if (node === undefined) return false;
+  }
+  return true;
+}
+
+/**
+ * Every dotted path the REAL intake emitters produce for one published document,
+ * from the REAL projected form: the disagreement this catches is between two
+ * emitters that address the SAME node, so both must be driven for real.
+ */
+export function emittedIntakePaths(form: IntakeForm): string[] {
+  const faults: DomainConfigError[] = [];
+  const collect = (fault: DomainConfigError): AppError => {
+    faults.push(fault);
+    return appError("INTERNAL", "The published configuration could not be resolved.");
+  };
+  const refuse: ConfiguredRefusal = {
+    uncompilable: collect, unrunnableStep: collect, intakeMismatch: collect,
+  };
+  const admitted = Object.fromEntries(form.fields.map((field) => [field.field, "supplied"]));
+  for (const field of form.fields) {
+    // The document declares a field this deployment's fixed input cannot carry...
+    unmappedIntakeFault(form, admitted, form.fields.filter((other) => other !== field).map((other) => other.field), refuse);
+    // ...and the deployment reads back a field the document declares.
+    requiredIntakeValue(form, admitted, field.field, refuse);
+  }
+  return [...new Set(faults.map((fault) => fault.path))].sort();
 }
 
 /**
@@ -1204,11 +1380,23 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     const project = realProject();
     const arms = refusalPortArms(project);
     expect(arms, `${REFUSAL_PORT_FILE} must declare the port, or the derivation checks nothing`).not.toEqual([]);
-    const unmarked = unmarkedConfigurationRefusals(project, CONFIGURATION_MODULE_ROOTS, arms);
+    // The DIRECTORY roots plus every module that answers for a compiled command -
+    // the adapters, which the directories alone could not see.
+    const commandType = compiledCommandType(project);
+    expect(commandType, `${EXECUTION_PORT_FILE} must declare ${EXECUTION_PORT}.${EXECUTION_PORT_METHOD}`).not.toBeNull();
+    const roots = configurationModuleRoots(project, CONFIGURATION_MODULE_ROOTS, commandType);
+    // ANTI-VACUITY: a derivation that reached no module beyond the two directories
+    // would be the rule that was already there, checking the sites that already
+    // passed - which is exactly how the adapters shipped unseen.
+    expect(
+      roots.filter((root) => !CONFIGURATION_MODULE_ROOTS.some((declared) => root === declared)),
+      "no module outside the configuration directories answers for a compiled command - the widened derivation checks nothing",
+    ).not.toEqual([]);
+    const unmarked = unmarkedConfigurationRefusals(project, roots, arms);
     expect(unmarked, `configuration refusals minted outside the one shape:\n${unmarked.join("\n")}`).toEqual([]);
     // ...and the derivation is COMPLETE: nothing marks a configuration refusal
     // where a rule derived from the configuration modules could not see it.
-    const outside = configurationMarkersOutsideModules(project, CONFIGURATION_MODULE_ROOTS);
+    const outside = configurationMarkersOutsideModules(project, roots);
     expect(outside, `configuration refusals minted outside the configuration modules:\n${outside.join("\n")}`).toEqual([]);
   });
 
@@ -1292,6 +1480,49 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
       emitted.filter((path) => path.includes("[")).length,
       "a step with no resolvable inputs must report the key segment that failed",
     ).toBeGreaterThan(0);
+    expect(sealedDiagnosisValues("configPath", emitted)).toEqual([]);
+  });
+
+  it("(L) enforces: a path whose depth comes from the DOCUMENT survives, and deeper is refused", () => {
+    // At the bound the emitter is admitted to, every path it builds must survive
+    // the channel - subscripts and all.
+    const admitted = parameterDepthPaths(MAX_CONFIGURED_VALUE_DEPTH);
+    expect(admitted.refused, "the probe must reach the substitution emitter at all").toBe(true);
+    const deepest = admitted.paths.reduce((longest, path) => (path.length > longest.length ? path : longest), "");
+    expect(
+      (deepest.match(/\[/g) ?? []).length,
+      "the probe must actually subscript once per admitted level, or the shape is checked against nothing",
+    ).toBe(MAX_CONFIGURED_VALUE_DEPTH);
+    expect(sealedDiagnosisValues("configPath", admitted.paths)).toEqual([]);
+    // ...and ONE LEVEL PAST IT the loader refuses, which is what makes the shape a
+    // consequence of the bound rather than a second opinion about it. Its own
+    // refusal reports the deepest ADMITTED path, so the refusal is not itself a
+    // location the channel censors.
+    const past = parameterDepthPaths(MAX_CONFIGURED_VALUE_DEPTH + 1);
+    expect(past.refused, "a graph deeper than the emitter's bound must be refused at admission").toBe(true);
+    expect(sealedDiagnosisValues("configPath", past.paths)).toEqual([]);
+    expect(
+      past.paths.every((path) => (path.match(/\[/g) ?? []).length <= MAX_CONFIGURED_VALUE_DEPTH),
+      "the overrun refusal must name a location the channel can carry",
+    ).toBe(true);
+  });
+
+  it.each(DOMAIN_FILES)("(L) enforces: %s - every intake fault path addresses a REAL node", (file) => {
+    const loaded = loadDomainConfig(parsed(file));
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const projected = intakeFormOf(loaded.value);
+    if (!projected.ok) return; // a domain declaring no form emits no intake path
+    const emitted = emittedIntakePaths(projected.value);
+    expect(emitted.length, "the intake emitters must produce a path to check").toBeGreaterThan(0);
+    // SHAPE IS NOT ENOUGH. `presentation.form.fields.householdName` matched the
+    // declared shape and addressed nothing: the document keys that list by SLOT.
+    const document = parsed(file);
+    const dangling = emitted.filter((path) => !resolvesInDocument(document, path));
+    expect(
+      dangling,
+      `an intake fault sends the operator to a location this document does not have:\n${dangling.join("\n")}`,
+    ).toEqual([]);
     expect(sealedDiagnosisValues("configPath", emitted)).toEqual([]);
   });
 
@@ -1548,6 +1779,89 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
         copyNamingDeploymentInternals(interpolated, ["src/domain/"]).some((hit) =>
           hit.includes("is built from a DomainConfigError")),
       ).toBe(true);
+      // ...and the SECOND run-time form, which the loader-fault-only rule could not
+      // see: the command adapters' `The configured command "${command.commandType}"
+      // resolved no ${field}` reached the external e-sign provider verbatim, and
+      // every literal span of it is ordinary prose.
+      const command = inMemoryProject({
+        "/src/domain/config/plan-compiler.ts":
+          `export type CommandInvocation = { commandType: string; payload: Record<string, string> };`,
+        "/src/infrastructure/execution-adapters.ts":
+          `import type { CommandInvocation } from "@domain/config/plan-compiler";\n` +
+          `export const required = (command: CommandInvocation, field: string): string => {\n` +
+          `  throw appError("INTERNAL", \`The configured command "\${command.commandType}" resolved no \${field}.\`);\n` +
+          `};`,
+      });
+      expect(
+        copyNamingDeploymentInternals(command, ["src/infrastructure/"]).some((hit) =>
+          hit.includes("is built from a CommandInvocation")),
+      ).toBe(true);
+    });
+
+    it("(I) catches an unmarked refusal in the module that answers for a compiled command", () => {
+      // The last site the DIRECTORY derivation could not see. The adapters live
+      // outside both configuration roots, so a rule derived from those directories
+      // read green while three published-configuration defects shipped unmarked,
+      // unreferenced and unlogged.
+      const project = inMemoryProject({
+        "/src/domain/config/plan-compiler.ts":
+          `export type CommandInvocation = { commandType: string; capabilityId: string };\n` +
+          `export interface ExecutionAdapters { invoke(command: CommandInvocation, tenant: unknown): Promise<void> }`,
+        "/src/infrastructure/execution-adapters.ts":
+          `import type { CommandInvocation, ExecutionAdapters } from "@domain/config/plan-compiler";\n` +
+          `export const required = (command: CommandInvocation) => {\n` +
+          `  throw appError("INTERNAL", "resolved no payload field");\n` +
+          `};`,
+        // A module that only CONSUMES the port never holds a compiled command, so
+        // its storage failures stay outside the rule - the over-broad "imports the
+        // configuration layer" derivation would have swept this in and then needed
+        // an exemption list, which is the registry this whole rule replaced.
+        "/src/infrastructure/wire.ts":
+          `import type { ExecutionAdapters } from "@domain/config/plan-compiler";\n` +
+          `export const start = (deps: ExecutionAdapters) => appError("INTERNAL", "The flow could not be started.");`,
+      });
+      const commandType = compiledCommandType(project);
+      expect(commandType).toBe("CommandInvocation");
+      const roots = configurationModuleRoots(project, ["src/domain/config/"], commandType);
+      expect(roots).toEqual(["src/domain/config/", "src/infrastructure/execution-adapters.ts"]);
+      expect(unmarkedConfigurationRefusals(project, roots, ARMS)).toEqual([
+        "src/domain/config/ refuses nothing - the derivation is stale",
+        "src/infrastructure/execution-adapters.ts:3: a configuration refusal is minted with no correlationId for the caller to quote",
+        "src/infrastructure/execution-adapters.ts:3: a configuration refusal is minted without operatorRecoverable()",
+        "src/infrastructure/execution-adapters.ts:3: a configuration refusal is minted without stating its diagnosis on an operator log line",
+      ]);
+      // Stated through the shared port instead, the adapter mints nothing and is
+      // outside the rule by construction - which is the architecture, not an escape.
+      const ported = inMemoryProject({
+        "/src/domain/config/plan-compiler.ts":
+          `export type CommandInvocation = { commandType: string; capabilityId: string };\n` +
+          `export interface ExecutionAdapters { invoke(command: CommandInvocation, tenant: unknown): Promise<void> }`,
+        "/src/infrastructure/execution-adapters.ts":
+          `import type { CommandInvocation } from "@domain/config/plan-compiler";\n` +
+          `export const required = (command: CommandInvocation, refuse) =>\n` +
+          `  { throw refuse.unrunnableStep(configError("incoherent", p, "m")); };`,
+      });
+      expect(
+        unmarkedConfigurationRefusals(
+          ported,
+          configurationModuleRoots(ported, [], compiledCommandType(ported)),
+          ARMS,
+        ),
+      ).toEqual([]);
+    });
+
+    it("(I) ANTI-VACUITY: a port with no declared command type derives no extra root", () => {
+      // The derivation reads the command type off the port's own `invoke`. An
+      // emptied port yields nothing to key on, and the widened rule then reports
+      // exactly the directories it started with rather than passing on a set it
+      // silently failed to compute.
+      const emptied = inMemoryProject({
+        "/src/domain/config/plan-compiler.ts": `export interface ExecutionAdapters { }`,
+        "/src/infrastructure/execution-adapters.ts": `export const x = 1;`,
+      });
+      expect(compiledCommandType(emptied)).toBeNull();
+      expect(configurationModuleRoots(emptied, ["src/domain/config/"], null))
+        .toEqual(["src/domain/config/"]);
     });
 
     it("(K) catches a deployment path in copy a user reads, in JSX text and in a message map", () => {
@@ -1583,6 +1897,46 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
       ).toBeGreaterThan(0);
       // ...and the live shape admits every one of them, which is the fix.
       expect(sealedDiagnosisValues("configPath", sealedByTheOldShape)).toEqual([]);
+    });
+
+    it("(L) catches the shape being narrower than its emitter in the DEPTH dimension", () => {
+      // The second time this shape shipped narrower than its emitter, and the
+      // dimension the leaf sweep structurally cannot reach: the probes replace
+      // string LEAVES, so no path they provoke is deeper than the schema already
+      // is. This one's depth comes from the document's own SHAPE.
+      const admitted = parameterDepthPaths(MAX_CONFIGURED_VALUE_DEPTH);
+      const priorCap = new RegExp(
+        String.raw`^[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,3}(?:\.[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,3}){0,15}$`,
+      );
+      const sealedByThePriorShape = admitted.paths.filter((path) => !priorCap.test(path));
+      expect(
+        sealedByThePriorShape.length,
+        "the probe must produce a path the three-subscript cap sealed, or this companion proves nothing",
+      ).toBeGreaterThan(0);
+      expect(sealedDiagnosisValues("configPath", sealedByThePriorShape)).toEqual([]);
+      // ...and the emitter cannot outrun the shape again, because admission stops
+      // it: a graph one level past the bound never reaches the substitution walk.
+      const past = parameterDepthPaths(MAX_CONFIGURED_VALUE_DEPTH + 1);
+      expect(past.paths.every((path) => (path.match(/\[/g) ?? []).length <= MAX_CONFIGURED_VALUE_DEPTH)).toBe(true);
+    });
+
+    it("(L) catches a fault path that MATCHES the shape and addresses nothing", () => {
+      // What shipped: `presentation.form.fields` is keyed by SLOT, and the intake
+      // view emitted the TRIGGER FIELD, so every intake-mismatch sent an operator
+      // to a node the document does not have - shape-perfect and wrong, which the
+      // sealed-value rule cannot see because nothing is sealed.
+      const document = parsed("account-opening.yaml");
+      expect(resolvesInDocument(document, "presentation.form.fields.householdName")).toBe(false);
+      expect(sealedDiagnosisValues("configPath", ["presentation.form.fields.householdName"])).toEqual([]);
+      // The slot-keyed path addresses the entry the document really carries...
+      expect(resolvesInDocument(document, "presentation.form.fields.household-name")).toBe(true);
+      // ...and the resolver is not simply permissive: it walks records by key,
+      // lists by their entries' own id, and subscripts by index.
+      expect(resolvesInDocument(document, "presentation.form.fields")).toBe(true);
+      expect(resolvesInDocument(document, "execution.capabilities.household-create")).toBe(true);
+      expect(resolvesInDocument(document, "execution.capabilities.no-such-capability")).toBe(false);
+      expect(resolvesInDocument(document, "intents.open-account.slots[0].triggerField")).toBe(true);
+      expect(resolvesInDocument(document, "intents.open-account.slots[99]")).toBe(false);
     });
 
     it("(L) catches a value NO shape admits, and never mistakes an absent path for a sealed one", () => {

@@ -42,6 +42,34 @@ export const DOMAIN_CONFIG_ERROR_CODES = [
 
 export type DomainConfigErrorCode = (typeof DOMAIN_CONFIG_ERROR_CODES)[number];
 
+/**
+ * HOW DEEP A CONFIGURED VALUE GRAPH MAY NEST - the ONE bound the fault-path
+ * channel and its emitter both read.
+ *
+ * A fault's `path` is the operator's only statement of WHERE, and the channel it
+ * travels admits a declared SHAPE (`configPath` in `domain/observability`), so a
+ * path the emitter can build and the shape cannot express degrades to
+ * "[REDACTED]" - a stage reported with its location censored, which is the dead
+ * diagnosis channel D-229 exists to prevent.
+ *
+ * Every other emitted path is bounded by the SCHEMA: the document's own sections
+ * nest a fixed number of levels. One is not. A primitive's `parameters` value is
+ * OPAQUE to this schema by design (the primitive's own schema judges it), so the
+ * walk that substitutes deferred references there descends once per array or
+ * object level of a graph the document authors freely, appending a segment or a
+ * subscript each time.
+ *
+ * So the bound is stated HERE, once, and applied at BOTH ends: the loader refuses
+ * a parameter graph nested deeper than this at admission (`resolveParameters`),
+ * and the diagnosis shape derives its per-segment subscript cap from this same
+ * constant. Bounding admission once is what keeps the two from being two
+ * opinions - the shape is a CONSEQUENCE of the bound rather than a second guess
+ * at it, which is the mistake that shipped twice (D-233).
+ *
+ * Raising it is a deliberate edit here; the shape follows automatically.
+ */
+export const MAX_CONFIGURED_VALUE_DEPTH = 8;
+
 export type DomainConfigError = {
   readonly code: DomainConfigErrorCode;
   /** Dotted document path (`intents.open-account.slots.email`), never a line offset. */

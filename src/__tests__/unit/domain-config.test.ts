@@ -456,20 +456,39 @@ describe("domain configuration: the shipped documents", () => {
       // The five shipped fields all land; a sixth configured slot would not, and
       // the route refuses it rather than losing it at a later step whose
       // predecessors have already committed (D-210).
-      expect(unmappedIntakeFault(admitted.value, Object.keys(VALID), recordStepFault)).toBeNull();
+      const projected = form();
+      expect(projected.ok).toBe(true);
+      if (!projected.ok) return;
+      expect(unmappedIntakeFault(projected.value, admitted.value, Object.keys(VALID), recordStepFault)).toBeNull();
       const refusal = unmappedIntakeFault(
-        { ...admitted.value, advisorNote: "x", branchCode: null },
-        Object.keys(VALID),
+        projected.value,
+        admitted.value,
+        Object.keys(VALID).filter((field) => field !== "householdName"),
         recordStepFault,
       );
       expect(refusal).not.toBeNull();
       // MINTED THROUGH THE SHARED PORT, not spelled here: the field the document
       // declares reaches the operator as the fault's own dotted path, and the
       // refusal itself carries no name a browser or the e-sign provider could read.
+      //
+      // The path is keyed by SLOT, which is how the document keys its form field
+      // list - `presentation.form.fields.householdName` names the TRANSPORT token
+      // and addresses no node the document has.
       expect(refusedStages).toEqual(["intake-mismatch"]);
       expect(stepFaults).toHaveLength(1);
-      expect(stepFaults[0]!.path).toBe("presentation.form.fields.advisorNote");
-      expect(refusal?.message).not.toContain("advisorNote");
+      expect(stepFaults[0]!.path).toBe("presentation.form.fields.household-name");
+      expect(refusal?.message).not.toContain("householdName");
+      // A key the document declares NO field for has no entry to name, so the
+      // fault addresses the list itself rather than inventing a child of it.
+      stepFaults.length = 0;
+      const foreign = unmappedIntakeFault(
+        projected.value,
+        { ...admitted.value, advisorNote: "x" },
+        Object.keys(VALID),
+        recordStepFault,
+      );
+      expect(foreign).not.toBeNull();
+      expect(stepFaults[0]!.path).toBe("presentation.form.fields");
     });
 
     it("refuses a value longer than the slot's DECLARED maximum, at that exact length", () => {
@@ -518,7 +537,9 @@ describe("domain configuration: the shipped documents", () => {
       expect(renamed.ok).toBe(false);
       if (renamed.ok) return;
       expect(refusedStages).toEqual(["intake-mismatch"]);
-      expect(stepFaults[0]!.path).toBe("presentation.form.fields.household_name");
+      // No entry of the field list holds that token - that IS the fault - so the
+      // path names the list rather than a child the document does not have.
+      expect(stepFaults[0]!.path).toBe("presentation.form.fields");
       expect(renamed.error.message).not.toContain("household_name");
       // An optional field is null when absent, and refused when UNDECLARED - the
       // two cases a `?? null` default cannot tell apart.
@@ -575,7 +596,10 @@ describe("domain configuration: the shipped documents", () => {
       // supplied as text" for a field the requester was entitled to omit.
       const declared = {
         ...projected.value,
-        fields: [...projected.value.fields, { field: "toString", label: "Trace", type: "text", required: false }],
+        fields: [
+          ...projected.value.fields,
+          { slot: "trace", field: "toString", label: "Trace", type: "text", required: false },
+        ],
       } as const;
       const admitted = admitIntakeSubmission(declared, VALID);
       expect(admitted.ok, admitted.ok ? "" : admitted.error.message).toBe(true);

@@ -15514,3 +15514,139 @@ fence failing for a reason nobody attributes to it.
 **Reverted:** the guard restored; `Tests 19 passed (19)`.
 
 **Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-one-mint-and-emitter-derived-shapes`).
+
+---
+
+## PF-286 - a configuration refusal minted where the DIRECTORY derivation could not see it
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, widened. The rule derived its
+candidate mints from two directories (`src/domain/config/`, `src/infrastructure/config/`), and the command
+adapters live in neither - so three published-configuration defects (a payload field the compiled command
+did not carry, a registration outside the store's vocabulary, a command type with no runner) shipped as
+bare `appError("INTERNAL", ...)` throws while the rule read green. Unmarked, the e-sign provider was told
+to redeliver forever with no pacing against a fault only an operator clears. The derivation now also
+covers every module that HOLDS a compiled command, keyed on the type the port's own `invoke` declares
+(read from that declaration, recognised by imported name) rather than on a directory or a spelling.
+
+**Injection.** Replaced `required`'s port refusal in `src/infrastructure/execution-adapters.ts` with the
+bare `throw appError("INTERNAL", "The configured command resolved no payload field.")` it shipped as.
+
+**Observed failure:**
+```
+× (I) enforces: every configuration refusal is minted with its cause marked, in ONE shape
+src/infrastructure/execution-adapters.ts:76: a configuration refusal is minted with no correlationId for the caller to quote
+src/infrastructure/execution-adapters.ts:76: a configuration refusal is minted without operatorRecoverable()
+src/infrastructure/execution-adapters.ts:76: a configuration refusal is minted without stating its diagnosis on an operator log line
+```
+
+**Companion.** `(I) catches an unmarked refusal in the module that answers for a compiled command` runs
+the widened derivation over a synthetic tree carrying the adapter AND a module that only CONSUMES the port
+(`deps: ExecutionAdapters`), asserting the first is derived in and the second stays out - the over-broad
+"imports the configuration layer" derivation would have swept the composition root's storage failures in
+and then needed an exemption list, which is the drifting registry this rule replaced. A second case proves
+the same adapter stating its fault through the shared PORT mints nothing and is clean. `(I) ANTI-VACUITY:
+a port with no declared command type derives no extra root` proves an emptied port yields the declared
+directories rather than a set the rule silently failed to compute, and the enforcing test requires the
+derivation to reach at least one module beyond those directories.
+
+**Reverted:** the port refusal restored; `Tests 61 passed (61)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-adapter-mint-and-emitter-bounds`).
+
+---
+
+## PF-287 - a wire message built from a compiled command
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE K, widened. The run-time half of the
+rule resolved one type (`DomainConfigError`), so the adapters' `The configured command
+"${command.commandType}" resolved no ${field}` was invisible: every authored literal span of it is
+ordinary prose, and the configured command type and payload field id only appear when it runs - in the
+JSON body the webhook returns to the EXTERNAL e-sign provider. The condition is "a message built from a
+value that IS a deployment internal", so `CommandInvocation` joins the loader fault.
+
+**Injection.** Restored that exact message, with `required(command: CommandInvocation, field: string)`, in
+`src/infrastructure/execution-adapters.ts`.
+
+**Observed failure:**
+```
+× (K) enforces: no deployment internal reaches a user-facing surface or the wire
+src/infrastructure/execution-adapters.ts:76: a client-facing message is built from a CommandInvocation, whose values reach the wire at run time
+```
+
+**Companion.** `(K) catches a wire message minted OUTSIDE src/app/, literally and by interpolation` gains
+the second run-time form beside the loader-fault one, over a synthetic adapter reproducing the shipped
+message; the pre-existing cases keep proving the literal forms (a bare filename, an unlisted extension, an
+environment variable name, a digest, a dotted document path) and that a module specifier is resolution
+rather than copy.
+
+**Reverted:** the port refusal restored; `Tests 61 passed (61)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-adapter-mint-and-emitter-bounds`).
+
+---
+
+## PF-288 - a diagnosis shape narrower than its emitter, in the DEPTH dimension
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, extended. The `configPath` shape
+had been widened once to admit subscripts and capped at three per segment - a number chosen beside the
+regex, against an emitter with no bound at all: `substitute` descends once per container level of a
+primitive's `parameters`, a value graph the SCHEMA does not shape, so a `$ref` four arrays deep emitted a
+path the shape sealed. RULE L's leaf sweep structurally cannot see this (the probes replace string LEAVES,
+so no path's depth depends on document STRUCTURE). The bound now lives with the emitter -
+`MAX_CONFIGURED_VALUE_DEPTH` in `src/domain/config/errors.ts`, refused at admission by `resolveParameters`
+- and the shape's per-segment subscript cap is read from that same constant, so the two cannot disagree by
+construction (D-233; the D-181 pattern of bounding admission once).
+
+**Injection.** Removed the admission check from `resolveParameters`, leaving the emitter unbounded.
+
+**Observed failure:**
+```
+× (L) enforces: a path whose depth comes from the DOCUMENT survives, and deeper is refused
+configPath: the emitters produce "primitiveBindings.probe.parameters.p[0][0][0][0][0][0][0][0][0]", which the declared shape seals
+```
+
+**Companion.** `(L) catches the shape being narrower than its emitter in the DEPTH dimension` drives the
+REAL `resolveParameters` at exactly the admitted bound and asserts the paths it produces are ones the
+PRIOR three-subscript cap sealed (or the companion proves nothing) and that the live shape admits every
+one; the enforcing test additionally requires the probe to subscript once per admitted level, requires a
+graph one level past the bound to be REFUSED, and requires that refusal's own path - the deepest ADMITTED
+one - to be a location the channel carries.
+
+**Reverted:** the admission check restored; `Tests 61 passed (61)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-adapter-mint-and-emitter-bounds`).
+
+---
+
+## PF-289 - a fault path that MATCHES the shape and addresses nothing
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, extended. `fieldPath` in the
+intake view addressed `presentation.form.fields` by TRIGGER FIELD (`householdName`) while the document -
+and `intakeFormOf`, the other emitter for the same node - keys that list by SLOT (`household-name`). The
+path satisfied the declared shape perfectly and pointed at a node the document does not contain, so
+nothing sealed and nothing failed: a confidently wrong location in the channel built to be authoritative,
+which an operator cannot tell from a right one. Shape-matching was exactly what let it through, so the
+rule now resolves every emitted intake path against the shipped document.
+
+**Injection.** Restored the trigger-field-keyed path in `src/domain/config/intake-view.ts`.
+
+**Observed failure:**
+```
+× (L) enforces: account-opening.yaml - every intake fault path addresses a REAL node
+an intake fault sends the operator to a location this document does not have:
+presentation.form.fields.accountType
+presentation.form.fields.firstName
+presentation.form.fields.householdName
+presentation.form.fields.lastName
+```
+
+**Companion.** `(L) catches a fault path that MATCHES the shape and addresses nothing` proves the shipped
+path resolves to no node WHILE passing the sealed-value rule clean (which is why that rule could not catch
+it), proves the slot-keyed path resolves, and proves the resolver is not merely permissive: it walks
+records by key, lists by their entries' own id, and subscripts by index, and answers false for an
+undeclared capability and an out-of-range subscript. The enforcing test runs per shipped document and
+requires the intake emitters to produce at least one path to check.
+
+**Reverted:** the slot-keyed path restored; `Tests 61 passed (61)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-adapter-mint-and-emitter-bounds`).

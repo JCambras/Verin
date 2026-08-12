@@ -23,7 +23,7 @@
  */
 import { z } from "zod";
 import { err, ok, type Result } from "@contracts/result";
-import { configError, type DomainConfigError } from "./errors";
+import { configError, MAX_CONFIGURED_VALUE_DEPTH, type DomainConfigError } from "./errors";
 
 
 /** The tenant-scoped reference classes a parameter position may defer. */
@@ -96,6 +96,48 @@ const parameterRefProblem = (ref: unknown): string | null => {
 export const NEUTRAL_FIRM_ID = "domain-config-neutral";
 
 export type RefResolver = (ref: ParameterRef["$ref"]) => unknown | null;
+
+/**
+ * WHERE A PARAMETER GRAPH STOPS BEING EXPRESSIBLE - the admission half of
+ * `MAX_CONFIGURED_VALUE_DEPTH`.
+ *
+ * `substitute` below descends once per container level and appends `.key` or
+ * `[index]` to the fault path as it goes, so the path it can emit is exactly as
+ * deep as the graph it is given. This walk MIRRORS that descent - same
+ * containers, same placeholder short-circuit - and refuses at the bound, naming
+ * the deepest ADMITTED path rather than the offending one: reporting a path the
+ * channel cannot carry would censor the very location this refusal exists to
+ * state.
+ *
+ * Refusing at admission is what makes the diagnosis shape a consequence of this
+ * constant instead of a second opinion about it (D-233), the same way the policy
+ * loader bounds document nesting before parsing rather than after (D-181).
+ */
+const depthOverruns = (
+  value: unknown,
+  path: string,
+  remaining: number,
+  errors: DomainConfigError[],
+): void => {
+  if (isParameterRef(value)) return;
+  const entries: (readonly [string, unknown])[] = Array.isArray(value)
+    ? value.map((entry, index) => [`${path}[${index}]`, entry] as const)
+    : typeof value === "object" && value !== null
+    ? Object.entries(value as Record<string, unknown>).map(([key, entry]) => [`${path}.${key}`, entry] as const)
+    : [];
+  if (entries.length === 0) return;
+  if (remaining === 0) {
+    errors.push(
+      configError(
+        "type-mismatch",
+        path,
+        `a configured parameter value may nest at most ${MAX_CONFIGURED_VALUE_DEPTH} levels, so a fault below this point has no location the operator's channel can carry`,
+      ),
+    );
+    return;
+  }
+  for (const [at, entry] of entries) depthOverruns(entry, at, remaining - 1, errors);
+};
 
 /** Substitute every placeholder through `resolve`; a `null` answer is an error. */
 const substitute = (
@@ -239,6 +281,13 @@ export const resolveParameters = (
       );
     }
   }
+  // BEFORE any walk that recurses on document structure, so a graph deeper than
+  // the fault channel can express is refused rather than walked - and so every
+  // recursion below is bounded by an admission this call has already proven.
+  for (const [name, value] of Object.entries(parameters)) {
+    depthOverruns(value, `${path}.${name}`, MAX_CONFIGURED_VALUE_DEPTH, errors);
+  }
+  if (errors.length > 0) return err(errors);
   for (const shaping of primitive.keyShapingParameters) {
     const value = parameters[shaping];
     if (value !== undefined && containsParameterRef(value)) {

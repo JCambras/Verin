@@ -51,6 +51,14 @@ import { configError, type ConfiguredRefusal } from "./errors";
 export const CLIENT_REQUEST_ID_KEY = "clientRequestId";
 
 export type IntakeField = {
+  /**
+   * The SLOT this field projects, carried because it is the id the DOCUMENT keys
+   * the form's field list by. The projection is keyed by `field` (the transport
+   * name a submission carries), so without this a fault about one of these fields
+   * could only name the transport token - and `presentation.form.fields.<trigger
+   * field>` addresses no node in the document at all.
+   */
+  readonly slot: string;
   readonly field: string;
   readonly label: string;
   readonly type: "text" | "email" | "select";
@@ -123,12 +131,24 @@ export const admitIntakeSubmission = (
 };
 
 /**
- * WHERE ONE INTAKE FIELD LIVES IN THE DOCUMENT, as the dotted path a fault
- * carries. The trigger field is the token the projected form is keyed by and the
- * one an operator greps for in the YAML, so it is the last segment - and it is a
- * document value throughout, never anything a submitter chose.
+ * THE DOCUMENT NODE THAT HOLDS THE FORM'S FIELD LIST - the path a fault about
+ * one of them is addressed under.
+ *
+ * The document keys that list by SLOT (`presentation.form.fields` is a list of
+ * `{slot, input}`), which is the addressing convention every other emitter uses
+ * for a list of identified entries, and `intakeFormOf` emits exactly this path
+ * for the same node. The projection is keyed by TRIGGER FIELD, so naming that
+ * token here produced `presentation.form.fields.householdName` - a location the
+ * document does not contain, in the channel that exists to be authoritative. A
+ * confidently wrong answer is worse than a sealed one: the operator cannot tell
+ * it is wrong.
  */
-const fieldPath = (field: string): string => `presentation.form.fields.${field}`;
+const FORM_FIELDS_PATH = "presentation.form.fields";
+const fieldPath = (slot: string): string => `${FORM_FIELDS_PATH}.${slot}`;
+
+/** The slot a projected field came from, or `null` when the document declares no such field. */
+const declaredSlot = (form: IntakeForm, field: string): string | null =>
+  form.fields.find((declared) => declared.field === field)?.slot ?? null;
 
 /**
  * The FIRST admitted field a caller's FIXED input shape has no room for, as a
@@ -140,9 +160,11 @@ const fieldPath = (field: string): string => `presentation.form.fields.${field}`
  * the boundary admits its value, and the value vanishes - to be missed at
  * whatever step sources it, by which point earlier steps have committed. The
  * field that caused it reaches the operator as the fault's own path rather than
- * the wire as prose (D-229).
+ * the wire as prose (D-229) - and because every admitted key came from the
+ * projected form, that path is always the slot-keyed node the document really has.
  */
 export const unmappedIntakeFault = (
+  form: IntakeForm,
   admitted: Readonly<Record<string, string | null>>,
   carried: readonly string[],
   refuse: ConfiguredRefusal,
@@ -150,15 +172,15 @@ export const unmappedIntakeFault = (
   const known = new Set<string>(carried);
   const unmapped = Object.keys(admitted).filter((field) => !known.has(field)).sort();
   const first = unmapped[0];
-  return first === undefined
-    ? null
-    : refuse.intakeMismatch(
-      configError(
-        "incoherent",
-        fieldPath(first),
-        "this deployment's fixed start input has no room for a field the document declares",
-      ),
-    );
+  if (first === undefined) return null;
+  const slot = declaredSlot(form, first);
+  return refuse.intakeMismatch(
+    configError(
+      "incoherent",
+      slot === null ? FORM_FIELDS_PATH : fieldPath(slot),
+      "this deployment's fixed start input has no room for a field the document declares",
+    ),
+  );
 };
 
 /** The label the document declares for a trigger field, or `undefined` if it declares none. */
@@ -173,10 +195,15 @@ const declaredLabel = (form: IntakeForm, field: string): string | undefined =>
  * who did nothing wrong and can do nothing about it. The instruction is inherited
  * from the shared mint rather than marked here, which is what keeps this refusal
  * from drifting apart from the eight others that say the same thing.
+ *
+ * The path is the FIELD LIST rather than an entry in it, because that is the
+ * honest location: no entry holds the token the caller named - that is the fault.
+ * Naming `presentation.form.fields.<the token>` would send an operator to a node
+ * the document does not have.
  */
-const undeclared = (field: string, refuse: ConfiguredRefusal): AppError =>
+const undeclared = (refuse: ConfiguredRefusal): AppError =>
   refuse.intakeMismatch(
-    configError("unknown-reference", fieldPath(field), "this document declares no intake field of that name"),
+    configError("unknown-reference", FORM_FIELDS_PATH, "this document declares no intake field of that name"),
   );
 
 /**
@@ -193,7 +220,7 @@ export const requiredIntakeValue = (
   refuse: ConfiguredRefusal,
 ): Result<string, AppError> => {
   const label = declaredLabel(form, field);
-  if (label === undefined || !Object.hasOwn(admitted, field)) return err(undeclared(field, refuse));
+  if (label === undefined || !Object.hasOwn(admitted, field)) return err(undeclared(refuse));
   const value = admitted[field];
   return typeof value === "string" && value !== ""
     ? ok(value)
@@ -208,7 +235,7 @@ export const optionalIntakeValue = (
   refuse: ConfiguredRefusal,
 ): Result<string | null, AppError> => {
   if (declaredLabel(form, field) === undefined || !Object.hasOwn(admitted, field)) {
-    return err(undeclared(field, refuse));
+    return err(undeclared(refuse));
   }
   const value = admitted[field];
   return ok(typeof value === "string" && value !== "" ? value : null);

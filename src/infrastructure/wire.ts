@@ -249,7 +249,7 @@ export async function startAccountOpening(
   const store = makeExecutionStore(db);
   const executionId = canonical.value.id;
   const observableExecutionId = canonical.value.observable;
-  const deps = makeExecutionAdapters(db, grant.writeActor);
+  const deps = makeExecutionAdapters(db, grant.writeActor, flow.value.refuse);
   // A client-minted id that already started is a double-submit: report the
   // existing execution's state instead of starting a duplicate. The tenant-scoped
   // loadById filters org_id in SQL, so a (guessed) foreign execution id can never
@@ -375,7 +375,7 @@ export async function resumeAccountOpeningByToken(
       data: {},
     };
   }
-  const deps = makeExecutionAdapters(db, starter);
+  const deps = makeExecutionAdapters(db, starter, flow.value.refuse);
   // The cursor this resume would drive is POSITIONAL, so it is only meaningful
   // against the plan the execution started under. A mid-flight configuration
   // version bump fails LOUDLY rather than silently resuming at the wrong step.

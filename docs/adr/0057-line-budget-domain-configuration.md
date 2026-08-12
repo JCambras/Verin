@@ -496,3 +496,36 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 | `infrastructure` | 8,701 | 8,745 | 44 (unchanged) |
 | `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
 | `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+## Amendment (2026-08-12, review round 17): `domain` and `infrastructure` raised for the adapter mint and the emitter-derived shape
+
+Both layers grow past their ceilings answering this round's findings in code. The classification the two
+previous amendments made structural still had one site outside it: the COMMAND ADAPTERS, which live in
+neither configuration directory and so were invisible to a rule derived from those directories. They
+answered a published-configuration defect in their own words - a payload field the compiled command did
+not carry, a registration outside the vocabulary the store accepts, a command type with no runner - so the
+configured command type and payload field id went to the EXTERNAL e-sign provider verbatim, the provider
+was told to redeliver forever with no pacing against a fault only an operator clears, and the operator got
+no line at all.
+
+`infrastructure` gains the adapters' three faults restated through the injected `ConfiguredRefusal` port,
+the document path each reports, and the context threading that carries the mint to them. `domain` gains
+the mint on the compiled plan (so the adapters and the plan's own steps provably share ONE port rather
+than two built beside each other), the slot the intake projection carries so a fault addresses the node
+the document really has, and the emitter-side depth bound that makes the `configPath` shape a consequence
+of an admission rather than a second opinion about it: the shape had been widened once and capped at three
+subscripts per segment against a substitution walk with no bound at all, which is the same defect the
+widening fixed, one dimension over.
+
+`contracts` is RE-TAKEN rather than carried forward and is unchanged at 6,752, comfortably inside the
+ceiling it already holds, so it is left alone rather than raised for company.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,752 | 6,782 | 30 (unchanged) |
+| `domain` | 9,622 | **9,685** | 63 |
+| `infrastructure` | 8,769 | **8,815** | 46 |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { toResponse } from "@contracts/errors";
+import { toResponse, type AppError } from "@contracts/errors";
 import { CLIENT_RETRY, clientRetryFor } from "@contracts/client-retry";
 import { MACHINE_RECORD_ID_RE } from "@contracts/record-id";
 
@@ -56,8 +56,10 @@ vi.mock("@domain/config/load", async (importOriginal) => {
   };
 });
 
-const { ACCOUNT_OPENING_DOMAIN, loadIntakeForm, loadPublishedDomainConfig } =
+const { ACCOUNT_OPENING_DOMAIN, configuredRefusal, loadIntakeForm, loadPublishedDomainConfig } =
   await import("@infra/config/domain-config-source");
+const { makeExecutionAdapters } = await import("@infra/execution-adapters");
+const { systemWriteActor } = await import("@contracts/principal");
 
 /** A published document this file loads NOWHERE else, so no memoized success hides the injection. */
 const UNMEMOIZED_DOMAIN = "money-movement";
@@ -165,5 +167,76 @@ describe("the domain-configuration source refuses without leaking its diagnosis"
     expect(line).not.toHaveProperty("configPath");
     expect(line["configCode"]).toBe(fault.code);
     expect(Object.values(line)).not.toContain(REDACTED);
+  });
+});
+
+/**
+ * THE COMMAND ADAPTERS, WHICH ANSWER FOR THE PUBLISHED DOCUMENT TOO (D-234).
+ *
+ * They were the last site outside the mint, and being outside it cost all three
+ * halves of the channel at once: the configured command type and payload field id
+ * went to the EXTERNAL e-sign provider verbatim through `toResponse`, the unmarked
+ * error made the webhook answer an unpaced 500 against a fault only an operator
+ * clears, and no log line was emitted at all. Driven through the REAL port here,
+ * because the fence proves the SHAPE and only running it proves the channel.
+ */
+describe("a command adapter refuses through the same mint as every other stage", () => {
+  beforeEach(() => {
+    emitted.lines = [];
+    injected.fault = null;
+  });
+
+  /** A compiled command whose payload is missing a field its runner requires. */
+  async function adapterRefusal(commandType: string, payload: Record<string, string>) {
+    const adapters = makeExecutionAdapters(
+      // Never reached: every refusal below is raised before the first write.
+      null as never,
+      systemWriteActor("esign-webhook", "org-1"),
+      configuredRefusal(ACCOUNT_OPENING_DOMAIN),
+    );
+    const starter = systemWriteActor("esign-webhook", "org-1");
+    return adapters.invoke(
+      { capabilityId: "household-create", commandType, payload, idempotencyKey: "k" },
+      starter.tenant,
+    ).then(
+      () => { throw new Error("the adapter must refuse"); },
+      (error: unknown) => error as AppError,
+    );
+  }
+
+  it.each([
+    ["a payload field the compiled command did not carry", "household.create", {}, "household-create"],
+    ["a command type this build ships no runner for", "no.such.command", { name: "n" }, "household-create"],
+  ])("answers %s with the generic sentence, a reference, and retry-later", async (_case, commandType, payload, capabilityId) => {
+    const error = await adapterRefusal(commandType, payload);
+    const correlationId = error.context?.["correlationId"];
+    expect(typeof correlationId).toBe("string");
+    expect(error.message).toContain(String(correlationId));
+    // NOT on the wire: the configured command type, the payload field, the path.
+    expect(error.message).not.toContain(commandType);
+    expect(error.message).not.toMatch(DOTTED_DOCUMENT_PATH);
+    expect(toResponse(error).body.error.message).toBe(error.message);
+    // The instruction is INHERITED from the cause, which is what turns the
+    // webhook's unpaced redeliver-forever 500 into a paced 503 + Retry-After.
+    expect(clientRetryFor(error, CLIENT_RETRY.sameIdentity)).toBe(CLIENT_RETRY.later);
+    // ...and the operator gets the location, as registered structured values.
+    const line = lastLogLine();
+    expect(line["correlationId"]).toBe(correlationId);
+    expect(line["domainConfigId"]).toBe(ACCOUNT_OPENING_DOMAIN);
+    expect(String(line["configPath"])).toContain(capabilityId);
+    expect(Object.values(line)).not.toContain(REDACTED);
+  });
+
+  it("files a registration the store cannot hold as a configuration fault, never a submitter's", async () => {
+    // As a VALIDATION this answered the e-sign callback 422 do-not-retry, which
+    // discards a signature event outright - and no submission can reach it, since
+    // the request boundary already admits only the document's own vocabulary.
+    const error = await adapterRefusal("application.create", {
+      householdId: "h", contactId: "c", accountType: "not-a-registration",
+    });
+    expect(error.code).toBe("INTERNAL");
+    expect(clientRetryFor(error, CLIENT_RETRY.none)).toBe(CLIENT_RETRY.later);
+    expect(error.message).not.toContain("not-a-registration");
+    expect(lastLogLine()["configPath"]).toBe("execution.capabilities.household-create.payload.accountType");
   });
 });

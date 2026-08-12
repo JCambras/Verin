@@ -294,8 +294,8 @@ const CEILINGS = {
 // infrastructure 8,701 / 8,745 (44).
 const CEILINGS = {
   contracts: 6782, // ADR-0057 as amended five times, on classification by cause (6,752 measured)
-  domain: 9555, // ADR-0057 as amended eleven times, on the one-mint refusal port (9,492 measured)
-  infrastructure: 8745, // ADR-0057 as amended five times, on the derived refusal class (8,701 measured)
+  domain: 9685, // ADR-0057 as amended twelve times, on the adapter mint and emitter-derived shape (9,622 measured)
+  infrastructure: 8815, // ADR-0057 as amended six times, on the adapter mint (8,769 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

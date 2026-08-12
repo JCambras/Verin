@@ -9461,3 +9461,54 @@ subscripted path, and on the field map equalling `CONFIGURATION_DIAGNOSIS_FIELDS
 `src/__tests__/fitness/charter-drift.test.ts` carries the cursor-walk companion. Proofs PF-284, PF-285.
 
 **Revert path.** Narrow the shape; PF-284 lists the exact emitted paths the dot-only form sealed.
+
+**Amendment (review round 17): a bound is stated ONCE, where the emitter is refused at it.** The widened
+shape capped subscripts at three per segment - a number chosen beside the regex, against `substitute`,
+which descends once per container level of a primitive's `parameters` with no bound at all. So a `$ref`
+four arrays deep emitted a path the shape sealed: the same defect the widening fixed, one dimension over,
+and one RULE L's leaf sweep structurally cannot see (the probes replace string LEAVES, so no emitted path's
+depth depends on document STRUCTURE). Guessing a wider cap would have been a third opinion. Instead the
+bound moved to the EMITTER: `MAX_CONFIGURED_VALUE_DEPTH` (`src/domain/config/errors.ts`, beside the fault
+type whose `path` it makes expressible) is refused at admission by `resolveParameters`, and the shape's
+per-segment subscript cap is read from that same constant - so the shape is a CONSEQUENCE of the bound
+rather than a second opinion about it, the way the policy loader already bounds document nesting before
+parsing (D-181). The segment COUNT carries no cap of its own for the same reason; the channel's
+128-character ceiling and the closed alphabet are what bound it. RULE L drives the real
+`resolveParameters` at the bound and one level past it. Proof PF-288.
+
+**Amendment (review round 17): a path that MATCHES the shape and addresses nothing.** The intake view
+emitted `presentation.form.fields.<trigger field>` while the document - and `intakeFormOf`, the other
+emitter for that same node - keys that list by SLOT. It satisfied the shape perfectly and pointed at a node
+the document does not contain, so nothing sealed and nothing failed: a confidently wrong location in the
+channel built to be authoritative, which is worse than a censored one because an operator cannot tell. A
+shape is necessary and not sufficient, so RULE L now RESOLVES every emitted intake path against the
+shipped document. Proof PF-289.
+
+## D-234 - Prompt 10 review: the command adapters answer for the published document too
+
+**Decision.** Every refusal the command adapters raise - a payload field the compiled command did not
+carry, a registration outside the vocabulary the store accepts, a command type this build has no runner
+for - is stated through the injected `ConfiguredRefusal` port rather than in the adapter's own words. The
+port travels on the `CompiledFlow` the plan compiler returns, so the adapters and the plan's own steps
+refuse through ONE mint rather than two built beside each other, and `makeExecutionAdapters` takes it as a
+parameter so the adapter module still names no domain. RULE I's candidate set is widened accordingly: it
+derives from the two configuration directories PLUS every module that HOLDS a compiled command, keyed on
+the type the port's own `invoke` declares.
+
+**Why.** D-228 classifies by CAUSE, and an adapter fault whose cause is the published document is
+operator-recoverable wherever it arises. These three were the last sites outside the mint, and being
+outside it cost all three halves of the channel: the configured command type and payload field id reached
+the EXTERNAL e-sign provider verbatim through `toResponse`, the unmarked error made the webhook answer an
+unpaced 500 - redeliver forever against a fault only an operator clears, and the `accountType` arm answered
+422 do-not-redeliver, discarding a signature event outright - and no `configStage`/`configPath` line was
+emitted at all. They shipped through the fence because a rule derived from two DIRECTORIES cannot see a
+third; widening to "any module that imports the configuration layer" would have swept in the composition
+root's storage failures and needed an exemption list, which is the drifting registry D-231 replaced.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I (derived roots, with
+anti-vacuity requiring the derivation to reach a module beyond the declared directories, and an emptied
+port proven to derive none) and RULE K (a wire message built from a `CommandInvocation`). Proofs PF-286,
+PF-287.
+
+**Revert path.** Mint in the adapter again; PF-286 records the exact three violations the derivation
+reports.

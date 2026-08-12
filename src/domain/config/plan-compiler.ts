@@ -385,6 +385,13 @@ const compileStep = (
 export type CompiledFlow = {
   readonly definition: FlowDefinition<ExecutionAdapters>;
   /**
+   * The mint THIS plan's refusals come through, carried so the adapters its steps
+   * invoke refuse through the same one rather than a second port built beside it:
+   * what an adapter refuses (a payload field the command did not carry, a command
+   * type with no runner) is a fact about the document compiled here.
+   */
+  readonly refuse: ConfiguredRefusal;
+  /**
    * The configuration version this plan was compiled FROM. `definition.id` is the
    * domainConfigId and is stable across versions, so it cannot tell a persisted
    * execution which plan it was started against; this can. The composition root
@@ -484,6 +491,7 @@ export const compileFlowDefinition = (
       name: config.document.presentation.domainLabel,
       steps: plans.map((plan) => compileStep(config, actionId, plan, refuse)),
     },
+    refuse,
     domainConfigVersionId: config.domainConfigVersionId,
     awaitingByStep: plans.map((plan) => (plan.awaits ? (plan.capability.verificationRule as string) : undefined)),
   });

@@ -134,9 +134,19 @@ rejection is a value, never a throw.
   configuration, and dead configuration cannot ship.
 - **`maxAge` is a domain FLOOR, not the policy window.** The floor exists so a firm cannot configure a
   window looser than the evidence can support.
+- **`$ref` placeholders may nest only as deep as a fault path can be REPORTED.** A parameter value is
+  opaque to this schema by design, so the walk that substitutes deferred references is the one emitter
+  whose fault path grows with the DOCUMENT rather than with the schema. `MAX_CONFIGURED_VALUE_DEPTH`
+  (`src/domain/config/errors.ts`) is refused at admission, and the operator channel's `configPath` shape
+  reads its per-segment subscript cap from that same constant - so a graph the loader admits always has
+  a location the channel can carry, and neither side is an opinion about the other (D-233).
 - **Command types name commands, never domains.** What a command DOES - its span, its SQL, its audit
   action - lives in `src/infrastructure/execution-adapters.ts`, as static literals the observability
-  vocabulary fence can still derive from real call sites.
+  vocabulary fence can still derive from real call sites. What it REFUSES is a fact about the document,
+  not about the adapter: a payload field the compiled command did not carry, a registration outside the
+  vocabulary the store accepts, and a command type with no runner are all stated through the
+  `ConfiguredRefusal` port the compiled plan carries, so they inherit one classification, one wire
+  sentence and one operator line with every other configuration refusal (D-234).
 - **`presentation` is load-bearing at the REQUEST boundary, not only on screen.** A text slot's
   `maxLength` and an enum slot's `values` are exactly what `/api/flows/account-opening` admits, through
   the same `IntakeForm` projection the page renders (`admitIntakeSubmission` in
