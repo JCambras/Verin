@@ -56,16 +56,29 @@ export const BAND_LABELS: Record<HealthBand, string> = {
   healthy: "Healthy", watch: "Watch", "needs-attention": "Needs attention",
 };
 
-/** Health is computed from fixture evidence, so it is a demonstration artifact
- * and every one of its figures must say so. */
-function healthProvenance(household: WorldHousehold, asOf: string): ReturnType<typeof deriveArtifactProvenance> {
-  const inputs: RecordProvenance[] = [
+/** Every stored record a household's summary figures read. One list, so the
+ * health derivation and the folded totals below can never read different
+ * evidence and publish two origins for the same household. */
+function summaryInputs(household: WorldHousehold): RecordProvenance[] {
+  return [
     household.provenance,
     ...household.accounts.map((account) => account.provenance),
     ...household.bankInstructions.map((instruction) => instruction.provenance),
     ...household.pendingActions.map((action) => action.provenance),
   ];
-  return deriveArtifactProvenance(inputs, asOf);
+}
+
+/** Health is computed from fixture evidence, so it is a demonstration artifact
+ * and every one of its figures must say so. */
+function healthProvenance(household: WorldHousehold, asOf: string): ReturnType<typeof deriveArtifactProvenance> {
+  return deriveArtifactProvenance(summaryInputs(household), asOf);
+}
+
+/** A factor's band and the word for it, decided once: the surface shows the word
+ * where it used to show the figure, so the two can never say different things. */
+function bandOf(score: number): { band: HealthBand; bandLabel: string } {
+  const band: HealthBand = score >= 80 ? "healthy" : score >= 55 ? "watch" : "needs-attention";
+  return { band, bandLabel: BAND_LABELS[band] };
 }
 
 export function buildHealthVM(household: WorldHousehold, asOf: string): HealthVM {
@@ -82,11 +95,17 @@ export function buildHealthVM(household: WorldHousehold, asOf: string): HealthVM
     factors: health.factors.map((factor) => ({
       id: factor.id,
       label: factor.label,
-      score: metric(factor.score, "score", provenance),
+      // A factor's contribution reaches the screen as the WIDTH of its bar and
+      // as the sentence beside it, never as a bare figure: a demonstration-
+      // derived number rendered outside `<Metric>` carries no watermark, and six
+      // of them per panel is six numbers a reader could take for measurements.
+      // The composite the panel leads with is the one figure, and it renders
+      // through `<Metric>` with its provenance (charter #3, ADR-0022).
+      barWidth: `${factor.score}%`,
       weightLabel: `${factor.weightBps / 100}% of the score`,
       statement: factor.statement,
       readRecords: factor.readRecords,
-      band: factor.score >= 80 ? "healthy" : factor.score >= 55 ? "watch" : "needs-attention",
+      ...bandOf(factor.score),
     })),
   };
 }
@@ -107,22 +126,22 @@ const count = (value: number, provenance: RecordProvenance | DerivedProvenance):
 const nothingRead = (asOf: string): RecordProvenance => ({ source: "fixture", asOf, confidence: "low" });
 
 /**
- * The summary strip is a FOLD over the very records it counts, so its confidence
- * and its as-of are the weakest and the newest of those records rather than a
- * confidence typed beside them - the same rule every folded figure in this
- * repository follows, and the reason a card can never claim to be surer than the
- * evidence behind it. An empty book has no record to read, so the zeroes fold
- * over the fact that nothing was read and say so.
+ * Every figure summarizing more than one record folds over ALL of them, so its
+ * confidence and its as-of are the weakest and the newest of those records
+ * rather than one contributor's borrowed - the same rule every folded figure in
+ * this repository follows, and the reason a summary can never claim to be surer
+ * or cleaner than the evidence behind it. Nothing to fold means nothing was
+ * read, which is itself a true origin and the weakest standing there is.
  */
-function totalsProvenance(households: readonly WorldHousehold[], asOf: string): DerivedProvenance {
-  const inputs = households.flatMap((household) => [
-    household.provenance,
-    ...household.accounts.map((account) => account.provenance),
-    ...household.bankInstructions.map((instruction) => instruction.provenance),
-    ...household.pendingActions.map((action) => action.provenance),
-  ]);
+function foldOrNothingRead(inputs: readonly RecordProvenance[], asOf: string): DerivedProvenance {
   return foldStoredProvenance(inputs) ?? deriveArtifactProvenance([nothingRead(asOf)], asOf);
 }
+
+/** The origin of "total across all accounts", wherever it is shown. One
+ * function, so the directory row and the household's own page cannot label the
+ * same sum two different ways. */
+export const foldAccountBalances = (household: WorldHousehold, asOf: string): DerivedProvenance =>
+  foldOrNothingRead(household.accounts.map((account) => account.provenance), asOf);
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
@@ -140,6 +159,14 @@ const openItemsOf = (household: WorldHousehold): number =>
 /** Everything on a directory row that the WORLD decides. The only field left is
  * the CRM record id, which is the tenant's own and is attached per request. */
 type WorldRowVM = Omit<HouseholdRowVM, "id">;
+
+/** A row plus the one folded origin that household contributes to the totals
+ * above it: both are functions of the world alone, so both are built together
+ * and kept together. */
+interface WorldRowEntry {
+  readonly row: WorldRowVM;
+  readonly totalsInput: DerivedProvenance;
+}
 
 function buildWorldRow(household: WorldHousehold, asOf: string): WorldRowVM {
   const totalBalanceMinor = household.accounts.reduce((sum, account) => sum + account.balanceMinor, 0);
@@ -160,7 +187,11 @@ function buildWorldRow(household: WorldHousehold, asOf: string): WorldRowVM {
       plural(openItems, "open item", "open items"),
     ].join(" · "),
     openItemCount: openItems,
-    totalBalance: metric(totalBalanceMinor, "currency-minor", household.accounts[0]?.provenance ?? household.provenance),
+    // A SUM over every account folds over every account. Publishing the first
+    // account's own provenance would let a total claim a cleanliness it does not
+    // have - and claim it beside four cards that fold correctly, which makes the
+    // pair actively misleading rather than merely wrong.
+    totalBalance: metric(totalBalanceMinor, "currency-minor", foldAccountBalances(household, asOf)),
     health: buildHealthVM(household, asOf),
     searchText: [
       household.displayName, household.surname, household.city, household.advisorName,
@@ -176,28 +207,38 @@ function buildWorldRow(household: WorldHousehold, asOf: string): WorldRowVM {
 /**
  * A row's world-derived half is built ONCE PER WORLD, not once per request. A
  * hundred-row directory otherwise re-derives a hundred six-factor health
- * breakdowns and a hundred search haystacks for every caller, and the world is
- * immutable committed bytes identified by its digest - so the digest is the key,
- * and a regenerated world evicts the previous one wholesale. The CRM still
- * decides per request WHICH rows the tenant may see; nothing tenant-scoped is
- * cached here. Held on `globalThis` for the same reason the store singleton is:
- * Next bundles route handlers and server components separately, so a
- * module-local cache would be two caches.
+ * breakdowns, a hundred search haystacks, and a fold over every provenance in
+ * the book for every caller, and the world is immutable committed bytes
+ * identified by its digest - so the digest is the key, and a regenerated world
+ * evicts the previous one wholesale. The CRM still decides per request WHICH
+ * rows the tenant may see, and the totals fold over exactly those; nothing
+ * tenant-scoped is cached here. Held on `globalThis` for the same reason the
+ * store singleton is: Next bundles route handlers and server components
+ * separately, so a module-local cache would be two caches.
  */
 const rowCacheHome = globalThis as unknown as {
-  __verinDirectoryRows?: { digest: string; rows: Map<string, WorldRowVM> };
+  __verinDirectoryRows?: { digest: string; rows: Map<string, WorldRowEntry> };
 };
 
-function worldRow(household: WorldHousehold, asOf: string, digest: string | null): WorldRowVM {
+function buildWorldRowEntry(household: WorldHousehold, asOf: string): WorldRowEntry {
+  return {
+    row: buildWorldRow(household, asOf),
+    // A household always publishes its own provenance, so this fold is never
+    // handed an empty list and never reaches the nothing-read origin.
+    totalsInput: foldOrNothingRead(summaryInputs(household), asOf),
+  };
+}
+
+function worldRowEntry(household: WorldHousehold, asOf: string, digest: string | null): WorldRowEntry {
   // No identity means no world to key on (and `asOf` is then the wall clock),
   // so there is nothing stable to cache: build it and move on.
-  if (digest === null) return buildWorldRow(household, asOf);
+  if (digest === null) return buildWorldRowEntry(household, asOf);
   const home = rowCacheHome.__verinDirectoryRows?.digest === digest
     ? rowCacheHome.__verinDirectoryRows
-    : (rowCacheHome.__verinDirectoryRows = { digest, rows: new Map<string, WorldRowVM>() });
+    : (rowCacheHome.__verinDirectoryRows = { digest, rows: new Map<string, WorldRowEntry>() });
   const cached = home.rows.get(household.id);
   if (cached) return cached;
-  const built = buildWorldRow(household, asOf);
+  const built = buildWorldRowEntry(household, asOf);
   home.rows.set(household.id, built);
   return built;
 }
@@ -227,11 +268,19 @@ export function buildDirectoryVM(input: DirectoryInput): DirectoryVM {
       return household ? { crmRow, household } : null;
     })
     .filter((pair): pair is { crmRow: Household; household: WorldHousehold } => pair !== null);
-  const rows = authorized
-    .map(({ crmRow, household }) => ({ ...worldRow(household, asOf, digest), id: crmRow.id }))
+  const entries = authorized.map(({ crmRow, household }) => ({
+    crmRow,
+    household,
+    entry: worldRowEntry(household, asOf, digest),
+  }));
+  const rows = entries
+    .map(({ crmRow, entry }) => ({ ...entry.row, id: crmRow.id }))
     .sort((left, right) => (left.displayName < right.displayName ? -1 : left.displayName > right.displayName ? 1 : 0));
-  const listProvenance = totalsProvenance(authorized.map(({ household }) => household), asOf);
-  const totals = authorized.reduce(
+  // The tenant-scoped half of the fold, and the only half done per request: each
+  // household's own origin was folded once for the world, and the book the
+  // caller may see decides which of them the cards stand on.
+  const listProvenance = foldOrNothingRead(entries.map(({ entry }) => entry.totalsInput), asOf);
+  const totals = entries.reduce(
     (acc, { household }) => ({
       accounts: acc.accounts + household.accounts.length,
       people: acc.people + household.members.length,

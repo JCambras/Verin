@@ -83,7 +83,19 @@ NOTHING - the view model receives no entry for it and emits an opaque page-local
 (`counterparty-1`) in place of a name, a world key and a link. The key is `<surname>-<given name>` by
 construction, so passing it through as a fallback would disclose the party at lower fidelity rather
 than withhold it, and the surface renders the neutral sentence as plain text: an affordance that can
-only land on a refusal is not one.
+only land on a refusal is not one. The ordinal counts the WITHHELD counterparties alone. Numbering
+every counterparty, including the ones rendered by name, gave a household with one named and one
+withheld link a page that opened at "Counterparty 2" with no first anywhere on it.
+
+**A summary figure is labeled by everything it summarizes.** "Total across all accounts" is a SUM, so
+it publishes `foldAccountBalances` - a fold over every account's provenance, the same rule the four
+directory cards follow - on the directory row and on the household's own page alike. Publishing the
+first account's own record provenance let a total claim a cleanliness the sum does not have, beside
+cards that folded correctly. And no metric-class figure reaches a screen outside `<Metric>`: the
+directory row's health badge carries the BAND WORD and the panel's factor cards a band, a bar and a
+sentence, because a score extracted from its `DisplayMetric` renders with no provenance and no
+"demonstration - not a compliance record" watermark - a hundred and six times a page respectively,
+and exactly the number a reader would screenshot.
 
 **One instant, one confidence.** A household's `evidence` block carries the PROVENANCE of each class
 (`liquidity`, `positions`, `instructions`), not a bare instant: the materializer measures the

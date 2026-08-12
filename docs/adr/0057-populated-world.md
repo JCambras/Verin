@@ -98,6 +98,11 @@ lower fidelity while the test that guarded it - the exact display name is absent
 hand-written prose that named the same party in three other fields is corrected with it, and
 `crossHouseholdProseProblems` holds both authors to that for good.
 
+**Amended by D-200** (review round). The ordinal is numbered across the WITHHELD counterparties alone.
+Numbering every counterparty, named ones included, gave a household holding one of each a page that
+opened at "Counterparty 2" with no first on it, and left the plural copy unreachable in the shipped
+world and therefore untested; it is now exercised directly rather than through world content.
+
 ### 4. Health is computed, never stored
 
 `computeHouseholdHealth` (`src/domain/world/health.ts`) is a pure, clock-free, integer-only
@@ -109,6 +114,14 @@ is a typed number wearing a computation's clothes.
 
 Every health figure is published through `deriveArtifactProvenance`, so it renders watermarked
 "demonstration - not a compliance record" and `canFeedComplianceDecision` refuses it (ADR-0022).
+
+**Amended by D-200** (review round). Publishing a figure that way is only half of it: the surfaces
+were extracting `.value` back out and rendering the score naked - in the directory row's band badge on
+all hundred rows, and on each of the six factor cards - so the very numbers this section watermarks
+reached the screen with no provenance at all. The badge now carries the band word, the factor cards a
+band, a bar and a sentence, and the one figure a page shows renders through `<Metric>`. The same rule
+made "total across all accounts" fold over the accounts it sums instead of borrowing the first one's
+record provenance.
 
 **Amended by D-197** (review round). Beneficiary materiality was ONE set answering two different
 questions, and it got the surface wrong in both directions in turn: scoring every registration

@@ -18,11 +18,16 @@ import type { HealthBand } from "@domain/world/health";
 export interface HealthFactorVM {
   readonly id: string;
   readonly label: string;
-  readonly score: DisplayMetric;
+  /** How far the factor's bar fills, composed here (`"73%"`). A factor's
+   * contribution is shown as a proportion and a sentence, never as a bare
+   * number: the panel's ONE figure is the composite, which renders through
+   * `<Metric>` carrying the watermark its derivation earns. */
+  readonly barWidth: string;
   readonly weightLabel: string;
   readonly statement: string;
   readonly readRecords: readonly string[];
   readonly band: HealthBand;
+  readonly bandLabel: string;
 }
 
 export interface HealthVM {
@@ -186,10 +191,12 @@ export interface ActivityVM {
 export interface CrossHouseholdLinkVM {
   readonly kindLabel: string;
   readonly note: string;
-  /** Page-local and OPAQUE: an ordinal over this household's own links, so two
-   * counterparties stay distinguishable across rows without anything about
-   * either one being derivable from it. Never a world key: those are
-   * `<surname>-<given name>`. */
+  /** How this page refers to the counterparty. A WITHHELD one is an opaque
+   * page-local ordinal (`counterparty-1`), numbered across withheld
+   * counterparties alone so the number the copy names counts the parties a
+   * reader can actually see, and derivable from nothing about who it is - never
+   * a world key, which is `<surname>-<given name>`. A counterparty this caller
+   * may see is referred to by the key `counterpartyKey` already discloses. */
   readonly reference: string;
   /** The world key to open, present ONLY when this firm's book holds the
    * counterparty. `null` withholds the link itself, because the key names the

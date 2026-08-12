@@ -17,7 +17,10 @@ import {
   BENEFICIARY_CAPABLE_REGISTRATIONS, BENEFICIARY_SCORED_REGISTRATIONS,
   type WorldAccount, type WorldBankInstruction, type WorldHousehold,
 } from "@domain/world/household-world";
-import { REGISTRATION_LABELS, STATE_LABELS, buildHealthVM, formatDay, groupDigits, titleize } from "./build";
+import {
+  REGISTRATION_LABELS, STATE_LABELS, buildHealthVM, foldAccountBalances,
+  formatDay, groupDigits, titleize,
+} from "./build";
 import type {
   AccountVM, ActivityVM, BankInstructionVM, CrossHouseholdLinkVM, EntityVM,
   HouseholdDetailVM, InstructionVM, PendingActionVM, PersonVM, PlannedWithdrawalVM,
@@ -263,30 +266,35 @@ function activityOf(household: WorldHousehold): ActivityVM[] {
  * through as a fallback label - or as an href - discloses precisely what
  * withholding exists to prevent, at lower fidelity than the display name and
  * with the same reader reaching the same conclusion. A withheld counterparty
- * therefore reaches the client as an ORDINAL over this household's own link
- * list: opaque, stable for the page, and a function of nothing about who the
- * counterparty is. The link is dropped with it, since an affordance that can
- * only land on a refusal is not one.
+ * therefore reaches the client as an ORDINAL: opaque, stable for the page, and a
+ * function of nothing about who the counterparty is. The link is dropped with
+ * it, since an affordance that can only land on a refusal is not one.
+ *
+ * The ordinal is numbered across the WITHHELD counterparties alone, because it
+ * is the reader's only handle on them and a number that counts parties the page
+ * never mentions is a number that does not match what is on the screen: a
+ * household holding one named counterparty and one withheld one would open with
+ * "Counterparty 2" and never show a first. A counterparty this caller may see is
+ * referred to by the key the same object already discloses.
  */
 function linksOf(
   household: WorldHousehold,
   counterpartyNames: ReadonlyMap<string, string>,
 ): CrossHouseholdLinkVM[] {
-  const references = new Map<string, number>();
-  const ordinalOf = (counterpartyKey: string): number => {
-    const seen = references.get(counterpartyKey);
-    if (seen !== undefined) return seen;
-    references.set(counterpartyKey, references.size + 1);
-    return references.size;
-  };
-  const several = new Set(household.crossHouseholdLinks.map((link) => link.counterpartyHouseholdKey)).size > 1;
+  const withheld = new Map<string, number>();
+  for (const link of household.crossHouseholdLinks) {
+    const key = link.counterpartyHouseholdKey;
+    if (counterpartyNames.has(key) || withheld.has(key)) continue;
+    withheld.set(key, withheld.size + 1);
+  }
+  const several = withheld.size > 1;
   return household.crossHouseholdLinks.map((link) => {
     const name = counterpartyNames.get(link.counterpartyHouseholdKey) ?? null;
-    const ordinal = ordinalOf(link.counterpartyHouseholdKey);
+    const ordinal = withheld.get(link.counterpartyHouseholdKey);
     return {
       kindLabel: LINK_KIND_LABELS[link.kind] ?? titleize(link.kind),
       note: link.note,
-      reference: `counterparty-${ordinal}`,
+      reference: ordinal === undefined ? link.counterpartyHouseholdKey : `counterparty-${ordinal}`,
       counterpartyKey: name === null ? null : link.counterpartyHouseholdKey,
       counterpartyLabel: name
         ?? (several
@@ -329,10 +337,13 @@ export function buildHouseholdDetailVM(
     openedOn: `Client since ${formatDay(household.openedOn)}`,
     narrative: household.narrative,
     authoringLabel: household.authoring === "hand-authored" ? "Hand-authored sample" : "Generated sample",
+    // Folded over every account it sums, exactly as the directory's cards are:
+    // a total that borrows one contributor's provenance claims a cleanliness the
+    // sum does not have.
     totalBalance: metric(
       household.accounts.reduce((sum, account) => sum + account.balanceMinor, 0),
       "currency-minor",
-      household.accounts[0]?.provenance ?? household.provenance,
+      foldAccountBalances(household, asOf),
     ),
     health: buildHealthVM(household, asOf),
     people: peopleOf(household),

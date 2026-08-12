@@ -14,17 +14,41 @@
  * directory that will eventually route work to the wrong one.
  */
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { Field, TextInput, StatusBadge, EmptyState } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
 import type { DirectoryVM, HouseholdRowVM } from "./model";
 import { VirtualList } from "./virtual-list";
 
-// One fixed row height serves every viewport, because the window has to know
-// how tall a row is before it renders one. 108px holds the mobile stack (name,
-// meta, counts, balance) as well as the roomier two-column desktop row.
-const ROW_HEIGHT = 108;
+// The window has to know how tall a row is before it renders one, so the height
+// is a number rather than a class - and ONE number cannot serve both layouts.
+// Above `sm` the row is two columns and 108px holds it; below, the same content
+// stacks (a name whose badges wrap, meta, counts, and a balance carrying its
+// provenance label and its demonstration watermark) and 108px overlapped the
+// next row's title. Measured against the widest row the world produces.
+const TWO_COLUMN_ROW = 108;
+const STACKED_ROW = 148;
 const VIEWPORT_HEIGHT = 648;
+
+// Tailwind's `sm`, the breakpoint the row's own classes switch on: the two must
+// agree, or the height is reserved for a layout that is not on screen.
+const TWO_COLUMN_QUERY = "(min-width: 40rem)";
+
+/** Which layout the row is actually in. `useSyncExternalStore` rather than an
+ * effect so the first paint is already correct and no row is measured against a
+ * height it never had. */
+function useRowHeight(): number {
+  const twoColumn = useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia(TWO_COLUMN_QUERY);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(TWO_COLUMN_QUERY).matches,
+    () => true,
+  );
+  return twoColumn ? TWO_COLUMN_ROW : STACKED_ROW;
+}
 
 const BAND_STATUS: Record<string, string> = {
   healthy: "proceed", watch: "blocked", "needs-attention": "rejected",
@@ -33,9 +57,15 @@ const BAND_STATUS: Record<string, string> = {
 /**
  * One row. The balance is the only metric-class value here, so it is the only
  * `<Metric>`: three of them side by side put three "· Sample data · as of …"
- * labels into eighty pixels each and the row became unreadable. The counts are
- * composed into one line by the builder, and the record they count states its
- * provenance through the balance beside them.
+ * labels into eighty pixels each and the row became unreadable (D-192). The
+ * counts are composed into one line by the builder, and the record they count
+ * states its provenance through the balance beside them.
+ *
+ * The health badge carries the BAND WORD and no figure. A score is a
+ * demonstration-derived number, so it may reach a screen only through `<Metric>`
+ * with its watermark - and a bare one on a hundred rows is exactly the number a
+ * reader would screenshot and take for a measurement. The figure itself belongs
+ * to the household's own page, where it renders once, labeled.
  */
 function HouseholdRow({ row }: { row: HouseholdRowVM }) {
   return (
@@ -46,7 +76,7 @@ function HouseholdRow({ row }: { row: HouseholdRowVM }) {
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="truncate text-sm font-semibold text-slate-900">{row.displayName}</span>
-          <StatusBadge status={BAND_STATUS[row.health.band] ?? "pending"} label={`${row.health.bandLabel} · ${row.health.score.value}`} />
+          <StatusBadge status={BAND_STATUS[row.health.band] ?? "pending"} label={row.health.bandLabel} />
           {row.state !== "active" ? <StatusBadge status="unknown" label={row.stateLabel} /> : null}
         </span>
         <span className="truncate text-xs text-slate-600">
@@ -62,7 +92,10 @@ function HouseholdRow({ row }: { row: HouseholdRowVM }) {
           <Metric metric={row.totalBalance} />
         </span>
       </span>
-      <span className="hidden w-52 shrink-0 flex-col items-end text-right text-xs text-slate-600 sm:flex">
+      {/* Wide enough for the balance's watermark to sit on ONE line: the total
+          folds over every account, so it is demonstration-derived and carries
+          the badge, and a 208px column wrapped it across two lines on every row. */}
+      <span className="hidden w-64 shrink-0 flex-col items-end text-right text-xs text-slate-600 sm:flex">
         <Metric metric={row.totalBalance} />
         <span>across all accounts</span>
       </span>
@@ -80,6 +113,7 @@ function SummaryCard({ label, children }: { label: string; children: React.React
 }
 
 export function HouseholdDirectory({ directory }: { directory: DirectoryVM }) {
+  const rowHeight = useRowHeight();
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
   const rows = useMemo(
@@ -122,7 +156,7 @@ export function HouseholdDirectory({ directory }: { directory: DirectoryVM }) {
 
       <VirtualList
         items={rows}
-        rowHeight={ROW_HEIGHT}
+        rowHeight={rowHeight}
         height={VIEWPORT_HEIGHT}
         keyOf={(row) => row.key}
         label="Households"

@@ -54,14 +54,19 @@ function HealthPanel({ health }: { health: HouseholdDetailVM["health"] }) {
       <ul className="mt-4 grid gap-3 sm:grid-cols-2">
         {health.factors.map((factor) => (
           <li key={factor.id} className="rounded-md border border-slate-200 bg-surface p-3">
-            <div className="flex items-baseline justify-between gap-2">
+            {/* The band word, the bar and the sentence carry the factor. A bare
+                figure here is a demonstration-derived number with no provenance
+                beside it, six times over, under the one composite that does
+                state its own - and the word says the same thing to a reader who
+                never sees the bar. */}
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
               <span className="text-sm font-medium text-slate-900">{factor.label}</span>
-              <span className="text-sm font-semibold tabular-nums text-slate-900">{factor.score.value}</span>
+              <StatusBadge status={BAND_STATUS[factor.band] ?? "pending"} label={factor.bandLabel} />
             </div>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
               <div
                 className={factor.band === "healthy" ? "h-full bg-green-600" : factor.band === "watch" ? "h-full bg-amber-500" : "h-full bg-red-600"}
-                style={{ width: `${factor.score.value}%` }}
+                style={{ width: factor.barWidth }}
               />
             </div>
             <p className="mt-2 text-sm text-slate-800">{factor.statement}</p>

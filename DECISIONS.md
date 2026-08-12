@@ -7949,3 +7949,75 @@ observable changes are the four summary cards on an empty book carrying a synthe
 watermark, an unauthorized cross-household link rendering as plain text instead of a slug-labeled
 link, and one Whitfield household's narrative, entity note and activity line naming the other
 household neutrally.
+
+### D-213 · 2026-08-12 · reversible · Populated-world review round eight: a watermarked figure that renders naked is not watermarked, a sum is labeled by what it sums, and a reference counts what a reader can see
+
+**The scores this branch watermarks were reaching the screen bare.** `model.ts` states the contract -
+"every displayed number is a `DisplayMetric`, so it reaches the screen only through `<Metric>` with its
+provenance attached; the health figures carry DERIVED provenance, which watermarks them" - and two
+renders broke it. The directory row's band badge read `${bandLabel} · ${score.value}`, extracting the
+composite out of its `DisplayMetric` on all hundred rows, and the health panel rendered
+`{factor.score.value}` on each of the six factor cards, directly beneath the composite that DOES carry
+its watermark. `deriveArtifactProvenance` had done its work and the surface undid it: a
+demonstration-derived number with no source, no as-of and no "not a compliance record" beside it, in
+the two places a reader is most likely to screenshot. The badge now carries the BAND WORD alone -
+never a second copy of the score beside it, which is the duplication D-205 deliberately removed - and a
+factor card carries its band, its bar and its sentence. `HealthFactorVM` no longer holds a
+`DisplayMetric` at all: it publishes `barWidth` (`"73%"`), so nothing is left to extract, and the
+figure itself renders once per page through `<Metric>`. The band word rather than nothing, because the
+bar alone says nothing to a reader who never sees it. PF-279.
+
+**A sum across accounts is labeled by every account it sums.** `totalBalance` - the headline figure on
+a directory row and on the household's own page - published `accounts[0].provenance`, one contributing
+record's own origin, for a figure derived from all of them. After D-212 the four summary cards beside
+it fold correctly, which made the pair actively misleading rather than merely wrong: two figures on
+one screen, folded from the same records, labeled by two different rules. Both surfaces now call one
+function, `foldAccountBalances`, so a sum cannot be labeled two ways. The visible consequence is the
+honest one - the balance is `computed`, carries the demonstration watermark, and takes the newest
+as-of of the accounts behind it rather than the first account's.
+
+**The row had to make room for the truth it now tells.** The watermark is thirty-nine characters, and
+a 208px column wrapped it across two lines on every row while the stacked layout below `sm` ran the
+next household's name into it. The two-column row's balance column widens to 256px, and the row height
+is now the height of the layout that is actually on screen - `useSyncExternalStore` over the same
+`sm` breakpoint the row's own classes switch on, 108px in two columns and 148px stacked. Found by
+screenshotting the real pages at 1280px and at 390px, not by a test; the test that keeps it honest
+asserts the stacked row reserves more height than the two-column one.
+
+**A page-local reference counts the things the page shows.** The withheld-counterparty ordinal was
+assigned across ALL counterparties, named and withheld alike, but only a withheld one ever renders it:
+a household holding one named counterparty and one withheld one opened at "Counterparty 2" with no
+first anywhere on the page. It is numbered across the withheld alone. The plural copy it feeds was
+also unreachable in the shipped world - the two linked households carry exactly one link each, so
+`several` was always false and the branch had never been produced or asserted. It is now exercised
+directly from a constructed household rather than through world content, together with the
+one-counterparty-two-kinds case that keeps the render keys distinct. PF-280.
+
+**One fold per world, one fold per caller.** `totalsProvenance` flat-mapped every household, account,
+bank-instruction and pending-action provenance in the authorized book on EVERY request - about 1,500
+objects for the hundred-household world - to produce four identical values, immediately beneath the
+row cache introduced to remove exactly that cost. Each household's own origin is now folded ONCE per
+`worldDigest` alongside its row, and only the fold over the caller's authorized subset is per request,
+which is the half that must stay uncached: caching it by digest would hand a firm with two households
+the whole world's origin. Asserted both ways - a smaller book takes its own as-of, and two callers of
+the same book read identical figures.
+
+**Verification item (C) from the round, checked rather than assumed.** D-212's empty-fold guard is in
+place with its companion: `household-directory-vm.test.ts` asserts all four cards on an empty book are
+refused a compliance decision, watermarked, badged and low-confidence, and a companion pins what
+`deriveArtifactProvenance([])` WOULD grant them (`canFeedComplianceDecision` true, `high`, no badge) so
+the guard cannot be removed and read as unnecessary. The contracts-level root remains recorded as
+`fu-empty-fold-provenance`, naming `deriveArtifactProvenance` in `src/contracts/provenance.ts`, which
+this branch does not own. No change needed.
+
+**Line budgets: nothing moves and nothing is re-measured, because no budgeted tree changed.** The
+whole change lives in `src/app/households/**` and `src/__tests__/**`, neither of which is in a bucket
+(the test tree's gap is `fu-corpus-test-tree-budget`, D-172). D-212's figures stand: 5,150 / 8,250 /
+14,200 against 5,086 / 8,200 / 14,168.
+
+**Revert path:** revert this changeset. `fixtures/world` is untouched (the world regenerates
+byte-identical, digest `8f9859b4…`); the view models, the two component surfaces, the responsive row
+height, the two new unit suites and the two proof-log entries revert together. The observable changes
+are a directory badge showing "Healthy" instead of "Healthy · 88", factor cards showing a band word
+instead of a number, every total balance carrying the demonstration watermark, and a wider, taller
+row to hold it.

@@ -121,10 +121,18 @@ no PERSON from a household it links to (`crossHouseholdProseProblems`), because 
 that household may not be told who is in it. A household's `evidence` block
 carries each class's PROVENANCE rather than a bare instant, measured once against the world's `asOf`,
 so no surface can mint a second confidence for the same observation. An unauthorized cross-household
-counterparty is withheld WHOLE - an opaque page-local ordinal, never the world key, which is
-`<surname>-<given name>` - and a figure folded over NO records is labeled synthetic rather than taking
-the `computed`/`high`/not-a-demonstration standing an empty derivation reports (`fu-empty-fold-provenance`).
-The directory's world-derived rows are built once per worldDigest, not once per request.
+counterparty is withheld WHOLE - an opaque page-local ordinal numbered across the WITHHELD
+counterparties alone (a number that counted named ones too opened a page at "Counterparty 2"), never
+the world key, which is `<surname>-<given name>` - and a figure folded over NO records is labeled
+synthetic rather than taking the `computed`/`high`/not-a-demonstration standing an empty derivation
+reports (`fu-empty-fold-provenance`). Every figure summarizing MORE than one record folds over all of
+them (`foldAccountBalances`, the four summary cards): a total that publishes one contributor's record
+provenance claims a cleanliness the sum does not have, so both surfaces label one sum one way. No
+metric-class figure reaches a screen outside `<Metric>` - the directory's health badge carries the
+BAND WORD and the panel's factor cards a band, a bar and a sentence, because a bare
+demonstration-derived score carries no watermark (D-200). The directory's world-derived rows AND each
+household's folded origin are built once per worldDigest; only the fold over the caller's own
+authorized book is per request.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
