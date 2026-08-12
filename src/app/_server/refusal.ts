@@ -19,6 +19,7 @@
  */
 import { NextResponse } from "next/server";
 import { CLIENT_RETRY, RETRY_LATER_AFTER_SECONDS, type ClientRetry } from "@contracts/client-retry";
+import type { AppError } from "@contracts/errors";
 
 const REFUSAL_STATUS: Record<ClientRetry, number> = {
   [CLIENT_RETRY.newIdentity]: 409,
@@ -27,7 +28,7 @@ const REFUSAL_STATUS: Record<ClientRetry, number> = {
   [CLIENT_RETRY.none]: 422,
 };
 
-export const REFUSAL_MESSAGE: Record<ClientRetry, string> = {
+const REFUSAL_MESSAGE: Record<ClientRetry, string> = {
   [CLIENT_RETRY.newIdentity]:
     "These details differ from the submission already sent under this form session. Submit again to send them as a new account opening.",
   [CLIENT_RETRY.sameIdentity]:
@@ -39,12 +40,32 @@ export const REFUSAL_MESSAGE: Record<ClientRetry, string> = {
 };
 
 /**
- * One refusal shape: the typed instruction, a human sentence, and - for the arm
- * that says "come back" - the pacing that keeps a client from hammering a
- * deployment an operator is still repairing.
+ * THE REFERENCE THE REFUSAL MINTED, if it minted one. A refusal that narrowed its
+ * own message to a generic sentence carries a correlation id its operator log line
+ * carries too, and that reference is the ONLY thing the person staring at the
+ * failure can hand to operations - so it belongs to the shape rather than to each
+ * caller, which is how it was dropped at both surfaces three rounds running.
  */
-export function refusalResponse(retry: ClientRetry, message: string): NextResponse {
+const referenceOf = (error: AppError | undefined): string | undefined => {
+  const reference = error?.context?.["correlationId"];
+  return typeof reference === "string" && reference.length > 0 ? reference : undefined;
+};
+
+/**
+ * One refusal shape: the typed instruction, a human sentence, the refusal's own
+ * reference when it has one, and - for the arm that says "come back" - the pacing
+ * that keeps a client from hammering a deployment an operator is still repairing.
+ *
+ * The SENTENCE is always this module's, never the refusal's: an `AppError`'s
+ * message is written for whoever raised it and has carried dotted document paths
+ * and SHA-256 digests across this boundary before (D-227/D-229).
+ */
+export function refusalResponse(retry: ClientRetry, error?: AppError): NextResponse {
   const status = REFUSAL_STATUS[retry];
+  const reference = referenceOf(error);
+  const message = reference === undefined
+    ? REFUSAL_MESSAGE[retry]
+    : `${REFUSAL_MESSAGE[retry]} Quote reference ${reference}.`;
   return NextResponse.json(
     { retry, error: { message } },
     retry === CLIENT_RETRY.later

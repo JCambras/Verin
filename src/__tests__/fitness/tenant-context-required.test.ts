@@ -50,6 +50,10 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/wire.ts :: resumeAccountOpeningByToken", why: "e-sign resume-token capability" },
   { ref: "src/infrastructure/wire.ts :: esignCallback", why: "verified e-sign signature and resume-token capability" },
   { ref: "src/infrastructure/wire.ts :: computeEsignSignature", why: "pure e-sign simulation signer" },
+  {
+    ref: "src/infrastructure/config/configured-flow.ts :: configuredFlow",
+    why: "compiles the PUBLISHED DOCUMENT and reads no row - its only tie to the store is the adapter module that also publishes the supported command vocabulary; the tenant scoping that matters is on the execution the compiled steps then drive, which each step's own port carries",
+  },
 ];
 
 const PORT_ESCAPES = new Set([
@@ -129,7 +133,6 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/document.ts :: canonicalConfigJson.<call>",
   "src/domain/config/document.ts :: domainConfigVersionId.<call>",
   "src/domain/config/errors.ts :: configError.<call>",
-  "src/domain/config/errors.ts :: formatDomainConfigErrors.<call>",
   "src/domain/config/evidence.ts :: durationSeconds.<call>",
   "src/domain/config/intake-view.ts :: admitIntakeSubmission.<call>",
   "src/domain/config/intake-view.ts :: optionalIntakeValue.<call>",
@@ -159,6 +162,12 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/parameters.ts :: RefResolver.<call>",
   "src/domain/config/parameters.ts :: resolveParameters.<call>",
   "src/domain/config/plan-compiler.ts :: compileFlowDefinition.<call>",
+  // The port a compiled step REFUSES through: it carries a typed loader fault out
+  // of pure domain code so the composition root can state it to an operator, and
+  // reaches no repository. Its shipped implementation mints and logs; the tenant
+  // scoping that matters there is on the execution the step was driving, which the
+  // step's own `invoke` already carries.
+  "src/domain/config/plan-compiler.ts :: ConfiguredStepRefusal.<call>",
   "src/domain/config/registries.ts :: policyRegistriesFor.<call>",
   "src/domain/config/segments.ts :: bucketOf.<call>",
   "src/domain/config/segments.ts :: renderKeySegments.<call>",

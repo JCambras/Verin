@@ -10,7 +10,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { appError, type AppError } from "@contracts/errors";
-import { CLIENT_RETRY, operatorRecoverable } from "@contracts/client-retry";
+import { CLIENT_RETRY, clientRetryFor, operatorRecoverable } from "@contracts/client-retry";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 import { CONFIG_VERSION_KEY, type CompiledFlow } from "@domain/config/plan-compiler";
 import type { ExecutionState } from "@domain/workflow/engine";
@@ -18,6 +18,7 @@ import {
   authorityObservabilityId,
   configurationDiagnosisId,
   generatedObservabilityId,
+  type ConfigurationStage,
 } from "@domain/observability/safe-values";
 import { keyedObservabilityId } from "@infra/observability/record-id";
 import { log } from "@infra/observability/logger";
@@ -51,6 +52,30 @@ export function versionSuperseded(flow: CompiledFlow, state: ExecutionState): bo
 }
 
 /**
+ * WHAT EACH VERDICT SAYS, TO WHOM. `compareVersion` distinguishes a version this
+ * deployment no longer publishes from a persisted value that is not a version at
+ * all, and collapsing them cost the operator that distinction: an ABSENT
+ * `configVersionStarted` is also what a shape violation and an omitted optional
+ * produce, so the line could not express which of the three it was. Each verdict
+ * now carries its own registered stage - queryable apart - and its own sentence.
+ */
+const VERSION_REFUSALS: Readonly<Record<"superseded" | "unreadable", {
+  readonly stage: ConfigurationStage;
+  readonly sentence: string;
+}>> = {
+  superseded: {
+    stage: "superseded-version",
+    sentence:
+      "This work was started under a configuration version this deployment no longer publishes, so it cannot be continued until an operator restores it.",
+  },
+  unreadable: {
+    stage: "unreadable-version",
+    sentence:
+      "This work records no readable configuration version, so it cannot be continued until an operator repairs it.",
+  },
+};
+
+/**
  * A persisted execution may only be DRIVEN by the configuration version it
  * started under. The cursor is POSITIONAL and the plan is now versioned data, so
  * a legitimate version bump between the e-sign suspend and the signature webhook
@@ -82,10 +107,16 @@ export function versionMismatch(
   assertTenantContext(tenant);
   const verdict = compareVersion(flow, state);
   if (verdict.kind === "compatible") return null;
+  const refusal = VERSION_REFUSALS[verdict.kind];
   const correlationId = generatedObservabilityId("correlationId", randomUUID());
+  const error = operatorRecoverable(appError(
+    "CONFLICT",
+    `${refusal.sentence} Quote reference ${correlationId.value}.`,
+    { stage: refusal.stage, correlationId: correlationId.value },
+  ));
   log.error({
     correlationId,
-    configStage: "superseded-version",
+    configStage: refusal.stage,
     orgId: authorityObservabilityId("orgId", tenant),
     // The same keyed value the start path logged, so the parked execution joins
     // to the request that produced it.
@@ -95,11 +126,10 @@ export function versionMismatch(
     configVersionStarted: verdict.kind === "superseded"
       ? configurationDiagnosisId("configVersionStarted", verdict.started)
       : undefined,
-    retry: CLIENT_RETRY.later,
+    // READ OFF THE REFUSAL, never stated here (D-228): the instruction an operator
+    // sees on this line is then provably the one the surfaces will give, rather
+    // than a second copy of the classification that can drift from it.
+    retry: clientRetryFor(error, CLIENT_RETRY.sameIdentity),
   }, "execution parked until an operator restores the configuration version");
-  return operatorRecoverable(appError(
-    "CONFLICT",
-    `This work was started under a configuration version this deployment no longer publishes, so it cannot be continued until an operator restores it. Quote reference ${correlationId.value}.`,
-    { stage: "superseded-version", correlationId: correlationId.value },
-  ));
+  return error;
 }

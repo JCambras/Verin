@@ -25,7 +25,7 @@ import type { PIIBearing } from "@contracts/pii";
 import { err, ok, type Result } from "@contracts/result";
 import type { TenantContext } from "@contracts/tenant";
 import type { FlowData, FlowDefinition, FlowStep, StepResult } from "@domain/workflow/engine";
-import { configError, formatDomainConfigErrors, type DomainConfigError } from "./errors";
+import { configError, type DomainConfigError } from "./errors";
 import type { ConfiguredSlot } from "./intents";
 import type { LoadedDomainConfig } from "./load";
 import type { ExecutionCapability, PlanStep } from "./operations";
@@ -243,9 +243,33 @@ const readsDecisionHash = (capability: ExecutionCapability): boolean =>
     (field) => field.kind !== "copy" && field.source.from === "decision-hash",
   );
 
-const failure = (errors: readonly DomainConfigError[]): StepResult => ({
+/**
+ * HOW A COMPILED STEP REPORTS A DOCUMENT IT CANNOT PREPARE (D-231).
+ *
+ * This module is domain code and reaches no logger, so it states the FAULT - the
+ * loader's own code and dotted document path - and the composition root's
+ * configuration source turns it into the one refusal shape every other stage
+ * takes: a generic sentence carrying a correlation id on the wire, and the
+ * diagnosis as registered structured values on the operator's line under that
+ * same id. It used to interpolate the loader's formatted output straight into a
+ * message the e-sign webhook returns verbatim to the EXTERNAL provider.
+ *
+ * REQUIRED rather than defaulted: a default that quietly dropped the fault would
+ * be the channel-nobody-reads this rule exists to refuse (D-229).
+ */
+export type ConfiguredStepRefusal = (fault: DomainConfigError) => AppError;
+
+/**
+ * The FIRST fault, for the reason the loader's own diagnosis reports one: the
+ * accumulated list is in document order, and a single registered value is the
+ * only shape the operator's channel carries.
+ */
+const failure = (refuse: ConfiguredStepRefusal, errors: readonly DomainConfigError[]): StepResult => ({
   kind: "fail",
-  error: appError("INTERNAL", `The configured step could not be prepared: ${formatDomainConfigErrors(errors)}`),
+  error: refuse(
+    errors[0] ??
+      configError("incoherent", "execution", "the configured step could not be prepared"),
+  ),
 });
 
 const buildPayload = (
@@ -313,18 +337,19 @@ const compileStep = (
   config: LoadedDomainConfig,
   actionId: string,
   plan: StepPlan,
+  refuse: ConfiguredStepRefusal,
 ): FlowStep<ExecutionAdapters> => ({
   id: plan.step.id,
   name: plan.capability.describes,
   async execute(ctx, deps, tenant): Promise<StepResult> {
     const payload = buildPayload(config, actionId, plan.capability, ctx);
-    if (!payload.ok) return failure(payload.error);
+    if (!payload.ok) return failure(refuse, payload.error);
     const key = renderKeySegments(
       plan.capability.idempotencyKey,
       resolverFor(config, actionId, ctx),
       `execution.capabilities.${plan.capability.id}.idempotencyKey`,
     );
-    if (!key.ok) return failure(key.error);
+    if (!key.ok) return failure(refuse, key.error);
     const outputs = await deps.invoke(
       {
         capabilityId: plan.capability.id,
@@ -350,12 +375,12 @@ const compileStep = (
       }
       patch[publication.as] = value;
     }
-    if (missing.length > 0) return failure(missing);
+    if (missing.length > 0) return failure(refuse, missing);
     if (!plan.awaits) return { kind: "continue", patch };
     const tokenOutput = plan.capability.awaitTokenFrom;
     const token = tokenOutput === undefined ? undefined : publishedOutput(outputs, tokenOutput);
     if (token === undefined) {
-      return failure([
+      return failure(refuse, [
         configError(
           "incoherent",
           `execution.capabilities.${plan.capability.id}.awaitTokenFrom`,
@@ -400,6 +425,7 @@ export type CompiledFlow = {
 export const compileFlowDefinition = (
   config: LoadedDomainConfig,
   actionId: string,
+  refuse: ConfiguredStepRefusal,
 ): Result<CompiledFlow, AppError> => {
   const intent = config.intents.get(actionId);
   if (intent === undefined) {
@@ -447,7 +473,7 @@ export const compileFlowDefinition = (
     definition: {
       id: config.document.domainConfigId,
       name: config.document.presentation.domainLabel,
-      steps: plans.map((plan) => compileStep(config, actionId, plan)),
+      steps: plans.map((plan) => compileStep(config, actionId, plan, refuse)),
     },
     domainConfigVersionId: config.domainConfigVersionId,
     awaitingByStep: plans.map((plan) => (plan.awaits ? (plan.capability.verificationRule as string) : undefined)),

@@ -7,6 +7,7 @@ import {
 } from "@contracts/pii";
 import { appError, isErrorCode } from "@contracts/errors";
 import { CLIENT_RETRY } from "@contracts/client-retry";
+import { DOMAIN_CONFIG_ERROR_CODES } from "@domain/config/errors";
 import { isMachineRecordId } from "@contracts/record-id";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
@@ -83,6 +84,20 @@ const CONFIGURATION_STAGE_NAMES = [
   "hash-mismatch", "invalid", "malformed-pins", "no-intake-form", "not-inert",
   "superseded-version", "unbindable", "uncanonical", "unpinned", "unpublished",
   "unreadable-pins",
+  /**
+   * A persisted execution recording something that is not a version string at
+   * all, kept APART from `superseded-version` because `compareVersion` makes the
+   * distinction deliberately and the log line could not express it: a missing
+   * `configVersionStarted` is also what a shape violation and an omitted optional
+   * produce, so collapsing the two left the operator unable to tell which.
+   */
+  "unreadable-version",
+  /**
+   * A step of an otherwise-compiled plan that could not be PREPARED against the
+   * running execution - the dotted path is a document path, so it goes here as
+   * structure rather than into a message the e-sign provider reads.
+   */
+  "unrunnable-step",
 ] as const;
 export type ConfigurationStage = (typeof CONFIGURATION_STAGE_NAMES)[number];
 const ENTITY_TYPE_NAMES = [
@@ -92,6 +107,11 @@ const ENTITY_TYPE_NAMES = [
 export type ObservabilityEntityType = (typeof ENTITY_TYPE_NAMES)[number];
 const ACTIONS = new Set<string>(ACTION_NAMES);
 const ENUMS = new Map<string, ReadonlySet<string>>([
+  // WHAT IS WRONG WITH THE DOCUMENT, beside WHERE. Read off the loader's own
+  // closed code vocabulary rather than spelled again, for the reason the retry
+  // arm below is: a stage and a path with no statement of the fault leaves the
+  // most common refusal ("invalid") saying only that something, somewhere, is.
+  ["configCode", new Set<string>(DOMAIN_CONFIG_ERROR_CODES)],
   ["configStage", new Set<string>(CONFIGURATION_STAGE_NAMES)],
   ["code", new Set([
     "AUTH_EXPIRED", "AUTH_FAILED", "CONFLICT", "FLOW_SUSPENDED", "FORBIDDEN",

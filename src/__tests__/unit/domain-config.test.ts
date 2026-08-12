@@ -14,7 +14,14 @@ import {
 } from "@domain/config/intake-view";
 import { domainLabelsOf } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
-import { compileFlowDefinition, EXECUTION_SCOPE_KEY, INITIATING_ACTOR_KEY } from "@domain/config/plan-compiler";
+import {
+  compileFlowDefinition,
+  EXECUTION_SCOPE_KEY,
+  INITIATING_ACTOR_KEY,
+  type ConfiguredStepRefusal,
+} from "@domain/config/plan-compiler";
+import type { DomainConfigError } from "@domain/config/errors";
+import { appError } from "@contracts/errors";
 import { RESERVED_TRIGGER_FIELDS } from "@domain/config/vocabulary";
 import { policyRegistriesFor } from "@domain/config/registries";
 import {
@@ -43,6 +50,20 @@ function documentOf(domain: string): Mutable {
   const text = readFileSync(`config/domains/${domain}.yaml`, "utf8");
   return parseDocument(text, { merge: false }).toJS() as Mutable;
 }
+
+/**
+ * THE PORT A COMPILED STEP REFUSES THROUGH (D-231), in test form: it RECORDS the
+ * typed fault rather than rendering it, which is exactly what the port exists for.
+ * The compiler used to flatten the loader's dotted document paths into an
+ * `AppError` message the e-sign webhook returns verbatim to the external provider;
+ * the shipped minter turns the same fault into a correlation id on the wire and
+ * registered structured values on the operator's line.
+ */
+const stepFaults: DomainConfigError[] = [];
+const recordStepFault: ConfiguredStepRefusal = (fault) => {
+  stepFaults.push(fault);
+  return appError("INTERNAL", "The configured step could not be prepared.");
+};
 
 function loadedOf(domain: string): LoadedDomainConfig {
   const result = loadDomainConfig(documentOf(domain));
@@ -185,7 +206,7 @@ describe("domain configuration: the shipped documents", () => {
   });
 
   it("enforces: account opening compiles to the five-step plan the shipped flow runs", () => {
-    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
+    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account", recordStepFault);
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
     expect(compiled.value.definition.id).toBe("account-opening");
@@ -199,7 +220,7 @@ describe("domain configuration: the shipped documents", () => {
   });
 
   it("enforces: the awaited rule is emitted PER compiled step, not scanned in document order", () => {
-    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
+    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account", recordStepFault);
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
     // The engine advances the cursor past the suspending step before persisting,
@@ -230,6 +251,7 @@ describe("domain configuration: the shipped documents", () => {
     const compiled = compileFlowDefinition(
       { ...loadedOf("account-opening"), document: document as never },
       "open-account",
+      recordStepFault,
     );
     expect(compiled.ok).toBe(false);
     if (compiled.ok) return;
@@ -248,7 +270,7 @@ describe("domain configuration: the shipped documents", () => {
    * have caught the escape-everywhere round silently re-keying finalize.
    */
   it("PINS the shipped finalize idempotency key to the bytes the application row records", async () => {
-    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
+    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account", recordStepFault);
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
     const finalize = compiled.value.definition.steps.at(-1)!;
@@ -285,7 +307,7 @@ describe("domain configuration: the shipped documents", () => {
   });
 
   it("enforces: a decision-hash idempotency key is REFUSED by the interim substrate, never faked", () => {
-    const compiled = compileFlowDefinition(loadedOf("money-movement"), "distribute-cash");
+    const compiled = compileFlowDefinition(loadedOf("money-movement"), "distribute-cash", recordStepFault);
     expect(compiled.ok).toBe(false);
     if (compiled.ok) return;
     expect(compiled.error.message).toContain("decision hash");
@@ -314,7 +336,7 @@ describe("domain configuration: the shipped documents", () => {
       const loaded = loadDomainConfig(document);
       expect(loaded.ok, "the document itself still loads: prompt 25 makes this authoring resolvable").toBe(true);
       if (!loaded.ok) return;
-      const compiled = compileFlowDefinition(loaded.value, "open-account");
+      const compiled = compileFlowDefinition(loaded.value, "open-account", recordStepFault);
       expect(compiled.ok, `an optional:${optional} decision-hash payload field must not compile`).toBe(false);
       if (compiled.ok) return;
       expect(compiled.error.message).toContain("decision hash");
@@ -341,7 +363,7 @@ describe("domain configuration: the shipped documents", () => {
     const loaded = loadDomainConfig(document);
     expect(loaded.ok, "the document itself must still load: the authoring is legal").toBe(true);
     if (!loaded.ok) return;
-    const compiled = compileFlowDefinition(loaded.value, "distribute-cash");
+    const compiled = compileFlowDefinition(loaded.value, "distribute-cash", recordStepFault);
     expect(compiled.ok).toBe(false);
     if (compiled.ok) return;
     expect(compiled.error.message).toContain("source-account");
@@ -1122,16 +1144,25 @@ describe("detects (companion): a configuration that is wrong in any of the seven
   });
 
   it("flags a compiled step whose execution scope never resolved", async () => {
-    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account");
+    const compiled = compileFlowDefinition(loadedOf("account-opening"), "open-account", recordStepFault);
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
     const step = compiled.value.definition.steps[0]!;
+    stepFaults.length = 0;
     const result = await step.execute(
       { householdName: "Household" },
       { invoke: () => Promise.resolve({ id: "hh-1" }) },
       { orgId: "org" } as never,
     );
     expect(result.kind).toBe("fail");
+    // THE FAULT IS STATED, NOT RENDERED (D-231). What the step hands its refusal
+    // port is the loader's own typed fault - a code and a dotted DOCUMENT path -
+    // so the composition root can put those on the operator's line as registered
+    // values instead of flattening them into a message the e-sign provider reads.
+    expect(stepFaults).toHaveLength(1);
+    expect(stepFaults[0]!.code).toBe("incoherent");
+    expect(stepFaults[0]!.path).toMatch(/^execution\.capabilities\./);
+    expect(result.kind === "fail" && result.error.message).not.toContain(stepFaults[0]!.path);
     const withScope = await step.execute(
       { householdName: "Household", [EXECUTION_SCOPE_KEY]: "exec-1" },
       { invoke: () => Promise.resolve({ id: "hh-1" }) },

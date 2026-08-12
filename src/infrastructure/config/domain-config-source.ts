@@ -49,7 +49,8 @@ import { intakeFormOf } from "@domain/config/intake";
 import type { IntakeForm } from "@domain/config/intake-view";
 import { domainLabelsOf, type DomainLabels } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
-import type { DomainConfigError } from "@domain/config/errors";
+import type { DomainConfigError, DomainConfigErrorCode } from "@domain/config/errors";
+import type { ConfiguredStepRefusal } from "@domain/config/plan-compiler";
 import { KEBAB_CASE_RE } from "@domain/config/vocabulary";
 
 /**
@@ -155,8 +156,16 @@ export const inertnessProblems = (text: string): readonly string[] =>
  * string would be a fact it does not have.
  */
 interface ConfigurationDiagnosis {
-  /** The dotted document path the loader accumulated FIRST, in document order. */
+  /**
+   * The dotted document path the loader accumulated FIRST, in document order.
+   * ABSENT and CENSORED are different facts: a root-level failure ("not-inert" on
+   * a document that is not a record, a schema issue at the document root) carries
+   * no path at all, and sealing its empty string would have printed the very
+   * "[REDACTED]" an operator reads as "a value was withheld for safety".
+   */
   readonly path?: string;
+  /** WHICH of the loader's eight faults it is - the most diagnostic single bit. */
+  readonly code?: DomainConfigErrorCode;
   readonly version?: string;
   readonly pinnedHash?: string;
   readonly readHash?: string;
@@ -187,13 +196,14 @@ const configurationRefusal = (
   diagnosis: ConfigurationDiagnosis = {},
 ): AppError => {
   const correlationId = generatedObservabilityId("correlationId", randomUUID());
-  const { path, version, pinnedHash, readHash } = diagnosis;
+  const { path, code, version, pinnedHash, readHash } = diagnosis;
   // Each mint names its field as a LITERAL: the observability fence derives the
   // id vocabulary from exactly that argument, so routing these through a helper
   // that forwards the field would leave the whole diagnosis underivable.
   log.error({
     correlationId,
     configStage: stage,
+    configCode: code,
     domainConfigId: configurationDiagnosisId("domainConfigId", domainConfigId),
     configPath: path === undefined ? undefined : configurationDiagnosisId("configPath", path),
     configVersion: version === undefined ? undefined : configurationDiagnosisId("configVersion", version),
@@ -251,7 +261,7 @@ const readOnce = (domainConfigId: string): Result<SourcedDomainConfig, AppError>
   }
   const loaded = loadDomainConfig(inert.data);
   if (!loaded.ok) {
-    return err(configurationRefusal(domainConfigId, "invalid", { path: firstPath(loaded.error) }));
+    return err(configurationRefusal(domainConfigId, "invalid", firstFault(loaded.error)));
   }
   const canonical = canonicalConfigJson(loaded.value.document);
   if (!canonical.ok) {
@@ -303,12 +313,36 @@ export const loadPublishedDomainConfig = (
 };
 
 /**
- * The path an operator is sent to FIRST. The loader accumulates the whole failure
+ * The fault an operator is sent to FIRST. The loader accumulates the whole failure
  * surface in document order, so the earliest entry is the one to read first - and
  * a single sealed id is the only shape the log channel carries, which is why this
  * is a choice rather than a list.
+ *
+ * An EMPTY path is omitted rather than reported: `loadDomainConfig` emits one for
+ * a document that is not a plain record, and a schema issue at the document root
+ * joins to one too. Passing that through would seal "[REDACTED]" for exactly the
+ * root-level failures, and an operator cannot tell a withheld value from a fact
+ * the loader never had.
  */
-const firstPath = (errors: readonly DomainConfigError[]): string | undefined => errors[0]?.path;
+const firstFault = (errors: readonly DomainConfigError[]): ConfigurationDiagnosis => {
+  const first = errors[0];
+  if (first === undefined) return {};
+  return first.path === "" ? { code: first.code } : { path: first.path, code: first.code };
+};
+
+/**
+ * The refusal a COMPILED STEP reports when the published document cannot be
+ * prepared against the execution it is running (v3 prompt 10, D-231).
+ *
+ * The plan compiler is domain code and cannot reach a logger, so it states the
+ * fault and this adapter - the one place every configuration refusal is minted -
+ * turns it into the same generic-sentence-plus-reference on the wire and the same
+ * registered diagnosis on the operator's line as every other stage. Before this,
+ * that one refusal interpolated the loader's dotted document paths into a message
+ * the e-sign webhook returns verbatim to the EXTERNAL provider.
+ */
+export const configuredStepRefusal = (domainConfigId: string): ConfiguredStepRefusal =>
+  (fault) => configurationRefusal(domainConfigId, "unrunnable-step", firstFault([fault]));
 
 /**
  * PROJECTIONS FOR SURFACES. A screen asks for the shape it renders, never for
@@ -323,7 +357,7 @@ export const loadIntakeForm = (domainConfigId: string): Result<IntakeForm, AppEr
   return form.ok
     ? ok(form.value)
     : err(configurationRefusal(domainConfigId, "no-intake-form", {
-      path: firstPath(form.error),
+      ...firstFault(form.error),
       version: sourced.value.config.domainConfigVersionId,
     }));
 };
@@ -351,7 +385,7 @@ export const loadDomainLabels = (
   return bound.ok
     ? ok(domainLabelsOf(bound.value))
     : err(configurationRefusal(domainConfigId, "unbindable", {
-      path: firstPath(bound.error),
+      ...firstFault(bound.error),
       version: sourced.value.config.domainConfigVersionId,
     }));
 };

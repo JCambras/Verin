@@ -236,6 +236,34 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
     expect(await rowCounts()).toEqual({ households: 0, contacts: 0, applications: 0, executions: 0 });
   });
 
+  /**
+   * THE REFERENCE SURVIVES THE WHOLE WAY TO THE BODY (D-231).
+   *
+   * The refusal narrows its own message to a generic sentence precisely so it can
+   * carry a correlation id instead of dotted document paths, and the reporting
+   * surfaces threw that id away and substituted a sentence of their own - for
+   * three rounds running, which is why the shape now carries the reference and no
+   * caller can drop it. Asserted at BOTH layers a broken document is noticed at,
+   * because giving an advisor something to quote at one of them and nothing at the
+   * other is the per-surface disagreement this whole taxonomy exists to remove.
+   */
+  it.each([
+    ["the intake projection", "unresolvableConfiguration"],
+    ["the start path", "unrunnableFlow"],
+  ] as const)("gives an advisor a quotable reference when %s refuses", async (_layer, noticedBy) => {
+    injected[noticedBy] = true;
+    const response = await post(SUBMISSION);
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { retry?: string; error?: { message?: string } };
+    expect(body.retry).toBe("retry-later");
+    expect(body.error?.message).toMatch(/Quote reference [0-9a-f-]{36}\./);
+    // ...and it is still the GENERIC sentence: the reference is what narrowing
+    // the message costs nothing, not a licence to put the diagnosis back.
+    expect(body.error?.message).toContain("operations team");
+    expect(body.error?.message).not.toMatch(/[0-9a-f]{32}/);
+    expect(body.error?.message).not.toContain("config/domains");
+  });
+
   it("still starts the flow for a registration the configuration DOES declare", async () => {
     const response = await post(SUBMISSION);
     expect(response.status).toBe(200);

@@ -9306,7 +9306,9 @@ putting the detail back on the wire re-opens the trust boundary. Structured is n
 improvement: STRUCTURED VALUES ARE QUERYABLE, so an operator can ask for every configuration refusal at a
 given stage for a given document, which free prose could never answer. The values are the deployment's own
 published document, never a request, so the provenance rule is a declared SHAPE per field rather than a
-mint ceremony. Proof PF-277.
+mint ceremony. Proof PF-278 - which this decision originally mis-cited as PF-277, another decision's
+evidence, and a record pointing at the wrong proof is the same defect class as a diagnosis pointing at a
+channel that drops it.
 
 **Fenced by.** `src/__tests__/unit/domain-config-source.test.ts` reads the BYTES THE REAL LOGGER EMITS -
 the module's `log` is a `pino` built from the real `loggerOptions` writing into a capture stream - and
@@ -9338,5 +9340,62 @@ have swapped one useless answer for another.
 bearing JSX attribute, or string in a registered client-message module may name a repository path or a
 configuration/module file. A module specifier is resolution rather than copy and is exempt, which is what
 keeps the demo surface manifest's own `componentPath` entries (structure, correctly spelled) out of scope.
+Proof PF-277. (D-231 widens that rule from this pattern to the whole condition.)
 
 **Revert path.** Put the path back in the copy; RULE K names the file and line.
+
+---
+
+## D-231 - Prompt 10 review: a fence whose registry is hand-maintained is a fence that will pass vacuously
+
+**What.** The three rules D-228/D-229/D-230 introduced are re-founded on DERIVATIONS, and the one
+configuration refusal they could not see is closed.
+
+- **RULE I is derived from the configuration MODULES** (`src/domain/config/`,
+  `src/infrastructure/config/`): every `appError` minted in one is a candidate, exempted only by its own
+  `VALIDATION` code - a refusal of the SUBMISSION rather than of the document. It is COMPLETE rather than
+  merely broad, because marking a refusal means importing `operatorRecoverable`, and no module outside
+  those roots may. So there is no residue to register and nothing to go stale.
+- **`plan-compiler.ts :: failure` is the refusal that proved the point**: it sat in a REGISTERED FILE and
+  an unregistered FUNCTION, mint unmarked, flattening the loader's dotted document paths
+  (`execution.capabilities.<id>.payload.<field>`) into a message the e-sign webhook returns verbatim to the
+  EXTERNAL provider. It now states a typed FAULT through a `ConfiguredStepRefusal` port; the composition
+  root's configuration source turns that into the one refusal shape - generic sentence plus correlation id
+  on the wire, `configStage`/`configCode`/`configPath` on the operator's line. The port is REQUIRED, never
+  defaulted: a default that dropped the fault is the dead channel D-229 is about.
+  `formatDomainConfigErrors` is deleted with its only consumer.
+- **`configuredFlow` moved from the composition root into `src/infrastructure/config/configured-flow.ts`.**
+  Everything it refuses is a fact about the document, and holding it in `wire.ts` was what forced RULE I to
+  keep a residue registry at all.
+- **RULE J derives its decision sites**: any file that reads the closed client-retry vocabulary, or writes
+  one of its arms into a `retry` position without importing anything. Three hand-listed surfaces were the
+  same per-site bookkeeping the rule abolished, moved into the fence.
+- **RULE K tests the CONDITION** - no deployment internal reaches a user-facing surface or the wire -
+  rather than a directory-shaped pattern over `src/app/`. Bare file names, environment variable names,
+  digests and dotted document paths (derived from the published documents' own section ids) all count; the
+  scope follows every `AppError` message in `src/app/`, `src/domain/` and `src/infrastructure/`, because
+  `toResponse` returns those verbatim; and a message BUILT from a `DomainConfigError` is refused
+  structurally, since no scan of authored literals can see what an interpolation evaluates to.
+- **The correlation reference reaches the response body.** `refusalResponse` takes the refusal itself and
+  appends the reference, so no surface can drop it - which both of them did, for three rounds.
+- **An EMPTY loader path is omitted rather than sealed** (a root-level failure has no path, and
+  `[REDACTED]` reads as a value withheld for safety), the loader's own eight-value `code` is emitted beside
+  it, and `unreadable-version` becomes its own registered stage and sentence beside `superseded-version`.
+
+**Why.** A registry a human maintains drifts and then reports green about a set that no longer matches
+reality, which the charter treats as worse than no fence: RULE I's own docstring claimed "a refusal added
+later inherits the classification without anyone remembering to" while a refusal in an unlisted function
+of a listed file shipped unmarked and leaking. The same argument applies to RULE J's three files and to
+RULE K's pattern, which required a directory separator and a fixed extension list - so "restore
+account-opening.yaml", a `SESSION_SECRET` and a SHA-256 digest all passed clean. Inclusions are DERIVED and
+only exceptions are listed, each justified and each proven to suppress something real.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULES I (derivation plus completeness),
+J and K, with (K') holding every reviewed escape to the same non-staleness rule RULE A's allow-list uses.
+`src/__tests__/unit/domain-config-source.test.ts` covers the loader code and the two reachable root-level
+failures against the real logger's bytes; `src/__tests__/integration/account-opening-route.test.ts` and the
+new `simulate-sign-route.test.ts` assert the reference actually reaches the response body at both layers a
+broken document is noticed at. Proofs PF-279, PF-280, PF-281, PF-282.
+
+**Revert path.** Re-list the sites and narrow the patterns; the four proofs above each name the file and
+line the derivation caught and the list could not.

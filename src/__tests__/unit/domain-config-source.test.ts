@@ -36,8 +36,31 @@ vi.mock("@infra/observability/logger", async (importOriginal) => {
   return { ...actual, log: probe };
 });
 
+/**
+ * A ROOT-LEVEL loader failure, which is the one shape `firstFault` has to treat
+ * differently: `loadDomainConfig` emits an EMPTY path for a document that is not a
+ * plain record, and a schema issue at the document root joins to one too. Sealing
+ * that empty string printed "[REDACTED]" on the operator's line for exactly those
+ * failures, which reads as a value withheld for safety rather than one the loader
+ * never had. Injected here because `config/domains/` is content-hash pinned: a
+ * document authored to fail this way cannot be published.
+ */
+const injected = vi.hoisted(() => ({ fault: null as null | { code: string; path: string; message: string } }));
+
+vi.mock("@domain/config/load", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@domain/config/load")>();
+  return {
+    ...actual,
+    loadDomainConfig: (input: unknown) =>
+      injected.fault === null ? actual.loadDomainConfig(input) : { ok: false as const, error: [injected.fault] },
+  };
+});
+
 const { ACCOUNT_OPENING_DOMAIN, loadIntakeForm, loadPublishedDomainConfig } =
   await import("@infra/config/domain-config-source");
+
+/** A published document this file loads NOWHERE else, so no memoized success hides the injection. */
+const UNMEMOIZED_DOMAIN = "money-movement";
 
 const HEX_DIGEST = /[0-9a-f]{32}/;
 const DOTTED_DOCUMENT_PATH = /\b[a-z]+\.[a-z][A-Za-z-]+\.[A-Za-z-]+/;
@@ -60,6 +83,7 @@ function lastLogLine(): Record<string, unknown> {
 describe("the domain-configuration source refuses without leaking its diagnosis", () => {
   beforeEach(() => {
     emitted.lines = [];
+    injected.fault = null;
   });
 
   it("is not asserting on a broken baseline: the shipped document DOES resolve", () => {
@@ -114,5 +138,32 @@ describe("the domain-configuration source refuses without leaking its diagnosis"
     // is the one that can carry a value from outside the closed shape.
     refusalOf("Not A Published Id");
     expect(lastLogLine()["domainConfigId"]).toBe(REDACTED);
+  });
+
+  it("states WHICH loader fault it is, beside where - the most diagnostic bit of all", () => {
+    injected.fault = { code: "unknown-reference", path: "intents.open-account.slots.email", message: "no such slot" };
+    refusalOf(UNMEMOIZED_DOMAIN);
+    const line = lastLogLine();
+    expect(line["configStage"]).toBe("invalid");
+    // A stage and a path with no statement of the fault left the most common
+    // refusal saying only that something, somewhere, was wrong with the document.
+    expect(line["configCode"]).toBe("unknown-reference");
+    expect(line["configPath"]).toBe("intents.open-account.slots.email");
+    expect(Object.values(line)).not.toContain(REDACTED);
+  });
+
+  it.each([
+    ["a document that is not a plain record", { code: "not-inert", path: "", message: "must be a plain data record" }],
+    ["a schema issue at the document ROOT", { code: "grammar", path: "", message: "required" }],
+  ])("reports %s as having NO path, never as a censored one", (_case, fault) => {
+    // An empty loader path used to be sealed, printing "[REDACTED]" for exactly
+    // the root-level failures - which an operator reads as a value withheld for
+    // safety rather than one the loader never had.
+    injected.fault = fault;
+    refusalOf(UNMEMOIZED_DOMAIN);
+    const line = lastLogLine();
+    expect(line).not.toHaveProperty("configPath");
+    expect(line["configCode"]).toBe(fault.code);
+    expect(Object.values(line)).not.toContain(REDACTED);
   });
 });

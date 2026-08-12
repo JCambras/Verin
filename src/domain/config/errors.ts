@@ -7,6 +7,13 @@
  * The code vocabulary is the seven ordered load stages plus firm binding, so a
  * caller can tell "this document is not inert" from "this firm does not supply
  * that approval template" without parsing prose.
+ *
+ * AND NO PROSE RENDERING LIVES HERE (D-231). The accumulator is a list of typed
+ * faults; the one consumer that flattened it into a sentence put dotted document
+ * paths into an `AppError` message the e-sign webhook returns verbatim to the
+ * EXTERNAL provider. A fault reaches an operator as REGISTERED STRUCTURED VALUES
+ * (`configCode`, `configPath`) on the log line the client's correlation id joins
+ * to, which is also the only shape this repository's log formatter carries.
  */
 
 export const DOMAIN_CONFIG_ERROR_CODES = [
@@ -42,10 +49,3 @@ export const configError = (
   path: string,
   message: string,
 ): DomainConfigError => ({ code, path, message });
-
-/** Accumulator: an author sees the whole failure surface at once, as prompt 9's loader does. */
-
-export const formatDomainConfigErrors = (
-  errors: readonly DomainConfigError[],
-): string =>
-  errors.map((error) => `${error.code} at ${error.path}: ${error.message}`).join("; ");

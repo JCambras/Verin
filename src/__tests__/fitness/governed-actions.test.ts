@@ -1301,6 +1301,10 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
  */
 export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why: string }> = [
   {
+    callable: "src/infrastructure/config/configured-flow.ts :: configuredFlow",
+    why: "compiles the PUBLISHED DOCUMENT into a runnable plan, and reads as PII only because a compiled step's adapter PORT is PII-bearing - the port is a type, carrying no data at all. Same standing as loadPublishedDomainConfig below: it is read before any firm is bound, so a tenant-scoped grant is unavailable rather than merely absent, and every step the plan then drives takes its own sealed tenant at invocation.",
+  },
+  {
     callable: "src/infrastructure/config/domain-config-source.ts :: loadDomainLabels",
     why: "returns the LABEL projection of a domain configuration bound for one firm - kind and slot ids mapped to display strings. Same reasoning as loadPublishedDomainConfig below: platform configuration, no household data, and the firm arrives as an explicit registry argument rather than as a grant.",
   },

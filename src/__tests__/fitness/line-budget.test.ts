@@ -266,10 +266,23 @@ const CEILINGS = {
 // above exists to prevent, so none is left to be corrected by an unrelated round.
 // RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,333 / 9,393 (60),
 // infrastructure 8,589 / 8,619 (30).
+//
+// ADR-0057 amendment (review round 15) raises `domain` and `infrastructure` for the
+// DERIVED refusal class (D-231): `infrastructure` gains the compile of the published
+// document, moved out of the composition root so every configuration refusal lives in
+// the configuration modules a fence can derive, plus the step-refusal minter, the
+// loader's fault code, the absent-versus-censored path, and a version guard that states
+// its two verdicts apart. `domain` gains the refusal port and its two registered stages
+// against the deleted loader-error formatter, and had reached 9,388 against 9,393 -
+// five lines, the zero-headroom condition this header exists to prevent - so it moves
+// too. `contracts` is RE-TAKEN and unchanged at 6,752, well inside its ceiling, so it is
+// left alone rather than raised for company.
+// RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,388 / 9,450 (62),
+// infrastructure 8,683 / 8,745 (62).
 const CEILINGS = {
   contracts: 6782, // ADR-0057 as amended five times, on classification by cause (6,752 measured)
-  domain: 9393, // ADR-0057 as amended nine times, on the configuration-diagnosis vocabulary (9,333 measured)
-  infrastructure: 8619, // ADR-0057 as amended four times, on the structured refusal diagnosis (8,589 measured)
+  domain: 9450, // ADR-0057 as amended ten times, on the derived refusal class (9,388 measured)
+  infrastructure: 8745, // ADR-0057 as amended five times, on the derived refusal class (8,683 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

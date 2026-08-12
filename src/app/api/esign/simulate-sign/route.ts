@@ -4,7 +4,7 @@ import { computeEsignSignature, esignCallback } from "@infra/wire";
 import { getApplicationByToken } from "@infra/crm/application-store";
 import { appError, logLevelFor } from "@contracts/errors";
 import { CLIENT_RETRY, clientRetryFor } from "@contracts/client-retry";
-import { REFUSAL_MESSAGE, refusalResponse } from "@app/_server/refusal";
+import { refusalResponse } from "@app/_server/refusal";
 import { log } from "@infra/observability/logger";
 import { getConfig } from "@infra/config";
 
@@ -48,7 +48,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const error = result.error ?? appError("INTERNAL", "Finalizing the account opening failed.");
     const retry = clientRetryFor(error, result.retry ?? CLIENT_RETRY.sameIdentity);
     log[logLevelFor(error.code)]({ code: error.code, retry }, "e-sign callback finalization failed");
-    return refusalResponse(retry, REFUSAL_MESSAGE[retry]);
+    // The refusal's own reference travels with it, so the advisor watching the
+    // demo journey has the id the operator's log line carries.
+    return refusalResponse(retry, error);
   }
   return NextResponse.json({ status: result.status });
 }

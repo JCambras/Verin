@@ -15250,3 +15250,151 @@ is itself the anti-vacuity check: it walks `src/app/**` and reports the demo sur
 **Reverted:** the generic sentence plus correlation id restored; `Tests 41 passed (41)`.
 
 **Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-diagnosis-channel`).
+
+---
+
+## PF-278 - a configuration diagnosis routed into a channel that silently drops it
+
+**Fence.** `src/__tests__/unit/domain-config-source.test.ts` - the D-229 evidence, and the check whose
+absence let a dead channel ship: it reads the BYTES THE REAL LOGGER EMITS, through the real
+`loggerOptions`, rather than the object handed to it.
+
+**Injection.** Restored the first attempt's shape at `configurationRefusal`
+(`src/infrastructure/config/domain-config-source.ts`): the registered diagnosis fields removed from the
+log line and the same facts flattened into an `AppError.context.detail` string - the channel nothing reads
+and the formatter would censor anyway.
+
+**Observed failure:**
+```
+× emits the diagnosis to the operator as REGISTERED values the formatter passes through
+AssertionError: expected undefined to be 'no-such-published-domain'
+ ❯ src/__tests__/unit/domain-config-source.test.ts:129:36
+```
+(four further cases fail with it: the stage, the loader code, and both root-path cases)
+
+**Companion.** The same file proves the rule is not "say nothing": a first case asserts the shipped
+document still resolves, so a source that refused everything could not satisfy it; another asserts a value
+outside its declared shape degrades to `[REDACTED]` rather than riding through; and the two root-level
+cases assert an absent path is ABSENT rather than sealed.
+
+**Reverted:** the registered fields restored; `Tests 9 passed (9)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-279 - a configuration refusal minted in an UNLISTED function of a listed file
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, now DERIVED from the
+configuration modules rather than from a list of owning functions (D-231).
+
+**Injection.** Restored the plan compiler's own pre-fix shape at
+`src/domain/config/plan-compiler.ts :: failure` - an unmarked `appError` built from the loader's dotted
+document paths. `failure` is not, and never was, in any registry; the old hand-listed rule keyed on
+`orderedSteps` and `compileFlowDefinition` and read this file green.
+
+**Observed failure:**
+```
+× (I) enforces: every configuration refusal is minted with its cause marked
+AssertionError: configuration refusals whose cause is unmarked:
+src/domain/config/plan-compiler.ts:269: a configuration refusal is minted without operatorRecoverable()
+
+× (K) enforces: no deployment internal reaches a user-facing surface or the wire
+AssertionError: deployment internals in what a user or a sender reads:
+src/domain/config/plan-compiler.ts:269: a client-facing message is built from a DomainConfigError, whose paths reach the wire at run time
+```
+
+**Companion.** The `detects` block plants the same shape in an in-memory project and asserts the marked
+form reports nothing; a `VALIDATION` mint in the same root is exempted BY ITS CODE rather than by a
+blessed-function list; and an ANTI-VACUITY case reports a root that refuses nothing as a derivation
+pointing at nothing.
+
+**Reverted:** the refusal port restored; `Tests 47 passed (47)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-280 - a configuration refusal marked where the derivation cannot see it
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I's completeness half
+(`configurationMarkersOutsideModules`) - what makes a root-derived rule COMPLETE rather than merely broad,
+and what replaces the hand-listed residue of sites outside those roots.
+
+**Injection.** Imported `operatorRecoverable` into `src/infrastructure/wire.ts` and referenced it - the
+exact shape the composition root had before `configuredFlow` moved into
+`src/infrastructure/config/configured-flow.ts`.
+
+**Observed failure:**
+```
+× (I) enforces: every configuration refusal is minted with its cause marked
+AssertionError: configuration refusals minted outside the configuration modules:
+src/infrastructure/wire.ts marks a configuration refusal outside the configuration modules, where the derivation cannot see it
+```
+
+**Companion.** The `detects` block proves an ALIASED import is caught (the rule resolves the import's own
+name), that the same import inside the roots is silent, and - anti-vacuously - that a marker no
+configuration module imports is reported as a rule checking a mark nobody applies.
+
+**Reverted:** the import removed; `Tests 47 passed (47)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-281 - a client instruction STATED in a file no registry lists
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J, now DERIVED: a decision site is
+any file that reads the closed client-retry vocabulary, or writes one of its arms into a `retry` position
+(D-231).
+
+**Injection.** Decided a category at `src/app/api/esign/webhook/route.ts` (`const retry =
+CLIENT_RETRY.none`). That surface was NOT among the three files the old registry listed, so the previous
+rule could not see it at all.
+
+**Observed failure:**
+```
+× (J) enforces: no surface STATES a client instruction it could read from the cause
+AssertionError: instructions chosen per call site:
+src/app/api/esign/webhook/route.ts:84: a client instruction is STATED here (CLIENT_RETRY.none) rather than read from the refusal's cause via clientRetryFor()
+```
+
+**Companion.** The `detects` block plants the decision in a NEW unregistered route and asserts the derived
+form reports nothing; a second case plants a RAW `"do-not-retry"` literal in a file that imports nothing,
+proving the derivation does not depend on the import; and an anti-vacuity case asserts the shipped run
+finds both a decision site and a decision, so an empty violation list is never a statement about nothing.
+
+**Reverted:** the decision removed; `Tests 47 passed (47)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-282 - a BARE configuration file name in copy an advisor reads
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE K, widened from a
+directory-shaped pattern over `src/app/` to the CONDITION - no deployment internal reaches a user-facing
+surface or the wire (D-231).
+
+**Injection.** Changed the account-opening configuration-failure screen
+(`src/app/app/account-opening/page.tsx`) to say "Ask your operations team to restore
+account-opening.yaml." - a BARE file name, with no directory, which the previous pattern required and
+therefore missed.
+
+**Observed failure:**
+```
+× (K) enforces: no deployment internal reaches a user-facing surface or the wire
+AssertionError: deployment internals in what a user or a sender reads:
+src/app/app/account-opening/page.tsx:31: user-facing copy names a deployment file name (This deployment is not currently able to start account openings, so no applicati)
+```
+
+**Companion.** The `detects` block exercises every form the first pattern let through - the bare file
+name, an extension outside the old fixed list, an ENVIRONMENT VARIABLE NAME, and a SHA-256 digest - plus
+the scope gap: a wire message minted in `src/domain/`, both as a literal dotted document path and as one
+INTERPOLATED from a loader fault at run time, which no scan of authored literals could see. The reviewed
+escape (the deferred-adapter boot diagnostic in `src/infrastructure/store/db.ts`) is held to rule (K'),
+which fails it the moment it suppresses nothing.
+
+**Reverted:** the generic sentence restored; `Tests 47 passed (47)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-fence-strength-and-plancompiler`).

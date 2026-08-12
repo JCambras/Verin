@@ -23,23 +23,22 @@ import {
   type GovernedOutput,
 } from "@contracts/authz";
 import { assertSameTenant, type TenantContext } from "@contracts/tenant";
-import { CLIENT_RETRY, clientRetryFor, operatorRecoverable, type ClientRetry } from "@contracts/client-retry";
+import { CLIENT_RETRY, clientRetryFor, type ClientRetry } from "@contracts/client-retry";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, normalizeAppError, type AppError } from "@contracts/errors";
 import { MACHINE_RECORD_ID_RE, parseMachineRecordId } from "@contracts/record-id";
 import { startFlow, resumeFlow, retryFlow, type ExecutionState, type ExecutionStore, type FlowRunResult, type ResumeGuard } from "@domain/workflow/engine";
 import {
-  compileFlowDefinition,
   CONFIG_VERSION_KEY,
   EXECUTION_SCOPE_KEY,
   INITIATING_ACTOR_KEY,
   type CompiledFlow,
   type ExecutionAdapters,
 } from "@domain/config/plan-compiler";
-import { ACCOUNT_OPENING_DOMAIN, loadPublishedDomainConfig } from "@infra/config/domain-config-source";
+import { configuredFlow } from "@infra/config/configured-flow";
 import { versionMismatch, versionSuperseded } from "@infra/config/execution-version";
-import { makeExecutionAdapters, SUPPORTED_COMMAND_TYPES } from "@infra/execution-adapters";
+import { makeExecutionAdapters } from "@infra/execution-adapters";
 import { makeExecutionStore } from "@infra/store/execution-store";
 import { auditedWrite } from "@infra/audit/audited-write";
 import { getApplicationByToken } from "@infra/crm/application-store";
@@ -54,38 +53,6 @@ import {
   type ObservabilityAction,
   type ObservabilityEntityType,
 } from "@domain/observability/safe-values";
-
-/**
- * The action the published configuration this surface runs declares. The route
- * and the page carry the same shipped names (CD-1 leaves shipped URLs and record
- * vocabulary unrenamed); everything the flow DOES comes from the document, whose
- * id lives beside the source that resolves it.
- */
-const ACCOUNT_OPENING_ACTION = "open-account";
-
-/**
- * Compile the shipped domain configuration into a runnable flow. Every failure
- * here is a typed AppError the surface reports: a missing, invalid, or
- * unrunnable configuration must break the flow loudly, never degrade to a
- * hard-coded fallback (which would make the configuration dead data).
- */
-function configuredFlow(): Result<CompiledFlow, AppError> {
-  const sourced = loadPublishedDomainConfig(ACCOUNT_OPENING_DOMAIN);
-  if (!sourced.ok) return sourced;
-  const config = sourced.value.config;
-  const unsupported = config.document.execution.capabilities
-    .map((capability) => capability.commandType)
-    .filter((commandType) => !SUPPORTED_COMMAND_TYPES.includes(commandType));
-  if (unsupported.length > 0) {
-    // A document naming a command this build has no adapter for is the same
-    // operator-recoverable cause as one that fails to load or compile (D-228):
-    // rolling the document back clears it, and no submission can.
-    return err(
-      operatorRecoverable(appError("INTERNAL", `This deployment has no execution adapter for: ${[...new Set(unsupported)].sort().join(", ")}.`)),
-    );
-  }
-  return compileFlowDefinition(config, ACCOUNT_OPENING_ACTION);
-}
 
 /** PIIBearing: household/contact names and email are client PII. */
 export interface StartAccountOpeningInput extends PIIBearing {

@@ -2,9 +2,9 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_server/context";
 import { startAccountOpening, CLIENT_REQUEST_ID_RE, START_INPUT_FIELDS } from "@infra/wire";
 import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
-import { appError, logLevelFor } from "@contracts/errors";
+import { appError, logLevelFor, type AppError } from "@contracts/errors";
 import { CLIENT_RETRY, clientRetryFor } from "@contracts/client-retry";
-import { REFUSAL_MESSAGE, refusalResponse } from "@app/_server/refusal";
+import { refusalResponse } from "@app/_server/refusal";
 import { log } from "@infra/observability/logger";
 import {
   admitIntakeSubmission,
@@ -15,6 +15,19 @@ import {
 } from "@domain/config/intake-view";
 
 export const runtime = "nodejs";
+
+/**
+ * A CHECKED INTAKE READ THAT FAILED, answered by its CAUSE (D-228). The same
+ * accessor raises two different things: a submitter's omission of a declared
+ * field, which is theirs to fix and keeps its own VALIDATION, and a document that
+ * declares no such trigger field at all, which no submission reaches and an
+ * operator rollback clears - so that one takes the shared refusal shape and its
+ * "come back" instruction rather than a bare server error.
+ */
+function intakeReadRefusal(error: AppError): NextResponse {
+  const retry = clientRetryFor(error, CLIENT_RETRY.newIdentity);
+  return retry === CLIENT_RETRY.later ? refusalResponse(retry, error) : errorResponse(error);
+}
 
 /**
  * Boundary refusals (authorization, malformed body, an undeclared registration, a
@@ -46,7 +59,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // carries; the document path, version and hashes are on that line as registered
   // values, never on the wire.
   if (!form.ok) {
-    return refusalResponse(clientRetryFor(form.error, CLIENT_RETRY.sameIdentity), form.error.message);
+    return refusalResponse(clientRetryFor(form.error, CLIENT_RETRY.sameIdentity), form.error);
   }
   const admitted = admitIntakeSubmission(form.value, b);
   if (!admitted.ok) return errorResponse(admitted.error);
@@ -88,15 +101,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // field renamed in the document is a refusal here rather than a blank passed on
   // for a value this boundary just declared required.
   const householdName = requiredIntakeValue(form.value, supplied, "householdName");
-  if (!householdName.ok) return errorResponse(householdName.error);
+  if (!householdName.ok) return intakeReadRefusal(householdName.error);
   const firstName = requiredIntakeValue(form.value, supplied, "firstName");
-  if (!firstName.ok) return errorResponse(firstName.error);
+  if (!firstName.ok) return intakeReadRefusal(firstName.error);
   const lastName = requiredIntakeValue(form.value, supplied, "lastName");
-  if (!lastName.ok) return errorResponse(lastName.error);
+  if (!lastName.ok) return intakeReadRefusal(lastName.error);
   const accountType = requiredIntakeValue(form.value, supplied, "accountType");
-  if (!accountType.ok) return errorResponse(accountType.error);
+  if (!accountType.ok) return intakeReadRefusal(accountType.error);
   const email = optionalIntakeValue(form.value, supplied, "email");
-  if (!email.ok) return errorResponse(email.error);
+  if (!email.ok) return intakeReadRefusal(email.error);
 
   const db = await getDb();
   const result = await startAccountOpening(db, auth.value, pii.value, {
@@ -116,7 +129,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const error = result.error ?? appError("INTERNAL", "The account-opening flow failed to start.");
     const retry = clientRetryFor(error, result.retry ?? CLIENT_RETRY.sameIdentity);
     log[logLevelFor(error.code)]({ code: error.code, retry }, "account-opening flow start failed");
-    return refusalResponse(retry, REFUSAL_MESSAGE[retry]);
+    // Whichever layer noticed the broken document, the browser gets the same
+    // sentence AND the same quotable reference - the per-surface disagreement the
+    // shared shape exists to remove ran the other way for three rounds here.
+    return refusalResponse(retry, error);
   }
 
   return NextResponse.json({

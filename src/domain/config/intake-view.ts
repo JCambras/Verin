@@ -31,6 +31,7 @@
  * trigger field of that name.
  */
 import { appError, type AppError } from "@contracts/errors";
+import { operatorRecoverable } from "@contracts/client-retry";
 import { err, ok, type Result } from "@contracts/result";
 
 /**
@@ -143,9 +144,15 @@ export const unmappedIntakeFields = (
 const declaredLabel = (form: IntakeForm, field: string): string | undefined =>
   form.fields.find((declared) => declared.field === field)?.label;
 
-/** A caller named a transport field this document does not declare: a configuration defect, not client input. */
+/**
+ * A caller named a transport field this document does not declare: a configuration
+ * defect, not client input. OPERATOR-RECOVERABLE by cause (D-228) - a rolled-back
+ * document restores the trigger field and the next submit works - so the surface
+ * inherits "come back" rather than answering a bare server error to a submitter
+ * who did nothing wrong and can do nothing about it.
+ */
 const undeclared = (field: string): AppError =>
-  appError("INTERNAL", `This domain declares no "${field}" intake field.`);
+  operatorRecoverable(appError("INTERNAL", `This domain declares no "${field}" intake field.`));
 
 /**
  * Read one admitted value a caller REQUIRES. An undeclared field is an INTERNAL

@@ -437,3 +437,32 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 | `infrastructure` | 8,589 | **8,619** | 30 |
 | `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
 | `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+## Amendment (2026-08-12, review round 15): `domain` and `infrastructure` raised for the derived refusal class
+
+`infrastructure` grows past its ceiling and `domain` reaches its own exactly, answering this round's
+findings in code (D-231).
+
+`infrastructure` gains `config/configured-flow.ts` - the compile of the published document, moved out of
+the composition root because everything it refuses is a fact about the DOCUMENT, and because holding it
+outside the configuration modules was what forced the domain-configuration fence to keep a hand-listed
+residue of refusal sites at all. It also gains the step-refusal minter the plan compiler is handed, the
+loader's own fault code on the operator's line, the absent-versus-censored path distinction, and a version
+guard that states its `superseded` and `unreadable` verdicts apart instead of collapsing them.
+
+`domain` gains the `ConfiguredStepRefusal` port and the two registered stages the new diagnosis carries,
+against the deletion of `formatDomainConfigErrors` and its leaked message. It measured 9,388 against a
+9,393 ceiling - five lines, which is the zero-headroom condition ADR-0033 exists to prevent and not a pass
+to bank - so it moves too. `contracts` is RE-TAKEN here rather than carried forward and is unchanged at
+6,752, comfortably inside the ceiling it already had, so that one is left alone rather than raised for
+company.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,752 | 6,782 | 30 (unchanged) |
+| `domain` | 9,388 | **9,450** | 62 |
+| `infrastructure` | 8,683 | **8,745** | 62 |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
