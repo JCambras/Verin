@@ -198,6 +198,7 @@ const AUDIT_INTENT_SITES = [
  */
 const OBSERVABILITY_ID_FACTORIES = [
   { file: SAFE_VALUES, name: "authorityObservabilityId" },
+  { file: SAFE_VALUES, name: "configurationDiagnosisId" },
   { file: SAFE_VALUES, name: "generatedObservabilityId" },
   { file: SAFE_VALUES, name: "keyedDigestObservabilityId" },
   { file: SAFE_VALUES, name: "observabilityIdOrRedacted" },

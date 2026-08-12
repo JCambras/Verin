@@ -37,6 +37,20 @@ export const ACTIVE_MECHANISM_RATCHET: Readonly<
       ref: "src/__tests__/fitness/ledger-append-only.test.ts",
     },
   ],
+  3: [
+    {
+      type: "fitness",
+      ref: "src/__tests__/fitness/domain-configuration.test.ts",
+    },
+    {
+      type: "file",
+      ref: "config/domains/account-opening.yaml",
+    },
+    {
+      type: "file",
+      ref: "config/domains/money-movement.yaml",
+    },
+  ],
   5: [
     {
       type: "fitness",

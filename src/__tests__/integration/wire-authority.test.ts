@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { actorRefOf, authorizeGovernedAction } from "@contracts/authz";
 import { principalFromIdentity, delegatedWriteActor, systemWriteActor } from "@contracts/principal";
 import { registerTestSystemActor, systemTenant, tenantOf, type TenantContext } from "@contracts/tenant";
-import type { AccountOpeningDeps } from "@domain/workflow/flows/account-opening";
+import type { ExecutionAdapters } from "@domain/config/plan-compiler";
 import type { FlowRunResult } from "@domain/workflow/engine";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 
@@ -43,10 +43,21 @@ describe("account-opening dependency authority", () => {
     startFlowMock.mockImplementation(async (
       _definition: unknown,
       _store: unknown,
-      deps: AccountOpeningDeps,
+      deps: ExecutionAdapters,
       input: { executionId: string },
     ): Promise<FlowRunResult> => {
-      await deps.createHousehold("Mismatch", injectedTenant);
+      // The configured plan's FIRST command, invoked with a mismatched
+      // authority: the adapter must refuse at the dependency call, before any
+      // write, exactly as the hand-coded deps did.
+      await deps.invoke(
+        {
+          capabilityId: "household-create",
+          commandType: "household.create",
+          payload: { name: "Mismatch" },
+          idempotencyKey: "household:mismatch",
+        },
+        injectedTenant,
+      );
       return {
         executionId: input.executionId,
         status: "completed",

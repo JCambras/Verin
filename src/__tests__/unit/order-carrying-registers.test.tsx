@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { metric } from "@contracts/metric";
 import { getJourney } from "@app/demo/journey";
+import { demoVocabulary } from "@app/demo/vocabulary";
 import { DISPOSITION_LABELS, type DispositionKind } from "@app/demo/model";
 import { comparisonSortValue, PolicyAuthoringSurface } from "@app/demo/surfaces/policy-authoring";
 import { PolicyTraceSurface } from "@app/demo/surfaces/policy-trace";
@@ -22,9 +23,18 @@ import type { LedgerRegisterViewModel } from "@app/ledger/model";
  * to unsortable, so this is a property of the caller's column declaration and belongs
  * beside the caller.
  */
+/** The journey is built from the REAL configured vocabulary, which the shipped
+ * document resolves; a deployment that could not is a rendered refusal rather than
+ * a journey, so there is nothing to order-check in that case (D-267). */
+function resolvedVocabulary() {
+  const vocabulary = demoVocabulary("firm-a");
+  if (!vocabulary.ok) throw new Error("the published money-movement configuration must resolve");
+  return vocabulary.value;
+}
+
 describe("order-carrying registers", () => {
   function renderPolicyTrace() {
-    const journey = getJourney("dual-approval", "firm-a");
+    const journey = getJourney("dual-approval", "firm-a", resolvedVocabulary());
     render(
       <PolicyTraceSurface
         vm={journey.policyTrace}
@@ -96,7 +106,7 @@ describe("the policy simulation delta as a set of cases", () => {
     "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order; that grouping is fixed, the direction reverses the values inside each group, and blanks stay last";
 
   function renderSimulation() {
-    const journey = getJourney("dual-approval", "firm-a");
+    const journey = getJourney("dual-approval", "firm-a", resolvedVocabulary());
     render(
       <PolicyAuthoringSurface
         vm={journey.policyAuthoring}

@@ -1,0 +1,585 @@
+# MONEY MOVEMENT, EXPRESSED AS DATA (v3 prompt 10; ADR-0058).
+#
+# The Phase 1 vertical (ADR-0025), authored against the SAME firm-neutral engine
+# schema account-opening.yaml uses. Nothing about that schema was widened to make
+# this file fit: the only sections this domain needs and account opening does not
+# are conflict keys and reservations, and both were already in the schema because
+# the ratified prompt names them.
+#
+# WHAT THIS FILE DOES NOT CONTAIN, and that absence IS the point (invariant 26):
+# Firm A's six-month reserve, Firm B's twelve, either firm's dual-approval
+# threshold, or either firm's handling of a recent bank change. Those are firm
+# JUDGMENT and live in the firm policy AST, which validates against the policy
+# slot below. If producing the Firm A / Firm B divergence ever required editing
+# this file, the firm/domain boundary would be wrong (falsifier X-3).
+#
+# HONEST LIMIT: money movement has no execution adapter and no evaluator yet
+# (Waves C-F, prompts 12-26). What is REACHABLE today is its vocabulary: the demo
+# journey renders its intent slots and evidence rows from this document, so the
+# labels a reviewer reads are the labels the engine is configured with.
+formatVersion: domain-config/1.0.0
+domainConfigId: money-movement
+# PINNED BY SIGNED TRUTH: all sixteen captain-signed golden fixtures record
+# "domainConfigVersionId": "money-movement@2026.07.0". Changing this identity
+# without re-signing those cases would silently detach product truth from the
+# configuration that is supposed to produce it.
+version: "2026.07.0"
+primitiveSetVersion: "1.0.0"
+policyGrammarVersion: "1.0.0"
+
+authorship:
+  authoredBy:
+    kind: platform-team
+    id: verin-core-domain
+  authoredAt: "2026-08-11T00:00:00.000Z"
+  basis:
+    - kind: signed-truth-set
+      ref: fixtures/golden/
+      describes: >-
+        The sixteen captain-signed golden cases: their evidence kinds,
+        instruction kinds, reason codes, reservation window and version identity
+        are product truth this document must be able to produce.
+    - kind: ratified-document
+      ref: docs/v3/verin-prompt-sequence-v3.md#10
+      describes: The ratified prompt-10 section list this document must cover.
+    - kind: ratified-document
+      ref: docs/demo-contract.md
+      describes: The normative Phase 1 investor-demo contract and its twelve journey surfaces.
+  parentVersion: null
+  changeFromParent:
+    - { op: add, section: header, describes: "The first published version of this domain." }
+    - { op: add, section: intents, describes: "One intent (distribute-cash) with six slots." }
+    - { op: add, section: evidence, describes: "The nine evidence kinds the signed cases use, with freshness floors." }
+    - { op: add, section: primitiveBindings, describes: "Six catalog bindings; authored, not yet evaluated." }
+    - { op: add, section: policy, describes: "The closed vocabulary a firm policy for this domain may use." }
+    - { op: add, section: instructionKinds, describes: "The two household instruction kinds the signed cases carry." }
+    - { op: add, section: prohibitions, describes: "Three prohibition vocabulary entries with their permitted source arms." }
+    - { op: add, section: blockers, describes: "Eight resolvable blocker codes with their resolving evidence." }
+    - { op: add, section: authority, describes: "Three approval template slots, one deliberately unstaffed." }
+    - { op: add, section: execution, describes: "One capability and the single-step plan template." }
+    - { op: add, section: conflictKeys, describes: "The liquidity and bank-instruction coordination keys." }
+    - { op: add, section: reservations, describes: "The liquidity reservation created at decision commit." }
+    - { op: add, section: verification, describes: "Settlement confirmation that never infers stronger than its source." }
+    - { op: add, section: presentation, describes: "Twelve journey surfaces and copy for every emittable code." }
+
+intents:
+  - id: distribute-cash
+    describes: Move household cash to an approved destination.
+    riskClass: high
+    reversibility: partially_reversible
+    triggerKinds: [human_request, system_event]
+    slots:
+      - id: household
+        describes: The household whose cash is being moved.
+        type: subject
+        subjectKind: household
+        required: true
+        resolution: bound-by-primitive
+        boundBy: { binding: household-selection, publishes: selection.household.selectedRef }
+      - id: amount
+        describes: How much is being moved, in minor units.
+        type: money
+        unit: USD-minor
+        required: true
+        resolution: supplied-by-trigger
+        triggerField: amountMinorUnits
+      - id: source-account
+        describes: The account the money leaves.
+        type: subject
+        subjectKind: financial-account
+        required: true
+        resolution: bound-by-primitive
+        boundBy: { binding: source-selection, publishes: selection.source-account.selectedRef }
+      - id: destination
+        describes: The bank instruction the money is sent to.
+        type: subject
+        subjectKind: bank-instruction
+        required: true
+        resolution: supplied-by-trigger
+        triggerField: destinationRef
+      - id: purpose
+        describes: What the client said the money is for; display only.
+        type: text
+        required: false
+        resolution: supplied-by-trigger
+        triggerField: purpose
+        maxLength: 500
+      - id: deadline
+        describes: The date the client needs the money by.
+        type: date
+        required: false
+        resolution: supplied-by-trigger
+        triggerField: deadline
+    requiresEvidence:
+      - account-balance
+      - account-restriction
+      - bank-instruction
+      - bank-instruction-independent-verification
+      - household-directory
+      - household-disambiguation
+      - household-instruction
+      - pending-actions
+      - planned-withdrawals
+    primitiveBindings:
+      - household-selection
+      - source-selection
+      - liquidity
+      - reserve
+      - sufficiency
+      - restrictions
+    policySlot: distribution-policy
+    conflictKeys: [liquidity-key, bank-instruction-key]
+    reservations: [liquidity-reservation]
+    executionPlan: distribute-cash-plan
+
+evidence:
+  - evidenceKind: account-balance
+    describes: The available balance of one household account, and whether drawing on it is a taxable event.
+    schemaVersion: "1.0.0"
+    subjectSlot: source-account
+    paths:
+      availableMinorUnits: { type: integer, describes: Available balance in minor units. }
+      taxableEvent: { type: boolean, describes: Whether a distribution from this account is taxable. }
+      asOfDate: { type: iso-date, describes: The date the balance was observed. }
+    freshnessBasis: observedAt
+    maxAge: P1D
+    absence: block
+    requiredFor: [distribute-cash]
+    suppliableBy: [external]
+  - evidenceKind: account-restriction
+    describes: Standing holds or freezes on a household account.
+    schemaVersion: "1.0.0"
+    subjectSlot: source-account
+    paths:
+      holdKind: { type: string, describes: "The kind of hold in force, if any." }
+      placedAt: { type: iso-timestamp, describes: When the hold was placed. }
+    freshnessBasis: retrievedAt
+    maxAge: P1D
+    absence: block
+    requiredFor: [distribute-cash]
+    suppliableBy: [external]
+  - evidenceKind: bank-instruction
+    describes: The destination bank instruction on file, and how it is titled.
+    schemaVersion: "1.0.0"
+    subjectSlot: destination
+    paths:
+      titling: { type: string, describes: Whether the instruction is titled to the household or a third party. }
+      changedAt: { type: iso-timestamp, describes: When the instruction last changed. }
+    freshnessBasis: observedAt
+    maxAge: P90D
+    absence: block
+    requiredFor: [distribute-cash]
+    suppliableBy: [external, "role:operations"]
+  - evidenceKind: bank-instruction-independent-verification
+    describes: An out-of-band confirmation that a changed bank instruction is genuine.
+    schemaVersion: "1.0.0"
+    subjectSlot: destination
+    paths:
+      verifiedAt: { type: iso-timestamp, describes: When the instruction was independently verified. }
+      method: { type: string, describes: How the verification was performed. }
+    freshnessBasis: observedAt
+    maxAge: P365D
+    absence: specialist_review
+    requiredFor: [distribute-cash]
+    suppliableBy: ["role:operations"]
+  - evidenceKind: household-directory
+    describes: The households a request could be referring to.
+    schemaVersion: "1.0.0"
+    subjectSlot: household
+    paths:
+      displayName: { type: string, describes: The household's display name. }
+      advisorId: { type: reference, describes: The advisor the household belongs to. }
+    freshnessBasis: retrievedAt
+    maxAge: P1D
+    absence: block
+    requiredFor: [distribute-cash]
+    suppliableBy: [external]
+  - evidenceKind: household-disambiguation
+    describes: A human's answer to which of several candidate households was meant.
+    schemaVersion: "1.0.0"
+    subjectSlot: household
+    paths:
+      chosenRef: { type: reference, describes: The household the human chose. }
+      answeredAt: { type: iso-timestamp, describes: When the human answered. }
+    freshnessBasis: observedAt
+    maxAge: P1D
+    absence: optional
+    requiredFor: [distribute-cash]
+    suppliableBy: ["role:advisor"]
+  - evidenceKind: household-instruction
+    describes: A standing client mandate governing this household's distributions.
+    schemaVersion: "1.0.0"
+    subjectSlot: household
+    paths:
+      instructionKind: { type: string, describes: Which taxonomy entry this instruction is. }
+      versionId: { type: string, describes: The instruction version in force. }
+    freshnessBasis: observedAt
+    maxAge: P365D
+    absence: block
+    requiredFor: [distribute-cash]
+    suppliableBy: ["role:operations"]
+  - evidenceKind: pending-actions
+    describes: Approved-but-unsettled activity that already claims this household's liquidity.
+    schemaVersion: "1.0.0"
+    subjectSlot: household
+    paths:
+      pendingMinorUnits: { type: integer, describes: "Total claimed but unsettled, in minor units." }
+      settlesOn: { type: iso-date, describes: When the pending activity settles. }
+    freshnessBasis: retrievedAt
+    maxAge: PT1H
+    absence: block
+    requiredFor: [distribute-cash]
+    suppliableBy: [external]
+  - evidenceKind: planned-withdrawals
+    describes: The household's scheduled future withdrawals, which the reserve floor is computed from.
+    schemaVersion: "1.0.0"
+    subjectSlot: household
+    paths:
+      monthlyMinorUnits: { type: integer, describes: Recurring monthly withdrawal in minor units. }
+      nextDueOn: { type: iso-date, describes: When the next scheduled withdrawal is due. }
+    freshnessBasis: observedAt
+    maxAge: P30D
+    absence: block
+    requiredFor: [distribute-cash]
+    suppliableBy: ["role:operations"]
+
+primitiveBindings:
+  - id: household-selection
+    describes: Bind the request to exactly one household, or ask a human which one.
+    primitiveId: candidate-selection
+    defaultStrategy: exactly-one
+    parameters:
+      candidateEvidenceKind: household-directory
+      subjectSlot: household
+      exclusions: []
+      ambiguityQuestionCode: household-slot-ambiguous
+  - id: source-selection
+    describes: Choose which account the money leaves, honoring the household's stated preference.
+    primitiveId: candidate-selection
+    defaultStrategy: preference-order
+    parameters:
+      candidateEvidenceKind: account-balance
+      subjectSlot: source-account
+      exclusions:
+        - { classification: tax-deferred, reasonCode: taxable-event-rejected }
+      ambiguityQuestionCode: source-account-ambiguous
+  - id: liquidity
+    describes: Effective liquidity - observed balances minus everything already claimed against them.
+    primitiveId: net-availability
+    parameters:
+      resourceEvidenceKind: account-balance
+      claimEvidenceKinds: [pending-actions]
+      subjectScope: subject-group
+  - id: reserve
+    describes: The cash reserve the household's scheduled withdrawals require over the horizon.
+    primitiveId: horizon-projection
+    parameters:
+      seriesEvidenceKind: planned-withdrawals
+      # The CONSERVATIVE default. Firm A and Firm B both set this explicitly in
+      # their own policy, so the demo's central divergence stays visible where a
+      # reviewer looks for it - in policy, never here.
+      horizonMonths: 6
+      direction: forward
+  - id: sufficiency
+    describes: Whether this movement still leaves the reserve intact.
+    primitiveId: sufficiency-check
+    parameters:
+      mode: floor-preserving
+      available: { kind: context, key: availability.net }
+      draw: { kind: context, key: amount }
+      bound: { kind: context, key: projection.total }
+  - id: restrictions
+    describes: Screen the destination and the source account against standing restrictions.
+    primitiveId: restriction-screen
+    parameters:
+      restrictionKinds:
+        - { kind: destination-restriction, polarity: allow-list }
+        - { kind: account-restriction, polarity: deny-list }
+      subjectsInScope: [destination, source-account]
+
+policy:
+  slots:
+    - id: distribution-policy
+      describes: The one active firm policy that governs this domain for a firm.
+      required: true
+      oneActivePerFirm: true
+      allowedEffects: [require_evidence, set_parameter, require_approval, block, prohibit, select_candidate]
+      settableParameters:
+        - binding: reserve
+          parameter: horizonMonths
+          describes: How many months of scheduled withdrawals the firm requires the household to retain.
+        - binding: source-selection
+          parameter: exclusions
+          describes: Which candidate classifications the firm refuses as a funding source.
+      selectableBindings:
+        - binding: source-selection
+          strategies: [preference-order, single-eligible]
+        - binding: household-selection
+          strategies: [exactly-one]
+      referenceableTemplates: [ops-dual-approval, bank-change-specialist, elevated-approval]
+      referenceableBlockerCodes:
+        - cash-reserve-breach
+        - reserve-evidence-stale
+        - freshness-window-exceeded
+        - bank-instruction-change-unverified
+        - liquidity-reserved-by-sibling
+        - household-slot-ambiguous
+      referenceableProhibitionCodes:
+        - destination-not-household-titled
+        - destination-off-list
+        - active-legal-hold
+
+instructionKinds:
+  - kind: destination-restriction
+    describes: A client mandate limiting which destinations may receive distributions.
+    class: restriction
+    versioned: true
+    paths:
+      allowedDestinationRefs: { type: structured, describes: The destinations the household permits. }
+      titlingRequirement: { type: string, describes: Whether destinations must be household-titled. }
+    appliesToSlots: [destination]
+    precedence: narrowing-only
+    onViolation: destination-not-household-titled
+    consumedBy: [restrictions]
+  - kind: liquidity-preference
+    describes: A client preference for which accounts fund discretionary spending first.
+    class: preference
+    versioned: true
+    paths:
+      rankedAccountRefs: { type: structured, describes: The household's preferred funding order. }
+    appliesToSlots: [source-account]
+    precedence: narrowing-only
+    consumedBy: [source-selection]
+
+prohibitions:
+  - code: destination-not-household-titled
+    describes: The destination is not titled to the household, which its own standing mandate forbids.
+    sources: [household_instruction]
+    scopeSlot: destination
+  - code: destination-off-list
+    describes: The destination is not on the household's permitted list.
+    sources: [household_instruction]
+    scopeSlot: destination
+  - code: active-legal-hold
+    describes: A legal hold prevents any distribution from the source account.
+    sources: [regulatory]
+    scopeSlot: source-account
+
+blockers:
+  - code: cash-reserve-breach
+    describes: The movement would leave the household below its required cash reserve.
+    resolvingEvidence: [account-balance, planned-withdrawals]
+  - code: reserve-evidence-stale
+    describes: The planned-withdrawal schedule is too old to compute the reserve from.
+    resolvingEvidence: [planned-withdrawals]
+  - code: freshness-window-exceeded
+    describes: A balance observation is older than the firm's configured window.
+    resolvingEvidence: [account-balance]
+  - code: bank-instruction-change-unverified
+    describes: The destination changed recently and has not been independently verified.
+    resolvingEvidence: [bank-instruction-independent-verification]
+  - code: liquidity-reserved-by-sibling
+    describes: A sibling request already reserved the liquidity this one needs.
+    resolvingEvidence: [pending-actions]
+  - code: household-slot-ambiguous
+    describes: More than one household matches the request; a human must choose.
+    resolvingEvidence: [household-disambiguation]
+  - code: source-account-ambiguous
+    describes: More than one eligible source account remains after ranking; a human must choose.
+    resolvingEvidence: [account-balance]
+  - code: taxable-event-rejected
+    describes: A candidate account was rejected because drawing on it is a taxable event.
+    resolvingEvidence: [account-balance]
+
+authority:
+  templates:
+    - id: ops-dual-approval
+      describes: Two distinct operations approvers, neither of them the requester.
+      kind: approval
+      requiredRoleClasses: [operations]
+    - id: bank-change-specialist
+      describes: A specialist review of a recently changed destination.
+      kind: specialist_review
+      requiredRoleClasses: [bank-change-specialist]
+    - id: elevated-approval
+      describes: >-
+        RECORDED SILENCE, not an invented role. The demo contract does not state
+        which role approves the elevated band a firm may configure, and
+        ApprovalRequirement requires at least one eligible role - so when a case
+        in that band is ever authored, the silence forces a decision instead of
+        inheriting a guess. The id names the BAND, never a firm: a firm-neutral
+        document that spelled a firm's name would falsify its own premise.
+      kind: approval
+      requiredRoleClasses: []
+  automaticWhenNoRequirementFires: true
+
+execution:
+  capabilities:
+    - id: funds-transfer
+      describes: Instruct the custodian to move the funds.
+      targetCapabilityClass: custodian-transfer
+      commandType: funds-transfer.instruct
+      payload:
+        - { kind: value, field: amountMinorUnits, source: { from: slot, slot: amount }, optional: false }
+        - { kind: value, field: sourceAccountRef, source: { from: slot, slot: source-account }, optional: false }
+        - { kind: value, field: destinationRef, source: { from: slot, slot: destination }, optional: false }
+        - { kind: value, field: valueDate, source: { from: slot, slot: deadline }, optional: true }
+      publishes:
+        - { output: handleId, as: executionHandleId }
+      # Anchored on the DECISION HASH, which the interim execution substrate does
+      # not have: compiling this plan is refused until prompt 25 executes against
+      # a recorded decision. That refusal is deliberate - a stand-in identity here
+      # would be an idempotency key that changes between attempts.
+      idempotencyKey:
+        - { kind: literal, value: transfer }
+        - { kind: value, source: { from: slot, slot: source-account } }
+        - { kind: value, source: { from: slot, slot: destination } }
+        - { kind: value, source: { from: slot, slot: amount } }
+        - { kind: value, source: { from: decision-hash } }
+      conflictKeys: [liquidity-key, bank-instruction-key]
+      reservations: [liquidity-reservation]
+      preconditions: [material-evidence-fresh-at-execution, approval-bound-to-decision-hash]
+      verificationRule: settlement-confirmed
+  planTemplates:
+    - id: distribute-cash-plan
+      describes: One external instruction; the plan's shape is a DAG regardless of its size.
+      steps:
+        - { id: instruct, capability: funds-transfer, dependsOn: [] }
+
+conflictKeys:
+  - id: liquidity-key
+    describes: Two requests drawing on the same household's liquidity in the same month contend.
+    segments:
+      - { kind: literal, value: liquidity }
+      - { kind: value, source: { from: slot, slot: household } }
+      - { kind: bucket, source: { from: slot, slot: deadline }, granularity: month }
+  - id: bank-instruction-key
+    describes: Two requests sending to the same destination for the same household contend.
+    segments:
+      - { kind: literal, value: bank-instruction }
+      - { kind: value, source: { from: slot, slot: household } }
+      - { kind: value, source: { from: slot, slot: destination } }
+
+reservations:
+  - id: liquidity-reservation
+    describes: Hold the liquidity this movement needs so a sibling request cannot spend it twice.
+    resourceKind: liquidity
+    conflictKey: liquidity-key
+    quantity: { from: slot, slot: amount }
+    # Captain ruling `reservation-timing` (2026-07-28): create at DECISION COMMIT
+    # for liquidity-class conflicts, so a later request sees the reservation
+    # during its own evaluation and two individually valid requests cannot
+    # jointly violate the reserve. Revalidation after approval is mandatory.
+    createAt: decision-commit
+    ttl: PT30M
+    # Expiry must be compatible with the approval window, or the ruling's
+    # "knowingly impossible approval path" is exactly what this would create.
+    extendToApprovalWindow: true
+    releaseOn: [execution-succeeded, execution-failed, decision-superseded, expiry]
+    visibleAsClaimTo: liquidity
+
+verification:
+  - id: settlement-confirmed
+    describes: >-
+      What the custodian returns is a SUBMISSION, not a settlement. This rule
+      closes only on an observed completed status with settlement proof, and
+      never infers a state stronger than its source reported.
+    observedStatuses: [submitted, in-flight, completed, nigo, unknown]
+    closesWhen:
+      status: completed
+      proof: [settlement-confirmation]
+    lateIngest: [nigo]
+    awaitsExternal: false
+    pollInterval: PT15M
+    unknownTimeout: PT6H
+    stuckAfter: P1D
+    neverInferStrongerThan: source
+
+presentation:
+  domainLabel: Money movement
+  domainSummary: Governed distribution of household cash to an approved destination.
+  surfaces:
+    - { id: workspace, order: 1, label: Household workspace }
+    - { id: intent, order: 2, label: Intent }
+    - { id: evidence, order: 3, label: Evidence }
+    - { id: recommendation, order: 4, label: Recommendation }
+    - { id: policy-trace, order: 5, label: Policy trace }
+    - { id: authority, order: 6, label: Authority }
+    - { id: safety, order: 7, label: Safety }
+    - { id: execution, order: 8, label: Execution }
+    - { id: verification, order: 9, label: Verification }
+    - { id: comparison, order: 10, label: Firm comparison }
+    - { id: policy-authoring, order: 11, label: Policy authoring }
+    - { id: record, order: 12, label: Record }
+  copy:
+    intents:
+      distribute-cash: { label: Move money }
+    slots:
+      household: { label: Household, display: text }
+      amount: { label: Amount, display: metric, format: currency-minor }
+      source-account: { label: Source account, display: text }
+      destination: { label: Destination, display: text }
+      purpose: { label: Purpose, display: text }
+      deadline: { label: Needed by, display: text }
+    evidenceKinds:
+      account-balance: { label: Available cash across household accounts, sourceLabel: House CRM }
+      account-restriction: { label: Account holds and freezes, sourceLabel: House CRM }
+      bank-instruction: { label: Bank instruction on file, sourceLabel: House CRM }
+      bank-instruction-independent-verification: { label: Independent verification of the bank change, sourceLabel: Operations }
+      household-directory: { label: Households matching the request, sourceLabel: House CRM }
+      household-disambiguation: { label: Which household was meant, sourceLabel: Advisor }
+      household-instruction: { label: Household instruction, sourceLabel: House CRM }
+      pending-actions: { label: Pending approved distribution, sourceLabel: House CRM }
+      planned-withdrawals: { label: Planned monthly withdrawal, sourceLabel: House CRM }
+    reasonCodes:
+      cash-reserve-breach:
+        title: Cash reserve would be breached
+        body: "Moving {slot:amount} leaves less than the reserve of {context:projection.total} the firm requires."
+        resolution: Refresh the balances, reduce the amount, or move the deadline.
+      reserve-evidence-stale:
+        title: Reserve evidence is stale
+        body: "The planned-withdrawal schedule for {slot:household} is older than the firm's window."
+        resolution: Refresh the planned-withdrawal schedule.
+      freshness-window-exceeded:
+        title: Balance observation is too old
+        body: "The balance for {slot:source-account} is older than the firm's configured freshness window."
+        resolution: Retrieve a current balance and re-evaluate.
+      bank-instruction-change-unverified:
+        title: Bank instruction changed recently
+        body: "{slot:destination} changed within the firm's recent-change window and has not been independently verified."
+        resolution: Complete an out-of-band verification, or route the movement for specialist review.
+      liquidity-reserved-by-sibling:
+        title: Liquidity is already reserved
+        body: "Another in-flight request has reserved the liquidity {slot:household} would need for this movement."
+        resolution: Wait for the sibling request to settle or be superseded, then re-evaluate.
+      household-slot-ambiguous:
+        title: Which household is this?
+        body: "More than one household matches the request."
+        resolution: Choose the household the request refers to.
+      source-account-ambiguous:
+        title: Which account should fund this?
+        body: "More than one eligible account remains after applying the household's preference."
+        resolution: Choose the source account.
+      taxable-event-rejected:
+        title: Retirement account rejected as a source
+        body: "Drawing on {slot:source-account} would be a taxable event, so it was not selected."
+        resolution: No action is needed; a taxable source is only used when nothing else qualifies.
+      destination-not-household-titled:
+        title: Destination is not household-titled
+        body: "{slot:household} instructs that distributions may only be sent to bank instructions titled to the household."
+        resolution: This cannot be resolved by evidence; use a household-titled destination.
+      destination-off-list:
+        title: Destination is not on the permitted list
+        body: "{slot:destination} is not among the destinations {slot:household} has permitted."
+        resolution: This cannot be resolved by evidence; use a permitted destination.
+      active-legal-hold:
+        title: A legal hold is in force
+        body: "An active legal hold prevents any distribution from {slot:source-account}."
+        resolution: This cannot be resolved by evidence; the hold must be lifted by its issuer.
+    statusLabels:
+      submitted: Submitted - not settled
+      in-flight: In flight
+      completed: Settled - verified
+      nigo: Returned not in good order
+      unknown: Not yet observed
+    commandText: {}

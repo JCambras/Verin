@@ -14287,3 +14287,1630 @@ reopening the store applies it.
 **Reverted:** all three injections restored; `Tests 19 passed`.
 
 **Date:** 2026-08-12 (review round fourteen, ADR-0057).
+## PF-247 · domain-configuration: a decision-core module, directory, or branch named for a domain · `src/__tests__/fitness/domain-configuration.test.ts`
+## PF-253 · domain-configuration: a decision-core module, directory, or branch named for a domain · `src/__tests__/fitness/domain-configuration.test.ts`
+## PF-291 · domain-configuration: a decision-core module, directory, or branch named for a domain · `src/__tests__/fitness/domain-configuration.test.ts`
+
+**Invariant:** v3 invariant 3 - no core module, directory, or evaluator branch is named for a decision
+domain. The forbidden vocabulary is DERIVED from `config/domains/*.yaml`'s own ids (plus their word
+forms), scoped by the captain's `invariant-3-scope` ruling to `contracts/decision-core`,
+`contracts/primitives`, `domain/config` and `domain/policy`.
+
+**Injection A - a domain-named evaluator branch.** Appended to `src/domain/config/bind.ts`:
+`export const injected = (id: string): boolean => id === "money-movement";`
+
+**Observed failure:**
+```
+AssertionError: decision-core names a decision domain (invariant 3):
+src/domain/config/bind.ts:205 string literal contains the domain name "money-movement"
+```
+
+**Injection B - a domain-named module.** Created `src/domain/config/money-movement-defaults.ts`.
+
+**Observed failure:**
+```
+AssertionError: decision-core names a decision domain (invariant 3):
+src/domain/config/money-movement-defaults.ts:1 file or directory name contains the domain name "money-movement"
+```
+
+**Executable companions (run on every build):** the domain-named branch, module and identifier cases,
+plus the ANTI-VACUITY case - `domainVocabulary([])` is empty, `domainVocabulary()` is not, and a tree
+containing a domain-named module reads CLEAN under an emptied vocabulary and DIRTY under the real one.
+That is the false-pass this rule is most exposed to (the self-audit caught two vacuous fences in this
+repo before), so it is asserted in both directions rather than assumed.
+
+**Reverted:** both injections removed immediately; `domain-configuration.test.ts` `Tests 21 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058).
+
+---
+
+## PF-292 · domain-configuration: a published configuration version is immutable · `src/__tests__/fitness/domain-configuration.test.ts`
+
+**Invariant:** the SHA-256 over a document's canonical bytes must equal the hash
+`config/domains/versions.json` pins for that `(domainConfigId, version)`. Editing a published document
+without bumping its version fails the build - the arch-version doc-pin mechanism, applied to
+configuration, so replay can never be pinned to bytes that silently moved.
+
+**Injection.** Changed one LABEL in `config/domains/money-movement.yaml`
+(`domainLabel: Money movement` -> `Money movement (edited)`), touching nothing else.
+
+**Observed failure:**
+```
+AssertionError: money-movement@2026.07.0 changed without a version bump
+(pinned ddf302642ebcae2dadf52ff972709a7440ec21f518abb7d5c94cd9d171b2bcf4,
+ computed 5ed8e5a3fcab13df30ed4d95690f0a070d6917f1757d581196582ddfc1e6e54e)
+```
+
+**Executable companion (runs on every build):** the canonical bytes of an edited document differ from
+those of the shipped one, so the rule cannot pass by comparing a document with itself.
+
+**Reverted:** file restored; `Tests 21 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058).
+
+---
+
+## PF-293 · domain-configuration: a configuration document that is not inert data · `src/__tests__/fitness/domain-configuration.test.ts`
+
+**Invariant:** tags, anchors, aliases and merge keys are the four ways a YAML document stops being data
+and starts being a program. All four are refused - by the fence over the shipped bytes, and by the
+runtime adapter before the text ever becomes a value.
+
+**Injection.** Added a YAML anchor and an alias to `config/domains/money-movement.yaml`
+(`domainLabel: &label Money movement`, `domainSummary: *label`).
+
+**Observed failure:**
+```
+AssertionError: expected [ 'line 499: anchor label', 'alias *label' ] to deeply equal []
+AssertionError: money-movement@2026.07.0 changed without a version bump (…)
+```
+(The hash rule fires too, which is the intended belt-and-braces: a non-inert edit is also an edit.)
+
+**Executable companion (runs on every build):** `!!js/function` tags, anchor+alias pairs and merge keys
+are each detected on synthetic documents, and a plain scalar document reads clean - so the detector is
+not simply rejecting everything.
+
+**Reverted:** file restored; `Tests 21 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058).
+
+---
+
+## PF-294 · domain-configuration: only the config source adapter reads `config/domains/` · `src/__tests__/fitness/domain-configuration.test.ts`
+
+**Invariant:** v3 §16 - no module imports from `config/`. Exactly one module may reach the configuration
+directory (`src/infrastructure/config/domain-config-source.ts`), the same single-allowed-module idiom
+`no-process-env` uses for the environment. The rule keys on an ACCESS verb, not on a mention: a message
+telling an operator to restore `config/domains/account-opening.yaml` is the opposite of access.
+
+**Injection.** Appended to `src/domain/config/load.ts`:
+`export const injectedPath = (id: string): string => ["config/domains", id].join("/");`
+
+**Observed failure:**
+```
+AssertionError: only src/infrastructure/config/domain-config-source.ts may read the configuration directory:
+src/domain/config/load.ts:<line>
+```
+
+**Executable companions (run on every build):** a `readFileSync("config/domains/…")` in a domain module
+is caught; the same path inside a comment is not; the same path inside user-facing copy is not; and the
+allowed reader must EXIST, or the rule would pass vacuously the day that file is renamed.
+
+**Reverted:** injection removed; `Tests 21 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058).
+
+---
+
+## PF-295 · domain-configuration: X-9, the honesty check - deleting the configuration must break the shipped flow
+
+**Invariant:** account opening runs FROM `config/domains/account-opening.yaml`. If the shipped
+`/app/account-opening` journey still worked without it, the file would be dead data and invariant 3
+would have been flipped on a document nobody reads. This is the one check in prompt 10 that cannot be
+argued with, so it is recorded as a manual procedure rather than left to inference.
+
+**Injection A - the integration suite.** `mv config/domains/account-opening.yaml /tmp/` and re-ran the
+UNCHANGED `src/__tests__/integration/account-opening.test.ts`.
+
+**Observed failure:**
+```
+Tests  12 failed | … src/__tests__/integration/account-opening.test.ts
+× suspends at e-sign, then finalizes on resume with a verifiable audit chain
+× a doubly-fired webhook has EXACTLY-ONCE effect (charter #16)
+× a forged webhook SIGNATURE is rejected; a valid one finalizes (STRIDE T-S3)
+… every case that starts or resumes the flow
+```
+
+**Injection B - the LIVE journey, against a real production build.** Same file removed, then
+`pnpm exec playwright test e2e/walkthrough.spec.ts` (which does `next build` + `next start` + seed).
+
+**Observed failure:**
+```
+2 failed
+  [chromium] › e2e/walkthrough.spec.ts:12:1 › login → account opening → e-sign suspend/resume → finalize → audit chain verified
+  [chromium] › e2e/walkthrough.spec.ts:41:1 › key skeleton pages have no Axe violations (WCAG 2.2 AA)
+    - waiting for locator('input[name="householdName"]')
+```
+The screen renders its "this flow is configuration-driven and its published configuration could not be
+loaded" state and NO form: there is no fallback field list. The POST route returns a typed failure for
+the same reason, so a half-working screen is not reachable either.
+
+**Reverted:** file restored. The integration suite passes UNCHANGED (`Tests 21 passed` across
+`account-opening.test.ts` and `wire-authority.test.ts`), and the full e2e suite passes `23 passed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; captain ruling `account-opening-migration-depth`).
+
+---
+
+## PF-296 · domain-configuration RULE F: a renamed vocabulary id must break the BUILD, not the demo journey
+
+**Invariant:** the walking skeleton reads its slot, evidence-kind and action labels from
+`config/domains/money-movement.yaml` through `src/app/demo/vocabulary.ts`, which THROWS on an id the
+document does not declare. Unfenced, renaming an id in the configuration would 500 the investor-demo
+journey at run time; the rule binds every id the shipped tree asks for to the published copy, resolving
+each reader by SYMBOL so an aliased import cannot evade it and failing closed on a non-literal id.
+
+**Injection.** Renamed the `pending-actions` evidence kind throughout `money-movement.yaml` (its
+`evidence` entry, the intent's `requiresEvidence`, the claim binding, the blocker's `resolvingEvidence`
+and its `presentation.copy` entry) so the document still LOADS and only the demo's id goes stale.
+
+**Observed failure:**
+```
+× (F) enforces: every label id the demo asks for is declared by money-movement.yaml
+AssertionError: the demo asks for a label the money-movement configuration does not declare
+(renaming one would 500 the demo journey):
+src/app/demo/build-context.ts:114 evidenceKinds pending-actions
+× (D) enforces: every published version's canonical bytes match its pinned hash
+```
+Rule D fired too, as designed: an edited published document is a hash-pin failure in its own right.
+
+**Reverted:** rename undone; `Tests 25 passed` for the whole fence file, and `pnpm test` reports
+`complete test suite passed: 63 fitness files executed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review ruling `p10-review-askuser`).
+
+---
+
+## PF-297 · domain-configuration RULE G: the store's registration vocabulary cannot drift from the document's
+
+**Invariant:** `registration-type`'s declared `values` in `config/domains/account-opening.yaml` and
+`ACCOUNT_TYPES` in `src/domain/schema/entities.ts` are two copies of ONE vocabulary, and CD-1 keeps the
+shipped copy unrenamed - so they must be proven EQUAL, in both directions. Unbound, a registration added
+to the document alone would be ADMITTED by the request boundary (whose admission rules are the document's
+own) and then refused by the execution adapter at the THIRD compiled step, after `household.create` and
+`contact.create` had already committed.
+
+**Injection A (the partial-write direction).** Deleted `"trust"` from `ACCOUNT_TYPES`, leaving the
+document declaring a registration the store's typed column does not accept. No pinned bytes touched.
+
+**Observed failure:**
+```
+× (G) enforces: the configured registration vocabulary equals the vocabulary the store accepts
+AssertionError: the configuration and src/domain/schema/entities.ts disagree about the registration
+vocabulary, so a configured option the request boundary admits would be refused at the third execution
+step - after the household and contact writes have committed:
+registration-type declares "trust", which the shipped vocabulary does not accept: expected [ Array(1) ] to deeply equal []
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:521:7
+```
+The companion `catches registration-vocabulary drift in BOTH directions, against the REAL document`
+failed alongside it, as designed: it plants its drift by removing `"trust"` from the real pair, so a
+vocabulary that has already lost that value can no longer be shown to differ - the anti-vacuity behavior.
+
+**Injection B (the unreachable-vocabulary direction).** Restored `ACCOUNT_TYPES` and instead appended
+`"custodial-utma"` to it, so the store accepts a registration no document offers.
+
+**Observed failure:**
+```
+× (G) enforces: the configured registration vocabulary equals the vocabulary the store accepts
+AssertionError: ... the shipped vocabulary accepts "custodial-utma", which registration-type does not
+declare: expected [ Array(1) ] to deeply equal []
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:521:7
+```
+
+**Reverted:** `git diff src/domain/schema/entities.ts` empty; the fence file reports `Tests 28 passed
+(28)`, and `pnpm test` reports `complete test suite passed: 63 fitness files executed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review ruling `p10-fixreview-askuser`, finding
+`account-type-vocabulary-moved-not-bound`).
+
+---
+
+## PF-298 · account-opening request boundary: an undeclared registration must commit NOTHING
+
+**Invariant:** an unsupported registration is refused at the REQUEST boundary, as a typed `VALIDATION`
+400 with zero committed records - never mid-flow. The companion assertion is the RECORD COUNTS
+(`households`, `contacts`, `account_opening_applications`, `flow_executions`), because a status-code-only
+assertion passes while the partial write happens, which is exactly how this regression shipped.
+
+**Injection.** Removed the declared-`options` check from `admitIntakeSubmission`
+(`src/domain/config/intake-view.ts`) - the deletion that moved the refusal from the boundary into the
+execution adapter - and posted `accountType: "not-a-registration"` through the real route handler.
+
+**Observed failure:**
+```
+× refuses a registration the configuration does not declare, committing NOTHING
+AssertionError: expected { households: 1, contacts: 1, …(2) } to deeply equal { households: +0, contacts: +0, …(2) }
++   "contacts": 1,
++   "executions": 1,
++   "households": 1,
+    "applications": 0,
+ ❯ src/__tests__/integration/account-opening-route.test.ts:98:31
+```
+The injected state is the finding verbatim: an orphan household, an orphan contact and a persisted
+failed execution, with the application refused at the third step.
+
+**Reverted:** check restored; `src/__tests__/integration/account-opening-route.test.ts` reports
+`Tests 2 passed (2)`, including the positive control that a DECLARED registration still starts the flow
+and commits one household, contact and application.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review ruling `p10-fixreview-askuser`).
+
+---
+
+## PF-299 · the firm-class checklist a surface binds through must be COMPLETE
+
+**Invariant:** `requiredFirmClasses` reports every firm-neutral class a document references, so a
+registry built from nothing but the derivation BINDS. The demo builds its registry that way (RULE H of
+the domain-configuration fence); a class the derivation missed is a binding refusal at REQUEST time on a
+screen whose only recovery is a throw, which is the runtime 500 the review finding
+`demo-firm-registry-unbound` describes.
+
+**Injection.** Dropped one registry from the derivation - `evidenceSources: []` in
+`src/domain/config/bind.ts` - which is exactly the shape of a derivation that forgot a position
+`bindDomainConfig` reads.
+
+**Observed failure:**
+```
+× (H) enforces: account-opening.yaml binds through a registry DERIVED from itself
+AssertionError: requiredFirmClasses does not report every class this document references, so a surface
+that builds its registry from it (the demo) refuses to bind at REQUEST time:
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:550:7
+× catches a firm-class checklist that misses ANY class the document references
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:771:82
+```
+The companion fired too: it drops each derived entry in turn and requires the refusal, so an entry that
+is not load-bearing cannot sit in the checklist unnoticed.
+
+**Reverted:** `git diff src/domain/config/bind.ts` shows only the round's intended change; the fence file
+reports `Tests 32 passed (32)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review ruling `p10-brands-askuser`, finding
+`demo-firm-registry-unbound`).
+
+---
+
+## PF-300 · inertness is proven of the SHIPPED reader, not of a second copy
+
+**Invariant:** RULE C judges the published documents with `inertnessProblems` imported from
+`src/infrastructure/config/domain-config-source.ts` - the function the running adapter calls - so
+gutting the shipped guard fails the build. The fence used to carry its own near-identical copy, which is
+detection standing in for verification: the copy would have kept reporting the documents inert while the
+reader that actually runs admitted a tagged, anchored or merged document.
+
+**Injection.** Deleted the `visit(document, {...})` walk from the SHIPPED `inertnessProblems`, leaving
+only the parser's own errors and warnings.
+
+**Observed failure:**
+```
+× catches every non-inert YAML feature
+AssertionError: expected 0 to be greater than 0
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:639:68
+```
+Before this change the same deletion left the whole suite green.
+
+**Recorded honestly:** the finding's other named mutation - flipping `merge: false` to `merge: true` in
+that parse - does NOT fail, and should not: the `Pair` visitor refuses a `<<` key structurally whether or
+not the parser would act on it, so the flag is defense in depth rather than the detection itself. What
+the flag guards is the separate `toJS()` parse below, which never sees a merged document because this
+guard refuses it first.
+
+**Reverted:** `git diff src/infrastructure/config/domain-config-source.ts` shows only the round's
+intended change; the fence file reports `Tests 32 passed (32)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review ruling `p10-brands-askuser`, finding
+`inertness-check-duplicated-unfenced`).
+
+## PF-301 · a top-level section that declares one id twice must not LOAD
+
+**Invariant:** every identified top-level section - `intents`, `evidence`, `primitiveBindings`,
+`policy.slots`, `instructionKinds`, `prohibitions`, `blockers`, `authority.templates`,
+`execution.capabilities`, `execution.planTemplates`, `conflictKeys`, `reservations`, `verification` -
+refuses a repeated id and names it (`src/domain/config/document.ts`). Each becomes a Map keyed by id
+downstream, so a duplicate SHADOWS rather than fails, and two consumers of one section can then
+disagree: `checkReferences` reads the FIRST match while `compileFlowDefinition` builds its awaiting set
+over ANY match.
+
+**Injection.** Added a second `verification` entry to the SHIPPED
+`config/domains/account-opening.yaml` under the existing id `crm-write-confirmed`, flipping only
+`awaitsExternal` to `true` - the exact shape that loads as "awaits nothing" and compiles as "awaits
+externally".
+
+**Observed failure:**
+```
+Error: account-opening failed to load: [
+    "message": "verification declares \"crm-write-confirmed\" twice; the second entry would shadow the first"
+```
+Before this change the same document loaded cleanly, and the disagreement surfaced only at run time -
+after the step's write had committed - as "an externally-gated step produced no correlation token".
+
+**Companion.** `src/__tests__/unit/domain-config.test.ts` plants the same duplication in all thirteen
+sections of the shipped money-movement bytes and requires each to be refused FOR the duplication (the
+message names the id), so a refusal arriving incidentally from another stage cannot stand in for it.
+
+**Reverted:** `git diff config/domains/account-opening.yaml` shows only the round's intended six added
+lines; `pnpm test` reports `complete test suite passed: 63 fitness files executed`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review finding `no-duplicate-id-check-top-level-sections`).
+
+## PF-302 · a renamed journey station must break the LOAD, not empty the progress rail
+
+**Invariant:** `presentation.form.surface` and `awaitingSurface` name the stations the shipped journey
+stands on, both refused unless the document declares them (`src/domain/config/presentation.ts`), and
+`src/app/app/account-opening/intake-journey.tsx` resolves them through the `IntakeForm` projection
+rather than holding station ids of its own.
+
+**Injection.** Renamed the declared surface `intake` to `client-details` in the SHIPPED
+`config/domains/account-opening.yaml`, leaving the form's reference untouched - the rename a document
+author would make.
+
+**Observed failure:**
+```
+Error: account-opening failed to load: [
+    "path": "presentation.form.surface",
+```
+Before this change the same rename loaded cleanly and passed every gate: `stationIndex("form")` returned
+-1, so the step card disappeared and the rail lit no station while the user stood on the form. The e2e
+walkthrough and the axe scans key on labels and testids, and the unit projection test asserted surface
+LABELS only, so nothing caught it.
+
+**Companion.** `src/__tests__/unit/domain-config.test.ts` refuses a form naming an undeclared station
+through both fields, and asserts the projected stations are members of the declared surface list - an
+assertion a rail bound to ordinals 0 and 1 would not satisfy.
+
+**Reverted:** `git diff config/domains/account-opening.yaml` shows only the round's intended six added
+lines; the 23 e2e specs and `pnpm test` are green.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review finding `live-station-surface-ids-unbound`).
+
+---
+
+## PF-303 · a rendered key must identify its segment tuple UNIQUELY
+
+**Invariant:** `renderKeySegments` (`src/domain/config/segments.ts`) escapes each resolved part before
+joining, so the rendered bytes are an injective encoding of the resolved tuple.
+
+**Injection.** Restored the bare join (`parts.join(SEGMENT_SEPARATOR)`).
+
+**Observed failure:**
+```
+× flags the segment-boundary collision a bare join admitted
+× enforces (P-4): rendering a key is INJECTIVE over the resolved segment tuple
+```
+`("h1:x", "d")` and `("h1", "x:d")` rendered ONE key. `bank-instruction-key` in
+`config/domains/money-movement.yaml` is a literal plus two subject slots read straight from the caller's
+transport, so two unrelated subjects shared a coordination identity - the exact failure a conflict key
+exists to prevent.
+
+**Companion.** `src/__tests__/unit/domain-config.test.ts` asserts the concrete collision and runs a
+fast-check property over arbitrary tuples drawn from an alphabet containing both the separator and the
+escape byte: distinct tuples never render one key, and colon-free, escape-free values render exactly as
+they did before (no shipped key is re-keyed).
+
+**Reverted:** the escaping restored; `pnpm test` green.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review finding `key-segments-separator-ambiguous`).
+
+---
+
+## PF-304 · flow data has two writers, and a publication alias may not claim a name another owns
+
+**Invariant:** the document-level refinement in `src/domain/config/document.ts` refuses a capability
+publication alias that is a reserved platform flow-data key, collides with a declared slot
+`triggerField`, or is already published by another capability.
+
+**Injection.** Neutralised the refinement loop, then pushed `as: executionScope`, `as: householdName`
+and a second `as: applicationId` onto `config/domains/account-opening.yaml`'s first capability in turn.
+
+**Observed failure (with the refinement restored, each mutation):**
+```
+× flags a publication alias that would overwrite the platform's execution scope
+× flags a publication alias that would overwrite a slot's own submitted value
+× flags one publication alias claimed by two capabilities
+```
+Without the refinement all three loaded cleanly. An alias equal to `executionScope` silently replaces
+the per-execution idempotency scope for every LATER step, so their keys derive from an adapter's return
+value rather than from the execution - exactly-once effect on replay lost, with no diagnostic.
+
+**Companion.** The three companion cases above, in
+`src/__tests__/unit/domain-config.test.ts`'s `detects (companion)` block.
+
+**Reverted:** the refinement restored; both shipped documents load unchanged.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review finding `publication-alias-not-reserved`).
+
+---
+
+## PF-305 · three loader checks that failed open
+
+**Invariant:** (a) `checkForm` requires a form field's slot to be `supplied-by-trigger`; (b) the
+settable-parameter existence check in `load-references.ts` is an own-property test; (c) `diff.ts`
+computes section bytes with the canonical serializer.
+
+**Injection.** (a) Flipped a rendered account-opening slot to `derived`; (b) restored the `in` operator
+and declared a policy write to `parameter: constructor`; (c) restored `JSON.stringify`.
+
+**Observed failure:**
+```
+× flags a form control over a slot the requester does not supply (stage 6)
+× flags a policy write to a parameter reached only through Object.prototype
+× enforces: the diff reads CANONICAL bytes, so authoring key order is not a change
+```
+(a) loaded clean and then rendered the "configuration could not be loaded" state on the live screen;
+(b) admitted a policy surface offering a write to a parameter the primitive never declared - a closure
+check failing OPEN; (c) reported every section as `replace` for a document whose only difference was
+authoring key order.
+
+**Companion.** The three cases named above.
+
+**Reverted:** all three restored; `pnpm test` green.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review findings `check-form-admits-non-trigger-slot`,
+`settable-parameter-uses-in-operator`, `diff-not-canonical-bytes`).
+
+---
+
+## PF-306 · a value source that exists but is not available where it is read
+
+**Invariant:** a `step-output` source resolves only against the CONSUMING step's transitive `dependsOn`
+closure, and an `await-observation` source only where an externally-gated step sits inside it.
+
+**Injection.** Removed the availability arms from `resolveSourceType`
+(`src/domain/config/load-closure.ts`), restoring the whole-plan view.
+
+**Observed failure:**
+```
+× flags a payload sourcing a step the consuming step does not depend on
+× flags an observation read by a step no externally-gated step precedes
+× flags a conflict key reading a step output, which resolves before the plan runs
+```
+Without the arms, giving `contact-create` a payload field sourcing the `application` step loaded
+cleanly and passed the whole fence suite - then failed at run time with "a required payload field did
+not resolve", after `household.create` had already committed: an orphan household, an orphan execution,
+from a document every gate called valid.
+
+**Companion.** The three cases above, plus "admits a step output the consuming step TRANSITIVELY
+depends on", which proves the rule rejects the unavailable reference rather than the arm, in
+`src/__tests__/unit/domain-config.test.ts`.
+
+**Reverted:** the arms restored; both shipped documents load unchanged.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review finding `source-not-checked-against-step-dependencies`).
+
+---
+
+## PF-307 · the awaited observation's own fields are part of the flow-data namespace
+
+**Invariant:** a publication alias may not name a field an awaited observation supplies, and an
+observation field may not be a reserved platform key or a declared `triggerField`.
+
+**Injection.** Emptied the observation-read derivation in `src/domain/config/document.ts`, leaving the
+alias check with the two writers it had.
+
+**Observed failure:**
+```
+× flags a publication alias that would shadow an awaited observation's field
+× flags a trigger field that would shadow an awaited observation's field
+```
+Both loaded cleanly. `resumeFlow` merges the observation UNDER stored flow data, and the shipped
+`signedAt` read is `optional`, so the substitution is reported nowhere: the finalized account takes its
+open date from whatever the shadowing writer put there.
+
+**Companion.** The two cases above, in `src/__tests__/unit/domain-config.test.ts`.
+
+**Reverted:** the derivation restored; both shipped documents load unchanged.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review finding `await-observation-field-not-reserved`).
+
+---
+
+## PF-308 · RULE E read green over an imported directory constant
+
+**Invariant:** only `src/infrastructure/config/domain-config-source.ts` may reach `config/domains/`,
+whether it names the path as a literal or through a binding that holds it.
+
+**Injection.** Removed the resolved-reference arm from `configDirectoryReaders`
+(`src/__tests__/fitness/domain-configuration.test.ts`), leaving the per-line literal scan.
+
+**Observed failure:**
+```
+× catches the directory reached through an IMPORTED constant, whose text names no path
+AssertionError: expected [] to deeply equal [ …(2) ]
+```
+A module importing the directory constant under any local alias and reading the directory through it
+was reported CLEAN - the only enforcement of v3 §16 passing over the exact access it exists to refuse,
+because "config/domains" appears nowhere in the offender's bytes.
+
+**Companion.** "catches the directory reached through an IMPORTED constant, whose text names no path",
+whose second half proves the allowed module's own use of the same constant is still permitted.
+
+**Reverted:** the arm restored; `DOMAIN_CONFIG_DIRECTORY` is now unexported as well.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review finding `config-directory-fence-evadable`).
+
+---
+
+## PF-309 · a PERMANENT refusal must not ask an e-sign provider to redeliver forever
+
+**Invariant:** the e-sign webhook's HTTP status is an INSTRUCTION to an external system. A retryable
+failure answers 5xx (the callback was not delivered; the saved cursor makes the redelivery idempotent);
+a permanent refusal answers its own 4xx, because every redelivery would meet the identical refusal until
+the provider's retry budget is spent and the signature event is dropped.
+
+**Injection.** Restored the flattening expression in `src/app/api/esign/webhook/route.ts`
+(`mapped.status >= 500 ? mapped.status : 500`) and fired a validly signed callback at an execution whose
+recorded configuration version disagrees with the published one.
+
+**Observed failure:**
+```
+× answers a PERMANENT refusal with its own 4xx, so the provider stops redelivering
+AssertionError: expected 500 to be 409 // Object.is equality
+```
+A `CONFLICT` - `{status: 409, category: "permanent", retryable: false}` in the taxonomy - reported to the
+provider as a retryable server error, which is the finding verbatim.
+
+**Companion.** "still answers an ORDINARY finalize failure with a 5xx, so the provider redelivers": a
+storage failure inside finalize (the case the blanket 5xx was written for) must not become a 4xx the
+provider treats as final.
+
+**Reverted:** the retryability read restored;
+`src/__tests__/integration/esign-webhook-route.test.ts` reports `Tests 2 passed (2)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review ruling `p10-version-guard-fallout`).
+
+---
+
+## PF-310 · a MISSING configuration version is LEGACY, not a mismatch
+
+**Invariant:** the D-246 resume guard refuses a KNOWN DIFFERENT configuration version. An execution that
+recorded no version predates the pinning itself, so it can only have started under the plan published
+before the guard existed, and it RESUMES - otherwise the guard's first act on deployment is to strand
+every legitimate in-flight signature, the before-deploy/after-deploy harm it exists to prevent.
+
+**Injection.** Removed the `if (started === undefined) return null;` branch from `versionMismatch`
+(`src/infrastructure/wire.ts`) and resumed an execution whose persisted flow data carries no
+`domainConfigVersionId`.
+
+**Observed failure:**
+```
+× RESUMES a legacy execution that recorded no configuration version at all
+AssertionError: expected 'failed' to be 'completed' // Object.is equality
+```
+
+**Companion.** The pre-existing "REFUSES to resume an execution started under a different configuration
+version" still passes, so widening the guard to admit absence did not disarm it for disagreement.
+
+**Reverted:** the branch restored; `src/__tests__/integration/account-opening.test.ts` reports
+`Tests 22 passed (22)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review ruling `p10-version-guard-fallout`).
+
+---
+
+## PF-311 · the replay path may not report a step read from a plan it is not running
+
+**Invariant:** a double-submit replay reports the awaited rule at `awaitingByStep[cursor - 1]`. That
+cursor is POSITIONAL, so under a different configuration version it names a step the execution never
+took. The path drives nothing, so what it can get wrong is the ANSWER - and it is refused instead.
+
+**Injection.** Removed the version check from `replayedRunResult` (`src/infrastructure/wire.ts`) and
+re-submitted the same client request id against an execution whose recorded version had been bumped.
+
+**Observed failure:**
+```
+× REFUSES a double-submit replay of an execution started under a different configuration version
+AssertionError: expected 'suspended' to be 'failed' // Object.is equality
+```
+The replay answered `suspended` with a resume token and an awaited rule borrowed from the current plan -
+for a token whose eventual resume the guard would refuse.
+
+**Companion.** The pre-existing double-submit case ("no duplicate households", D-027) still replays
+`suspended` with the SAME token, so the refusal is scoped to a version disagreement rather than to
+replay itself.
+
+**Reverted:** the check restored; `src/__tests__/integration/account-opening.test.ts` reports
+`Tests 22 passed (22)`.
+
+**Date:** 2026-08-11 (v3 prompt 10, ADR-0058; review ruling `p10-version-guard-fallout`).
+
+---
+
+## PF-312 · a downstream refusal may not borrow a status this endpoint already owns
+
+**Invariant:** the e-sign webhook's HTTP status is an INSTRUCTION about REDELIVERY, not a window into
+the internal error taxonomy. Every downstream REFUSAL answers ONE dedicated status (422) whatever code
+produced it; a server-side failure still answers 5xx; and 401 and 404 keep meaning only what this
+handler already says they mean - "invalid webhook signature" and "unknown signing token". PF-309 fixed
+the first half of this (a permanent refusal must not ask for redelivery forever) by passing the internal
+code's own status through, which collided with the two statuses the handler owns.
+
+**Injection.** Restored the pass-through expression in `src/app/api/esign/webhook/route.ts:65`
+(`!isRetryable(refusal) && mapped.status >= 400 ? mapped.status : …`) and fired two validly signed
+callbacks: one at an execution whose recorded configuration version disagrees with the published one,
+and one whose application row no longer carries the id the suspended execution recorded, so finalize's
+org-scoped UPDATE matches zero rows.
+
+**Observed failure:**
+```
+× answers a PERMANENT refusal with the do-not-redeliver status, whatever code produced it
+AssertionError: expected 409 to be 422 // Object.is equality
+× never reports a downstream permanent failure with a status this endpoint already owns
+AssertionError: expected 404 to be 422 // Object.is equality
+```
+The second is the finding verbatim: a finalize-time `NOT_FOUND` reported to the provider with the same
+404 this route uses for "that signing token does not exist".
+
+**Companion.** "still answers an ORDINARY finalize failure with a 5xx, so the provider redelivers": a
+dropped `financial_accounts` table raises `INTERNAL`, which the taxonomy scores non-retryable but 500 -
+an operational fault a redelivery after repair completes, not a refusal - and it must stay 5xx. That
+case is what forced the predicate to be `isRetryable(code) || status >= 500` rather than retryability
+alone.
+
+**Reverted:** the single-status mapping restored;
+`src/__tests__/integration/esign-webhook-route.test.ts` reports `Tests 3 passed (3)`, and the run
+carries the diagnosis the narrowed status no longer does:
+`{"code":"INTERNAL","msg":"e-sign callback finalization failed"}`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-webhook-status-collision`).
+
+---
+
+## PF-313 · a runnable plan may not carry a slot source the trigger cannot supply
+
+**Invariant:** `resolverFor` reads a slot ONLY through its declared `triggerField`, and the intent
+grammar forbids one on any slot that is not `supplied-by-trigger`. A capability sourcing a
+`bound-by-primitive` or `derived` slot - in a payload field, an idempotency-key segment, or a
+`{slot:…}` placeholder of its command text - therefore closes cleanly through all seven load stages and
+then fails at the step that consumes it, after earlier steps have committed real CRM rows. The plan is
+refused where it becomes RUNNABLE, because the authoring itself is legitimate: money movement's
+`household` and `source-account` genuinely are selected by primitives, and their values arrive with the
+evaluator's context plane (prompt 16).
+
+**Injection.** Removed the `unreadableSlot` refusal from `compileFlowDefinition`
+(`src/domain/config/plan-compiler.ts:334`) and compiled money movement's plan with only its
+`decision-hash` idempotency segment dropped - the segment prompt 25 replaces, and today the only reason
+that plan is refused at all.
+
+**Observed failure:**
+```
+× REFUSES compiling a plan whose capability reads a slot the trigger cannot supply
+AssertionError: expected true to be false // Object.is equality
+ ❯ src/__tests__/unit/domain-config.test.ts:314:25
+```
+The plan compiled to a runnable flow whose `sourceAccountRef` payload field and `source-account` key
+segment can never resolve.
+
+**Companion.** The same case asserts the mutated document still LOADS (`expect(loaded.ok).toBe(true)`),
+so the refusal cannot be satisfied by rejecting the shipped document instead - which would have thrown
+away prompt 10's two-domain deliverable to close a runtime hole. The pre-existing "a decision-hash
+idempotency key is REFUSED by the interim substrate" still passes, so the two deferrals stay distinct.
+
+**Reverted:** the refusal restored; `src/__tests__/unit/domain-config.test.ts` reports
+`Tests 82 passed (82)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-webhook-status-collision`).
+
+---
+
+## PF-314 · a command-text placeholder is checked against the intent that RENDERS it
+
+**Invariant:** copy is authored per DOMAIN, so stage 6 holds a template to the union of every intent's
+slot ids - but `buildPayload` renders it through ONE intent's resolver. Where those scopes differ, a
+template naming intent A's slot and reached from a capability in intent B's plan loads clean and then
+fails mid-plan. The closure stage checks each command text against the slots of the intent whose plan
+actually reaches it.
+
+**Injection.** Reduced the copy branch of `checkReferences` back to the bare key check
+(`src/domain/config/load-references.ts:221`) and loaded a money-movement document carrying a second
+intent that shares the plan but does not declare `purpose`, with a command text reading
+`{slot:purpose}`.
+
+**Observed failure:**
+```
+× flags a command-text slot the RENDERING intent does not declare (stage 3, not the union)
+AssertionError: the mutated document must NOT load: expected true to be false
+ ❯ src/__tests__/unit/domain-config.test.ts:569:61
+```
+
+**Companion.** The case asserts the load reports EXACTLY the one new error, so the document is legal in
+every other respect - which is what proves the union check would have admitted it rather than the
+document being rejected for an unrelated reason.
+
+**Reverted:** the per-intent check restored; `src/__tests__/unit/domain-config.test.ts` reports
+`Tests 82 passed (82)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-webhook-status-collision`).
+
+## PF-315 · the decision hash is refused in EVERY position a compiled step resolves
+
+**Invariant:** the interim execution substrate has no decision hash (prompt 16 records the decision,
+prompt 25 executes against it), and `resolverFor` has no value for it. `compileFlowDefinition` refuses
+a capability that reads it in an idempotency-key segment OR a command payload field - every position a
+compiled step resolves, since a `copy` field renders only `{slot:…}` and `{context:…}` placeholders.
+
+**Injection.** Reduced `readsDecisionHash` (`src/domain/config/plan-compiler.ts:222`) back to the
+key-only predicate the guard shipped with, and compiled account opening with a
+`{kind: value, field: decisionRef, source: {from: decision-hash}}` payload field appended.
+
+**Observed failure:**
+```
+× REFUSES compiling a plan whose capability sources a PAYLOAD field from the decision hash
+AssertionError: an optional:false decision-hash payload field must not compile: expected true to be false
+ ❯ src/__tests__/unit/domain-config.test.ts:318:99
+```
+The plan compiled to a runnable flow whose `decisionRef` payload field can never resolve - and with
+`optional: true` it compiled AND dropped the field from the command with no diagnostic anywhere.
+
+**Companion.** The same case asserts the mutated document still LOADS, so the refusal cannot be
+satisfied by rejecting the DOCUMENT: `config/domains/money-movement.yaml` ships a `decision-hash`
+idempotency segment as the ratified anchor (PC-11), and refusing it at load would throw away prompt
+10's two-domain deliverable to close a runtime hole - the line D-252 already drew. `resolverFor` now
+also ends in a `never`-typed tail (`unresolvableSource`), so a future grammar arm with no resolver is a
+BUILD failure rather than the silent `absent` this gap actually was.
+
+**Reverted:** the payload half restored; `src/__tests__/unit/domain-config.test.ts` reports
+`Tests 84 passed (84)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-redeliverability-and-leak`).
+
+---
+
+## PF-316 · an operator-recoverable refusal is redelivered LATER, paced, never discarded
+
+**Invariant:** the webhook's status is an instruction about REDELIVERY, and permanent-versus-transient
+was a false binary. A configuration-version mismatch is neither: it clears when an operator rolls the
+published document back. It answers 503 with `Retry-After`, the execution stays suspended, and the
+instruction is read off the flow's own typed `retry` rather than re-derived from the error code (the
+taxonomy scores `CONFLICT` non-retryable and 409, which is right for a client repeating the identical
+request and wrong for a provider whose redelivery after a rollback succeeds).
+
+**Injection.** Disabled the retry-later arm of the status expression in
+`src/app/api/esign/webhook/route.ts:82`, leaving the permanent/transient binary that shipped.
+
+**Observed failure:**
+```
+× asks the provider to redeliver LATER when the configuration version was superseded
+AssertionError: expected 422 to be 503
+ ❯ src/__tests__/integration/esign-webhook-route.test.ts:98:29
+```
+422 tells the provider never to redeliver, so the signature event the client already gave is dropped
+and the application stays suspended with no external event left to complete it.
+
+**Companion.** The two sibling cases in the same file still pass: a genuinely permanent refusal still
+answers the ONE do-not-redeliver status whatever internal code produced it (PF-312's collision case),
+and an ordinary finalize failure still answers 5xx. So the third category is added, not substituted for
+the first two. The retry-later case also asserts `Retry-After` is present and positive - an unpaced 503
+is the blanket 5xx wearing a new number - and that the execution row is still `suspended`.
+
+**Reverted:** the arm restored; `src/__tests__/integration/esign-webhook-route.test.ts` reports
+`Tests 3 passed (3)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-redeliverability-and-leak`).
+
+---
+
+## PF-317 · a configuration refusal carries a reference on the wire and its diagnosis in the log
+
+**Invariant:** `toResponse` returns an `AppError`'s message verbatim, so the message a configuration
+refusal carries is what a browser and an external e-sign provider read. Every refusal
+`domain-config-source.ts` can produce is minted in ONE place: a generic sentence plus a correlation id
+on the wire, the dotted document paths and SHA-256 hashes in `context` (which `toResponse` has never
+returned), and an operator log line under the same correlation id and a closed `configStage` code.
+
+**Injection.** Restored the detailed message at the mint
+(`src/infrastructure/config/domain-config-source.ts:141`), spelling the domain id and the stage detail
+into the client-visible sentence exactly as the pre-fix refusals did.
+
+**Observed failure:**
+```
+× answers an unresolvable configuration with retry-later, paced, and no diagnosis on the wire
+AssertionError: expected 'The "no-such-published-domain" config…' to contain 'Quote reference'
+Received: "The "no-such-published-domain" configuration could not be resolved: no domain configuration
+is published under that id"
+ ❯ src/__tests__/integration/account-opening-route.test.ts:200:33
+```
+Two further cases in `src/__tests__/unit/domain-config-source.test.ts` failed with it, on the hex-digest
+and dotted-path shapes the narrowed message must not carry.
+
+**Companion.** The unit file's first case asserts the SHIPPED document still resolves, so the rule
+cannot be satisfied by a source that refuses everything; and it asserts the diagnosis is still
+PRESENT - `context.detail` non-empty, `context.stage` the closed code - while
+`JSON.stringify(toResponse(error))` does not contain it. Narrowing the message is what the finding
+asked for; losing the diagnosis is what the correlation id exists to prevent.
+
+**Reverted:** the generic mint restored; both files report `Tests 4 passed (4)` and `Tests 5 passed (5)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-redeliverability-and-leak`).
+
+---
+
+## PF-318 · a caller's resume precondition judges the ONE snapshot the drive uses
+
+**Invariant:** the composition root refuses to resume an execution bound to a superseded configuration
+version. It supplies that precondition as a `ResumeGuard` the engine calls against the state IT loaded,
+so the version checked is provably the version driven - and the webhook path loads the continuation
+once rather than twice.
+
+**Injection.** Re-read the row before calling the guard in `resumeFlow`
+(`src/domain/workflow/engine.ts:190`), reproducing the check-then-drive shape the composition root
+used to have.
+
+**Observed failure:**
+```
+× enforces: a resume guard judges the ONE snapshot the drive would use
+AssertionError: expected 2 to be 1
+ ❯ src/__tests__/fitness/flowstep-suspend-resume.test.ts:121:41
+```
+Two token loads for one resume, against a store that serializes every operation behind a mutex - and
+two snapshots, which is the TOCTOU half: a state that changed between them would be checked in one and
+driven in the other.
+
+**Companion.** The sibling case drives a guard that returns `null` to completion, so the refusal is
+conditional rather than a resume that never runs; and the refusal case asserts the persisted row is
+still `suspended` with only the pre-suspend steps hit, so refusing to DRIVE never advances or fails the
+execution the later redelivery must still complete.
+
+**Reverted:** the single load restored; `src/__tests__/fitness/flowstep-suspend-resume.test.ts` reports
+`Tests 6 passed (6)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-redeliverability-and-leak`).
+
+---
+
+## PF-319 - a configuration refusal minted WITHOUT its cause marked
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I - every refusal meaning "this
+deployment cannot resolve or compile its published configuration" carries `operatorRecoverable` at the
+mint, so every surface can inherit the instruction rather than choosing one (D-257).
+
+**Injection.** Dropped the `operatorRecoverable(...)` wrapper from `compileFlowDefinition`'s
+no-such-intent refusal (`src/domain/config/plan-compiler.ts:406`), which is exactly the shape every
+refusal in this class had before this round.
+
+**Observed failure:**
+```
+× (I) enforces: every configuration refusal is minted with its cause marked
+AssertionError: configuration refusals whose cause is unmarked:
+src/domain/config/plan-compiler.ts:406: compileFlowDefinition mints a configuration refusal without operatorRecoverable()
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:818:97
+```
+
+**Companion.** The `detects` block plants the same shape in an in-memory project and asserts the marked
+form reports nothing, plus an ANTI-VACUITY pair: a registered site that mints no refusal at all, and one
+that no longer exists, are BOTH reported stale - so the rule can never pass by pointing at nothing.
+
+**Reverted:** the wrapper restored; `src/__tests__/fitness/domain-configuration.test.ts` reports
+`Tests 41 passed (41)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-diagnosis-channel`).
+
+---
+
+## PF-320 - a client instruction STATED at a call site instead of read from the cause
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J - no registered surface names a
+`ClientRetry`; every decision goes through `clientRetryFor(error, fallback)` (D-257).
+
+**Injection.** Made `refused` (`src/infrastructure/wire.ts:125`) pass its caller's category straight
+through instead of asking the cause - the per-call-site assignment that had the start path answering
+`do-not-retry` for a document an operator rollback repairs.
+
+**Observed failure:**
+```
+× (J) enforces: no surface STATES a client instruction it could read from the cause
+AssertionError: instructions chosen per call site:
+src/infrastructure/wire.ts:125: a client instruction is STATED here (otherwise) rather than read from the refusal's cause via clientRetryFor()
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:823:80
+```
+
+**Companion.** The `detects` block plants a stated `CLIENT_RETRY.none` and asserts the derived form
+reports nothing, plus an anti-vacuity case: a registered surface that decides no instruction is reported
+stale rather than read as clean. `src/__tests__/integration/account-opening-route.test.ts` proves the
+behavior end to end - the START-path refusal answers 503 with `Retry-After` and `retry-later`, and its
+sentence is NOT "Resubmitting will not help".
+
+**Reverted:** the derivation restored; `Tests 41 passed (41)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-diagnosis-channel`).
+
+---
+
+## PF-321 - user-facing copy naming a deployment internal
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE K - no rendered JSX text, copy-bearing
+JSX attribute, or string in a registered client-message module names a repository path or a
+configuration/module file (D-259).
+
+**Injection.** Restored the previous copy on the account-opening configuration-failure screen
+(`src/app/app/account-opening/page.tsx:32`), which told an authenticated advisor to restore
+`config/domains/account-opening.yaml`.
+
+**Observed failure:**
+```
+× (K) enforces: no user-facing copy names a deployment internal
+AssertionError: deployment internals in copy a user reads:
+src/app/app/account-opening/page.tsx:32: user-facing copy names a deployment internal (config/domains/account-opening.yaml)
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:828:86
+```
+
+**Companion.** The `detects` block plants the path in JSX text and, separately, in a registered
+client-message map - the two ways it reaches a person - and proves a MODULE SPECIFIER carrying the same
+shape is not flagged, which is what keeps the rule from reading every import as copy. The whole-tree run
+is itself the anti-vacuity check: it walks `src/app/**` and reports the demo surface manifest's
+`componentPath` entries (structure, correctly spelled) as clean.
+
+**Reverted:** the generic sentence plus correlation id restored; `Tests 41 passed (41)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-diagnosis-channel`).
+
+---
+
+## PF-322 - a configuration diagnosis routed into a channel that silently drops it
+
+**Fence.** `src/__tests__/unit/domain-config-source.test.ts` - the D-258 evidence, and the check whose
+absence let a dead channel ship: it reads the BYTES THE REAL LOGGER EMITS, through the real
+`loggerOptions`, rather than the object handed to it.
+
+**Injection.** Restored the first attempt's shape at `configurationRefusal`
+(`src/infrastructure/config/domain-config-source.ts`): the registered diagnosis fields removed from the
+log line and the same facts flattened into an `AppError.context.detail` string - the channel nothing reads
+and the formatter would censor anyway.
+
+**Observed failure:**
+```
+× emits the diagnosis to the operator as REGISTERED values the formatter passes through
+AssertionError: expected undefined to be 'no-such-published-domain'
+ ❯ src/__tests__/unit/domain-config-source.test.ts:129:36
+```
+(four further cases fail with it: the stage, the loader code, and both root-path cases)
+
+**Companion.** The same file proves the rule is not "say nothing": a first case asserts the shipped
+document still resolves, so a source that refused everything could not satisfy it; another asserts a value
+outside its declared shape degrades to `[REDACTED]` rather than riding through; and the two root-level
+cases assert an absent path is ABSENT rather than sealed.
+
+**Reverted:** the registered fields restored; `Tests 9 passed (9)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-323 - a configuration refusal minted in an UNLISTED function of a listed file
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, now DERIVED from the
+configuration modules rather than from a list of owning functions (D-260).
+
+**Injection.** Restored the plan compiler's own pre-fix shape at
+`src/domain/config/plan-compiler.ts :: failure` - an unmarked `appError` built from the loader's dotted
+document paths. `failure` is not, and never was, in any registry; the old hand-listed rule keyed on
+`orderedSteps` and `compileFlowDefinition` and read this file green.
+
+**Observed failure:**
+```
+× (I) enforces: every configuration refusal is minted with its cause marked
+AssertionError: configuration refusals whose cause is unmarked:
+src/domain/config/plan-compiler.ts:269: a configuration refusal is minted without operatorRecoverable()
+
+× (K) enforces: no deployment internal reaches a user-facing surface or the wire
+AssertionError: deployment internals in what a user or a sender reads:
+src/domain/config/plan-compiler.ts:269: a client-facing message is built from a DomainConfigError, whose paths reach the wire at run time
+```
+
+**Companion.** The `detects` block plants the same shape in an in-memory project and asserts the marked
+form reports nothing; a `VALIDATION` mint in the same root is exempted BY ITS CODE rather than by a
+blessed-function list; and an ANTI-VACUITY case reports a root that refuses nothing as a derivation
+pointing at nothing.
+
+**Reverted:** the refusal port restored; `Tests 47 passed (47)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-324 - a configuration refusal marked where the derivation cannot see it
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I's completeness half
+(`configurationMarkersOutsideModules`) - what makes a root-derived rule COMPLETE rather than merely broad,
+and what replaces the hand-listed residue of sites outside those roots.
+
+**Injection.** Imported `operatorRecoverable` into `src/infrastructure/wire.ts` and referenced it - the
+exact shape the composition root had before `configuredFlow` moved into
+`src/infrastructure/config/configured-flow.ts`.
+
+**Observed failure:**
+```
+× (I) enforces: every configuration refusal is minted with its cause marked
+AssertionError: configuration refusals minted outside the configuration modules:
+src/infrastructure/wire.ts marks a configuration refusal outside the configuration modules, where the derivation cannot see it
+```
+
+**Companion.** The `detects` block proves an ALIASED import is caught (the rule resolves the import's own
+name), that the same import inside the roots is silent, and - anti-vacuously - that a marker no
+configuration module imports is reported as a rule checking a mark nobody applies.
+
+**Reverted:** the import removed; `Tests 47 passed (47)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-325 - a client instruction STATED in a file no registry lists
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J, now DERIVED: a decision site is
+any file that reads the closed client-retry vocabulary, or writes one of its arms into a `retry` position
+(D-260).
+
+**Injection.** Decided a category at `src/app/api/esign/webhook/route.ts` (`const retry =
+CLIENT_RETRY.none`). That surface was NOT among the three files the old registry listed, so the previous
+rule could not see it at all.
+
+**Observed failure:**
+```
+× (J) enforces: no surface STATES a client instruction it could read from the cause
+AssertionError: instructions chosen per call site:
+src/app/api/esign/webhook/route.ts:84: a client instruction is STATED here (CLIENT_RETRY.none) rather than read from the refusal's cause via clientRetryFor()
+```
+
+**Companion.** The `detects` block plants the decision in a NEW unregistered route and asserts the derived
+form reports nothing; a second case plants a RAW `"do-not-retry"` literal in a file that imports nothing,
+proving the derivation does not depend on the import; and an anti-vacuity case asserts the shipped run
+finds both a decision site and a decision, so an empty violation list is never a statement about nothing.
+
+**Reverted:** the decision removed; `Tests 47 passed (47)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-326 - a BARE configuration file name in copy an advisor reads
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE K, widened from a
+directory-shaped pattern over `src/app/` to the CONDITION - no deployment internal reaches a user-facing
+surface or the wire (D-260).
+
+**Injection.** Changed the account-opening configuration-failure screen
+(`src/app/app/account-opening/page.tsx`) to say "Ask your operations team to restore
+account-opening.yaml." - a BARE file name, with no directory, which the previous pattern required and
+therefore missed.
+
+**Observed failure:**
+```
+× (K) enforces: no deployment internal reaches a user-facing surface or the wire
+AssertionError: deployment internals in what a user or a sender reads:
+src/app/app/account-opening/page.tsx:31: user-facing copy names a deployment file name (This deployment is not currently able to start account openings, so no applicati)
+```
+
+**Companion.** The `detects` block exercises every form the first pattern let through - the bare file
+name, an extension outside the old fixed list, an ENVIRONMENT VARIABLE NAME, and a SHA-256 digest - plus
+the scope gap: a wire message minted in `src/domain/`, both as a literal dotted document path and as one
+INTERPOLATED from a loader fault at run time, which no scan of authored literals could see. The reviewed
+escape (the deferred-adapter boot diagnostic in `src/infrastructure/store/db.ts`) is held to rule (K'),
+which fails it the moment it suppresses nothing.
+
+**Reverted:** the generic sentence restored; `Tests 47 passed (47)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-fence-strength-and-plancompiler`).
+
+---
+
+## PF-327 - a configuration refusal that MARKS its cause and still says nothing to anyone
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, extended from "the cause is
+marked" to "the cause is marked AND the refusal takes the one shape": every non-`VALIDATION` mint in a
+configuration module must carry a `correlationId` in its own context (what `refusalResponse` appends for
+the caller to quote) and state its diagnosis on an operator log line in the SAME function (what that
+reference joins to). A module that refuses through the shared `ConfiguredRefusal` port mints nothing and
+is outside the rule by construction, which is what makes "one place" a mechanism rather than a
+convention nine authors applied nine ways.
+
+**Injection 1** - the exact regression, in the module the previous round's port was introduced for.
+Restored `compileFlowDefinition`'s hand-written intent refusal in `src/domain/config/plan-compiler.ts`:
+`operatorRecoverable(appError("INTERNAL", \`The configuration declares no intent named "${actionId}".\`))`.
+
+```
+× (I) enforces: every configuration refusal is minted with its cause marked, in ONE shape
+AssertionError: configuration refusals minted outside the one shape:
+src/domain/config/plan-compiler.ts:426: a configuration refusal is minted with no correlationId for the caller to quote
+src/domain/config/plan-compiler.ts:426: a configuration refusal is minted without stating its diagnosis on an operator log line
+```
+
+**Injection 2** - the same class one layer out, in the composition root. Restored the unsupported-command
+refusal in `src/infrastructure/config/configured-flow.ts`, which interpolated the document's own command
+type into a message the e-sign webhook returns verbatim to the EXTERNAL provider and emitted no log line
+at all.
+
+```
+× (I) enforces: every configuration refusal is minted with its cause marked, in ONE shape
+AssertionError: configuration refusals minted outside the one shape:
+src/infrastructure/config/configured-flow.ts:55: a configuration refusal is minted with no correlationId for the caller to quote
+src/infrastructure/config/configured-flow.ts:55: a configuration refusal is minted without stating its diagnosis on an operator log line
+```
+
+**Companion.** The `detects` block plants a marked-but-silent mint and asserts BOTH halves are reported;
+plants a mint whose log line lives in a same-module helper it never calls, and asserts the delegation is
+refused (that delegation is how the diagnosis was lost); proves a module that states its fault through
+the PORT satisfies the anti-vacuity anchor while minting nothing; and proves the arms are read from the
+`ConfiguredRefusal` interface itself - an emptied declaration leaves the anchor recognising nothing and
+the root is then reported as refusing nothing rather than passing.
+
+**Reverted:** both mints routed back through the port; `Tests 54 passed (54)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-one-mint-and-emitter-derived-shapes`).
+
+---
+
+## PF-328 - a diagnosis shape narrower than the emitters it guards
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L (new). Every
+`CONFIGURATION_DIAGNOSIS_SHAPES` entry is checked against REAL EMITTER OUTPUT: the real loader is driven
+over both shipped documents corrupted one string leaf at a time (with an id-shaped and a non-id-shaped
+probe, so the reference-closure emitters and the grammar emitters are both reached), the real compiler's
+steps are driven with the document's own projected trigger fields, and the version ids, pinned hashes and
+canonical-byte digests are read from the artifacts the shipped adapter really reads them from.
+
+**Injection.** Restored the shipped `configPath` shape to its dot-only form in
+`src/domain/observability/safe-values.ts`:
+`/^[A-Za-z0-9_-]{1,64}(?:\.[A-Za-z0-9_-]{1,64}){0,15}$/`.
+
+**Observed failure:**
+```
+× (L) enforces: every dotted path the loader EMITS survives the diagnosis channel
+AssertionError: the operator's line would report a stage with its location censored:
+configPath: the emitters produce "conflictKeys.liquidity-key.segments[1]", which the declared shape seals
+configPath: the emitters produce "execution.capabilities.funds-transfer.idempotencyKey[3]", which the declared shape seals
+configPath: the emitters produce "primitiveBindings.identity-reconciliation.parameters.sourcesToReconcile[0]", which the declared shape seals
+× (L) enforces: a step the COMPILER cannot prepare reports a path the channel carries
+× (L) enforces: every OTHER diagnosis shape admits what its real emitters produce
+× (L) catches the shape this rule was written for: the dot-only configPath
+```
+
+**Companion.** The `detects` block replays the exact regression against real emitter output - it asserts
+the sweep REACHES paths the pre-fix shape sealed (or the companion proves nothing) and that the live
+shape admits every one; a second case asserts the shapes still SEAL what they exist to seal (prose, a
+person's name, an over-long run, a non-digest, a spaced document id) and that the EMPTY path - a fact the
+loader never had rather than a censored one - is not reported. The enforcing rules carry their own
+anti-vacuity: the sweep must emit over 100 paths and reach the subscripting emitters in at least three
+distinct modules, the compiled-step run must produce a subscripted path, and the field map must equal
+`CONFIGURATION_DIAGNOSIS_FIELDS` exactly with every field checked against non-empty real output.
+
+**Reverted:** the subscripted shape restored; `Tests 54 passed (54)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-one-mint-and-emitter-derived-shapes`).
+
+---
+
+## PF-329 - a fence that dies on an ordinary cursor walk
+
+**Fence.** `src/__tests__/fitness/charter-drift.test.ts` (b), through the shared member-chain analysis in
+`src/__tests__/fitness/_fence-utils.ts`. `memberSources` recursed with no visited set while
+`expressionSources` follows assignments, so the ordinary `node = node[segment]` cursor loop made
+`node[segment]` a source OF `node` and the two walks fed each other until the stack ran out. A fence that
+crashes on legal code reads as a fence bug and gets "fixed" by rewriting the file it was analysing, which
+is a detection channel silently going dead - the same failure class as PF-328 one level up.
+
+**Injection.** Removed the guard (`if (walked.has(at)) return []`) from `memberSources`.
+
+**Observed failure:**
+```
+× (b) no fitness fence is disabled or focused (this file included)
+× (b companion) survives a self-referential member cursor rather than dying on it
+RangeError: Maximum call stack size exceeded
+ ❯ expressionSources src/__tests__/fitness/_fence-utils.ts:420:31
+```
+
+**Companion.** `(b companion) survives a self-referential member cursor rather than dying on it` runs the
+real registration analysis over an imported helper containing exactly that cursor walk and requires an
+empty problem list - so the guard cannot be removed without a named test failing, rather than the whole
+fence failing for a reason nobody attributes to it.
+
+**Reverted:** the guard restored; `Tests 19 passed (19)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-one-mint-and-emitter-derived-shapes`).
+
+---
+
+## PF-330 - a configuration refusal minted where the DIRECTORY derivation could not see it
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, widened. The rule derived its
+candidate mints from two directories (`src/domain/config/`, `src/infrastructure/config/`), and the command
+adapters live in neither - so three published-configuration defects (a payload field the compiled command
+did not carry, a registration outside the store's vocabulary, a command type with no runner) shipped as
+bare `appError("INTERNAL", ...)` throws while the rule read green. Unmarked, the e-sign provider was told
+to redeliver forever with no pacing against a fault only an operator clears. The derivation now also
+covers every module that HOLDS a compiled command, keyed on the type the port's own `invoke` declares
+(read from that declaration, recognised by imported name) rather than on a directory or a spelling.
+
+**Injection.** Replaced `required`'s port refusal in `src/infrastructure/execution-adapters.ts` with the
+bare `throw appError("INTERNAL", "The configured command resolved no payload field.")` it shipped as.
+
+**Observed failure:**
+```
+× (I) enforces: every configuration refusal is minted with its cause marked, in ONE shape
+src/infrastructure/execution-adapters.ts:76: a configuration refusal is minted with no correlationId for the caller to quote
+src/infrastructure/execution-adapters.ts:76: a configuration refusal is minted without operatorRecoverable()
+src/infrastructure/execution-adapters.ts:76: a configuration refusal is minted without stating its diagnosis on an operator log line
+```
+
+**Companion.** `(I) catches an unmarked refusal in the module that answers for a compiled command` runs
+the widened derivation over a synthetic tree carrying the adapter AND a module that only CONSUMES the port
+(`deps: ExecutionAdapters`), asserting the first is derived in and the second stays out - the over-broad
+"imports the configuration layer" derivation would have swept the composition root's storage failures in
+and then needed an exemption list, which is the drifting registry this rule replaced. A second case proves
+the same adapter stating its fault through the shared PORT mints nothing and is clean. `(I) ANTI-VACUITY:
+a port with no declared command type derives no extra root` proves an emptied port yields the declared
+directories rather than a set the rule silently failed to compute, and the enforcing test requires the
+derivation to reach at least one module beyond those directories.
+
+**Reverted:** the port refusal restored; `Tests 61 passed (61)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-adapter-mint-and-emitter-bounds`).
+
+---
+
+## PF-331 - a wire message built from a compiled command
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE K, widened. The run-time half of the
+rule resolved one type (`DomainConfigError`), so the adapters' `The configured command
+"${command.commandType}" resolved no ${field}` was invisible: every authored literal span of it is
+ordinary prose, and the configured command type and payload field id only appear when it runs - in the
+JSON body the webhook returns to the EXTERNAL e-sign provider. The condition is "a message built from a
+value that IS a deployment internal", so `CommandInvocation` joins the loader fault.
+
+**Injection.** Restored that exact message, with `required(command: CommandInvocation, field: string)`, in
+`src/infrastructure/execution-adapters.ts`.
+
+**Observed failure:**
+```
+× (K) enforces: no deployment internal reaches a user-facing surface or the wire
+src/infrastructure/execution-adapters.ts:76: a client-facing message is built from a CommandInvocation, whose values reach the wire at run time
+```
+
+**Companion.** `(K) catches a wire message minted OUTSIDE src/app/, literally and by interpolation` gains
+the second run-time form beside the loader-fault one, over a synthetic adapter reproducing the shipped
+message; the pre-existing cases keep proving the literal forms (a bare filename, an unlisted extension, an
+environment variable name, a digest, a dotted document path) and that a module specifier is resolution
+rather than copy.
+
+**Reverted:** the port refusal restored; `Tests 61 passed (61)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-adapter-mint-and-emitter-bounds`).
+
+---
+
+## PF-332 - a diagnosis shape narrower than its emitter, in the DEPTH dimension
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, extended. The `configPath` shape
+had been widened once to admit subscripts and capped at three per segment - a number chosen beside the
+regex, against an emitter with no bound at all: `substitute` descends once per container level of a
+primitive's `parameters`, a value graph the SCHEMA does not shape, so a `$ref` four arrays deep emitted a
+path the shape sealed. RULE L's leaf sweep structurally cannot see this (the probes replace string LEAVES,
+so no path's depth depends on document STRUCTURE). The bound now lives with the emitter -
+`MAX_CONFIGURED_VALUE_DEPTH` in `src/domain/config/errors.ts`, refused at admission by `resolveParameters`
+- and the shape's per-segment subscript cap is read from that same constant, so the two cannot disagree by
+construction (D-262; the D-181 pattern of bounding admission once).
+
+**Injection.** Removed the admission check from `resolveParameters`, leaving the emitter unbounded.
+
+**Observed failure:**
+```
+× (L) enforces: a path whose depth comes from the DOCUMENT survives, and deeper is refused
+configPath: the emitters produce "primitiveBindings.probe.parameters.p[0][0][0][0][0][0][0][0][0]", which the declared shape seals
+```
+
+**Companion.** `(L) catches the shape being narrower than its emitter in the DEPTH dimension` drives the
+REAL `resolveParameters` at exactly the admitted bound and asserts the paths it produces are ones the
+PRIOR three-subscript cap sealed (or the companion proves nothing) and that the live shape admits every
+one; the enforcing test additionally requires the probe to subscript once per admitted level, requires a
+graph one level past the bound to be REFUSED, and requires that refusal's own path - the deepest ADMITTED
+one - to be a location the channel carries.
+
+**Reverted:** the admission check restored; `Tests 61 passed (61)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-adapter-mint-and-emitter-bounds`).
+
+---
+
+## PF-333 - a fault path that MATCHES the shape and addresses nothing
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, extended. `fieldPath` in the
+intake view addressed `presentation.form.fields` by TRIGGER FIELD (`householdName`) while the document -
+and `intakeFormOf`, the other emitter for the same node - keys that list by SLOT (`household-name`). The
+path satisfied the declared shape perfectly and pointed at a node the document does not contain, so
+nothing sealed and nothing failed: a confidently wrong location in the channel built to be authoritative,
+which an operator cannot tell from a right one. Shape-matching was exactly what let it through, so the
+rule now resolves every emitted intake path against the shipped document.
+
+**Injection.** Restored the trigger-field-keyed path in `src/domain/config/intake-view.ts`.
+
+**Observed failure:**
+```
+× (L) enforces: account-opening.yaml - every intake fault path addresses a REAL node
+an intake fault sends the operator to a location this document does not have:
+presentation.form.fields.accountType
+presentation.form.fields.firstName
+presentation.form.fields.householdName
+presentation.form.fields.lastName
+```
+
+**Companion.** `(L) catches a fault path that MATCHES the shape and addresses nothing` proves the shipped
+path resolves to no node WHILE passing the sealed-value rule clean (which is why that rule could not catch
+it), proves the slot-keyed path resolves, and proves the resolver is not merely permissive: it walks
+records by key, lists by their entries' own id, and subscripts by index, and answers false for an
+undeclared capability and an out-of-range subscript. The enforcing test runs per shipped document and
+requires the intake emitters to produce at least one path to check.
+
+**Reverted:** the slot-keyed path restored; `Tests 61 passed (61)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-adapter-mint-and-emitter-bounds`).
+
+**Correction, 2026-08-12 (label only, no behavior change).** The companion paragraph above says "the intake
+emitters" plural; only ONE of the two is driven to a fault. `emittedIntakePaths` withholds each field in
+turn from the carried set, so `unmappedIntakeFault` really refuses and its slot-keyed
+`presentation.form.fields.<slot>` paths are OBSERVED - which is the disagreement this proof is about, so
+nothing here is weakened. Its second call passes `requiredIntakeValue` a field the document declares and
+the admitted map carries, so that call returns ok every time and `undeclared` - the only emitter of the
+bare `presentation.form.fields` parent - never runs. That parent path is ASSERTED to address a real node,
+as the prefix the resolver walks through on the way to each collected child; it is not observed from an
+emitter, and no comment, name or line here may say it is. Driving it for real is banked as
+`fu-intake-probe-drives-emitter`.
+
+---
+
+## PF-334 - a fault path a document KEY makes inexpressible
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, extended to the class two bounded
+shapes still could not express: a segment the AUTHOR chose. A primitive's `parameters` map and the value
+graph under it are opaque to the schema by design (the primitive's own schema is the judge), so
+`resolveParameters` and `substitute` append document keys verbatim, and a Zod `invalid_key` issue reports
+its own path THROUGH the offending key. `configError` - the ONE constructor of every fault in the system -
+now carries only the deepest prefix the channel can express, from the same constants
+`domain/observability/safe-values` builds the `configPath` shape from (D-266).
+
+**Injection.** Removed the carry from `configError` in `src/domain/config/errors.ts`, leaving it to pass
+the path through as it was handed.
+
+**Observed failure:**
+```
+× (L) enforces: a path segment the AUTHOR chose survives the channel too
+a document key the author chose censors the location of its own refusal:
+configPath: the emitters produce "presentation.copy.statusLabels.kkkk…kkkk", which the declared shape seals
+× (L) enforces: NO string can make the one fault constructor emit an uncarriable path
+"presentation.copy.slots." -> "presentation.copy.slots.": expected [ Array(1) ] to deeply equal []
+```
+
+**Companion.** The enforcing tests are themselves the adversarial pair: the KEY sweep renames one document
+key at a time to a name the channel cannot carry (whitespace, a dot, non-ASCII, past the per-segment
+ceiling), drives the REAL loader over both shipped documents, requires more than ten emitted paths (a sweep
+that reached nothing would pass on any shape), requires NO emitted path to carry a hostile key, and proves
+the raw interpolated path each emitter would otherwise have built is broken - sealed, or shaped while
+naming one more node than the emitter meant. The property test asserts that for arbitrary segments -
+empty, over-length, whitespace, braces, subscripted, non-ASCII - what `configError` carries survives the
+channel AND is a prefix of what it was asked to report, so the constructor may lose depth and never invent
+a location.
+
+**Reverted:** the carry restored; `Tests 63 passed (63)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-diagnosis-shape-and-demo-honesty`).
+
+---
+
+## PF-335 - a dotted document key JOINED into a location that addresses nothing
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L. A key carrying a `.` is not one
+segment: `presentation.copy.slots` plus `"Household.Name"` joined SHAPES perfectly and names a node the
+document does not contain - the confidently-wrong location D-262's second amendment ruled worse than a
+censored one. So the grammar stage builds its location from Zod's issue path SEGMENTS through
+`configPathOf`, and the parameter walks refuse an unnameable key at ADMISSION rather than descending past
+it (D-266).
+
+**Injection.** Two, run separately: restored `issue.path.map(String).join(".")` in
+`src/domain/config/load.ts`, and restored the interpolated `${path}.${name}` in `resolveParameters`.
+
+**Observed failure:**
+```
+× (L) enforces: a path segment the AUTHOR chose survives the channel too
+no emitted path carries a hostile key, so this rule would pass on a shape that seals them:
+expected 80 to be +0            (the grammar-stage join)
+expected 29 to be +0            (the parameter-name interpolation)
+```
+
+**Companion.** The same rule's anti-vacuity clauses: the sweep must emit paths at all, and every raw
+interpolated form must be provably broken (sealed, or carrying a segment count the emitter did not mean),
+so the rule cannot pass by finding nothing.
+
+**Reverted:** both restored; `Tests 63 passed (63)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-diagnosis-shape-and-demo-honesty`).
+
+---
+
+## PF-336 - a demo station page that renders a journey it never proved it could label
+
+**Fence.** `src/__tests__/fitness/demo-surface-completeness.test.ts`, route rule. `/app/demo/[station]`
+renders on the SERVER from a published configuration read at request time, so a deployment that cannot
+supply the vocabulary must render the refusal - carrying the reference an operator needs - rather than
+crash inside a builder (D-267). The page must resolve `demoVocabulary(firmId)` for the SAME firm the URL
+resolved, refuse as a rendered value that receives the error, and drive the journey from the resolved
+value; that refusal is the ONLY early exit admitted, by identity.
+
+**Injection.** Removed the refusal guard from `src/app/app/demo/[station]/page.tsx`, leaving the page to
+drive the journey from an unproven vocabulary.
+
+**Observed failure:**
+```
+× enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+src/app/app/demo/[station]/page.tsx:1 dynamic demo page must bind resolved scenario and firm inputs to the
+journey service, resolve the configured vocabulary for that firm and render its refusal when this
+deployment cannot supply it, and pass its resolved station to the validated renderer and loaded marker
+```
+
+**Companion.** Four mutations of the real route, each of which must be reported: the page that never
+resolves the vocabulary, the one that resolves and renders on regardless, the one that refuses and DROPS
+the refusal (leaving the person on the screen nothing to quote), and the one that resolves a firm the URL
+did not. A fifth proves the exemption did not widen the rule: an early exit that is not the sanctioned
+refusal - `if (approved) return <div data-demo-surface="workspace" />` - still fails, as does the
+pre-existing `if (true) return …` short-circuit.
+
+**Verified end to end.** With `config/domains/money-movement.yaml` moved aside, `demoVocabulary` returns a
+refusal and `DemoUnavailable` renders "This journey cannot be shown … quote reference <id>" with no
+document path, file name or hash, while the operator's line carries `configStage=unpublished`,
+`domainConfigId=money-movement` and the same correlation id.
+
+**Reverted:** the guard restored; `Tests 8 passed (8)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-diagnosis-shape-and-demo-honesty`).
+
+---
+
+## PF-337 - an instruction STATED where the fence knew only one reader's name
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J. The rule's admissible readers are
+now DERIVED from the contract's own exported surface - an exported function in
+`src/contracts/client-retry.ts` returning that vocabulary - because a hardcoded name would have read
+`causeRetryFor`, the reader a surface with one instruction-carrying arm needs, as a STATED category
+(D-265).
+
+**Injection.** Replaced the derived read in `src/app/api/flows/account-opening/route.ts` with the stated
+category it used to fall back to.
+
+**Observed failure:**
+```
+× (J) enforces: no surface STATES a client instruction it could read from the cause
+src/app/api/flows/account-opening/route.ts:36: a client instruction is STATED here
+(CLIENT_RETRY.newIdentity) rather than read from the refusal's cause via causeRetryFor() / clientRetryFor()
+```
+
+**Companion.** `(J) catches an instruction STATED in a file NO registry lists` now feeds a synthetic
+contract declaring both readers and proves each is admitted, that a stated arm still fails, and that a tree
+whose contract is ABSENT admits NO reader at all - so the derivation fails closed rather than trusting a
+name it remembered.
+
+**Reverted:** the derived read restored; `Tests 63 passed (63)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `p10-diagnosis-shape-and-demo-honesty`).
+
+## PF-338 - a location whose two limits are one sentinel
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE M (new). The REAL parameter emitters
+are driven into BOTH ways a location can end, under a binding path read from a document this repository
+really publishes: `path-too-long` with ORDINARY camelCase keys inside the ALLOWED
+`MAX_CONFIGURED_VALUE_DEPTH` (the keys proven nameable through `childConfigPath` itself, so nothing here
+could be the naming cause wearing another name), and `unnameable-segment` with a key carrying whitespace.
+Each cause must be reported as ITSELF, the two probes must disagree, every limit must survive
+`isSafeObservabilityPrimitive("configPathLimit", …)`, and `configError` must never report a truncated
+location as an exact one.
+
+**Injection.** Collapsed the two limits back into one answer in `src/domain/config/errors.ts` -
+`childConfigPath`'s ceiling arm returning `limit: "unnameable-segment"`, which is the D-266 sentinel with
+a name on it.
+
+**Observed failure:**
+```
+× (M) enforces: a location the CEILING ended is reported as a length cause, not a naming one
+AssertionError: reported as unnameable-segment: 1 name(s) here are not ones the operator's fault
+channel can carry as one segment, so a fault below them would have no location to report:
+expected 'unnameable-segment' to be 'path-too-long'
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:1852:10
+× (M) enforces: the two limits are told APART, and each survives the operator's channel
+AssertionError: path-too-long is reported as something else: expected [ 'unnameable-segment' ] to
+deeply equal [ 'path-too-long' ]
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:1874:76
+× (M) catches the sentinel this rule was written for: one answer meaning two causes
+× (M) catches a truncating constructor that reports its location as an exact one
+```
+
+**Companion.** The `detects` block replays the shipped bug against the real emitters: both probes report at
+an ANCESTOR, so the `at === path` test both callers used provably cannot separate them and only the named
+limit can; a second case proves an unregistered cause is refused by the log formatter (the dead-diagnosis
+class one field over from RULE L); a third proves the constructor inherits the limit its OWN truncation hit
+when the emitter states none, and reports no limit for a location it carried whole. The enforcing rules
+carry their own anti-vacuity: the probe path must name a real shipped binding, the length probe's keys must
+be nameable segments and must not trip the depth refusal, each emitter must be reached at all, and the
+constructor sample must contain both truncated and exact outcomes.
+
+**Reverted:** the ceiling arm restored; `Tests 69 passed (69)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review ruling `config-path-cause-conflation`).
+
+## PF-339 - a location handed over without the limit that ended it
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE M, extended three ways for D-269.
+(1) The REAL loader is driven into a truncated GRAMMAR-stage location - the loader's most common failure -
+on every `presentation.copy.*` record BOTH shipped documents declare, with each of the hostile keys the
+channel cannot carry as one segment; every fault reported at the ancestor must name the limit
+`childConfigPath` says ended it, and a grammar fault the channel carried whole must name none.
+(2) A LIST graph and an OBJECT graph of the SAME accumulated length, under the longest binding path a
+shipped document really declares and a parameter name at the segment grammar's own 64-character maximum,
+must reach the SAME verdict - at the ceiling and one level short of it - with the crossing depth computed
+from `MAX_CONFIG_DIAGNOSIS_LENGTH` rather than hand-picked.
+(3) No `configError` call site anywhere in the repository may read `.path` off a step: that is the one hole
+the type cannot close, since a step's path is a perfectly carriable string.
+
+**Injection A** - the grammar builder drops the limit it just computed. `src/domain/config/load.ts`:
+`configError("grammar", configPathFrom(issue.path.map(String)).path, issue.message)`.
+
+**Observed failure:**
+```
+× (M) enforces: the GRAMMAR stage names the limit that ended its location
+AssertionError: account-opening.yaml intents."tolerance level" reports an ancestor as an exact
+location: expected undefined to be 'unnameable-segment'
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:2052:15
+× (M) enforces: no fault location is handed over without the limit that ended it
+AssertionError: a truncated location would report itself as an exact one:
+src/domain/config/load.ts:262 configPathFrom(issue.path.map(String)).path drops the limit that ended it
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:2105:7
+```
+
+**Injection B** - the ceiling enforced for one container kind and not the other.
+`src/domain/config/errors.ts`: `childConfigSubscript` returns `{ carried: true, path: joined }` without
+admitting the joined location, which is the raw `${path}[${index}]` append it replaced.
+
+**Observed failure:**
+```
+× (M) enforces: a LIST POSITION is admitted under the same ceiling as a KEY
+AssertionError: a list position past the ceiling must be refused at admission: expected 0 to be
+greater than 0
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:2088:90
+× (M) catches a ceiling enforced for one container kind and not the other
+AssertionError: a list position past the ceiling was admitted: expected [ undefined ] to deeply
+equal [ 'path-too-long' ]
+```
+
+**Injection C** - the constructor re-derives the limit from a step's path instead of reading the step.
+`src/domain/config/errors.ts`: `const located = configPathOfText(typeof at === "string" ? at : at.path)`.
+This is the precedence bug in its residual form: every step's path is carriable, so the re-walk finds
+nothing to truncate and reports every truncated location as exact.
+
+**Observed failure:** 7 rules, headed by
+```
+× (M) enforces: a location the CEILING ended is reported as a length cause, not a naming one
+AssertionError: reported as no cause at all: this location has reached the 128 characters the
+operator's fault channel carries...: expected undefined to be 'path-too-long'
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:1964:10
+```
+
+**Companion.** The `detects` block replays all three shipped shapes: a location handed over as a bare
+string (the in-memory fixture proves the AST rule reports the direct `.path` read AND the interpolated
+one, at `file:line`, while a Zod issue's own `path` - a raw segment list, not a step - is correctly not
+mistaken for one); a ceiling enforced for lists and not keys, with anti-vacuity proving the list probe
+really crossed through SUBSCRIPTS and that one level short really loaded; and a constructor handed a
+stopped step, which must report that step's own limit because there is no limit argument left to overrule
+it. The enforcing rules carry their own anti-vacuity: the grammar sweep must truncate a location in every
+copy record it exercises, must cover at least as many records as the document declares kinds of, and must
+show a whole location reporting no limit; the ceiling probe must stay inside `MAX_CONFIGURED_VALUE_DEPTH`,
+so nothing there is the depth refusal wearing another name.
+
+**Reverted:** all three restored; `Tests 74 passed (74)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0058; review rulings `grammar-path-drops-its-limit`,
+`list-positions-bypass-step-rule`, `configerror-limit-precedence`).

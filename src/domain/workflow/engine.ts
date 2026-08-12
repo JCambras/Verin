@@ -155,6 +155,23 @@ export async function retryFlow<D>(
   }
   return drive(def, store, deps, { ...state, status: "running" }, tenant);
 }
+/**
+ * A caller's veto on DRIVING a loaded continuation, judged against the very
+ * snapshot the drive would use.
+ *
+ * The composition root has preconditions the engine cannot know (a persisted
+ * execution may only be driven by the configuration version it started under),
+ * and it used to check them by loading the row ITSELF before calling in - a
+ * second round trip on the webhook path and, worse, a second SNAPSHOT: the
+ * version checked was not provably the version driven. Returning an AppError
+ * refuses the drive; returning null proceeds.
+ *
+ * It receives the tenant the engine has just validated the row against, so a
+ * guard reporting on a continuation attributes it to the authority the load was
+ * checked under rather than to one it captured before the row was seen.
+ */
+export type ResumeGuard = (state: ExecutionState, tenant: TenantContext) => AppError | null;
+
 export async function resumeFlow<D>(
   def: FlowDefinition<D>,
   store: ExecutionStore,
@@ -162,6 +179,7 @@ export async function resumeFlow<D>(
   token: string,
   payload: FlowData,
   tenant: TenantContext,
+  guard?: ResumeGuard,
 ): Promise<FlowRunResult | { status: "not-found" }> {
   assertTenantContext(tenant);
   const state = await store.loadByToken(token);
@@ -177,6 +195,12 @@ export async function resumeFlow<D>(
   if (state.status !== "suspended" && state.status !== "failed") {
     return { executionId: state.id, status: state.status, data: state.data };
   }
+  // Only the two DRIVEABLE states are held to the caller's precondition: a
+  // completed execution is reported idempotently above without re-running
+  // anything, so refusing a doubly-fired webhook its "already finalized" answer
+  // would trade one silent wrong outcome for a loud one nothing can act on.
+  const refusal = guard?.(state, tenant) ?? null;
+  if (refusal) return { executionId: state.id, status: "failed", error: refusal, data: {} };
   // Failed resumes share retryFlow's saved-cursor, idempotent-write contract
   // (D-027), so transient mid-finalize errors remain recoverable.
   // Trusted flow context takes precedence over the (HMAC-token-authed but

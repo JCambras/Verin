@@ -24,6 +24,16 @@ The `FlowStep` / execution model has a first-class **suspended** state and a per
   `TenantContext`, token, and payload. The engine validates the runtime seal before the capability-keyed
   load, then compares organization ownership before it runs a step or writes.
 - Resume is **idempotent** (ADR-0009): resuming with the same token/payload twice yields exactly-once effect.
+- **Amended by ADR-0058 (D-246/D-255):** `resumeFlow` takes an optional caller-supplied **`ResumeGuard`** -
+  a veto on DRIVING the loaded continuation, judged against the very snapshot the drive will use. The
+  composition root has preconditions the engine cannot know (a persisted execution may only be driven
+  under the configuration version it started on), and it used to check them by loading the row ITSELF
+  before calling in: a second round trip on the webhook path and, worse, a second SNAPSHOT - the version
+  checked was not provably the version driven. The guard receives the state and the tenant the engine has
+  just validated the row against; returning an `AppError` refuses the drive, returning `null` proceeds.
+  Only the two DRIVEABLE states (`suspended`, `failed`) are held to it - a completed execution is still
+  reported idempotently without re-running anything, so a doubly-fired webhook keeps its "already
+  finalized" answer.
 
 The walking skeleton proves this end-to-end: account opening suspends at the e-sign step (fire-and-return),
 a simulated e-sign **webhook** resumes it, and the finalize write is audited + exactly-once.
@@ -43,8 +53,10 @@ a simulated e-sign **webhook** resumes it, and the finalize write is audited + e
 
 ## Consequences
 
-Fence: `flowstep-suspend-resume` proves the engine has a suspended state and a resume path (not a stub).
-Pairs with ADR-0009 (idempotent resume) and ADR-0007 (audited finalize). Charter-map id 6.
+Fence: `flowstep-suspend-resume` proves the engine has a suspended state and a resume path (not a stub),
+and (D-255) that a `ResumeGuard` judges the ONE snapshot the drive would use - it counts token loads and
+ships a passing-guard sibling so the refusal stays conditional. Pairs with ADR-0009 (idempotent resume)
+and ADR-0007 (audited finalize). Charter-map id 6.
 
 ## Deferred hardening (explicit, with triggers — D-021)
 

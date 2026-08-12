@@ -642,10 +642,23 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
           }
           return leftExpression?.getText() === rightExpression?.getText();
         };
+        /**
+         * A member chain's sources. GUARDED, because `expressionSources` follows
+         * assignments and this walk resets its `seen` set on every hop: the
+         * ordinary `node = node[segment]` cursor loop makes `node[segment]` a
+         * source OF `node`, so the two recursions fed each other until the stack
+         * ran out - a fence dying on ordinary code, which reads as a fence bug and
+         * gets "fixed" by rewriting the code it was analysing. A repeat visit can
+         * contribute no source the first did not.
+         */
         const memberSources = (
           owner: Node,
           requested: string | null,
+          walked: ReadonlySet<string> = new Set(),
         ): Node[] => {
+          const at = `${owner.getSourceFile().getFilePath()}:${owner.getPos()}:${owner.getEnd()}:${requested ?? ""}`;
+          if (walked.has(at)) return [];
+          const visitedHere = new Set(walked).add(at);
           const sources: Node[] = [];
           for (const source of expressionSources(owner)) {
             if (
@@ -658,9 +671,10 @@ export function moduleReferences(sf: SourceFile): ModuleReference[] {
               for (const nestedSource of memberSources(
                 source.getExpression(),
                 nestedMember,
+                visitedHere,
               )) {
                 sources.push(
-                  ...memberSources(nestedSource, requested),
+                  ...memberSources(nestedSource, requested, visitedHere),
                 );
               }
               continue;

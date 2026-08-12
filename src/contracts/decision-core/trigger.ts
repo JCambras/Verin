@@ -6,12 +6,12 @@
  */
 import { z } from "zod";
 import {
+  ActionIdSchema,
   DomainConfigVersionRefSchema,
   EvidenceKindSchema,
   EvidenceSourceRefSchema,
   FirmIdSchema,
   IntentIdSchema,
-  PrimitiveIdSchema,
   ReasonCodeSchema,
   RoleRefSchema,
   SecureEventRefSchema,
@@ -90,16 +90,18 @@ function triggerFirmId(trigger: Trigger): z.infer<typeof FirmIdSchema> {
 }
 
 /**
- * The governed intent both trigger paths produce: a primitive action plus bound
+ * The governed intent both trigger paths produce: a domain ACTION plus bound
  * slots, pinned to the domain-config version that will interpret it. Cross-tenant
  * assembly (an Intent scoped to one firm carrying another firm's trigger) is a
- * parse error, not a convention.
+ * parse error, not a convention. `action` is an ActionId, not a PrimitiveId: the
+ * domain's action vocabulary is declared by its configuration (prompt 10), while
+ * PrimitiveId is closed by the catalog prompt 9's loader validates against.
  */
 export const IntentSchema = TenantContextSchema.unwrap().extend({
   id: IntentIdSchema,
   trigger: TriggerSchema,
   domainConfigVersionRef: DomainConfigVersionRefSchema,
-  action: PrimitiveIdSchema,
+  action: ActionIdSchema,
   slots: z.record(z.string().min(1), SlotRefSchema).readonly(),
   createdAt: TimestampSchema,
 })

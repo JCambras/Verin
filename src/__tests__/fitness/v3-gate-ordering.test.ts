@@ -1373,18 +1373,28 @@ describe("v3 gate-ordering fence", () => {
       expect(problems.some((problem) => problem.includes("required activation mechanism") && problem.includes("does not exist"))).toBe(true);
     });
 
-    it("holds Gate B below green until both domain files are schema-valid and bound through the shared engine", () => {
+    it("holds Gate B below green while an un-mechanised evidence clause remains, and green once it is REPLACED by a real check", () => {
+      // Prompt 10 (ADR-0058) replaced Gate B's own prompt-10 evidence clause with
+      // the executable domain-configuration fence, which is exactly what this
+      // companion demands: an outcome clause with no mechanism can never read
+      // green, and the only honest way to clear it is to land the proof.
       const reg = clone(registry);
+      const unverifiable = {
+        kind: "evidence" as const,
+        ref: "a clause with no mechanism behind it",
+        prompt: 10,
+      };
       reg.gates = {
         B: {
           ...reg.gates.B!,
           entryGates: [],
           entryCondition: "None.",
-          requires: reg.gates.B!.requires.filter(
-            (requirement) =>
-              requirement.kind === "artifact" ||
-              requirement.ref === "both domain YAML files parse against the domain schema and bind through the shared engine without domain-specific core branches",
-          ),
+          requires: [
+            ...reg.gates.B!.requires.filter(
+              (requirement) => requirement.kind === "artifact" || requirement.kind === "fitness",
+            ),
+            unverifiable,
+          ],
         },
       };
       const deps = { invariantState: () => "active-pass", exists: () => true, ciRuns: () => true, fitnessPassed: () => true };

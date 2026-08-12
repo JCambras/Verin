@@ -14,8 +14,14 @@ interface Deps {
   hits: string[];
 }
 
-function makeStore(): ExecutionStore {
+/** Counts token loads: the resume path is behind a serializing mutex in production. */
+interface CountingStore extends ExecutionStore {
+  tokenLoads(): number;
+}
+
+function makeStore(): CountingStore {
   const rows = new Map<string, ExecutionState>();
+  let tokenLoads = 0;
   return {
     async create(s) {
       rows.set(s.id, { ...s });
@@ -27,10 +33,12 @@ function makeStore(): ExecutionStore {
       return rows.get(id) ?? null;
     },
     async loadByToken(token) {
+      tokenLoads += 1;
       // In-memory TEST FAKE lookup; the production token/HMAC comparison uses timingSafeEqual (esign.ts).
       // nosemgrep: ajinabraham.njsscan.crypto.timing_attack_node.node_timing_attack
       return [...rows.values()].find((r) => r.resumeToken === token) ?? null;
     },
+    tokenLoads: () => tokenLoads,
   };
 }
 
@@ -88,6 +96,47 @@ describe("flowstep suspend/resume fence", () => {
     const retry = await resumeFlow(flaky, store, deps, "tk", {}, TENANT); // retried, not wedged
     expect("status" in retry && retry.status).toBe("completed");
     expect(attempts).toBe(2);
+  });
+
+  /**
+   * A CALLER'S PRECONDITION IS JUDGED AGAINST THE SNAPSHOT THE DRIVE USES.
+   *
+   * The composition root refuses to resume an execution bound to a superseded
+   * configuration version. It used to load the row ITSELF to check that and then
+   * call in, which loaded the row a second time - a third sequential round trip on
+   * the webhook path against a store that serializes every operation, and two
+   * different snapshots, so the version checked was not provably the version
+   * driven. Both halves are asserted: ONE load, and the guard sees the same state.
+   */
+  it("enforces: a resume guard judges the ONE snapshot the drive would use", async () => {
+    const store = makeStore();
+    const deps: Deps = { hits: [] };
+    await startFlow(flow, store, deps, { executionId: "e-guard", tenant: TENANT, data: { mark: "start" } });
+    const before = store.tokenLoads();
+    const seen: ExecutionState[] = [];
+    const refused = await resumeFlow(flow, store, deps, "tok-1", { signed: true }, TENANT, (state) => {
+      seen.push(state);
+      return { code: "CONFLICT", message: "superseded" };
+    });
+    expect(store.tokenLoads() - before).toBe(1);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.id).toBe("e-guard");
+    expect(seen[0]!.data["mark"]).toBe("start");
+    expect("status" in refused && refused.status).toBe("failed");
+    // Refusing to DRIVE never advances or fails the persisted row: the execution
+    // stays resumable, so the sender's later redelivery still completes it.
+    expect(deps.hits).toEqual(["a", "b"]);
+    const persisted = await store.loadById("e-guard", undefined as never);
+    expect(persisted?.status).toBe("suspended");
+  });
+
+  it("enforces: a guard that passes drives normally, so the refusal is conditional", async () => {
+    const store = makeStore();
+    const deps: Deps = { hits: [] };
+    await startFlow(flow, store, deps, { executionId: "e-open", tenant: TENANT, data: {} });
+    const resumed = await resumeFlow(flow, store, deps, "tok-1", {}, TENANT, () => null);
+    expect("status" in resumed && resumed.status).toBe("completed");
+    expect(deps.hits).toEqual(["a", "b", "c"]);
   });
 
   describe("detects (companion): the engine is not an execute-to-completion stub", () => {

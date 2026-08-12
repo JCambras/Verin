@@ -110,7 +110,11 @@ const TRUSTED_FACTORY_CALLS = [
     declaration: "src/contracts/principal.ts",
     allowed: [
       { file: "src/app/login/actions.ts", owner: "loginAction" },
-      { file: "src/infrastructure/wire.ts", owner: "makeDeps" },
+      // Prompt 10 (ADR-0058) moved the account-opening steps out of a hand-coded
+      // flow and into config/domains/account-opening.yaml; the finalize command
+      // adapter is where the initiating advisor's identity is re-established for
+      // the audited write, and it is the only place that delegation happens.
+      { file: "src/infrastructure/execution-adapters.ts", owner: "finalize" },
     ],
   },
   {
@@ -142,8 +146,9 @@ const REVIEWED_FACTORY_EXPORTS = new Map<string, ReadonlySet<string>>([
     "tokenizeRecord", "tokenizeText",
   ])],
   ["src/domain/observability/safe-values.ts", new Set([
-    "authorityObservabilityId", "generatedObservabilityId",
-    "keyedDigestObservabilityId", "observabilityIdOrRedacted",
+    "authorityObservabilityId", "configurationDiagnosisId",
+    "generatedObservabilityId", "keyedDigestObservabilityId",
+    "observabilityIdOrRedacted",
   ])],
 ]);
 

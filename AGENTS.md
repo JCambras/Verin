@@ -158,6 +158,61 @@ BAND WORD and the panel's factor cards a band, a bar and a sentence, because a b
 demonstration-derived score carries no watermark (D-200). The directory's world-derived rows AND each
 household's folded origin are built once per worldDigest; only the fold over the caller's own
 authorized book is per request.
+The domain configuration schema (v3 prompt 10, ADR-0056) makes a decision DOMAIN data:
+The domain configuration schema (v3 prompt 10, ADR-0057) makes a decision DOMAIN data:
+The domain configuration schema (v3 prompt 10, ADR-0058) makes a decision DOMAIN data:
+`src/domain/config/` holds the thirteen-section grammar, the seven-stage loader (inert -> grammar ->
+reference closure -> type check -> coherence -> completeness -> identity; every failure a value, never a
+throw), the firm binder, the prompt-9 registry derivation, the plan compiler, the version diff, and the
+intake/label projections. The DATA is `config/domains/{account-opening,money-movement}.yaml` plus the
+`versions.json` content-hash pins; exactly one module reads that directory
+(`src/infrastructure/config/domain-config-source.ts`), and what a configured `commandType` DOES - its
+span, SQL and audit action - lives in `src/infrastructure/execution-adapters.ts` as static literals the
+observability fence still derives from real call sites. [`docs/domain-config.md`](./docs/domain-config.md)
+is the normative contract; [`docs/domain-config-gaps.md`](./docs/domain-config-gaps.md) is the required
+gap report. Load-bearing rules an agent trips over:
+- **THE GRAMMAR RULE:** every non-label string is an id from a closed vocabulary, and every composite
+  value (conflict/idempotency keys, command payloads, copy) comes from the closed SEGMENT GRAMMAR. The
+  ONLY interpolation in the system is `{slot:…}`/`{context:…}`; any other brace is a load error.
+- **A domain is DATA, never a module.** `src/domain/workflow/flows/account-opening.ts` is DELETED
+  (ADR-0010 amended); the shipped `/app/account-opening` flow and its form are COMPILED from the YAML, so
+  deleting that file breaks the live journey (X-9; proof log PF-295). Invariant 3 is active on the
+  `domain-configuration` fence, whose forbidden vocabulary DERIVES from the published documents' own ids.
+- **Tenancy enters once,** at `bindDomainConfig(loaded, firmRegistry)`; the document may not carry a
+  `firmId` anywhere. A parameter needing a tenant-scoped ref uses the one `{ $ref: { kind, class } }`
+  placeholder, and never in a key-shaping parameter (D-184/D-185).
+- **A configuration refusal is minted ONCE and classified by CAUSE** (`docs/domain-config.md` §10, fence
+  RULES I-M). A config module states a typed fault; the `ConfiguredRefusal` port mints it. Every "this
+  deployment cannot resolve or compile its published configuration" refusal is operator-recoverable and
+  therefore `retry-later` wherever it arises, and a surface READS that instruction
+  (`clientRetryFor`, `src/contracts/client-retry.ts`) instead of choosing one or pattern-matching a
+  status (a surface whose other arm carries no instruction asks `causeRetryFor` rather than inventing a
+  fallback it can never send, D-265). No deployment internal - document path, file name, env var, hash,
+  version id - reaches user-facing copy (static literals included) or the external provider: the wire
+  gets a generic sentence plus the correlation reference, and the diagnosis goes to the operator as the
+  REGISTERED fields `configStage`/`configCode`/`configPath` (D-256..D-263). A fault LOCATION is BUILT
+  from segments, never interpolated: `src/domain/config/errors.ts` states the channel's segment grammar
+  and length ceiling once, `configError` carries only the deepest prefix that statement can express, and
+  an author-chosen key it cannot name is refused at admission - so a fault reports the deepest nameable
+  ancestor instead of `[REDACTED]` or a node the document does not have (D-266). A location and the
+  limit that ended it are ONE value, `ConfigPath`: build it with `configPathFrom`/`configPathOfText`,
+  step it with `childConfigPath` (a key) or `childConfigSubscript` (a list position, under the SAME
+  ceiling), and hand `configError` the STEP - it takes no limit argument, and passing the step's `.path`
+  instead drops the limit and reports a truncated location as an exact one, which the fence rejects with
+  `file:line`. The two limits reach the operator as the registered `configPathLimit`
+  (`unnameable-segment` means RENAME THE KEY, `path-too-long` means FLATTEN THE GRAPH); no limit at all
+  means the path IS the location (D-268/D-269). A surface that renders
+  configured copy resolves it up front and renders the refusal when it cannot: the demo station page is
+  server-rendered, so deleting the published document must break that journey visibly, never as a stack
+  trace (D-267).
+- **Never name a Zod schema type (or any deeply recursive type) in an exported `src/domain/` signature**
+  (D-222): the sealed-authority fences expand parameter types structurally and a schema generic makes
+  that walk exhaust its heap - the worker DIES mid-file and vitest reports a partial run, not a failure.
+  Export named types and narrow ports; each section module carries a collapsed-export note.
+- Editing a published document without bumping its `version` fails the build; update `versions.json` and
+  `authorship.changeFromParent` (checked against the diff computed from the parent's bytes whenever the
+  loader is given them - today only the empty baseline a first version diffs against; a version declaring
+  a parent owes a non-empty record and no more until PC-4 lands) in the same commit.
 
 The walking skeleton (v3 prompt 3, D-036) lives at `/app/demo` (launcher + `/app/demo/[station]`):
 typed view models `src/app/demo/model.ts`, fake service `src/app/demo/journey.ts` + `build-*.ts`,
@@ -167,7 +222,9 @@ branch data `src/app/demo/data.ts` fenced EQUAL to scenarios.yaml, and surfaces 
 `src/__tests__/fitness/demo-surface-completeness.test.ts`, which binds the normative section 4 list to
 the exact twelve surface identities in the SHA-pinned ratified demo contract, the typed manifest, each
 route case's imported component and exact journey view model, its resolved identifier spread without
-overrides, the dynamic page's reachable return, and policy authoring's query-derived approval input,
+overrides, the dynamic page's reachable return, its resolution of `demoVocabulary` for the SAME firm the
+URL resolved with the rendered refusal as the ONLY admitted early exit and the resolved value driving
+`getJourney` (D-267), and policy authoring's query-derived approval input,
 the exact ordered clickable journey controls without registered Playwright hooks, and screenshots that
 verify the corresponding URL and loaded marker. CI then runs
 `scripts/demo-screen-artifacts.ts` to require every canonical artifact to exist and be non-empty, and
@@ -231,7 +288,8 @@ Four layers under `src/`, dependency rule points inward (`contracts ← domain �
   (`Result<T,E>`, `AppError`, roles) plus the v3 decision-core Zod contracts
   (`contracts/decision-core/`, ADR-0029; zod is the layer's ONLY permitted external import - a
   second one needs its own ADR).
-- `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine + flow definitions.
+- `src/domain/` — entities, use-cases, ports (interfaces), the workflow engine (`workflow/engine.ts`;
+  flow definitions are COMPILED from domain configuration, never authored here - ADR-0058).
 - `src/infrastructure/` — adapters/port implementations. `process.env` is read ONLY in
   `src/infrastructure/config` (fence: `no-process-env`).
 - `src/app/` — Next.js App Router + the presentation tier (`app/presentation/`). Any demo/UI

@@ -31,7 +31,7 @@
     },
     {
       "id": 3,
-      "title": "No unlabeled synthetic data, ever (incl. derived artifacts \u2014 ADR-0022)",
+      "title": "No unlabeled synthetic data, ever (incl. derived artifacts — ADR-0022)",
       "status": "enforced",
       "phase": "C/F/W1",
       "mechanisms": [
@@ -793,6 +793,38 @@
         {
           "type": "adr",
           "ref": "docs/adr/0053-policy-ast-and-interpreter.md"
+        }
+      ]
+    },
+    {
+      "id": "domain-config-as-data",
+      "title": "A decision domain is DATA, not code: both ratified domains are published as inert, firm-neutral, hash-pinned configuration that loads and binds through one versioned engine schema, and no decision-core module, directory, identifier, or literal is named for a domain (v3 prompt 10, invariant 3, ADR-0058)",
+      "status": "enforced",
+      "phase": "v3-p10",
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/domain-configuration.test.ts"
+        },
+        {
+          "type": "config",
+          "ref": "config/domains/account-opening.yaml"
+        },
+        {
+          "type": "config",
+          "ref": "config/domains/money-movement.yaml"
+        },
+        {
+          "type": "config",
+          "ref": "config/domains/versions.json"
+        },
+        {
+          "type": "adr",
+          "ref": "docs/adr/0058-domain-configuration-schema.md"
+        },
+        {
+          "type": "procedure",
+          "ref": "docs/domain-config.md"
         }
       ]
     }

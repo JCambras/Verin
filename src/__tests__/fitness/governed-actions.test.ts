@@ -1301,6 +1301,22 @@ export function deriveGovernedSinks(project: Project): GovernedSink[] {
  */
 export const REVIEWED_PRE_AUTH_PII_READS: ReadonlyArray<{ callable: string; why: string }> = [
   {
+    callable: "src/infrastructure/config/configured-flow.ts :: configuredFlow",
+    why: "compiles the PUBLISHED DOCUMENT into a runnable plan, and reads as PII only because a compiled step's adapter PORT is PII-bearing - the port is a type, carrying no data at all. Same standing as loadPublishedDomainConfig below: it is read before any firm is bound, so a tenant-scoped grant is unavailable rather than merely absent, and every step the plan then drives takes its own sealed tenant at invocation.",
+  },
+  {
+    callable: "src/infrastructure/config/domain-config-source.ts :: loadDomainLabels",
+    why: "returns the LABEL projection of a domain configuration bound for one firm - kind and slot ids mapped to display strings. Same reasoning as loadPublishedDomainConfig below: platform configuration, no household data, and the firm arrives as an explicit registry argument rather than as a grant.",
+  },
+  {
+    callable: "src/infrastructure/config/domain-config-source.ts :: loadFirmClasses",
+    why: "returns the CHECKLIST of firm-neutral classes a published document references - execution-target, evidence-source, approval-template and role CLASS names a firm must answer. It is read to BUILD a firm registry, so it necessarily precedes any firm, exactly as loadPublishedDomainConfig below does; the only reason it reads as PII at all is that 'evidenceSources' names the registry it fills.",
+  },
+  {
+    callable: "src/infrastructure/config/domain-config-source.ts :: loadPublishedDomainConfig",
+    why: "a domain configuration is PLATFORM data with zero firm identity and zero household data (prompt 10, ADR-0058): it names evidence KINDS and slot vocabulary, never an observation or a subject. It is read BEFORE any tenant exists - binding a firm to it is a separate, later call - so a tenant-scoped grant is not merely absent here, it is unavailable. The firm-neutrality claim is enforced structurally by bindDomainConfig, which refuses a document carrying a firmId anywhere in its graph.",
+  },
+  {
     callable: "src/infrastructure/pii/scrub.ts :: scrub",
     why: "PII scrub boundary returns an opaque structural clone only after recursively redacting every sensitive field and value.",
   },

@@ -50,11 +50,20 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
   { ref: "src/infrastructure/wire.ts :: resumeAccountOpeningByToken", why: "e-sign resume-token capability" },
   { ref: "src/infrastructure/wire.ts :: esignCallback", why: "verified e-sign signature and resume-token capability" },
   { ref: "src/infrastructure/wire.ts :: computeEsignSignature", why: "pure e-sign simulation signer" },
+  {
+    ref: "src/infrastructure/config/configured-flow.ts :: configuredFlow",
+    why: "compiles the PUBLISHED DOCUMENT and reads no row - its only tie to the store is the adapter module that also publishes the supported command vocabulary; the tenant scoping that matters is on the execution the compiled steps then drive, which each step's own port carries",
+  },
 ];
 
 const PORT_ESCAPES = new Set([
   "src/domain/ledger/projections.ts :: foldDecisionProjection.<call>",
   "src/domain/observability/safe-values.ts :: isSafeObservabilityPrimitive.<call>",
+  // The configuration DIAGNOSIS names a published document, not a tenant's data:
+  // the document is firm-neutral by construction (tenancy enters only at
+  // bindDomainConfig), so there is no tenant to scope it by, and the value is
+  // shape-checked rather than trusted.
+  "src/domain/observability/safe-values.ts :: configurationDiagnosisId.<call>",
   "src/domain/observability/safe-values.ts :: generatedObservabilityId.<call>",
   "src/domain/observability/safe-values.ts :: keyedDigestObservabilityId.<call>",
   "src/domain/observability/safe-values.ts :: observabilityIdOrRedacted.<call>",
@@ -105,6 +114,78 @@ const PORT_ESCAPES = new Set([
   "src/domain/policy/load-checks.ts :: resolveValueType.<call>",
   "src/domain/policy/load-effects.ts :: checkEffects.<call>",
   "src/domain/policy/registries.ts :: catalogPrimitiveMap.<call>",
+  // The DOMAIN CONFIGURATION module (prompt 10, ADR-0058) is PURE COMPUTATION
+  // over a FIRM-NEUTRAL document. A configuration carries no firm identity by
+  // construction - `bindDomainConfig` refuses one found anywhere in the graph -
+  // and the module performs no repository or port access at all: it parses,
+  // closes references, derives a dataflow order, and projects. Tenancy enters
+  // exactly once, as bindDomainConfig's explicit FirmRegistry argument, which is
+  // the firm's own declared identifiers rather than ambient authority; the sealed
+  // TenantContext exists to scope a REPOSITORY call, and there is none to scope
+  // here. Same reasoning as foldDecisionProjection and the prompt-9 policy
+  // interpreter above.
+  "src/domain/config/bind.ts :: bindDomainConfig.<call>",
+  "src/domain/config/bind.ts :: firmIdentityPaths.<call>",
+  "src/domain/config/bind.ts :: requiredFirmClasses.<call>",
+  "src/domain/config/bindings.ts :: orderBindings.<call>",
+  "src/domain/config/diff.ts :: changeDeclarationMismatch.<call>",
+  "src/domain/config/diff.ts :: diffDomainConfigs.<call>",
+  "src/domain/config/document.ts :: canonicalConfigJson.<call>",
+  "src/domain/config/document.ts :: domainConfigVersionId.<call>",
+  "src/domain/config/errors.ts :: carriableConfigPath.<call>",
+  "src/domain/config/errors.ts :: childConfigPath.<call>",
+  "src/domain/config/errors.ts :: childConfigSubscript.<call>",
+  "src/domain/config/errors.ts :: configError.<call>",
+  "src/domain/config/errors.ts :: configPathFrom.<call>",
+  "src/domain/config/errors.ts :: configPathOfText.<call>",
+  // The port EVERY configuration refusal is minted through (D-260): each arm
+  // carries one typed loader fault out of pure domain code so the composition
+  // root can state it to an operator, and reaches no repository. The shipped
+  // implementation mints and logs; the tenant scoping that matters there is on
+  // the execution the refused work was driving, which its own `invoke` carries.
+  "src/domain/config/errors.ts :: ConfiguredRefusal.intakeMismatch",
+  "src/domain/config/errors.ts :: ConfiguredRefusal.uncompilable",
+  "src/domain/config/errors.ts :: ConfiguredRefusal.undeclaredCopy",
+  "src/domain/config/errors.ts :: ConfiguredRefusal.unrunnableStep",
+  "src/domain/config/evidence.ts :: durationSeconds.<call>",
+  "src/domain/config/intake-view.ts :: admitIntakeSubmission.<call>",
+  "src/domain/config/intake-view.ts :: optionalIntakeValue.<call>",
+  "src/domain/config/intake-view.ts :: requiredIntakeValue.<call>",
+  "src/domain/config/intake-view.ts :: unmappedIntakeFault.<call>",
+  "src/domain/config/intake.ts :: intakeFormOf.<call>",
+  "src/domain/config/labels.ts :: domainLabelsOf.<call>",
+  "src/domain/config/load-closure.ts :: checkBucketSource.<call>",
+  "src/domain/config/load-closure.ts :: checkEvidenceWindows.<call>",
+  "src/domain/config/load-closure.ts :: checkSource.<call>",
+  "src/domain/config/load-closure.ts :: requireMember.<call>",
+  "src/domain/config/load-closure.ts :: resolveSourceType.<call>",
+  "src/domain/config/load-coherence.ts :: checkCopyCompleteness.<call>",
+  "src/domain/config/load-coherence.ts :: checkCopyTemplates.<call>",
+  "src/domain/config/load-coherence.ts :: checkForm.<call>",
+  "src/domain/config/load-coherence.ts :: checkPlanAcyclicity.<call>",
+  "src/domain/config/load-coherence.ts :: checkReachability.<call>",
+  "src/domain/config/load-references.ts :: checkIdentity.<call>",
+  "src/domain/config/load-references.ts :: checkReferences.<call>",
+  "src/domain/config/load.ts :: loadDomainConfig.<call>",
+  "src/domain/config/load.ts :: shippedConfigEnvironment.<call>",
+  "src/domain/config/parameters.ts :: containsParameterRef.<call>",
+  "src/domain/config/parameters.ts :: contextKeyReads.<call>",
+  "src/domain/config/parameters.ts :: neutralRefResolver.<call>",
+  "src/domain/config/parameters.ts :: parameterRefClasses.<call>",
+  "src/domain/config/parameters.ts :: ParameterOwner.parseParameters",
+  "src/domain/config/parameters.ts :: RefResolver.<call>",
+  "src/domain/config/parameters.ts :: resolveParameters.<call>",
+  "src/domain/config/plan-compiler.ts :: compileFlowDefinition.<call>",
+  "src/domain/config/registries.ts :: policyRegistriesFor.<call>",
+  "src/domain/config/segments.ts :: bucketOf.<call>",
+  "src/domain/config/segments.ts :: renderKeySegments.<call>",
+  "src/domain/config/segments.ts :: renderTemplate.<call>",
+  "src/domain/config/segments.ts :: SourceResolver.<call>",
+  "src/domain/config/segments.ts :: templateIsInert.<call>",
+  "src/domain/config/segments.ts :: templatePlaceholders.<call>",
+  "src/domain/config/segments.ts :: TemplateValues.context",
+  "src/domain/config/segments.ts :: TemplateValues.slot",
+  "src/domain/config/vocabulary.ts :: kebabId.<call>",
   "src/domain/policy/registries.ts :: deriveContextKeys.<call>",
   "src/domain/policy/registries.ts :: evidenceKindDescriptor.<call>",
   "src/domain/policy/registries.ts :: instructionKindDescriptor.<call>",

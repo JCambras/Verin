@@ -145,10 +145,10 @@
           "prompt": 10
         },
         {
-          "kind": "evidence",
-          "ref": "both domain YAML files parse against the domain schema and bind through the shared engine without domain-specific core branches",
+          "kind": "fitness",
+          "ref": "src/__tests__/fitness/domain-configuration.test.ts",
           "prompt": 10,
-          "note": "NO MECHANISM YET: the prompt-10 domain schema, loader, shared-engine binding, and both domain YAML files do not exist. File existence alone cannot prove valid configuration or shared-engine binding, so this clause stays unverifiable until prompt 10 replaces it with an adversarial fitness requirement covering invalid, empty, and domain-specific configurations."
+          "note": "REPLACES the prompt-10 evidence clause (ADR-0058): both domain YAML files now parse against the domain schema and bind through the shared engine under an adversarial fitness check that loads and binds the shipped bytes for two firms, refuses invalid, non-inert, firm-identified and domain-named configurations, and proves an emptied forbidden vocabulary cannot read clean. File existence alone never proved that outcome, which is why the clause was unverifiable until now."
         },
         {
           "kind": "evidence",
@@ -492,8 +492,8 @@
       "group": "foundation",
       "gate": "B",
       "name": "No core module, directory, or evaluator branch is named for a decision domain",
-      "status": "not-yet-active",
-      "activatesWhen": "the ADR-0010 account-opening flow definition migrates into the domain-configuration system (Wave B prompt 10, marriage-map C10) so no decision domain survives as a core module, directory, or evaluator branch; the naming fence ships in that PR",
+      "status": "active",
+      "activatesWhen": "",
       "activationPrompts": [
         10
       ],
@@ -507,14 +507,27 @@
           "ref": "src/__tests__/fitness/domain-configuration.test.ts"
         }
       ],
-      "mechanisms": [],
-      "notes": "GATED AT B, NOT A (ADR-0055). The decision-core subsystems scaffolded in Wave A (ADR-0026 / marriage-map C6) are substrate, not activation: this invariant's implementation prerequisite is prompt 10, which lands in Wave B, so requiring it at Gate A made Gate A unreachable by construction. Until prompt 10 exists, no document, proof, or UI may claim this invariant is implemented. Activation requires both pinned domain YAML artifacts and the pinned domain-configuration fitness mechanism, which must adversarially prove schema validation and shared-engine binding for both files; an unrelated naming-only fence cannot activate invariant 3."
+      "mechanisms": [
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/domain-configuration.test.ts"
+        },
+        {
+          "type": "file",
+          "ref": "config/domains/account-opening.yaml"
+        },
+        {
+          "type": "file",
+          "ref": "config/domains/money-movement.yaml"
+        }
+      ],
+      "notes": "ACTIVATED by prompt 10 (ADR-0058). The ADR-0010 account-opening flow definition is DELETED: config/domains/account-opening.yaml compiles to the FlowDefinition the shipped generic engine drives, so removing that file breaks the shipped /app/account-opening journey (the honesty check was run). Money movement ships as the second document against the SAME firm-neutral engine schema, and its vocabulary is reachable today through the demo journey's bound labels. Scope is the captain's invariant-3-scope ruling (2026-07-28): the fence derives its forbidden vocabulary from the published documents' own ids - so a third domain cannot leave it stale - and scopes it to contracts/decision-core, contracts/primitives, domain/config and domain/policy. Shipped house-CRM record vocabulary, table names, audit action codes, public routes and established observability names are outside that scope and were not renamed; the enumerated allow-list holds ONE entry (prompt 8's horizon-projection falsification criterion, whose whole content is the domain name it names), justified in ADR-0058 and proved load-bearing. The fence does not stop at file existence: it runs the REAL loader and binder over the shipped bytes for two firms and proves the binding differs only by firmId, refuses non-inert YAML and any firm identity, holds each published version to its pinned content hash, and keeps config/domains/ readable by exactly one adapter. An anti-vacuity companion proves an EMPTIED vocabulary fails rather than passing."
     },
     {
       "id": 4,
       "group": "foundation",
       "gate": "A",
-      "name": "Import boundaries match v3 \u00a716",
+      "name": "Import boundaries match v3 §16",
       "status": "not-yet-active",
       "activatesWhen": "the §16 module subsystems exist inside the four layers - the Wave A subjects (prompts 5-7) activate it at Gate A, and each v3 dependency rule (decision/ never imports llm/, no module imports config/, ...) lands as a ts-morph fence in the wave that creates its subject (ADR-0026), extending the same fence family without re-gating this invariant",
       "activationPrompts": [

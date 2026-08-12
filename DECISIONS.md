@@ -3336,7 +3336,8 @@ Each becomes a fence in the PR that builds its subject; none is a
 `not-yet-active` v3-invariants row, because that registry tracks the ratified
 v3 invariant set and these are implementation obligations under ADR-0039.
 
-1. **Prompt 10 - restriction evidence must be declared required.**
+1. **Prompt 10 - restriction evidence must be declared required.** *(NOT LANDED - see the
+   status correction below.)*
    `restriction-screen` is fail-open on absent evidence by design:
    `restrictions.matched.<kind> = false` means "screened against everything
    supplied", never "the evidence was verified present", so a bundle assembled
@@ -3347,7 +3348,8 @@ v3 invariant set and these are implementation obligations under ADR-0039.
    error naming the primitive and the undeclared kinds. Until that check exists,
    nothing stops a governed action clearing over regulatory holds nobody
    assembled (docs/primitive-rationale.md, `restriction-screen`).
-2. **Prompt 10 - binding multiplicity is a fail-closed load check.** The four
+2. **Prompt 10 - binding multiplicity is a fail-closed load check.** *(NOT LANDED -
+   see the status correction below.)* The four
    unscoped-key primitives (`net-availability`, `horizon-projection`,
    `sufficiency-check`, `restriction-screen`) are bound AT MOST ONCE per domain
    configuration, and the two parameter-scoped ones (`candidate-selection` by
@@ -3379,6 +3381,16 @@ v3 invariant set and these are implementation obligations under ADR-0039.
    assembled; `sourcesToReconcile` (min 2) already names the sources the
    requirement is derived from (docs/primitive-rationale.md,
    `evidence-reconciliation`).
+
+**Status correction, 2026-08-12 (prompt 10 shipped; see D-264).** Obligations 1 and
+2 were owed by prompt 10 and DID NOT LAND. Prompt 10 built their subject - the
+config loader is `src/domain/config/` - so neither is an unfenceable obligation
+any more; both are unmet ones. They are re-owned by name in D-264
+(`fu-restriction-evidence-required` to prompt 15,
+`fu-binding-multiplicity-check` to prompt 16), and the documents that asserted
+them as binding and fail-closed have been corrected to say what is true today.
+Obligations 3 and 4 are unchanged: their subjects (prompts 14 and 15) still do
+not exist.
 
 **Alternatives rejected:** `not-yet-active` v3-invariants rows (that registry is
 the ratified 30-invariant v3 set, not a scratchpad for per-ADR implementation
@@ -8435,3 +8447,1362 @@ reverted; versions 9 and 10 keep their shipped bytes and `fixtures/world` is unt
 `src/infrastructure/store/demo-tenant.ts` alone would leave the seed and the migration free to disagree
 about which org is the demonstration one, so it reverts with the seed's imports and the upgrade case
 that proves the repair.
+## D-191 - Prompt 10: a decision domain is expressed as data, and the schema lives in `src/domain/config/`
+## D-204 - Prompt 10: a decision domain is expressed as data, and the schema lives in `src/domain/config/`
+## D-220 - Prompt 10: a decision domain is expressed as data, and the schema lives in `src/domain/config/`
+
+**What.** v3 prompt 10's domain configuration schema lands as `src/domain/config/` (grammar, seven-stage
+loader, firm binder, prompt-9 registry derivation, plan compiler, version diff, projections), with the
+YAML adapter in `src/infrastructure/config/domain-config-source.ts` and the DATA at repo-root
+`config/domains/`. The ratified deliverable list names `src/config/domain-schema.ts`.
+
+**Why.** A fifth top-level `src/` directory has no layer in the dependency-rule fence, no line-budget
+bucket, and v3 §16's own rule is that no module imports from `config/` - a `src/config/` module everything
+imports would contradict the module map it comes from. Putting the schema in `contracts/` was also
+rejected: there is no contracts-layer consumer, and `knip.json` treats `src/contracts/**` as an entry
+point, which would silently exempt ~2,000 lines from charter #5's dead-export gate.
+
+**Alternatives considered.** `src/config/` (as written); `src/contracts/decision-core/`.
+
+**Revert path.** ADR-0058 records the deviation; moving the module later is a mechanical import rewrite,
+and the fence's `DECISION_CORE_ROOTS` would move with it.
+
+---
+
+## D-221 - Prompt 10: `Intent.action` becomes `ActionId`, not `PrimitiveId`
+
+**What.** `Intent.action` was typed `PrimitiveId`. It is now `ActionId`, a new brand.
+
+**Why.** It conflated a domain's ACTION vocabulary (`distribute-cash`, `open-account`) with the primitive
+catalog's ids (`net-availability`). Prompt 9's loader rejects an unknown `primitiveId` against the
+catalog; sharing the brand made that check ambiguous, and parked a domain-named value inside a type whose
+name says "primitive". Both are branded `string` at runtime, so this is compile-time separation only: no
+hash preimage, no stored bytes, no fixture change - verified by the full suite passing unchanged.
+
+**Alternatives considered.** Keeping `PrimitiveId` and closing action ids against the configuration's
+intent list, accepting the weaker prompt-9 check.
+
+**Revert path.** Retype the one field; delete the brand.
+
+---
+
+## D-222 - Prompt 10: a Zod schema type may not appear in an exported `src/domain/` signature
+
+**What.** No exported function under `src/domain/` names a Zod schema type (or any deeply recursive type)
+in its signature, and every composed schema in `src/domain/config/` exports a NAMED type plus a
+`z.ZodType` view rather than its inferred generic. The one place a schema is touched across a module
+boundary is an UNEXPORTED adapter beside the loader (`parameterOwnerOf`).
+
+**Why.** Discovered by bisection, not by taste. The repo's sealed-authority fences expand a parameter's
+type STRUCTURALLY - skipping callable members, recursing into non-callable ones - and a `z.ZodType`
+carries deep non-callable internals. With ~20 composed schemas in one module, `tenant-context-required`
+exhausted its worker's heap ("Ineffective mark-compacts near heap limit") and DIED mid-file. Vitest
+reports that as a partial run (`Test Files 61 passed (62)`), not a failure: **a fence that stops running
+looks greener than one that fails.** Raising the heap did not help at 8 GB, 12 GB or 20 GB, because the
+cost is structural, not capacity.
+
+Also corrected here: prompt 8's `PublishedFactValue` is a recursive union, so `CatalogPrimitive` is
+expensive for the same walk; the parameter port narrows to the three members it needs.
+
+**Alternatives considered.** Raising the fitness worker heap (rejected - not a capacity problem, and it
+would hide the next occurrence); adding a known-empty memo to the shared authority walk in
+`_fence-utils.ts` (sound and tempting, but an unrequested change to a load-bearing shared util while the
+cause was on this side - recorded in `docs/domain-config-gaps.md` §5 as a standing hardening item so the
+hazard is not lost).
+
+**Revert path.** None wanted; the rule is recorded in `docs/domain-config.md` §9 and in the
+collapsed-export comment in each section module.
+
+---
+
+## D-223 - Prompt 10: user-typed text may reach a command payload, never a coordination key
+
+**What.** A `text`-typed slot may appear in an execution command's payload projection. It may NOT appear
+in a conflict key or an idempotency key. Load-checked.
+
+**Why.** This corrects the prompt-10 design report, which forbade a `text` slot in a payload outright.
+Account opening FALSIFIES that rule: its payloads are a household name and a contact name - user-typed
+text is exactly what a CRM create is. The real hazard is narrower and sharper: unbounded, editable bytes
+inside a coordination or idempotency identity make that identity unstable, which is how two requests stop
+colliding on the key that exists to make them collide.
+
+**Alternatives considered.** Keeping the blanket rule (would have made account opening inexpressible);
+allowing text everywhere (loses the concurrency guarantee).
+
+**Revert path.** One predicate in `load-closure.ts`.
+
+---
+
+## D-224 - Prompt 10: account opening declares NO conflict key, and that is a finding
+
+**What.** `config/domains/account-opening.yaml` ships `conflictKeys: []`. Double submission is guarded by
+the per-execution idempotency scope instead.
+
+**Why.** A conflict key names the RESOURCE two requests would contend for. Account opening's subject -
+the household - does not exist until the plan's first step creates it, so no key is derivable from the
+intent alone. The ratified `ExecutionStep` requires at least one conflict key per external action, so this
+is a real constraint handed to prompt 25: an existence-CREATING action needs a decided answer for what it
+collides on. Recorded in `docs/domain-config-gaps.md` (MR-8) rather than papered over with a synthetic key
+built from the execution id, which would have looked like coordination while coordinating nothing.
+
+**Alternatives considered.** A key over the household NAME (a `text` slot - refused by D-223, and wrong:
+two advisors may legitimately open accounts for identically-named households).
+
+**Revert path.** Add the section once prompt 25 rules on it.
+
+---
+
+## D-225 - Prompt 10: the finalize fan-out stays ONE command
+
+**What.** `application.finalize` remains a single configured command whose adapter performs three writes
+(financial account, funding task, application completion), keeping the exact sub-keys the hand-coded flow
+derived from the application's own minted idempotency key.
+
+**Why.** The captain's `account-opening-migration-depth` ruling is behavior-preserving. Splitting the
+fan-out into three capabilities - which the design report recommended, and which is probably right
+eventually - changes the span shape the `observability-coverage` fence and the untouched integration test
+pin (`account-opening.finalize`), and changes the audit shape. That is prompt 25's call, and it is
+recorded as a deferral rather than taken here.
+
+**Alternatives considered.** Three capabilities with three spans (would have required editing the
+integration test the ruling says must pass unchanged).
+
+**Revert path.** Split the capability and its adapter; update the observability vocabulary in the same PR.
+
+---
+
+## D-226 - Prompt 10: `wire-authority.test.ts` is the one test the migration edits, and why
+
+**What.** `src/__tests__/integration/account-opening.test.ts`, `e2e/walkthrough.spec.ts` and
+`pnpm load:smoke` pass UNCHANGED, as the ruling requires. `src/__tests__/integration/wire-authority.test.ts`
+is edited: it drove `deps.createHousehold(...)` directly and now drives `deps.invoke({ commandType:
+"household.create", … })`.
+
+**Why.** That test is a white-box test OF THE DEPS PORT SHAPE - the exact thing the migration replaces -
+rather than a test of user-visible behavior. Its assertion is unchanged and still the point: a mismatched
+tenant authority is refused AT the dependency call, before any write. Leaving it untouched was not
+possible; leaving it unremarked would have been the dishonest option.
+
+**Revert path.** The test reverts with the migration.
+
+---
+
+## D-227 - Prompt 10 review: the request boundary derives its admission rules from the configuration
+
+**What.** `/api/flows/account-opening` no longer hardcodes `200/100/100/320` and `isAccountType`. It
+projects the published document through `loadIntakeForm` and judges the submission with
+`admitIntakeSubmission` (`src/domain/config/intake-view.ts`), so a text slot's declared `maxLength` and
+an enum slot's declared `values` are enforced at the boundary that declares them. The same projection
+now carries `presentation.surfaces`, so the journey's progress rail and its step-info title are the
+document's station labels rather than three literals beside them.
+
+**Why.** The reviewer's strongest finding: the configuration DECLARED those constraints and nothing
+enforced or bound them, so adding a registration to the YAML would have rendered a select option the API
+rejected with a 400, and a widened `maxLength` would have had no effect. That is the exact
+configuration-duplicated-in-code failure prompt 10 exists to eliminate, at the one boundary that matters.
+The limits and the seven registrations are byte-identical to what they replaced.
+
+**Alternatives considered.** A second projection type beside `IntakeForm` (rejected: the form IS the
+intake contract - a second one is the same duplication one layer down). Keeping the literals and fencing
+them against the YAML (rejected: a fence that pins two copies together is weaker than one copy).
+
+**Revert path.** Re-inline the literals in the route; drop `maxLength`/`surfaces` from the projection.
+
+---
+
+## D-228 - Prompt 10 review: the awaited rule comes from the step that suspended
+
+**What.** `compileFlowDefinition` returns a `CompiledFlow` - the definition PLUS `awaitingByStep`, emitted
+from the same ordered plan that produced the steps. Replay reads `awaitingByStep[cursor - 1]`, the step
+the engine advanced past when it persisted the suspension.
+
+**Why.** `wire.ts` previously scanned `execution.capabilities` in DOCUMENT order for the first
+externally-gated rule. That agrees with the suspending step only while a domain has exactly one such
+capability; a second one would report the wrong rule to a double-submitting client. Deriving both from
+one ordered plan makes disagreement unrepresentable rather than unlikely.
+
+**Revert path.** Return the bare `FlowDefinition` and re-derive `awaiting` in the composition root.
+
+---
+
+## D-229 - Prompt 10 review: totality and caching corrections in the loader seam
+
+**What.** Three fail-open corrections. (1) `bindDomainConfig` mints every tenant-scoped reference through
+`safeParse` and accumulates a typed `firm-binding` error, so a registry with a blank `firmId` or a blank
+mapped id is a value rather than a ZodError thrown out of a `Result`-returning API. (2) `orderedSteps`
+REFUSES a plan template with no runnable order instead of `break`ing out with a partial plan the engine
+would run to `completed`. (3) `loadPublishedDomainConfig` caches only successful reads: "a published
+version is immutable" justifies memoizing a document, not memoizing an EMFILE.
+
+**Why.** Each is a claim the code made and did not keep - "loading is TOTAL", "a compiled plan is the
+plan", "a published version is immutable" - and each failed open rather than closed.
+
+**Revert path.** Independent; each is local to its own module.
+
+---
+
+## D-230 - Prompt 10 review: the store's registration vocabulary is FENCED equal to the document's
+
+**What.** `registration-type.values` in `config/domains/account-opening.yaml` and `ACCOUNT_TYPES` in
+`src/domain/schema/entities.ts` are now proven EQUAL, in both directions, by RULE G of the
+domain-configuration fence: the enum slot supplying the shipped `accountType` transport field must declare
+exactly the values the house-CRM's typed column accepts, and a document where no single slot supplies that
+field fails closed. Neither name is renamed (CD-1 leaves shipped record vocabulary alone) and the request
+boundary keeps refusing an undeclared registration from the document's own admission rules.
+
+**Why.** D-227 moved the boundary's admission rules into the configuration, which was right, but it left
+the second copy of that vocabulary unbound. A registration added to the document alone would have been
+ADMITTED at the boundary and then refused by the execution adapter at the third compiled step - after
+`household.create` and `contact.create` had committed, leaving an orphan household, an orphan contact and
+a persisted failed execution where the pre-migration code refused with a clean 400 and zero writes. A
+partial write is strictly worse than the rejection it replaced. Binding the two vocabularies makes that
+state unreachable at BUILD time, which is what "the check must never be able to disagree with the
+configuration" actually requires; deleting a second check would have been the same mistake again.
+`src/__tests__/integration/account-opening-route.test.ts` asserts the record counts are zero after the
+refusal, not merely that the response is a 400 - that assertion is what stops this recurring.
+
+**Alternatives considered.** Deriving `AccountType` from the YAML (rejected: the adapter needs a
+compile-time union for a typed store column, and generating types from data at build time is a build-system
+change prompt 10 does not own). Dropping the boundary check again (rejected: it is what keeps the refusal
+free of committed writes).
+
+**Revert path.** Delete RULE G and its two companion cases; the vocabularies drift again silently.
+
+---
+
+## D-231 - Prompt 10 review: the deferred change-record byte check is stated as it IS, and owned
+
+**What.** `checkIdentity` compares `authorship.changeFromParent` against the diff it computes only when
+the parent document's bytes are available, and `shippedConfigEnvironment()` supplies them only for the
+empty baseline a FIRST version diffs against. `docs/domain-config.md` §8, `AGENTS.md` and the branch
+itself now say exactly that, and the full byte check for a PARENTED version is recorded in the gap
+report's dependency table beside PC-4, owned by prompts 15/19. Alongside it, three smaller seams closed:
+the request boundary reads admitted values through `requiredIntakeValue`/`optionalIntakeValue` instead of
+`?? ""`; the intake journey's progress rail names its live station by surface ID rather than by ordinal;
+the loader refuses two slots reading one transport field; and a configuration id is checked against the
+kebab-case vocabulary before it reaches a filesystem path.
+
+**Why.** The guarantee held today and would have vanished silently at the first parented version - the
+moment it starts to matter - while three documents asserted it unconditionally. The defect was the
+overclaiming prose, not the loader: making the check real requires deciding where a superseded document's
+canonical bytes live, and that storage question belongs to the persisted configuration-version registry,
+not to prompt 10. Each remaining seam was a place a configuration edit could make the product disagree
+with the document quietly rather than loudly.
+
+**Revert path.** Independent; each is local to its own module or document.
+
+---
+
+## D-232 - Prompt 10 review: the configuration identifier vocabulary has ONE declaration
+
+**What.** `DomainConfigIdSchema`, `ExecutionCapabilityIdSchema`, `CommandTypeSchema`,
+`ConflictKeyTemplateIdSchema` and `PlanTemplateIdSchema` are DELETED from
+`src/contracts/decision-core/ids.ts`. The `kebabId<...>()` mints in `src/domain/config/` - the ones the
+schema actually parses with - are now the single declaration. `ActionIdSchema` stays: `Intent.action`
+consumes it.
+
+**Why.** Five exported schemas with zero consumers repo-wide are built-but-not-shipped (charter #5), and
+the only reason `pnpm knip` stayed green through four review rounds is that `knip.json` declares
+`src/contracts/**` an entry point (D-220) - an exemption for contracts that must exist before their
+consumers, not a licence for dead ones. Worse, the two declarations agreed at COMPILE time and disagreed
+at RUNTIME: `brandedString` is `z.string().min(1)` while `kebabId` enforces `KEBAB_CASE_RE`, so a value
+one layer parsed the other would refuse under the same nominal type. Deleting one declaration removes the
+disagreement rather than documenting it. ADR-0059's contracts ceiling RATCHETS DOWN to 6,680 against a
+re-taken 6,626, because leaving it at 6,700 would bank correction headroom on deleted code.
+
+**Alternatives considered.** Deriving the domain mints from the contracts schemas and tightening
+`brandedString` to kebab-case there (rejected: it would put prompt 10's schema vocabulary in a layer with
+no consumer for it, against the ADR-0058 §3 siting, and tightening a shared `brandedString` reaches
+every other brand in that file).
+
+**Follow-up.** `fu-contracts-dead-export-visibility` (gap report §5, FOUNDATION register): a dead export
+under `contracts/` is invisible to the dead-export gate. Recorded, not fenced - a reachability rule for
+the contract surface needs its own decision about what "shipped" means for a type awaiting its consumer.
+
+**Revert path.** Re-add the five schemas; the runtime disagreement returns with them.
+
+---
+
+## D-233 - Prompt 10 review: a surface DERIVES the firm classes it binds through
+
+**What.** `requiredFirmClasses` (`src/domain/config/bind.ts`) reads, from a loaded document, exactly the
+firm-neutral classes `bindDomainConfig` demands: capability targets, approval templates, required and
+evidence-supplier roles, and the `evidence-source` classes deferred inside primitive parameters (walked
+by the new `parameterRefClasses`). `src/app/demo/vocabulary.ts` builds its registry from that instead of
+transcribing the document's classes into a literal, through `loadFirmClasses` on the config source. RULE
+H of the domain-configuration fence proves the derivation COMPLETE - a registry built from nothing but it
+must bind each shipped document - and its companion drops each derived entry in turn to prove every one
+is load-bearing (PF-299).
+
+**Why.** The hand-written registry hardcoded the classes `money-movement.yaml` happens to declare today,
+with nothing binding the two. Adding a capability class, an approval template, a `requiredRoleClasses`
+entry or a `role:` supplier would make `bindDomainConfig` refuse, `loadDomainLabels` return that refusal,
+and `vocabularyFor` THROW - a 500 on the investor-demo journey from an ordinary configuration edit, with
+a green build. That is the failure RULE F was written for, through a different door. Deriving makes the
+drift unrepresentable rather than merely detected; the fence then guards the derivation itself, which is
+the only thing left that can be wrong.
+
+**Alternatives considered.** Fencing the literal registry against the document (rejected as the weaker of
+the two ruled options: it detects drift instead of preventing it, and leaves the demo one forgotten
+`registryFor` update away from the same 500).
+
+**Revert path.** Restore the literal maps in `src/app/demo/vocabulary.ts` and delete RULE H; the demo can
+fall behind the document again.
+
+**Amendment (review round 18).** The consequence named above - "`vocabularyFor` THROW ... a 500 on the
+investor-demo journey" - is no longer what happens: resolution is a typed `Result` and the station page
+renders the refusal (D-267). The argument is unchanged, since a rendered refusal on the demo is still the
+failure deriving the registry exists to make unrepresentable; only the crash it used to be is gone.
+
+---
+
+## D-234 - Prompt 10 review: the platform's flow-data keys are a RESERVED namespace, enforced
+
+**What.** `EXECUTION_SCOPE_KEY`, `INITIATING_ACTOR_KEY` and `clientRequestId` move into
+`RESERVED_TRIGGER_FIELDS` in `src/domain/config/vocabulary.ts` (the plan compiler re-exports the two it
+reads, so there is still one declaration), and the intent schema REFUSES a slot whose `triggerField`
+names one. Two smaller corrections ride along: `admitIntakeSubmission` gates its payload read on
+`Object.hasOwn`, matching what the accessors below it already do and what the module header already
+claimed; and RULE C of the domain-configuration fence now judges inertness with the SHIPPED
+`inertnessProblems` rather than a second copy of it (PF-300).
+
+**Why.** The platform writes its keys into flow data AFTER the caller's values, so a slot reading one
+would resolve to the execution id instead of what the requester supplied - silently, unlike every other
+slot mistake the loader catches. "Reserved" was a word in a doc comment, not an enforced namespace.
+`TriggerFieldSchema` admits `toString`/`valueOf`/`constructor`, so a document could name one; a bare
+index read then resolved an omitted optional field to a prototype function and answered "must be supplied
+as text" for a field the requester was entitled to omit.
+
+**Revert path.** Independent; each is local to its own module.
+
+## D-235 - Prompt 10 review: a top-level section may not declare one id twice
+
+**What.** `src/domain/config/document.ts` collects every identified top-level section - `intents`,
+`evidence`, `primitiveBindings`, `policy.slots`, `instructionKinds`, `prohibitions`, `blockers`,
+`authority.templates`, `execution.capabilities`, `execution.planTemplates`, `conflictKeys`,
+`reservations`, `verification` - into ONE rule that refuses a repeated id and names it. The nested lists
+have refused duplicates since the schema was written; the top level had not.
+
+**Why.** Each of those sections becomes a Map keyed by id downstream, so a duplicate SHADOWS instead of
+failing: the later entry wins in the loader while `find` keeps returning the earlier one. That lets two
+consumers of one section disagree - a `verification` id declared twice loads as "awaits nothing"
+(`checkReferences` reads the FIRST match) and compiles as "awaits externally" (`compileFlowDefinition`
+builds a set over ANY match), so the step invokes its command, the write COMMITS, and only then does the
+compiler refuse for a correlation token that was never declared. Collecting the sections in one place
+rather than repeating a refinement thirteen times is what keeps the rule from drifting section to
+section.
+
+**Revert path.** One refinement in one module.
+
+## D-236 - Prompt 10 review: the journey's live station is DECLARED, not positional
+
+**What.** `presentation.form` gains `surface` and optional `awaitingSurface`; the presentation schema
+refuses either naming a station the document does not declare; `intakeFormOf` projects them as
+`IntakeForm.stations`; and `src/app/app/account-opening/intake-journey.tsx` drops its `LIVE_STATION`
+literal and reads them. `config/domains/account-opening.yaml` declares `intake` and `signature`, with the
+`versions.json` hash re-pinned in the same commit.
+
+**Why.** Rounds 3 and 4 bound the progress rail and the step card by station ID precisely so a reordered
+document could not light the wrong station - but the IDs themselves were still transcribed into the
+component, with nothing binding them. Renaming a surface in the document made `stationIndex("form")`
+return -1: the step card disappeared and the rail lit nothing while the user stood on the form, with
+every gate green, because the e2e walkthrough and the axe scans key on labels and testids. Carrying the
+station identity through the projection removes the coupling rather than reporting it: the screen now
+holds no station id at all, and a form naming an undeclared station is a LOAD refusal.
+
+**Revert path.** The schema fields are additive; reverting them reverts the projection and the component
+together, plus the pinned hash.
+
+## D-237 - Prompt 10 review: an adapter's returned outputs are read as OWN properties
+
+**What.** `compileStep` reads a declared publication and the correlation token through one
+`publishedOutput` helper gated on `Object.hasOwn`, and `required()` in
+`src/infrastructure/execution-adapters.ts` gates its payload read the same way. The client-request
+transport key moves to `src/domain/config/intake-view.ts`, the leaf both of its writers (the intake route
+and the journey component) already import, and `RESERVED_TRIGGER_FIELDS` imports it from there.
+
+**Why.** `OutputNameSchema` admits `toString`, `valueOf` and `constructor`, so a bare index let
+`Object.prototype` satisfy the very absence check that exists to fail closed - publishing an inherited
+function into flow data instead of reporting that the adapter returned nothing. That is the same
+own-property discipline rounds 3 and 4 applied in `intake-view.ts`, now applied where the values come
+from OUTSIDE the loader. The key move is the same defect in the other shape: the one reserved name whose
+purpose is preventing drift was itself the copy that could drift, because the two modules writing it
+spelled it as a literal. A client bundle may not pull the schema module's zod graph to learn one string,
+so the declaration lives in the leaf and the vocabulary imports it.
+
+**Revert path.** Independent; each is local to its own module.
+
+## D-238 - Prompt 10 review: the rendered key is an INJECTIVE encoding of its segments
+
+**What.** `renderKeySegments` (`src/domain/config/segments.ts`) escapes each resolved part - the escape
+byte first, then the separator - before joining. A property test over arbitrary segment tuples proves no
+two distinct tuples render one key.
+
+**Why.** A bare join is not injective, and a conflict key is the mechanism that makes two individually
+valid operations contend when they must. `bank-instruction-key` in money-movement.yaml is a literal plus
+two subject slots read straight from the caller's transport, so `("h1:x", "d")` and `("h1", "x:d")`
+rendered ONE key and two unrelated subjects shared a coordination identity - the exact failure the key
+exists to prevent, in the coordination primitive this prompt wrote. Refusing a value that carries the
+separator was the other option and is worse: the shipped `application-finalize` capability keys on the
+application step's own minted key, which already contains one, so refusal would break the live journey.
+Escaping leaves every colon-free and backslash-free value byte-identical (every kebab literal, every UUID
+execution scope, every ISO bucket), so no shipped key changes except that one deliberately nested value,
+whose bytes stay deterministic per execution and therefore keep exactly-once effect.
+
+Prompt 23 owns the conflict-key derivation RULES; the injectivity of the encoding this prompt emits is
+this prompt's own defect and does not travel.
+
+**Revert path.** Local to one function; reverting restores the ambiguous join.
+
+## D-239 - Prompt 10 review: the intake boundary REFUSES a configured field it cannot carry
+
+**What.** `src/app/api/flows/account-opening/route.ts` refuses, by name, any admitted intake field
+outside `START_INPUT_FIELDS` - now exported from `wire.ts`, where it already described exactly what
+`StartAccountOpeningInput` persists. `unmappedIntakeFields` in the intake-view leaf computes the set.
+
+**Why.** The boundary judged the WHOLE configured field list and then read back five fixed names,
+discarding the rest: adding a sixth trigger-supplied slot (the canonical prompt-10 edit) rendered a
+control, admitted its value, and dropped it - to be missed by `buildPayload` at whatever step sourced the
+slot, which for account opening is step 3, after the household and contact writes have committed. That is
+the partial write a clean refusal exists to prevent.
+
+Deriving the start input generically from the configured trigger fields is the generic intake pipeline,
+which the ratified sequence assigns to PROMPT 12; building it here would expand this prompt past its
+accepted scope. So the seam refuses loudly instead of losing a value, and the derivation is recorded as a
+named prompt-12 obligation in `docs/domain-config-gaps.md` §3.
+
+**Revert path.** Independent; the refusal is additive and unreachable for the shipped document.
+
+## D-240 - Prompt 10 review: a publication alias may not claim a name another writer owns
+
+**What.** The document-level refinement (`src/domain/config/document.ts`) refuses a capability
+publication alias that is a reserved platform flow-data key, that collides with a declared slot
+`triggerField`, or that a second capability already publishes. Reserved names come from
+`RESERVED_TRIGGER_FIELDS`, the one declaration the writers consume.
+
+**Why.** Flow data has TWO writers and only one was guarded. D-234 closed the slot side; a capability's
+`publishes[].as` writes into the same namespace through the other door, and `OutputNameSchema` admits
+`executionScope`, `initiatedBy`, `clientRequestId` and `householdName` alike. An alias equal to
+`executionScope` silently replaces the per-execution idempotency scope for every LATER step, so their
+keys derive from an adapter's return value instead of the execution - exactly-once effect on replay lost,
+with no diagnostic. An alias equal to a trigger field overwrites the requester's own value, and one alias
+published twice makes the compiler's alias-keyed step-output lookup return the wrong step's value.
+
+**Revert path.** One refinement; both shipped documents already satisfy it.
+
+## D-241 - Prompt 10 review: three loader checks that failed open, and one claim narrowed
+
+**What.** (a) `checkForm` requires a form field's slot to be `supplied-by-trigger`. (b) The
+settable-parameter existence check uses `Object.hasOwn`. (c) `diff.ts` computes section bytes through
+`canonicalJson` rather than `JSON.stringify`. (d) The `ActionId` section comment in
+`contracts/decision-core/ids.ts` no longer implies the brand agrees with its domain mint.
+
+**Why.** (a) A form field naming a `bound-by-primitive` or `derived` slot loaded clean, passed the whole
+fence suite, and then broke `/app/account-opening` at request time, because such a slot has no transport
+field for the projector to read - completeness stage 6 exists precisely to make a non-submittable form a
+LOAD failure. (b) `SettableParameterSchema.parameter` is an unconstrained string, so a slot naming
+`constructor` or `toString` satisfied a prototype-walking check and the loader admitted a policy write to
+a parameter the primitive never declared: a closure check failing OPEN, in the module whose stated
+posture is own-property lookups only. (c) `JSON.stringify` is key-order sensitive and the canonical
+serializer is not, so once PC-4 feeds real parent bytes a reserialized version and an author-ordered
+candidate would diff as `replace` for every section and force an author to declare changes that did not
+happen; a section the canonical serializer refuses renders as its own refusal rather than comparing
+equal to bytes. (d) The comment justified deleting five brands on a runtime disagreement that SURVIVES
+for the one kept. Narrowing the schema is a real change, not a comment fix - a shipped test parses an
+`Intent` whose action is `"primitive:distribute-cash"`, left over from the PrimitiveId this field used to
+carry (D-221) - so the alignment is recorded as PC-3a, owned by prompt 14, the first prompt that
+constructs an `Intent` and therefore the first with real values to narrow against.
+
+**Revert path.** Four independent edits, each local to its own module.
+
+## D-242 - Prompt 10 review: a value source must be AVAILABLE where it is read, not merely declared
+
+**What.** `resolveSourceType` (`src/domain/config/load-closure.ts`) now resolves a `step-output` source
+against the CONSUMING step's transitive `dependsOn` closure and an `await-observation` source against
+whether an externally-gated step sits inside that closure. `load-references.ts` builds one availability
+per step from the plan DAG; conflict keys and reservation quantities, which resolve to coordinate a
+decision before any step runs, carry the empty availability.
+
+**Why.** Closure checked that a source EXISTED, never that its value would exist where it is read, and
+the whole-plan view answered both arms. A payload field of the SECOND step naming the THIRD step's
+output therefore loaded clean, passed the fence suite, and failed at run time - after the first step's
+write had committed. That is the orphan-record partial write the round-2 ruling called strictly worse
+than the refusal it replaced, reachable from an ordinary authoring mistake. The check is per consuming
+step because two steps may legitimately read different ancestors.
+
+**Revert path.** One field on `ClosureWorld`, one derivation in its caller; both shipped documents
+satisfy the rule unchanged.
+
+## D-243 - Prompt 10 review: flow data has THREE writers, and the third is the awaited observation
+
+**What.** The document-level refinement D-240 introduced now also covers the fields of the external
+observation that closes an awaited verification rule: a read of one is refused when the name is a
+reserved platform key or a declared `triggerField`, and a publication alias is refused when it names an
+observation field. The field names are derived from the same capability declarations the plan compiler
+resolves against.
+
+**Why.** `resumeFlow` merges the observation UNDER the stored flow data by design, so a stored key of
+the same name wins silently - and `OutputNameSchema` and the observation field share one camelCase
+space. The shipped `application-finalize` step reads `signedAt` as an OPTIONAL source, so a capability
+publishing `as: signedAt`, or a slot whose trigger field is `signedAt`, would shadow the signing instant
+with no diagnostic at all and open the account with the advisor's typed value as its open date.
+
+**Revert path.** One derivation and two arms inside the existing refinement.
+
+## D-244 - Prompt 10 review: RULE E resolves the configuration directory by SYMBOL
+
+**What.** The domain-configuration fence's RULE E recognises access to `config/domains/` by the path
+literal OR by a resolved reference to a binding holding it, and `DOMAIN_CONFIG_DIRECTORY` is no longer
+exported from `src/infrastructure/config/domain-config-source.ts`.
+
+**Why.** RULE E was a per-line text scan, and the constant was exported while having exactly one
+consumer - itself. A second module could import it and read the directory with the path appearing
+nowhere in its own text, leaving the only enforcement of v3 §16's no-module-imports-config rule reading
+green over the exact access it exists to refuse. `knip.json`'s `ignoreExportsUsedInFile` is why the
+unused export itself was invisible. Un-exporting alone makes the evasion inconvenient; resolving by
+symbol is what makes it fail the build, the same way the test-only injection seams are keyed.
+
+**Revert path.** One helper in the fence plus one companion case; the constant's single consumer is
+unaffected.
+
+## D-245 - Prompt 10 review: the finalize key is COMPOSED by the grammar, not carried as one value
+
+**What.** `application-finalize`'s idempotency key is now two segments - the literal `finalize` and the
+application step's published `id` - and `application-create` no longer publishes the pre-joined key it
+minted. Every segment is still escaped before joining, so the rendered bytes stay an injective encoding
+of the resolved tuple, and they are exactly the pre-branch bytes: `finalize:<applicationId>`.
+
+**Why.** The round-6 injectivity fix escapes every segment, which silently re-keyed the ONE shipped key
+whose single segment's VALUE already contained the separator. That key is the exactly-once guard: the
+house-CRM adapter derives `account:` / `task:` / `complete:` sub-keys from it into `crm_write_cache`, so
+a changed byte form means a doubly-fired e-sign webhook opens a duplicate financial account and a
+duplicate funding task (charter #16). The ruled remedy - pass a LONE segment through raw - restores those
+bytes but cannot be made injective: a raw branch emits arbitrary strings, so a one-segment value carrying
+the separator renders exactly what the two-segment tuple around it renders, and no marker on the other
+branch can prevent that (the raw branch can emit the marked form too). Carrying a segment count on the
+multi-segment branch instead would have re-keyed the four pre-suspend keys - the same defect, four more
+times. Composing the finalize key from the same two parts the application row composes satisfies both
+goals at once: the bytes are restored, the encoding keeps ONE rule, and the arity is recoverable from the
+rendered bytes for every tuple. The equality with the row's recorded column is now ASSERTED
+(`src/__tests__/integration/account-opening.test.ts`) rather than true by construction and untested.
+
+**Revert path.** Two lines of `config/domains/account-opening.yaml` plus its hash pin.
+
+## D-246 - Prompt 10 review: a suspended execution is bound to the configuration version it started under
+
+**What.** `startFlow` persists `domainConfigVersionId` into flow data under a reserved platform key, and
+the composition root REFUSES with a typed `CONFLICT` to drive a stored cursor - on the webhook resume or
+on the failed-start re-drive - when the published version disagrees.
+
+**Why.** The cursor is POSITIONAL and, since this prompt, the plan it indexes into is versioned DATA.
+`loadOwnExecution` compares only `flowId`, which is the domainConfigId and stable across versions, so a
+legitimate bump that inserts, removes or reorders a step between the e-sign suspend and the signature
+webhook resumed at the WRONG step - skipping finalize, or re-running a committed one. A YAML edit is a
+far lower bar than a code deploy, which is what made a latent hazard live. Resuming against the PINNED
+document is the correct end state and stays owned by PC-4 (prompts 15/19); an honest refusal is the
+interim guard, and a partial guarantee that reads like a complete one would be worse.
+
+**Revert path.** One reserved key, one predicate in `wire.ts`, two call sites.
+
+## D-247 - Prompt 10 review: the context plane is refused at LOAD, not discovered mid-plan
+
+**What.** A `{from: context}` value source and a `{context:…}` placeholder in COMMAND TEXT are refused by
+the loader, naming the key and why it cannot resolve. Reason-code copy still admits `{context:…}`: the
+evaluator renders it against a real context plane. The grammar arm stays; only its use before the plane
+exists is refused.
+
+**Why.** The loader validated context keys against the derived vocabulary while the plan compiler
+resolves them out of FLOW DATA, which carries only transport fields, the platform's reserved keys and
+publication aliases. Such a source loaded clean and then failed at the step that consumed it, after
+earlier steps had committed real records - the load-clean-then-fail-mid-plan class this stage exists to
+close. The plane arrives with the evaluator (prompt 16), which is where the refusal points.
+
+**Revert path.** One branch in `resolveSourceType` and one in `checkCopyTemplates`.
+
+## D-248 - Prompt 10 review: closure scope now equals reachability scope
+
+**What.** `checkReferences` type-checks every conflict-key template and reservation reachable by ANY
+route the reachability check counts - the intent's own lists, a capability's, and a reservation's
+`conflictKey` - rather than only those the intent lists directly. `$ref.kind` is validated against
+`PARAMETER_REF_KINDS` at load, and RULE D of the domain-configuration fence now treats a document it
+cannot load or canonicalize as DRIFT rather than skipping it.
+
+**Why.** Three fail-opens of one shape. A template named only by a capability was reachable-and-therefore-
+not-dead while escaping segment type-checking entirely, so an unknown slot, a text slot inside a
+coordination key (MR-7) or a bucket over a non-date source loaded clean. A closed vocabulary nothing
+enforces is not closed: a `$ref.kind` typo substituted cleanly and only diverged at bind, where the class
+silently dropped out of the checklist a surface builds its firm registry from. And RULE D is the only
+check binding shipped bytes to pinned hashes - skipping a document it could not process left it passing
+while proving nothing about that file, which the charter treats as worse than no fence.
+
+**Revert path.** One derived set in the closure stage, one predicate in `parameters.ts`, one extracted
+helper plus its companion in the fence.
+
+## D-249 - Prompt 10 review: a demonstration fixture date leaves the published document
+
+**What.** `config/domains/money-movement.yaml`'s `pending-actions` evidence-kind label is generic again;
+the demo builder appends the `(settles Aug 1)` qualifier. Visible demo copy is unchanged byte-for-byte.
+
+**Why.** This reverses the earlier ruling that restored the parenthetical into the document to preserve
+user-visible copy. The document is what a real firm would deploy, and it is hash-pinned and versioned: an
+evidence-kind label states what a KIND is, while a settlement date is a property of this branch's fake
+row. Appending it on the demo side serves the original intent better than the original instruction did.
+
+**Revert path.** One label and one template literal.
+
+## D-250 - Prompt 10 review: the version guard's own fallout, in three places
+
+**What.** Three corrections to the D-246 guard, all one root cause - a positional cursor read against a
+plan that may no longer be the one it was recorded under. (a) The e-sign webhook reads the taxonomy's
+retryability instead of flattening every failed callback to 5xx: a PERMANENT refusal answers its own
+4xx, a retryable failure still answers 5xx. (b) A MISSING recorded configuration version is LEGACY and
+RESUMES; only a KNOWN DIFFERENT one is refused, and the refusal names both versions. (c) The REPLAY path
+refuses a version-disagreeing SUSPENDED execution rather than reporting an awaited rule read out of the
+current plan; a COMPLETED execution still replays, since reporting a finished run needs no plan.
+
+**Why.** A guard that reports a permanent refusal as a retryable server error asks an external provider
+to redeliver a callback that can never succeed, until its retry budget is spent and the signature event
+is dropped with only an error log behind it - and the sibling `simulate-sign` route already answered 409
+for the identical result, so the two disagreed. Treating ABSENCE as disagreement would have made the
+guard's first act on deployment the stranding of every legitimate in-flight execution: the exact
+before-deploy/after-deploy harm it was built to prevent. And the replay path drives nothing, so what it
+can get wrong is the ANSWER - a step identity borrowed from a plan the execution is not running is a
+silent wrong answer, which this build refuses everywhere else.
+
+**Revert path.** One accessor in `errors.ts`, one status expression in the webhook route, two branches in
+`wire.ts`.
+
+---
+
+## D-251 - Prompt 10 review: the webhook's status is a REDELIVERY instruction, not a taxonomy view
+
+**What.** The e-sign webhook maps EVERY downstream refusal to one dedicated status, 422, whatever
+internal code produced it, and keeps 5xx for server-side failures. The refusal predicate is
+`isRetryable(code) || status >= 500`: an `INTERNAL` raised by a missing table is non-retryable in the
+taxonomy but is an operational fault a redelivery after repair completes, so it stays 5xx. The taxonomy
+code and its message stay in the response body, and a log line at the severity the taxonomy assigns the
+code carries the diagnosis the narrowed status no longer does.
+
+**Why.** D-250(a) fixed half of this by passing the internal code's own status through - which let
+`NOT_FOUND` (404) and `AUTH_FAILED` (401) out of the failed-callback branch, onto the two statuses this
+same handler already uses for "unknown signing token" and "invalid webhook signature". A finalize-time
+`NOT_FOUND` is reachable (`completeApplication` and the finalize adapter throw it on a zero-row UPDATE),
+so a provider and its dashboards would read "that token does not exist" for "the token was fine and a
+downstream write failed". Narrowing the same expression twice is the signal that the expression was the
+wrong shape: the status answers ONE question - redeliver or do not - and the diagnosis belongs in the
+body and the log, where an operator looks. Proof PF-312.
+
+**Revert path.** One constant, one predicate, and one log call in `src/app/api/esign/webhook/route.ts`,
+plus the message's registration in the observability vocabulary.
+
+---
+
+## D-252 - Prompt 10 review: a slot a plan READS must have a transport, refused at COMPILE
+
+**What.** `compileFlowDefinition` refuses a plan whose capability sources a slot that is not
+`supplied-by-trigger` - in a payload field, an idempotency-key segment, or a `{slot:…}` placeholder of
+its command text - naming the slot and its resolution. Separately, a command-text placeholder is now
+checked at LOAD against the slots of the intent whose plan reaches it, rather than against the union of
+every intent's slots.
+
+**Why.** These are the last two members of the load-clean-then-fail-mid-plan class. The interim resolver
+reads a slot ONLY through its declared `triggerField`, which the intent grammar forbids on any slot that
+is not trigger-supplied, so such a plan commits its earlier steps and then cannot resolve its own
+payload - and `config/domains/money-movement.yaml` already carries four such sources, harmless today
+only because its `decision-hash` segment refuses that plan for an unrelated reason prompt 25 removes.
+The refusal is at COMPILE and not at LOAD because the authoring is legitimate: money movement's
+`household` and `source-account` genuinely ARE selected by primitives, and refusing the DOCUMENT would
+throw away prompt 10's two-domain deliverable to close a runtime hole - so the document stays loadable
+while a plan carrying an unresolvable source stays unrunnable, exactly the line the `decision-hash`
+deferral already draws. The command-text half is the same scope mismatch one stage over: copy is
+authored per domain, but `buildPayload` renders it through one intent's resolver. Recorded against the
+prompt-16 context plane in `docs/domain-config-gaps.md` §3. Proofs PF-313, PF-314.
+
+**Revert path.** One helper pair and one guard in `plan-compiler.ts`; one placeholder loop in the copy
+branch of `checkReferences`.
+
+---
+
+## D-253 - Prompt 10 review: a status code is an instruction to an audience, never a taxonomy view
+
+**What.** The general rule, recorded once because the same conflation has now caused three defects at two
+boundaries: THE STATUS A SURFACE RETURNS IS A MESSAGE TO A NAMED AUDIENCE ABOUT WHAT TO DO NEXT - an
+external provider (redeliver, or stop), a browser (retry the same submission, or correct it), an
+operator (page, or ignore) - and never a window onto the internal error taxonomy. Choose it by the action
+the audience should take; put WHICH failure it was in the body and the log. Three corrections apply it:
+(a) the intake route reports an unmapped configured field as an INTERNAL, since only a published document
+can cause it and no submission can fix it; (b) the account-opening journey burns its per-session client
+request id ONLY on a VALIDATION, keeping it for every permanent server-side refusal; (c) the replay path
+in `wire.ts` DEGRADES a version-disagreeing report - real persisted status and token, awaited rule
+undetermined - instead of answering `failed`, which corrects D-250(c). The paths that DRIVE steps
+(`resumeAccountOpeningByToken`, `retryFailedStart`) still refuse, unchanged. D-251 is the same rule at
+the webhook and now cites this entry.
+
+**Why.** (b) is the root defect and holds independently of the version guard: a fresh request id is a
+fresh EXECUTION, and the per-write idempotency keys are execution-scoped, so re-minting one in answer to
+a refusal the user cannot fix converts an honest refusal into duplicate household, contact and
+application rows on the next submit - the exact harm this branch has spent four rounds closing. (c) is
+its supplier: a reporting path that answers `failed` tells a browser the submission did not happen, and
+refusing to DRIVE a stale cursor is a different act from refusing to REPORT an execution that plainly
+exists - the awaited rule is the ONLY field derived from the plan, so it alone goes undetermined. (a)
+makes (b) sound: burning on VALIDATION is only correct while every VALIDATION this endpoint emits is one
+the submitter owns, which a deployment defect filed as a client 400 would have broken.
+
+**Residual, reported not fixed.** A user whose id is kept after a permanent refusal and who then EDITS
+the form meets the D-027 edited-replay CONFLICT with no in-page remedy (reloading mints a new session
+id). Banked as `fu-intake-spent-id-recovery` for prompt 12, which owns the generic intake pipeline: the
+server knows the identity is spent and the client should be told structurally, not by message text.
+
+**Revert path.** One code literal in the intake route, one condition in `intake-journey.tsx`, and one
+branch in `replayedRunResult`.
+
+## D-254 - Prompt 10 review: the browser is TOLD what to do next, it never infers it
+
+**What.** The account-opening start response carries an explicit typed instruction - `retry`, from the
+closed `CLIENT_RETRY` vocabulary in `src/contracts/client-retry.ts`: mint a NEW request identity, resubmit
+under the SAME one, or do not retry at all. Every refusal `startAccountOpening` can return names its own
+instruction at the point where the reason is still known (a spent identity, a superseded configuration
+version, a step that failed after its writes committed). The route answers the instruction plus one human
+sentence, with a status chosen for what the submitter should DO (409 / 500 / 422), and stops forwarding
+the flow's own `AppError` code to the browser; the internal code goes to the log line beside it at the
+level the taxonomy assigns. `intake-journey.tsx` burns its per-session request id if and only if it is
+told to, and reads nothing else. This is D-253 at its third call site - provider, operator, browser - and
+it CLOSES `fu-intake-spent-id-recovery`.
+
+**Why.** The previous rule keyed on the error CODE, which is a different axis from the question that
+matters: can the submitter clear this by editing and resubmitting? The two `CONFLICT`s this endpoint
+answers prove they are different - an edited resubmit IS clearable (the refusal's own message says "mint a
+new request id and resubmit") while a version mismatch is NOT - so a code-keyed rule had to get one of
+them wrong, and it made the D-027 edited-resubmit escape hatch a permanent dead end: refused, id kept,
+same refusal on every further submit, no in-page remedy. Forwarding the flow's error was the same defect
+one layer down: `accountTypeOf` raises a VALIDATION from inside `application.create`, after
+`household.create` and `contact.create` have committed, so the client's rule silently depended on the
+domain-configuration fence's RULE G holding the registration vocabularies equal. The asymmetry is what
+settles the default: a wrong burn writes duplicate records, a missed burn costs a retry, so an absent or
+unrecognised instruction keeps the identity.
+
+**Fenced by.** `src/__tests__/integration/account-opening-route.test.ts` drives the edited-resubmit path
+end to end - submit, edit, resubmit under the same id, assert the mint-a-new-identity instruction and that
+no internal code reaches the body, then FOLLOW the instruction and assert it opens the corrected account.
+Asserting the refusal alone would have read green on the dead end it replaced.
+
+**Revert path.** Delete `contracts/client-retry.ts`, the `retry` field on the start result, and the route's
+instruction mapping; the client falls back to a code-keyed rule with the dead end this entry closes.
+
+---
+
+## D-255 - Prompt 10 review: permanent versus transient was a FALSE BINARY; the third arm is RETRY-LATER
+
+**What.** `CLIENT_RETRY` gains a fourth member, `retry-later`, plus `RETRY_LATER_AFTER_SECONDS` - the
+pacing every surface answering it puts on the wire. A refusal that WILL CLEAR ON OPERATOR ACTION is
+neither permanent nor a transient fault, and the configuration-version mismatch is the reachable case:
+the e-sign webhook answers it 503 with `Retry-After` (not the do-not-redeliver 422), the account-opening
+route answers it 503 with `Retry-After` (not "contact your operations team"), and a signature callback
+parked on one is reported at `error` level with the tenant-keyed `executionId` the start path logged, so
+an operator finds the execution before the client phones to ask why nothing happened. The webhook reads
+the flow's own typed instruction rather than re-deriving redeliverability from the code. `resumeFlow`
+takes an optional `ResumeGuard`, so the version check happens against the state the ENGINE loaded: one
+round trip instead of three on the webhook path, and one snapshot instead of two.
+
+**Why.** D-251 fixed one half and D-253 named the rule, but both were still asking a two-valued question.
+A superseded configuration version answered "never redeliver" DISCARDS A SIGNATURE THE CLIENT ALREADY
+GAVE: the execution stays suspended forever with no external event left to complete it, which is strictly
+worse than the unbounded redelivery 422 was introduced to stop. It is also not transient - redelivering
+in ten seconds meets the identical refusal - so 5xx alone just spends the provider's retry budget. The
+two audiences share ONE taxonomy: the browser's vocabulary had the identical gap (it could say
+retry-with-new-identity, retry-with-same-identity and do-not-retry, but not "this will clear, come back"),
+so fixing one side alone would have reopened the hole on the other at the next reachable case. Pacing is
+part of the arm, not an afterthought: an unpaced 503 is the old blanket 5xx wearing a new number. The
+single-snapshot guard is the same finding one layer down - the composition root loaded the row to check
+the version and `resumeFlow` loaded it again to drive it, so the version checked was not provably the
+version driven. Proofs PF-316, PF-318.
+
+**Fenced by.** `src/__tests__/integration/esign-webhook-route.test.ts` asserts all three categories at
+once (later/paced/still-suspended, permanent-on-one-status, transient-on-5xx);
+`src/__tests__/fitness/flowstep-suspend-resume.test.ts` counts token loads and asserts the guard sees the
+drive's own state, with a passing-guard sibling so the refusal stays conditional.
+
+**Revert path.** Remove the `later` member and its two status mappings; the webhook falls back to the
+binary and the signature-discard returns.
+
+---
+
+## D-256 - Prompt 10 review: a configuration diagnosis goes to the operator, joined by a correlation id
+
+**What.** Every refusal `src/infrastructure/config/domain-config-source.ts` can produce is minted in ONE
+place. The wire gets a generic sentence carrying a correlation id; `AppError.context` gets the full
+diagnosis (dotted document paths, per-stage loader messages, the pinned and read SHA-256 hashes) and
+`toResponse` has never returned `context`; the operator's log line gets that same correlation id and a
+closed `configStage` code. The reference is minted through `generatedObservabilityId`, so it survives the
+log formatter instead of degrading to `[REDACTED]`; `correlationId` and `configStage` are registered
+observability vocabulary, derived from the real call sites both ways. The intake route answers a
+configuration refusal with the `retry-later` instruction (D-255) rather than the taxonomy's code. The YAML
+is also parsed ONCE now: the same `Document` the inertness walk judges is the one converted to data, so an
+inert verdict can never stand for a document other than the one loaded.
+
+**Why.** D-253 said the diagnosis belongs in the logs and the previous round left it riding the response:
+`toResponse` returns `AppError.message` verbatim, so the detail reached a BROWSER through the intake route
+and an EXTERNAL e-sign provider through the webhook's JSON body. Nothing in it is PII, but deployment
+internals crossing a trust boundary is exactly the class D-253 exists to close. Narrowing the message
+alone would have cost the diagnosis, which was the explicit constraint the first time the rule was
+applied - so the correlation id is what makes the narrowing safe, and it is minted where the failure is
+known rather than at each of the three surfaces that report one. The two-parse issue is smaller but the
+same shape: the bytes judged inert were not PROVABLY the bytes converted, and a future divergence in
+`parseDocument` options is all it would take to separate them. Proof PF-317.
+
+**Fenced by.** `src/__tests__/unit/domain-config-source.test.ts` asserts the wire message carries the
+reference and neither a hex digest nor a dotted document path, that the same message is what `toResponse`
+emits, that `context.detail` is still populated and is NOT in the serialized response, and that two
+refusals never share a reference - with a first case proving the shipped document still resolves, so the
+rule cannot be met by a source that refuses everything.
+
+**Revert path.** Inline the detail back into the message at `configurationRefusal`; the leak returns at
+all three surfaces at once, which is the property that made the single mint the right place to fix it.
+
+---
+
+## D-257 - Prompt 10 review: a retry category belongs to a CAUSE, never to a call site
+
+**What.** `src/contracts/client-retry.ts` now states the classification rule beside the vocabulary it
+classifies, and carries the two functions that apply it: `operatorRecoverable(error)` marks a refusal at
+the mint that knows why, and `clientRetryFor(error, otherwise)` is what every surface asks instead of
+naming a category. EVERY refusal whose cause is "this deployment cannot resolve or compile its published
+configuration" is marked - the load and pin failures in `domain-config-source.ts`, every
+`compileFlowDefinition` refusal, the plan template with no runnable order, the missing execution adapter in
+`configuredFlow`, and the version guard - so it inherits `retry-later` wherever it arises. The
+account-opening start path, the e-sign resume path, the intake boundary and the simulate-sign affordance
+all read the instruction rather than choosing one, and `src/app/_server/refusal.ts` gives the two API
+surfaces ONE refusal shape (typed instruction, human sentence, `Retry-After` on the arm that says come
+back).
+
+**Why.** D-255 added the third arm and applied it at two sites, which left one broken document producing
+three different instructions: the version guard said "come back", the start path said "Resubmitting will
+not help; contact your operations team" (422, `do-not-retry`) for the SAME document one layer in, and the
+resume path said nothing and fell through to an unpaced 500 - the unbounded redelivery the
+do-not-redeliver status exists to stop, wearing a new number. Telling an advisor to give up on a refusal
+an operator rollback WILL clear is the same false instruction closed at the webhook, one layer down.
+Assigning the category per call site is what produced that inconsistency and would produce the next one,
+so the classification travels with the refusal instead. The simulate-sign affordance mattered
+disproportionately: it forwarded the raw `AppError`, so a superseded version answered 409 with the
+internal message and no typed instruction on the one surface the shipped demo journey actually clicks.
+Proofs PF-319, PF-320.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I (every registered
+configuration-refusal mint carries `operatorRecoverable`, with an anti-vacuity arm that reports a site
+minting nothing as stale) and RULE J (no registered surface STATES an instruction it could read from the
+cause). `src/__tests__/integration/account-opening-route.test.ts` asserts the START-path refusal answers
+503 + `Retry-After` + `retry-later`, beside the boundary case for the same document.
+
+**Revert path.** Drop the marker and pass literals again; the three-way disagreement returns, and RULE J
+is what names each site that reopened it.
+
+---
+
+## D-258 - Prompt 10 review: verify the destination can carry it before redirecting a diagnosis there
+
+**Durable lesson, verbatim from the ruling:** *"when a ruling says 'send it somewhere else', verify the
+destination can actually carry it - a redirect to a channel that silently drops the payload is worse than
+the leak it replaced, because everyone believes the information exists."*
+
+**What.** The configuration diagnosis is emitted as REGISTERED STRUCTURED VALUES: the closed
+`configStage` enum, plus `domainConfigId`, `configPath` (the first offending dotted document path),
+`configVersion`, `configHashPinned` and `configHashRead` as observability id fields minted through
+`configurationDiagnosisId`, a shape-checked factory in `src/domain/observability/safe-values.ts`. The dead
+`AppError.context.detail` prose is DELETED so nobody believes it is carried. `versionMismatch` gets the
+same treatment: its message no longer interpolates the persisted and published version ids (the e-sign
+webhook returned it verbatim to the EXTERNAL provider and `/api/esign/simulate-sign` to the browser), the
+pair goes on the operator's line as `configVersion`/`configVersionStarted`, and the guard now emits that
+line on every path that can raise it - so a parked signature is operator-visible on the start path too,
+not only the webhook's.
+
+**Why.** D-256 said "narrow the wire message, keep the full diagnosis in the logs" and never checked that
+this repository HAS a prose channel. It deliberately does not: the observability vocabulary admits only
+registered enums and sealed ids precisely so an unregistered value degrades to `[REDACTED]`, which is a
+safety property rather than an obstacle. So the diagnosis went nowhere while a unit test asserted it was
+"preserved for the operator" - strictly worse than the leak, because everyone believed it existed.
+Widening the vocabulary to carry prose would trade a real safety property for a worse artifact, and
+putting the detail back on the wire re-opens the trust boundary. Structured is not a compromise but an
+improvement: STRUCTURED VALUES ARE QUERYABLE, so an operator can ask for every configuration refusal at a
+given stage for a given document, which free prose could never answer. The values are the deployment's own
+published document, never a request, so the provenance rule is a declared SHAPE per field rather than a
+mint ceremony. Proof PF-322 - which this decision originally mis-cited as PF-321, another decision's
+evidence, and a record pointing at the wrong proof is the same defect class as a diagnosis pointing at a
+channel that drops it.
+
+**Fenced by.** `src/__tests__/unit/domain-config-source.test.ts` reads the BYTES THE REAL LOGGER EMITS -
+the module's `log` is a `pino` built from the real `loggerOptions` writing into a capture stream - and
+asserts the stage, the document and the correlation id survive uncensored, that the id on the line is the
+one the client-facing sentence quotes, and that a value outside its declared shape degrades to
+`[REDACTED]` rather than riding through. That last pair is the check whose absence let a dead channel
+ship. The observability-vocabulary fence derives the new id fields from the real mints both ways.
+
+**Revert path.** Re-inline the detail into the message; the leak returns at three surfaces at once and the
+formatter proof above fails first.
+
+---
+
+## D-259 - Prompt 10 review: user-facing copy names no deployment internal, literal or generated
+
+**What.** The account-opening configuration-failure screen no longer tells an advisor to restore
+`config/domains/account-opening.yaml`. It states plainly that the deployment cannot start account openings
+and that operations must restore it, and shows the refusal's own correlation id as a reference to quote.
+The rule is stated about USER-FACING COPY GENERALLY - static literals in surfaces included - not only
+about generated `AppError` messages.
+
+**Why.** The screen survived D-256 only because it was a static literal rather than a generated message,
+which is the whole argument for stating the rule about copy rather than about error objects. An advisor
+staring at a failure cannot act on a repository path, and needs a reference they can quote to operations
+far more than a filename they have no access to - so narrowing the copy without adding the reference would
+have swapped one useless answer for another.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE K: no rendered JSX text, copy-
+bearing JSX attribute, or string in a registered client-message module may name a repository path or a
+configuration/module file. A module specifier is resolution rather than copy and is exempt, which is what
+keeps the demo surface manifest's own `componentPath` entries (structure, correctly spelled) out of scope.
+Proof PF-321. (D-260 widens that rule from this pattern to the whole condition.)
+
+**Revert path.** Put the path back in the copy; RULE K names the file and line.
+
+---
+
+## D-260 - Prompt 10 review: a fence whose registry is hand-maintained is a fence that will pass vacuously
+
+**What.** The three rules D-257/D-258/D-259 introduced are re-founded on DERIVATIONS, and the one
+configuration refusal they could not see is closed.
+
+- **RULE I is derived from the configuration MODULES** (`src/domain/config/`,
+  `src/infrastructure/config/`): every `appError` minted in one is a candidate, exempted only by its own
+  `VALIDATION` code - a refusal of the SUBMISSION rather than of the document. It is COMPLETE rather than
+  merely broad, because marking a refusal means importing `operatorRecoverable`, and no module outside
+  those roots may. So there is no residue to register and nothing to go stale.
+- **`plan-compiler.ts :: failure` is the refusal that proved the point**: it sat in a REGISTERED FILE and
+  an unregistered FUNCTION, mint unmarked, flattening the loader's dotted document paths
+  (`execution.capabilities.<id>.payload.<field>`) into a message the e-sign webhook returns verbatim to the
+  EXTERNAL provider. It now states a typed FAULT through a `ConfiguredStepRefusal` port; the composition
+  root's configuration source turns that into the one refusal shape - generic sentence plus correlation id
+  on the wire, `configStage`/`configCode`/`configPath` on the operator's line. The port is REQUIRED, never
+  defaulted: a default that dropped the fault is the dead channel D-258 is about.
+  `formatDomainConfigErrors` is deleted with its only consumer.
+- **`configuredFlow` moved from the composition root into `src/infrastructure/config/configured-flow.ts`.**
+  Everything it refuses is a fact about the document, and holding it in `wire.ts` was what forced RULE I to
+  keep a residue registry at all.
+- **RULE J derives its decision sites**: any file that reads the closed client-retry vocabulary, or writes
+  one of its arms into a `retry` position without importing anything. Three hand-listed surfaces were the
+  same per-site bookkeeping the rule abolished, moved into the fence.
+- **RULE K tests the CONDITION** - no deployment internal reaches a user-facing surface or the wire -
+  rather than a directory-shaped pattern over `src/app/`. Bare file names, environment variable names,
+  digests and dotted document paths (derived from the published documents' own section ids) all count; the
+  scope follows every `AppError` message in `src/app/`, `src/domain/` and `src/infrastructure/`, because
+  `toResponse` returns those verbatim; and a message BUILT from a `DomainConfigError` is refused
+  structurally, since no scan of authored literals can see what an interpolation evaluates to.
+- **The correlation reference reaches the response body.** `refusalResponse` takes the refusal itself and
+  appends the reference, so no surface can drop it - which both of them did, for three rounds.
+- **An EMPTY loader path is omitted rather than sealed** (a root-level failure has no path, and
+  `[REDACTED]` reads as a value withheld for safety), the loader's own eight-value `code` is emitted beside
+  it, and `unreadable-version` becomes its own registered stage and sentence beside `superseded-version`.
+
+**Why.** A registry a human maintains drifts and then reports green about a set that no longer matches
+reality, which the charter treats as worse than no fence: RULE I's own docstring claimed "a refusal added
+later inherits the classification without anyone remembering to" while a refusal in an unlisted function
+of a listed file shipped unmarked and leaking. The same argument applies to RULE J's three files and to
+RULE K's pattern, which required a directory separator and a fixed extension list - so "restore
+account-opening.yaml", a `SESSION_SECRET` and a SHA-256 digest all passed clean. Inclusions are DERIVED and
+only exceptions are listed, each justified and each proven to suppress something real.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULES I (derivation plus completeness),
+J and K, with (K') holding every reviewed escape to the same non-staleness rule RULE A's allow-list uses.
+`src/__tests__/unit/domain-config-source.test.ts` covers the loader code and the two reachable root-level
+failures against the real logger's bytes; `src/__tests__/integration/account-opening-route.test.ts` and the
+new `simulate-sign-route.test.ts` assert the reference actually reaches the response body at both layers a
+broken document is noticed at. Proofs PF-323, PF-324, PF-325, PF-326.
+
+**Revert path.** Re-list the sites and narrow the patterns; the four proofs above each name the file and
+line the derivation caught and the list could not.
+
+## D-261 - Prompt 10 review: a classification nine authors apply by hand is a convention, not a mechanism
+
+**Decision.** Every configuration refusal is MINTED IN ONE PLACE, and the modules that find a fault state
+it as data instead. `ConfiguredRefusal` (`src/domain/config/errors.ts`, beside the fault type it converts)
+has three arms - `uncompilable`, `unrunnableStep`, `intakeMismatch` - each a registered
+`ConfigurationStage`; the shipped implementation is `configuredRefusal(domainConfigId)` in the one adapter
+that already mints every load-stage refusal.
+
+- **The plan compiler mints nothing.** Its six compile-time refusals - no such intent, no such plan
+  template, no runnable order, an undeclared capability, a decision-hash source, an unreadable slot -
+  become `configError(code, path, message)` faults routed through the port, alongside the step-time
+  refusals that already were. The intent, template, step, capability and slot ids they interpolated now
+  travel as the fault's dotted document PATH to the operator's log line.
+- **The intake view mints nothing.** Its undeclared-trigger-field refusal takes the same route, and the
+  route's unmapped-configured-field check becomes `unmappedIntakeFault`, so a field the deployment cannot
+  carry is refused through the mint rather than named on the wire in a bare 500. That refusal INHERITS
+  retry-later from its cause (D-257) instead of the boundary deciding locally: it answers 503 with a
+  pacing header, the shared sentence and a quotable reference.
+- **The composition root mints nothing of its own.** `configuredFlow`'s unsupported-command-type refusal -
+  the last one outside the minter, which emitted no log line at all and sent the document's command types
+  verbatim to the EXTERNAL e-sign provider - states a fault at
+  `execution.capabilities.<id>.commandType`.
+
+**Why.** D-260 made the CLASSIFICATION derivable and left the SHAPE conventional. Nine refusals marked
+themselves `operatorRecoverable` and then each wrote its own sentence, so the browser got a server error
+with nothing to quote, the provider got the ids, and the operator got no line - and the tenth author would
+have written a tenth variant. Marking is now necessary but not sufficient: a mint owes a `correlationId`
+in its own context and an operator log line in the same function, which is a property of the code rather
+than of anyone's memory.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I, extended with both halves of
+the D-258 channel and re-anchored on the port's own declared arms (a root that neither mints nor refuses
+through the port is reported). Proof PF-327.
+
+**Revert path.** Re-mint in place; PF-327 names the two files and lines the extended rule caught.
+
+## D-262 - Prompt 10 review: a shape is validated against what the emitters produce, never against examples
+
+**Decision.** `CONFIGURATION_DIAGNOSIS_SHAPES` is proven against REAL EMITTER OUTPUT. `configPath` admits a
+subscripted segment (`…idempotencyKey[1]`, `…segments[2]`, `…sourcesToReconcile[0]`), bounded like every
+other part of the shape, because the loader builds `${path}[${index}]` wherever it walks a declared list.
+RULE L drives the real loader over both shipped documents corrupted one string leaf at a time - with an
+id-shaped probe that reaches the reference-closure emitters and a non-id-shaped one that reaches the
+grammar emitters - drives the real compiler's steps with the document's own projected trigger fields, and
+checks the remaining five fields against the version ids, pinned hashes and canonical-byte digests the
+shipped adapter really computes.
+
+**Why.** The diagnosis channel degrades an unregistered value to `[REDACTED]` silently, on purpose. A shape
+narrower than its emitters therefore reports the stage and CENSORS the location, and nothing anywhere
+fails - so `unrunnable-step`, the most likely run-time configuration fault, logged a stage with no place to
+look. That is D-258's dead channel one level down, and it survived four review rounds because the regex was
+checked against strings someone wrote next to it. The same reasoning fixed an unguarded member-chain
+recursion in the shared fence util, where an ordinary `node = node[segment]` cursor walk killed the
+charter-drift fence with a `RangeError` - a detection channel dying in a way that reads as a fence bug.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, with anti-vacuity on the sweep
+size, on reaching the subscripting emitters in at least three modules, on the compiled-step run producing a
+subscripted path, and on the field map equalling `CONFIGURATION_DIAGNOSIS_FIELDS` exactly.
+`src/__tests__/fitness/charter-drift.test.ts` carries the cursor-walk companion. Proofs PF-328, PF-329.
+
+**Revert path.** Narrow the shape; PF-328 lists the exact emitted paths the dot-only form sealed.
+
+**Amendment (review round 17): a bound is stated ONCE, where the emitter is refused at it.** The widened
+shape capped subscripts at three per segment - a number chosen beside the regex, against `substitute`,
+which descends once per container level of a primitive's `parameters` with no bound at all. So a `$ref`
+four arrays deep emitted a path the shape sealed: the same defect the widening fixed, one dimension over,
+and one RULE L's leaf sweep structurally cannot see (the probes replace string LEAVES, so no emitted path's
+depth depends on document STRUCTURE). Guessing a wider cap would have been a third opinion. Instead the
+bound moved to the EMITTER: `MAX_CONFIGURED_VALUE_DEPTH` (`src/domain/config/errors.ts`, beside the fault
+type whose `path` it makes expressible) is refused at admission by `resolveParameters`, and the shape's
+per-segment subscript cap is read from that same constant - so the shape is a CONSEQUENCE of the bound
+rather than a second opinion about it, the way the policy loader already bounds document nesting before
+parsing (D-181). The segment COUNT carries no cap of its own for the same reason; the channel's
+128-character ceiling and the closed alphabet are what bound it. RULE L drives the real
+`resolveParameters` at the bound and one level past it. Proof PF-332.
+
+**Amendment (review round 17): a path that MATCHES the shape and addresses nothing.** The intake view
+emitted `presentation.form.fields.<trigger field>` while the document - and `intakeFormOf`, the other
+emitter for that same node - keys that list by SLOT. It satisfied the shape perfectly and pointed at a node
+the document does not contain, so nothing sealed and nothing failed: a confidently wrong location in the
+channel built to be authoritative, which is worse than a censored one because an operator cannot tell. A
+shape is necessary and not sufficient, so RULE L now RESOLVES every emitted intake path against the
+shipped document. Proof PF-333.
+
+## D-263 - Prompt 10 review: the command adapters answer for the published document too
+
+**Decision.** Every refusal the command adapters raise - a payload field the compiled command did not
+carry, a registration outside the vocabulary the store accepts, a command type this build has no runner
+for - is stated through the injected `ConfiguredRefusal` port rather than in the adapter's own words. The
+port travels on the `CompiledFlow` the plan compiler returns, so the adapters and the plan's own steps
+refuse through ONE mint rather than two built beside each other, and `makeExecutionAdapters` takes it as a
+parameter so the adapter module still names no domain. RULE I's candidate set is widened accordingly: it
+derives from the two configuration directories PLUS every module that HOLDS a compiled command, keyed on
+the type the port's own `invoke` declares.
+
+**Why.** D-257 classifies by CAUSE, and an adapter fault whose cause is the published document is
+operator-recoverable wherever it arises. These three were the last sites outside the mint, and being
+outside it cost all three halves of the channel: the configured command type and payload field id reached
+the EXTERNAL e-sign provider verbatim through `toResponse`, the unmarked error made the webhook answer an
+unpaced 500 - redeliver forever against a fault only an operator clears, and the `accountType` arm answered
+422 do-not-redeliver, discarding a signature event outright - and no `configStage`/`configPath` line was
+emitted at all. They shipped through the fence because a rule derived from two DIRECTORIES cannot see a
+third; widening to "any module that imports the configuration layer" would have swept in the composition
+root's storage failures and needed an exemption list, which is the drifting registry D-260 replaced.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I (derived roots, with
+anti-vacuity requiring the derivation to reach a module beyond the declared directories, and an emptied
+port proven to derive none) and RULE K (a wire message built from a `CommandInvocation`). Proofs PF-330,
+PF-331.
+
+**Revert path.** Mint in the adapter again; PF-330 records the exact three violations the derivation
+reports.
+
+---
+
+## D-264 - Two D-104 obligations prompt 10 owed did not land, and are re-owned as NAMED deferrals
+
+**Date:** 2026-08-12 · **Reversible** · Relates to: ADR-0039, ADR-0058, D-104, charter #2/#4, v3
+prompts 15 and 16
+
+**What.** D-104 obligations 1 and 2 were owed by prompt 10 and are NOT implemented. They are recorded
+here as named deferrals, each with an owning prompt and an un-defer trigger, and every document that
+asserted them as binding and fail-closed (`docs/primitive-rationale.md`, `PLAN.md` appendix 4,
+`docs/domain-config-gaps.md`, D-104 itself) now states what is true today.
+
+1. **`fu-restriction-evidence-required` - owned by prompt 15 (validation and input-bundle assembly).**
+   A configuration binding `restriction-screen` must declare a restriction-source evidence kind as
+   REQUIRED evidence for every bound restriction kind. No such check exists: `src/domain/config/`
+   never special-cases a primitive id, and `config/domains/account-opening.yaml` binds the screen for
+   `jurisdiction-restriction` with no restriction-source evidence and loads clean. The reason it did
+   not land is structural, not an oversight in review: a `restrictionKinds[]` entry carries `kind` and
+   `polarity` only, so no document can NAME the evidence kind that supplies a bound kind's list and
+   the cross-check has no subject to read. Landing it means the falsification path prompt 8 already
+   declared - `sourceEvidenceKinds` on `restrictionKinds[]`, under a primitive-set version bump -
+   which is a catalog change, and the contract that then consumes it is prompt 15's, alongside
+   obligation 4 (the two are the same fail-open-on-absent-evidence shape).
+   **Un-defer trigger:** the first configuration whose restriction lists are actually assembled and
+   evaluated, or the primitive-set version bump that adds `sourceEvidenceKinds` - whichever is first;
+   at the latest, prompt 15's evidence-sufficiency contract.
+2. **`fu-binding-multiplicity-check` - owned by prompt 16 (evaluator and explanation trace).**
+   An unscoped-key primitive is bound at most once per configuration; a parameter-scoped one repeats
+   only with distinct key scopes; both halves are load errors naming the primitive and both bindings.
+   Nothing groups `primitiveBindings` by `primitiveId`. Unlike obligation 1 this one IS expressible
+   today - it simply did not land, which is why it is recorded as an unmet obligation rather than a
+   blocked one. What ships is narrower and incidental: `deriveContextKeys` refuses two bindings whose
+   published keys collide within ONE intent, reported against the colliding key and worded as a
+   slot-versus-primitive clash, so it names neither the primitive nor the two bindings and does not
+   see bindings attached to different intents. Both shipped documents satisfy the rule by authorship.
+   **Un-defer trigger:** the third domain configuration, any configuration that binds one primitive
+   twice, or the first evaluator that reads a published fact - at the latest, prompt 16, which must
+   not evaluate a configuration this check has never seen.
+
+**Why record rather than implement.** This round is documentation-only under a budget constraint, and
+the failure being closed is the one that matters most: a published document asserting a fail-closed
+check that does not exist is worse than no claim, because every later reader trusts it and stops
+looking. Charter #2's "detection is not verification" has a mirror - a guarantee believed but never
+built - and the cheapest protection is refusing to let a document overstate what shipped.
+
+**Weaker than the deferrals it imitates, deliberately stated.** `ledger-reachability` and the
+`policy-ast` fence hold their named deferrals in a REGISTRY that fails both when an entry gains a
+caller and when an orphan appears. Neither idiom applies here: these are MISSING CHECKS, not orphan
+exports, so there is no symbol for a fence to key on and no build failure the day one lands. These two
+deferrals are therefore doc-recorded only, and the un-defer triggers above are the whole mechanism.
+That gap is the honest cost of recording them at all, and it is the argument for landing both checks
+in the next prompt that opens `src/domain/config/`.
+
+**Fenced by.** Nothing - and that is the point of the paragraph above. The only enforcement today is
+that `docs/primitive-rationale.md`, `PLAN.md`, `docs/domain-config-gaps.md` and D-104 now describe the
+absence rather than a guarantee.
+
+**The two OWNERS are proposed, not ruled.** The obligations themselves and their absence are facts;
+which prompt lands each is a scheduling call, and the reasoning is stated above so a captain can
+re-own either by editing this entry and the four pointers to it. What may not be reverted without a
+replacement is the honesty: no document goes back to asserting a fail-closed check nothing performs.
+
+**Revert path.** Delete this entry and restore the four documents' previous wording; the obligations
+then read as shipped guarantees again, which is the state this entry exists to end.
+
+## D-265 - Prompt 10 review: a surface with one instruction-carrying arm asks the cause, it does not invent a fallback
+
+**Decision.** `@contracts/client-retry` exports a second reader, `causeRetryFor(error)`, which answers the
+instruction the CAUSE dictates or `null` when the cause says nothing; `clientRetryFor` is defined in terms
+of it, so one rule is stated once. The account-opening intake accessor uses it: a configuration cause takes
+the shared refusal shape and its inherited instruction, and a submitter's own omission keeps its plain
+VALIDATION answer, which carries no `retry` field at all.
+
+**Why.** That call site computed `clientRetryFor(error, CLIENT_RETRY.newIdentity)` and then only ever
+compared the result against `later`. The fallback was unsendable by construction - the other arm answers
+through `errorResponse`, which emits no instruction - so it read to every later maintainer as a case that
+can happen. It was also the WRONG instruction for the case it named: `retry-with-new-identity` tells the
+browser to burn the form session's request id, and `intake-journey.tsx` re-mints it on that word, so the
+first edit that started forwarding `retry` (the natural direction, since every sibling path already does)
+would open a SECOND execution over a blank required field and duplicate the household, contact and
+application rows - the exact harm D-254 exists to prevent. Choosing a different unsendable fallback would
+have left the same false branch; asking the cause removes it.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J, whose admissible READERS are now
+derived from the contract's own exported surface (an exported function in `src/contracts/client-retry.ts`
+returning that vocabulary) rather than from a remembered name - a hardcoded name would have read the new
+reader as a STATED category. A project with no contract admits no reader, so the derivation fails closed.
+Proof PF-337.
+
+**Revert path.** Delete `causeRetryFor`, restore the fallback argument, and the reader derivation collapses
+to a single name.
+
+## D-266 - Prompt 10 review: a fault LOCATION is built from segments, and the one constructor carries only what the channel can express
+
+**Decision.** `src/domain/config/errors.ts` states the diagnosis channel's capacity ONCE - the segment
+grammar (`CONFIG_PATH_SEGMENT_SOURCE`, whose subscript cap is `MAX_CONFIGURED_VALUE_DEPTH`) and the
+128-character ceiling - and three things read it: `configError`, the ONE constructor of every fault in the
+system, which carries the deepest prefix of the path it is handed that the channel can express;
+`configPathOf`, which the grammar stage uses to build a location from Zod's issue path SEGMENTS; and
+`domain/observability/safe-values`, which builds the `configPath` shape from the same constants. The
+parameter walks refuse an unnameable key at ADMISSION, beside the depth bound, and report at the deepest
+admitted node.
+
+**Why.** The shape had now been widened by guesswork twice (D-262 and its round-17 amendment), and even
+bounded it could not express a whole class its own emitters produce: a document KEY. `ParameterMapSchema`
+is `z.record(z.string().min(1), z.unknown())` by design - the primitive's own schema is the judge of a
+parameter graph - so `resolveParameters` and `substitute` append author-chosen names verbatim, and a Zod
+`invalid_key` issue reports its own path THROUGH the offending key. An author writing
+`parameters: { "tolerance level": 0 }` was refused correctly and reported NOWHERE: `configStage=invalid`,
+`configCode=unknown-reference`, `configPath=[REDACTED]`, with the browser holding only the generic
+sentence. A key carrying a `.` was worse than censored - `presentation.copy.slots` plus `"Household.Name"`
+JOINED shapes perfectly and names a node the document does not have, which is the confidently-wrong
+location D-262's second amendment already ruled out. Building the location from segments answers both, and
+putting the carry in the constructor makes it a property of every emitter, including the ones not written
+yet, rather than a rule each author must remember.
+
+**What it costs, stated plainly.** A fault under an unnameable key reports its deepest NAMEABLE ancestor
+instead of the exact node - the same trade the depth-overrun refusal already makes. That is less precise
+and still true; `[REDACTED]` was neither.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, extended twice: a KEY sweep that
+renames one document key at a time to a name the channel cannot carry (whitespace, a dot, non-ASCII, past
+the per-segment ceiling), drives the REAL loader over both shipped documents, and requires every emitted
+path to survive the channel AND to carry no hostile key; and a property check that no string whatever can
+make `configError` emit an uncarriable path, with what it carries always a prefix of what it was asked to
+report. Proofs PF-334, PF-335.
+
+**Revert path.** Drop the carry from `configError`; PF-334 lists the paths that then seal.
+
+## D-267 - Prompt 10 review: the demo station page fails as a rendered value, never as a stack trace
+
+**Decision.** `src/app/demo/vocabulary.ts` resolves the demo's configured vocabulary as a `Result`, and
+throws nowhere. The exact label ids the journey renders are declared in that module, so every reader
+(`slotLabel`, `evidenceLabel`, `actionLabel`) is a total lookup and the three reachable failures - an
+absent or drifted document, a firm the registry cannot bind, and a document that no longer declares a
+label this journey shows - are resolved once, up front. The last of those is stated as a typed fault and
+minted through the shared `ConfiguredRefusal` port, which gains an `undeclaredCopy` arm and the registered
+`undeclared-copy` stage; the first two already carried the adapter's mint. `/app/demo/[station]` resolves
+the vocabulary for the firm the URL resolved, renders `DemoUnavailable` with the refusal itself when it
+cannot, and passes the resolved vocabulary to `getJourney`.
+
+**Why.** That path is SERVER-RENDERED, and prompt 10's whole point is that removing the configuration
+breaks the flow HONESTLY (X-9). A raw `Error` from a builder is an unhandled crash: the reviewer reads a
+stack trace instead of a statement, and the person on the screen gets nothing to quote. The rendered copy
+carries the generic sentence plus the refusal's correlation reference and NO deployment internals - no
+path, file name, env var or hash (D-243/D-246/D-247/D-259) - while the diagnosis goes to the operator's
+line as the registered `configStage`/`configCode`/`configPath` values. A firm the demo does not record is
+NOT a configuration refusal and does not pretend to be one: it answers `NOT_FOUND` with no reference,
+because there is no operator diagnosis to join to.
+
+**Fenced by.** `src/__tests__/fitness/demo-surface-completeness.test.ts`, whose route rule now requires the
+page to resolve `demoVocabulary(firmId)` for the SAME firm the URL resolved, to refuse as a rendered value
+carrying that error, and to drive the journey from the resolved value. The refusal is the ONLY early exit
+admitted, and it is admitted by identity (its condition is the resolved vocabulary's own discriminant, and
+what it renders receives the error); every other statement before the surface render must still be
+incapable of returning, so a page cannot short-circuit to a hardcoded surface. `isProvablyReachable` grew
+an explicit `exempt` list for that purpose rather than being loosened. Unit coverage:
+`src/__tests__/unit/demo-configuration-refusal.test.tsx` and the `undeclared-copy` case in
+`src/__tests__/unit/domain-config-source.test.ts`. Proof PF-336.
+
+**Verified end to end.** With `config/domains/money-movement.yaml` moved aside, the station renders "This
+journey cannot be shown ... Nothing was lost. Your operations team must restore this deployment; quote
+reference <id>." while the operator's line carries `configStage=unpublished`,
+`domainConfigId=money-movement` and the same correlation id.
+
+**Revert path.** Restore the throws and the two-argument `getJourney`; the fence's route rule then fails
+until its vocabulary clauses are deleted too.
+
+## D-268 - Prompt 10 review: one sentinel meaning two causes is a confidently wrong diagnosis
+
+**Decision.** `childConfigPath` returns a TYPED step - `{ carried: true, path }` or
+`{ carried: false, path, limit }` - naming which of the two limits ended the location: `unnameable-segment`
+(the author's key is not one segment the operator's channel can carry) or `path-too-long` (a perfectly
+nameable key whose accumulated path reached `MAX_CONFIG_DIAGNOSIS_LENGTH`). Both callers in
+`src/domain/config/parameters.ts` report the cause they actually got, `configError` inherits the limit its
+own truncation hit when the emitter states none, `DomainConfigError` carries it, and the composition root
+logs it as the registered enum `configPathLimit` beside `configStage`/`configCode`/`configPath`. The two
+truncation walks that had drifted apart (`configPathOf` and `childConfigPath`) are now ONE step rule.
+
+**Why.** D-266 ended a location by returning the parent for BOTH limits, and both callers discriminated
+with the same `at === path` test - one sentinel meaning two things. So a LENGTH truncation was reported as
+a NAMING problem, and it is reachable with ordinary camelCase keys inside the ALLOWED
+`MAX_CONFIGURED_VALUE_DEPTH`: `primitiveBindings.identity-reconciliation.parameters` is already 52
+characters, so a plausible `sourcesToReconcile.candidateThreshold…` graph crosses 128 and `depthOverruns`
+refused it with "a configured parameter value may only carry keys the operator's fault channel can name as
+one segment", while `resolveParameters` told the author the primitive "declares no parameter of that name"
+about a parameter it declares perfectly well. Both are hard refusals, so `/app/account-opening` shows the
+cannot-start screen and `/app/demo/[station]` renders `DemoUnavailable` - and the operator is sent to
+rename keys that are fine. This is the same class D-262/D-266 exist to close (an operator sent to a cause
+the document does not have), reintroduced by the helper that closed it.
+
+**What it costs, stated plainly.** A length overrun is still a REFUSAL, not a silent degradation: the
+loader continues to enforce a location ceiling alongside the documented depth bound, and that ceiling is
+now stated in `docs/domain-config.md` §7 rather than left implicit. What changes is that the refusal names
+the repair - flatten the graph - instead of naming the wrong one.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE M: the REAL emitters are driven
+into BOTH causes under a binding path read from a shipped document, the length probe's keys are proven
+nameable and inside the depth bound, each cause must be reported as itself, the two probes must disagree,
+every limit must survive `isSafeObservabilityPrimitive("configPathLimit", …)`, and the constructor must
+never report a truncated location as an exact one. `src/__tests__/unit/domain-config-source.test.ts` proves
+the operator's REAL log line carries it. Proof PF-338.
+
+**Revert path.** Collapse the step back to a bare string; RULE M's companion then fails on the two probes
+agreeing.
+
+## D-269 - Prompt 10 review: a fault location and the limit that ended it are ONE value
+
+**Decision.** `ConfigPath` (`src/domain/config/errors.ts`) is the ONLY way to name a location, and it
+carries the limit that ended it. It is built exclusively by `configPathFrom`/`configPathOfText` and stepped
+by `childConfigPath` (an object key) or `childConfigSubscript` (a LIST POSITION), all of which start at the
+root - so its `path` is carriable by construction and a stopped location stays stopped. Three consequences,
+each closing one of the three findings this decision answers:
+
+- `configError` has NO limit argument. An emitter that descended hands over the STEP; one handing over a
+  raw dotted path knows no limit, so the constructor's own truncation owns the one it hits. There is no
+  precedence question left, because there is no second opinion to have one.
+- The grammar stage passes `configPathFrom(issue.path.map(String))` WHOLE. `configPathOf`, which returned
+  the step's `path` alone, is deleted.
+- Admission bounds BOTH container kinds from the same constant: `depthOverruns` routes list positions
+  through `childConfigSubscript`, so `substitute` appends subscripts on an admission that really covers
+  them.
+
+**Why.** The limit/truncation contract D-268 introduced lived in convention, and convention lost three
+times in one change. The grammar stage - the loader's MOST COMMON failure - built its location with
+`configPathOf`, which discarded the limit the step had just computed; `configError`, re-walking an
+already-carriable string, found nothing to truncate and emitted `limit: undefined`, which under D-268's own
+contract means THE PATH IS THE EXACT LOCATION. An author writing
+`presentation: { copy: { slots: { "Household Name": … } } }` - the very example D-266/D-268 were written
+about, and a key Zod reports THROUGH `issue.path` - therefore sent the operator to
+`configPath=presentation.copy.slots` with no `configPathLimit` at all: a node the document really has,
+presented as the exact one. Separately, `depthOverruns` appended `[index]` raw while every object key went
+through the step, so the channel's length ceiling was enforced for one container kind and not the other:
+under a 52-character shipped binding path, a 64-character parameter name and four nested LISTS loaded at
+129 characters while the identical nesting in OBJECTS was a hard refusal that renders the cannot-start
+screen and `DemoUnavailable`. Two identical overruns, opposite verdicts, and the module header and
+`docs/domain-config.md` §7 both claimed otherwise. And `limit ?? (at.carried ? undefined : at.limit)` let
+an emitter's limit outrank the constructor's own further truncation, so the reported limit could describe
+a location the constructor no longer reported.
+
+**What it costs, stated plainly.** A list graph whose accumulated path crosses 128 characters is now
+REFUSED where it previously loaded. That is the point - the alternative is a fault below it with no
+location the operator's channel can carry - but it is a refusal that did not exist before, reachable only
+with a parameter name at the segment grammar's own 64-character maximum under the longest shipped binding
+path. No shipped document is anywhere near it.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE M, extended three ways: the REAL
+loader is driven into a truncated GRAMMAR-stage location on every copy record both shipped documents
+declare, and each must name the limit that ended it; a LIST graph and an OBJECT graph of the same
+accumulated length under the longest shipped binding path must reach the same verdict, at the ceiling and
+one level short of it; and no `configError` call site anywhere may read `.path` off a step - the one hole
+the type cannot close, since a step's path is a perfectly carriable string. Proof PF-339.
+
+**Revert path.** Restore the limit argument and let a builder hand over `.path`; the third rule then fails
+with `file:line`, and the grammar sweep fails on a truncated location reporting no limit.
+## D-270 - Line-budget ceilings re-measured on the merged tree, not maxed across two branches
+
+**Date:** 2026-08-16 · **Reversible** · Relates to: ADR-0059, ADR-0057, PR #39, `fu-domain-ceiling-headroom`
+
+**What.** Rebasing this branch onto PR #39 produced a tree containing both bodies of code, which no
+ceiling on either side covered. The ceilings are re-measured on the merged tree and set to measurement
+plus named headroom: contracts 6,771/6,900, domain 10,447/10,600, infrastructure 9,505/9,650,
+presentation 2,240/6,000 (unchanged), tooling 14,330/14,500.
+
+**Why not the per-bucket max.** That was the first resolution and it is refused. A ceiling set to the
+larger of two numbers, NEITHER of which was measured on the tree it governs, is a number asserting a
+measurement nobody took - indistinguishable from a stale figure, and it would have passed the fence
+while holding nothing.
+
+**What it costs.** Before the raise the merged tree left tooling 20 lines and contracts 39 - the
+condition where the next one-line correction fails an unrelated ceiling. Neither branch caused it
+alone; it emerged from their sum, which means no author could see it before the merge. Recorded rather
+than rounded away.
+

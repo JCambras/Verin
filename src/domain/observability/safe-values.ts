@@ -6,6 +6,13 @@ import {
   REDACTED,
 } from "@contracts/pii";
 import { appError, isErrorCode } from "@contracts/errors";
+import { CLIENT_RETRY } from "@contracts/client-retry";
+import {
+  CONFIG_PATH_LIMITS,
+  CONFIG_PATH_SEGMENT_SOURCE,
+  DOMAIN_CONFIG_ERROR_CODES,
+  MAX_CONFIG_DIAGNOSIS_LENGTH,
+} from "@domain/config/errors";
 import { isMachineRecordId } from "@contracts/record-id";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
@@ -13,6 +20,27 @@ import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 export const OBSERVABILITY_ID_FIELDS = [
   "actor",
   "applicationId",
+  /**
+   * THE CONFIGURATION DIAGNOSIS (D-258), as STRUCTURE rather than prose. This
+   * repository has no prose channel by design - the formatter admits registered
+   * enums and sealed ids precisely so an unregistered value degrades to
+   * "[REDACTED]" - so a diagnosis routed at a free-form `detail` string went
+   * nowhere while everyone believed it was carried. These are the same facts,
+   * expressed the way the channel can actually carry them, and queryable besides:
+   * an operator can ask for every refusal at a given stage for a given document.
+   */
+  "configHashPinned",
+  "configHashRead",
+  "configPath",
+  "configVersion",
+  "configVersionStarted",
+  /**
+   * The reference a refused request carries on the WIRE and the operator's log
+   * line carries beside the diagnosis, so narrowing a client-facing message to a
+   * generic sentence never costs the ability to diagnose it (D-256).
+   */
+  "correlationId",
+  "domainConfigId",
   "entityId",
   "executionId",
   "orgId",
@@ -29,7 +57,7 @@ export interface ObservabilityId {
 const OBSERVABILITY_IDS = new WeakSet<object>();
 export type RecordObservabilityIdField = Extract<
   ObservabilityIdField,
-  "applicationId" | "entityId" | "executionId" | "outboxRowId"
+  "applicationId" | "correlationId" | "entityId" | "executionId" | "outboxRowId"
 >;
 /**
  * Exported as TYPES, not just runtime sets: an `action: string` audit field lets a
@@ -49,6 +77,56 @@ const ACTION_NAMES = [
   "session.revoke", "task.create", "world.seed",
 ] as const;
 export type ObservabilityAction = (typeof ACTION_NAMES)[number];
+/**
+ * WHICH stage of resolving a published domain configuration refused (v3 prompt 10,
+ * ADR-0058). The client is told a generic sentence and a reference, because a
+ * dotted document path and a pair of SHA-256 hashes are deployment internals; this
+ * is the half that reaches the OPERATOR, in the log line the reference joins to.
+ * Exported as a TYPE for the same reason as the audit vocabularies above: a
+ * `string` here would degrade to "[REDACTED]" in the one line naming what broke.
+ */
+const CONFIGURATION_STAGE_NAMES = [
+  "hash-mismatch", "invalid", "malformed-pins", "no-intake-form", "not-inert",
+  "superseded-version", "unbindable", "uncanonical", "unpinned", "unpublished",
+  "unreadable-pins",
+  /**
+   * The document's declared intake fields and this deployment's fixed input
+   * shape disagree - either direction, since a field the document declares and
+   * the deployment cannot carry, and a field the deployment requires and the
+   * document no longer declares, are the same disagreement seen from two ends.
+   */
+  "intake-mismatch",
+  /**
+   * A document that loaded cleanly and then would not compile into a runnable
+   * plan: an undeclared intent or capability, a plan template with no runnable
+   * order, a source the interim substrate cannot resolve, or a command type this
+   * build ships no execution adapter for.
+   */
+  "uncompilable",
+  /**
+   * A persisted execution recording something that is not a version string at
+   * all, kept APART from `superseded-version` because `compareVersion` makes the
+   * distinction deliberately and the log line could not express it: a missing
+   * `configVersionStarted` is also what a shape violation and an omitted optional
+   * produce, so collapsing the two left the operator unable to tell which.
+   */
+  "unreadable-version",
+  /**
+   * A document that loaded and BOUND, and then did not declare the copy a surface
+   * renders. Kept apart from `unbindable`: the firm supplied everything the
+   * document asked of it, so an operator sent to the firm registry would be
+   * looking in the wrong place - the fault is in `presentation.copy`, which is
+   * where this refusal's path points.
+   */
+  "undeclared-copy",
+  /**
+   * A step of an otherwise-compiled plan that could not be PREPARED against the
+   * running execution - the dotted path is a document path, so it goes here as
+   * structure rather than into a message the e-sign provider reads.
+   */
+  "unrunnable-step",
+] as const;
+export type ConfigurationStage = (typeof CONFIGURATION_STAGE_NAMES)[number];
 const ENTITY_TYPE_NAMES = [
   "AccountOpeningApplication", "Contact", "FinancialAccount", "Household",
   "Org", "Session", "Task", "User",
@@ -56,6 +134,17 @@ const ENTITY_TYPE_NAMES = [
 export type ObservabilityEntityType = (typeof ENTITY_TYPE_NAMES)[number];
 const ACTIONS = new Set<string>(ACTION_NAMES);
 const ENUMS = new Map<string, ReadonlySet<string>>([
+  // WHAT IS WRONG WITH THE DOCUMENT, beside WHERE. Read off the loader's own
+  // closed code vocabulary rather than spelled again, for the reason the retry
+  // arm below is: a stage and a path with no statement of the fault leaves the
+  // most common refusal ("invalid") saying only that something, somewhere, is.
+  ["configCode", new Set<string>(DOMAIN_CONFIG_ERROR_CODES)],
+  // WHY the location is an ANCESTOR rather than the exact node, when it is - read
+  // off the emitter's own closed vocabulary for the reason above. Without it a key
+  // the channel cannot name and a path that outgrew it are the same log line, and
+  // the two ask an operator for opposite repairs (D-268).
+  ["configPathLimit", new Set<string>(CONFIG_PATH_LIMITS)],
+  ["configStage", new Set<string>(CONFIGURATION_STAGE_NAMES)],
   ["code", new Set([
     "AUTH_EXPIRED", "AUTH_FAILED", "CONFLICT", "FLOW_SUSPENDED", "FORBIDDEN",
     "IDEMPOTENCY_REPLAY", "INTEGRATION_ERROR", "INTEGRATION_TIMEOUT", "INTERNAL",
@@ -64,14 +153,23 @@ const ENUMS = new Map<string, ReadonlySet<string>>([
   ])],
   ["entityType", new Set<string>(ENTITY_TYPE_NAMES)],
   ["flow", new Set(["account-opening"])],
+  // What a surface TOLD its client to do next (D-253/D-254). Read off the closed
+  // contract rather than spelled again, so widening the vocabulary can never leave
+  // the instruction an operator needs degraded to "[REDACTED]" in the log line
+  // that explains why a submission was refused.
+  ["retry", new Set<string>(Object.values(CLIENT_RETRY))],
   ["status", new Set(["completed", "failed", "running", "suspended"])],
 ]);
 const NUMERIC_FIELDS = new Set(["attempts", "outboxPending"]);
 const LOG_MESSAGES = new Set([
+  "account-opening flow start failed",
   "audit outbox row parked after repeated delivery failures (dead-letter; requires operator intervention)",
   "audited write failed",
   "constant-work audit mirror failed",
   "decision ledger append failed",
+  "domain configuration could not be resolved",
+  "e-sign callback finalization failed",
+  "execution parked until an operator restores the configuration version",
   "failed sign-in attempt for an unknown email",
   "failure-audit entry could not be recorded",
   "flow retried",
@@ -105,6 +203,7 @@ export function registerTestSpanName(name: string): void {
 const OPAQUE_ID_RE = /^[a-z0-9]+(?:[._:-][a-z0-9]+)*$/i;
 const RECORD_ID_FIELDS = new Set<ObservabilityIdField>([
   "applicationId",
+  "correlationId",
   "entityId",
   "executionId",
   "outboxRowId",
@@ -190,6 +289,75 @@ export function authorityObservabilityId(
   assertTenantContext(tenant);
   const value = field === "orgId" ? tenant.orgId : tenant.actor.actorId;
   return sealId(field, isOpaqueId(field, value) ? value : REDACTED);
+}
+
+/**
+ * WHICH facts a configuration refusal states to the operator (D-258). Each is a
+ * value the DEPLOYMENT'S OWN published document (or its version pin file) carries,
+ * never a request value, so the provenance rule is a declared SHAPE per field
+ * rather than a mint ceremony: an alphabet with no whitespace plus a length cap is
+ * what makes these incapable of carrying prose or a person's name into a log line,
+ * and anything outside the shape degrades exactly as an unregistered value does.
+ */
+export type ConfigurationDiagnosisField = Extract<
+  ObservabilityIdField,
+  | "configHashPinned"
+  | "configHashRead"
+  | "configPath"
+  | "configVersion"
+  | "configVersionStarted"
+  | "domainConfigId"
+>;
+/** `${domainConfigId}@${version}` - the identity every golden fixture already pins. */
+const CONFIG_VERSION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*@[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/;
+/**
+ * ONE SEGMENT of a dotted document path, READ FROM THE EMITTER'S OWN STATEMENT OF
+ * WHAT IT MAY BUILD.
+ *
+ * Nothing about this shape is chosen here, and that is the point: it was written
+ * twice as an opinion about what the emitters produce, and was wrong twice - first
+ * about subscripts (the loader subscripts every LIST it walks), then about the
+ * whole class of document keys no schema shapes (a primitive's opaque `parameters`
+ * graph, a Zod `invalid_key` path). A shape narrower than its emitters censors the
+ * location of a real refusal and nothing fails.
+ *
+ * So `domain/config/errors` states the segment grammar and the length ceiling ONCE,
+ * beside the depth bound its own emitter is refused at, and `configError` - the one
+ * constructor of every fault path - carries only the deepest prefix that statement
+ * can express. This shape is the same statement read from the other end, which is
+ * what makes it a CONSEQUENCE of the emitter rather than a third guess at it
+ * (D-262/D-266).
+ */
+const CONFIGURATION_DIAGNOSIS_SHAPES: Readonly<Record<ConfigurationDiagnosisField, RegExp>> = {
+  configHashPinned: /^[0-9a-f]{64}$/,
+  configHashRead: /^[0-9a-f]{64}$/,
+  configPath: new RegExp(
+    `^${CONFIG_PATH_SEGMENT_SOURCE}(?:\\.${CONFIG_PATH_SEGMENT_SOURCE})*$`,
+  ),
+  configVersion: CONFIG_VERSION_RE,
+  configVersionStarted: CONFIG_VERSION_RE,
+  domainConfigId: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+};
+/**
+ * EXPOSED so the fence can prove every shape above against the values its REAL
+ * emitters produce, rather than against examples someone wrote next to the regex.
+ * The `configPath` shape admitted only dot-separated segments while the loader
+ * subscripted every list it walked, so the most likely run-time fault logged a
+ * stage and "[REDACTED]" where its location should have been. THEN it admitted
+ * three subscripts while its own emitter descended without a bound at all, and
+ * even bounded it still could not express a document KEY no schema shapes - which
+ * is why the statement now lives with the emitter and this module reads it.
+ */
+export const CONFIGURATION_DIAGNOSIS_FIELDS = Object.freeze(
+  Object.keys(CONFIGURATION_DIAGNOSIS_SHAPES).sort(),
+) as readonly ConfigurationDiagnosisField[];
+export function configurationDiagnosisId(
+  field: ConfigurationDiagnosisField,
+  value: string,
+): ObservabilityId {
+  const shaped = value.length <= MAX_CONFIG_DIAGNOSIS_LENGTH &&
+    CONFIGURATION_DIAGNOSIS_SHAPES[field].test(value);
+  return sealId(field, shaped ? value : REDACTED);
 }
 
 /**

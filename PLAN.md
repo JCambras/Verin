@@ -408,13 +408,19 @@ captured for the ADR (AutopilotScene, native-setter typing, audio await-`ended` 
 Obligations a landed PR states but cannot fence yet, because their subject belongs to a later prompt,
 are recorded in `DECISIONS.md` by owning prompt and become fences in the PR that builds that subject.
 
-- **D-104** - the four prompt-8 primitive-catalog obligations: prompt 10 owes the fail-closed
-  config-load cross-check that a `restriction-screen` binding declares its restriction-source evidence
-  kinds as required evidence, and the fail-closed binding-multiplicity check (unscoped primitives at
-  most once, scoped ones only with distinct key scopes); prompt 14 owes the evidence assembler's claim
-  de-duplication and the per-`(claimKind, snapshotRef)` aggregation question; prompt 15 owes the
-  validation-stage evidence-sufficiency contract that covers `evidence-reconciliation` bindings, whose
-  `consistent` fact is vacuously true below two assertions.
+- **D-104** - the four prompt-8 primitive-catalog obligations. **Its two prompt-10 obligations DID NOT
+  LAND and are re-owned by D-264**: the fail-closed config-load cross-check that a `restriction-screen`
+  binding declares its restriction-source evidence kinds as required evidence is deferred to prompt 15
+  as `fu-restriction-evidence-required` (the linkage is not expressible until `restrictionKinds[]`
+  entries gain `sourceEvidenceKinds` under a primitive-set version bump), and the fail-closed
+  binding-multiplicity check (unscoped primitives at most once, scoped ones only with distinct key
+  scopes) is deferred to prompt 16 as `fu-binding-multiplicity-check` - expressible today, simply not
+  built, with only `deriveContextKeys`' per-intent published-key collision standing in for it. Unlike
+  the ledger and policy deferrals below, neither is fenced: a missing CHECK gives a registry no symbol
+  to key on, so D-264's un-defer triggers are the whole mechanism. Still owed as originally recorded:
+  prompt 14 owes the evidence assembler's claim de-duplication and the per-`(claimKind, snapshotRef)`
+  aggregation question; prompt 15 owes the validation-stage evidence-sufficiency contract that covers
+  `evidence-reconciliation` bindings, whose `consistent` fact is vacuously true below two assertions.
 - **D-116 / D-119 / D-121** - the prompt-7 ledger deferrals. Prompt 7 deliberately ships the
   post-decision append boundary (`appendDecisionEvents`) and `preflightEvidenceSnapshots` with no shipped
   caller: the storage and verification foundation lands now, the first producer arrives with prompt 18
@@ -427,13 +433,15 @@ are recorded in `DECISIONS.md` by owning prompt and become fences in the PR that
   registry is that fence's `DEFERRED_EXPORTS` map, not this appendix. Separately, ADR-0044 defers bounded
   checkpoint-reuse verification to its authenticated-checkpoint measured-latency trigger.
 - **D-178 / D-184** - the prompt-9 policy-module deferrals and the key-shaping constraint. Prompt 9
-  deliberately ships the policy AST + interpreter with no shipped caller: `loadPolicy` belongs to
-  prompt 10 (policy references in domain config) and prompt 20 (policy lifecycle activation),
-  `evaluatePolicy` to prompt 16 (the complete evaluator over the immutable DecisionInputBundle), and
-  the four registry builders to prompt 10 (the config loader derives the closed context-key
-  vocabulary). Like the ledger deferrals these are ALREADY fenced - the `policy-ast` fence's
-  `NAMED_DEFERRALS` registry fails on an orphan export and just as loudly when a deferred entry point
-  gains its caller, and that registry, not this appendix, is authoritative. Separately, D-184 binds
+  deliberately ships the policy AST + interpreter with no shipped caller. Prompt 10 (ADR-0058)
+  discharged the registry half: the config loader now calls all four registry builders and derives the
+  closed context-key vocabulary (`src/domain/config/registries.ts`, `load.ts`), so they are off the
+  deferral registry. What remains deferred is `loadPolicy` to prompt 20 (nothing authors a firm policy
+  until the lifecycle exists) and `evaluatePolicy` to prompt 16 (the complete evaluator over the
+  immutable DecisionInputBundle). Like the ledger deferrals these are ALREADY fenced - the `policy-ast`
+  fence's `NAMED_DEFERRALS` registry fails on an orphan export and just as loudly when a deferred entry
+  point gains its caller, and that registry, not this appendix, is authoritative. Separately, D-184 binds
   prompt 10's binding model: a primitive's `keyShapingParameters` stay configuration-only (a binding
-  chooses the key scope; a rule may not move it), so the binding model must not re-open them to
-  policy.
+  chooses the key scope; a rule may not move it), and prompt 10 honored it - the loader refuses a
+  tenant-scoped `$ref` in a key-shaping parameter, so the published key space is identical for every
+  firm.

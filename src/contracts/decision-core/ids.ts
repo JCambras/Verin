@@ -364,3 +364,37 @@ export type AllowedSelectionStrategy = z.infer<typeof AllowedSelectionStrategySc
 /** Evidence taxonomy id (golden truth set: "account-balance", "planned-withdrawals"). */
 export const EvidenceKindSchema = brandedString<"EvidenceKind">();
 export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
+
+// ── Domain-configuration vocabulary (v3 §5/§16; prompt 10, ADR-0058) ────────────
+//
+// ONE brand, not the configuration schema's whole identifier vocabulary. The
+// rest of that vocabulary (domain config id, execution capability id, command
+// type, conflict-key template id, plan template id) is minted where the schema
+// that uses it lives, in `src/domain/config/` (D-220): a second declaration here
+// had no contracts consumer, and the two disagreed at RUNTIME while agreeing at
+// compile time - `brandedString` admits any non-empty string, `kebabId` does
+// not - so a value one layer parsed the other would refuse under the same type.
+//
+// THAT DISAGREEMENT IS REMOVED FOR THE FIVE DELETED BRANDS AND REMAINS FOR THIS
+// ONE. `ActionIdSchema` below is a `brandedString`, while `src/domain/config/`
+// mints the same `"ActionId"` brand as a `kebabId`, so a non-kebab value parsed
+// here is typed `ActionId` and `compileFlowDefinition` could never resolve it
+// against the document's intents. Aligning the two is a real narrowing, not a
+// comment fix - `src/__tests__/unit/decision-core.test.ts` parses an `Intent`
+// whose action is `"primitive:distribute-cash"`, a value left over from the
+// PrimitiveId this field used to carry (D-221) - so it is recorded as the named
+// obligation PC-3a in docs/domain-config-gaps.md, owned by prompt 14, the prompt
+// that first CONSTRUCTS an Intent and therefore first has real values to narrow
+// against. Nothing constructs one today, so the disagreement is unreachable now.
+
+/**
+ * A domain's ACTION vocabulary ("distribute-cash", "open-account"), distinct
+ * from PrimitiveId. Intent.action used to carry PrimitiveId, which conflated
+ * the two closed vocabularies: prompt 9's loader rejects an unknown primitive
+ * against the catalog, so a domain action sharing that brand made the check
+ * ambiguous and parked a domain-named value inside a type whose name says
+ * "primitive". Both are branded `string` at runtime, so this is a compile-time
+ * separation only - no hash preimage and no stored byte changes (D-187).
+ */
+export const ActionIdSchema = brandedString<"ActionId">();
+export type ActionId = z.infer<typeof ActionIdSchema>;

@@ -155,108 +155,203 @@ import { join, relative } from "node:path";
 // has 39 lines left, which is again the condition this header argues against and
 // is stated here so the next change to `scripts/**` reads it before spending it.
 // `contracts` and `presentation` are untouched by that work and do not move.
+//
+// ADR-0059 (v3 prompt 10, the domain-configuration schema): the single largest
+// domain addition of the build so far, and deliberately so - the whole point of
+// prompt 10 is that a decision DOMAIN stops being code. src/domain/config/ is
+// the schema for all thirteen ratified sections, the seven-stage loader, the
+// firm binder, the prompt-9 registry derivation, the plan compiler, and the
+// version diff; against it the hand-coded account-opening flow definition (123
+// lines) is DELETED and src/infrastructure/wire.ts shrinks to composition.
+// MEASURED on the composed tree: contracts 6,647 / 6,700 (53), domain 8,340 /
+// 8,420 (80), infrastructure 8,204 / 8,290 (86), presentation 928 / 6,000,
+// tooling 12,140. Every figure here is a MEASUREMENT taken in this commit; a
+// further raise stays a measured ADR amendment, and no correction is ever paid
+// for by deleting documentation (ADR-0048) or by folding readable code onto
+// fewer lines (ADR-0050).
+//
+// ADR-0059 AMENDMENT (review round 3): `domain`'s 80 lines of correction headroom
+// were spent answering review findings in code - the request boundary's checked
+// intake reads, the duplicate-transport-field refusal, and the named owner of the
+// deferred change-record byte check. RE-MEASURED with this file's own algorithm:
+// contracts 6,647 / 6,700 (53), domain 8,433 / 8,520 (87), infrastructure 8,225 /
+// 8,290 (65), presentation 928 / 6,000, tooling 12,154 / 12,400. Only `domain`'s
+// ceiling moves; the other three are re-taken and still inside their ceilings, so
+// those are left where ADR-0059 set them rather than re-baselined for company.
+//
+// ADR-0059 AMENDMENT (review round 4): five of the six prompt-10 brands were
+// DELETED from `contracts` - they had no consumer, and their `brandedString`
+// declaration disagreed at runtime with the `kebabId` mint in `src/domain/config/`
+// that does the same job. `contracts` therefore RATCHETS DOWN: leaving its ceiling
+// where code that no longer exists put it would bank headroom on a deletion.
+// `domain` grows past its ceiling answering this round's findings in code (the
+// derived firm-class checklist, the reserved trigger-field namespace, the
+// deferred-reference walk). RE-MEASURED with this file's own algorithm:
+// contracts 6,626 / 6,680 (54), domain 8,578 / 8,660 (82), infrastructure 8,250 /
+// 8,290 (40), presentation 928 / 6,000, tooling 12,154 / 12,400. `infrastructure`
+// moved but stayed inside, so its ceiling is left alone rather than raised for
+// company - the same rule the previous amendment applied.
+//
+// ADR-0059 AMENDMENT (review round 7): `domain` grows past its ceiling answering
+// this round's findings in code - a value source is checked for AVAILABILITY at
+// the CONSUMING step rather than against the plan as a whole (so a forward or
+// sibling `step-output` reference is a load error, not a mid-plan failure after
+// earlier writes have committed), and the flow-data namespace check gains its
+// third writer, the awaited observation's own fields. RE-MEASURED with this
+// file's own algorithm: contracts 6,638 / 6,680 (42), domain 8,973 / 9,050 (77),
+// infrastructure 8,270 / 8,290 (20), presentation 928 / 6,000, tooling 12,154 /
+// 12,400. Only `domain`'s ceiling moves; `contracts` and `infrastructure` are
+// RE-TAKEN here rather than carried forward - the round-4 and round-6 figures
+// had gone stale by twelve and eight lines, which is exactly what this header
+// says a number nobody re-took is worth - and both stay inside the ceilings they
+// already had, so those are left alone rather than raised for company.
+//
+// ADR-0059 AMENDMENT (review round 8): BOTH `domain` and `infrastructure` grow
+// past their ceilings answering this round's findings in code. In `domain`: the
+// context plane is refused at LOAD in both places it would have failed mid-plan,
+// `$ref.kind` is checked against its closed vocabulary, the closure stage's scope
+// is widened to match the reachability stage's, and a compiled plan carries the
+// configuration version it was compiled from. In `infrastructure`: the
+// composition root pins that version into flow data at start and refuses to drive
+// a stored positional cursor under a different one. The round-9 amendment answers
+// that guard's own fallout - the taxonomy's retryability is read at the webhook
+// rather than flattened to 5xx, a MISSING recorded version is legacy rather than
+// mismatched, and the replay path is held to the same discipline as the two paths
+// that drive - and NO ceiling moves for it. RE-MEASURED with this file's own
+// algorithm: contracts 6,649 / 6,680 (31), domain 9,085 / 9,150 (65),
+// infrastructure 8,341 / 8,360 (19), presentation 928 / 6,000, tooling 12,154 /
+// 12,400.
+//
+// ADR-0059 AMENDMENT (review round 12): `contracts` and `infrastructure` grow
+// past their ceilings answering this round's finding in code. In `contracts`: the
+// closed client-retry vocabulary, which exists because no error CODE can carry
+// what a submitter should do next - this endpoint answers two CONFLICTs whose
+// remedies are opposite. In `infrastructure`: every start refusal now names its
+// own instruction at the point where the reason is still known. `contracts` is
+// RAISED, not ratcheted down as in round 4: that ratchet paid for deleted code,
+// and this is added code with a live consumer in three layers. `domain` moved
+// (one registered log message, one registered attribute vocabulary) but stayed
+// inside, so its ceiling is left alone rather than raised for company.
+// RE-MEASURED with this file's own algorithm: contracts 6,682 / 6,710 (28),
+// domain 9,183 / 9,240 (57), infrastructure 8,380 / 8,400 (20), presentation
+// 928 / 6,000, tooling 12,154 / 12,400.
+//
+// ADR-0059 amendment (review round 13) raises all three for the THIRD refusal
+// category and the correlation-id-joined configuration diagnosis: `contracts`
+// carries the `retry-later` arm and its pacing constant, `domain` the
+// correlationId/configStage observability vocabulary, the exhaustive value-source
+// resolver and the engine's resume guard, `infrastructure` the operator-visible
+// parked-callback report and the one place every configuration refusal is minted.
+// `contracts` had reached its ceiling EXACTLY (6,710 / 6,710), which is the
+// zero-headroom condition the header above exists to prevent, so it moves too.
+// RE-MEASURED: contracts 6,710 / 6,740 (30), domain 9,271 / 9,330 (59),
+// infrastructure 8,485 / 8,515 (30).
+//
+// ADR-0059 amendment (review round 14) raises all three for CLASSIFICATION BY
+// CAUSE and a diagnosis channel that actually carries the diagnosis: `contracts`
+// carries the operator-recoverable marker and the `clientRetryFor` rule stated
+// where the categories are defined, `domain` the configuration-diagnosis id
+// vocabulary and its shape-checked factory plus the marked compile refusals,
+// `infrastructure` the structured refusal emission and a version guard that logs
+// the parked execution on every path that can raise one. All three were within
+// ~30 lines of their ceilings, which is the zero-headroom condition the header
+// above exists to prevent, so none is left to be corrected by an unrelated round.
+// RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,333 / 9,393 (60),
+// infrastructure 8,589 / 8,619 (30).
+//
+// ADR-0059 amendment (review round 15) raises `domain` and `infrastructure` for the
+// DERIVED refusal class (D-260): `infrastructure` gains the compile of the published
+// document, moved out of the composition root so every configuration refusal lives in
+// the configuration modules a fence can derive, plus the step-refusal minter, the
+// loader's fault code, the absent-versus-censored path, and a version guard that states
+// its two verdicts apart. `domain` gains the refusal port and its two registered stages
+// against the deleted loader-error formatter, and had reached 9,388 against 9,393 -
+// five lines, the zero-headroom condition this header exists to prevent - so it moves
+// too. `contracts` is RE-TAKEN and unchanged at 6,752, well inside its ceiling, so it is
+// left alone rather than raised for company.
+// RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,388 / 9,450 (62),
+// infrastructure 8,683 / 8,745 (62).
+//
+// ADR-0059 amendment (review round 16) raises `domain` for making the refusal port
+// the ONE mint rather than a mark nine authors applied nine ways: the port grows a
+// third arm and a home beside the fault type it converts, the plan compiler's six
+// hand-written refusals become typed faults with real document paths, the intake
+// view's two become the same, and the diagnosis shape learns the subscripted
+// segment its emitters had been producing all along. The DELETED half is real too -
+// nine interpolated sentences and two marker imports - so the net is 104 lines for
+// a classification that is now structural. `contracts` and `infrastructure` are
+// RE-TAKEN: `infrastructure` moved by 18 lines and both stay inside the ceilings
+// they already had, so neither is raised for company.
+// RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,492 / 9,555 (63),
+// infrastructure 8,701 / 8,745 (44).
+//
+// ADR-0059 amendment (review round 18) raises `contracts` and `domain` for a fault
+// LOCATION that is built rather than interpolated, and for a demo surface that fails
+// as a value. In `contracts`: the cause reader a surface with ONE
+// instruction-carrying arm needs, so no call site invents a fallback it can never
+// send (D-265). In `domain`: the diagnosis channel's capacity stated once beside the
+// emitter that must respect it, the fault constructor that carries only what it can
+// express, the grammar stage's segment-built location, the parameter walks' refusal
+// of a key the channel cannot name, and the refusal port's fourth arm with its
+// registered stage (D-266/D-267). `contracts` had 11 lines of headroom and `domain`
+// was 80 over - both the zero-headroom condition the header above exists to prevent.
+// `infrastructure` moved by two lines and stays well inside, so it is RE-TAKEN
+// rather than raised for company; `presentation` is re-taken too, since the 928 this
+// header carried had gone several rounds stale.
+// RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,765 / 9,830 (65),
+// infrastructure 8,792 / 8,815 (23), presentation 2,240 / 6,000, tooling 12,154 /
+// 12,400.
+//
+// ADR-0059 amendment (review round 19) raises `domain` and `infrastructure` for a
+// fault location that NAMES the limit that ended it: `domain` carries the two-limit
+// vocabulary, the typed step both parameter walks now discriminate on, one message
+// per cause, and the limit `configError` inherits from its own truncation (the two
+// drifted truncation walks collapse into one step rule, which is the deleted half);
+// `infrastructure` carries that limit on the shared mint's diagnosis and the
+// registered `configPathLimit` on the operator's line. Ending a location for two
+// reasons with one answer reported a LENGTH truncation as a NAMING problem, at the
+// ALLOWED depth, with ordinary camelCase keys (D-268). Both layers were left with
+// twelve and thirteen lines - the zero-headroom condition this header exists to
+// prevent - so both move; the other three did not move and are RE-TAKEN.
+// RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,818 / 9,880 (62),
+// infrastructure 8,802 / 8,850 (48), presentation 2,240 / 6,000, tooling 12,154 /
+// 12,400.
+//
+// ADR-0059 re-measure (review round 20): carrying a fault location and its limit as
+// ONE value (`ConfigPath`, D-269) spent 50 of `domain`'s 62 lines of correction
+// headroom - the typed step both container kinds now take, the subscript step that
+// puts a list POSITION under the same ceiling as a key, and a constructor with no
+// limit argument left to overrule. NO ceiling moves: every layer is inside the one
+// it already had, and a ceiling raised without its own finding is a ceiling nobody
+// is holding. `domain` is now TWELVE lines from its ceiling, which is the
+// zero-headroom condition the header above argues against - named here rather than
+// banked, so the next change to `src/domain/**` reads it as the ADR amendment it now
+// is.
+// RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,868 / 9,880 (12),
+// infrastructure 8,802 / 8,850 (48), presentation 2,240 / 6,000, tooling 12,154 /
+// 12,400.
+// REBASE RE-MEASURE (this branch onto PR #39, the populated world). The merged
+// tree contains BOTH bodies of code, so NEITHER side's ceilings covered it:
+// domain measured 10,447 against a 9,880 ceiling and infrastructure 9,505
+// against 8,850. The per-bucket MAX of the two sides was rejected as the
+// resolution - a ceiling set to the larger of two numbers, neither of which was
+// measured on this tree, asserts a measurement nobody took, which is the same
+// defect as a stale figure. Every ceiling below is RE-MEASURED on the merged
+// tree with this file's own algorithm and raised to measurement plus NAMED
+// headroom, recorded in ADR-0059 (D-270).
+//
+// Stated explicitly rather than rounded away: BEFORE this raise the merged tree
+// left tooling 20 lines (14,330 against 14,350) and contracts 39 lines (6,771
+// against 6,810) of headroom - both the "the next one-line correction fails an
+// unrelated ceiling" condition this header argues against, arriving not from
+// either branch's work but from their sum. `fu-domain-ceiling-headroom` already
+// tracks that condition for the domain layer.
 const CEILINGS = {
-  contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
-  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,093 re-measured, D-214)
-  infrastructure: 8600, // ADR-0057, on the fixture adapter, the CRM projection and the record-origin fact (8,489 re-measured, D-219)
-  presentation: 6000, // grown only by an ADR bump (ADR-0012)
-  // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
-  // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
-  // corpus generator out of src/ would have been evasion rather than
-  // discipline. Measured 3636 at introduction; 3818 after the PR-11a review
-  // round (D-078/D-080 split observation from business instants and replaced
-  // substring resolution with structured parses), then 4254 after D-081 closed
-  // the graph, intake, signoff, and measurement review findings. ADR-0052 raises
-  // the ceiling from 4000 to 4300 with 46 lines of explicit headroom. D-082
-  // raises it to 4900; D-084 records 4900 measured lines after the final
-  // replay-intake review. D-085 raises it to 5900 against 5747 measured lines.
-  // D-086 raises it to 6200 against 5996 measured lines for outcome-based
-  // semantics, request-bound conflict topology, schema-driven uniqueness, and
-  // assignment-aware determinism enforcement. D-152 raises it to 8000 against
-  // 7941 measured lines for exact pending-action balance accounting. D-154
-  // keeps it at 8000 against 7989 lines after settled-outgoing reconciliation.
-  // D-155 raises it to 8100 against 8018 lines for transitive determinism
-  // provenance and restriction lifecycle recomputation. D-158 (ADR-0052) raises
-  // it to 8300 for the conflict-safe corpus substrate. The recorded figure then
-  // went a round stale (8276 against an actual 8292), leaving EIGHT lines of
-  // real headroom - the exact condition the header above argues against, where
-  // the next one-line correction fails `pnpm test` on an unrelated ceiling and
-  // the only remedy is an ADR amendment. D-167 (ADR-0052) re-measures 8446
-  // lines AFTER the fail-closed evidence vocabulary, the spec-coverage check,
-  // the narrowed executable-authority binding, and the parameterized signoff
-  // root, and raises the ceiling to 8700 so a review round has room to correct
-  // itself. That figure then went stale the same way, by 141 lines the two
-  // review commits after it added, so D-172 KEEPS the ceiling at 8700 and
-  // records the re-measured 8587 - 113 lines of real headroom. D-173 keeps it
-  // at 8700 again and re-measures 8607 after the single-sourced real-derived
-  // intake filename rule - 93 lines of real headroom. D-175 keeps it at 8700
-  // once more and re-measures 8657 after the intake naming authority moved into
-  // its own module, which the per-file ceiling forced and which costs one
-  // module header - 43 lines of real headroom. D-176 keeps it at 8700 and
-  // re-measures 8681 after the intake anchoring rule became a STRUCTURAL read
-  // of the pattern rather than a first-and-last-character test - 19 lines of
-  // real headroom, the narrowest this ceiling has run, named here so the next
-  // change reads it as the ADR amendment it now is. D-177 raises it to 9300
-  // against 9053 measured lines: the envelope arrives on the decision-ledger
-  // trunk, whose OWN build-time tooling (`seed-decision-ledger.ts`,
-  // `ledger-rebuild{,-args}.ts`, `decision-ledger-vacuity.ts`, plus the
-  // chain-verify, restore-drill and seed edits) this bucket now measures for the
-  // first time - 366 lines this branch did not write and cannot shrink. A
-  // ceiling is measured on the tree AS IT LANDS, so it is re-taken here rather
-  // than inherited. ADR-0055's consolidated wrap-up amendment (2026-08-10)
-  // raises it to 12400 against 12,139 re-measured lines: the shared gate
-  // constitution decomposed into `scripts/v3-gates/` modules under the 500-line
-  // per-file ceiling (the ADR-0055 rule set, its ratchets, and the CI-workflow
-  // authority the fences and the blocking runner both import), plus the
-  // registry-validation consolidation - 261 lines of named correction headroom.
-  // Every raise above is a
-  // MEASURED ADR amendment recorded in ADR-0052 or ADR-0055, never a code
-  // change - a ceiling raised without a measurement beside it is a ceiling
-  // nobody is holding, and a measurement left stale is the same ceiling with a
-  // number nobody re-took. Tooling is REPORTED SEPARATELY, never averaged into
-  // a platform layer.
-  //
-  // `src/__tests__/**` is NOT in any bucket: 49,365 lines that no ceiling
-  // holds (49,014 before the key-shaping load tests, property family G, and the
-  // catalog-declaration fence check; 45,362 before the prompt-9 policy suites, property families, and
-  // policy-ast fence landed beneath it; 37,529 before D-173 split the two oversized corpus fence files into
-  // per-topic modules, which costs one import header per file; 38,125 before
-  // the non-determinism scanner was decomposed into per-concern modules under
-  // the same ceiling; 38,469 before D-175 made the shared corpus world rebuild
-  // itself on a watch rerun and refuse an unpinned clock; 38,641 before D-176
-  // proved the sharing seam against a counted double instead of two more real
-  // validations; 38,728 before the decision-ledger suites and fences landed
-  // beneath it). Every figure here is re-measured with this file's own
-  // algorithm on the tree AS IT LANDS - the D-175 figure went a review round
-  // stale by 80 lines, which is what the paragraph above says a number nobody
-  // re-took is worth. That gap is recorded
-  // honestly in D-172 under follow-up key `fu-corpus-test-tree-budget`, not left
-  // implicit here.
-  // D-207 (ADR-0057 amendment) raises it to 14,200 against a RE-MEASURED 14,005:
-  // the populated-world review round added the clean-slate sweep's third,
-  // catalog-based reading, the two account rules validate now holds both authors
-  // to, and the roster's asset-class uniqueness refinement. 216 lines of named
-  // headroom became 15, which is the exact "next one-line correction fails an
-  // unrelated ceiling" condition the paragraph above argues against - so the
-  // figure is re-taken and 195 lines are named again rather than banked. D-209
-  // KEEPS 14,200 and re-measures 14,077 after the declaration-aware clean-slate
-  // cross-check, the derived instrument selection and its reachability rule -
-  // 123 lines of real headroom, re-taken rather than inherited. D-210 KEEPS
-  // 14,200 again and re-measures 14,101 after the cross-check's closed column-type
-  // reading and the holding-freshness reference instant - 99 lines of real
-  // headroom, named rather than banked. D-211 KEEPS 14,200 and re-measures
-  // 14,125 after the evidence clock became per-class provenance and the third
-  // account rule joined `accountRuleProblems` - 75 lines of real headroom. D-212
-  // KEEPS 14,200 and re-measures 14,168 after the rule that a household's prose
-  // names nobody from the household it links to - 32 lines of real headroom, the
-  // narrowest this ceiling has run since D-176 and named here rather than banked,
-  // so the next change reads it as the ADR amendment it now is. D-214 RAISES it
-  // to 14,350 against a re-measured 14,232: the clean-slate sweep now counts a
-  // row's ORIGIN rather than the provenance of its values, and reads the pairing
-  // between the two columns off the DDL as well as off the store's catalog. 32
-  // lines of headroom is the condition the paragraph above argues against, so
-  // 118 are named again rather than banked.
-  tooling: 14350, // D-214 (ADR-0057), on the record-origin reading (14,232 re-measured)
+  contracts: 6900, // ADR-0059 (D-270), re-measured on the merged tree: 6,771 + 129 named
+  domain: 10600, // ADR-0059 (D-270), re-measured on the merged tree: 10,447 + 153 named
+  infrastructure: 9650, // ADR-0059 (D-270), re-measured on the merged tree: 9,505 + 145 named
+  presentation: 6000, // grown only by an ADR bump (ADR-0012); re-measured 2,240
+  tooling: 14500, // ADR-0059 (D-270), re-measured on the merged tree: 14,330 + 170 named
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";
