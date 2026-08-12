@@ -73,6 +73,7 @@ const recordStepFault: ConfiguredRefusal = {
   uncompilable: record("uncompilable"),
   unrunnableStep: record("unrunnable-step"),
   intakeMismatch: record("intake-mismatch"),
+  undeclaredCopy: record("undeclared-copy"),
 };
 
 function loadedOf(domain: string): LoadedDomainConfig {

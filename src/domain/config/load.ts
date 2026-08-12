@@ -38,7 +38,7 @@ import {
   domainConfigVersionId,
   type DomainConfigDocument,
 } from "./document";
-import { configError, type DomainConfigError } from "./errors";
+import { configError, configPathOf, type DomainConfigError } from "./errors";
 import type { ConfiguredIntent, ConfiguredSlot } from "./intents";
 import { checkEvidenceWindows } from "./load-closure";
 import { checkIdentity, checkReferences } from "./load-references";
@@ -249,8 +249,14 @@ export const loadDomainConfig = (
   }
   const parsed = DomainConfigDocumentSchema.safeParse(input);
   if (!parsed.success) {
+    // BUILT FROM SEGMENTS, never joined (D-250): a record key the schema rejects is
+    // reported THROUGH by Zod's own issue path, and an author's key may be anything
+    // - `{ "Household.Name": … }` joined would name a node this document does not
+    // have, while a key the channel cannot carry at all would censor the whole
+    // location. Either way the honest answer is the deepest node that CAN be named.
     return err(
-      parsed.error.issues.map((issue) => configError("grammar", issue.path.map(String).join("."), issue.message)),
+      parsed.error.issues.map((issue) =>
+        configError("grammar", configPathOf(issue.path.map(String)), issue.message)),
     );
   }
   const document = parsed.data;

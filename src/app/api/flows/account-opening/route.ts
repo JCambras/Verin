@@ -7,7 +7,7 @@ import {
   loadIntakeForm,
 } from "@infra/config/domain-config-source";
 import { appError, logLevelFor, type AppError } from "@contracts/errors";
-import { CLIENT_RETRY, clientRetryFor } from "@contracts/client-retry";
+import { CLIENT_RETRY, causeRetryFor, clientRetryFor } from "@contracts/client-retry";
 import { refusalResponse } from "@app/_server/refusal";
 import { log } from "@infra/observability/logger";
 import {
@@ -27,10 +27,14 @@ export const runtime = "nodejs";
  * declares no such trigger field at all, which no submission reaches and an
  * operator rollback clears - so that one takes the shared refusal shape and its
  * "come back" instruction rather than a bare server error.
+ *
+ * The VALIDATION arm carries no instruction on the wire at all, so this asks the
+ * cause DIRECTLY (D-249): a fallback here would be an instruction this surface can
+ * never send, and the unsendable one it held named the identity-burning arm.
  */
 function intakeReadRefusal(error: AppError): NextResponse {
-  const retry = clientRetryFor(error, CLIENT_RETRY.newIdentity);
-  return retry === CLIENT_RETRY.later ? refusalResponse(retry, error) : errorResponse(error);
+  const retry = causeRetryFor(error);
+  return retry === null ? errorResponse(error) : refusalResponse(retry, error);
 }
 
 /**

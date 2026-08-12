@@ -15,6 +15,7 @@ import { buildApprovals, buildPolicyTrace, buildRecommendation } from "./build-d
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
 import { buildComparison, buildPolicyAuthoring, buildRecord } from "./build-summary";
 import { dispositionFor, firmById, scenarioById } from "./data";
+import type { DemoVocabulary } from "./vocabulary";
 
 /** How far this branch's journey reaches, from recorded contract data only. */
 function reachOf(scenarioId: string, firmId: string) {
@@ -37,7 +38,21 @@ function stopNoteOf(scenarioId: string, firmId: string): string | null {
   return null;
 }
 
-export function getJourney(scenarioId: string, firmId: string): DecisionJourneyVM {
+/**
+ * The typed journey for one recorded branch, built from contract data and the
+ * ALREADY-RESOLVED configured vocabulary.
+ *
+ * The vocabulary is a PARAMETER rather than something this service resolves,
+ * because resolving it can REFUSE - the published document may be absent, drifted
+ * from its pin, unbindable, or missing a label this journey renders - and a
+ * server-rendered page must answer that with a rendered refusal rather than a
+ * stack trace (D-251). Taking it here keeps every builder below total.
+ */
+export function getJourney(
+  scenarioId: string,
+  firmId: string,
+  vocabulary: DemoVocabulary,
+): DecisionJourneyVM {
   const scenario = scenarioById(scenarioId);
   const firm = firmById(firmId);
   const reached = reachOf(scenario.id, firm.id);
@@ -49,8 +64,8 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
     firmName: firm.name,
     outcomeClass: scenario.outcomeClass,
     workspace: buildWorkspace(scenario),
-    intent: buildIntent(scenario, firm.id),
-    evidence: buildEvidence(scenario, firm.id),
+    intent: buildIntent(scenario, vocabulary),
+    evidence: buildEvidence(scenario, vocabulary),
     recommendation: buildRecommendation(scenario, firm),
     policyTrace: buildPolicyTrace(scenario, firm),
     approvals: reached.authority ? buildApprovals(scenario, firm) : null,
@@ -60,6 +75,6 @@ export function getJourney(scenarioId: string, firmId: string): DecisionJourneyV
     stopNote,
     comparison: buildComparison(scenario),
     policyAuthoring: buildPolicyAuthoring(scenario, firm),
-    record: buildRecord(scenario, firm, reached, stopNote),
+    record: buildRecord(scenario, firm, vocabulary, reached, stopNote),
   };
 }

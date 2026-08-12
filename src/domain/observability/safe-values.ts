@@ -7,7 +7,11 @@ import {
 } from "@contracts/pii";
 import { appError, isErrorCode } from "@contracts/errors";
 import { CLIENT_RETRY } from "@contracts/client-retry";
-import { DOMAIN_CONFIG_ERROR_CODES, MAX_CONFIGURED_VALUE_DEPTH } from "@domain/config/errors";
+import {
+  CONFIG_PATH_SEGMENT_SOURCE,
+  DOMAIN_CONFIG_ERROR_CODES,
+  MAX_CONFIG_DIAGNOSIS_LENGTH,
+} from "@domain/config/errors";
 import { isMachineRecordId } from "@contracts/record-id";
 import { assertTenantContext, type TenantContext } from "@contracts/tenant";
 
@@ -106,6 +110,14 @@ const CONFIGURATION_STAGE_NAMES = [
    * produce, so collapsing the two left the operator unable to tell which.
    */
   "unreadable-version",
+  /**
+   * A document that loaded and BOUND, and then did not declare the copy a surface
+   * renders. Kept apart from `unbindable`: the firm supplied everything the
+   * document asked of it, so an operator sent to the firm registry would be
+   * looking in the wrong place - the fault is in `presentation.copy`, which is
+   * where this refusal's path points.
+   */
+  "undeclared-copy",
   /**
    * A step of an otherwise-compiled plan that could not be PREPARED against the
    * running execution - the dotted path is a document path, so it goes here as
@@ -293,31 +305,23 @@ export type ConfigurationDiagnosisField = Extract<
 /** `${domainConfigId}@${version}` - the identity every golden fixture already pins. */
 const CONFIG_VERSION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*@[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/;
 /**
- * ONE SEGMENT of a dotted document path, SUBSCRIPTED AS DEEPLY AS ITS EMITTER
- * CAN SUBSCRIPT IT.
+ * ONE SEGMENT of a dotted document path, READ FROM THE EMITTER'S OWN STATEMENT OF
+ * WHAT IT MAY BUILD.
  *
- * Schema keys are legitimately camelCase, so the person-name shape `isOpaqueId`
- * keys on would refuse `execution.planTemplates`; the closed alphabet, the digit
- * cap and the caller's 128-character ceiling are what bound this instead. None of
- * those is what went wrong twice. The SUBSCRIPT count was, because it was written
- * as an opinion about what the emitters produce: the loader builds `${path}[i]`
- * wherever it walks a declared LIST, and the one walk over a value graph the
- * SCHEMA does not shape - the deferred-reference substitution inside a
- * primitive's `parameters` - can subscript a single segment once per array level.
+ * Nothing about this shape is chosen here, and that is the point: it was written
+ * twice as an opinion about what the emitters produce, and was wrong twice - first
+ * about subscripts (the loader subscripts every LIST it walks), then about the
+ * whole class of document keys no schema shapes (a primitive's opaque `parameters`
+ * graph, a Zod `invalid_key` path). A shape narrower than its emitters censors the
+ * location of a real refusal and nothing fails.
  *
- * So the cap is not chosen here at all. It is `MAX_CONFIGURED_VALUE_DEPTH`, the
- * bound that emitter is REFUSED AT (`resolveParameters`), read from the module
- * that states it: the shape cannot be narrower than its emitter without the
- * loader having admitted a graph it declared inadmissible (D-246).
- *
- * The SEGMENT COUNT carries no cap of its own for the same reason - any number
- * written here would be a third opinion. The 128-character ceiling in
- * `configurationDiagnosisId` bounds it, and the closed alphabet (no whitespace,
- * no punctuation beyond `.`/`_`/`-`/subscripts) is what makes a value of any
- * length incapable of carrying prose or a person's name.
+ * So `domain/config/errors` states the segment grammar and the length ceiling ONCE,
+ * beside the depth bound its own emitter is refused at, and `configError` - the one
+ * constructor of every fault path - carries only the deepest prefix that statement
+ * can express. This shape is the same statement read from the other end, which is
+ * what makes it a CONSEQUENCE of the emitter rather than a third guess at it
+ * (D-246/D-250).
  */
-const CONFIG_PATH_SEGMENT_SOURCE =
-  String.raw`[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,${MAX_CONFIGURED_VALUE_DEPTH}}`;
 const CONFIGURATION_DIAGNOSIS_SHAPES: Readonly<Record<ConfigurationDiagnosisField, RegExp>> = {
   configHashPinned: /^[0-9a-f]{64}$/,
   configHashRead: /^[0-9a-f]{64}$/,
@@ -334,8 +338,9 @@ const CONFIGURATION_DIAGNOSIS_SHAPES: Readonly<Record<ConfigurationDiagnosisFiel
  * The `configPath` shape admitted only dot-separated segments while the loader
  * subscripted every list it walked, so the most likely run-time fault logged a
  * stage and "[REDACTED]" where its location should have been. THEN it admitted
- * three subscripts while its own emitter descended without a bound at all, which
- * is why the bound now lives with the emitter and this shape reads it.
+ * three subscripts while its own emitter descended without a bound at all, and
+ * even bounded it still could not express a document KEY no schema shapes - which
+ * is why the statement now lives with the emitter and this module reads it.
  */
 export const CONFIGURATION_DIAGNOSIS_FIELDS = Object.freeze(
   Object.keys(CONFIGURATION_DIAGNOSIS_SHAPES).sort(),
@@ -344,7 +349,8 @@ export function configurationDiagnosisId(
   field: ConfigurationDiagnosisField,
   value: string,
 ): ObservabilityId {
-  const shaped = value.length <= 128 && CONFIGURATION_DIAGNOSIS_SHAPES[field].test(value);
+  const shaped = value.length <= MAX_CONFIG_DIAGNOSIS_LENGTH &&
+    CONFIGURATION_DIAGNOSIS_SHAPES[field].test(value);
   return sealId(field, shaped ? value : REDACTED);
 }
 

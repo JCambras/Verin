@@ -255,7 +255,10 @@ rather than from a hand-kept list.
 - **One mint.** A configuration module never mints an `AppError`. It states the typed
   `DomainConfigError` it found, and the `ConfiguredRefusal` port (`src/domain/config/errors.ts`) turns
   that fault into the one refusal shape through the stage arm it belongs to - `uncompilable`,
-  `unrunnableStep`, `intakeMismatch`. Nine hand-written mints saying the same thing in their own words
+  `unrunnableStep`, `intakeMismatch`, `undeclaredCopy` (a surface renders a label the document declares
+  no copy for; kept apart from `unbindable` because the firm supplied everything the document asked of
+  it, so an operator sent to the firm registry would be looking in the wrong place - D-251). Nine
+  hand-written mints saying the same thing in their own words
   is what produced a server error with nothing to quote, an external provider holding our internal ids,
   and no operator line at all (D-244/D-245). Pure domain code reaches no logger, which is why the
   conversion is a port rather than a function in the module that found the fault.
@@ -288,3 +291,17 @@ rather than from a hand-kept list.
   is also why the admitted `configPath` shape is derived from what the emitters actually produce and
   bounded by `MAX_CONFIGURED_VALUE_DEPTH` (§7): a path the emitter can build and the shape cannot
   express would censor the very location the operator needs (D-246).
+- **A LOCATION is built from segments, and the one constructor carries only what the channel can
+  express.** `src/domain/config/errors.ts` states the channel's capacity once - the segment grammar and
+  the length ceiling - and `configError`, `configPathOf` (the grammar stage's builder) and the
+  observability shape all read it. A document KEY is author-chosen and may be anything: one carrying
+  whitespace or non-ASCII would censor the whole location, and one carrying a `.` is worse than
+  censored, since joining it SHAPES perfectly while naming a node the document does not have. So a
+  parameter name or graph key the channel cannot name as one segment is refused at ADMISSION beside the
+  depth bound, and every fault reports the deepest NAMEABLE ancestor rather than a fabricated node
+  (D-250).
+- **A surface that reads configured copy fails as a VALUE.** The demo station page renders on the
+  server from the published document, so it resolves its vocabulary before building anything and renders
+  the refusal - generic sentence, correlation reference, no internals - when this deployment cannot
+  supply it. Removing the published document must break that journey visibly and honestly, never as a
+  stack trace (X-9, D-251).

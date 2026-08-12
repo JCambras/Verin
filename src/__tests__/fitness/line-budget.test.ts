@@ -292,10 +292,27 @@ const CEILINGS = {
 // they already had, so neither is raised for company.
 // RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,492 / 9,555 (63),
 // infrastructure 8,701 / 8,745 (44).
+//
+// ADR-0058 amendment (review round 18) raises `contracts` and `domain` for a fault
+// LOCATION that is built rather than interpolated, and for a demo surface that fails
+// as a value. In `contracts`: the cause reader a surface with ONE
+// instruction-carrying arm needs, so no call site invents a fallback it can never
+// send (D-249). In `domain`: the diagnosis channel's capacity stated once beside the
+// emitter that must respect it, the fault constructor that carries only what it can
+// express, the grammar stage's segment-built location, the parameter walks' refusal
+// of a key the channel cannot name, and the refusal port's fourth arm with its
+// registered stage (D-250/D-251). `contracts` had 11 lines of headroom and `domain`
+// was 80 over - both the zero-headroom condition the header above exists to prevent.
+// `infrastructure` moved by two lines and stays well inside, so it is RE-TAKEN
+// rather than raised for company; `presentation` is re-taken too, since the 928 this
+// header carried had gone several rounds stale.
+// RE-MEASURED: contracts 6,771 / 6,810 (39), domain 9,765 / 9,830 (65),
+// infrastructure 8,792 / 8,815 (23), presentation 2,240 / 6,000, tooling 12,154 /
+// 12,400.
 const CEILINGS = {
-  contracts: 6782, // ADR-0058 as amended five times, on classification by cause (6,752 measured)
-  domain: 9685, // ADR-0058 as amended twelve times, on the adapter mint and emitter-derived shape (9,622 measured)
-  infrastructure: 8815, // ADR-0058 as amended six times, on the adapter mint (8,769 measured)
+  contracts: 6810, // ADR-0058 as amended six times, on the cause reader (6,771 measured)
+  domain: 9830, // ADR-0058 as amended thirteen times, on the built fault location (9,765 measured)
+  infrastructure: 8815, // ADR-0058 as amended six times, on the adapter mint (8,792 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

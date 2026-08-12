@@ -26,6 +26,7 @@ import {
   DISPOSITION_BADGES,
 } from "./build-decision";
 import { buildExecution, buildSafety, buildVerification } from "./build-outcome";
+import type { DemoVocabulary } from "./vocabulary";
 import { DEMO_NOW, FIRMS, IDS, OBSERVED_RECENT, dispositionFor, type FirmData, type ScenarioData } from "./data";
 
 function thresholdMetric(firm: FirmData): DisplayMetric {
@@ -169,7 +170,13 @@ export function buildPolicyAuthoring(scenario: ScenarioData, firm: FirmData): Po
   };
 }
 
-export function buildRecord(scenario: ScenarioData, firm: FirmData, reached: { authority: boolean; safety: boolean; execution: boolean }, stopNote: string | null): RecordVM {
+export function buildRecord(
+  scenario: ScenarioData,
+  firm: FirmData,
+  vocabulary: DemoVocabulary,
+  reached: { authority: boolean; safety: boolean; execution: boolean },
+  stopNote: string | null,
+): RecordVM {
   const provenance = recordProvenance(
     [prov("synthetic-fixture", OBSERVED_RECENT), prov("user-entered-demo-input", DEMO_NOW)],
     DEMO_NOW,
@@ -188,8 +195,8 @@ export function buildRecord(scenario: ScenarioData, firm: FirmData, reached: { a
       instructionVersion: "HH-INSTR-SMITH v3",
       auditPosition: IDS.auditPosition,
     },
-    intent: buildIntent(scenario, firm.id),
-    evidence: buildEvidence(scenario, firm.id).rows,
+    intent: buildIntent(scenario, vocabulary),
+    evidence: buildEvidence(scenario, vocabulary).rows,
     disposition: buildDisposition(scenario, firm),
     precedence: buildPolicyTrace(scenario, firm).rows,
     approvalStages: reached.authority ? buildStages(scenario, firm, "final") : null,

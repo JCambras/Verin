@@ -355,6 +355,7 @@ export const configuredRefusal = (domainConfigId: string): ConfiguredRefusal => 
   uncompilable: (fault) => configurationRefusal(domainConfigId, "uncompilable", firstFault([fault])),
   unrunnableStep: (fault) => configurationRefusal(domainConfigId, "unrunnable-step", firstFault([fault])),
   intakeMismatch: (fault) => configurationRefusal(domainConfigId, "intake-mismatch", firstFault([fault])),
+  undeclaredCopy: (fault) => configurationRefusal(domainConfigId, "undeclared-copy", firstFault([fault])),
 });
 
 /**

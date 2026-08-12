@@ -185,10 +185,18 @@ gap report. Load-bearing rules an agent trips over:
   deployment cannot resolve or compile its published configuration" refusal is operator-recoverable and
   therefore `retry-later` wherever it arises, and a surface READS that instruction
   (`clientRetryFor`, `src/contracts/client-retry.ts`) instead of choosing one or pattern-matching a
-  status. No deployment internal - document path, file name, env var, hash, version id - reaches
-  user-facing copy (static literals included) or the external provider: the wire gets a generic sentence
-  plus the correlation reference, and the diagnosis goes to the operator as the REGISTERED fields
-  `configStage`/`configCode`/`configPath` (D-240..D-247).
+  status (a surface whose other arm carries no instruction asks `causeRetryFor` rather than inventing a
+  fallback it can never send, D-249). No deployment internal - document path, file name, env var, hash,
+  version id - reaches user-facing copy (static literals included) or the external provider: the wire
+  gets a generic sentence plus the correlation reference, and the diagnosis goes to the operator as the
+  REGISTERED fields `configStage`/`configCode`/`configPath` (D-240..D-247). A fault LOCATION is BUILT
+  from segments, never interpolated: `src/domain/config/errors.ts` states the channel's segment grammar
+  and length ceiling once, `configError` carries only the deepest prefix that statement can express, and
+  an author-chosen key it cannot name is refused at admission - so a fault reports the deepest nameable
+  ancestor instead of `[REDACTED]` or a node the document does not have (D-250). A surface that renders
+  configured copy resolves it up front and renders the refusal when it cannot: the demo station page is
+  server-rendered, so deleting the published document must break that journey visibly, never as a stack
+  trace (D-251).
 - **Never name a Zod schema type (or any deeply recursive type) in an exported `src/domain/` signature**
   (D-206): the sealed-authority fences expand parameter types structurally and a schema generic makes
   that walk exhaust its heap - the worker DIES mid-file and vitest reports a partial run, not a failure.

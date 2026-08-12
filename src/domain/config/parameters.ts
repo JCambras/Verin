@@ -23,7 +23,12 @@
  */
 import { z } from "zod";
 import { err, ok, type Result } from "@contracts/result";
-import { configError, MAX_CONFIGURED_VALUE_DEPTH, type DomainConfigError } from "./errors";
+import {
+  childConfigPath,
+  configError,
+  MAX_CONFIGURED_VALUE_DEPTH,
+  type DomainConfigError,
+} from "./errors";
 
 
 /** The tenant-scoped reference classes a parameter position may defer. */
@@ -99,19 +104,25 @@ export type RefResolver = (ref: ParameterRef["$ref"]) => unknown | null;
 
 /**
  * WHERE A PARAMETER GRAPH STOPS BEING EXPRESSIBLE - the admission half of
- * `MAX_CONFIGURED_VALUE_DEPTH`.
+ * `MAX_CONFIGURED_VALUE_DEPTH` and of the fault channel's SEGMENT grammar.
  *
  * `substitute` below descends once per container level and appends `.key` or
  * `[index]` to the fault path as it goes, so the path it can emit is exactly as
- * deep as the graph it is given. This walk MIRRORS that descent - same
- * containers, same placeholder short-circuit - and refuses at the bound, naming
- * the deepest ADMITTED path rather than the offending one: reporting a path the
- * channel cannot carry would censor the very location this refusal exists to
- * state.
+ * deep as the graph it is given - and its segments are exactly the OWN KEYS of a
+ * value graph this schema deliberately does not shape (the primitive's own schema
+ * is the judge). Both are therefore author-chosen, and both are refused HERE: this
+ * walk MIRRORS that descent - same containers, same placeholder short-circuit - and
+ * refuses at the bound or at the first unnameable key, naming the deepest ADMITTED
+ * path rather than the offending one. Reporting a path the channel cannot carry
+ * censors the very location the refusal exists to state; reporting one that JOINS a
+ * dotted key into it invents a node the document does not have, which is worse
+ * (D-246/D-250).
  *
- * Refusing at admission is what makes the diagnosis shape a consequence of this
- * constant instead of a second opinion about it (D-246), the same way the policy
- * loader bounds document nesting before parsing rather than after (D-181).
+ * Refusing at admission is what makes the diagnosis shape a consequence of these
+ * constants instead of a second opinion about them, the same way the policy loader
+ * bounds document nesting before parsing rather than after (D-181) - and it is what
+ * lets `substitute` append keys unconditionally, since every key it can reach has
+ * already been proven nameable.
  */
 const depthOverruns = (
   value: unknown,
@@ -120,11 +131,28 @@ const depthOverruns = (
   errors: DomainConfigError[],
 ): void => {
   if (isParameterRef(value)) return;
+  const unnameable: string[] = [];
   const entries: (readonly [string, unknown])[] = Array.isArray(value)
     ? value.map((entry, index) => [`${path}[${index}]`, entry] as const)
     : typeof value === "object" && value !== null
-    ? Object.entries(value as Record<string, unknown>).map(([key, entry]) => [`${path}.${key}`, entry] as const)
+    ? Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
+        const at = childConfigPath(path, key);
+        if (at === path) {
+          unnameable.push(key);
+          return [];
+        }
+        return [[at, entry] as const];
+      })
     : [];
+  if (unnameable.length > 0) {
+    errors.push(
+      configError(
+        "type-mismatch",
+        path,
+        `a configured parameter value may only carry keys the operator's fault channel can name as one segment, so ${unnameable.length} key(s) below this point could not be reported`,
+      ),
+    );
+  }
   if (entries.length === 0) return;
   if (remaining === 0) {
     errors.push(
@@ -270,22 +298,38 @@ export const resolveParameters = (
   path: string,
 ): Result<ResolvedParameters, readonly DomainConfigError[]> => {
   const errors: DomainConfigError[] = [];
+  // A parameter NAME is author-chosen too, so the location it is reported at is
+  // built rather than interpolated: a name the channel cannot carry as one segment
+  // is refused AT the parameters node, which is a location the document has.
   for (const name of Object.keys(parameters)) {
+    const at = childConfigPath(path, name);
+    if (at === path) {
+      errors.push(
+        configError(
+          "unknown-reference",
+          path,
+          `primitive ${primitive.id} declares no parameter of that name, and the name is not one the operator's fault channel can report`,
+        ),
+      );
+      continue;
+    }
     if (!primitive.declaredParameters.has(name)) {
       errors.push(
         configError(
           "unknown-reference",
-          `${path}.${name}`,
+          at,
           `primitive ${primitive.id} declares no parameter named ${JSON.stringify(name)}`,
         ),
       );
     }
   }
   // BEFORE any walk that recurses on document structure, so a graph deeper than
-  // the fault channel can express is refused rather than walked - and so every
-  // recursion below is bounded by an admission this call has already proven.
+  // the fault channel can express - or carrying a key it cannot name - is refused
+  // rather than walked, and so every recursion below is bounded by an admission
+  // this call has already proven.
   for (const [name, value] of Object.entries(parameters)) {
-    depthOverruns(value, `${path}.${name}`, MAX_CONFIGURED_VALUE_DEPTH, errors);
+    const at = childConfigPath(path, name);
+    if (at !== path) depthOverruns(value, at, MAX_CONFIGURED_VALUE_DEPTH, errors);
   }
   if (errors.length > 0) return err(errors);
   for (const shaping of primitive.keyShapingParameters) {

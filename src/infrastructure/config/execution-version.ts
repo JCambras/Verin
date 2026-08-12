@@ -36,6 +36,28 @@ type VersionVerdict =
   | { readonly kind: "unreadable" }
   | { readonly kind: "superseded"; readonly started: string };
 
+/**
+ * TREATING AN ABSENT PERSISTED VERSION AS COMPATIBLE IS INTENTIONAL (D-230/D-234).
+ *
+ * WHY: an execution carrying no pinned version can only have started under the
+ * plan published BEFORE pinning existed, so refusing on absence would make the
+ * guard's first act on deployment the stranding of every legitimate in-flight
+ * execution - a client who has already signed, parked forever - which is the exact
+ * harm this guard exists to prevent.
+ *
+ * WHAT IT COSTS: a persisted version that was stripped or is genuinely unreadable
+ * as a KEY is indistinguishable from a legacy one, so it resumes rather than
+ * refusing. (A recorded value that is present but is not a version STRING is a
+ * different fact and still fails closed, below.) The guard is therefore inert for
+ * exactly the executions that exist at the moment it deploys, and it is safe here
+ * only because the compiled plan's step order matches the deleted hand-coded
+ * flow's - a property of this migration, not one this function checks. Resuming
+ * against the PINNED document instead is the end state and stays owned by PC-4
+ * (prompts 15/19, docs/domain-config-gaps.md).
+ *
+ * Tightening this to refuse on absence is a REGRESSION, not a hardening: it trades
+ * a bounded, migration-scoped blind spot for the stranding bug itself.
+ */
 const compareVersion = (flow: CompiledFlow, state: ExecutionState): VersionVerdict => {
   const started = state.data[CONFIG_VERSION_KEY];
   if (started === undefined || started === flow.domainConfigVersionId) return { kind: "compatible" };

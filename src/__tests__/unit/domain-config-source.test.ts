@@ -168,6 +168,27 @@ describe("the domain-configuration source refuses without leaking its diagnosis"
     expect(line["configCode"]).toBe(fault.code);
     expect(Object.values(line)).not.toContain(REDACTED);
   });
+
+  it("answers a surface asking for copy the document does not declare, through the same mint", () => {
+    // The stage a demo station page raises when the document loaded and BOUND and
+    // then said none of the words it renders (D-251). It is kept apart from
+    // `unbindable` because the firm supplied everything the document asked of it -
+    // an operator sent to the firm registry would be looking in the wrong place.
+    const error = configuredRefusal(UNMEMOIZED_DOMAIN).undeclaredCopy({
+      code: "incomplete",
+      path: "presentation.copy.slots.household",
+      message: "no copy for a label this journey renders",
+    });
+    const correlationId = error.context?.["correlationId"];
+    expect(error.message).toContain(String(correlationId));
+    expect(error.message).not.toMatch(DOTTED_DOCUMENT_PATH);
+    expect(clientRetryFor(error, CLIENT_RETRY.none)).toBe(CLIENT_RETRY.later);
+    const line = lastLogLine();
+    expect(line["correlationId"]).toBe(correlationId);
+    expect(line["configStage"]).toBe("undeclared-copy");
+    expect(line["configPath"]).toBe("presentation.copy.slots.household");
+    expect(Object.values(line)).not.toContain(REDACTED);
+  });
 });
 
 /**

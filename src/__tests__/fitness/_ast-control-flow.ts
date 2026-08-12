@@ -26,7 +26,12 @@ function statementsMayExit(statements: readonly Statement[]): boolean {
   return statements.some(statementMayExit);
 }
 
-function statementMayExit(statement: Statement): boolean {
+/**
+ * Can this statement return or throw? EXPORTED so a caller that sanctions ONE
+ * reviewed early exit can find every exit itself and judge each by identity,
+ * rather than by loosening the reachability rule below for all of them.
+ */
+export function statementMayExit(statement: Statement): boolean {
   if (Node.isReturnStatement(statement) || Node.isThrowStatement(statement)) {
     return true;
   }
@@ -89,7 +94,17 @@ function contains(container: Node, node: Node): boolean {
   return container === node || node.getAncestors().includes(container);
 }
 
-export function isProvablyReachable(node: Node, boundary: Node): boolean {
+/**
+ * `exempt` names statements a caller has ALREADY judged individually - a reviewed
+ * conditional refusal it admits by identity. Everything else that may exit before
+ * `node` still makes it unreachable, so exempting one statement can never widen the
+ * rule to the next author's early return.
+ */
+export function isProvablyReachable(
+  node: Node,
+  boundary: Node,
+  exempt: readonly Node[] = [],
+): boolean {
   for (const ancestor of node.getAncestors()) {
     if (ancestor === boundary) break;
     if (Node.isIfStatement(ancestor)) {
@@ -117,7 +132,10 @@ export function isProvablyReachable(node: Node, boundary: Node): boolean {
       const index = statements.findIndex((statement) =>
         contains(statement, node),
       );
-      if (index > 0 && statementsMayExit(statements.slice(0, index))) {
+      const preceding = statements
+        .slice(0, Math.max(index, 0))
+        .filter((statement) => !exempt.includes(statement));
+      if (index > 0 && statementsMayExit(preceding)) {
         return false;
       }
     }

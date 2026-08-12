@@ -26,6 +26,9 @@ import {
 import { resolveParameters, type ParameterOwner } from "@domain/config/parameters";
 import { compileFlowDefinition } from "@domain/config/plan-compiler";
 import {
+  carriableConfigPath,
+  configError,
+  MAX_CONFIG_DIAGNOSIS_LENGTH,
   MAX_CONFIGURED_VALUE_DEPTH,
   type ConfiguredRefusal,
   type DomainConfigError,
@@ -88,11 +91,12 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *
  *  RULE F - EVERY VOCABULARY ID THE DEMO ASKS FOR IS DECLARED BY THE DOCUMENT.
  *    The walking skeleton reads its slot, evidence-kind and action labels from
- *    `money-movement.yaml` through `src/app/demo/vocabulary.ts`, which THROWS on
- *    an id the document does not declare. Left unfenced, renaming a slot in the
- *    configuration would 500 the investor-demo journey at run time; the ids are
- *    resolved by SYMBOL from every call site, so an aliased import cannot evade
- *    the check and a non-literal id fails closed rather than passing unproven.
+ *    `money-movement.yaml` through `src/app/demo/vocabulary.ts`, which REFUSES as
+ *    a typed value on an id the document does not declare (D-251). Left unfenced,
+ *    renaming a slot in the configuration would turn the investor-demo journey
+ *    into a rendered refusal at run time; the ids are resolved by SYMBOL from
+ *    every call site, so an aliased import cannot evade the check and a
+ *    non-literal id fails closed rather than passing unproven.
  *
  *  RULE G - A CONFIGURED ENUM VOCABULARY EQUALS THE STORE VOCABULARY IT FEEDS.
  *    `registration-type`'s declared `values` and `ACCOUNT_TYPES` (the union the
@@ -140,10 +144,13 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    Assigning a `ClientRetry` per call site is what produced the inconsistency
  *    RULE I closes - the version guard said "come back", the start path said
  *    "resubmitting will not help", and the resume path said nothing, for one
- *    broken document. Every decision goes through `clientRetryFor(error, …)`, and
- *    the deciding files are DERIVED (a file that reads the closed vocabulary, or
- *    writes one of its arms into a `retry` position) rather than listed - a
- *    hand-listed surface set is the same per-site bookkeeping moved into the fence.
+ *    broken document. Every decision goes through one of the contract's OWN cause
+ *    readers, and both the deciding files and the admissible READERS are DERIVED
+ *    (a file that reads the closed vocabulary, or writes one of its arms into a
+ *    `retry` position; a reader the vocabulary's module exports returning that
+ *    vocabulary) rather than listed - a hand-listed surface set is the same
+ *    per-site bookkeeping moved into the fence, and a hand-listed reader name would
+ *    have read the `null`-answering reader D-249 added as a STATED category.
  *
  *  RULE K - NO DEPLOYMENT INTERNAL REACHES A USER-FACING SURFACE OR THE WIRE
  *    (D-243). The screen that told an advisor to restore a YAML path survived
@@ -860,11 +867,38 @@ function retryDecisions(sourceFile: SourceFile): Node[] {
   ];
 }
 
+/**
+ * THE READERS AN INSTRUCTION MAY COME FROM, derived from the contract's OWN
+ * exported surface rather than spelled here.
+ *
+ * A hardcoded name is why this rule would have refused the second reader the
+ * vocabulary needed: a surface whose other arm carries no instruction at all has
+ * nothing to fall back TO, so it asks the cause for `ClientRetry | null` instead of
+ * inventing a fallback it can never send (D-249). Both readers state ONE rule -
+ * `clientRetryFor` is defined in terms of `causeRetryFor` - so admitting whichever
+ * ones the contract exports is admitting the rule, not a list. A project with no
+ * contract admits NONE, so the derivation fails closed.
+ */
+export function retryCauseReaders(project: Project): string[] {
+  const sourceFile = project.getSourceFiles()
+    .find((candidate) => normalizedPath(candidate.getFilePath()) === CLIENT_RETRY_CONTRACT);
+  return (sourceFile?.getFunctions() ?? [])
+    .filter((declaration) =>
+      declaration.isExported() &&
+      (declaration.getReturnTypeNode()?.getText() ?? "").includes("ClientRetry"))
+    .flatMap((declaration) => {
+      const name = declaration.getName();
+      return name === undefined ? [] : [name];
+    })
+    .sort();
+}
+
 export function statedRetryInstructions(
   project: Project,
   roots: readonly string[],
 ): { readonly violations: string[]; readonly decisions: number } {
   const violations: string[] = [];
+  const readers = retryCauseReaders(project);
   let decisions = 0;
   for (const file of retryDecisionFiles(project, roots)) {
     const sourceFile = project.getSourceFiles()
@@ -873,9 +907,9 @@ export function statedRetryInstructions(
     for (const decision of retryDecisions(sourceFile)) {
       decisions += 1;
       const derived = Node.isCallExpression(decision) &&
-        decision.getExpression().getText() === "clientRetryFor";
+        readers.includes(decision.getExpression().getText());
       if (!derived) {
-        violations.push(`${file}:${decision.getStartLineNumber()}: a client instruction is STATED here (${decision.getText()}) rather than read from the refusal's cause via clientRetryFor()`);
+        violations.push(`${file}:${decision.getStartLineNumber()}: a client instruction is STATED here (${decision.getText()}) rather than read from the refusal's cause via ${readers.join("() / ") || "the contract's reader"}()`);
       }
     }
   }
@@ -1117,6 +1151,99 @@ export function emittedConfigurationPaths(documents: readonly JsonNode[]): strin
 }
 
 /**
+ * WHAT THE LEAF SWEEP ABOVE STRUCTURALLY CANNOT REACH, TAKE TWO: a path segment
+ * that is a document KEY rather than a document VALUE.
+ *
+ * The probes replace string LEAVES, so every segment they provoke is a name the
+ * SCHEMA chose. Two emitters interpolate names the AUTHOR chose: a Zod
+ * `invalid_key` issue reports its own path THROUGH the offending key, and a
+ * primitive's `parameters` map (`z.record(z.string().min(1), z.unknown())`, opaque
+ * by design because the primitive's own schema is the judge) has both its names and
+ * every own key of its value graph appended by the substitution walk. Neither can
+ * be reached by corrupting a leaf, which is how a bound-and-fenced shape still
+ * sealed every fault an author's `parameters: { "tolerance level": 0 }` produces.
+ *
+ * These tokens are what a document key can legitimately BE and the channel's closed
+ * alphabet legitimately cannot carry: whitespace, punctuation, non-ASCII, and a name
+ * past the per-segment ceiling.
+ */
+const HOSTILE_KEYS = ["tolerance level", "Household.Name", "propietário", "k".repeat(200)] as const;
+
+/** Every own MAP key of a document, as the path to it. */
+function recordKeys(value: unknown, at: readonly (string | number)[], out: (string | number)[][]): void {
+  if (Array.isArray(value)) return void value.forEach((entry, index) => recordKeys(entry, [...at, index], out));
+  if (typeof value !== "object" || value === null) return;
+  for (const [key, entry] of Object.entries(value)) {
+    out.push([...at, key]);
+    recordKeys(entry, [...at, key], out);
+  }
+}
+
+function withKeyRenamed(document: JsonNode, at: readonly (string | number)[], name: string): JsonNode {
+  const mutant = JSON.parse(JSON.stringify(document)) as JsonNode;
+  let node = mutant as Record<string | number, unknown>;
+  for (const segment of at.slice(0, -1)) node = node[segment] as Record<string | number, unknown>;
+  const key = at.at(-1)!;
+  const carried = node[key];
+  delete node[key];
+  node[name] = carried;
+  return mutant;
+}
+
+/**
+ * Every dotted path the REAL loader emits for the shipped documents when one KEY at
+ * a time is a name the diagnosis channel cannot carry. Returned WITH the raw path
+ * each fault would have had before `configError` bounded it, so the rule can prove
+ * the mechanism is load-bearing rather than that the sweep found nothing.
+ */
+export function emittedKeyFaultPaths(
+  documents: readonly JsonNode[],
+): { readonly emitted: string[]; readonly hostileSegments: number } {
+  const emitted = new Set<string>();
+  let hostileSegments = 0;
+  for (const document of documents) {
+    const keys: (string | number)[][] = [];
+    recordKeys(document, [], keys);
+    for (const at of keys) {
+      for (const hostile of HOSTILE_KEYS) {
+        const loaded = loadDomainConfig(withKeyRenamed(document, at, hostile));
+        if (loaded.ok) continue;
+        for (const fault of loaded.error) {
+          emitted.add(fault.path);
+          // The location the emitter WANTED: this key is in the path Zod and the
+          // substitution walk build, and it is exactly what used to be sealed.
+          if (fault.path.includes(hostile)) hostileSegments += 1;
+        }
+      }
+    }
+  }
+  return { emitted: [...emitted].sort(), hostileSegments };
+}
+
+/**
+ * The paths the parameter emitters build for an author-chosen NAME and for an
+ * author-chosen key inside the OPAQUE value graph under one - driven through the
+ * real `resolveParameters`, which is where both are interpolated.
+ */
+export function parameterKeyPaths(name: string, nestedKey: string): string[] {
+  const owner: ParameterOwner = {
+    id: "probe-primitive",
+    keyShapingParameters: [],
+    declaredParameters: new Set(["p"]),
+    parseParameters: () => ({ ok: true, parameters: {} }),
+  };
+  const paths: string[] = [];
+  for (const parameters of [
+    { [name]: 1 },
+    { p: { [nestedKey]: { $ref: { kind: "no-such-kind", class: "probe" } } } },
+  ]) {
+    const resolved = resolveParameters(owner, parameters, () => null, "primitiveBindings.probe.parameters");
+    if (!resolved.ok) paths.push(...resolved.error.map((fault) => fault.path));
+  }
+  return paths;
+}
+
+/**
  * WHAT THE LEAF SWEEP ABOVE STRUCTURALLY CANNOT REACH: a path whose DEPTH comes
  * from the document's SHAPE rather than from its schema.
  *
@@ -1221,6 +1348,7 @@ export function emittedIntakePaths(form: IntakeForm): string[] {
   };
   const refuse: ConfiguredRefusal = {
     uncompilable: collect, unrunnableStep: collect, intakeMismatch: collect,
+    undeclaredCopy: collect,
   };
   const admitted = Object.fromEntries(form.fields.map((field) => [field.field, "supplied"]));
   for (const field of form.fields) {
@@ -1421,6 +1549,11 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     // nothing at all.
     expect(retryDecisionFiles(project, WIRE_MESSAGE_ROOTS).length).toBeGreaterThan(0);
     expect(stated.decisions).toBeGreaterThan(0);
+    // ...and the READERS are the contract's own, so a rule that admitted a name it
+    // remembered rather than the ones the vocabulary publishes cannot pass here.
+    const readers = retryCauseReaders(project);
+    expect(readers, "every reader a surface may take its instruction from is exported by the contract")
+      .toEqual(["causeRetryFor", "clientRetryFor"]);
   });
 
   it("(K) enforces: no deployment internal reaches a user-facing surface or the wire", () => {
@@ -1459,6 +1592,83 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
+  it("(L) enforces: a path segment the AUTHOR chose survives the channel too", () => {
+    // The class two bounded-and-fenced shapes still could not express: a document
+    // KEY. Every fault the real loader emits for a hostile key must carry a
+    // location, and the sweep must really have driven the emitters that
+    // interpolate one - otherwise this passes against nothing, which is how the
+    // previous shape passed.
+    const swept = emittedKeyFaultPaths(DOMAIN_FILES.map((file) => parsed(file) as JsonNode));
+    const sealed = sealedDiagnosisValues("configPath", swept.emitted);
+    expect(
+      sealed,
+      `a document key the author chose censors the location of its own refusal:\n${sealed.join("\n")}`,
+    ).toEqual([]);
+    expect(swept.emitted.length, "the key sweep must reach the loader at all").toBeGreaterThan(10);
+    expect(
+      swept.hostileSegments,
+      "no emitted path carries a hostile key, so this rule would pass on a shape that seals them",
+    ).toBe(0);
+    // The parameter emitters, driven directly: an undeclared parameter NAME and an
+    // own key of the opaque value graph under a declared one. Both are appended to
+    // the path verbatim, both are author-chosen, and neither is reachable by
+    // corrupting a leaf.
+    for (const hostile of HOSTILE_KEYS) {
+      const paths = parameterKeyPaths(hostile, hostile);
+      expect(paths.length, "the parameter emitters must refuse and report").toBeGreaterThan(1);
+      expect(sealedDiagnosisValues("configPath", paths)).toEqual([]);
+      // ...and what survives is the deepest ADMITTED ancestor - a location the
+      // document really has - never the offending segment silently kept.
+      for (const path of paths) {
+        expect(path).toBe(carriableConfigPath(path));
+        expect(path.includes(hostile)).toBe(false);
+        expect("primitiveBindings.probe.parameters.p".startsWith(path)).toBe(true);
+      }
+    }
+    // ANTI-VACUITY, the other way: every RAW path those emitters would have built
+    // by interpolation is broken - SEALED by the channel, or (the dotted key) shaped
+    // perfectly while naming one more node than the emitter meant, which is the
+    // confidently-wrong location that is worse than a censored one. Building the
+    // location from segments is what answers both.
+    for (const hostile of HOSTILE_KEYS) {
+      const raw = `primitiveBindings.probe.parameters.${hostile}`;
+      const sealed = sealedDiagnosisValues("configPath", [raw]).length === 1;
+      const misaddressed = !sealed && raw.split(".").length !== "primitiveBindings.probe.parameters.x".split(".").length;
+      expect(sealed || misaddressed, `interpolating ${JSON.stringify(hostile)} would have been fine`).toBe(true);
+    }
+  });
+
+  it("(L) enforces: NO string can make the one fault constructor emit an uncarriable path", () => {
+    // The shape is a CONSEQUENCE of the emitter now, so this is a property of the
+    // constructor rather than a sample of documents: every fault in the system is
+    // built here, and whatever it is handed, what it carries survives the channel.
+    const segments = [
+      "", ".", "..", "a".repeat(65), "a".repeat(64), "slots[0]", "slots[00000000]",
+      " ", "\n", "présentation", "a b", "a.b c.d", "{slot:amount}", "a[0][1][2][3][4][5][6][7][8]",
+      ...HOSTILE_KEYS,
+    ];
+    const paths = segments.flatMap((segment) => [
+      segment,
+      `presentation.copy.slots.${segment}`,
+      `${segment}.presentation`,
+      `intents.open-account.slots.${segment}.type`,
+      Array.from({ length: 40 }, (_, index) => `s${index}${segment}`).join("."),
+    ]);
+    for (const path of paths) {
+      const carried = configError("grammar", path, "probe").path;
+      expect(sealedDiagnosisValues("configPath", [carried]), `${JSON.stringify(path)} -> ${JSON.stringify(carried)}`)
+        .toEqual([]);
+      // A carried path is a PREFIX of what it was asked to report: the constructor
+      // may lose depth, never invent a location.
+      expect(path === carried || path.startsWith(`${carried}.`) || carried === "").toBe(true);
+    }
+    // ...and the ceiling is the channel's own, so a path of otherwise-legal segments
+    // cannot outgrow it either.
+    const long = Array.from({ length: 40 }, (_, index) => `segment${index}`).join(".");
+    expect(long.length).toBeGreaterThan(MAX_CONFIG_DIAGNOSIS_LENGTH);
+    expect(configError("grammar", long, "probe").path.length).toBeLessThanOrEqual(MAX_CONFIG_DIAGNOSIS_LENGTH);
+  });
+
   it("(L) enforces: a step the COMPILER cannot prepare reports a path the channel carries", async () => {
     // The `unrunnable-step` stage, from the REAL compiler - the run-time fault the
     // sealed shape hid, reached the only way that proves anything: by running the
@@ -1479,6 +1689,7 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     };
     const refuse: ConfiguredRefusal = {
       uncompilable: record, unrunnableStep: record, intakeMismatch: record,
+      undeclaredCopy: record,
     };
     const compiled = compileFlowDefinition(loaded.value, "open-account", refuse);
     expect(compiled.ok).toBe(true);
@@ -1669,7 +1880,9 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
 
     it("(I) ANTI-VACUITY: the port arms are read from the interface, not spelled here", () => {
       const project = realProject();
-      expect(refusalPortArms(project)).toEqual(["intakeMismatch", "uncompilable", "unrunnableStep"]);
+      expect(refusalPortArms(project)).toEqual([
+        "intakeMismatch", "uncompilable", "undeclaredCopy", "unrunnableStep",
+      ]);
       // An emptied port declaration leaves the anchor with nothing to recognise,
       // and the rule then reports the root as refusing nothing rather than passing.
       const emptied = inMemoryProject({
@@ -1717,20 +1930,43 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     it("(J) catches an instruction STATED in a file NO registry lists", () => {
       // The derivation is what makes this bite: this surface is new, nobody
       // registered it, and it decides a category instead of asking the cause.
+      const contract =
+        `export type ClientRetry = string;\n` +
+        `export function clientRetryFor(e: unknown, o: ClientRetry): ClientRetry { return o; }\n` +
+        `export function causeRetryFor(e: unknown): ClientRetry | null { return null; }\n` +
+        `export function operatorRecoverable(e: AppError): AppError { return e; }\n`;
       const project = inMemoryProject({
+        [`/${CLIENT_RETRY_CONTRACT}`]: contract,
         "/src/app/api/flows/other/route.ts":
           `import { CLIENT_RETRY } from "@contracts/client-retry";\n` +
           `export const POST = (e) => ({ retry: CLIENT_RETRY.none });`,
       });
+      expect(retryCauseReaders(project)).toEqual(["causeRetryFor", "clientRetryFor"]);
       const stated = statedRetryInstructions(project, ["src/app/"]);
       expect(stated.violations.some((hit) => hit.includes("CLIENT_RETRY.none"))).toBe(true);
       expect(stated.decisions).toBe(1);
-      const derived = inMemoryProject({
+      // BOTH readers the contract publishes are admitted - the one that falls back
+      // to what the caller knows, and the one that answers `null` when the cause
+      // says nothing so a surface with a single instruction-carrying arm need not
+      // invent an unsendable fallback (D-249).
+      for (const reader of ["clientRetryFor(e, CLIENT_RETRY.none)", "causeRetryFor(e)"]) {
+        const derived = inMemoryProject({
+          [`/${CLIENT_RETRY_CONTRACT}`]: contract,
+          "/src/app/api/flows/other/route.ts":
+            `import { clientRetryFor, causeRetryFor, CLIENT_RETRY } from "@contracts/client-retry";\n` +
+            `export const POST = (e) => ({ retry: ${reader} });`,
+        });
+        expect(statedRetryInstructions(derived, ["src/app/"]).violations).toEqual([]);
+      }
+      // ...and a tree whose contract is absent admits NO reader, so the rule fails
+      // closed rather than trusting a name it remembered.
+      const orphaned = inMemoryProject({
         "/src/app/api/flows/other/route.ts":
           `import { clientRetryFor, CLIENT_RETRY } from "@contracts/client-retry";\n` +
           `export const POST = (e) => ({ retry: clientRetryFor(e, CLIENT_RETRY.none) });`,
       });
-      expect(statedRetryInstructions(derived, ["src/app/"]).violations).toEqual([]);
+      expect(retryCauseReaders(orphaned)).toEqual([]);
+      expect(statedRetryInstructions(orphaned, ["src/app/"]).violations).toHaveLength(1);
     });
 
     it("(J) catches a RAW instruction literal in a file that imports nothing", () => {

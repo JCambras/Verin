@@ -40,8 +40,9 @@ import {
   SCENARIOS,
 } from "../../app/demo/data";
 import { getJourney } from "../../app/demo/journey";
+import { demoVocabulary } from "../../app/demo/vocabulary";
 import { DEMO_SEQUENCE, type DemoStation } from "../../app/demo/model";
-import { isProvablyReachable } from "./_ast-control-flow";
+import { isProvablyReachable, statementMayExit } from "./_ast-control-flow";
 import { REPO_ROOT } from "./_fence-utils";
 import { hasRegisteredPlaywrightHook } from "./_playwright-hook-analysis";
 
@@ -382,6 +383,71 @@ function canonicalJourneyCallback(file: SourceFile): Callback | undefined {
     );
 }
 
+/**
+ * THE ONE EXIT A DEMO STATION PAGE MAY TAKE BEFORE RENDERING ITS SURFACE: the
+ * refusal it owes when this deployment cannot supply the configured vocabulary
+ * (D-251).
+ *
+ * The page renders on the SERVER and its labels come from a published document at
+ * request time, so "the document is gone" must be a RENDERED state - and one that
+ * carries the refusal itself, because the correlation reference inside it is the
+ * only thing the person looking at the screen can hand to an operator. Dropping the
+ * error and rendering a bare apology is the failure this checks for, not a style
+ * preference.
+ *
+ * It is deliberately the ONLY admissible early exit: every other statement before
+ * the surface render must be incapable of returning, which is what keeps a page
+ * from short-circuiting to a hardcoded surface.
+ */
+function configurationRefusalGuard(
+  statement: Node,
+  vocabulary: ReturnType<SourceFile["getVariableDeclaration"]>,
+): boolean {
+  if (!Node.isIfStatement(statement) || vocabulary === undefined) return false;
+  const condition = statement.getExpression();
+  if (
+    !Node.isPrefixUnaryExpression(condition) ||
+    condition.getOperatorToken() !== SyntaxKind.ExclamationToken
+  ) {
+    return false;
+  }
+  const tested = condition.getOperand();
+  if (
+    !Node.isPropertyAccessExpression(tested) ||
+    tested.getName() !== "ok" ||
+    !Node.isIdentifier(tested.getExpression()) ||
+    tested.getExpression().getSymbol() !== vocabulary.getSymbol()
+  ) {
+    return false;
+  }
+  const then = statement.getThenStatement();
+  const returned = Node.isReturnStatement(then)
+    ? then.getExpression()
+    : Node.isBlock(then) && then.getStatements().length === 1
+      ? then.getStatements()[0]?.asKind(SyntaxKind.ReturnStatement)?.getExpression()
+      : undefined;
+  if (returned === undefined || !Node.isJsxSelfClosingElement(returned)) return false;
+  const tag = returned.getTagNameNode();
+  const imported = Node.isIdentifier(tag)
+    ? tag.getSymbol()?.getDeclarations().find(Node.isImportSpecifier)
+    : undefined;
+  if (imported === undefined || !(importModuleOf(imported) ?? "").startsWith("@app/")) return false;
+  // ...and the REFUSAL ITSELF reaches what is rendered, so the reference an
+  // operator needs cannot be dropped on the way to the screen.
+  return returned.getAttributes().some((attribute) => {
+    if (!Node.isJsxAttribute(attribute)) return false;
+    const initializer = attribute.getInitializer();
+    const value = Node.isJsxExpression(initializer) ? initializer.getExpression() : undefined;
+    return (
+      value !== undefined &&
+      Node.isPropertyAccessExpression(value) &&
+      value.getName() === "error" &&
+      Node.isIdentifier(value.getExpression()) &&
+      value.getExpression().getSymbol() === vocabulary.getSymbol()
+    );
+  });
+}
+
 function routePageUsesResolvedStation(source: string): boolean {
   const file = parsedSourceFile("/route.tsx", source);
   const renderer = file.getFunction("renderStation");
@@ -509,6 +575,23 @@ function routePageUsesResolvedStation(source: string): boolean {
       resolution.getArguments()[0]?.getText() === `first(sp.${query})`
     );
   };
+  // THE CONFIGURED VOCABULARY, resolved from the SAME firm the URL resolved and
+  // refused as a rendered value before any journey exists (D-251).
+  const vocabularyDeclaration = directConst("vocabulary");
+  const vocabularyInitializer = vocabularyDeclaration?.getInitializer();
+  if (
+    !Node.isCallExpression(vocabularyInitializer) ||
+    !isNamedImportIdentifier(
+      vocabularyInitializer.getExpression(),
+      "@app/demo/vocabulary",
+      "demoVocabulary",
+    ) ||
+    vocabularyInitializer.getArguments().length !== 1 ||
+    !Node.isIdentifier(vocabularyInitializer.getArguments()[0]) ||
+    vocabularyInitializer.getArguments()[0]?.getSymbol() !== firmId?.getSymbol()
+  ) {
+    return false;
+  }
   const journeyInitializer = journeyDeclaration?.getInitializer();
   if (
     !isResolvedInput(scenarioId, "resolveScenarioId", "scenario") ||
@@ -519,17 +602,23 @@ function routePageUsesResolvedStation(source: string): boolean {
       "@app/demo/journey",
       "getJourney",
     ) ||
-    journeyInitializer.getArguments().length !== 2
+    journeyInitializer.getArguments().length !== 3
   ) {
     return false;
   }
-  const [scenarioArgument, firmArgument] =
+  const [scenarioArgument, firmArgument, vocabularyArgument] =
     journeyInitializer.getArguments();
   if (
     !Node.isIdentifier(scenarioArgument) ||
     scenarioArgument.getSymbol() !== scenarioId?.getSymbol() ||
     !Node.isIdentifier(firmArgument) ||
-    firmArgument.getSymbol() !== firmId?.getSymbol()
+    firmArgument.getSymbol() !== firmId?.getSymbol() ||
+    // The journey is driven by the vocabulary this page RESOLVED and proved, never
+    // by one a builder re-resolves where a refusal would have nowhere to go.
+    !Node.isPropertyAccessExpression(vocabularyArgument) ||
+    vocabularyArgument.getName() !== "value" ||
+    !Node.isIdentifier(vocabularyArgument.getExpression()) ||
+    vocabularyArgument.getExpression().getSymbol() !== vocabularyDeclaration?.getSymbol()
   ) {
     return false;
   }
@@ -567,10 +656,22 @@ function routePageUsesResolvedStation(source: string): boolean {
   ) {
     return false;
   }
-  const returnStatement = body.getStatements().find(Node.isReturnStatement);
+  const statements = body.getStatements();
+  const returnStatement = statements.find(Node.isReturnStatement);
+  if (returnStatement === undefined) return false;
+  // REACHABLE EXCEPT FOR THE ONE SANCTIONED REFUSAL. `isProvablyReachable` treats
+  // any preceding statement that MAY exit as disqualifying, which is what stops a
+  // page short-circuiting to a hardcoded surface; the configuration refusal is the
+  // single exception, and it is admitted by IDENTITY (its condition is the resolved
+  // vocabulary's own discriminant and it renders that refusal) rather than by being
+  // an early return the rule stopped looking at.
+  const exits = statements
+    .slice(0, statements.indexOf(returnStatement))
+    .filter((statement) => statementMayExit(statement));
   if (
-    returnStatement === undefined ||
-    !isProvablyReachable(returnStatement, page)
+    exits.some((statement) => !configurationRefusalGuard(statement, vocabularyDeclaration)) ||
+    exits.length !== 1 ||
+    !isProvablyReachable(returnStatement, page, exits)
   ) {
     return false;
   }
@@ -1263,7 +1364,7 @@ export function surfaceCompletenessProblems(
   }
   if (!routePageUsesResolvedStation(route)) {
     problems.push(
-      `${ROUTE_PATH}:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service and pass its resolved station to the validated renderer and loaded marker`,
+      `${ROUTE_PATH}:1 dynamic demo page must bind resolved scenario and firm inputs to the journey service, resolve the configured vocabulary for that firm and render its refusal when this deployment cannot supply it, and pass its resolved station to the validated renderer and loaded marker`,
     );
   }
 
@@ -1478,12 +1579,38 @@ describe("demo-surface-completeness fence", () => {
           '  if (true) return <div data-demo-surface="workspace"><WorkspaceSurface vm={journey.workspace} {...ids} /></div>;\n  return (\n    <div data-demo-surface={resolvedStation}>',
         ),
         route.replace(
-          "getJourney(scenarioId, firmId)",
-          'getJourney("safe-proceed", firmId)',
+          "getJourney(scenarioId, firmId, vocabulary.value)",
+          'getJourney("safe-proceed", firmId, vocabulary.value)',
         ),
         route.replace(
-          "getJourney(scenarioId, firmId)",
-          'getJourney(scenarioId, "firm-a")',
+          "getJourney(scenarioId, firmId, vocabulary.value)",
+          'getJourney(scenarioId, "firm-a", vocabulary.value)',
+        ),
+        // THE CONFIGURATION REFUSAL, removed four ways (D-251): the page that never
+        // resolves the vocabulary at all and lets a builder discover the failure,
+        // the one that resolves but renders on regardless, the one that refuses and
+        // throws the refusal away - leaving the person on the screen with nothing to
+        // quote to operations - and the one that resolves a firm the URL did not.
+        route.replace(
+          "  const vocabulary = demoVocabulary(firmId);\n" +
+            "  if (!vocabulary.ok) return <DemoUnavailable error={vocabulary.error} />;\n",
+          "",
+        ),
+        route.replace(
+          "  if (!vocabulary.ok) return <DemoUnavailable error={vocabulary.error} />;\n",
+          "",
+        ),
+        route.replace(
+          "  if (!vocabulary.ok) return <DemoUnavailable error={vocabulary.error} />;",
+          "  if (!vocabulary.ok) return <DemoUnavailable />;",
+        ),
+        route.replace("demoVocabulary(firmId)", 'demoVocabulary("firm-a")'),
+        // ...and an early exit that is NOT the sanctioned refusal is still refused,
+        // whatever it is conditioned on.
+        route.replace(
+          "  const journey = getJourney(scenarioId, firmId, vocabulary.value);",
+          '  if (approved) return <div data-demo-surface="workspace" />;\n' +
+            "  const journey = getJourney(scenarioId, firmId, vocabulary.value);",
         ),
         route.replace(
           "const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };",
@@ -1882,7 +2009,10 @@ hooks.install!(async ({ page }) => {
       ).toEqual([]);
       for (const scenario of SCENARIOS) {
         for (const firm of Object.values(FIRMS)) {
-          const journey = getJourney(scenario.id, firm.id);
+          const vocabulary = demoVocabulary(firm.id);
+          expect(vocabulary.ok, "the published configuration must supply the demo's vocabulary").toBe(true);
+          if (!vocabulary.ok) return;
+          const journey = getJourney(scenario.id, firm.id, vocabulary.value);
           expect(journey.scenarioId).toBe(scenario.id);
           expect(journey.firmId).toBe(firm.id);
           expect(journey.scenarioTitle).toBe(scenario.title);

@@ -15662,3 +15662,138 @@ bare `presentation.form.fields` parent - never runs. That parent path is ASSERTE
 as the prefix the resolver walks through on the way to each collected child; it is not observed from an
 emitter, and no comment, name or line here may say it is. Driving it for real is banked as
 `fu-intake-probe-drives-emitter`.
+
+---
+
+## PF-296 - a fault path a document KEY makes inexpressible
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, extended to the class two bounded
+shapes still could not express: a segment the AUTHOR chose. A primitive's `parameters` map and the value
+graph under it are opaque to the schema by design (the primitive's own schema is the judge), so
+`resolveParameters` and `substitute` append document keys verbatim, and a Zod `invalid_key` issue reports
+its own path THROUGH the offending key. `configError` - the ONE constructor of every fault in the system -
+now carries only the deepest prefix the channel can express, from the same constants
+`domain/observability/safe-values` builds the `configPath` shape from (D-250).
+
+**Injection.** Removed the carry from `configError` in `src/domain/config/errors.ts`, leaving it to pass
+the path through as it was handed.
+
+**Observed failure:**
+```
+× (L) enforces: a path segment the AUTHOR chose survives the channel too
+a document key the author chose censors the location of its own refusal:
+configPath: the emitters produce "presentation.copy.statusLabels.kkkk…kkkk", which the declared shape seals
+× (L) enforces: NO string can make the one fault constructor emit an uncarriable path
+"presentation.copy.slots." -> "presentation.copy.slots.": expected [ Array(1) ] to deeply equal []
+```
+
+**Companion.** The enforcing tests are themselves the adversarial pair: the KEY sweep renames one document
+key at a time to a name the channel cannot carry (whitespace, a dot, non-ASCII, past the per-segment
+ceiling), drives the REAL loader over both shipped documents, requires more than ten emitted paths (a sweep
+that reached nothing would pass on any shape), requires NO emitted path to carry a hostile key, and proves
+the raw interpolated path each emitter would otherwise have built is broken - sealed, or shaped while
+naming one more node than the emitter meant. The property test asserts that for arbitrary segments -
+empty, over-length, whitespace, braces, subscripted, non-ASCII - what `configError` carries survives the
+channel AND is a prefix of what it was asked to report, so the constructor may lose depth and never invent
+a location.
+
+**Reverted:** the carry restored; `Tests 63 passed (63)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0057; review ruling `p10-diagnosis-shape-and-demo-honesty`).
+
+---
+
+## PF-297 - a dotted document key JOINED into a location that addresses nothing
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L. A key carrying a `.` is not one
+segment: `presentation.copy.slots` plus `"Household.Name"` joined SHAPES perfectly and names a node the
+document does not contain - the confidently-wrong location D-246's second amendment ruled worse than a
+censored one. So the grammar stage builds its location from Zod's issue path SEGMENTS through
+`configPathOf`, and the parameter walks refuse an unnameable key at ADMISSION rather than descending past
+it (D-250).
+
+**Injection.** Two, run separately: restored `issue.path.map(String).join(".")` in
+`src/domain/config/load.ts`, and restored the interpolated `${path}.${name}` in `resolveParameters`.
+
+**Observed failure:**
+```
+× (L) enforces: a path segment the AUTHOR chose survives the channel too
+no emitted path carries a hostile key, so this rule would pass on a shape that seals them:
+expected 80 to be +0            (the grammar-stage join)
+expected 29 to be +0            (the parameter-name interpolation)
+```
+
+**Companion.** The same rule's anti-vacuity clauses: the sweep must emit paths at all, and every raw
+interpolated form must be provably broken (sealed, or carrying a segment count the emitter did not mean),
+so the rule cannot pass by finding nothing.
+
+**Reverted:** both restored; `Tests 63 passed (63)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0057; review ruling `p10-diagnosis-shape-and-demo-honesty`).
+
+---
+
+## PF-298 - a demo station page that renders a journey it never proved it could label
+
+**Fence.** `src/__tests__/fitness/demo-surface-completeness.test.ts`, route rule. `/app/demo/[station]`
+renders on the SERVER from a published configuration read at request time, so a deployment that cannot
+supply the vocabulary must render the refusal - carrying the reference an operator needs - rather than
+crash inside a builder (D-251). The page must resolve `demoVocabulary(firmId)` for the SAME firm the URL
+resolved, refuse as a rendered value that receives the error, and drive the journey from the resolved
+value; that refusal is the ONLY early exit admitted, by identity.
+
+**Injection.** Removed the refusal guard from `src/app/app/demo/[station]/page.tsx`, leaving the page to
+drive the journey from an unproven vocabulary.
+
+**Observed failure:**
+```
+× enforces: every demo-contract §4 surface is typed, routed, clickable, and screenshotted
+src/app/app/demo/[station]/page.tsx:1 dynamic demo page must bind resolved scenario and firm inputs to the
+journey service, resolve the configured vocabulary for that firm and render its refusal when this
+deployment cannot supply it, and pass its resolved station to the validated renderer and loaded marker
+```
+
+**Companion.** Four mutations of the real route, each of which must be reported: the page that never
+resolves the vocabulary, the one that resolves and renders on regardless, the one that refuses and DROPS
+the refusal (leaving the person on the screen nothing to quote), and the one that resolves a firm the URL
+did not. A fifth proves the exemption did not widen the rule: an early exit that is not the sanctioned
+refusal - `if (approved) return <div data-demo-surface="workspace" />` - still fails, as does the
+pre-existing `if (true) return …` short-circuit.
+
+**Verified end to end.** With `config/domains/money-movement.yaml` moved aside, `demoVocabulary` returns a
+refusal and `DemoUnavailable` renders "This journey cannot be shown … quote reference <id>" with no
+document path, file name or hash, while the operator's line carries `configStage=unpublished`,
+`domainConfigId=money-movement` and the same correlation id.
+
+**Reverted:** the guard restored; `Tests 8 passed (8)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0057; review ruling `p10-diagnosis-shape-and-demo-honesty`).
+
+---
+
+## PF-299 - an instruction STATED where the fence knew only one reader's name
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J. The rule's admissible readers are
+now DERIVED from the contract's own exported surface - an exported function in
+`src/contracts/client-retry.ts` returning that vocabulary - because a hardcoded name would have read
+`causeRetryFor`, the reader a surface with one instruction-carrying arm needs, as a STATED category
+(D-249).
+
+**Injection.** Replaced the derived read in `src/app/api/flows/account-opening/route.ts` with the stated
+category it used to fall back to.
+
+**Observed failure:**
+```
+× (J) enforces: no surface STATES a client instruction it could read from the cause
+src/app/api/flows/account-opening/route.ts:36: a client instruction is STATED here
+(CLIENT_RETRY.newIdentity) rather than read from the refusal's cause via causeRetryFor() / clientRetryFor()
+```
+
+**Companion.** `(J) catches an instruction STATED in a file NO registry lists` now feeds a synthetic
+contract declaring both readers and proves each is admitted, that a stated arm still fails, and that a tree
+whose contract is ABSENT admits NO reader at all - so the derivation fails closed rather than trusting a
+name it remembered.
+
+**Reverted:** the derived read restored; `Tests 63 passed (63)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0057; review ruling `p10-diagnosis-shape-and-demo-honesty`).

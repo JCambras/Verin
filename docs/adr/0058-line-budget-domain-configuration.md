@@ -529,3 +529,42 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 | `infrastructure` | 8,769 | **8,815** | 46 |
 | `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
 | `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |
+
+## Amendment (2026-08-12, review round 18): `contracts` and `domain` raised for the built fault location and the demo's value-shaped failure
+
+Two layers grow past their ceilings answering this round's findings in code.
+
+`contracts` gains the second cause reader (`causeRetryFor`). A surface whose OTHER arm carries no
+instruction at all - the intake accessor answers a submitter's own omission with a plain VALIDATION, which
+has no `retry` field - had nothing to fall back TO, so the fallback it passed was unsendable by
+construction, and the one it named would have told a browser to burn the form session's request id over a
+blank required field. Asking the cause directly removes the false branch instead of renaming it (D-249).
+
+`domain` gains the statement of the diagnosis channel's capacity - the segment grammar and the length
+ceiling - beside the emitter that must respect it, the carry inside `configError` (the ONE constructor of
+every fault in the system), the grammar stage's segment-built location, the parameter walks' refusal of a
+key the channel cannot name as one segment, and the refusal port's fourth arm with its registered
+`undeclared-copy` stage. The defect being closed is the third form of one already fixed twice: the shape
+could not express a document KEY, which is author-chosen and may carry whitespace (censoring the location
+whole) or a `.` (shaping perfectly while naming a node the document does not have). A location is now
+BUILT from segments rather than interpolated (D-250), and the demo station page resolves its configured
+vocabulary and renders that refusal rather than throwing inside a builder on a server-rendered route
+(D-251).
+
+`contracts` had ELEVEN lines of headroom and `domain` was eighty lines over - both the zero-headroom
+condition this ADR's header argues against, where the next one-line correction fails an unrelated ceiling.
+`infrastructure` moved by two lines and stays well inside, so it is RE-TAKEN rather than raised for
+company. `presentation` is re-taken too: the 928 carried forward since ADR-0058 had gone several rounds
+stale, which is exactly what this ADR says a number nobody re-took is worth. The demo surfaces and route
+live under `src/app/demo/` and `src/app/app/`, which no bucket measures - that gap is the pre-existing one
+this ADR does not change.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,771 | **6,810** | 39 |
+| `domain` | 9,765 | **9,830** | 65 |
+| `infrastructure` | 8,792 | 8,815 | 23 (unchanged) |
+| `presentation` | 2,240 | 6,000 | (ADR-0012 envelope, unchanged; re-taken) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |

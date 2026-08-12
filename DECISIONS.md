@@ -8748,6 +8748,11 @@ the two ruled options: it detects drift instead of preventing it, and leaves the
 **Revert path.** Restore the literal maps in `src/app/demo/vocabulary.ts` and delete RULE H; the demo can
 fall behind the document again.
 
+**Amendment (review round 18).** The consequence named above - "`vocabularyFor` THROW ... a 500 on the
+investor-demo journey" - is no longer what happens: resolution is a typed `Result` and the station page
+renders the refusal (D-251). The argument is unchanged, since a rendered refusal on the demo is still the
+failure deriving the registry exists to make unrepresentable; only the crash it used to be is gone.
+
 ---
 
 ## D-218 - Prompt 10 review: the platform's flow-data keys are a RESERVED namespace, enforced
@@ -9590,3 +9595,106 @@ replacement is the honesty: no document goes back to asserting a fail-closed che
 
 **Revert path.** Delete this entry and restore the four documents' previous wording; the obligations
 then read as shipped guarantees again, which is the state this entry exists to end.
+
+## D-249 - Prompt 10 review: a surface with one instruction-carrying arm asks the cause, it does not invent a fallback
+
+**Decision.** `@contracts/client-retry` exports a second reader, `causeRetryFor(error)`, which answers the
+instruction the CAUSE dictates or `null` when the cause says nothing; `clientRetryFor` is defined in terms
+of it, so one rule is stated once. The account-opening intake accessor uses it: a configuration cause takes
+the shared refusal shape and its inherited instruction, and a submitter's own omission keeps its plain
+VALIDATION answer, which carries no `retry` field at all.
+
+**Why.** That call site computed `clientRetryFor(error, CLIENT_RETRY.newIdentity)` and then only ever
+compared the result against `later`. The fallback was unsendable by construction - the other arm answers
+through `errorResponse`, which emits no instruction - so it read to every later maintainer as a case that
+can happen. It was also the WRONG instruction for the case it named: `retry-with-new-identity` tells the
+browser to burn the form session's request id, and `intake-journey.tsx` re-mints it on that word, so the
+first edit that started forwarding `retry` (the natural direction, since every sibling path already does)
+would open a SECOND execution over a blank required field and duplicate the household, contact and
+application rows - the exact harm D-238 exists to prevent. Choosing a different unsendable fallback would
+have left the same false branch; asking the cause removes it.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J, whose admissible READERS are now
+derived from the contract's own exported surface (an exported function in `src/contracts/client-retry.ts`
+returning that vocabulary) rather than from a remembered name - a hardcoded name would have read the new
+reader as a STATED category. A project with no contract admits no reader, so the derivation fails closed.
+Proof PF-299.
+
+**Revert path.** Delete `causeRetryFor`, restore the fallback argument, and the reader derivation collapses
+to a single name.
+
+## D-250 - Prompt 10 review: a fault LOCATION is built from segments, and the one constructor carries only what the channel can express
+
+**Decision.** `src/domain/config/errors.ts` states the diagnosis channel's capacity ONCE - the segment
+grammar (`CONFIG_PATH_SEGMENT_SOURCE`, whose subscript cap is `MAX_CONFIGURED_VALUE_DEPTH`) and the
+128-character ceiling - and three things read it: `configError`, the ONE constructor of every fault in the
+system, which carries the deepest prefix of the path it is handed that the channel can express;
+`configPathOf`, which the grammar stage uses to build a location from Zod's issue path SEGMENTS; and
+`domain/observability/safe-values`, which builds the `configPath` shape from the same constants. The
+parameter walks refuse an unnameable key at ADMISSION, beside the depth bound, and report at the deepest
+admitted node.
+
+**Why.** The shape had now been widened by guesswork twice (D-246 and its round-17 amendment), and even
+bounded it could not express a whole class its own emitters produce: a document KEY. `ParameterMapSchema`
+is `z.record(z.string().min(1), z.unknown())` by design - the primitive's own schema is the judge of a
+parameter graph - so `resolveParameters` and `substitute` append author-chosen names verbatim, and a Zod
+`invalid_key` issue reports its own path THROUGH the offending key. An author writing
+`parameters: { "tolerance level": 0 }` was refused correctly and reported NOWHERE: `configStage=invalid`,
+`configCode=unknown-reference`, `configPath=[REDACTED]`, with the browser holding only the generic
+sentence. A key carrying a `.` was worse than censored - `presentation.copy.slots` plus `"Household.Name"`
+JOINED shapes perfectly and names a node the document does not have, which is the confidently-wrong
+location D-246's second amendment already ruled out. Building the location from segments answers both, and
+putting the carry in the constructor makes it a property of every emitter, including the ones not written
+yet, rather than a rule each author must remember.
+
+**What it costs, stated plainly.** A fault under an unnameable key reports its deepest NAMEABLE ancestor
+instead of the exact node - the same trade the depth-overrun refusal already makes. That is less precise
+and still true; `[REDACTED]` was neither.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE L, extended twice: a KEY sweep that
+renames one document key at a time to a name the channel cannot carry (whitespace, a dot, non-ASCII, past
+the per-segment ceiling), drives the REAL loader over both shipped documents, and requires every emitted
+path to survive the channel AND to carry no hostile key; and a property check that no string whatever can
+make `configError` emit an uncarriable path, with what it carries always a prefix of what it was asked to
+report. Proofs PF-296, PF-297.
+
+**Revert path.** Drop the carry from `configError`; PF-296 lists the paths that then seal.
+
+## D-251 - Prompt 10 review: the demo station page fails as a rendered value, never as a stack trace
+
+**Decision.** `src/app/demo/vocabulary.ts` resolves the demo's configured vocabulary as a `Result`, and
+throws nowhere. The exact label ids the journey renders are declared in that module, so every reader
+(`slotLabel`, `evidenceLabel`, `actionLabel`) is a total lookup and the three reachable failures - an
+absent or drifted document, a firm the registry cannot bind, and a document that no longer declares a
+label this journey shows - are resolved once, up front. The last of those is stated as a typed fault and
+minted through the shared `ConfiguredRefusal` port, which gains an `undeclaredCopy` arm and the registered
+`undeclared-copy` stage; the first two already carried the adapter's mint. `/app/demo/[station]` resolves
+the vocabulary for the firm the URL resolved, renders `DemoUnavailable` with the refusal itself when it
+cannot, and passes the resolved vocabulary to `getJourney`.
+
+**Why.** That path is SERVER-RENDERED, and prompt 10's whole point is that removing the configuration
+breaks the flow HONESTLY (X-9). A raw `Error` from a builder is an unhandled crash: the reviewer reads a
+stack trace instead of a statement, and the person on the screen gets nothing to quote. The rendered copy
+carries the generic sentence plus the refusal's correlation reference and NO deployment internals - no
+path, file name, env var or hash (D-227/D-230/D-231/D-243) - while the diagnosis goes to the operator's
+line as the registered `configStage`/`configCode`/`configPath` values. A firm the demo does not record is
+NOT a configuration refusal and does not pretend to be one: it answers `NOT_FOUND` with no reference,
+because there is no operator diagnosis to join to.
+
+**Fenced by.** `src/__tests__/fitness/demo-surface-completeness.test.ts`, whose route rule now requires the
+page to resolve `demoVocabulary(firmId)` for the SAME firm the URL resolved, to refuse as a rendered value
+carrying that error, and to drive the journey from the resolved value. The refusal is the ONLY early exit
+admitted, and it is admitted by identity (its condition is the resolved vocabulary's own discriminant, and
+what it renders receives the error); every other statement before the surface render must still be
+incapable of returning, so a page cannot short-circuit to a hardcoded surface. `isProvablyReachable` grew
+an explicit `exempt` list for that purpose rather than being loosened. Unit coverage:
+`src/__tests__/unit/demo-configuration-refusal.test.tsx` and the `undeclared-copy` case in
+`src/__tests__/unit/domain-config-source.test.ts`. Proof PF-298.
+
+**Verified end to end.** With `config/domains/money-movement.yaml` moved aside, the station renders "This
+journey cannot be shown ... Nothing was lost. Your operations team must restore this deployment; quote
+reference <id>." while the operator's line carries `configStage=unpublished`,
+`domainConfigId=money-movement` and the same correlation id.
+
+**Revert path.** Restore the throws and the two-argument `getJourney`; the fence's route rule then fails
+until its vocabulary clauses are deleted too.

@@ -132,7 +132,10 @@ const PORT_ESCAPES = new Set([
   "src/domain/config/diff.ts :: diffDomainConfigs.<call>",
   "src/domain/config/document.ts :: canonicalConfigJson.<call>",
   "src/domain/config/document.ts :: domainConfigVersionId.<call>",
+  "src/domain/config/errors.ts :: carriableConfigPath.<call>",
+  "src/domain/config/errors.ts :: childConfigPath.<call>",
   "src/domain/config/errors.ts :: configError.<call>",
+  "src/domain/config/errors.ts :: configPathOf.<call>",
   // The port EVERY configuration refusal is minted through (D-244): each arm
   // carries one typed loader fault out of pure domain code so the composition
   // root can state it to an operator, and reaches no repository. The shipped
@@ -140,6 +143,7 @@ const PORT_ESCAPES = new Set([
   // the execution the refused work was driving, which its own `invoke` carries.
   "src/domain/config/errors.ts :: ConfiguredRefusal.intakeMismatch",
   "src/domain/config/errors.ts :: ConfiguredRefusal.uncompilable",
+  "src/domain/config/errors.ts :: ConfiguredRefusal.undeclaredCopy",
   "src/domain/config/errors.ts :: ConfiguredRefusal.unrunnableStep",
   "src/domain/config/evidence.ts :: durationSeconds.<call>",
   "src/domain/config/intake-view.ts :: admitIntakeSubmission.<call>",

@@ -80,13 +80,32 @@ export function operatorRecoverable(error: AppError): AppError {
 }
 
 /**
+ * THE INSTRUCTION THE CAUSE ITSELF DICTATES, or `null` when the cause says nothing.
+ *
+ * A surface whose OTHER arm carries no instruction at all - the intake accessor
+ * answers a submitter's own omission with its plain VALIDATION, which has no
+ * `retry` field - has nothing to fall back TO, and the fallback it invented to
+ * satisfy the reader below was unsendable by construction. An unsendable argument
+ * is not inert: the one that shipped here named `retry-with-new-identity`, and the
+ * first edit that started forwarding it would have told a browser to re-mint the
+ * form session's id over a blank required field, opening the SECOND execution the
+ * execution-scoped idempotency keys cannot merge (D-238). So a surface with one
+ * instruction-carrying arm asks the cause directly instead.
+ */
+export function causeRetryFor(error: AppError | undefined): ClientRetry | null {
+  return error !== undefined && OPERATOR_RECOVERABLE.has(error) ? CLIENT_RETRY.later : null;
+}
+
+/**
  * The instruction a refusal INHERITS from its cause, falling back to what the
  * caller knows when the cause says nothing. Every surface that reports a refusal
  * asks this instead of naming a category, which is what makes the rule above
- * self-applying rather than a convention someone has to remember.
+ * self-applying rather than a convention someone has to remember. It is the SAME
+ * rule as `causeRetryFor`, read through it, so the two can never disagree about
+ * what a cause means.
  */
 export function clientRetryFor(error: AppError | undefined, otherwise: ClientRetry): ClientRetry {
-  return error !== undefined && OPERATOR_RECOVERABLE.has(error) ? CLIENT_RETRY.later : otherwise;
+  return causeRetryFor(error) ?? otherwise;
 }
 
 /**

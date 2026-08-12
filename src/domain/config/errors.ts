@@ -70,6 +70,88 @@ export type DomainConfigErrorCode = (typeof DOMAIN_CONFIG_ERROR_CODES)[number];
  */
 export const MAX_CONFIGURED_VALUE_DEPTH = 8;
 
+/**
+ * HOW MANY CHARACTERS ONE CONFIGURATION DIAGNOSIS VALUE MAY CARRY, and ONE SEGMENT
+ * of a dotted document path - the complete statement of what the operator's
+ * `configPath` channel can express, stated HERE because this is where the emitter
+ * that must respect it lives.
+ *
+ * Schema keys are legitimately camelCase, so the person-name shape the observability
+ * module keys on would refuse `execution.planTemplates`; the closed alphabet (no
+ * whitespace, no punctuation beyond `.`/`_`/`-`/subscripts) is what makes a value
+ * of any length incapable of carrying prose or a person's name into a log line.
+ * The subscript cap is `MAX_CONFIGURED_VALUE_DEPTH` above - the bound the deepest
+ * emitter is REFUSED at - so the shape cannot be narrower than its emitter without
+ * the loader having admitted a graph it declared inadmissible.
+ *
+ * IT LIVES BESIDE `configError` BECAUSE THE EMITTER READS IT (D-250). Twice this
+ * shape was widened by GUESSING at what the emitters produce, and both guesses were
+ * wrong in the same direction: a path the emitter builds and the shape cannot
+ * express degrades to "[REDACTED]" - a stage reported with its location censored,
+ * which is the dead diagnosis channel D-242 exists to prevent - and NOTHING fails.
+ * The last guess still missed a whole class, because two emitters interpolate
+ * document keys the schema does not shape at all: a primitive's `parameters` names
+ * and every own key of the OPAQUE value graph under one (`z.record(z.string()…)`,
+ * judged by the primitive's own schema), plus any record key a Zod `invalid_key`
+ * issue reports its own path THROUGH. An author writing `parameters: { "tolerance
+ * level": 0 }` refused correctly and reported nowhere.
+ *
+ * So the number is not an opinion about the emitters any more: `configError` - the
+ * ONE constructor of every fault in the system - carries the deepest prefix of a
+ * path this shape can express, and the observability channel builds its `configPath`
+ * shape from these same two constants. A fault whose exact location is inexpressible
+ * therefore names the deepest ADMITTED ancestor, exactly as the depth-overrun
+ * refusal above does, rather than being censored whole.
+ */
+export const MAX_CONFIG_DIAGNOSIS_LENGTH = 128;
+export const CONFIG_PATH_SEGMENT_SOURCE =
+  String.raw`[A-Za-z0-9_-]{1,64}(?:\[[0-9]{1,6}\]){0,${MAX_CONFIGURED_VALUE_DEPTH}}`;
+const CONFIG_PATH_SEGMENT_RE = new RegExp(`^${CONFIG_PATH_SEGMENT_SOURCE}$`);
+
+/** Is this ONE name a segment the operator's channel can carry as itself? */
+const isCarriableConfigSegment = (segment: string): boolean =>
+  CONFIG_PATH_SEGMENT_RE.test(segment);
+
+/**
+ * The deepest prefix of a location the channel can carry, built from SEGMENTS -
+ * which is the only way the two halves of an author's key can be told apart.
+ *
+ * A key carrying a `.` is not one segment: reporting `presentation.copy.slots` +
+ * `"Household.Name"` joined would SHAPE perfectly and address a node the document
+ * does not contain, and an operator cannot tell a confidently wrong location from a
+ * right one (the same failure `presentation.form.fields.<trigger field>` was). So a
+ * name that is not one carriable segment ENDS the location rather than contributing
+ * to it, and everything below it ends with it.
+ */
+export const configPathOf = (segments: readonly string[]): string => {
+  const carried: string[] = [];
+  for (const segment of segments) {
+    if (!isCarriableConfigSegment(segment)) break;
+    if ([...carried, segment].join(".").length > MAX_CONFIG_DIAGNOSIS_LENGTH) break;
+    carried.push(segment);
+  }
+  return carried.join(".");
+};
+
+/**
+ * The deepest prefix of an already-joined dotted path the channel can carry. A
+ * root-level fault has no path at all and keeps the empty string, which the source
+ * adapter omits rather than reporting - an absent location and a censored one are
+ * different facts (D-242).
+ */
+export const carriableConfigPath = (path: string): string => configPathOf(path.split("."));
+
+/**
+ * One step deeper into a location, or the location itself when the step is a name
+ * the channel cannot carry. The caller that appends an author-chosen key uses this
+ * and REFUSES rather than descending past it, so a fault below an unnameable key is
+ * reported at the deepest node that can be named instead of at a fabricated one.
+ */
+export const childConfigPath = (parent: string, key: string): string =>
+  isCarriableConfigSegment(key) && `${parent}.${key}`.length <= MAX_CONFIG_DIAGNOSIS_LENGTH
+    ? (parent === "" ? key : `${parent}.${key}`)
+    : parent;
+
 export type DomainConfigError = {
   readonly code: DomainConfigErrorCode;
   /** Dotted document path (`intents.open-account.slots.email`), never a line offset. */
@@ -81,7 +163,7 @@ export const configError = (
   code: DomainConfigErrorCode,
   path: string,
   message: string,
-): DomainConfigError => ({ code, path, message });
+): DomainConfigError => ({ code, path: carriableConfigPath(path), message });
 
 /**
  * THE PORT EVERY CONFIGURATION REFUSAL IS MINTED THROUGH (D-244).
@@ -113,4 +195,8 @@ export interface ConfiguredRefusal {
   /** The declared intake fields and this deployment's fixed shape disagree - a
    * declared field it cannot carry, or a field it requires the document dropped. */
   intakeMismatch(fault: DomainConfigError): AppError;
+  /** A surface renders a label the published document declares no copy for. The
+   * document loaded and bound; it simply does not say the words, and a surface
+   * that invented them would be showing a firm vocabulary nobody configured. */
+  undeclaredCopy(fault: DomainConfigError): AppError;
 }

@@ -7,6 +7,8 @@
  */
 import { notFound } from "next/navigation";
 import { getJourney } from "@app/demo/journey";
+import { demoVocabulary } from "@app/demo/vocabulary";
+import { DemoUnavailable } from "@app/demo/surfaces/unavailable";
 import { resolveFirmId, resolveScenarioId } from "@app/demo/data";
 import { DEMO_SEQUENCE, type DemoStation } from "@app/demo/model";
 import { WorkspaceSurface } from "@app/demo/surfaces/workspace";
@@ -76,7 +78,14 @@ export default async function DemoStationPage({
   const firmId = resolveFirmId(first(sp.firm));
   if (!scenarioId || !firmId) notFound();
   const approved = first(sp.approved) === "1";
-  const journey = getJourney(scenarioId, firmId);
+  // THE CONFIGURED VOCABULARY IS RESOLVED BEFORE THE JOURNEY IS BUILT, and a
+  // deployment that cannot supply it renders the refusal instead (D-251). This is
+  // the X-9 honesty check on the demo side: removing the published document breaks
+  // this journey visibly, with the quotable reference its own operator line
+  // carries, rather than with a server stack trace.
+  const vocabulary = demoVocabulary(firmId);
+  if (!vocabulary.ok) return <DemoUnavailable error={vocabulary.error} />;
+  const journey = getJourney(scenarioId, firmId, vocabulary.value);
   const ids = { scenarioId: journey.scenarioId, firmId: journey.firmId };
   const resolvedStation = station as DemoStation;
   return (
