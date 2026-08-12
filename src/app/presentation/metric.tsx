@@ -14,6 +14,7 @@
  */
 import { type DisplayMetric, formatMetricValue, metricWatermark } from "@contracts/metric";
 import { FreshValue } from "./fresh-value";
+import { Badge } from "./ui";
 
 export function Metric({ metric }: { metric: DisplayMetric }) {
   const watermark = metricWatermark(metric);
@@ -23,9 +24,9 @@ export function Metric({ metric }: { metric: DisplayMetric }) {
         <span className="font-semibold tabular-nums text-slate-900">{formatMetricValue(metric)}</span>
       </FreshValue>
       {watermark ? (
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900" data-testid="metric-watermark">
+        <Badge tone="warning" data-testid="metric-watermark">
           {watermark}
-        </span>
+        </Badge>
       ) : null}
     </span>
   );

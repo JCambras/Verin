@@ -7,7 +7,7 @@
  * UI reflects reality. A voided actor row stays (append-only UI) and recedes to the
  * 0.7 opacity floor - the same grammar as stale data, which a voided approval is.
  */
-import { StatusBadge } from "./ui";
+import { Card, StatusBadge } from "./ui";
 
 export interface ApprovalActorSlot {
   readonly name: string;
@@ -27,7 +27,7 @@ export interface ApprovalStageProps {
 
 export function ApprovalStagePanel({ stage }: { stage: ApprovalStageProps }) {
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-surface p-4" aria-label={stage.title}>
+    <Card as="section" className="flex flex-col gap-3" aria-label={stage.title}>
       <div className="flex flex-col gap-1">
         <p className="text-base font-semibold text-slate-900">{stage.title}</p>
         <p className="text-sm text-slate-600">{stage.requirement}</p>
@@ -56,6 +56,6 @@ export function ApprovalStagePanel({ stage }: { stage: ApprovalStageProps }) {
           {stage.escalation}
         </p>
       ) : null}
-    </section>
+    </Card>
   );
 }

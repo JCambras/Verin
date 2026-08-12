@@ -284,6 +284,25 @@ reject duplicate exact results.
   in JSX without provenance). A value computed from any synthetic input auto-becomes a watermarked
   "demonstration" via `deriveArtifactProvenance` and is refused by `canFeedComplianceDecision`
   (charter #3 extension, ADR-0022). Seeding the populated world / building compliance-scan must use these.
+- **Product UI composes the canonical presentation primitives, never feature-local recipes.** Core
+  controls, cards, badges, pills, and empty states live in `src/app/presentation/ui.tsx`; compact sorted
+  and virtualized registers live in `src/app/presentation/table.tsx`; interactive leaves stay in their
+  focused siblings under `src/app/presentation/`. The `presentation-primitives` fence rejects native
+  feature buttons and repeated button, badge, or pill recipes with `file:line`, including ones spelled
+  as interpolated templates or exported class-string constants; an element that cannot BE a primitive
+  (a Next `Link` wearing the button recipe) takes `buttonClassName()` / `cardClassName()`. Its escape
+  list is EXACT-PATH, so renaming or splitting a primitive file fails the staleness guard rather than
+  silently exempting nothing. `Table` columns are unsortable by default and sortability is opted in
+  one column at a time: a register of a SET of cases may be sortable, a register of a SEQUENCE of
+  causes (execution timeline, precedence trace) may not (D-196). A sortable register must be reviewed
+  into `register-sortability`'s registry with the visible column that carries recorded order, must
+  declare its own short `regionName` (a caption asserting an order cannot double as a landmark name,
+  D-201), and any cell it sorts must offer RAW typed data - `compareSortValues`
+  (`presentation/table-order.ts`) is the tier's one ordering, and formatted text collates as text.
+  A foundation primitive may sit callerless ONLY as a named deferral in `PORT-LEDGER.md` citing the
+  front-end prompt that lands its first caller, and that prompt is its EXPIRY - a real caller or a
+  deletion, never a re-deferral (ADR-0056 amends ADR-0012's port-on-first-use rule this narrowly and
+  no wider; the five current rows are in D-192). Nothing else may land ahead of its surface.
 - **Sealed security types (v3 §15, D-061) construct ONLY via their factories** - all SEVEN of
   `Tokenized<T>`, `TenantContext`, `ActionGrant`, `ActorRef`, `Principal`, `WriteActor`, `ObservabilityId`
   (`tenantOf`/`tenantFromIdentity`/`systemTenant` in `contracts/tenant.ts`;

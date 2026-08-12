@@ -12641,3 +12641,357 @@ not flagged.
 **Reverted:** injection removed immediately; charter-drift `Tests 18 passed` on the reverted tree.
 
 **Date:** 2026-08-10 (wrap-up fix round, findings `vitest-call-apply-bind-invisible`).
+
+## PF-247 · presentation primitives: feature code cannot recreate button, badge, or pill styling · `src/__tests__/fitness/presentation-primitives.test.ts`
+
+**Invariant:** every product surface routes button, badge, and pill visuals through the canonical
+presentation primitives. A feature-level native button, a button-styled link, a repeated chip recipe,
+or a visual override on a canonical control is a second styling path and fails with its exact file and
+line.
+
+**Injection - a landing-page button bypasses the primitive.** Added a native `<button>` with the
+complete button class recipe to `src/app/page.tsx`.
+
+**Observed failure (`presentation-primitives.test.ts`):**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/page.tsx:13 :: native <button> bypasses the canonical <Button> primitive
+src/app/page.tsx:13 :: ad-hoc button class recipe bypasses buttonClassName/Button
+❯ src/__tests__/fitness/presentation-primitives.test.ts:100
+```
+
+**Executable companions (run on every build):** native-button, button-styled-link, badge-recipe,
+pill-recipe, aliased and dynamic canonical-control overrides, `buttonClassName` visual overrides, and
+layout-only composition cases live beside the fence.
+
+**Reverted:** the injected button was removed immediately; the focused fence returned to `Tests 6
+passed` on the restored tree.
+
+**Date:** 2026-08-11 (front-end parity Wave A, prompt 2).
+
+**Amendment (2026-08-11, review round D-192) - the shorthand-padding escape.** `hasSpacing` required a
+`px-*` token AND a `py-*` token, so a control recipe written with Tailwind's `p-*` shorthand or with
+per-side padding satisfied every recipe check vacuously.
+
+**Injection - a shorthand-padded button-styled link on the landing page.** Added
+`<a href="/login" className="inline-flex items-center justify-center rounded-md p-2 text-sm font-medium bg-slate-900 text-white">`
+to `src/app/page.tsx`.
+
+**Observed on the PRE-amendment fence:** the enforce test PASSED with the injection in place, and both
+new companions failed - the escape, stated as a test:
+```
+× rejects a shorthand-padded button-styled link
+× rejects a per-side padded button-styled link
+Tests  2 failed | 8 passed (10)
+```
+
+**Observed on the amended fence (same injection):**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/page.tsx:10 :: ad-hoc button class recipe bypasses buttonClassName/Button
+❯ src/__tests__/fitness/presentation-primitives.test.ts:181
+```
+
+**Second escape of the same class - the justification swap.** `BUTTON_RECIPE` required the literal
+token `justify-center`, so the identical recipe written with `justify-start` (or `justify-between`)
+was invisible. The recipe now requires ANY `justify-*` token.
+
+**Injection:**
+`<a href="/login" className="inline-flex items-center justify-start rounded-md px-4 py-2 text-sm font-medium bg-slate-900 text-white">`
+in `src/app/page.tsx`.
+
+**Observed:**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/page.tsx:10 :: ad-hoc button class recipe bypasses buttonClassName/Button
+```
+
+**Executable companions added:** shorthand `p-2`, per-side `pl-/pr-/pt-/pb-`, the justification swap,
+and a padded layout wrapper that must still pass (the fence widened, not loosened).
+
+**Reverted:** both injected links were removed immediately; the focused fence returned to `Tests 11
+passed` on the restored tree.
+
+**Amendment (2026-08-11, review round D-193) - the interpolated-template blindspot.** The recipe
+scan collected only `StringLiteral` and `NoSubstitutionTemplateLiteral` nodes. An interpolated
+template - the repository's dominant `className` idiom - carries its class tokens in
+`TemplateHead`/`TemplateMiddle`/`TemplateTail` plus the literals inside each `${…}` arm, none of
+which is a `StringLiteral`, so a COMPLETE control recipe written that way was invisible to the
+charter enforcement point. The scan now composes the whole template (head, every span literal, and
+every literal nested in the interpolations) into one token set. Related second hole: `appProject()`
+walked only `.tsx`, so a class-string constant exported from a `.ts` module under `src/app` was never
+read at all; the walk now takes both extensions.
+
+**Injection A - an interpolated-template button-styled link on the landing page.** Added
+```
+<a href="/login" className={`inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-slate-900 text-white ${busy ? "opacity-50" : ""}`}>Sign in</a>
+```
+to `src/app/page.tsx`.
+
+**Observed on the PRE-amendment fence (injection in place):**
+```
+Test Files  1 passed (1)
+     Tests  11 passed (11)
+```
+The enforce test passed with a fully-styled second button path in the tree - the escape, verbatim.
+
+**Observed on the amended fence (same injection):**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/page.tsx:13 :: ad-hoc button class recipe bypasses buttonClassName/Button
+❯ src/__tests__/fitness/presentation-primitives.test.ts:222:83
+```
+
+**Injection B - a control recipe in a `.ts` module.** Created `src/app/_adv-styles.ts` holding
+`export const ADV_ACTION = "inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium bg-slate-900 text-white";`
+
+**Observed on the PRE-amendment fence (`.tsx`-only walk):** `Tests 11 passed (11)` - the file was
+never opened.
+
+**Observed on the amended fence (same injection):**
+```
+× enforces: product surfaces have no second button, badge, or pill styling path
+src/app/_adv-styles.ts:1 :: ad-hoc button class recipe bypasses buttonClassName/Button
+❯ src/__tests__/fitness/presentation-primitives.test.ts:222:83
+```
+
+**Executable companions added:** an interpolated-template button recipe, a pill recipe split across a
+template head and its two interpolated arms, a class-string constant in a `.ts` module, an
+interpolated LAYOUT template that must still pass (the fence widened, not loosened), and a coverage
+assertion that the real-tree walk admits `src/app/ledger/model.ts` alongside `.tsx`.
+
+**Reverted:** `src/app/page.tsx` was restored from its pre-injection bytes and `src/app/_adv-styles.ts`
+was deleted immediately; the focused fence returned to `Tests 16 passed` on the restored tree.
+
+**Amendment (2026-08-11, review round D-195) - the escape list had no staleness guard.**
+`PRIMITIVE_FILES` is a seven-entry EXACT-PATH escape list, and every comparable escape registry in
+this repository carries a companion proving its entries still resolve (`no-console.test.ts` has one
+verbatim). Without it a rename or a split - which the 500-line per-file ceiling makes routine here -
+leaves an entry exempting NOTHING while a reader still believes the file is covered, and no test
+notices. `stalePrimitiveEscapes` now reports every entry that no longer resolves in the scanned tree,
+with `file:line`.
+
+**Injection - a renamed primitive.** `git mv src/app/presentation/tooltip.tsx
+src/app/presentation/tooltip-panel.tsx` (the exact shape of the drift: the file is still in the tree,
+under a different path, and the escape now points at nothing).
+
+**Observed on the PRE-amendment fence (injection in place):** the enforce test passed - the file walk
+found `tooltip-panel.tsx`, no recipe in it tripped a rule, and the dead `tooltip.tsx` escape was
+simply never consulted. A stale escape is INVISIBLE to the enforcement point it belongs to, which is
+why the guard cannot be the enforce test.
+
+**Observed on the amended fence (same injection):**
+```
+× staleness guard: every reviewed primitive escape still resolves in the scanned tree
+PRIMITIVE_FILES entries exempt nothing:
+src/app/presentation/tooltip.tsx:1 :: reviewed primitive escape no longer resolves in the scanned tree
+❯ src/__tests__/fitness/presentation-primitives.test.ts:243
+```
+
+**Executable companions added:** a tree with one reviewed path filtered out, which must report that
+exact path with its line, and a pair asserting the guard passes ONLY against a tree that really holds
+every escape (an empty tree reports all seven), so the guard cannot pass vacuously.
+
+**Reverted:** the rename was undone immediately; the focused fence returned to `Tests 19 passed` on
+the restored tree.
+
+## PF-248 · register-sortability: a sortable register cannot land unreviewed against D-194 · `src/__tests__/fitness/register-sortability.test.ts`
+
+**Invariant:** every file under `src/app` that declares a sortable table column is registered against
+D-194 with the VISIBLE column that carries its recorded order, and that column is itself declared and
+sortable in the same collection. D-194 had only per-surface unit tests, which cannot see the next
+caller - the round that generalised the rule shipped a fully sortable simulation delta one file over,
+with nothing visible reconstructing its authored order.
+
+**Injection 1 - an unreviewed register acquires a sortable column.** Added `sortable: true` to the
+`status` column of `src/app/presentation/execution-timeline.tsx`, the register whose recorded order
+D-192 says is its whole claim.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/presentation/execution-timeline.tsx:33 :: sortable register is not reviewed against D-194 - register it with the visible column that carries recorded order
+❯ src/__tests__/fitness/register-sortability.test.ts:173
+```
+The vacuity companion failed alongside it, since the scanned set no longer matched the registry.
+
+**Injection 2 - a reviewed register loses its order carrier.** Removed the `{ id: "case", … }` column
+from `SIMULATION_COLUMNS` in `src/app/demo/surfaces/policy-authoring.tsx` - the exact defect the
+review found, now expressed against the fence:
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/demo/surfaces/policy-authoring.tsx:24 :: recorded order is not reconstructible: no visible sortable 'case' column (D-194 condition 1)
+❯ src/__tests__/fitness/register-sortability.test.ts:173
+```
+
+**Executable companions (run on every build):** the unreviewed register, the reviewed register whose
+order column is missing or declared unsortable, the accepted register whose order column is visible
+and sortable, an unsortable register with no review at all, a computed `sortable` flag, a spread
+column collection, a non-literal column `id`, a staleness guard that reports a registry entry which
+stopped sorting (and cannot pass against an empty tree), and a vacuity check binding the scanned tree
+to the registry.
+
+**Reverted:** both injections were undone immediately; the focused fence returned to `Tests 10 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - fifth review round, D-196).
+
+---
+
+## PF-249 · register-sortability, amended: a column built by a transform (D-197)
+
+**Invariant (amendment):** a sortable column literal that is not a DIRECT element of an array
+literal has no sibling collection to prove an order carrier against, so it is refused rather than
+skipped. The fence previously walked array literals only, which meant
+`BASE.map((c) => ({ ...c, sortable: true }))` produced a fully sortable, entirely unreviewed
+register that the enforce test never saw - the same blind spot the presentation-primitives fence
+was amended twice for, in a fence one round old.
+
+**Injection - the reviewed simulation delta acquires its sortability through `.map`.** Rewrote
+`SIMULATION_COLUMNS` in `src/app/demo/surfaces/policy-authoring.tsx` as a `SIMULATION_BASE` array
+spread through `.map((column) => ({ ...column, sortable: true }))`, keeping the file's registry
+entry intact so the injection also proves a review cannot buy the shape out.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/demo/surfaces/policy-authoring.tsx:58 :: a sortable column built outside a literal column collection has no siblings to prove an order carrier against (D-194) - declare the register's columns as one literal array
+❯ src/__tests__/fitness/register-sortability.test.ts:190
+```
+Before the amendment the same tree reported nothing at all.
+
+**Executable companions (run on every build):** a transform-produced sortable column with and
+without a registry entry, a computed `sortable` inside a transform, an explicit `sortable: false`
+opt-out inside a transform (accepted - it claims nothing), and a direct array element still
+grouping into its collection, so the transform rule is not over-broad.
+
+**Reverted:** the injection was undone immediately; the focused fence returned to `Tests 13 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - sixth review round, D-197).
+
+## PF-250 · register-sortability, amended: sortability inherited through a spread (D-198)
+
+**Invariant (amendment):** a column collection is recognized by what it IS - an array holding a
+column literal, an array annotated `TableColumn[]`, or whatever a `<Table columns={...}>` names -
+and every element of one is resolved to a literal or refused. The previous scan identified a column
+by the presence of an own `sortable` key, so `{ ...SHARED_SORTABLE, id: "when", header: "When" }`
+was not a column at all to it: the register shipped fully sortable and the enforce test saw
+nothing, which its own header promises cannot happen. Spread sources declared exactly once in the
+same file are now INLINED and reviewed like any other column; every other source - an import, a
+shadowed name, a call, a chain past the depth cap - is refused with `file:line`, whether it lives
+inside `src/app` or outside it.
+
+**Injection - a reviewed compliance register inherits sortability from an unreadable source.**
+Exported `SORTABLE_COLUMN = { sortable: true }` from `src/app/presentation/table.tsx` and rewrote
+the audit register's `When` column in `src/app/app/audit/page.tsx` as
+`{ ...SORTABLE_COLUMN, id: "when", header: "When" }`, keeping the file's registry entry intact so
+the injection also proves a review cannot buy the shape out.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/app/audit/page.tsx:10 :: 'sortable' is not a resolvable literal - a computed value, or inherited through a spread this fence cannot read - so this register's sortability cannot be reviewed (D-194)
+❯ src/__tests__/fitness/register-sortability.test.ts:417
+```
+The fence AS SHIPPED AT HEAD was run against the same injected tree for comparison: it reported
+nothing whatsoever about `src/app/app/audit/page.tsx`, passing the register as fully reviewed. (It
+did flag the shared constant's own literal in `table.tsx` as a homeless sortable column, which is
+the pre-existing transform rule from PF-249 firing on a different node, not the register.)
+
+**Executable companions (run on every build):** sortability inherited from an imported source, from
+a whole-collection `[...SHARED]` spread, and from a shadowed local name; an own `sortable: false`
+proven when it follows the spread and refused when it precedes one; a readable same-file spread
+resolved COMPLETELY - accepted when the order carrier survives the merge, and still refused when it
+does not, so the rule is resolution rather than a ban on spreads; and a `<Table columns={...}>`
+naming nothing this fence can read.
+
+**Reverted:** the injection was undone immediately; the focused fence returned to `Tests 16 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - seventh review round, D-198).
+
+---
+
+## PF-251 · register-sortability, amended: a sortable register names its own landmark (D-201)
+
+**Invariant (amendment):** a rendered `<Table>` whose resolved columns include a sortable one must
+declare a literal `regionName`. `regionName` defaults to the caption, which is right for a register
+whose rows cannot move and wrong for one whose rows can: both compliance registers were captioned
+"…entries, newest first", so their landmarks - met on every landmark entry, again in the rotor, and
+never re-announced after a sort - went on promising newest-first over rows a reader had ordered by
+actor, while the caption underneath correctly said otherwise. Unreadable is REFUSED, not assumed
+harmless: an empty or whitespace name, a computed one, a shadowed constant, and a `{...spread}` that
+could carry the prop or could not all fail with `file:line`. An unsortable register keeps the
+default.
+
+**Injection - a shipped compliance register inherits its landmark name from an order-asserting
+caption.** Deleted the `regionName="Audit log"` attribute from the `<Table>` in
+`src/app/app/audit/page.tsx`, leaving the register fully sortable and its registry entry intact, so
+the injection also proves a review cannot buy the shape out.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/app/audit/page.tsx:123 :: a sortable register must name its own landmark: declare a literal 'regionName' rather than inheriting a caption, which is free to assert an order the reader can sort away (D-201)
+❯ src/__tests__/fitness/register-sortability.test.ts:484
+```
+
+**Executable companions (run on every build):** a sortable register with no `regionName` at all, one
+whose name is the empty string, one whose name is a non-literal expression, and one carrying a JSX
+spread that could supply it - each refused; a literal name and an unshadowed same-file string
+constant - each accepted; and an unsortable register left to the caption default, so the rule is a
+requirement on registers whose rows can move rather than a blanket ban on the default.
+
+**Reverted:** the injection was undone immediately; the focused fence returned to `Tests 18 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - tenth review round, D-201).
+
+---
+
+## PF-252 · register-sortability, amended: a register is what its tag NAMES, not how it is spelled (D-202)
+
+**Invariant (amendment):** a rendered register is identified by resolving its JSX tag to the
+canonical `Table` export - through named-import aliases, namespace members, local bindings, and
+re-export chains - rather than by comparing the tag's TEXT to "Table". Only a tag PROVEN to name
+something else is skipped; a package import, a default import, a module outside the scanned tree, and
+a chain deeper than the depth cap are all held to the rule rather than waved through. The alias
+resolution is the same `canonicalLocalNames` helper the sibling `presentation-primitives` fence uses
+for its own control tags, so the two cannot disagree about what "canonical" means.
+
+**The hole:** `import { Table as Register }` (or `import * as P` and `<P.Table>`) rendered the
+canonical register under a name the fence did not recognize. It was not refused and not reported - it
+was not a register at all, so `regionName` was never required and the columns' own review never
+attached to an element. The register then shipped with `registerName = regionName ?? caption`
+inheriting an order-asserting caption, which is exactly what PF-251/D-201 was written to close.
+
+**Injection - the shipped audit register, laundered through an alias.** Renamed the import to
+`Table as Register` in `src/app/app/audit/page.tsx`, rendered `<Register>`, and restored the
+order-asserting caption with no `regionName`, leaving the registry entry intact so the injection also
+proves a review cannot buy the shape out. Before this amendment that file PASSED.
+
+**Observed failure (`register-sortability.test.ts`):**
+```
+× enforces: every sortable register names the visible column that carries its recorded order
+unreviewed register sortability:
+src/app/app/audit/page.tsx:123 :: a sortable register must name its own landmark: declare a literal 'regionName' rather than inheriting a caption, which is free to assert an order the reader can sort away (D-201)
+❯ src/__tests__/fitness/register-sortability.test.ts:607
+```
+
+**Executable companions (run on every build):** an aliased import, a namespace member, an import from
+a package this fence cannot resolve, and a default import - each held to the landmark rule and each
+accepted once it declares a name; a register reached through a module that merely re-publishes
+`Table` - refused; and a component PROVEN to be something else (a locally declared `Chart` taking a
+`columns` prop) - left alone, so the rule resolves rather than blanket-flagging every component that
+takes columns.
+
+**Reverted:** the injection was undone immediately; the focused fence returned to `Tests 20 passed`
+on the restored tree.
+
+**Date:** 2026-08-12 (front-end parity Wave A, prompt 2 - eleventh review round, D-202).

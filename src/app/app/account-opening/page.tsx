@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Field, TextInput, SelectField, Button, StatusBadge } from "@app/presentation/ui";
+import { Button, Card, Field, Input, Select, StatusBadge } from "@app/presentation/ui";
 import { WhyBubble } from "@app/presentation/why-bubble";
 import { StepInfoCard } from "@app/presentation/step-info-card";
 import { ProgressSteps, type ProgressStep } from "@app/presentation/progress-steps";
@@ -112,15 +112,15 @@ export default function AccountOpeningPage() {
                 {accountOpeningView.fields.map((f) => (
                   <Field key={f.name} label={f.label} htmlFor={f.name} hint={f.hint}>
                     {f.type === "select" ? (
-                      <SelectField id={f.name} name={f.name} defaultValue={f.defaultValue ?? f.options?.[0]}>
+                      <Select id={f.name} name={f.name} defaultValue={f.defaultValue ?? f.options?.[0]}>
                         {(f.options ?? []).map((o) => (
                           <option key={o} value={o}>
                             {o}
                           </option>
                         ))}
-                      </SelectField>
+                      </Select>
                     ) : (
-                      <TextInput id={f.name} name={f.name} type={f.type === "email" ? "email" : "text"} required={f.required} />
+                      <Input id={f.name} name={f.name} type={f.type === "email" ? "email" : "text"} required={f.required} />
                     )}
                   </Field>
                 ))}
@@ -181,10 +181,10 @@ export default function AccountOpeningPage() {
           ) : null}
         </div>
 
-        <aside className="rounded-lg border border-slate-200 bg-surface p-4">
+        <Card as="aside">
           <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-600">Progress</p>
           <ProgressSteps steps={steps()} />
-        </aside>
+        </Card>
       </div>
     </div>
   );

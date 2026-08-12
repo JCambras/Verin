@@ -21,9 +21,29 @@ tier (`src/app/presentation/`, ADR-0012) rather than waiting for a trigger. WhyB
 > the `Verin.` wordmark (`brand.tsx`), the full OKLCH slate tokens + Geist + keyframes + reduced-motion
 > (`src/app/globals.css`), and the micro-components the skeleton renders — WhyBubble (`why-bubble.tsx`),
 > StepInfoCard, ProgressSteps, FreshValue (`fresh-value.tsx`, with provenance labels), StatusBadge,
-> EmptyState, Field/TextInput/SelectField/Button (`ui.tsx`). All are rendered by the login /
-> account-opening / console / audit screens and are axe-clean (WCAG 2.2 AA, enforced in CI). Everything
-> below in the deferred table is NOT built (charter #5) — catalogued here, pulled on first real use.
+> EmptyState, Field/Input/Select/Button/Card/Badge/Pill (`ui.tsx`), the register grammar
+> (`table.tsx` + `table-order.ts`), and the focused interaction leaves Toast + host, Dialog, and
+> ErrorBoundary. **Those** are rendered by the login / account-opening / console / audit / ledger /
+> demo screens and are axe-clean (WCAG 2.2 AA, enforced in CI — a scan reaches a component only
+> through a route that renders it).
+>
+> **Built, and honestly not yet rendered:** `Checkbox` and `Radio` (`ui.tsx`), `Tabs` (`tabs.tsx`),
+> `Tooltip` (`tooltip.tsx`), and a DIRECTLY composed `Pill` have no product caller — the prompt-2
+> brief asked for the complete primitive foundation, and inventing a workflow to showcase a control
+> is a worse failure than naming the gap. They are NAMED DEFERRALS with a first-caller prompt each
+> (D-192's table: Tooltip at prompt 3, Pill at 5, Tabs at 7, Checkbox at 8, Radio at 11; a primitive
+> still callerless after its prompt lands is deleted rather than re-deferred). **ADR-0056 is the
+> authority** - it amends ADR-0012's "port on first use only" rule with exactly this exception, states
+> its five conditions, and carries the same table with each row's expiry; a sixth row is another ADR
+> amendment, never an edit here. Their contracts are
+> validated directly by `src/__tests__/unit/presentation-primitives.test.tsx`, NOT by an e2e axe
+> scan, which cannot reach a component no route renders. (`Pill` and `Badge` do reach the screens
+> through `StatusBadge`, `Metric`, and `DevProvenanceBadge`; what is deferred is a caller composing
+> `Pill` itself.)
+>
+> Everything below in the deferred table is NOT built (charter #5) — catalogued here, pulled on
+> first real use — EXCEPT where a row below says LIVE, which names the part that has since shipped and
+> the part that is still deferred.
 
 | Component | Meridian source | Verin disposition |
 |-----------|-----------------|-------------------|
@@ -54,7 +74,7 @@ populated world together (captain D-005 / ADR-0012).
 | 6 | **Pervasive explainability** — WhyBubble on *every* automated decision, with regulation citations | doctrine `CONVENTIONS.md:106-112`; `src/components/shared/WhyBubble.tsx` | **LIVE** (WhyBubble ships in the skeleton); pervasiveness across flows grows flow-by-flow — N/A as a defer |
 | 7 | **NotificationCenter** — derived alerts feed (~181 lines) | `src/components/shared/NotificationCenter.tsx` | When a home/dashboard surface with derived alerts ships |
 | 8 | **CommandPalette in production** — ⌘K, 300ms-debounced search (~234 lines) | `src/components/shared/CommandPalette.tsx` | When the app shell has >1 primary surface to navigate |
-| 9 | **Production chrome** — nav, execution history, toasts | `src/components/shared/AppHeader.tsx` | When the second flow ships (nav needs >1 destination) |
+| 9 | **Production chrome** — nav, execution history, toasts | `src/components/shared/AppHeader.tsx` | **Nav and toasts LIVE** (`src/app/app/nav.tsx`; `ToastProvider` in `src/app/app/layout.tsx`, fired by the console's create and rename). Execution history as production chrome: when a surface outside the demo journey needs it |
 | 10 | **Workflow-catalog presentation** — flow registry home as tiles, not a drawer | flow registry home | When a 2nd+ flow exists to browse |
 | 11 | **Undo (two impls)** — CRM-send undo + triage undo (optimistic, reversible) | CRM-send `WhyDecomposition.tsx:86-102` + `src/lib/data-mode-context.tsx:46-52`; triage `src/app/home/HomeScreen.tsx:259-267` + `src/lib/app-state.ts:215-217` | When a reversible mutation surface ships (triage or send-to-CRM) |
 | 12 | **Bespoke screen density / layout-fidelity** — renderer honors `view.layout` for rich per-screen layout | the generic renderer | When the renderer must render >1 layout mode richly |
@@ -64,7 +84,7 @@ populated world together (captain D-005 / ADR-0012).
 | 16 | **Brand identity & reveal + brand-voice copy** — animated wordmark/tagline/splash + full voice pass | reveal `src/app/home/components/BrandReveal.tsx:60-69`; voice ROADMAP Priority 12 | **`Verin.` wordmark + tokens LIVE**; animated brand-reveal splash + full voice pass: first demo milestone |
 | 17 | **Demo-mode ergonomics** — `Ctrl+Shift+D` toggle, `?mode=demo`, booth attract mode, `data-autopilot` CSS hooks | Meridian demo-mode plumbing | First demo milestone |
 | 18 | **Presenter tooling** — cheatsheet, kill-lines, checklist | `DEMO_CHEATSHEET.md:122-137` | First demo milestone |
-| 19 | **Step-up / confirmation quality** — a wizard confirm gate that confirms the **payload**, not metadata (vs. `window.prompt`) | Meridian confirm gates (`src/components/shared/ConfirmAction.tsx`) | When a sensitive/irreversible action flow ships (money movement / wire) needing step-up auth |
+| 19 | **Step-up / confirmation quality** — a wizard confirm gate that confirms the **payload**, not metadata. The `window.prompt` this row once measured itself against is gone (the console rename is the canonical `Dialog`), so what remains deferred is step-up AUTH, not the modal | Meridian confirm gates (`src/components/shared/ConfirmAction.tsx`) | When a sensitive/irreversible action flow ships (money movement / wire) needing step-up auth |
 | 20 | **Surfaced integration breadth** — multi-CRM (Redtail, Wealthbox), custodial (Schwab, Pershing, BridgeFT), DocuSign, PDF export, SF-Flow across 52 API routes | Meridian's surfaced adapters | Per integration, when each is wired as a **real** adapter behind its port (never scaffolded empty — charter #5) |
 
 ---

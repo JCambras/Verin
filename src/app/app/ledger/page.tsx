@@ -1,10 +1,52 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import type { LedgerRegisterViewModel } from "@app/ledger/model";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
-import { StatusBadge } from "@app/presentation/ui";
+import { buttonClassName, Card, StatusBadge } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
+import { Table, type TableColumn, type TableEmptyState, type TableRow } from "@app/presentation/table";
+
+const COLUMNS: readonly TableColumn[] = [
+  { id: "sequence", header: "#", align: "right", sortable: true },
+  { id: "event", header: "Event", sortable: true },
+  { id: "actor", header: "Actor", sortable: true },
+  {
+    id: "decision",
+    header: "Decision",
+    sortable: true,
+    sortNote:
+      "decision ids alphabetically, with numbers in numeric order; an event that belongs to no decision has nothing to order by, so those rows stay last in both directions",
+  },
+  { id: "hash", header: "Hash", sortable: true },
+];
+
+/**
+ * The recorded order DECLARED rather than left implicit: `/api/ledger` returns the latest
+ * stored events newest first, which is this register's own sequence column descending. The
+ * caption then states the order the rows are in while they are in it, instead of a
+ * "newest first" the landmark borrowed as its name and kept asserting once a reader had
+ * re-ordered the rows by event (D-201).
+ */
+const RECORDED_ORDER = { columnId: "sequence", direction: "descending" } as const;
+
+/**
+ * An empty register means two different things, and a compliance surface may not conflate
+ * them: nothing has ever been recorded for the firm, or the displayed window holds nothing
+ * while the chain still stores events. The second reads as an affirmative "no decisions
+ * exist" if it borrows the first one's copy, so each state names itself.
+ */
+const NO_HISTORY_STATE = {
+  title: "No decision events yet",
+  description: "Run the governed money-movement journey to record the first decision event.",
+} as const;
+
+const EMPTY_WINDOW_STATE: TableEmptyState = {
+  title: "No events in the displayed window",
+  description:
+    "This view is empty, but stored decision history exists for the firm. The stored-event count below states what the chain holds, and verification still covers all of it.",
+};
 
 export default function DecisionLedgerPage() {
   const [model, setModel] = useState<LedgerRegisterViewModel | null>(null);
@@ -26,6 +68,40 @@ export default function DecisionLedgerPage() {
       }
     })();
   }, []);
+
+  const entryRows: readonly TableRow[] = model?.entries.map((entry) => ({
+    id: String(entry.sequence),
+    cells: {
+      sequence: { content: entry.sequence, sortValue: entry.sequence, className: "text-slate-600" },
+      event: {
+        content: (
+          <div>
+            <p className="font-mono text-xs text-slate-800">{entry.eventType}</p>
+            <time dateTime={entry.occurredAt} className="mt-1 block whitespace-nowrap text-xs text-slate-600">
+              {new Date(entry.occurredAt).toLocaleString()}
+            </time>
+            {entry.provenanceLabel ? <span className="mt-1 inline-block"><DevProvenanceBadge label={entry.provenanceLabel} /></span> : null}
+          </div>
+        ),
+        sortValue: entry.eventType,
+      },
+      actor: { content: entry.actor, sortValue: entry.actor, className: "font-mono text-xs text-slate-800" },
+      decision: { content: entry.decisionId ?? "-", sortValue: entry.decisionId ?? "", className: "font-mono text-xs text-slate-600" },
+      hash: {
+        content: `${entry.entryHash}…`,
+        sortValue: entry.entryHash,
+        className: "font-mono text-xs text-slate-500",
+      },
+    },
+  })) ?? [];
+
+  const storedEventsExist = model?.total != null && model.total.value > 0;
+  const registerEmptyState: TableEmptyState = storedEventsExist
+    ? EMPTY_WINDOW_STATE
+    : {
+        ...NO_HISTORY_STATE,
+        action: <Link href="/app/demo" className={buttonClassName()}>Open the demo</Link>,
+      };
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,10 +129,11 @@ export default function DecisionLedgerPage() {
 
       {model ? (
         <>
-          <section
+          <Card
+            as="section"
+            variant="white"
             aria-labelledby="ledger-integrity-heading"
             data-testid="ledger-verdict"
-            className="rounded-lg border border-slate-200 bg-white p-4"
           >
             <div className="flex items-center gap-3">
               <h2
@@ -84,13 +161,14 @@ export default function DecisionLedgerPage() {
                 </li>
               ))}
             </ul>
-          </section>
+          </Card>
 
           {model.decisions.length > 0 ? (
-            <section
+            <Card
+              as="section"
+              variant="white"
               aria-labelledby="ledger-state-heading"
               data-testid="ledger-decision-state"
-              className="rounded-lg border border-slate-200 bg-white p-4"
             >
               <h2
                 id="ledger-state-heading"
@@ -150,7 +228,7 @@ export default function DecisionLedgerPage() {
                   </li>
                 ))}
               </ul>
-            </section>
+            </Card>
           ) : null}
 
           {model.verification.ok && model.decisionsWithheld ? (
@@ -175,66 +253,16 @@ export default function DecisionLedgerPage() {
               failed. Restore and verify the ledger before inspecting its
               recorded data.
             </p>
-          ) : model.entries.length === 0 && !model.total ? (
-            <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-600">
-              No decision events have been recorded for this firm.
-            </p>
           ) : (
-            <div
-              role="region"
-              aria-label="Decision ledger entries"
-              tabIndex={0}
-              className="overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600"
-            >
-              <table className="w-full text-left text-sm">
-                <caption className="sr-only">
-                  Decision ledger entries, newest first
-                </caption>
-                <thead className="bg-surface text-xs uppercase tracking-wide text-slate-600">
-                  <tr>
-                    <th scope="col" className="px-3 py-2">#</th>
-                    <th scope="col" className="px-3 py-2">Event</th>
-                    <th scope="col" className="px-3 py-2">Actor</th>
-                    <th scope="col" className="px-3 py-2">Decision</th>
-                    <th scope="col" className="px-3 py-2">Hash</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {model.entries.map((entry) => (
-                    <tr key={entry.sequence}>
-                      <td className="px-3 py-2 text-slate-600">
-                        {entry.sequence}
-                      </td>
-                      <td className="px-3 py-2">
-                        <p className="font-mono text-xs text-slate-800">
-                          {entry.eventType}
-                        </p>
-                        <time
-                          dateTime={entry.occurredAt}
-                          className="mt-1 block whitespace-nowrap text-xs text-slate-600"
-                        >
-                          {new Date(entry.occurredAt).toLocaleString()}
-                        </time>
-                        {entry.provenanceLabel ? (
-                          <span className="mt-1 inline-block">
-                            <DevProvenanceBadge label={entry.provenanceLabel} />
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-slate-800">
-                        {entry.actor}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-slate-600">
-                        {entry.decisionId ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-slate-500">
-                        {entry.entryHash}…
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              caption="Decision ledger entries"
+              regionName="Decision ledger"
+              layout="scroll-region"
+              columns={COLUMNS}
+              rows={entryRows}
+              initialSort={RECORDED_ORDER}
+              emptyState={registerEmptyState}
+            />
           )}
           {model.verification.ok && model.total &&
           model.total.value > model.entries.length ? (

@@ -8,9 +8,10 @@
  * product claim is "Verin did not send it again"; "idempotency" stays out of primary
  * copy). The timeline is append-only in presentation just as the ledger is in storage.
  */
-import { StatusBadge } from "./ui";
+import { Button } from "./ui";
 import { TapToVerify, type VerifyDetail } from "./tap-to-verify";
 import { DevProvenanceBadge } from "./dev-provenance-badge";
+import { Table, type TableColumn, type TableRow } from "./table";
 
 export interface ExecutionTimelineRow {
   readonly step: string;
@@ -25,52 +26,39 @@ export interface ExecutionTimelineRow {
   readonly devBadgeLabel: string;
 }
 
+/**
+ * No column is sortable: recorded order is the register's meaning here, and a viewer
+ * who could reorder it would be reading a different claim than the one made.
+ */
+const COLUMNS: readonly TableColumn[] = [
+  { id: "step", header: "Step" },
+  { id: "target", header: "Target" },
+  { id: "status", header: "Status" },
+  { id: "when", header: "When" },
+];
+
 export function ExecutionTimeline({ caption, rows }: { caption: string; rows: readonly ExecutionTimelineRow[] }) {
-  return (
-    <div
-      role="region"
-      aria-label={caption}
-      tabIndex={0}
-      className="overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600"
-    >
-      <table className="w-full text-left text-sm">
-        <caption className="sr-only">{caption}</caption>
-        <thead className="bg-surface text-xs uppercase tracking-wide text-slate-600">
-          <tr>
-            <th scope="col" className="px-3 py-2">Step</th>
-            <th scope="col" className="px-3 py-2">Target</th>
-            <th scope="col" className="px-3 py-2">Status</th>
-            <th scope="col" className="px-3 py-2">When</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => (
-            <tr key={`${r.step}-${r.timestamp}`} className="print-avoid-break">
-              <td className="px-3 py-2 align-top">
-                <div className="flex flex-col items-start gap-1">
-                  <span className="flex flex-wrap items-center gap-2 text-slate-800">
-                    {r.step}
-                    <DevProvenanceBadge label={r.devBadgeLabel} />
-                  </span>
-                  {r.honestyLine ? <span className="text-xs text-slate-600">{r.honestyLine}</span> : null}
-                  {r.plainClaim ? <span className="text-sm text-slate-700">{r.plainClaim}</span> : null}
-                  {r.affordanceLabel ? (
-                    <button type="button" className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50">
-                      {r.affordanceLabel}
-                    </button>
-                  ) : null}
-                  <TapToVerify details={r.identifiers} />
-                </div>
-              </td>
-              <td className="px-3 py-2 align-top text-slate-700">{r.target}</td>
-              <td className="px-3 py-2 align-top">
-                <StatusBadge status={r.status} label={r.statusLabel} />
-              </td>
-              <td className="px-3 py-2 align-top whitespace-nowrap text-slate-700">{r.timestamp}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  const tableRows: readonly TableRow[] = rows.map((row) => ({
+    id: `${row.step}-${row.timestamp}`,
+    cells: {
+      step: {
+        content: (
+          <div className="flex flex-col items-start gap-1">
+            <span className="flex flex-wrap items-center gap-2 text-slate-800">
+              {row.step}
+              <DevProvenanceBadge label={row.devBadgeLabel} />
+            </span>
+            {row.honestyLine ? <span className="text-xs text-slate-600">{row.honestyLine}</span> : null}
+            {row.plainClaim ? <span className="text-sm text-slate-700">{row.plainClaim}</span> : null}
+            {row.affordanceLabel ? <Button type="button" variant="secondary">{row.affordanceLabel}</Button> : null}
+            <TapToVerify details={row.identifiers} />
+          </div>
+        ),
+      },
+      target: { content: row.target },
+      status: { kind: "status", status: row.status, label: row.statusLabel },
+      when: { content: row.timestamp, className: "whitespace-nowrap" },
+    },
+  }));
+  return <Table caption={caption} columns={COLUMNS} rows={tableRows} />;
 }

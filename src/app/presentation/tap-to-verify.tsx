@@ -9,6 +9,7 @@
  * two never merge.
  */
 import { useId, useState } from "react";
+import { Button } from "./ui";
 
 export interface VerifyDetail {
   readonly label: string;
@@ -21,15 +22,15 @@ export function TapToVerify({ details }: { details: readonly VerifyDetail[] }) {
   const regionId = useId();
   return (
     <span className="inline-flex flex-col items-start">
-      <button
+      <Button
         type="button"
+        variant="text"
         aria-expanded={open}
         aria-controls={regionId}
         onClick={() => setOpen((v) => !v)}
-        className="text-sm text-slate-600 underline underline-offset-2 hover:text-slate-900"
       >
         Verify source
-      </button>
+      </Button>
       {open ? (
         <span id={regionId} className="mt-1.5 block max-w-md rounded-md border border-slate-200 bg-slate-50 p-3 animate-slide-down">
           <span className="flex flex-col gap-1">

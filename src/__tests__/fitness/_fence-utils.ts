@@ -1415,6 +1415,55 @@ export function realSemanticProject(): Project {
   return semanticProject;
 }
 
+/**
+ * A ts-morph Project over the app tree (`src/app`), untyped and MEMOIZED. Two fences
+ * scan this tree structurally, and each was building its own full program - the
+ * fitness project runs serially, so that was the whole app tree parsed twice per run
+ * plus a second time inside one of them. Both only READ it, so one instance serves.
+ */
+let appProject: Project | null = null;
+export function appSourceProject(): Project {
+  if (appProject) return appProject;
+  const project = new Project({ useInMemoryFileSystem: false, skipAddingFilesFromTsConfig: true });
+  for (const file of walk(join(SRC_ROOT, "app"), (f) => f.endsWith(".ts") || f.endsWith(".tsx"))) {
+    project.addSourceFileAtPath(file);
+  }
+  appProject = project;
+  return project;
+}
+
+/** The repo-relative, forward-slashed path a fence reports violations against. */
+export function relativeToRepo(sf: SourceFile): string {
+  return relative(REPO_ROOT, sf.getFilePath()).replace(/\\/g, "/");
+}
+
+/**
+ * The names a file writes a set of canonical exports UNDER - alias and namespace member
+ * included. A JSX tag is only a local name: `import { Table as Register }` renames it and
+ * `import * as P` members it, so a fence that compares tag TEXT reviews whatever the
+ * author happened to spell and waves the rest through. Two fences identify canonical
+ * components this way, and one resolution is what keeps them from disagreeing about what
+ * "canonical" means; each still owns what it does with names it cannot account for.
+ */
+export function canonicalLocalNames(
+  sf: SourceFile,
+  isCanonicalModule: (specifier: string) => boolean,
+  exportNames: Iterable<string>,
+): Set<string> {
+  const wanted = new Set(exportNames);
+  const names = new Set<string>();
+  for (const declaration of sf.getImportDeclarations()) {
+    if (!isCanonicalModule(declaration.getModuleSpecifierValue())) continue;
+    for (const named of declaration.getNamedImports()) {
+      const imported = named.getName();
+      if (wanted.has(imported)) names.add(named.getAliasNode()?.getText() ?? imported);
+    }
+    const namespace = declaration.getNamespaceImport()?.getText();
+    if (namespace) for (const name of wanted) names.add(`${namespace}.${name}`);
+  }
+  return names;
+}
+
 /** An in-memory Project for companion tests. */
 export function inMemoryProject(files: Record<string, string>): Project {
   const project = new Project({

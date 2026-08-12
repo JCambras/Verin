@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { DecisionSpine } from "@app/presentation/decision-spine";
 import type { ExecutionTimelineRow } from "@app/presentation/execution-timeline";
-import { EmptyState } from "@app/presentation/ui";
+import { buttonClassName, EmptyState } from "@app/presentation/ui";
 import {
   DEV_BADGE_TEXT,
   type DecisionSpineVM,
@@ -45,7 +45,7 @@ export function PrimaryLink({ href, children }: { href: string; children: ReactN
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center gap-2 self-start rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-700"
+      className={buttonClassName({ variant: "primary", className: "self-start" })}
     >
       {children}
     </Link>
@@ -57,7 +57,7 @@ export function SecondaryLink({ href, children }: { href: string; children: Reac
   return (
     <Link
       href={href}
-      className="inline-flex items-center justify-center gap-2 self-start rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-50"
+      className={buttonClassName({ variant: "secondary", className: "self-start" })}
     >
       {children}
     </Link>

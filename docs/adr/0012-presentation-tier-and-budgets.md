@@ -1,6 +1,7 @@
 # ADR-0012: The presentation tier is a first-class product surface with its own budget; demo world deferred
 
-**Status:** Accepted
+**Status:** Accepted (amended by ADR-0056: the "port on first use only" bullet carries ONE narrow,
+expiring named-deferral exception for the shared control foundation)
 **Date:** 2026-07-18
 **Deciders:** Founding architect; captain (D-005)
 **Relates to:** Charter non-negotiable #10; deliverable D
@@ -23,6 +24,11 @@ growable by an ADR bump — so richness is planned, not sprawling, while platfor
 - **Port on first use only:** the skeleton ports just the components its screens render; everything else
   worth porting is catalogued in `PORT-LEDGER.md` (source `file:line`, what, why, when) and pulled when a
   real surface needs it (charter #5: no dead components).
+  **Amended by ADR-0056 (2026-08-12):** a presentation FOUNDATION primitive that an explicit ratified
+  brief asked for as a SET may land ahead of its first product caller under a NAMED DEFERRAL that cites
+  the front-end prompt landing that caller and EXPIRES there: at that prompt it acquires a real caller or
+  is deleted. Everything else still ports on first use; this is not a licence to build ahead, and the
+  complete list of primitives holding it lives in ADR-0056 and `PORT-LEDGER.md` (D-191/D-192).
 - **Separate budget:** the presentation tier has its own line budget (ADR-0018), grown only by an ADR bump.
   Platform ceilings (contracts/domain/infrastructure) stay ratchet-down and are unaffected by presentation richness.
 - **Demo-choreography engines (tour / narration / recorder):** *planned here by ADR now, ported at the first

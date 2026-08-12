@@ -6663,3 +6663,813 @@ imported helper, and an AST-level (rather than textual) config-scope pin.
 
 **Revert path:** revert this changeset; the analysis closures, companions, and proof entries revert
 together. Gate semantics are unchanged throughout.
+
+### D-191 · 2026-08-11 · reversible · Product surfaces share one primitive grammar with isolated interactive leaves
+
+Wave A prompt 2 consolidates the canonical Button, Input, Select, Checkbox, Radio, Card, Badge, Pill,
+and EmptyState recipes in `src/app/presentation/ui.tsx`, the file already named as their authority by
+the ratified demo design language. Legacy control names were removed after every caller migrated, leaving
+no duplicate exports or alternate style path. Table, Tabs, Toast, Tooltip, Dialog, and ErrorBoundary
+live in focused presentation modules; only the leaves that hold interaction state carry `"use client"`.
+The authenticated app layout mounts the toast host and error boundary without converting the server
+layout into a client component.
+
+Table consumes typed column and row view models, owns compact headers and cells, status-pill rendering,
+sorting, loading and actionable empty states, and switches to a fixed-row virtual window above 100 rows.
+Small existing registers render in full, preserving their established layout; the 5,000-row path renders
+only the visible window plus bounded overscan. No runtime dependency or new design token was added.
+The presentation tier re-measures at 1,645/6,000 lines; its ceiling is unchanged.
+
+**Why:** visual recipes repeated in features drift, and a client-first component tree would discard the
+repository's server-default boundary. The explicit prompt asks for the complete foundation set, including
+controls whose feature-level first use arrives in later front-end waves; focused component tests make
+those requested contracts executable now without inventing product behavior merely to showcase them.
+
+**Alternatives rejected:** a third-party component library (new runtime dependency and token fork), one
+large client-side primitive module (needlessly widens hydration), and forcing Checkbox, Radio, or Tabs
+into unrelated current workflows (changes product behavior to manufacture usage).
+
+**Revert path:** restore the prior `ui.tsx`, the native registers and call-site recipes, remove the focused
+interactive modules and tests, and remove the app-layout wrappers and PF-247 fence together.
+
+### D-192 · 2026-08-11 · reversible · Review round: register honesty, one justification authority, and named-deferral primitives
+
+The prompt-2 review gate returned ten findings; the recorded ruling (`review-ask-user`, 2026-08-11)
+resolves all ten. Two were real regressions the primitives task exists to prevent. The `Button` base
+recipe carried `justify-center`, and joined class strings are not conflict-resolved, so the base could
+outrank the alignment a caller passes and every sortable register header risked rendering centered over
+left- or right-aligned cells. Justification now has exactly one authority: the base contributes none,
+`default`/`compact` center themselves, and `text`/`table` leave the flex default so a caller's
+`justify-start`/`justify-end` is the only such token on the element. Separately, a failed rename set
+page-level error state that renders outside the modal `<dialog>`, so a refusal ("needs ops role or
+higher") landed on an inert page behind the backdrop and Save appeared to do nothing; the dialog now
+owns its own error state, cleared on open, on close, and on each submit, and reports inside the modal.
+
+**Register honesty.** The hash tooltips are removed from the audit and decision-ledger registers. Both
+APIs truncate `entryHash` to 16 characters deliberately - the register bounds disclosure while still
+authenticating the complete chain - so a tooltip promising the complete hash while repeating the
+truncated one is a false affordance on a compliance surface, and it cost one extra tab stop per row on
+a register that can hold thousands. Neither API is widened to satisfy it: whether the register should
+disclose full identifiers at all is a disclosure question, deferred under follow-up key
+`fu-audit-full-identifier-disclosure`. **Un-defer trigger:** the next change to what the audit or
+ledger read surfaces disclose - an export path, a hash-verification affordance, or a payload widening -
+takes that decision with it. `ExecutionTimeline` columns are no longer sortable: recorded order is the
+meaning of an append-only register, and a viewer who reorders it reads a different claim than the one
+made. For registers where sorting IS legitimate, `Table` now composes its own caption from the active
+sort, so "newest first" cannot silently become false after the first click.
+
+**Named deferrals (charter #5).** `Checkbox`, `Radio`, `Tabs`, `Tooltip`, and directly-composed `Pill`
+have no product caller yet. Manufacturing one would change product behavior to satisfy a gate, and
+deleting them would discard the foundation set the prompt asked for, so each names the front-end prompt
+that lands its first honest caller, on the ledger-export precedent (D-116):
+
+| Primitive | First caller lands at |
+| --- | --- |
+| `Tooltip` | Prompt 3, application shell - icon-only chrome controls and the environment badge |
+| `Pill` (direct) | Prompt 5, role homes - summary-card status and context lines |
+| `Tabs` | Prompt 7, household context surface - sectioned dense client view |
+| `Checkbox` | Prompt 8, the table system - row selection across table-heavy registers |
+| `Radio` | Prompt 11, configuration authoring - exclusive-choice configuration fields |
+
+**Un-defer trigger:** each entry is retired by the prompt named beside it; a primitive still callerless
+after its prompt lands is deleted rather than re-deferred, so this table cannot become a standing
+amnesty.
+
+**Fence and test robustness.** `hasSpacing` in the presentation-primitives fence accepted only the
+`px-*`/`py-*` pair, so a fully-styled control written with Tailwind's `p-*` shorthand or per-side
+padding walked straight through the charter enforcement point; it now accepts every spelling of
+two-axis padding. The button recipe had the same shape of hole one token over - it demanded the
+literal `justify-center`, so the identical recipe written `justify-start` was invisible - and now
+requires any `justify-*`, which is also what lets the base recipe stop hard-coding one. Companions
+cover the shorthand, per-side, and justification-swap forms plus a layout-wrapper case that must
+still pass; both injections are recorded against PF-247. The 5,000-row e2e dropped its wall-clock
+scroll bound - a loaded runner failed a correct build, and the windowing property is already proven by
+the rendered-row assertions. The console empty-state assertion moved into its own spec served an empty
+list, because it previously created the very data that made its own retry unpassable; the rename
+refusal gained the failure-path spec charter #8 asks for, driven by the real loader refusal rather
+than a mock. `Table` header rows carry
+`aria-rowindex={1}`, required once `aria-rowcount` reports rows outside the DOM, and each sortable
+label gets a print-visible twin, since `globals.css` hides every control in print and the register
+would otherwise print headerless.
+
+The presentation tier re-measures at 1,664/6,000 lines on the tree as it lands, recorded beside the
+ceilings in `line-budget.test.ts`; no ceiling moves.
+
+**Revert path:** revert this changeset; the primitives, registers, fence, and specs return to their
+D-191 state, and the deferral table and `fu-audit-full-identifier-disclosure` revert with it.
+
+### D-193 · 2026-08-11 · reversible · Second review round: measured windowing, register-state honesty, and a dismissible tooltip
+
+The prompt-2 review gate returned eight further findings; all eight are resolved here.
+
+**Windowing is measured, not assumed.** `Table` derived its virtual window from a fixed 40px row
+height. Shipped register rows are taller than that - the decision ledger stacks an event type, a
+timestamp, and a provenance badge in one cell (~80px) - so the container's scroll extent ran past
+`rowCount × 40`, and scrolling to the bottom produced a window start BEYOND the last row: an empty
+slice, a blank register body, and a spacer-driven scroll bounce as the browser re-clamped. Both
+registers reach 200 rows against a `virtualizeAbove` of 100, so both virtualize and both could hit it.
+The estimate now seeds only the first paint; a row-set-scoped effect measures the rendered rows and
+the window and both spacers are computed from that height, with every index additionally clamped to
+the row count so an un-measured or mid-convergence height can never yield an empty window. The
+5,000-row path is unchanged in character (one bounded window plus overscan). The existing e2e fixture
+could not have caught this: its single-line rows are SHORTER than the estimate, which is the safe
+direction of the mismatch, so a ledger-shaped 200-row e2e with an asserted row height above 40px was
+added beside it.
+
+**An empty register names which empty it is.** The prior round collapsed two different claims into one
+copy. "No decision events yet · Run the governed money-movement journey to record the first decision
+event" rendered whenever `entries` was empty, including directly above "Showing the latest 0 of 12
+stored events" - an affirmative "this firm has no decisions" over a chain holding twelve. The two
+states are now distinct and typed: a chain with no stored events keeps the inviting copy and its
+primary action, while an empty displayed window over a positive stored total says the view is empty
+and stored decision history exists, keeping the accurate stored-event line. `EmptyState`'s action
+became optional to carry that: the window case has no honest next step, and inventing a control on a
+compliance surface is a false affordance. Every other empty state still passes a real primary action.
+
+**Accessibility of the shared leaves.** The region landmark's `aria-label` kept the unsorted caption
+while the `<caption>` re-composed itself, so a screen-reader user entering the landmark heard "newest
+first" after sorting ascending - the exact false claim D-192 added the sorted caption to prevent; both
+now read `sortedCaption`. `Tooltip` is a client leaf: Escape dismisses its content while the trigger
+keeps focus, and the offset moved from a margin to padding INSIDE the hoverable panel, so the pointer
+can travel from trigger to content without crossing a strip where neither is hovered (WCAG 1.4.13,
+Dismissible and Hoverable). Toast auto-dismiss is held while a toast contains focus or the pointer and
+resumes with its remaining time, so a timer can no longer unmount the control a keyboard user is
+sitting on and drop focus to `<body>` (WCAG 2.2.1). `ErrorBoundary` records a default diagnostic to the
+browser console when the host passes no `onError` - the surface the no-console fence sanctions for a
+client boundary (ADR-0013) - because the one shipped mount wraps every authenticated page and a caught
+failure that goes nowhere is an undiagnosable production incident.
+
+**Fence and test robustness.** The presentation-primitives recipe scan read only plain string literals,
+so a complete control recipe written as an interpolated template - the repository's dominant className
+idiom - passed untouched, and its project walk took only `.tsx`, so a class-string constant in a `.ts`
+module under `src/app` was never opened. Both holes are closed and both were injected against the real
+tree, observed passing on the pre-amendment fence and failing with `file:line` on the amended one, then
+reverted; the evidence is appended to PF-247. Two decision-ledger e2e assertions targeted
+"No decision events have been recorded", a string deleted in the prior round, so they could never fail;
+they now assert against the current distinct empty-state copy, joined by a spec for the genuinely-empty
+chain. Five unit regressions (window clamp, sorted landmark label, tooltip Escape, toast hold,
+boundary diagnostic) were each observed failing against the pre-fix components before being kept.
+
+The presentation tier measured 1,804/6,000 lines on the tree as it landed; the figure recorded here in
+that round was 1,782, taken before the round finished landing, and it is corrected under D-194. No
+ceiling moves, and no runtime dependency was added.
+
+**Revert path:** revert this changeset; the fixed-height window, the single empty-state copy, the
+CSS-only tooltip, the unheld toast timer, the silent boundary, and the literal-only fence scan return
+to their D-192 state.
+
+### D-194 · 2026-08-11 · reversible · Third review round: order-carrying registers, one collator, a pointer-dismissible tooltip
+
+The prompt-2 review gate returned four further findings; all four are resolved here.
+
+**Sortability is conditional, and the conditions are a test.** *(This paragraph was rewritten under
+D-195, which found the rule as first recorded contradicted the tree; the "Restore recorded order"
+control it names below landed in that round, not this one.)* D-192 settled this for
+`ExecutionTimeline` and the same change then shipped a fully sortable precedence trace one file over,
+so the rule is generalised here rather than re-litigated per surface. The rule as this entry FIRST
+recorded it was a blanket one - "a register whose order is the claim is not sortable" - listing the
+decision ledger and the audit register among the registers that keep recorded order while both shipped
+fully sortable and this same entry said the ledger's sortability stands. A durable rule that
+contradicts the tree it governs is worse than none, so it is superseded here by an operational
+principle a future author can APPLY rather than interpret:
+
+> A register may be sortable only when (1) its recorded order is reconstructible from a VISIBLE
+> sortable column, (2) the caption and the landmark label state the ACTIVE sort rather than asserting a
+> fixed order, and (3) restoring recorded order is ONE action away. Where position itself is the only
+> carrier of the meaning, the register stays unsortable.
+
+The three conditions are conditions on PERMISSION, not an obligation: `Table` defaults `sortable` to
+absent per column and must stay that way, so sortability is opted INTO by a caller with a reader who
+needs it, never imported by default. Condition (3) is why `Table` now renders a "Restore recorded
+order" control whenever the active sort differs from the one the caller declared: repeat header clicks
+put recorded order two or more actions away from an arbitrary sorted state, which is not a restoration
+a reader can rely on.
+
+**The audit register and the decision ledger are sortable, and satisfy all three.** Their claim is
+CONTENTS and INTEGRITY - what was recorded and that the chain is unbroken - not the position a row
+happens to occupy, and a compliance reader legitimately asks "everything this actor did" or "every
+`household.updated`". Recorded order survives the sort in data a reader can see: both carry a visible,
+sortable `#` sequence column and a hash chain whose verdict is computed over the whole chain
+regardless of display order. Both disclose every active sort in the caption and the landmark, and both
+restore recorded order in one action.
+
+**The precedence trace and the execution timeline are not sortable.** `ExecutionTimeline` fails
+condition (1) outright: nothing in Step / Target / Status / When reconstructs which step came first,
+so its position is the only carrier and sorting would silently destroy it. `PolicyTraceSurface` does
+render a visible `#`, so it could be permitted - but permission is not obligation, and a four-row
+precedence trace whose entire surface claim is "the rules that governed this decision, in the order
+they were applied" has no reader asking for a different order. It accordingly declares four unsortable
+columns, and the now-inert `sortValue` entries went with them, since a sort value on an unsortable
+register is a claim the surface does not make.
+
+**One collator, not one per comparison.** `compareValues` called `localeCompare` with an options
+object, which is exactly the call shape that misses V8's cached-collator fast path and constructs a
+fresh `Intl.Collator` per comparison. The 5,000-row register this component advertises is ~60,000
+comparisons, so the sort the change exists to make smooth was paying ~60,000 collator constructions on
+the main thread. One module-scope `Intl.Collator` now serves the tier with the same numeric,
+case-insensitive collation. The regression asserts both halves: the ordering is unchanged, and a sort
+makes no `String.prototype.localeCompare` call at all.
+
+**The tooltip is dismissible for pointer users too.** D-193 put the Escape handler on the wrapping
+`<span>`, so it only fired when focus was already inside the tooltip subtree - a pointer user who
+hovered the trigger saw content with no dismissal mechanism, and WCAG 1.4.13 Dismissible covers
+hover-triggered content, not only focus-triggered. Visibility is now state rather than `group-hover`,
+which is what lets a document-level `keydown` listener exist EXACTLY while the panel is shown: nothing
+is bound when no tooltip is up, hiding removes it, and unmount removes it. A dismissal is released only
+once neither the pointer nor focus is on the trigger, so leaving one of the two cannot re-show content
+the viewer just dismissed. Hoverability (padding inside the panel, no margin gap) and the client-leaf
+boundary are unchanged.
+
+**The recorded measurement is re-taken, not inherited.** D-193 recorded presentation at 1,782 lines
+against a tree that measured 1,804 - a number taken before that round finished landing, which is the
+staleness `line-budget.test.ts`'s own header argues is a ceiling nobody re-took. The presentation tier
+re-measures at 1,840/6,000 with that file's own algorithm on the tree as this round lands; the D-193
+sentence is corrected to its true 1,804, no ceiling moves, and no runtime dependency was added.
+
+**Revert path:** revert this changeset; the sortable precedence trace, the per-comparison collator, the
+focus-only tooltip dismissal, and the stale presentation figure return to their D-193 state.
+
+### D-195 · 2026-08-11 · reversible · Fourth review round: a boundary that lets go, and governance that matches the tree
+
+The prompt-2 review gate returned five findings; all five are resolved here. Four of them are the same
+failure in different places - a durable statement that stopped matching the code it governs - and the
+fifth is a latent bug that turns one broken page into a broken section.
+
+**A boundary mounted in a persistent host must let go.** `ErrorBoundary` was mounted directly in the
+`/app` layout with nothing to key it. App Router preserves a layout across client-side navigation: the
+element is reconciled by position, so the boundary INSTANCE and its `state.error` survive a route
+change while only `children` are swapped. One render failure on `/app/audit` therefore left
+`/app/console` and `/app/ledger` showing "This view could not be shown." over content that never
+failed - the nav kept working and every destination was dead, recoverable only by clicking "Try again"
+on whichever page the viewer happened to be standing on. There is no `error.tsx` or `global-error.tsx`
+anywhere under `src/app`, so nothing else would have reset it. The primitive now takes a `resetKey`
+naming the content it guards and releases a caught error when that key changes, and
+`RouteErrorBoundary` (`src/app/app/route-error-boundary.tsx`) is the smallest client leaf that can
+supply it: the layout stays a Server Component and the leaf reads `usePathname`. The regression asserts
+BOTH halves - arriving at a different route clears the fallback, and re-rendering the SAME route with
+healthy children does not, so the reset is keyed on the view rather than on any re-render.
+
+**D-194's rule is superseded by one a future author can apply.** As first written it named the decision
+ledger and the audit register among the registers that keep recorded order, then two paragraphs later
+said the ledger's sortability stands - and both ship fully sortable, with the audit register never
+re-litigated anywhere. A durable rule that contradicts the tree it governs is worse than no rule,
+because the next author obeys whichever half they read first. D-194 above now carries the operational
+principle instead: sortable is permitted only when recorded order is reconstructible from a visible
+sortable column, the caption and landmark state the active sort, and restoring recorded order is one
+action away; where position is the only carrier of meaning, the register stays unsortable. The third
+condition was not met by anything in the tree - repeat header clicks put recorded order two or more
+actions away from an arbitrary sorted state - so `Table` now renders a "Restore recorded order" control
+whenever the active sort differs from the caller's declared one. Coverage is on the SHIPPED surfaces,
+not on fixtures: the audit trail and the decision ledger each prove a visible sortable `#`, a caption
+and landmark that follow every active sort, and one action that puts recorded order back; the
+precedence trace and the execution timeline each prove no sortable header at all.
+
+**The design language described a Tooltip that no longer exists.** It still read "Tooltip remains
+server-capable because its interaction is native focus plus CSS", which stopped being true at D-193 and
+was contradicted outright at D-194 - the primitive carries `"use client"`, holds visibility in state,
+and installs a document `keydown` listener. `AGENTS.md` makes that document normative and tells UI
+prompts to read it first, and Tooltip's first product caller arrives at prompt 3, so the next author
+would have been told by the authority that it can be rendered from a Server Component, which fails at
+build time. The row now states the client-leaf reason (Dismissible is owed to pointer users, whose
+Escape lands on the document), and the `table.tsx` row records the conditional sortability above.
+
+**An escape list with no staleness guard.** `PRIMITIVE_FILES` is a seven-entry exact-path escape list
+with no companion proving its entries resolve, unlike every comparable registry here. A rename or a
+split - routine under the 500-line per-file ceiling - would leave an entry exempting nothing while a
+reader still believed the file was covered, and the enforce test cannot notice, because a dead escape
+is simply never consulted. `stalePrimitiveEscapes` closes it with `file:line`. Proven adversarially by
+renaming `tooltip.tsx` in the real tree: the enforce test passed with the escape pointing at nothing,
+the guard failed naming the exact path, and the rename was reverted (PF-247).
+
+**PORT-LEDGER rows that the previous rounds invalidated.** The catalog's header asserts everything in
+the deferred table is NOT built, while row 9 still deferred toasts (a `ToastProvider` ships in the
+authenticated layout and fires on console create and rename) and row 19 still measured a deferred
+step-up gate against `window.prompt`, which this branch deleted when the console rename became the
+canonical `Dialog`. Both rows now name what shipped and what genuinely remains deferred - step-up
+AUTH, not the modal - and the header says a LIVE row means exactly that. No fence covers this file,
+which is why it has to be corrected by hand in the PR that moves it.
+
+The presentation tier re-measures at 1,884/6,000 with `line-budget.test.ts`'s own algorithm on the tree
+as this round lands (1,840 at D-194); the recorded figure there is updated to match. No ceiling moves,
+no runtime dependency was added, and nothing under `domain/`, `contracts/`, or `infrastructure/` was
+touched.
+
+**Revert path:** revert this changeset; the section-wide error fallback, the two-or-more-action return
+to recorded order, the contradictory sortability rule, the server-capable Tooltip claim, the unguarded
+escape list, and the stale port-ledger rows return to their D-194 state.
+
+### D-196 · 2026-08-12 · reversible · Fifth review round: a set is not a sequence, and a control that lets go of focus
+
+The prompt-2 review gate returned three findings; all three are resolved here. Two are the same
+defect in the control D-195 introduced - a restore action that was correct about ORDER and careless
+about the reader using it - and the third is the sortability rule meeting a register the rule had not
+been asked about yet.
+
+**The set-versus-sequence test, and why the simulation delta passes it.** D-195 shipped the
+policy-authoring simulation delta as a fully sortable register with Dimension / Today / Under the
+draft, which satisfies none of D-194's condition (1): nothing visible reconstructed the authored
+order. The resolution is not to drop the sort. A simulation delta is a SET of affected cases - no row
+is a consequence of the one above it, and a reviewer legitimately asks to see the changed dimensions
+together - whereas a precedence trace and an execution timeline are causal SEQUENCES, where position
+is the only carrier of "this happened because that did". That distinction is the test a future author
+applies BEFORE reaching for D-194's three conditions:
+
+> Is the register a SET of cases, or a SEQUENCE of causes? A sequence keeps its recorded order and
+> stays unsortable. A set may be sortable - and then owes D-194 in full: a VISIBLE sortable column
+> carrying its recorded order, a caption and landmark stating the ACTIVE sort, and recorded order ONE
+> action away.
+
+The delta accordingly gains a visible, sortable case number, so the authored order now lives in data
+the reader can see rather than in the position a row holds; the surface's typed view model carries no
+per-row causal rule to promote, since the whole table is the impact of the ONE drafted policy shown
+above it. D-194 is unchanged and unqualified - this entry supplies the question that precedes it, not
+an exemption from it.
+
+**A rule with no fence is a rule that governs only the surfaces it was written against.** D-194 was
+enforced by per-surface unit tests, so it could not see the NEXT caller - which is exactly how the
+simulation delta acquired sortable headers in the round that generalised the rule. The
+`register-sortability` fence closes that: every `src/app` file declaring a sortable column must be
+registered against D-194 with the visible column that carries its recorded order, and that column
+must itself be declared and sortable in the same collection. A computed `sortable`, a spread column
+collection, and a non-literal column `id` all fail closed rather than passing as reviewed. What the
+fence cannot decide - whether the named column TRULY reconstructs recorded order - stays a reviewer's
+judgement, asserted on the rendered surfaces in `order-carrying-registers.test.tsx`; the fence's job
+is to make that judgement unskippable. Proven adversarially twice against the real tree (PF-248), and
+mapped under non-negotiable #10 in `charter-map.json` with its enforced-mechanism ratchet entry, so
+the fence itself cannot go quiet without the charter-drift fence saying so.
+
+**The control that restores order may not strand the reader who used it.** "Restore recorded order"
+removes itself by succeeding, so a keyboard user who tabbed to it and pressed Enter was dropped on
+`<body>` - the same focus-stranding this branch already fixed for the auto-dismissing toast, and one
+`toHaveCount(0)` assertion could not catch. Focus is now placed BEFORE the state change lands: on the
+header of the caller's declared recorded order where there is one, else on the header whose sort was
+just undone, else on the register itself. Each outlives the control.
+
+**And it belongs inside the landmark it acts on.** The control was a sibling of the `region`, so a
+reader who navigated by landmark into the register never met the one action D-194 owes them, and two
+sorted registers on one page would have exposed two identically-named buttons. The landmark now wraps
+the scrolled box AND the control, the control renders AFTER the register (above it, its appearance
+pushed the header the viewer had just clicked out from under their pointer), and its accessible name
+carries the caption - "Restore recorded order: Audit log entries, newest first" - with the visible
+text as the name's prefix (WCAG 2.5.3). The scrolled box keeps `tabIndex` and is marked
+`data-table-scroll`, which is what the windowing tests drive.
+
+The presentation tier re-measures at 1,915/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (1,884 at D-195); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the positionally-ordered simulation delta, the unfenced
+sortability rule, the focus-stranding restore control, and its placement outside the landmark return
+to their D-195 state.
+
+### D-197 · 2026-08-12 · reversible · Sixth review round: a sort that moves nothing, and a register that prints cropped
+
+The prompt-2 review gate returned four findings; all four are resolved here. Two are the same shape
+of dishonesty in the canonical `Table` - a claim made on screen that the DOM does not support - and
+two harden the fence and the shared fence utilities the previous round introduced.
+
+**A column may not advertise a sort it cannot perform.** Both value columns of the policy-authoring
+simulation delta declared `sortable` against `sortValue: row.before.display`, and
+`ComparisonCellVM.display` is never set for a simulation row: the sort value was always `undefined`,
+`cellSortValue` fell through to a `<Cell>` ELEMENT and returned `""`, every comparison tied, and ties
+resolve to the authored index BEFORE direction is applied. So both directions left the rows exactly
+where they were while the caption, the landmark label and `aria-sort` all announced a re-sort, and
+the "Restore recorded order" control appeared to undo something that had not happened. That is
+precisely the false order claim D-194 condition (2) exists to prevent, on the surface D-196 was
+written to bring into compliance.
+
+Each cell now yields a real scalar. Dispositions rank by the ratified §5 restrictiveness lattice -
+`DISPOSITION_RESTRICTIVENESS`, proceed before blocked before prohibited - and NEVER by label, which
+would order "Blocked - resolvable" before "Proceed" before "Prohibited": an alphabet a reader would
+read as severity. Every other value falls back to the text on screen. The key names its band first,
+so one ranking serves both columns and they compare directly.
+
+**An ordering a reader cannot name is an ordering they will misread.** A column mixing dispositions,
+money and counts does not sort in the order its values suggest, so `TableColumn` gains `sortNote`:
+the ordering rule, carried in the caption and the landmark label - "(re-sorted by Today, ascending,
+dispositions by restrictiveness, then alphabetically)" - and shown as VISIBLE text beside the restore
+control while that column's sort is active, because the caption is sr-only and a sighted reader
+looking at "Proceed, Blocked, Prohibited" cannot otherwise tell severity from alphabet. It sits in
+that row rather than under the column header so a narrow column cannot wrap the sentence, and it
+prints with the register. Declared only where the order is not the obvious one for the value on
+screen; the compliance registers' sequence, actor and action columns are unchanged.
+
+**A windowed register must print whole.** Above `virtualizeAbove` the scroll box takes a height cap
+and only the current window exists in the DOM, the rest represented by two fixed-height spacer rows.
+Printing that emitted a 384px cropped box with blank bands: Chromium does not paginate content
+overflowing an `overflow: auto` container, and the off-window rows were not in the document at all.
+Both compliance registers cap at 200 entries and so exceed the 100-row threshold in ordinary use, and
+the pre-change audit register printed in full - a regression on the one artifact a compliance reader
+takes off the screen. No stylesheet closes it, because the missing rows do not exist: windowing is
+therefore SUSPENDED for the print pass (`beforeprint`/`afterprint` and the `print` media query,
+committed with `flushSync` because `window.print()` blocks before a batched update would land),
+which drops the height cap and the spacers with it. Nothing is duplicated - the same rows are
+swapped, so no screen reader meets the register twice - and the print-media CSS backstop
+(`print:max-h-none print:overflow-visible`) covers the cap even where scripting has not run. There is
+no row limit and there will not be one: if this ever needs bounding, the architecture refuses the
+print and offers an export rather than truncating a record silently.
+
+**A fence one round old already had the hole its neighbour was amended twice for.**
+`register-sortability` inspected only object literals that were DIRECT elements of an array literal,
+so `BASE.map((c) => ({ ...c, sortable: true }))` produced a fully sortable register the fence never
+saw - passing as unnoticed rather than as unreviewed, which its own header promises cannot happen. A
+column literal built anywhere else has no siblings to prove an order carrier against and is now
+refused with `file:line`, review or no review; an explicit `sortable: false` in a transform still
+passes, since it claims nothing. Proven adversarially against the real tree (PF-249).
+
+**One app-tree program, not one per fence.** `appSourceProject()` and `relativeToRepo()` move into
+`_fence-utils.ts`, the established shared home. Both new fences were building byte-identical
+ts-morph programs over all of `src/app` and repeating the repo-relative normalization four times
+between them; the fitness project runs serially, so that was the app tree parsed three times per run
+for two structural scans that only read it.
+
+The presentation tier re-measures at 1,970/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (1,915 at D-196); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the no-op value-column sort, the undisclosed ordering, the
+cropped printed register, the transform-blind fence, and the duplicated app-tree walk return to
+their D-196 state.
+
+### D-198 · 2026-08-12 · reversible · Seventh review round: one stated ordering, and a window that follows the element
+
+The prompt-2 review gate returned three findings; all three are resolved here. The first is the
+same shape of dishonesty D-197 chased out of the caption, one layer down in the comparator; the
+other two harden the fence and the print pass that round introduced.
+
+**A register may not state an ordering rule it does not apply.** D-197 gave `TableColumn` a
+`sortNote` so a sighted reader could tell a severity order from an alphabet, and the simulation
+delta's read "dispositions by restrictiveness, then alphabetically". The fallback band was the
+FORMATTED cell text compared through the tier's numeric-aware collator, which is not alphabetical -
+and the divergence was reachable on the shipped firm-A rows, not in theory: ascending by "Today"
+put `$36,000.00` above `$124,000.00` under a note promising the alphabet. Worse, a money string is
+not orderable at all once a thousands separator lands, since `$1,234.00` collates below `$980.00`.
+A disclosure that describes a different ordering than the one performed is the same false claim as
+a caption describing a sort that never happened.
+
+The tier now has ONE ordering, in its own pure module `src/app/presentation/table-order.ts`, and
+it is stated in the reader's words wherever it is not obvious. `TableSortValue` is
+`string | number | boolean | { rank } | null | undefined`, and `compareSortValues` sorts by
+explicit BANDS: a domain lattice first (ranked by the ratified §5 `DISPOSITION_RESTRICTIVENESS`,
+never by label), then numbers compared as numbers, then text through the one hoisted collator
+(case-insensitive and numeric-aware, so "item 2" precedes "item 10"), then booleans false before
+true. Absent, null and empty values group at the END in BOTH directions - a blank is the absence
+of a value, not a small one, and flipping the direction to float the blanks buries the rows the
+reader asked for - which is why the comparator takes the direction rather than having its result
+negated by the caller. Ties return exactly zero, so the caller's recorded order survives and stays
+one action from restoration (D-194). Cells yield RAW typed data: a metric yields its number (money
+converted out of minor units, so a column mixing it with counts compares what the reader sees), a
+disposition yields its rank, and a cell with neither yields nothing rather than a `""` that ties
+every row silently. The simulation note now reads "dispositions by restrictiveness, then numbers
+by value, then text alphabetically with numbers in numeric order, blanks last" - the bands, in the
+order they are applied - and the caption, the landmark label and the visible text carry the same
+bytes.
+
+**A fence that identifies a column by its own `sortable` key cannot see one that inherits it.**
+`register-sortability` treated an object literal as a column only when the literal declared
+`sortable` itself, so `[{ ...SHARED_SORTABLE, id: "when", header: "When" }]` was not a column at
+all to it: the register shipped fully sortable and entirely unreviewed, and nothing was reported -
+the "passing as unnoticed rather than as unreviewed" failure its own header promises cannot
+happen, for the second round running. A column collection is now recognized by what it IS - an
+array holding a column literal, an array annotated `TableColumn[]`, or whatever a
+`<Table columns={...}>` attribute names - and every element of one is resolved to a literal or
+refused. Spread sources declared exactly once in the same file are INLINED and reviewed like any
+other column, with the last writer winning as it does at runtime; every other source (an import, a
+shadowed name, a call, a chain past the depth cap) is refused with `file:line`, and so is a
+`columns` attribute naming nothing the fence can read. Where the source LIVES decides whether it
+can be read, never whether it must be reviewed. Proven adversarially against the real tree, with
+the shipped-at-HEAD fence run on the same injected tree for comparison (PF-250).
+
+**A window resumed from an offset the element no longer has renders blank.** Suspending row
+windowing for the print pass drops the height cap, so the box stops overflowing and the browser
+clamps its `scrollTop`; restoring the cap lets the browser put an offset back. The scroll handler
+hears neither, because it is gated on windowing being ON - so React kept the pre-print offset and,
+on the way out, placed the rendered slice hundreds of pixels away from the visible band. It
+self-healed only when the clamp's scroll event happened to land after the transition, which is a
+timing accident. Both transitions now READ THE OFFSET BACK off the element inside the same
+synchronous commit: whatever the element settles on IS the offset, and the only guarantee owed is
+that state agrees with it. Trying to restore a captured offset instead was measured and rejected -
+the print media query has already dropped the cap by the time the listener runs, so the captured
+value is the clamped one, and writing it back destroys the position the browser had preserved.
+Covered TWICE, because the browser half cannot be made deterministic: an e2e regression scrolls deep
+into a 200-row register, crosses print media in both directions, and asserts rows cover the visible
+band from its top edge to its bottom one - the shape the failure takes for a reader - while a jsdom
+unit spec forces the disagreement outright and asserts the resumed window index. The e2e alone was
+NOT enough and was measured to prove it: Chromium sometimes hands the scroll position back on the
+way out, and when it does the stale window agrees with the element by accident and the broken code
+passes. jsdom performs no layout, so there the offset is what the test sets and the row height is
+the seeded estimate; the unit spec fails on the unreconciled build every time, and a companion
+asserts the reconciliation is not a rewind - an element that keeps its offset keeps its window.
+
+The ordering module is a split, not new surface area: `table.tsx` had reached 479 of its 500-line
+ceiling holding two unrelated concerns, and the comparator is pure and React-free. The presentation
+tier re-measures at 2,064/6,000 with `line-budget.test.ts`'s own algorithm on the tree as this round
+lands (1,970 at D-197); the recorded figure there is updated to match. No ceiling moves, no runtime
+dependency was added, and nothing under `domain/`, `contracts/`, or `infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the misstated ordering note, the string-sorted money, the
+spread-blind fence, and the stale post-print window return to their D-197 state.
+
+### D-199 · 2026-08-12 · reversible · Eighth review round: the direction sorts the subject, not the scaffolding
+
+The prompt-2 review gate returned three findings; all three are resolved here. The first is D-198's
+own ordering read back one layer further down: the comparator was right about what to compare and
+wrong about what the direction is allowed to touch.
+
+**A sort direction reverses the SUBJECT of the sort and nothing else.** `compareSortValues` negated
+its whole result for a descending sort, band comparison included, so flipping the direction did not
+just put the largest amount first - it moved the kinds. Ascending laid the register out
+dispositions, numbers, text, booleans; descending laid it out booleans, text, numbers,
+dispositions. The visible note beneath the simulation delta went on saying "dispositions by
+restrictiveness, then numbers by value, ...", an enumeration true in exactly one of the two
+directions, and it was reachable on the shipped firm-A rows rather than in theory: the four
+`simulationDelta` rows give "Today" the values `36000`, `124000`, a disposition rank and `0`, so
+two clicks on that header put the disposition LAST, directly above a line telling the reader
+dispositions come first. That is D-197's false claim in the disclosure the round added to prevent
+it.
+
+The distinction the comparator now draws is between the sort's subject and its scaffolding. The
+SUBJECT is the values inside a kind, and the direction reverses them: dispositions against the
+ratified §5 restrictiveness lattice, numbers against their value, text against the one hoisted
+collator, booleans against false-then-true. Everything else is SCAFFOLDING - the arrangement that
+lets unlike kinds sit in one column at all - and it holds still. The band layout holds still,
+because a reader who flipped the direction asked for the amounts largest-first and not for the
+dispositions to change ends of the register; blanks hold still at the end, because a missing value
+is not a small one. So there is ONE note for both directions, and the direction is stated beside it
+rather than written into it: the visible line now reads `Sorted by <column>, <direction>: <note>`,
+the same bytes the caption and the landmark label carry, and the simulation's note names the fixed
+grouping and says outright that the direction reverses the values inside each group and that blanks
+stay last. A disclosure that needs a different sentence per direction is a disclosure that will be
+wrong in one of them.
+
+**A `NaN` is an absence wearing a number's type.** The comparator routed `null`, `undefined`, `""`
+and whitespace-only strings to the blanks band and left `NaN` in the numeric one, where
+`left - right` is `NaN`, which `Array.prototype.sort` reads as non-negative: the rows land in an
+implementation-defined order while the caption announces the one the reader asked for - the same
+false claim by a quieter route than the one above. `NaN` now groups with the blanks, in both
+directions and for a `{ rank: NaN }` as much as a bare one, and every numeric comparison is a
+`<`/`>` test rather than a subtraction, so `Infinity` against `Infinity` cannot reintroduce it. No
+shipped caller can produce either today; the module is the tier's single ordering and its spec
+enumerates every other absence, so the gap was in the rule rather than in a caller. The spec now
+proves the comparator is total over every value shape it accepts: never `NaN`, and antisymmetric in
+both directions.
+
+**Reconciliation belongs on the windowing transition, not on the print pass that exposed it.**
+D-198 read the scroll offset back off the element on both print transitions, which fixed printing
+and nothing else: the scroll handler is gated on windowing being ON, so ANY suspension leaves React
+holding an offset the element has since dropped. A row count falling to the threshold, a refetch
+flipping `loading`, a caller widening `virtualizeAbove` - each drops the height cap, each lets the
+browser clamp the box, and each resumes a window from an offset that no longer exists, which is the
+blank register D-198 describes. There is now ONE reconciliation keyed on `virtualized` itself; the
+print handler calls that same function inside its `flushSync` because `window.print()` blocks the
+main thread and a passive effect scheduled behind it would land after the page was captured. Unit
+coverage forces the disagreement on both non-print suspensions and asserts the resumed window
+index, with a companion proving the reconciliation is not a rewind - a suspension the element
+survives keeps the reader's place.
+
+The presentation tier re-measures at 2,119/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (2,064 at D-198); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the direction-negated band layout, the unguarded `NaN`, and
+the print-only window reconciliation return to their D-198 state.
+
+### D-200 · 2026-08-12 · reversible · Ninth review round: a name is a label, and a claim is about the reader
+
+The prompt-2 review gate returned four findings; all four are resolved here. Two are the register
+saying more than a reader asked for or less than is true, one corrects a normative doc row the
+previous round left behind, and one closes the half of toast focus the auto-dismiss hold never
+covered.
+
+**An accessible name identifies; it does not explain.** `Table` spliced the active sort AND the
+active column's `sortNote` into the landmark's `aria-label`, so the simulation delta's landmark was
+named "Simulated impact of the drafted policy (re-sorted by Under the draft, ascending, dispositions
+by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order;
+that grouping is fixed, the direction reverses the values inside each group, and blanks stay last)" -
+291 characters, heard on every landmark entry, again in the landmark rotor, and again from the
+caption on traversing the table, for a four-row demo comparison. Nothing about that was false; it was
+in the wrong place. A name is met before a reader has decided to go in, so it answers WHICH REGISTER
+this is and stops.
+
+`TableProps` therefore gains `regionName`: the register's short, stable identity, defaulting to the
+caption for a caller whose caption already is one (both compliance registers), and declared where the
+caption is a sentence - the simulation delta is "Simulation delta". It names the landmark and the
+restore control, and it does not move when the sort does. The disclosure is unchanged in substance
+and stays exactly where a reader who has gone in meets it: the sr-only `<caption>` carries
+`caption (re-sorted by <column>, <direction>, <note>)`, and the visible line beside the restore
+control carries `Sorted by <column>, <direction>: <note>` for a sighted reader who cannot hear either.
+No `aria-describedby` was added: the caption already says these words to a screen reader traversing
+the table, and describing the table with the same sentence would announce it a third time - the
+verbosity this entry is about.
+
+**"Re-sorted" is a claim about the READER having moved the rows.** The caption composed
+`... (re-sorted by ...)` whenever a sort was active, and a caller's `initialSort` seeds one, so a
+register that declared a recorded order opened by asserting it had been re-sorted while the restore
+control - correctly absent, since nothing had moved - disagreed with it in the same render. That is
+D-194 condition (2)'s false order claim on first paint. The caption now says "(in recorded order, by
+Amount, descending)" until the reader touches a header and reverts to it when the restore control
+returns them, so the declared order still states itself and its ordering rule; only a departure from
+it is called a re-sort. No shipped surface passes `initialSort` today - the prop is public and will
+acquire callers, which is the whole reason to settle it before it has any.
+
+**A control that removes the element holding focus places focus first.** The round-1 toast fix held
+the auto-dismiss timer while a toast had focus or the pointer, which cannot cover the one path where
+the reader has asked for the toast to go: pressing its own Dismiss unmounted the focused button and
+dropped them on `<body>`, losing their place in the tab order - the same stranding the restore
+control answers one file over, on a shipped path (console create and rename both raise toasts).
+`ToastHost` now places focus before the removal, and ONLY when the toast leaving is the one holding
+it: the next remaining toast's dismiss control, else the previous one's, else back to whatever held
+focus before it entered the host (`<body>` excluded - handing focus back to it is the stranding, not
+a destination), else the host. An auto-dismiss, or a pointer dismissal while focus is elsewhere on
+the page, moves nothing: taking focus a reader did not offer is its own defect.
+
+**And the normative row for the comparator was left a round behind.** `docs/demo-design-language.md`
+still stated D-198's band enumeration flat - "booleans false before true. Absent, null and empty
+values group at the END in both directions" - which D-199 made true only ascending, and it did not
+carry `NaN`. AGENTS.md makes that file normative and says UI prompts read it first, so the next agent
+adopting the comparator would have read a direction-specific claim as the rule. The row now mirrors
+the sibling row it sits beside: the band layout is scaffolding and is direction-invariant, the
+direction reverses only the values inside a kind, and `NaN` - a `{ rank: NaN }` as much as a bare
+one - groups with the blanks at the end in both directions.
+
+The presentation tier re-measures at 2,193/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (2,119 at D-199); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the paragraph-length landmark name, the caption that claimed
+a re-sort on first paint, the toast dismissal that stranded focus, and the stale ordering row return
+to their D-199 state.
+
+### D-201 · 2026-08-12 · reversible · Tenth review round: a sortable register names its own landmark
+
+The prompt-2 review gate returned three findings; all three are resolved here. One is the landmark
+name D-200 fixed for the demo register and left inherited on the two compliance registers, and two
+are records - a normative doc row and a charter-#5 ledger - that stopped matching the tree.
+
+**A name a reader cannot re-read may not carry a claim the reader can undo.** D-200 made
+`regionName` the register's short, stable identity and defaulted it to the caption, on the reading
+that both compliance captions already WERE names. They were not: "Audit log entries, newest first"
+and "Decision ledger entries, newest first" assert an ORDER. Sorting by Actor left the sr-only
+`<caption>` correctly reading "(re-sorted by Actor, ascending)" while the landmark - met on every
+entry, again in the rotor, and never re-announced after a sort - went on promising newest-first over
+actor-ordered rows. That is D-194 condition (2)'s false order claim in the one place a reader has no
+way to check it, and it is the round-1 finding `table-region-label-stale-after-sort` re-opened for
+the two surfaces that ship it.
+
+The three tiers are now separated on both registers. The LANDMARK is "Audit log" and "Decision
+ledger": identity, nothing else. The CAPTION states whatever order the rows are in right now - and
+because "newest first" IS the sequence column descending, each register DECLARES that as its
+`initialSort` rather than asserting it in prose, so the caption opens "(in recorded order, by #,
+descending)", becomes "(re-sorted by Actor, ascending)" when the reader moves the rows, and returns
+when the one-action restore does. The declared order is the API's own (`/api/audit` and `/api/ledger`
+both emit their capped window newest first), so nothing is re-ordered on first paint; what changes is
+that the claim now lives where it can be kept. The ledger's `Decision` column additionally declares a
+`sortNote`: not every event belongs to a decision, and those rows group LAST whichever way the sort
+runs, which is not what a reader expects of a column that otherwise reverses.
+
+**And the default is now fenced rather than trusted.** A caller-by-caller fix leaves the next
+sortable register free to inherit the next order-asserting caption, so `register-sortability` - which
+already reviews every sortable register in `src/app` - requires a rendered sortable `<Table>` to
+declare a literal `regionName`. Unreadable is refused, not assumed: an empty name, a computed one, a
+shadowed constant, and a `{...spread}` that could carry the prop all fail with `file:line`. An
+UNSORTABLE register keeps the default, because a caption whose rows cannot move cannot come apart
+from them. Proven adversarially against the shipped tree (PF-251): removing `regionName` from the
+audit register fails the fence at `src/app/app/audit/page.tsx:123`.
+
+**Two records that had stopped being true.** `PORT-LEDGER.md` - the charter-#5 register that
+separates shipped from deferred - listed Tabs, Tooltip, Checkbox and Radio among the built primitives
+and then asserted all of them are "rendered by the login / account-opening / console / audit / ledger
+/ demo screens and are axe-clean". None of the four has a product caller; an e2e axe scan cannot
+reach a component no route renders, so that clause was unbacked for exactly them. They are named
+deferrals with a first-caller prompt each (D-192's table), and the paragraph now says so and points
+at the unit spec that DOES validate them. And `table-order.ts`'s module header still named the
+landmark label as one of the three places the register states its ordering, which D-200 had already
+taken away from it; the header now names the caption and the visible line beside the restore control.
+
+The presentation tier re-measures at 2,199/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (2,193 at D-200); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the two compliance landmarks return to their captions,
+"newest first" returns to those captions as prose, the fence stops requiring a name, and both records
+return to their D-200 state.
+
+### D-202 · 2026-08-12 · reversible · Eleventh review round: layout is declared, never a side effect of a strategy
+
+The prompt-2 review gate returned four findings; all four are resolved here. The substantive one is
+a design change made by a performance strategy; the rest are a fence that reviewed a spelling, a
+reset key that missed the one navigation that needs it, and an unreachable branch.
+
+**A presentational choice may never be a side effect of a rendering strategy.** The register's
+384px scroll cap was applied as `virtualized && "max-h-96"`, so it appeared and disappeared at
+exactly `virtualizeAbove`: at 100 entries the audit register rendered full height inline, and at 101
+the same register collapsed into a capped, scrolling box. Both compliance APIs cap at 200 and both
+grow through that threshold in ordinary use, so a firm watched its audit trail change shape as it
+crossed one row - a design decision nobody made, taken by a windowing heuristic. `Table` now takes a
+typed `layout`: `"scroll-region"` caps the register and scrolls it in its own box at EVERY row count,
+`"auto"` grows it to its content, and both compliance registers declare the former. Changing how a
+body is rendered no longer changes how the register looks.
+
+**The dependency runs one way, and only one way.** Windowing needs a bounded viewport to be sound:
+a window over a box that grows to its content leaves the unrendered rows as blank space the reader
+can scroll to, because nothing ever clamps the box or fires its scroll handler. So windowing is
+available INSIDE a declared scroll region and nowhere else, and within one it is decided by row
+count, `loading`, and the print pass alone. Layout is the caller's declaration; the strategy follows
+from it. The cap's pixel figure is no longer restated as a second authority either - `max-h-96` is
+the layout contract, and the window math MEASURES the viewport off the element (seeded, like the row
+height, only for the first paint), so a caller's own height in `className` is read rather than
+silently disagreed with.
+
+**A JSX tag is a local name, so the fence resolves what it NAMES.** `register-sortability`
+identified a register by its tag's TEXT, so `import { Table as Register }` or `import * as P` took
+the register out of its sight entirely - not refused, not reported, simply not a register, free to
+ship with a landmark named after an order-asserting caption. The tag is now resolved through
+aliases, namespace members, local bindings and re-export chains to one of three verdicts, and only a
+tag PROVEN to name something else is skipped: a package import, a default import, a module outside
+the scanned tree, and a chain deeper than the cap are all held to the rule. The alias resolution
+itself is now one helper (`canonicalLocalNames`) shared with `presentation-primitives`, which had the
+same resolution for its own control tags - two partial authorities on what "canonical" means was the
+shape that let this diverge. Proven adversarially against the shipped tree (PF-252).
+
+**A view is its path AND its query.** `RouteErrorBoundary` keyed its reset on `usePathname()`, so a
+client navigation that changes only search params never released a caught error - and the demo's
+approval gate is exactly that navigation, linking back to its own station with `approved=1`. The one
+place the reset matters most (the approved view is what the viewer went there to see) was the one
+place it did not happen. The key is now the path and the query together.
+
+**And a branch that could not run.** `comparisonText`'s metric arm was unreachable:
+`comparisonSortValue` returns the metric's NUMBER before ever asking for words. The dead arm is gone
+and the fallback's real contract - badge label, else display text, else nothing - reads at a glance.
+
+The presentation tier re-measures at 2,240/6,000 with `line-budget.test.ts`'s own algorithm on the
+tree as this round lands (2,199 at D-201); the recorded figure there is updated to match. No ceiling
+moves, no runtime dependency was added, and nothing under `domain/`, `contracts/`, or
+`infrastructure/` was touched.
+
+**Revert path:** revert this changeset; the cap returns to riding on windowing, the fence returns to
+comparing tag text, and the boundary returns to a path-only reset key.
+
+### D-203 · 2026-08-12 · reversible · Documentation round: the ADR says what the tree does, and a stale measurement is recorded rather than quietly fixed
+
+The prompt-2 documentation gate returned two findings that a documentation edit could not settle on
+its own authority; the recorded ruling (`document-ask-user`, 2026-08-12) resolves both. This round
+changes documents only - no runtime code, no test, no fence, and no ceiling - so the presentation
+tier still measures 2,240/6,000 as D-202 recorded it, and `line-budget.test.ts` is untouched.
+
+**An accepted ADR is amended by an ADR, not by the docs that cite it.** ADR-0012 states "Port on
+first use only ... pulled when a real surface needs it (charter #5: no dead components)" without
+qualification, while the tree ships five foundation primitives that have no product caller
+(`Checkbox`, `Radio`, `Tabs`, `Tooltip`, a directly composed `Pill`). D-191/D-192 recorded them as
+named deferrals, `PORT-LEDGER.md` lists them, and the design language stated the exception - but all
+three are subordinate records, so the governing text still read as an absolute rule the repository
+contradicts. That is D-195's split-authority failure at constitutional scale: the next author obeys
+whichever half they read first, and both available readings (delete the foundation, or treat "port
+on first use" as advisory) are wrong.
+
+[ADR-0056](./docs/adr/0056-presentation-foundation-named-deferrals.md) amends ADR-0012 with the
+NARROW rule and nothing wider, on the ADR-0031 precedent: a presentation foundation primitive an
+explicit ratified brief asked for **as a set** may land ahead of its first product caller only when
+it is a named deferral in `PORT-LEDGER.md` and `DECISIONS.md` citing the SPECIFIC front-end prompt
+that lands its first honest caller; that citation is its EXPIRY, so at that prompt the primitive
+acquires a real caller or is deleted in the same work, never re-deferred; its contract is executable
+now as a unit test, because an axe scan cannot reach a component no route renders (D-201); and no
+caller is manufactured to satisfy a gate. It is stated in the ADR itself that this is not a blanket
+exemption and not permission to build ahead generally - convenience code never qualifies (ADR-0031),
+the five-row table is the complete list, and a sixth row is another amendment. Charter #5 is not
+weakened: it keeps meaning what D-116's ledger-export deferrals already made it mean, which is that
+a capability has a caller or a named, expiring deferral a reviewer can check against a prompt number.
+ADR-0012's status line and its port bullet name the amendment, the ADR index carries the row, and the
+four documents an author actually reads first - `PORT-LEDGER.md`, `FOUNDATION.md`,
+`docs/demo-design-language.md` §1 rule 2, and `AGENTS.md`'s presentation-primitives rule - now cite
+ADR-0056 as the authority instead of citing a decision entry for a rule only an ADR can grant.
+
+The ADR also says plainly that this rule is enforced by REVIEW, not by a fence: `knip` cannot see the
+class (every primitive has a unit test, which is a reference) and nothing fails the build today if an
+expiry passes unretired. Recorded as follow-up key `fu-primitive-deferral-expiry-fence`. **Un-defer
+trigger:** the first expiry - prompt 3, `Tooltip` - which is the first prompt that must retire a row
+and therefore the first that can prove a fence against a real retirement rather than a fixture.
+
+**A measurement of a layer this diff never opened does not belong in this diff.** `FOUNDATION.md`'s
+"Current prompt-11 line-budget PR evidence" paragraph still reports contracts 6,064/6,110 and domain
+1,581/1,650, both against ceilings ADR-0054 has since replaced (6,650 and 4,550) on a tree that
+measures 6,602 and 4,514 today; `line-budget.test.ts`'s own header records infrastructure at
+7,780/7,840 against a tree that measures 7,786. None of the three is re-taken here. This branch adds
+zero lines to any platform layer, and the fence's own discipline is that a figure is re-measured in
+the commit that changes that layer - re-taking three unrelated layers inside a UI documentation
+commit is how a measurement stops belonging to the work that proved it. The historical snapshot
+wording stands, and the gap is recorded rather than lost: follow-up key
+`fu-platform-budget-remeasure`, named in `FOUNDATION.md` beside the snapshot it qualifies and owned
+in the §4 gap table. **Un-defer trigger:** the next commit that changes `src/contracts/**`,
+`src/domain/**`, or `src/infrastructure/**` re-measures that layer with `line-budget.test.ts`'s own
+algorithm and re-takes its figure in both places. The rule this round applies generally: fix what the
+change touched, record what it revealed, and never let an out-of-scope discovery disappear.
+
+**Revert path:** revert this changeset; ADR-0056 and the ADR index row go with it, ADR-0012's status
+line and port bullet return to the unqualified rule, the four citing documents return to their D-202
+state, and both follow-up keys and their §4 gap rows are withdrawn. Nothing executable changes
+either way.

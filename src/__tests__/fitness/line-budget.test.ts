@@ -44,7 +44,25 @@ import { join, relative } from "node:path";
 // for the scoped rebuild preview, the whole-chain counted provenance, and the shared
 // decision-id extractor the dedup moved INTO contracts. MEASURED on the composed tree that
 // also carries ADR-0040's prompt-8 primitive catalog: contracts 6064/6110 (46), domain
-// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 928/6000. A figure recorded
+// 1581/1650 (69), infrastructure 7780/7840 (60), presentation 2240/6000 (re-measured in the
+// D-202 review round, which took the register's height cap off the windowing strategy and
+// made it the caller's declared layout; 2199 at D-201, which took the landmark name off the
+// two compliance captions that assert an order and made a sortable register declare its own;
+// 2193 at
+// D-200, which separated a register's landmark NAME from the sort disclosure
+// it had been carrying, gated "re-sorted" on the reader having moved the rows, and placed
+// focus before an explicitly dismissed toast removes the control holding it; 2119 at D-199,
+// where the direction stopped reversing the ordering's SCAFFOLDING - the
+// band layout and the blanks hold still, only the values inside a kind reverse - and window
+// reconciliation moved from the print pass onto the windowing transition itself; 2064 at
+// D-198, which gave the tier ONE stated ordering in its own `table-order.ts`; 1970 at D-197,
+// 1915 at D-196, 1884 at D-195, 1840 at D-194, 1664 at D-192, 1645
+// as the primitives landed). D-193
+// recorded
+// 1782 for a tree that measured 1804 - the figure was taken before that round finished
+// landing, which is the exact staleness the paragraph below names, so D-194 re-took it
+// with this file's own algorithm rather than inheriting it, and D-195 re-takes it again
+// for the one-action recorded-order restore and the boundary reset key. A figure recorded
 // here is a MEASUREMENT, so
 // re-measure it in the commit that changes a layer - ADR-0049's import hoist left this
 // line reading a stale figure while the layer had moved, and the whole ratchet chain rests

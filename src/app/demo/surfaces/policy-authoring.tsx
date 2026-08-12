@@ -6,12 +6,81 @@
  * result appear only in the approved state - the gate is real choreography, not
  * decoration. A number is never LLM-drafted: every figure renders through Metric.
  */
+import type { DisplayMetric } from "@contracts/metric";
 import { Metric } from "@app/presentation/metric";
-import { StatusBadge } from "@app/presentation/ui";
+import { Card, StatusBadge } from "@app/presentation/ui";
+import { Table, type TableColumn, type TableRow } from "@app/presentation/table";
+import type { TableSortValue } from "@app/presentation/table-order";
 import { DevProvenanceBadge } from "@app/presentation/dev-provenance-badge";
 import type { ComparisonCellVM, PolicyAuthoringVM } from "../model";
-import { DEV_BADGE_TEXT } from "../model";
+import { DEV_BADGE_TEXT, DISPOSITION_RESTRICTIVENESS } from "../model";
 import { JourneyNav, PrimaryLink, SurfaceShell, demoHref } from "./shared";
+
+const DISPOSITION_RANKS = new Map<string, number>(Object.entries(DISPOSITION_RESTRICTIVENESS));
+/**
+ * Stated by the register while either value column is the active sort, because a reader
+ * cannot otherwise tell a severity order from an alphabet - nor a number read as a number
+ * from a number read as text. It names the bands `compareSortValues` actually applies, in
+ * the order it applies them; a note that describes a different ordering is the same false
+ * claim as a caption that describes a sort that never happened.
+ *
+ * ONE sentence for both directions, which is only honest because the comparator reverses
+ * the values inside a kind and nothing else: the grouping and the blanks hold still, so
+ * the sentence says so rather than enumerating an order that inverts underneath it.
+ *
+ * It reaches the reader through the caption and the visible line beside the restore
+ * control, never through the landmark's name - which is why this register declares a
+ * `regionName`: a name is a label, and a reader should not have to hear a paragraph to
+ * find out which landmark they are standing in.
+ */
+const SIMULATION_SORT_NOTE =
+  "dispositions by restrictiveness, then numbers by value, then text alphabetically with numbers in numeric order; that grouping is fixed, the direction reverses the values inside each group, and blanks stay last";
+
+/** The fallback band's text: a cell with a metric never reaches here - it has a NUMBER,
+ * and `comparisonSortValue` yields that before asking for words. */
+function comparisonText(cell: ComparisonCellVM): string {
+  return [cell.badge?.label, cell.display].filter((part): part is string => Boolean(part)).join(" ");
+}
+
+/** The number the reader SEES: money is stored in minor units, so a column mixing money
+ * with counts would otherwise rank $0.50 above 3. */
+function metricSortValue(m: DisplayMetric): number {
+  return m.format === "currency-minor" ? Number(m.value) / 100 : Number(m.value);
+}
+
+/**
+ * A comparison cell carries a disposition, a metric, or plain text, so its column has no
+ * single scale to order by - and a cell whose content is an ELEMENT has no scalar at all,
+ * which is how both value columns came to advertise a sort that could not move a row
+ * while the caption announced one had happened.
+ *
+ * Each kind yields the value the comparator's own bands are built for, so the ordering is
+ * the one the register states out loud: dispositions rank by the ratified §5
+ * restrictiveness lattice and never by label, a metric yields its NUMBER rather than the
+ * money-formatted string a collator reads as text (`$1,234.00` below `$980.00`), and
+ * anything else falls back to the text the reader can see. A cell with none of the three
+ * yields nothing, and nothing groups at the end in both directions.
+ */
+export function comparisonSortValue(cell: ComparisonCellVM): TableSortValue {
+  const rank = cell.badge ? DISPOSITION_RANKS.get(cell.badge.status) : undefined;
+  if (rank !== undefined) return { rank };
+  if (cell.metric) return metricSortValue(cell.metric);
+  return comparisonText(cell) || null;
+}
+
+/**
+ * The simulation delta is a SET of affected cases, not a causal sequence: no row is a
+ * consequence of the one above it, and a reviewer legitimately asks to see the changed
+ * dimensions together. It is therefore sortable under D-194 - but only because the case
+ * number below is visible and sortable, so the authored order is reconstructible from
+ * data the reader can see rather than from the position a row happens to hold.
+ */
+const SIMULATION_COLUMNS: readonly TableColumn[] = [
+  { id: "case", header: "#", align: "right", sortable: true },
+  { id: "dimension", header: "Dimension", sortable: true },
+  { id: "today", header: "Today", sortable: true, sortNote: SIMULATION_SORT_NOTE },
+  { id: "draft", header: "Under the draft", sortable: true, sortNote: SIMULATION_SORT_NOTE },
+];
 
 function Cell({ cell }: { cell: ComparisonCellVM }) {
   return (
@@ -34,16 +103,25 @@ export function PolicyAuthoringSurface({
   firmId: string;
   approved: boolean;
 }) {
+  const simulationRows: readonly TableRow[] = vm.simulationDelta.map((row, index) => ({
+    id: row.label,
+    cells: {
+      case: { content: index + 1, sortValue: index + 1 },
+      dimension: { content: row.label, sortValue: row.label },
+      today: { content: <Cell cell={row.before} />, sortValue: comparisonSortValue(row.before) },
+      draft: { content: <Cell cell={row.after} />, sortValue: comparisonSortValue(row.after) },
+    },
+  }));
   return (
     <SurfaceShell
       spine={vm.spine}
       title="Policy authoring"
       description="A policy sentence becomes structured, simulated, and humanly approved before it governs anything."
     >
-      <section aria-label="Policy sentence" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+      <Card as="section" aria-label="Policy sentence" className="flex flex-col gap-2">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-600">Proposed policy</p>
         <p className="text-base text-slate-900">“{vm.sentence}”</p>
-      </section>
+      </Card>
 
       <section aria-label="Structured draft" className="flex flex-col gap-2">
         <h2 className="text-base font-semibold text-slate-900">Structured draft</h2>
@@ -69,36 +147,16 @@ export function PolicyAuthoringSurface({
           Simulation impact
           <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
         </h2>
-        <div
-          role="region"
-          aria-label="Simulation delta"
-          tabIndex={0}
-          className="overflow-x-auto rounded-lg border border-slate-200 focus-visible:outline-2 focus-visible:outline-slate-600"
-        >
-          <table className="w-full text-left text-sm">
-            <caption className="sr-only">Simulated impact of the drafted policy</caption>
-            <thead className="bg-surface text-xs uppercase tracking-wide text-slate-600">
-              <tr>
-                <th scope="col" className="px-3 py-2">Dimension</th>
-                <th scope="col" className="px-3 py-2">Today</th>
-                <th scope="col" className="px-3 py-2">Under the draft</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {vm.simulationDelta.map((r) => (
-                <tr key={r.label}>
-                  <td className="px-3 py-2 align-top text-slate-700">{r.label}</td>
-                  <td className="px-3 py-2 align-top"><Cell cell={r.before} /></td>
-                  <td className="px-3 py-2 align-top"><Cell cell={r.after} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          caption="Simulated impact of the drafted policy"
+          regionName="Simulation delta"
+          columns={SIMULATION_COLUMNS}
+          rows={simulationRows}
+        />
       </section>
 
       {approved ? (
-        <section aria-label="Activation" role="status" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 animate-fade-in" data-testid="policy-activated">
+        <Card as="section" variant="white" aria-label="Activation" role="status" className="flex flex-col gap-2 animate-fade-in" data-testid="policy-activated">
           <p className="flex flex-wrap items-center gap-2 text-sm text-slate-800">
             <StatusBadge status="done" label="Approved and activated" />
             <span className="font-mono text-xs text-slate-800">
@@ -107,12 +165,12 @@ export function PolicyAuthoringSurface({
           </p>
           <p className="text-sm text-slate-700">{vm.changedRerunResult}</p>
           <PrimaryLink href={demoHref("record", scenarioId, firmId)}>View the printable decision record</PrimaryLink>
-        </section>
+        </Card>
       ) : (
-        <section aria-label="Approval gate" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-surface p-4">
+        <Card as="section" aria-label="Approval gate" className="flex flex-col gap-2">
           <p className="text-sm text-slate-600">Activation requires attributed human approval. Nothing governs until a person says go.</p>
           <PrimaryLink href={demoHref("policy-authoring", scenarioId, firmId, "&approved=1")}>{vm.gateLabel}</PrimaryLink>
-        </section>
+        </Card>
       )}
 
       <JourneyNav back={{ href: demoHref("comparison", scenarioId, firmId), label: "Back to the comparison" }} />

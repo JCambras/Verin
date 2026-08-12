@@ -7,6 +7,7 @@
  */
 import { WhyBubble } from "@app/presentation/why-bubble";
 import { EvidenceConflict, EvidenceMetricRow, EvidenceMissing, EvidenceRow } from "@app/presentation/evidence-row";
+import { Button, Card } from "@app/presentation/ui";
 import { DEV_BADGE_TEXT, type EvidenceRowVM, type EvidenceVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 
@@ -34,9 +35,9 @@ function Row({ row }: { row: EvidenceRowVM }) {
           badgeLabel={DEV_BADGE_TEXT[row.fakeClass]}
           affordance={
             row.blockerAffordance ? (
-              <button type="button" className="inline-flex items-center justify-center self-start rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50">
+              <Button type="button" variant="secondary" className="self-start">
                 {row.blockerAffordance}
-              </button>
+              </Button>
             ) : null
           }
         />
@@ -53,11 +54,11 @@ export function EvidenceSurface({ vm, scenarioId, firmId }: { vm: EvidenceVM; sc
       title="Evidence"
       description="Every item names its source, when it was observed, and when Verin retrieved it. Gaps and conflicts are stated, never hidden."
     >
-      <div className="flex flex-col divide-y divide-slate-100 rounded-lg border border-slate-200 bg-surface px-4 py-2">
+      <Card padding="none" className="flex flex-col divide-y divide-slate-100 px-4 py-2">
         {vm.rows.map((row, i) => (
           <Row key={i} row={row} />
         ))}
-      </div>
+      </Card>
       <JourneyNav
         back={{ href: demoHref("intent", scenarioId, firmId), label: "Back to the request" }}
         forward={{ href: demoHref("decision", scenarioId, firmId), label: "View the recommendation" }}

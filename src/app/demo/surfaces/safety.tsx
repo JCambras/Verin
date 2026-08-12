@@ -9,7 +9,7 @@
  * next action. Under reduced motion it reads as a pure state change.
  */
 import { FreshValue } from "@app/presentation/fresh-value";
-import { StatusBadge } from "@app/presentation/ui";
+import { Card, StatusBadge } from "@app/presentation/ui";
 import { WhyBubble } from "@app/presentation/why-bubble";
 import { EvidenceRow } from "@app/presentation/evidence-row";
 import { TapToVerify } from "@app/presentation/tap-to-verify";
@@ -48,7 +48,7 @@ export function SafetySurface({
         <DevProvenanceBadge label={DEV_BADGE_TEXT[vm.fakeClass]} />
       </p>
 
-      <section aria-label="Revalidation checks" className="flex flex-col divide-y divide-slate-100 rounded-lg border border-slate-200 bg-surface px-4 py-1">
+      <Card as="section" padding="none" aria-label="Revalidation checks" className="flex flex-col divide-y divide-slate-100 px-4 py-1">
         {vm.checks.map((c) => (
           <div key={c.label} className="flex flex-col gap-1 py-2">
             <p className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-800">
@@ -58,7 +58,7 @@ export function SafetySurface({
             {c.detail ? <p className="text-xs text-slate-600">{c.detail}</p> : null}
           </div>
         ))}
-      </section>
+      </Card>
 
       <TapToVerify
         details={[
@@ -74,19 +74,19 @@ export function SafetySurface({
           {/* The row's CONTENT recedes to 0.7 (slate-800+ inside, so the AA floor
               holds - design §12.1); the voided badge itself stays at full strength:
               it announces the new state and must not fade with the stale content. */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-surface p-4" data-testid="voided-approval">
+          <Card className="flex flex-wrap items-center justify-between gap-2" data-testid="voided-approval">
             <span className="text-sm text-slate-900" style={{ opacity: 0.7 }}>
               {vm.invalidation.voidedActor.name} <span className="text-slate-800">· {vm.invalidation.voidedActor.role} · approved {vm.invalidation.voidedActor.when}</span>
             </span>
             <StatusBadge status="voided" label="Approval voided - evidence changed" />
-          </div>
+          </Card>
           {/* 2. What changed, at full weight; announced politely; one entry fade. */}
-          <div role="status" className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 animate-fade-in" data-testid="what-changed">
+          <Card variant="white" role="status" className="flex flex-col gap-2 animate-fade-in" data-testid="what-changed">
             <p className="text-base font-semibold text-slate-900">{vm.invalidation.deltaSentence}</p>
             <EvidenceRow label="Before" fact={vm.invalidation.before} badgeLabel={DEV_BADGE_TEXT["synthetic-fixture"]} />
             <EvidenceRow label="After" fact={vm.invalidation.after} badgeLabel={DEV_BADGE_TEXT["synthetic-fixture"]} />
             <WhyBubble reason={vm.invalidation.why.reason} {...(vm.invalidation.why.regulation ? { regulation: vm.invalidation.why.regulation } : {})} />
-          </div>
+          </Card>
           {/* 4. One clear next action. */}
           <PrimaryLink href={demoHref("decision", scenarioId, firmId)}>{vm.invalidation.primaryLabel}</PrimaryLink>
         </section>

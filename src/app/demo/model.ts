@@ -80,6 +80,17 @@ export const DISPOSITION_LABELS: Record<DispositionKind, string> = {
   blocked: "Blocked - resolvable",
   prohibited: "Prohibited",
 };
+/**
+ * The §5 restrictiveness lattice: how far a disposition holds a request back. It is
+ * the ONLY defensible order for a column of dispositions - sorting them by their
+ * labels puts "Blocked - resolvable" ahead of "Proceed" ahead of "Prohibited", an
+ * alphabet the product makes no claim about and a reader would read as severity.
+ */
+export const DISPOSITION_RESTRICTIVENESS: Record<DispositionKind, number> = {
+  proceed: 1,
+  blocked: 2,
+  prohibited: 3,
+};
 export interface DispositionFigureVM {
   readonly label: string;
   readonly metric: DisplayMetric;
