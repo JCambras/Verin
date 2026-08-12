@@ -103,16 +103,68 @@ describe("canonical presentation primitives", () => {
     const trigger = screen.getByText("a3f9c2…");
     const panel = screen.getByTestId("tooltip-panel");
     expect(panel).toHaveAttribute("data-state", "available");
-    expect(panel.className).toContain("group-focus-within:visible");
+    expect(panel.className).toContain("visible");
 
     await user.keyboard("{Escape}");
     expect(panel).toHaveAttribute("data-state", "dismissed");
-    expect(panel.className).not.toContain("group-focus-within:visible");
+    expect(panel.className).toContain("invisible");
     expect(trigger).toHaveFocus();
 
     await user.tab();
     expect(trigger).not.toHaveFocus();
     expect(panel).toHaveAttribute("data-state", "available");
+  });
+
+  /**
+   * A pointer user has no focus inside the tooltip, so a wrapper-scoped key handler
+   * never sees their Escape - the panel would stay up with no dismissal mechanism at
+   * all. WCAG 1.4.13 Dismissible covers hover-triggered content, not only focus.
+   */
+  it("dismisses a hover-opened tooltip on Escape with focus outside it", async () => {
+    const user = userEvent.setup();
+    render(
+      <div>
+        <Button>Elsewhere</Button>
+        <Tooltip label="Complete decision hash">a3f9c2…</Tooltip>
+      </div>,
+    );
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" });
+    act(() => elsewhere.focus());
+
+    await user.hover(screen.getByText("a3f9c2…"));
+    const panel = screen.getByTestId("tooltip-panel");
+    expect(panel.className).toContain("visible");
+    expect(panel.className).not.toContain("invisible");
+
+    await user.keyboard("{Escape}");
+    expect(panel).toHaveAttribute("data-state", "dismissed");
+    expect(panel.className).toContain("invisible");
+    expect(elsewhere).toHaveFocus();
+  });
+
+  it("binds the document Escape listener only while tooltip content is shown", async () => {
+    const add = vi.spyOn(document, "addEventListener");
+    const remove = vi.spyOn(document, "removeEventListener");
+    try {
+      const user = userEvent.setup();
+      const { unmount } = render(<Tooltip label="Complete decision hash">a3f9c2…</Tooltip>);
+      const keydownListeners = () => add.mock.calls.filter(([type]) => type === "keydown").length;
+      expect(keydownListeners()).toBe(0);
+
+      await user.hover(screen.getByText("a3f9c2…"));
+      expect(keydownListeners()).toBe(1);
+
+      await user.unhover(screen.getByText("a3f9c2…"));
+      expect(remove.mock.calls.filter(([type]) => type === "keydown")).toHaveLength(1);
+
+      await user.tab();
+      expect(keydownListeners()).toBe(2);
+      unmount();
+      expect(remove.mock.calls.filter(([type]) => type === "keydown")).toHaveLength(2);
+    } finally {
+      add.mockRestore();
+      remove.mockRestore();
+    }
   });
 
   it("keeps the pointer path from the trigger into tooltip content hoverable", () => {
@@ -210,6 +262,36 @@ describe("Table", () => {
     expect(within(bodyRows[0]!).getByText("Household 0001")).toBeVisible();
     expect(screen.getByText("$1").closest("td")).toHaveClass("text-right", "tabular-nums");
     expect(screen.getByText("Households (re-sorted by Name, ascending)")).toBeInTheDocument();
+  });
+
+  /**
+   * The collator is constructed once for the tier rather than per comparison (a
+   * `localeCompare` handed an options object mints one every call, which is what the
+   * 5,000-row sort paid for). Hoisting must not change the collation, so the ordering
+   * it produces is asserted directly: numeric-aware and case-insensitive.
+   */
+  it("sorts strings numerically and case-insensitively through one shared collator", async () => {
+    const user = userEvent.setup();
+    const labels = ["item 10", "Item 9", "item 2"];
+    render(
+      <Table
+        caption="Collation fixture"
+        columns={[{ id: "name", header: "Name", sortable: true }]}
+        rows={labels.map((label, index) => ({ id: `row-${index}`, cells: { name: { content: label } } }))}
+      />,
+    );
+    const localeCompare = vi.spyOn(String.prototype, "localeCompare");
+    try {
+      await user.click(screen.getByRole("button", { name: /Name/ }));
+      expect(localeCompare).not.toHaveBeenCalled();
+    } finally {
+      localeCompare.mockRestore();
+    }
+    expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "item 2",
+      "Item 9",
+      "item 10",
+    ]);
   });
 
   it("keeps the region landmark label true to the active sort", async () => {

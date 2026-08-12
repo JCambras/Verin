@@ -81,9 +81,18 @@ function cellSortValue(cell: TableCell | undefined): string | number {
   return typeof cell.content === "string" || typeof cell.content === "number" ? cell.content : "";
 }
 
+/**
+ * ONE collator for the whole tier. `localeCompare` only reaches its cached fast path
+ * when it is called with no options; handing it an options object mints a fresh
+ * collator per comparison, so the 5,000-row sort this register is built for paid for
+ * ~60,000 of them on the main thread. Hoisting is order-preserving: the same numeric,
+ * case-insensitive collation, constructed once.
+ */
+const COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
 function compareValues(left: string | number, right: string | number): number {
   if (typeof left === "number" && typeof right === "number") return left - right;
-  return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" });
+  return COLLATOR.compare(String(left), String(right));
 }
 
 function TableCellContent({ cell }: { cell: TableCell | undefined }) {

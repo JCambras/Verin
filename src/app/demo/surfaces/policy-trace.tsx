@@ -10,18 +10,23 @@ import { Table, type TableColumn, type TableRow } from "@app/presentation/table"
 import { DEV_BADGE_TEXT, type PolicyTraceVM } from "../model";
 import { JourneyNav, SurfaceShell, demoHref } from "./shared";
 
+/**
+ * No column is sortable. Precedence is the claim this register makes - "the order they
+ * were applied" - so a viewer who could reorder it would be reading a different claim,
+ * exactly as with the append-only ExecutionTimeline.
+ */
 const COLUMNS: readonly TableColumn[] = [
-  { id: "order", header: "#", align: "right", sortable: true },
-  { id: "rule", header: "Rule", sortable: true },
-  { id: "result", header: "Result", sortable: true },
-  { id: "provision", header: "Provision", sortable: true },
+  { id: "order", header: "#", align: "right" },
+  { id: "rule", header: "Rule" },
+  { id: "result", header: "Result" },
+  { id: "provision", header: "Provision" },
 ];
 
 export function PolicyTraceSurface({ vm, scenarioId, firmId, journeyContinues }: { vm: PolicyTraceVM; scenarioId: string; firmId: string; journeyContinues: boolean }) {
   const rows: readonly TableRow[] = vm.rows.map((row) => ({
     id: String(row.order),
     cells: {
-      order: { content: row.order, sortValue: row.order, className: "text-slate-600" },
+      order: { content: row.order, className: "text-slate-600" },
       rule: {
         content: (
           <div className="flex flex-col items-start gap-1 text-slate-800">
@@ -29,10 +34,9 @@ export function PolicyTraceSurface({ vm, scenarioId, firmId, journeyContinues }:
             {row.why ? <WhyBubble reason={row.why.reason} {...(row.why.regulation ? { regulation: row.why.regulation } : {})} /> : null}
           </div>
         ),
-        sortValue: row.rule,
       },
-      result: { content: row.result, sortValue: row.result },
-      provision: { content: row.version, sortValue: row.version, className: "font-mono text-xs whitespace-nowrap text-slate-500" },
+      result: { content: row.result },
+      provision: { content: row.version, className: "font-mono text-xs whitespace-nowrap text-slate-500" },
     },
   }));
   return (

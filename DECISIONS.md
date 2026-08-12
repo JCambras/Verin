@@ -6810,9 +6810,56 @@ they now assert against the current distinct empty-state copy, joined by a spec 
 chain. Five unit regressions (window clamp, sorted landmark label, tooltip Escape, toast hold,
 boundary diagnostic) were each observed failing against the pre-fix components before being kept.
 
-The presentation tier re-measures at 1,782/6,000 lines on the tree as it lands, recorded beside the
-ceilings in `line-budget.test.ts`; no ceiling moves, and no runtime dependency was added.
+The presentation tier measured 1,804/6,000 lines on the tree as it landed; the figure recorded here in
+that round was 1,782, taken before the round finished landing, and it is corrected under D-194. No
+ceiling moves, and no runtime dependency was added.
 
 **Revert path:** revert this changeset; the fixed-height window, the single empty-state copy, the
 CSS-only tooltip, the unheld toast timer, the silent boundary, and the literal-only fence scan return
 to their D-192 state.
+
+### D-194 · 2026-08-11 · reversible · Third review round: order-carrying registers, one collator, a pointer-dismissible tooltip
+
+The prompt-2 review gate returned four further findings; all four are resolved here.
+
+**A register whose row order carries meaning is not sortable.** D-192 settled this for
+`ExecutionTimeline` and the same change then shipped a fully sortable precedence trace one file over,
+so the rule is generalised here rather than re-litigated per surface. Sorting is an affordance for
+TABULAR DATA, where row order is a convenience the viewer may set. It is not an affordance for a
+register whose order IS the claim: precedence traces (applied in order), execution timelines
+(append-only chronology), the decision ledger and the audit register (recorded order, newest first).
+Those keep their recorded order, and a surface that would need a different order asks for a different
+view rather than a sort control. `Table` already defaults `sortable` to absent per column, and it must
+stay that way: sortability is opted INTO by the caller that can justify it, never imported by default
+into a caller whose order is semantic. `PolicyTraceSurface` accordingly declares four unsortable
+columns, and the now-inert `sortValue` entries went with them, since a sort value on an unsortable
+register is a claim the surface does not make. The decision ledger's sortability was deliberated in
+D-192 and stands: it is the one register here whose rows a compliance reader legitimately re-orders,
+and its caption and landmark disclose the active sort.
+
+**One collator, not one per comparison.** `compareValues` called `localeCompare` with an options
+object, which is exactly the call shape that misses V8's cached-collator fast path and constructs a
+fresh `Intl.Collator` per comparison. The 5,000-row register this component advertises is ~60,000
+comparisons, so the sort the change exists to make smooth was paying ~60,000 collator constructions on
+the main thread. One module-scope `Intl.Collator` now serves the tier with the same numeric,
+case-insensitive collation. The regression asserts both halves: the ordering is unchanged, and a sort
+makes no `String.prototype.localeCompare` call at all.
+
+**The tooltip is dismissible for pointer users too.** D-193 put the Escape handler on the wrapping
+`<span>`, so it only fired when focus was already inside the tooltip subtree - a pointer user who
+hovered the trigger saw content with no dismissal mechanism, and WCAG 1.4.13 Dismissible covers
+hover-triggered content, not only focus-triggered. Visibility is now state rather than `group-hover`,
+which is what lets a document-level `keydown` listener exist EXACTLY while the panel is shown: nothing
+is bound when no tooltip is up, hiding removes it, and unmount removes it. A dismissal is released only
+once neither the pointer nor focus is on the trigger, so leaving one of the two cannot re-show content
+the viewer just dismissed. Hoverability (padding inside the panel, no margin gap) and the client-leaf
+boundary are unchanged.
+
+**The recorded measurement is re-taken, not inherited.** D-193 recorded presentation at 1,782 lines
+against a tree that measured 1,804 - a number taken before that round finished landing, which is the
+staleness `line-budget.test.ts`'s own header argues is a ceiling nobody re-took. The presentation tier
+re-measures at 1,840/6,000 with that file's own algorithm on the tree as this round lands; the D-193
+sentence is corrected to its true 1,804, no ceiling moves, and no runtime dependency was added.
+
+**Revert path:** revert this changeset; the sortable precedence trace, the per-comparison collator, the
+focus-only tooltip dismissal, and the stale presentation figure return to their D-193 state.
