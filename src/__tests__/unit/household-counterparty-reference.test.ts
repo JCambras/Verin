@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildHouseholdDetailVM } from "@app/households/build-detail";
+import { crmRowFor } from "./_crm-row";
 import type {
   WorldCrossHouseholdLink, WorldHousehold,
 } from "@domain/world/household-world";
@@ -37,7 +38,7 @@ const withLinks = (links: readonly WorldCrossHouseholdLink[]): WorldHousehold =>
 const linksOf = (
   links: readonly WorldCrossHouseholdLink[],
   named: readonly [string, string][],
-) => buildHouseholdDetailVM(withLinks(links), SUBJECT.id, AS_OF, new Map(named)).crossHouseholdLinks;
+) => buildHouseholdDetailVM(withLinks(links), crmRowFor(SUBJECT), AS_OF, new Map(named)).crossHouseholdLinks;
 
 describe("the page-local reference for a withheld counterparty", () => {
   it("numbers the WITHHELD ones only, so a named counterparty never takes a number", () => {

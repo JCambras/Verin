@@ -98,6 +98,15 @@ lower fidelity while the test that guarded it - the exact display name is absent
 hand-written prose that named the same party in three other fields is corrected with it, and
 `crossHouseholdProseProblems` holds both authors to that for good.
 
+**Amended by D-201** (review round). The record store owns IDENTITY as well as authorization: the
+directory and the household page render `households.name`, because the console renames a household
+through a governed audited write and the surfaces were rendering the fixture's name - two shipped
+surfaces disagreeing about one record indefinitely, with nothing on either to say so. And the
+directory now lists households the CRM holds that no evidence describes, which is what every
+household looks like for the first minutes of its life; it says plainly that nothing has arrived yet
+and links to the console rather than dead-ending. The three record counts read only the described
+households and say so when they differ from the household count.
+
 **Amended by D-200** (review round). The ordinal is numbered across the WITHHELD counterparties alone.
 Numbering every counterparty, named ones included, gave a household holding one of each a page that
 opened at "Counterparty 2" with no first on it, and left the plural copy unreachable in the shipped
@@ -163,6 +172,18 @@ while the view and other-schema false alarms stay closed through the `BASE TABLE
 on the clean-slate check is as corrosive as a false pass: it is the one check that has to be
 unambiguous.
 
+**Amended by D-201** (review round). What the sweep COUNTS moved from `prov_source` to a new
+`record_origin` column (migration 9), because the provenance of a VALUE and the origin of a RECORD are
+two different facts and one flag cannot carry both. An advisor who renames a seeded household has
+genuinely entered that name, so the rename re-stamps `prov_source = 'user-input'` and their words
+render un-watermarked - and the row is still a demonstration record, so the purge still takes it. A
+sweep keyed on value provenance would have let demonstration data survive into production because
+somebody typed over it. The table LIST is still derived from `prov_source` declarations and read the
+same three ways; the pairing between the two columns is itself checked twice - from the DDL
+(`recordOriginCoverageProblems`, which sees a column declared in a `CREATE TABLE` or added by a later
+`ALTER TABLE`) and from the store's own catalog - so a provenance-bearing table with no origin to
+count by fails rather than being swept blind.
+
 ### 6. Budgets are amended by measurement
 
 `src/domain/**` gains the world model and the health computation; `src/infrastructure/**` gains the
@@ -186,6 +207,12 @@ next one-line correction fails an unrelated ceiling. `tooling` moves to 14,200; 
 5,150 / 8,250 / 14,200 against 5,079 / 8,184 / 14,101 as this round lands - 71, 66 and 99 lines of
 correction room, named rather than banked. A ceiling carrying a stale measurement is a ceiling nobody
 re-took.
+
+**Amended by D-201** (review round). `infrastructure` moves to 8,400 and `tooling` to 14,350 against
+re-measured 8,283 and 14,232 - the record-origin fact arrives as its own vocabulary, its own migration
+and its own reading of the DDL - while `domain` HOLDS at 5,150 against a re-measured 5,093. That is
+117, 118 and 57 lines of correction room; `tooling` had 32 left, which is precisely the condition
+ADR-0018's commentary names.
 
 `contracts` and `presentation` are unmoved. Headroom is *named* rather than banked, so the next change
 to any of these layers reads as the measured amendment it is. No ceiling here was paid for by deleting

@@ -17,7 +17,7 @@ import Link from "next/link";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { Field, TextInput, StatusBadge, EmptyState } from "@app/presentation/ui";
 import { Metric } from "@app/presentation/metric";
-import type { DirectoryVM, HouseholdRowVM } from "./model";
+import type { DirectoryVM, HouseholdRowVM, NoEvidenceVM } from "./model";
 import { VirtualList } from "./virtual-list";
 
 // The window has to know how tall a row is before it renders one, so the height
@@ -34,9 +34,19 @@ const VIEWPORT_HEIGHT = 648;
 // agree, or the height is reserved for a layout that is not on screen.
 const TWO_COLUMN_QUERY = "(min-width: 40rem)";
 
-/** Which layout the row is actually in. `useSyncExternalStore` rather than an
- * effect so the first paint is already correct and no row is measured against a
- * height it never had. */
+/**
+ * Which layout the row is actually in. `useSyncExternalStore` rather than a
+ * layout-measurement effect: the media query answers directly, so nothing has to
+ * render at one height to discover another.
+ *
+ * The SERVER snapshot cannot know the viewport - React uses it for SSR and for
+ * the hydration render, where no window exists - so it reserves the STACKED
+ * height, the taller of the two. That is the safe direction and the only one:
+ * reserving too much leaves a gap under a narrow row for one frame, reserving
+ * too little overlaps the next row's name, which is the defect the second
+ * constant was added for. On a wide viewport the first client render corrects
+ * it downward.
+ */
 function useRowHeight(): number {
   const twoColumn = useSyncExternalStore(
     (onChange) => {
@@ -45,7 +55,7 @@ function useRowHeight(): number {
       return () => query.removeEventListener("change", onChange);
     },
     () => window.matchMedia(TWO_COLUMN_QUERY).matches,
-    () => true,
+    () => false,
   );
   return twoColumn ? TWO_COLUMN_ROW : STACKED_ROW;
 }
@@ -68,38 +78,69 @@ const BAND_STATUS: Record<string, string> = {
  * to the household's own page, where it renders once, labeled.
  */
 function HouseholdRow({ row }: { row: HouseholdRowVM }) {
+  if (row.evidence === null) return <UnevidencedRow row={row} />;
+  const evidence = row.evidence;
   return (
     <Link
-      href={`/app/households/${row.key}`}
+      href={row.href}
       className="flex h-full items-center gap-4 px-4 py-3 transition-colors hover:bg-slate-50 focus-visible:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-slate-500"
     >
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="truncate text-sm font-semibold text-slate-900">{row.displayName}</span>
-          <StatusBadge status={BAND_STATUS[row.health.band] ?? "pending"} label={row.health.bandLabel} />
+          <StatusBadge status={BAND_STATUS[evidence.health.band] ?? "pending"} label={evidence.health.bandLabel} />
           {row.state !== "active" ? <StatusBadge status="unknown" label={row.stateLabel} /> : null}
         </span>
         <span className="truncate text-xs text-slate-600">
-          {row.surname} household · {row.city} · {row.advisorName}
+          {evidence.surname} household · {evidence.city} · {evidence.advisorName}
         </span>
         <span className="truncate text-xs text-slate-600">
-          {row.countsLabel} · {row.serviceTier} · {row.authoringLabel}
+          {evidence.countsLabel} · {evidence.serviceTier} · {evidence.authoringLabel}
         </span>
         {/* Below `sm` there is no room for a right-hand column, so the balance
             sits in the stack rather than disappearing - it is the number a
             person came to the list for. */}
         <span className="text-xs text-slate-600 sm:hidden">
-          <Metric metric={row.totalBalance} />
+          <Metric metric={evidence.totalBalance} />
         </span>
       </span>
       {/* Wide enough for the balance's watermark to sit on ONE line: the total
           folds over every account, so it is demonstration-derived and carries
           the badge, and a 208px column wrapped it across two lines on every row. */}
       <span className="hidden w-64 shrink-0 flex-col items-end text-right text-xs text-slate-600 sm:flex">
-        <Metric metric={row.totalBalance} />
+        <Metric metric={evidence.totalBalance} />
         <span>across all accounts</span>
       </span>
     </Link>
+  );
+}
+
+/**
+ * A household the firm's record store holds and no evidence describes - which
+ * is what every household looks like for the first minutes of its life. It is
+ * NOT a link: its own page would have nothing on it, and an affordance that can
+ * only land on emptiness is not one. The row states the position plainly and
+ * carries the one action that does something about it.
+ */
+function UnevidencedRow({ row }: { row: HouseholdRowVM & { noEvidence: NoEvidenceVM } }) {
+  return (
+    <div className="flex h-full flex-col justify-center gap-1 px-4 py-3">
+      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="truncate text-sm font-semibold text-slate-900">{row.displayName}</span>
+        <StatusBadge status="unknown" label={row.noEvidence.badgeLabel} />
+        {row.state !== "active" ? <StatusBadge status="unknown" label={row.stateLabel} /> : null}
+      </span>
+      {/* Not truncated: it is the whole content of the row, and a sentence a
+          reader cannot finish explains nothing. Two lines at the narrowest width
+          still sit inside the stacked row's reserved height. */}
+      <span className="text-xs text-slate-600">{row.noEvidence.note}</span>
+      <Link
+        href={row.noEvidence.actionHref}
+        className="w-fit text-xs text-slate-800 underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+      >
+        {row.noEvidence.actionLabel}
+      </Link>
+    </div>
   );
 }
 
@@ -138,6 +179,14 @@ export function HouseholdDirectory({ directory }: { directory: DirectoryVM }) {
         <SummaryCard label="Accounts"><Metric metric={directory.totalAccounts} /></SummaryCard>
         <SummaryCard label="Open items"><Metric metric={directory.totalOpenItems} /></SummaryCard>
       </div>
+
+      {/* Every household is listed, including the ones no evidence describes
+          yet. Three of these four cards read only the described ones, so when
+          they differ the cards say which - a figure that silently counts a
+          subset of the list beside it is the quiet kind of wrong. */}
+      {directory.evidenceCoverageNote
+        ? <p className="text-xs text-slate-600" data-testid="evidence-coverage">{directory.evidenceCoverageNote}</p>
+        : null}
 
       <Field label="Search households" htmlFor="household-search" hint="Matches names, people, cities, advisors, accounts, and custodians.">
         <TextInput

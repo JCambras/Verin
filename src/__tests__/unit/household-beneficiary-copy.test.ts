@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildHouseholdDetailVM } from "@app/households/build-detail";
+import { crmRowFor } from "./_crm-row";
 import { computeHouseholdHealth } from "@domain/world/health";
 import {
   BENEFICIARY_CAPABLE_REGISTRATIONS, BENEFICIARY_SCORED_REGISTRATIONS,
@@ -32,7 +33,7 @@ const AS_OF = "2026-07-01T00:00:00.000Z";
 const CANNOT_CARRY = "This registration does not take a beneficiary designation.";
 const NONE_ON_FILE = "None designated.";
 
-const detail = (household: WorldHousehold) => buildHouseholdDetailVM(household, household.id, AS_OF);
+const detail = (household: WorldHousehold) => buildHouseholdDetailVM(household, crmRowFor(household), AS_OF);
 
 const withAccounts = (household: WorldHousehold, accounts: readonly WorldAccount[]): WorldHousehold =>
   ({ ...household, accounts });

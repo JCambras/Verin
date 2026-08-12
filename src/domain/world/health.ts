@@ -202,7 +202,14 @@ function operationalFactor(household: WorldHousehold): Omit<HealthFactor, "weigh
   };
 }
 
-function band(score: number): HealthBand {
+/**
+ * The band a 0-100 score falls in. EXPORTED because the surface grades the six
+ * factors with the same cut-offs it grades the composite with, and after the
+ * band word became the whole per-factor signal a second copy of these thresholds
+ * would put six words on one scale under a word on another - with nothing in the
+ * type system or the fences noticing the day somebody moved one.
+ */
+export function healthBand(score: number): HealthBand {
   return score >= 80 ? "healthy" : score >= 55 ? "watch" : "needs-attention";
 }
 
@@ -218,5 +225,5 @@ export function computeHouseholdHealth(household: WorldHousehold, asOf: string):
   ].map((factor) => ({ ...factor, weightBps: WEIGHTS[factor.id] }));
   const weighted = factors.reduce((sum, factor) => sum + factor.score * factor.weightBps, 0);
   const score = Math.trunc(weighted / 10_000);
-  return { score, band: band(score), factors, asOf };
+  return { score, band: healthBand(score), factors, asOf };
 }

@@ -2,7 +2,10 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { createMemoryDb, type SqlDb } from "@infra/store/db";
 import { runMigrations } from "@infra/store/migrations";
 import { seedWorldIntoCrm } from "@infra/crm/world-seed";
+import { updateHouseholdName } from "@infra/crm/house-crm";
 import { systemWriteActor } from "@contracts/principal";
+import { parseMachineRecordId } from "@contracts/record-id";
+import { canFeedComplianceDecision, provenanceLabel, syntheticBadgeLabel } from "@contracts/provenance";
 import { cleanSlateViolations, sweepFixtureRows } from "../../../scripts/fixture-purge";
 import { generateWorld } from "../../../scripts/world/generate";
 import { loadWorldSpec, WORLD_SEED } from "../../../scripts/world/spec";
@@ -15,8 +18,9 @@ import { loadWorldSpec, WORLD_SEED } from "../../../scripts/world/spec";
  *   - loading the populated world makes it UNCLEAN, and the sweep names every
  *     table the world touched (a check that cannot see the rows it is meant to
  *     find is the false-pass class this repository exists to prevent);
- *   - purging the fixture-marked rows returns it to clean, while the firm's own
- *     `verin-crm` rows survive - the marker is what is purged, not the table.
+ *   - purging the demonstration-origin rows returns it to clean, while the
+ *     firm's own rows survive - the ORIGIN is what is purged, not the table, and
+ *     not the provenance of whatever somebody has since typed into the row.
  */
 
 const ORG = "org-clean-slate";
@@ -28,6 +32,15 @@ const DIGEST = String((world.manifest.value as Record<string, unknown>).worldDig
 const HOUSEHOLDS = world.households.slice(0, 5);
 
 let db: SqlDb;
+
+/** Child rows first: the household foreign keys are real, which is exactly why a
+ * purge is an ordered operation rather than a truncate. Keyed on the ROW's
+ * origin, never on the provenance of the values in it. */
+async function purgeDemonstrationRecords(store: SqlDb): Promise<void> {
+  await store.query("DELETE FROM tasks WHERE record_origin = 'world-fixture'");
+  await store.query("DELETE FROM contacts WHERE record_origin = 'world-fixture'");
+  await store.query("DELETE FROM households WHERE record_origin = 'world-fixture'");
+}
 
 beforeEach(async () => {
   db = await createMemoryDb();
@@ -57,21 +70,53 @@ describe("clean-slate guarantee", () => {
     expect(violations.every((violation) => violation.includes("must contain none"))).toBe(true);
   });
 
-  it("purging the fixture-marked rows restores clean and leaves the firm's own records alone", async () => {
+  it("purging the demonstration-origin rows restores clean and leaves the firm's own records alone", async () => {
     await seedWorldIntoCrm(db, systemWriteActor("seed", ORG), HOUSEHOLDS, DIGEST);
     await db.query(
       "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ('real-hh',$1,'A Real Household',NULL,NULL,'active',$2,'verin-crm',$2,'high')",
       [ORG, TS],
     );
-    // Child rows first: the household foreign keys are real, which is exactly
-    // why a purge is an ordered operation rather than a truncate.
-    await db.query("DELETE FROM tasks WHERE prov_source = 'fixture'");
-    await db.query("DELETE FROM contacts WHERE prov_source = 'fixture'");
-    await db.query("DELETE FROM households WHERE prov_source = 'fixture'");
+    await purgeDemonstrationRecords(db);
     const sweep = await sweepFixtureRows(db);
     expect(cleanSlateViolations(sweep)).toEqual([]);
     const survivors = await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM households WHERE org_id = $1", [ORG]);
     expect(Number(survivors.rows[0]!.n), "purging fixtures must not touch the firm's own records").toBe(1);
+  });
+
+  it("a RENAMED seeded household reads as user-entered AND is still purged", async () => {
+    // The two facts, proved apart. The advisor typed the name, so the VALUE is
+    // user-entered and renders un-watermarked - labeling their own words "Sample
+    // data" is charter #3's mislabel in the direction nobody watches. The ROW is
+    // still a demonstration record, so the clean-slate purge still takes it: if
+    // an edit exempted a row, demo data would reach production because somebody
+    // renamed it, which is the exact hole the guarantee exists to close.
+    const actor = systemWriteActor("seed", ORG);
+    await seedWorldIntoCrm(db, actor, HOUSEHOLDS, DIGEST);
+    const id = parseMachineRecordId("household", HOUSEHOLDS[0]!.id)!;
+    const renamed = await updateHouseholdName(db, actor, id, "The Name An Advisor Typed");
+    expect(renamed.ok, renamed.ok ? "" : renamed.error.message).toBe(true);
+
+    const provenance = renamed.ok ? renamed.value.provenance : null;
+    expect(provenance?.source, "a human typed this name; the value is theirs").toBe("user-input");
+    // What the console actually renders beside the name: FreshValue prints this
+    // label, and `<Metric>`/the badge helpers print no synthetic class for it.
+    expect(provenanceLabel(provenance!)).toMatch(/^Entered · as of /);
+    expect(syntheticBadgeLabel(provenance!), "a typed name must carry no synthetic badge").toBeNull();
+    expect(canFeedComplianceDecision(provenance!)).toBe(true);
+
+    const row = await db.query<{ record_origin: string; prov_source: string }>(
+      "SELECT record_origin, prov_source FROM households WHERE id = $1",
+      [HOUSEHOLDS[0]!.id],
+    );
+    expect(row.rows[0], "the rename must not move where the ROW came from")
+      .toEqual({ record_origin: "world-fixture", prov_source: "user-input" });
+
+    const before = await sweepFixtureRows(db);
+    expect(cleanSlateViolations(before).length, "the renamed row is still demonstration data").toBeGreaterThan(0);
+    await purgeDemonstrationRecords(db);
+    expect(cleanSlateViolations(await sweepFixtureRows(db))).toEqual([]);
+    const left = await db.query<{ n: number }>("SELECT COUNT(*)::int AS n FROM households WHERE org_id = $1", [ORG]);
+    expect(Number(left.rows[0]!.n), "a renamed demonstration household must not survive the purge").toBe(0);
   });
 
   it("a provenance-bearing table the shipped DDL never declared is caught by the store's own catalog", async () => {
@@ -83,6 +128,16 @@ describe("clean-slate guarantee", () => {
     const sweep = await sweepFixtureRows(db);
     expect(sweep.problems.some((problem) => problem.startsWith("rogue_evidence:"))).toBe(true);
     expect(cleanSlateViolations(sweep).some((violation) => violation.startsWith("rogue_evidence:"))).toBe(true);
+  });
+
+  it("a swept table whose ORIGIN column is missing is refused rather than counted blind", async () => {
+    // The pairing, against a real catalog. A table that can hold a demonstration
+    // row and has no origin to count it by cannot be cleared, and saying so by
+    // name beats the driver error the count would otherwise raise.
+    await db.exec("ALTER TABLE tasks DROP COLUMN record_origin");
+    const sweep = await sweepFixtureRows(db);
+    expect(sweep.problems.some((problem) => problem.startsWith("tasks: carries prov_source but no record_origin"))).toBe(true);
+    expect(cleanSlateViolations(sweep).length).toBeGreaterThan(0);
   });
 
   it("a VIEW over a provenance-bearing table is not mistaken for an unswept table", async () => {

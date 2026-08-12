@@ -78,8 +78,11 @@ mechanism; featured households are addressed by KEY, derived ones by SLOT, and o
 both so the ninety are as deep as the ten. Household DEPTH is EVIDENCE behind a port
 (`HouseholdWorldSource`, `src/domain/world/`) whose Wave 0 fixture adapter refuses production and is
 REPLACED, not relabeled, when a real EvidenceSource lands (ADR-0024/0027); the house CRM is projected
-only what it owns (households, people, open items) at `prov_source='fixture'` - never financial
-accounts, which the account-opening flow mints. HEALTH IS COMPUTED, NEVER STORED
+only what it owns (households, people, open items) at `prov_source='fixture'` and
+`record_origin='world-fixture'` - never financial accounts, which the account-opening flow mints. The
+RECORD STORE owns IDENTITY (the surfaces render `households.name`, and a CRM household no evidence
+describes is LISTED with an honest no-evidence state and a real on-ramp); the port supplies DEPTH
+(D-201). HEALTH IS COMPUTED, NEVER STORED
 (`src/domain/world/health.ts`, six weighted factors); the generator emitting a health field fails the
 `world-provenance` fence. Vocabularies live in `src/domain/world/household-world.ts` and the generator
 IMPORTS them, so a fixture cannot carry a value the product cannot render;
@@ -90,9 +93,14 @@ health factor AND the deficiency note, so the two cannot disagree; `BENEFICIARY_
 account takes a transfer-on-death designation and telling a reader it cannot is the same false claim
 as calling the absence a gap (D-195, D-197). Holding confidence is measured against the world's `asOf`,
 never against the observation itself, so the receding treatment reads a real signal (D-197).
-Clean slate is COUNTED:
-`pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`) and
-fails on the first fixture-marked row; a sweep over zero tables is a problem, never a pass. That
+Clean slate is COUNTED, and what it counts is the ROW's ORIGIN, never its value provenance:
+`prov_source` moves when a human edits a value (a rename re-stamps it `user-input`, so an advisor's
+own words render un-watermarked) while `record_origin` never moves, so a seeded household somebody
+renamed is still purged - two facts, two columns, neither answering the other's question (D-201).
+`pnpm fixture:check` derives its swept tables from the shipped DDL (any table with `prov_source`),
+counts `record_origin` in them, and fails on the first demonstration-origin row; a sweep over zero
+tables is a problem, never a pass, and so is a provenance-bearing table the DDL never gives an origin
+column (checked from the DDL and again from the store's catalog). That
 derivation is read THREE ways that share no code - a structural parse of each table's balanced body
 and its top-level column items, a text scan for every `prov_source` DECLARATION (the name followed by
 one of a CLOSED set of column TYPES - never a list of keywords that may follow a reference, which is

@@ -25,6 +25,7 @@ import { appError, normalizeAppError } from "@contracts/errors";
 import type { SqlDb, SqlQueryable } from "./db";
 import { migrationFailure } from "./migration-errors";
 import { migrationLedgerExists } from "./migration-support";
+import { FIRM_RECORD_ORIGIN, RECORD_ORIGIN_COLUMN } from "./record-origin";
 import {
   DECISION_LEDGER_GENERATIONS_SQL,
   DECISION_LEDGER_HISTORY_INDEXES_SQL,
@@ -340,6 +341,28 @@ ${TENANT_EDGES.map((e) => `ALTER TABLE ${e.child}
   FOREIGN KEY (${e.childColumns.join(", ")}) REFERENCES ${e.parent}(${e.parentColumns.join(", ")});`).join("\n")}
 `;
 
+/**
+ * Version 9 - the ORIGIN of a row, beside the provenance of its values
+ * (ADR-0057 amendment). `prov_source` says where a VALUE came from and moves
+ * when a human edits it; `record_origin` says who put the ROW here and never
+ * moves, because renaming a demonstration household does not make it the firm's
+ * own record. The clean-slate sweep counts THIS column, so a seeded row that has
+ * since been edited is still removed - otherwise demonstration data would
+ * survive into production simply because somebody typed over it.
+ *
+ * The table list is the provenance-bearing set AS OF THIS VERSION, frozen here
+ * like every shipped migration's DDL. A provenance-bearing table added later
+ * declares `record_origin` in its own `CREATE TABLE`, and the clean-slate check
+ * fails on any table that carries one column without the other, so the pair
+ * cannot drift apart unnoticed.
+ */
+const RECORD_ORIGIN_SQL = [
+  "orgs", "users", "households", "contacts", "financial_accounts",
+  "account_opening_applications", "tasks", "decision_ledger",
+]
+  .map((table) => `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${RECORD_ORIGIN_COLUMN} text NOT NULL DEFAULT '${FIRM_RECORD_ORIGIN}';`)
+  .join("\n");
+
 /** The ordered migration list. Append a new `{ version, name, sql }` for each schema change; never edit a shipped entry. */
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "baseline", sql: BASELINE_SQL },
@@ -359,6 +382,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 6, name: "decision-ledger-history-indexes", sql: DECISION_LEDGER_HISTORY_INDEXES_SQL },
   { version: 7, name: "decision-reservation-drop-created-sequence", sql: DECISION_LEDGER_RESERVATION_SEQUENCE_DROP_SQL },
   { version: 8, name: "decision-drop-projection-checkpoint", sql: DECISION_LEDGER_PROJECTION_CHECKPOINT_DROP_SQL },
+  { version: 9, name: "record-origin", sql: RECORD_ORIGIN_SQL },
 ];
 
 // Fail loud at module load if a migration is malformed: versions must be a gap-free

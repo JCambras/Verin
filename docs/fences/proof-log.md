@@ -13890,3 +13890,112 @@ become a slug again.
 **Reverted:** `src/app/households/build-detail.ts` restored; `Tests 4 passed`.
 
 **Date:** 2026-08-12 (review round eight, ADR-0057 / D-213).
+
+## PF-281 · the clean-slate sweep counts a row's ORIGIN, never its value provenance · `src/infrastructure/crm/house-crm.ts` + `src/infrastructure/store/migrations.ts`
+
+**Invariant:** the provenance of a VALUE and the origin of a RECORD are two facts and one flag cannot
+carry both. A renamed demonstration household reads as user-entered (a human typed the name) AND is
+still removed by the clean-slate purge (the row is still demonstration data), and a
+provenance-bearing table the DDL never gives an origin column is refused rather than swept blind.
+
+**Injection A - let the rename make the row the firm's own.** Added `record_origin = 'firm-record'`
+to `updateHouseholdName`'s `UPDATE`, which is exactly the shortcut that would let demo data survive
+into production because somebody edited it.
+
+**Observed failure (`pnpm exec vitest run src/__tests__/integration/fixture-purge.test.ts`):**
+```
+× a RENAMED seeded household reads as user-entered AND is still purged
+AssertionError: the rename must not move where the ROW came from:
+  expected { record_origin: 'firm-record', …(1) } to deeply equal { Object (record_origin, prov_source) }
+Tests  1 failed | 13 passed (14)
+```
+
+**Injection B - ship a provenance-bearing table with no origin to count by.** Dropped `tasks` from
+migration 9's table list, leaving a table that holds fixture rows and cannot be keyed on.
+
+**Observed failure (`pnpm exec vitest run src/__tests__/fitness/clean-slate.test.ts`):**
+```
+× enforces: what the sweep counts is the record's ORIGIN, and every swept table has one
+AssertionError: expected [ Array(1) ] to deeply equal []
++ "tasks: the shipped DDL declares prov_source but never gives it a record_origin, so the sweep has
+   no origin to count and cannot clear it (charter #4)"
+Tests  1 failed | 22 passed (23)
+```
+
+**Executable companions (run on every build):** the renamed row is asserted to FAIL the clean-slate
+verdict before the purge runs, so "still purged" is a statement about a check that could see it; the
+purge is asserted to leave the firm's own `verin-crm` household alone, so the sweep is not just
+deleting the table; the pairing is read twice - from the DDL and from the store's live catalog, where
+dropping `record_origin` from a swept table is refused by name; and the origin vocabulary itself is
+pinned, so a new demonstration origin has to be classified rather than defaulting into the clean half.
+
+**Reverted:** both files restored; `Tests 14 passed` and `Tests 23 passed`.
+
+**Date:** 2026-08-12 (review round nine, ADR-0057 / D-214).
+
+## PF-282 · the record store owns identity, and a household with no evidence is still in the book · `src/app/households/build.ts` + `src/app/households/build-detail.ts`
+
+**Invariant:** the surfaces render `households.name` (the CRM renames through a governed audited
+write, so a page showing the fixture's name puts two shipped surfaces in disagreement about one
+record), and a household the CRM holds that no evidence describes is LISTED with an honest
+no-evidence state and a real on-ramp rather than dropped from "the firm's whole book".
+
+**Injection A - render the fixture's name again.** Replaced the row's and the page's `crmRow.name`
+with the world household's `displayName`.
+
+**Observed failure (`pnpm exec vitest run src/__tests__/unit/household-directory-vm.test.ts`):**
+```
+× renders the CRM's name, not the fixture's
+AssertionError: expected [ 'the fixture's name' ] to deeply equal [ 'The Name An Advisor Typed' ]
+Tests  1 failed | 9 passed (10)
+```
+
+**Injection B - drop the households no evidence describes.** Restored the intersection filter
+(`.filter(({ entry }) => entry !== null)`) before the rows are built.
+
+**Observed failure (same file):**
+```
+× a household the record store holds and no evidence describes is LISTED, and says so
+AssertionError: a household somebody just created must not vanish from the firm's book:
+  expected undefined to be defined
+Tests  1 failed | 9 passed (10)
+```
+
+**Executable companions (run on every build):** the listed no-evidence row is asserted to carry NO
+detail link (its own page would have nothing on it) and a next action that is not a dead end; the
+people/account/open-item cards are asserted to still count only the described households while the
+household count includes every row, and the coverage sentence that reconciles the two is asserted
+verbatim; a book where every household has evidence is asserted to say nothing about coverage, so the
+sentence cannot become permanent furniture; and the browser spec creates a household in the console
+and finds it in the directory, which is the cross-surface path no unit test can stand in for.
+
+**Reverted:** both files restored; `Tests 10 passed`.
+
+**Date:** 2026-08-12 (review round nine, ADR-0057 / D-214).
+
+## PF-283 · the naked-figure detector can see a figure welded to a label · `src/__tests__/unit/household-metric-provenance.test.tsx`
+
+**Invariant:** charter #4 applied to the check itself. The companion for "no metric-class figure
+reaches a screen outside `<Metric>`" must FAIL when the detector cannot see the shape it was written
+for - the previous helper matched only an element whose entire text equalled the figure, so the row's
+`Healthy · 87` was invisible to it and the companion passed by asserting the detector found nothing.
+
+**Injection - restore the equality match.** Replaced the token pattern with `^${figure}$`, the
+matching rule the helper shipped with.
+
+**Observed failure (`pnpm exec vitest run src/__tests__/unit/household-metric-provenance.test.tsx`):**
+```
+× detects (companion): the shape this row used to ship IS caught, and the shipped one is not
+  the detector cannot see a figure concatenated into a label - the check proves nothing
+Tests  1 failed | 10 passed (11)
+```
+
+**Executable companions (run on every build):** the same companion asserts the detector does NOT flag
+the identical figure rendered through `<Metric>`, so the catch is a statement about the shape rather
+than about the number; the factor-card companion does the same for a bare figure in its own span; and
+the row assertion counts the rows actually mounted before it is trusted, because a windowed list that
+mounted none would pass every per-row assertion in it.
+
+**Reverted:** the detector restored; `Tests 11 passed`.
+
+**Date:** 2026-08-12 (review round nine, ADR-0057 / D-214).

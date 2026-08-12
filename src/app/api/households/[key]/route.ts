@@ -49,13 +49,16 @@ export async function GET(
     const counterpartyId = parseMachineRecordId("household", counterparty.id);
     if (!counterpartyId) continue;
     const counterpartyRow = await getHouseholdById(db, auth.value, counterpartyId);
-    if (counterpartyRow) counterpartyNames.set(counterparty.key, counterparty.displayName);
+    // The counterparty's name is the RECORD STORE's too, for the same reason the
+    // subject's is: the firm renames its own households, and a link that keeps
+    // calling one by the fixture's name names a household nobody here has.
+    if (counterpartyRow) counterpartyNames.set(counterparty.key, counterpartyRow.name);
   }
   const identity = worldIdentity();
   return NextResponse.json({
     household: buildHouseholdDetailVM(
       household,
-      crmRow.id,
+      crmRow,
       identity?.asOf ?? household.evidence.retrievedAt,
       counterpartyNames,
     ),

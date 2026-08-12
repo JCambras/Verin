@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { buildHouseholdDetailVM } from "@app/households/build-detail";
+import { crmRowFor } from "./_crm-row";
 import type { HouseholdDetailVM } from "@app/households/model";
 import { generateWorld } from "../../../scripts/world/generate";
 import { loadWorldSpec, WORLD_SEED } from "../../../scripts/world/spec";
@@ -42,7 +43,7 @@ const heading = (name: string) => screen.findByRole("heading", { level: 1, name 
 
 const vmOf = (key: string): HouseholdDetailVM => {
   const household = WORLD.find((candidate) => candidate.key === key)!;
-  return buildHouseholdDetailVM(household, household.id, AS_OF);
+  return buildHouseholdDetailVM(household, crmRowFor(household), AS_OF);
 };
 
 /** The counterparty this firm's book does not contain resolves to the same 404

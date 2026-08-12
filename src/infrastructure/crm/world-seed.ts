@@ -4,9 +4,13 @@
  * Loads the generated world's households, their people, and their open items
  * into the house CRM so no product surface renders empty in development. Rows
  * land labeled `prov_source = 'fixture'` - NOT `verin-crm` - because that is
- * what they are (charter #3), and because the clean-slate guarantee is proved
- * by counting fixture-marked rows: a marker only means something if the
- * synthetic rows actually carry it.
+ * what the VALUES are (charter #3).
+ *
+ * They also land with `record_origin = 'world-fixture'`, which is a DIFFERENT
+ * fact: where the ROW came from. The clean-slate guarantee is counted off the
+ * origin, because value provenance moves the moment an advisor edits a value and
+ * the row is still a demonstration record afterwards - a purge keyed on
+ * `prov_source` would leave a renamed household behind in production.
  *
  * What is DELIBERATELY not projected: financial accounts and their positions.
  * An account in the house CRM is the OUTPUT of the account-opening flow, minted
@@ -26,6 +30,7 @@ import { assertWriteActor, type WriteActor } from "@contracts/principal";
 import { appError } from "@contracts/errors";
 import type { Result } from "@contracts/result";
 import type { WorldHousehold } from "@domain/world/household-world";
+import { WORLD_FIXTURE_ORIGIN } from "@infra/store/record-origin";
 
 /** Rows this call actually WROTE, never rows offered. Every insert is
  * `ON CONFLICT DO NOTHING` on ids derived from the world seed, so they are the
@@ -153,6 +158,7 @@ export async function seedWorldIntoCrm(
       const householdRows = households.map((household) => [
         household.id, orgId, household.displayName, null, null, household.state,
         household.provenance.asOf, "fixture", household.provenance.asOf, FIXTURE_CONFIDENCE,
+        WORLD_FIXTURE_ORIGIN,
       ] as const);
       const contactRows = households.flatMap((household) =>
         household.members
@@ -162,6 +168,7 @@ export async function seedWorldIntoCrm(
             return [
               member.id, orgId, household.id, first, last, null, null,
               member.provenance.asOf, "fixture", member.provenance.asOf, FIXTURE_CONFIDENCE,
+              WORLD_FIXTURE_ORIGIN,
             ] as const;
           }),
       );
@@ -169,6 +176,7 @@ export async function seedWorldIntoCrm(
         openItemTasks(household).map((task) => [
           task.id, orgId, household.id, task.subject, "not-started", null, null,
           task.createdAt, "fixture", task.createdAt, FIXTURE_CONFIDENCE,
+          WORLD_FIXTURE_ORIGIN,
         ] as const),
       );
       // One row per statement, every statement a LITERAL. A multi-row VALUES
@@ -182,7 +190,7 @@ export async function seedWorldIntoCrm(
       const conflicted: string[] = [];
       for (const row of householdRows) {
         const rows = await tx.query(
-          "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING RETURNING id",
+          "INSERT INTO households (id,org_id,name,primary_contact_id,advisor_user_id,status,created_at,prov_source,prov_asof,prov_confidence,record_origin) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING id",
           [...row],
         );
         if (rows.rows.length === 0) conflicted.push(row[0]);
@@ -194,14 +202,14 @@ export async function seedWorldIntoCrm(
       }
       for (const row of contactRows) {
         const rows = await tx.query(
-          "INSERT INTO contacts (id,org_id,household_id,first_name,last_name,email,phone,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING id",
+          "INSERT INTO contacts (id,org_id,household_id,first_name,last_name,email,phone,created_at,prov_source,prov_asof,prov_confidence,record_origin) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING RETURNING id",
           [...row],
         );
         written.contacts += rows.rows.length;
       }
       for (const row of taskRows) {
         const rows = await tx.query(
-          "INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING RETURNING id",
+          "INSERT INTO tasks (id,org_id,household_id,subject,status,due_date,assignee_user_id,created_at,prov_source,prov_asof,prov_confidence,record_origin) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING RETURNING id",
           [...row],
         );
         written.tasks += rows.rows.length;

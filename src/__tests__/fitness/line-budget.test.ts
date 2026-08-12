@@ -130,16 +130,24 @@ import { join, relative } from "node:path";
 // clean-slate sweep). Ceilings moved to 5,150 / 8,250 / 14,000 - 106, 114 and 216
 // lines of correction room, NAMED rather than banked. Those are NOT the figures
 // this file enforces today: the review rounds beneath this branch moved the
-// tooling ceiling again (D-194, 14,200) and moved all three measurements, so the
+// tooling ceiling again (D-207, 14,200) and moved all three measurements, so the
 // current pairing is 5,150 / 8,250 / 14,200 against RE-MEASURED 5,086 / 8,200 /
-// 14,168 (D-199) - 64, 50 and 32 lines of correction room. A summary paragraph
+// 14,168 (D-212) - 64, 50 and 32 lines of correction room. A summary paragraph
 // carrying a superseded ceiling is the same defect as a ceiling carrying a stale
 // measurement, so it is re-stated here rather than left for a reader to catch.
+// D-214 (ADR-0057 amendment, review round nine) raises infrastructure to 8,400
+// and tooling to 14,350 against RE-MEASURED 8,283 and 14,232: the RECORD-ORIGIN
+// fact arrives as its own vocabulary, its own migration and its own reading of
+// the DDL, because the provenance of a value and the origin of a record are two
+// facts one flag cannot carry. Domain HOLDS at 5,150 against a re-measured
+// 5,093. That leaves 117, 118 and 57 lines of correction room, NAMED rather than
+// banked - tooling had 32 left, which is the "the next one-line correction fails
+// an unrelated ceiling" condition this header argues against.
 // `contracts` and `presentation` are untouched by that work and do not move.
 const CEILINGS = {
   contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
-  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,086 re-measured, D-212)
-  infrastructure: 8250, // ADR-0057, on the fixture evidence adapter and CRM projection (8,200 re-measured, D-212)
+  domain: 5150, // ADR-0057, on the populated world's model and health computation (5,093 re-measured, D-214)
+  infrastructure: 8400, // ADR-0057, on the fixture adapter, the CRM projection and the record-origin fact (8,283 re-measured, D-214)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the
@@ -231,8 +239,13 @@ const CEILINGS = {
   // KEEPS 14,200 and re-measures 14,168 after the rule that a household's prose
   // names nobody from the household it links to - 32 lines of real headroom, the
   // narrowest this ceiling has run since D-176 and named here rather than banked,
-  // so the next change reads it as the ADR amendment it now is.
-  tooling: 14200, // D-212 (ADR-0057), on the world review round (14,168 re-measured)
+  // so the next change reads it as the ADR amendment it now is. D-214 RAISES it
+  // to 14,350 against a re-measured 14,232: the clean-slate sweep now counts a
+  // row's ORIGIN rather than the provenance of its values, and reads the pairing
+  // between the two columns off the DDL as well as off the store's catalog. 32
+  // lines of headroom is the condition the paragraph above argues against, so
+  // 118 are named again rather than banked.
+  tooling: 14350, // D-214 (ADR-0057), on the record-origin reading (14,232 re-measured)
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";

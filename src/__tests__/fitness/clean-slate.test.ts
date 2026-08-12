@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { MIGRATION_SQL } from "@infra/store/migrations";
-import { SYNTHETIC_SOURCES } from "@contracts/provenance";
+import { DEMONSTRATION_ORIGINS, RECORD_ORIGINS } from "@infra/store/record-origin";
 import {
-  cleanSlateViolations, createTableBodies, expectedRowsViolations, provenanceBearingTables,
-  provenanceDeclarationScan, provenanceDerivationProblems, type FixtureSweep,
+  cleanSlateViolations, createTableBodies, expectedRowsViolations, originBearingTables,
+  provenanceBearingTables, provenanceDeclarationScan, provenanceDerivationProblems,
+  recordOriginCoverageProblems, type FixtureSweep,
 } from "../../../scripts/fixture-purge";
 
 /**
@@ -160,17 +161,60 @@ describe("clean-slate fence", () => {
     expect(cleanSlateViolations(sweep(provenanceBearingTables().map((table) => ({ table, rows: 0 }))))).toEqual([]);
   });
 
-  it("enforces: the synthetic source list the sweep counts is the contract's, not a copy", () => {
-    expect([...SYNTHETIC_SOURCES].sort()).toEqual(["default", "estimate", "fixture"]);
+  it("enforces: what the sweep counts is the record's ORIGIN, and every swept table has one", () => {
+    // Two facts, two columns. A sweep keyed on `prov_source` clears a seeded
+    // household the moment somebody renames it - the value provenance moves to
+    // `user-input`, honestly, and the demonstration record walks into production
+    // behind it. So the guarantee is counted off the origin, and a
+    // provenance-bearing table without one cannot be counted at all.
+    expect([...DEMONSTRATION_ORIGINS]).toEqual(["world-fixture"]);
+    expect([...RECORD_ORIGINS].sort()).toEqual(["firm-record", "world-fixture"]);
+    expect(recordOriginCoverageProblems()).toEqual([]);
+    const origins = new Set(originBearingTables());
+    for (const table of provenanceBearingTables()) {
+      expect(origins.has(table), `${table} is swept but the DDL gives it no record_origin`).toBe(true);
+    }
   });
 
   describe("detects (companion): an unclean instance CANNOT pass", () => {
-    it("one fixture-marked row in one table fails the verdict", () => {
+    it("one demonstration-origin row in one table fails the verdict", () => {
       const violations = cleanSlateViolations(sweep([
         { table: "households", rows: 1 },
         { table: "contacts", rows: 0 },
       ]));
-      expect(violations).toEqual(["households: 1 fixture-marked row(s) - a production instance must contain none"]);
+      expect(violations).toEqual(["households: 1 demonstration-origin row(s) - a production instance must contain none"]);
+    });
+
+    it("a provenance-bearing table with NO origin column is refused, not swept blind", () => {
+      // The pairing this design stands on. A table that can hold a demonstration
+      // row and carries no origin to count it by is a hole in the guarantee, and
+      // the DDL says so before any store is stood up.
+      const ddl = [
+        "CREATE TABLE IF NOT EXISTS unkeyed (",
+        "  id text PRIMARY KEY,",
+        "  prov_source text NOT NULL",
+        ");",
+      ].join("\n");
+      const problems = recordOriginCoverageProblems(ddl);
+      expect(problems.length).toBe(1);
+      expect(problems[0]).toContain("never gives it a record_origin");
+      expect(originBearingTables(ddl)).toEqual([]);
+    });
+
+    it("an origin column added by a LATER migration counts, or version 9 would read as no coverage at all", () => {
+      const ddl = [
+        "CREATE TABLE IF NOT EXISTS altered (",
+        "  id text PRIMARY KEY,",
+        "  prov_source text NOT NULL",
+        ");",
+        "ALTER TABLE altered ADD COLUMN IF NOT EXISTS record_origin text NOT NULL DEFAULT 'firm-record';",
+        "CREATE TABLE IF NOT EXISTS declared (",
+        "  prov_source text NOT NULL,",
+        "  record_origin text NOT NULL",
+        ");",
+      ].join("\n");
+      expect(originBearingTables(ddl)).toEqual(["altered", "declared"]);
+      expect(recordOriginCoverageProblems(ddl)).toEqual([]);
     });
 
     it("a sweep that could not read a table fails rather than reporting clean", () => {

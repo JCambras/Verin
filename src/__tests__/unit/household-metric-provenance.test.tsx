@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, within } from "@testing-library/react";
 import { metricWatermark } from "@contracts/metric";
+import { Metric } from "@app/presentation/metric";
 import { canFeedComplianceDecision, isDemonstration } from "@contracts/provenance";
 import { buildDirectoryVM } from "@app/households/build";
 import { buildHouseholdDetailVM } from "@app/households/build-detail";
@@ -73,14 +74,47 @@ const directoryOf = (households: readonly WorldHousehold[]) =>
     identity: { version: "test", digest: `digest-${households.length}`, asOf: AS_OF, provenanceNote: "test world" },
   });
 
-/** Every element whose WHOLE text is exactly this figure - the shape a naked
- * `{metric.value}` renders as, and the shape `<Metric>` never produces, because
- * it always sets the provenance label beside the value. */
-const bareRendersOf = (scope: HTMLElement, figure: number): Element[] =>
-  [...scope.querySelectorAll("*")].filter((node) => node.textContent?.trim() === String(figure));
+/**
+ * Every place `figure` reaches the screen as a number a reader reads, minus the
+ * places it reaches through a value that carries its own provenance.
+ *
+ * WHAT IT MATCHES IS A TOKEN INSIDE A TEXT NODE, not an element whose entire
+ * text equals the figure. The equality test this replaces could not see the
+ * defect it was written for: the row shipped `Healthy · 87`, an equality test
+ * found nothing, and the companion asserting "the old shape would be caught"
+ * passed by asserting the opposite. A figure welded to a label is still a figure
+ * on the screen, and a green companion is what stops anyone looking.
+ *
+ * WHAT IT EXCUSES is a figure rendered inside the element that carries its
+ * provenance label - `<Metric>` renders its value through `FreshValue`, which
+ * puts the value in a titled span beside the source/as-of label, so "inside the
+ * element holding that pair" is exactly "rendered through the sanctioned
+ * component" - and a digit inside a sentence the VIEW MODEL composed ("0 of 3
+ * accounts that pass by designation", "4 accounts · 3 people"), where the number
+ * is part of a statement rather than a figure standing on its own.
+ */
+function nakedRendersOf(scope: HTMLElement, figure: number, accounted: readonly string[] = []): string[] {
+  const token = new RegExp(`(?<![\\d.,])${figure}(?![\\d.,])`);
+  const composed = new Set(accounted.map((text) => text.trim()));
+  const labeled = (node: Node): boolean => {
+    for (let element = node.parentElement; element !== null && scope.contains(element); element = element.parentElement) {
+      if (element.hasAttribute("title") || element.querySelector(":scope > [title]") !== null) return true;
+    }
+    return false;
+  };
+  const found: string[] = [];
+  const walker = scope.ownerDocument.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const text = (node.textContent ?? "").trim();
+    if (!token.test(text) || composed.has(text) || labeled(node)) continue;
+    found.push(text);
+  }
+  return found;
+}
 
 describe("the health score is a figure, so it renders like one", () => {
   const vm = directoryOf(SAMPLE);
+  const rowScore = (row: (typeof vm.rows)[number]) => Number(row.evidence!.health.score.value);
 
   it("the directory row's badge carries the BAND WORD and no figure", () => {
     const { container } = render(<HouseholdDirectory directory={vm} />);
@@ -90,42 +124,61 @@ describe("the health score is a figure, so it renders like one", () => {
       const link = within(list).queryByRole("link", { name: new RegExp(escape(row.displayName)) });
       if (!link) continue;
       checked += 1;
-      const badge = within(link).getByText(row.health.bandLabel);
-      expect(badge.textContent, `${row.key}: the band badge names a figure`).toBe(row.health.bandLabel);
-      expect(bareRendersOf(link, Number(row.health.score.value)), `${row.key}: a bare health score reached the row`)
-        .toEqual([]);
+      const badge = within(link).getByText(row.evidence!.health.bandLabel);
+      expect(badge.textContent, `${row.key}: the band badge names a figure`).toBe(row.evidence!.health.bandLabel);
+      expect(
+        nakedRendersOf(link, rowScore(row), [row.evidence!.countsLabel]),
+        `${row.key}: a bare health score reached the row`,
+      ).toEqual([]);
     }
     expect(checked, "no row was mounted - the assertion above proved nothing").toBeGreaterThan(3);
   });
 
-  it("detects (companion): the shape this row used to ship WOULD be caught", () => {
+  it("detects (companion): the shape this row used to ship IS caught, and the shipped one is not", () => {
     const row = vm.rows[0]!;
-    const { container } = render(
-      <span>{`${row.health.bandLabel} · ${row.health.score.value}`}</span>,
+    const score = rowScore(row);
+    const asShipped = render(
+      <span>{`${row.evidence!.health.bandLabel} · ${row.evidence!.health.score.value}`}</span>,
     );
-    expect(bareRendersOf(container, Number(row.health.score.value))).toEqual([]);
-    expect(container.textContent).toContain(String(row.health.score.value));
+    expect(
+      nakedRendersOf(asShipped.container, score),
+      "the detector cannot see a figure concatenated into a label - the check proves nothing",
+    ).toEqual([`${row.evidence!.health.bandLabel} · ${score}`]);
+    // ...and the sanctioned rendering of the SAME figure is not a finding, so
+    // the assertion above is a statement about the shape rather than the number.
+    const throughMetric = render(<Metric metric={row.evidence!.health.score} />);
+    expect(nakedRendersOf(throughMetric.container, score)).toEqual([]);
   });
 
   it("a factor card shows its band and its sentence, never a bare score", () => {
     for (const household of SAMPLE.slice(0, 4)) {
-      const detail = buildHouseholdDetailVM(household, household.id, AS_OF);
+      const detail = buildHouseholdDetailVM(household, crmRow(household), AS_OF);
       const { container } = render(<HouseholdDetail household={detail} />);
       const factors = computeHouseholdHealth(household, AS_OF).factors;
       expect(factors.length, "no factor to inspect").toBeGreaterThan(3);
       for (const factor of factors) {
         const card = within(container).getByText(factor.label).closest("li") as HTMLElement;
-        expect(bareRendersOf(card, factor.score), `${household.key}/${factor.id}: a bare factor score reached the panel`)
-          .toEqual([]);
-        expect(card.textContent, `${household.key}/${factor.id}: the band word is missing`)
-          .toContain(detail.health.factors.find((entry) => entry.id === factor.id)!.bandLabel);
+        const shown = detail.health.factors.find((entry) => entry.id === factor.id)!;
+        expect(
+          nakedRendersOf(card, factor.score, [shown.statement, shown.weightLabel, shown.readRecords.join(", ")]),
+          `${household.key}/${factor.id}: a bare factor score reached the panel`,
+        ).toEqual([]);
+        expect(card.textContent, `${household.key}/${factor.id}: the band word is missing`).toContain(shown.bandLabel);
       }
     }
   });
 
+  it("detects (companion): the factor card's previous bare figure IS caught", () => {
+    const detail = buildHouseholdDetailVM(SAMPLE[0]!, crmRow(SAMPLE[0]!), AS_OF);
+    const factor = detail.health.factors[0]!;
+    const score = computeHouseholdHealth(SAMPLE[0]!, AS_OF).factors[0]!.score;
+    const { container } = render(<span className="text-sm">{score}</span>);
+    expect(nakedRendersOf(container, score, [factor.statement])).toEqual([String(score)]);
+  });
+
   it("the ONE score a page shows renders through <Metric>, watermarked", () => {
     const household = SAMPLE[0]!;
-    const detail = buildHouseholdDetailVM(household, household.id, AS_OF);
+    const detail = buildHouseholdDetailVM(household, crmRow(household), AS_OF);
     const { container } = render(<HouseholdDetail household={detail} />);
     const panel = within(container).getByText("Health").closest("section") as HTMLElement;
     expect(metricWatermark(detail.health.score)).toBe("Demonstration - not a compliance record");
@@ -143,7 +196,7 @@ describe("a total across accounts is labeled by the accounts it sums", () => {
   it("folds, rather than borrowing one contributing record's provenance", () => {
     const problems: string[] = [];
     for (const household of SAMPLE) {
-      const provenance = buildHouseholdDetailVM(household, household.id, AS_OF).totalBalance.provenance;
+      const provenance = buildHouseholdDetailVM(household, crmRow(household), AS_OF).totalBalance.provenance;
       if (!isDemonstration(provenance)) problems.push(`${household.key}: the total is not a derived artifact`);
       if (provenance.source !== "computed") problems.push(`${household.key}: source is ${provenance.source}`);
       if (provenance.asOf !== latestAccountAsOf(household)) {
@@ -158,9 +211,9 @@ describe("a total across accounts is labeled by the accounts it sums", () => {
     const rows = new Map(directoryOf(SAMPLE).rows.map((row) => [row.key, row]));
     for (const household of SAMPLE) {
       const row = rows.get(household.key)!;
-      const detail = buildHouseholdDetailVM(household, household.id, AS_OF);
-      expect(row.totalBalance.value, household.key).toBe(detail.totalBalance.value);
-      expect(row.totalBalance.provenance, household.key).toEqual(detail.totalBalance.provenance);
+      const detail = buildHouseholdDetailVM(household, crmRow(household), AS_OF);
+      expect(row.evidence!.totalBalance.value, household.key).toBe(detail.totalBalance.value);
+      expect(row.evidence!.totalBalance.provenance, household.key).toEqual(detail.totalBalance.provenance);
     }
   });
 
@@ -170,7 +223,7 @@ describe("a total across accounts is labeled by the accounts it sums", () => {
     expect(metricWatermark({ value: 0, format: "currency-minor", provenance: asShipped })).toBeNull();
     expect(isDemonstration(asShipped)).toBe(false);
     // ...while the fold over the same accounts does carry it.
-    const folded = buildHouseholdDetailVM(household, household.id, AS_OF).totalBalance;
+    const folded = buildHouseholdDetailVM(household, crmRow(household), AS_OF).totalBalance;
     expect(metricWatermark(folded)).toBe("Demonstration - not a compliance record");
   });
 });

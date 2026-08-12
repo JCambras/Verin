@@ -8021,3 +8021,80 @@ height, the two new unit suites and the two proof-log entries revert together. T
 are a directory badge showing "Healthy" instead of "Healthy · 88", factor cards showing a band word
 instead of a number, every total balance carrying the demonstration watermark, and a wider, taller
 row to hold it.
+
+### D-214 · 2026-08-12 · reversible · Populated-world review round nine: two facts need two columns, the record store owns identity, and a companion that cannot see the defect is not a companion
+
+**The provenance of a VALUE and the origin of a RECORD are two facts, and one flag was carrying
+both.** `seedWorldIntoCrm` writes a hundred households at `prov_source = 'fixture'`, and `/app/console`
+renames any of them through a governed audited write that touched only `name`. So an advisor's own
+words rendered receded under a "Sample data · as of <the world's instant>" label - charter #3's
+mislabel in the direction nobody watches - and the only alternative on the table, re-stamping the row
+`user-input`, would have exempted it from the clean-slate purge, which is how demonstration data
+survives into production because somebody typed over it. Both readings are wrong because the question
+is two questions. Migration 9 adds `record_origin` to every provenance-bearing table (`world-fixture`
+for the projection, `firm-record` by DDL default for everything the firm's own flows write);
+`updateHouseholdName` now moves `prov_source` to `user-input` with the edit's instant and LEAVES the
+origin alone; and the clean-slate sweep counts the ORIGIN. A renamed demonstration household therefore
+reads as user-entered, un-watermarked, and is still removed by the purge - proved as one test, because
+the two halves are only interesting together. The vocabulary lives in
+`src/infrastructure/store/record-origin.ts` so the seed, the sweep and the fence read one list.
+PF-281.
+
+**A table that can hold a demonstration row and has no origin to count it by cannot be cleared.** The
+swept table LIST is still derived from `prov_source` declarations and still read the three ways D-207
+through D-210 built, because that question - which tables can hold a labeled row - has not changed.
+What changed is the predicate, so the two columns must exist together, and that pairing is now checked
+twice with no shared code: `recordOriginCoverageProblems` reads it off the shipped DDL (seeing a column
+declared in a `CREATE TABLE` or added by a later `ALTER TABLE`, or version 9 would read as no coverage
+at all), and the catalog reading answers it again from the store's live columns. Either way it is a
+sweep problem, which fails `pnpm fixture:check` and the blocking `world` job.
+
+**The record store owns IDENTITY; the evidence port supplies DEPTH.** The household surfaces took
+`crmRow.id` from the CRM and everything else from the fixture, so a household renamed in the console
+kept its fixture name on `/app/households` and `/app/households/[key]` indefinitely, with nothing on
+either page to say the two disagreed. Both now render `households.name` and the CRM's status, and a
+cross-household link renders the counterparty's CRM name for the same reason. **And a CRM household
+with no world entry is no longer dropped.** That is what every household looks like for the first
+minutes of its life - somebody created it in the console - and the surface the app home page calls
+"the firm's whole book" was quietly omitting it; households-with-evidence is a distinction nobody asked
+for and nobody can see. It is listed, says plainly that nothing has arrived for it yet, and carries a
+link to the console rather than dead-ending. The row is deliberately NOT a link: its own page would
+have nothing on it. The three record cards still read only the described households, so the directory
+now says which - `evidenceCoverageNote` - because a figure counting a subset of the list beside it is
+the quiet kind of wrong. PF-282.
+
+**A companion that cannot see the defect it names is worse than no companion.** The round-eight check
+for "no metric-class figure reaches a screen outside `<Metric>`" matched an element whose ENTIRE text
+equalled the figure. The defect it was written for was `Healthy · 87`, which that rule cannot see - so
+the companion titled "the shape this row used to ship WOULD be caught" asserted, correctly for the
+helper and backwards for the reader, that the detector found NOTHING. The green result is what stops
+anyone looking. The detector now matches a whole-number TOKEN inside a text node and excuses two
+things it can name: a figure inside the element carrying its provenance label (which is exactly
+`<Metric>`, since `FreshValue` puts the value in a titled span beside the source/as-of line) and a
+digit inside a sentence the view model composed. The companion asserts the old shape IS caught and the
+sanctioned rendering of the same number is not. PF-283.
+
+**The band thresholds are the domain's, imported rather than copied.** `bandOf` in the view model
+restated `>= 80 / >= 55` because `health.ts` did not export them, so the composite badge and the six
+factor badges were graded on two independently-maintained scales - and after D-213 made the band WORD
+the whole per-factor signal, a divergence would be visible on the screen rather than buried in a
+number. `healthBand` is exported and read.
+
+**The row-height snapshot reserves the taller row.** `useRowHeight`'s comment said no row is measured
+against a height it never had, while `getServerSnapshot` returned "two column" unconditionally - the
+one frame where the claim is false is exactly the narrow layout the second constant was added for. The
+server snapshot now returns the STACKED height: too much reserved space is a gap for one frame, too
+little is an overlap, and only one of those is a defect. The comment states what actually holds.
+
+**Line budgets: `infrastructure` to 8,400 and `tooling` to 14,350, `domain` held, all three
+re-measured.** 8,283 / 14,232 / 5,093 as this round lands, so 117, 118 and 57 lines of correction room
+are NAMED rather than banked. `tooling` had 32 lines left after D-212, which is the exact condition
+ADR-0018's commentary argues against. ADR-0057 §6 carries the amendment.
+
+**Revert path:** revert this changeset. Migration 9 is append-only and additive (`ADD COLUMN IF NOT
+EXISTS` with a default), so a store that already ran it keeps a column nothing reads after a revert;
+the sweep, the seed, the rename, the view models, the two surfaces and the three proof-log entries
+revert together. `fixtures/world` is untouched - nothing in this round reaches the generator, and the
+world regenerates byte-identical. The observable changes are a household directory that renders the
+firm's own names, lists households with no evidence yet, and says when its counts read only part of
+the book.

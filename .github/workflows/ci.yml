@@ -261,7 +261,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: world validation (regenerate + byte-compare; provenance, reconciliation, awkward cases)
         run: pnpm exec tsx scripts/world-validate.ts
-      - name: clean-slate guarantee (a fresh instance carries zero fixture-marked rows)
+      - name: clean-slate guarantee (a fresh instance carries zero demonstration-origin rows)
         run: pnpm exec tsx scripts/db-migrate.ts && pnpm exec tsx scripts/fixture-purge-check.ts
       # The floor is the world's household count, well under the rows the seed
       # actually writes (households + people + open items): a seed that quietly

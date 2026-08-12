@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { login, PRINCIPAL } from "./helpers";
 
 /**
@@ -11,21 +11,65 @@ import { login, PRINCIPAL } from "./helpers";
  * surname Smith, and a trust registered in one household pays another.
  */
 
+/**
+ * How many households this firm's book holds RIGHT NOW. The directory lists
+ * every household the record store holds, so the earlier specs in this run
+ * (which create households of their own) legitimately move the number: pinning
+ * it to the world's hundred would make this spec fail for the correct reason
+ * that another surface worked.
+ */
+async function bookSize(page: Page): Promise<number> {
+  const shown = page.getByTestId("household-directory");
+  await expect(shown).toContainText(/Showing \d+ of \d+ households/);
+  const match = /Showing (\d+) of (\d+) households/.exec((await shown.textContent()) ?? "");
+  expect(match, "the directory must state what it is showing").not.toBeNull();
+  expect(match![1], "an unfiltered directory shows the whole book").toBe(match![2]);
+  return Number(match![2]);
+}
+
 test("the directory renders the whole book and search narrows it", async ({ page }) => {
   await login(page, PRINCIPAL);
   await page.goto("/app/households");
-  await expect(page.getByTestId("household-directory")).toContainText("Showing 100 of 100 households");
+  const total = await bookSize(page);
+  expect(total, "the seeded world's hundred households are all listed").toBeGreaterThanOrEqual(100);
 
-  // Windowed: a hundred rows are announced, far fewer are mounted.
+  // Windowed: every row is announced, far fewer are mounted.
   const rows = page.getByRole("listitem").filter({ has: page.getByRole("link") });
   const mounted = await rows.count();
   expect(mounted, "the list must be virtualized, not fully mounted").toBeLessThan(40);
-  await expect(rows.first()).toHaveAttribute("aria-setsize", "100");
+  await expect(rows.first()).toHaveAttribute("aria-setsize", String(total));
 
   await page.getByLabel("Search households").fill("Smith");
-  await expect(page.getByTestId("household-directory")).toContainText("of 100 households");
+  await expect(page.getByTestId("household-directory")).toContainText(`of ${total} households`);
   const smithCount = await rows.count();
   expect(smithCount, "several households share the surname Smith - that is deliberate").toBeGreaterThan(1);
+});
+
+/**
+ * The two surfaces read ONE record. A household created in the console has a
+ * record and no evidence, and it belongs on the surface the app home page calls
+ * "the firm's whole book" - dropping it there because the evidence port cannot
+ * describe it is the silently-missing-content failure this world exists to fix.
+ */
+test("a household created in the console appears in the book, saying what is missing", async ({ page }) => {
+  await login(page, PRINCIPAL);
+  await page.goto("/app/console");
+  const name = `Households E2E ${Date.now()}`;
+  await page.getByLabel("New household name").fill(name);
+  await page.getByRole("button", { name: "Create" }).click();
+  await expect(page.getByTestId("household-list")).toContainText(name);
+
+  await page.goto("/app/households");
+  // The cards above the list count records, and this household has none - so the
+  // page says which part of the list they read rather than letting a reader take
+  // them for the whole book.
+  await expect(page.getByTestId("evidence-coverage")).toContainText("no evidence on file yet");
+  await page.getByLabel("Search households").fill(name);
+  const row = page.getByRole("listitem").filter({ hasText: name });
+  await expect(row).toContainText("No evidence on file");
+  await expect(row).toContainText("Nothing has arrived for this household yet");
+  // An empty state with nowhere to go is a dead end; this one goes somewhere.
+  await expect(row.getByRole("link", { name: "Open it in the house-CRM console" })).toBeVisible();
 });
 
 test("a household opens in depth: people, accounts, instructions, activity and an explained health score", async ({ page }) => {
@@ -153,7 +197,7 @@ test("recovery path: clearing a search that matched nothing returns the book, no
   await expect(page.getByText("No household matches that search")).toBeVisible();
 
   await search.fill("");
-  await expect(page.getByTestId("household-directory")).toContainText("Showing 100 of 100 households");
+  expect(await bookSize(page), "the whole book is back").toBeGreaterThanOrEqual(100);
   await expect(rows.first()).toHaveAttribute("aria-posinset", "1");
   await expect(rows.first()).toBeInViewport();
 });

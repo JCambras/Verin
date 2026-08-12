@@ -38,14 +38,13 @@ export interface HealthVM {
   readonly factors: readonly HealthFactorVM[];
 }
 
-/** One row of the hundred-household directory. */
-export interface HouseholdRowVM {
-  readonly key: string;
-  readonly id: string;
-  readonly displayName: string;
+/** The DEPTH the evidence port supplies for one household. Everything here is
+ * evidence, which is why it is one nullable block rather than a dozen optional
+ * fields: a household the firm's record store holds and no evidence describes
+ * has none of it, and inventing an empty shell for those fields would be a
+ * surface asserting facts nobody sent. */
+export interface HouseholdRowEvidenceVM {
   readonly surname: string;
-  readonly stateLabel: string;
-  readonly state: string;
   readonly advisorName: string;
   readonly serviceTier: string;
   readonly city: string;
@@ -58,11 +57,54 @@ export interface HouseholdRowVM {
   readonly openItemCount: number;
   readonly totalBalance: DisplayMetric;
   readonly health: HealthVM;
+}
+
+/** What a household with no evidence on file says, and where it sends a reader
+ * next. A state a person can do nothing about is a dead end, so this always
+ * carries a real destination. */
+export interface NoEvidenceVM {
+  readonly badgeLabel: string;
+  readonly note: string;
+  readonly actionLabel: string;
+  readonly actionHref: string;
+}
+
+/**
+ * What every row carries whatever the evidence port can say. IDENTITY is the
+ * record store's - the house CRM owns the household's name and status, edits
+ * them through a governed audited write, and two shipped surfaces reading one
+ * record must not disagree about what it is called.
+ */
+interface HouseholdRowIdentityVM {
+  readonly key: string;
+  readonly id: string;
+  readonly displayName: string;
+  readonly stateLabel: string;
+  readonly state: string;
   /** Lowercased haystack the client filters on - search must not re-derive
    * which fields are searchable, or two surfaces will disagree about it. */
   readonly searchText: string;
   readonly provenance: RecordProvenance;
 }
+
+/**
+ * A row is one of exactly two things, and the type says which so the component
+ * cannot render a half state: a household the evidence port describes, which
+ * opens its own page, or one it does not, which says so and offers a next step.
+ */
+export type HouseholdRowVM =
+  | (HouseholdRowIdentityVM & {
+    /** The household's own page. */
+    readonly href: string;
+    readonly evidence: HouseholdRowEvidenceVM;
+    readonly noEvidence: null;
+  })
+  | (HouseholdRowIdentityVM & {
+    /** No page to open: it would have nothing on it. */
+    readonly href: null;
+    readonly evidence: null;
+    readonly noEvidence: NoEvidenceVM;
+  });
 
 export interface DirectoryVM {
   readonly rows: readonly HouseholdRowVM[];
@@ -70,6 +112,10 @@ export interface DirectoryVM {
   readonly totalAccounts: DisplayMetric;
   readonly totalPeople: DisplayMetric;
   readonly totalOpenItems: DisplayMetric;
+  /** What the three record counts stand on when part of the book has no
+   * evidence yet: the households are all listed, so a figure that reads only
+   * some of them has to say which (null when every row has evidence). */
+  readonly evidenceCoverageNote: string | null;
   readonly worldVersion: string | null;
   readonly worldDigest: string | null;
   readonly provenanceNote: string;

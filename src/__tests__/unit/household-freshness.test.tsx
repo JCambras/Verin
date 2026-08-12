@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, within } from "@testing-library/react";
 import { buildHouseholdDetailVM } from "@app/households/build-detail";
+import { crmRowFor } from "./_crm-row";
 import { HouseholdDetail } from "@app/households/detail";
 import type { WorldHousehold } from "@domain/world/household-world";
 import { generateWorld } from "../../../scripts/world/generate";
@@ -47,7 +48,7 @@ const FRESH = WORLD.filter((household) => positionsAgeDays(household) === 0);
 /** The first account's holdings panel, opened the way a reader opens it. */
 function openedAccount(household: WorldHousehold): HTMLElement {
   const { container } = render(
-    <HouseholdDetail household={buildHouseholdDetailVM(household, household.id, AS_OF)} />,
+    <HouseholdDetail household={buildHouseholdDetailVM(household, crmRowFor(household), AS_OF)} />,
   );
   const card = container.querySelector<HTMLElement>(`[data-account-card="${household.accounts[0]!.key}"]`)!;
   fireEvent.click(within(card).getByRole("button", { name: /Show holdings/ }));
@@ -133,7 +134,7 @@ describe("the evidence lines carry the provenance the world measured", () => {
   it("each line IS the class's own provenance, never one built on the page", () => {
     const problems: string[] = [];
     for (const household of WORLD) {
-      const lines = buildHouseholdDetailVM(household, household.id, AS_OF).evidenceLines;
+      const lines = buildHouseholdDetailVM(household, crmRowFor(household), AS_OF).evidenceLines;
       const expected = [household.evidence.liquidity, household.evidence.positions, household.evidence.instructions];
       lines.forEach((line, index) => {
         const owed = expected[index]!;
@@ -147,7 +148,7 @@ describe("the evidence lines carry the provenance the world measured", () => {
 
   it("and that confidence VARIES across the world, so it is a measurement", () => {
     const confidences = WORLD.flatMap((household) =>
-      buildHouseholdDetailVM(household, household.id, AS_OF).evidenceLines.map((line) => line.provenance.confidence));
+      buildHouseholdDetailVM(household, crmRowFor(household), AS_OF).evidenceLines.map((line) => line.provenance.confidence));
     expect(confidences.length).toBe(WORLD.length * 3);
     expect(confidences.filter((value) => value === "high").length, "no evidence line reads high").toBeGreaterThan(20);
     expect(confidences.filter((value) => value === "medium").length, "no evidence line reads medium - the label is a constant").toBeGreaterThan(20);
@@ -157,7 +158,7 @@ describe("the evidence lines carry the provenance the world measured", () => {
     const problems = WORLD
       .map((household) => ({
         household,
-        line: buildHouseholdDetailVM(household, household.id, AS_OF).evidenceLines
+        line: buildHouseholdDetailVM(household, crmRowFor(household), AS_OF).evidenceLines
           .find((entry) => entry.label === "Instructions and authorities")!,
       }))
       .filter(({ household, line }) => line.provenance.confidence !== household.provenance.confidence)

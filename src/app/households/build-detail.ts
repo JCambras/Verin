@@ -13,6 +13,7 @@
  */
 import { metric } from "@contracts/metric";
 import type { RecordProvenance } from "@contracts/provenance";
+import type { Household } from "@domain/schema/entities";
 import {
   BENEFICIARY_CAPABLE_REGISTRATIONS, BENEFICIARY_SCORED_REGISTRATIONS,
   type WorldAccount, type WorldBankInstruction, type WorldHousehold,
@@ -319,18 +320,25 @@ function evidenceLinesOf(household: WorldHousehold): { label: string; provenance
   ];
 }
 
+/**
+ * One household's page. IDENTITY - the id, the name, the status - comes from the
+ * RECORD STORE, never from the evidence: the house CRM owns the household's name
+ * and renames it through a governed audited write, and a page still showing the
+ * fixture's name after that write would put two shipped surfaces in disagreement
+ * about one record with nothing on either to say so. Depth is the evidence's.
+ */
 export function buildHouseholdDetailVM(
   household: WorldHousehold,
-  crmId: string,
+  crmRow: Household,
   asOf: string,
   counterpartyNames: ReadonlyMap<string, string> = new Map(),
 ): HouseholdDetailVM {
   return {
     key: household.key,
-    id: crmId,
-    displayName: household.displayName,
-    state: household.state,
-    stateLabel: STATE_LABELS[household.state] ?? titleize(household.state),
+    id: crmRow.id,
+    displayName: crmRow.name,
+    state: crmRow.status,
+    stateLabel: STATE_LABELS[crmRow.status] ?? titleize(crmRow.status),
     advisorLabel: `${household.advisorName}, ${household.advisorCredential}`,
     serviceTierLabel: `${titleize(household.serviceTier)} service`,
     city: household.city,
@@ -356,6 +364,9 @@ export function buildHouseholdDetailVM(
     activity: activityOf(household),
     crossHouseholdLinks: linksOf(household, counterpartyNames),
     evidenceLines: evidenceLinesOf(household),
-    provenance: household.provenance,
+    // The RECORD's provenance, which is the record store's row: the name above it
+    // is that row's, and a renamed household states where the name came from
+    // rather than where the fixture did.
+    provenance: crmRow.provenance,
   };
 }

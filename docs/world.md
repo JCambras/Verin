@@ -153,10 +153,19 @@ never reported as a gap, and a capability is never denied.
 ## How it reaches a surface
 
 ```
-CRM (households, contacts, tasks)  ──►  who this tenant may see        (pii.view grant, org-scoped)
+CRM (households, contacts, tasks)  ──►  who this tenant may see, and what each is CALLED
 HouseholdWorldSource (evidence)    ──►  the depth of those households  (pii.view grant)
 computeHouseholdHealth             ──►  the figure, as a demonstration artifact
 ```
+
+**The record store owns identity; the evidence supplies depth.** The house CRM owns a household's
+name and status and renames them through a governed audited write, so the directory and the household
+page render `households.name` - a surface still showing the fixture's name after a rename would put
+two shipped surfaces in disagreement about one record, with nothing on either to say so. A household
+the CRM holds and no evidence describes (one somebody created in the console a minute ago) is LISTED,
+says plainly that nothing has arrived for it yet, and carries a link to the console rather than a dead
+end. The three record counts above the list read only the described households, and say so when they
+differ from the household count.
 
 Household depth is EVIDENCE - positions, beneficiary designations and bank instructions are owned by
 custodians and the CRM of record, not by Verin's house CRM - so it arrives through a port
@@ -164,8 +173,17 @@ custodians and the CRM of record, not by Verin's house CRM - so it arrives throu
 adapter is **replaced, not relabeled**, when a real `EvidenceSource` lands (ADR-0024).
 
 `pnpm db:seed` projects households, their people, and their open items into the house CRM, labeled
-`prov_source = 'fixture'`. It deliberately does **not** seed financial accounts: an account in the
-house CRM is the output of the account-opening flow, and custodial positions are evidence.
+`prov_source = 'fixture'` and `record_origin = 'world-fixture'`. It deliberately does **not** seed
+financial accounts: an account in the house CRM is the output of the account-opening flow, and
+custodial positions are evidence.
+
+**Two facts, two columns, and neither answers the other's question.** `prov_source` is where a VALUE
+came from and it MOVES: an advisor who renames a seeded household has entered that name, so the
+rename re-stamps `prov_source = 'user-input'` and the console renders their own words un-watermarked
+rather than receded under "Sample data". `record_origin` is where the ROW came from and it NEVER
+moves, because editing a demonstration record does not make it the firm's own. The clean-slate sweep
+counts the ORIGIN: keyed on `prov_source` it would leave a seeded household in production the moment
+somebody typed over it.
 
 The seed counts rows **written** (`RETURNING id`), never rows offered, and **refuses** with a typed
 `CONFLICT` naming the collision when a conflicting household is held by ANOTHER org. World record ids
@@ -183,7 +201,7 @@ conflicts away to nothing. That is the ordinary development loop: it writes what
 ## The clean-slate guarantee
 
 ```
-pnpm fixture:check                          # fails on the FIRST fixture-marked row (run against production)
+pnpm fixture:check                          # fails on the FIRST demonstration-origin row (run against production)
 pnpm fixture:check --report                 # counts them (what a seeded development store wants)
 pnpm fixture:check --report --expect-rows=n # the same count as an ASSERTION (CI uses it after the seed)
 ```
@@ -192,9 +210,14 @@ pnpm fixture:check --report --expect-rows=n # the same count as an ASSERTION (CI
 `--expect-rows` is how the CI step after the seed proves the world actually landed, because a report
 that finds nothing proves nothing (charter #4).
 
-The sweep derives its table list from the shipped DDL - every table whose DDL carries a
-`prov_source` column - so a new provenance-bearing table widens the guarantee automatically. A sweep
-that finds no such table reports a problem rather than passing vacuously (charter #4).
+What it COUNTS is `record_origin`, never `prov_source` - see the two facts above. What it counts it
+IN is derived from the shipped DDL: every table whose DDL carries a `prov_source` column, so a new
+provenance-bearing table widens the guarantee automatically. A sweep that finds no such table reports
+a problem rather than passing vacuously, and so does a provenance-bearing table the DDL never gives a
+`record_origin` - a table that can hold a demonstration row with no origin to count it by cannot be
+cleared (charter #4). That pairing is read from the DDL (`recordOriginCoverageProblems`, which sees a
+column declared in a `CREATE TABLE` or added by a later `ALTER TABLE`) and again from the store's own
+catalog.
 
 That derivation is read THREE ways, and any disagreement is a sweep problem, which fails the runner:
 

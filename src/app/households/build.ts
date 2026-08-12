@@ -8,9 +8,10 @@
  * inputs, so it is published through `deriveArtifactProvenance` and renders
  * watermarked (charter #3, ADR-0022).
  *
- * The CRM is the authority on WHICH households a caller may see; the evidence
- * port supplies their depth. A world household with no authorized CRM row is
- * simply not in the directory.
+ * The CRM is the authority on WHICH households a caller may see AND on what each
+ * one is called; the evidence port supplies their depth and nothing else. A
+ * world household with no authorized CRM row is simply not in the directory, and
+ * a CRM household with no evidence is in it saying so.
  */
 import { metric, type DisplayMetric } from "@contracts/metric";
 import {
@@ -18,10 +19,14 @@ import {
   type DerivedProvenance, type RecordProvenance,
 } from "@contracts/provenance";
 import type { Household } from "@domain/schema/entities";
-import { computeHouseholdHealth, type HealthBand, type HouseholdHealth } from "@domain/world/health";
+import {
+  computeHouseholdHealth, healthBand, type HealthBand, type HouseholdHealth,
+} from "@domain/world/health";
 import type { WorldHousehold } from "@domain/world/household-world";
 import type { WorldIdentity } from "@infra/world/fixture-world-source";
-import type { DirectoryVM, HealthVM, HouseholdRowVM } from "./model";
+import type {
+  DirectoryVM, HealthVM, HouseholdRowEvidenceVM, HouseholdRowVM, NoEvidenceVM,
+} from "./model";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -74,10 +79,13 @@ function healthProvenance(household: WorldHousehold, asOf: string): ReturnType<t
   return deriveArtifactProvenance(summaryInputs(household), asOf);
 }
 
-/** A factor's band and the word for it, decided once: the surface shows the word
- * where it used to show the figure, so the two can never say different things. */
+/** A factor's band and the word for it. The cut-offs are the DOMAIN's, imported
+ * rather than restated: the panel grades its six factors and the composite above
+ * them on one scale, and a copy of the thresholds here would let the two disagree
+ * the first time somebody moved one - visibly, since the word is now the whole
+ * per-factor signal. */
 function bandOf(score: number): { band: HealthBand; bandLabel: string } {
-  const band: HealthBand = score >= 80 ? "healthy" : score >= 55 ? "watch" : "needs-attention";
+  const band = healthBand(score);
   return { band, bandLabel: BAND_LABELS[band] };
 }
 
@@ -156,27 +164,22 @@ const openItemsOf = (household: WorldHousehold): number =>
   household.bankInstructions.filter((i) => i.state === "current" && i.verifiedAt === null).length
   + household.pendingActions.filter((a) => a.state === "blocked" || a.state === "rejected").length;
 
-/** Everything on a directory row that the WORLD decides. The only field left is
- * the CRM record id, which is the tenant's own and is attached per request. */
-type WorldRowVM = Omit<HouseholdRowVM, "id">;
-
-/** A row plus the one folded origin that household contributes to the totals
- * above it: both are functions of the world alone, so both are built together
- * and kept together. */
+/** Everything a row gets from the EVIDENCE port, plus what the totals above it
+ * read from the same household: all functions of the world alone, so they are
+ * built together, cached together, and never re-derived per caller. */
 interface WorldRowEntry {
-  readonly row: WorldRowVM;
+  readonly key: string;
+  readonly evidence: HouseholdRowEvidenceVM;
+  readonly searchText: string;
+  readonly counts: { readonly accounts: number; readonly people: number; readonly openItems: number };
   readonly totalsInput: DerivedProvenance;
 }
 
-function buildWorldRow(household: WorldHousehold, asOf: string): WorldRowVM {
+function buildWorldRowEvidence(household: WorldHousehold, asOf: string): HouseholdRowEvidenceVM {
   const totalBalanceMinor = household.accounts.reduce((sum, account) => sum + account.balanceMinor, 0);
   const openItems = openItemsOf(household);
   return {
-    key: household.key,
-    displayName: household.displayName,
     surname: household.surname,
-    state: household.state,
-    stateLabel: STATE_LABELS[household.state] ?? titleize(household.state),
     advisorName: `${household.advisorName}, ${household.advisorCredential}`,
     serviceTier: titleize(household.serviceTier),
     city: household.city,
@@ -193,14 +196,6 @@ function buildWorldRow(household: WorldHousehold, asOf: string): WorldRowVM {
     // pair actively misleading rather than merely wrong.
     totalBalance: metric(totalBalanceMinor, "currency-minor", foldAccountBalances(household, asOf)),
     health: buildHealthVM(household, asOf),
-    searchText: [
-      household.displayName, household.surname, household.city, household.advisorName,
-      household.serviceTier, household.state,
-      ...household.members.map((member) => member.displayName),
-      ...household.entities.map((entity) => entity.name),
-      ...household.accounts.map((account) => `${account.title} ${account.custodian}`),
-    ].join(" ").toLowerCase(),
-    provenance: household.provenance,
   };
 }
 
@@ -222,7 +217,20 @@ const rowCacheHome = globalThis as unknown as {
 
 function buildWorldRowEntry(household: WorldHousehold, asOf: string): WorldRowEntry {
   return {
-    row: buildWorldRow(household, asOf),
+    key: household.key,
+    evidence: buildWorldRowEvidence(household, asOf),
+    searchText: [
+      household.displayName, household.surname, household.city, household.advisorName,
+      household.serviceTier, household.state,
+      ...household.members.map((member) => member.displayName),
+      ...household.entities.map((entity) => entity.name),
+      ...household.accounts.map((account) => `${account.title} ${account.custodian}`),
+    ].join(" ").toLowerCase(),
+    counts: {
+      accounts: household.accounts.length,
+      people: household.members.length,
+      openItems: openItemsOf(household),
+    },
     // A household always publishes its own provenance, so this fold is never
     // handed an empty list and never reaches the nothing-read origin.
     totalsInput: foldOrNothingRead(summaryInputs(household), asOf),
@@ -249,51 +257,99 @@ export interface DirectoryInput {
   readonly identity: WorldIdentity | null;
 }
 
+/** Where a household with no evidence yet sends its reader. The house CRM is
+ * where that record actually lives and where a person can act on it, so the
+ * empty state is an on-ramp rather than a shrug. */
+const NO_EVIDENCE: NoEvidenceVM = {
+  badgeLabel: "No evidence on file",
+  note: "Nothing has arrived for this household yet - only the firm's own record of it.",
+  actionLabel: "Open it in the house-CRM console",
+  actionHref: "/app/console",
+};
+
+function toRow(crmRow: Household, entry: WorldRowEntry | null): HouseholdRowVM {
+  // IDENTITY IS THE RECORD STORE'S. The house CRM owns the household's name and
+  // status and edits them through a governed audited write, so rendering the
+  // fixture's name here would leave a rename showing on one shipped surface and
+  // not on the other, indefinitely and with nothing to say it had happened.
+  const identity = {
+    id: crmRow.id,
+    displayName: crmRow.name,
+    state: crmRow.status,
+    stateLabel: STATE_LABELS[crmRow.status] ?? titleize(crmRow.status),
+    provenance: crmRow.provenance,
+  };
+  const named = crmRow.name.toLowerCase();
+  return entry === null
+    ? { ...identity, key: crmRow.id, href: null, evidence: null, noEvidence: NO_EVIDENCE, searchText: named }
+    : {
+      ...identity,
+      key: entry.key,
+      href: `/app/households/${entry.key}`,
+      evidence: entry.evidence,
+      noEvidence: null,
+      searchText: `${entry.searchText} ${named}`,
+    };
+}
+
 /**
- * The directory. Rows are the INTERSECTION of what the tenant is authorized to
- * see (the CRM) and what the evidence port can describe: a CRM household with
- * no world entry would render as an empty shell, and a world household with no
- * CRM row was never authorized, so neither is listed.
+ * The directory: every household this tenant is AUTHORIZED to see, which is the
+ * CRM's list and only the CRM's. A household somebody created in the console a
+ * minute ago has a record and no evidence yet; dropping it from the firm's book
+ * because the evidence port cannot describe it makes the surface the app home
+ * page calls "the firm's whole book" quietly incomplete, and
+ * households-with-evidence is a distinction nobody asked for and nobody can see.
+ * It appears, and says plainly that nothing has arrived for it yet.
+ *
+ * A world household with no authorized CRM row was never authorized, so it is
+ * still not listed - and the totals still fold over exactly the rows shown.
  */
 export function buildDirectoryVM(input: DirectoryInput): DirectoryVM {
   const asOf = input.identity?.asOf ?? new Date().toISOString();
   const digest = input.identity?.digest ?? null;
   const worldById = new Map(input.worldHouseholds.map((household) => [household.id, household]));
-  // The intersection is computed ONCE and everything on the page reads from it:
-  // totals summarizing households the tenant may not list would be a disclosure
-  // dressed as a summary card.
-  const authorized = input.crmHouseholds
-    .map((crmRow) => {
-      const household = worldById.get(crmRow.id);
-      return household ? { crmRow, household } : null;
-    })
-    .filter((pair): pair is { crmRow: Household; household: WorldHousehold } => pair !== null);
-  const entries = authorized.map(({ crmRow, household }) => ({
-    crmRow,
-    household,
-    entry: worldRowEntry(household, asOf, digest),
-  }));
-  const rows = entries
-    .map(({ crmRow, entry }) => ({ ...entry.row, id: crmRow.id }))
+  const authorized = input.crmHouseholds.map((crmRow) => {
+    const household = worldById.get(crmRow.id);
+    return { crmRow, entry: household ? worldRowEntry(household, asOf, digest) : null };
+  });
+  const rows = authorized
+    .map(({ crmRow, entry }) => toRow(crmRow, entry))
     .sort((left, right) => (left.displayName < right.displayName ? -1 : left.displayName > right.displayName ? 1 : 0));
   // The tenant-scoped half of the fold, and the only half done per request: each
   // household's own origin was folded once for the world, and the book the
-  // caller may see decides which of them the cards stand on.
-  const listProvenance = foldOrNothingRead(entries.map(({ entry }) => entry.totalsInput), asOf);
-  const totals = entries.reduce(
-    (acc, { household }) => ({
-      accounts: acc.accounts + household.accounts.length,
-      people: acc.people + household.members.length,
-      openItems: acc.openItems + openItemsOf(household),
+  // caller may see decides which of them the cards stand on. A household with no
+  // evidence still contributes the record the household count stands on - its
+  // own CRM row - so no card is ever folded over fewer records than it counts.
+  const listProvenance = foldOrNothingRead(
+    authorized.map(({ crmRow, entry }) => entry?.totalsInput ?? crmRow.provenance),
+    asOf,
+  );
+  const described = authorized.filter(({ entry }) => entry !== null);
+  const totals = described.reduce(
+    (acc, { entry }) => ({
+      accounts: acc.accounts + entry!.counts.accounts,
+      people: acc.people + entry!.counts.people,
+      openItems: acc.openItems + entry!.counts.openItems,
     }),
     { accounts: 0, people: 0, openItems: 0 },
   );
+  const undescribed = authorized.length - described.length;
   return {
     rows,
     totalHouseholds: count(rows.length, listProvenance),
     totalAccounts: count(totals.accounts, listProvenance),
     totalPeople: count(totals.people, listProvenance),
     totalOpenItems: count(totals.openItems, listProvenance),
+    // Every household is listed, so a figure that reads only some of them says
+    // so rather than letting a reader take it for the whole book. The
+    // none-described case is the one production reaches, where the fixture
+    // adapter refuses to serve at all: three cards of zeroes with no explanation
+    // is the silently-empty surface this world exists to end.
+    evidenceCoverageNote: undescribed === 0
+      ? null
+      : described.length === 0
+        ? "No evidence is on file for any household in this book yet, so the people, account, and open-item counts are zero."
+        : `${plural(undescribed, "household has", "households have")} no evidence on file yet, so the people, account, and open-item counts read the ${described.length} that do.`,
     worldVersion: input.identity?.version ?? null,
     worldDigest: input.identity?.digest ?? null,
     provenanceNote: input.identity?.provenanceNote

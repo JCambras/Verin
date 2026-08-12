@@ -84,6 +84,11 @@ const PORT_ESCAPES = new Set([
   // authority a pure function cannot honor - the same reasoning as
   // foldDecisionProjection and the policy interpreter below.
   "src/domain/world/health.ts :: computeHouseholdHealth.<call>",
+  // `healthBand` is that computation's own band cut-offs, exported so the
+  // surface grades the six factor cards on the SAME scale it grades the
+  // composite with rather than keeping a second copy of the thresholds. It
+  // takes a number and returns a word: there is nothing here to scope.
+  "src/domain/world/health.ts :: healthBand.<call>",
   "src/domain/policy/conflict.ts :: predicateDnf.<call>",
   "src/domain/policy/conflict.ts :: proveDisjoint.<call>",
   "src/domain/policy/evaluate.ts :: evaluatePolicy.<call>",
