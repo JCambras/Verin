@@ -15162,3 +15162,91 @@ execution the later redelivery must still complete.
 `Tests 6 passed (6)`.
 
 **Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-redeliverability-and-leak`).
+
+---
+
+## PF-275 - a configuration refusal minted WITHOUT its cause marked
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I - every refusal meaning "this
+deployment cannot resolve or compile its published configuration" carries `operatorRecoverable` at the
+mint, so every surface can inherit the instruction rather than choosing one (D-228).
+
+**Injection.** Dropped the `operatorRecoverable(...)` wrapper from `compileFlowDefinition`'s
+no-such-intent refusal (`src/domain/config/plan-compiler.ts:406`), which is exactly the shape every
+refusal in this class had before this round.
+
+**Observed failure:**
+```
+× (I) enforces: every configuration refusal is minted with its cause marked
+AssertionError: configuration refusals whose cause is unmarked:
+src/domain/config/plan-compiler.ts:406: compileFlowDefinition mints a configuration refusal without operatorRecoverable()
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:818:97
+```
+
+**Companion.** The `detects` block plants the same shape in an in-memory project and asserts the marked
+form reports nothing, plus an ANTI-VACUITY pair: a registered site that mints no refusal at all, and one
+that no longer exists, are BOTH reported stale - so the rule can never pass by pointing at nothing.
+
+**Reverted:** the wrapper restored; `src/__tests__/fitness/domain-configuration.test.ts` reports
+`Tests 41 passed (41)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-diagnosis-channel`).
+
+---
+
+## PF-276 - a client instruction STATED at a call site instead of read from the cause
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE J - no registered surface names a
+`ClientRetry`; every decision goes through `clientRetryFor(error, fallback)` (D-228).
+
+**Injection.** Made `refused` (`src/infrastructure/wire.ts:125`) pass its caller's category straight
+through instead of asking the cause - the per-call-site assignment that had the start path answering
+`do-not-retry` for a document an operator rollback repairs.
+
+**Observed failure:**
+```
+× (J) enforces: no surface STATES a client instruction it could read from the cause
+AssertionError: instructions chosen per call site:
+src/infrastructure/wire.ts:125: a client instruction is STATED here (otherwise) rather than read from the refusal's cause via clientRetryFor()
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:823:80
+```
+
+**Companion.** The `detects` block plants a stated `CLIENT_RETRY.none` and asserts the derived form
+reports nothing, plus an anti-vacuity case: a registered surface that decides no instruction is reported
+stale rather than read as clean. `src/__tests__/integration/account-opening-route.test.ts` proves the
+behavior end to end - the START-path refusal answers 503 with `Retry-After` and `retry-later`, and its
+sentence is NOT "Resubmitting will not help".
+
+**Reverted:** the derivation restored; `Tests 41 passed (41)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-diagnosis-channel`).
+
+---
+
+## PF-277 - user-facing copy naming a deployment internal
+
+**Fence.** `src/__tests__/fitness/domain-configuration.test.ts` RULE K - no rendered JSX text, copy-bearing
+JSX attribute, or string in a registered client-message module names a repository path or a
+configuration/module file (D-230).
+
+**Injection.** Restored the previous copy on the account-opening configuration-failure screen
+(`src/app/app/account-opening/page.tsx:32`), which told an authenticated advisor to restore
+`config/domains/account-opening.yaml`.
+
+**Observed failure:**
+```
+× (K) enforces: no user-facing copy names a deployment internal
+AssertionError: deployment internals in copy a user reads:
+src/app/app/account-opening/page.tsx:32: user-facing copy names a deployment internal (config/domains/account-opening.yaml)
+ ❯ src/__tests__/fitness/domain-configuration.test.ts:828:86
+```
+
+**Companion.** The `detects` block plants the path in JSX text and, separately, in a registered
+client-message map - the two ways it reaches a person - and proves a MODULE SPECIFIER carrying the same
+shape is not flagged, which is what keeps the rule from reading every import as copy. The whole-tree run
+is itself the anti-vacuity check: it walks `src/app/**` and reports the demo surface manifest's
+`componentPath` entries (structure, correctly spelled) as clean.
+
+**Reverted:** the generic sentence plus correlation id restored; `Tests 41 passed (41)`.
+
+**Date:** 2026-08-12 (v3 prompt 10, ADR-0056; review ruling `p10-diagnosis-channel`).

@@ -9239,3 +9239,104 @@ rule cannot be met by a source that refuses everything.
 
 **Revert path.** Inline the detail back into the message at `configurationRefusal`; the leak returns at
 all three surfaces at once, which is the property that made the single mint the right place to fix it.
+
+---
+
+## D-228 - Prompt 10 review: a retry category belongs to a CAUSE, never to a call site
+
+**What.** `src/contracts/client-retry.ts` now states the classification rule beside the vocabulary it
+classifies, and carries the two functions that apply it: `operatorRecoverable(error)` marks a refusal at
+the mint that knows why, and `clientRetryFor(error, otherwise)` is what every surface asks instead of
+naming a category. EVERY refusal whose cause is "this deployment cannot resolve or compile its published
+configuration" is marked - the load and pin failures in `domain-config-source.ts`, every
+`compileFlowDefinition` refusal, the plan template with no runnable order, the missing execution adapter in
+`configuredFlow`, and the version guard - so it inherits `retry-later` wherever it arises. The
+account-opening start path, the e-sign resume path, the intake boundary and the simulate-sign affordance
+all read the instruction rather than choosing one, and `src/app/_server/refusal.ts` gives the two API
+surfaces ONE refusal shape (typed instruction, human sentence, `Retry-After` on the arm that says come
+back).
+
+**Why.** D-226 added the third arm and applied it at two sites, which left one broken document producing
+three different instructions: the version guard said "come back", the start path said "Resubmitting will
+not help; contact your operations team" (422, `do-not-retry`) for the SAME document one layer in, and the
+resume path said nothing and fell through to an unpaced 500 - the unbounded redelivery the
+do-not-redeliver status exists to stop, wearing a new number. Telling an advisor to give up on a refusal
+an operator rollback WILL clear is the same false instruction closed at the webhook, one layer down.
+Assigning the category per call site is what produced that inconsistency and would produce the next one,
+so the classification travels with the refusal instead. The simulate-sign affordance mattered
+disproportionately: it forwarded the raw `AppError`, so a superseded version answered 409 with the
+internal message and no typed instruction on the one surface the shipped demo journey actually clicks.
+Proofs PF-275, PF-276.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE I (every registered
+configuration-refusal mint carries `operatorRecoverable`, with an anti-vacuity arm that reports a site
+minting nothing as stale) and RULE J (no registered surface STATES an instruction it could read from the
+cause). `src/__tests__/integration/account-opening-route.test.ts` asserts the START-path refusal answers
+503 + `Retry-After` + `retry-later`, beside the boundary case for the same document.
+
+**Revert path.** Drop the marker and pass literals again; the three-way disagreement returns, and RULE J
+is what names each site that reopened it.
+
+---
+
+## D-229 - Prompt 10 review: verify the destination can carry it before redirecting a diagnosis there
+
+**Durable lesson, verbatim from the ruling:** *"when a ruling says 'send it somewhere else', verify the
+destination can actually carry it - a redirect to a channel that silently drops the payload is worse than
+the leak it replaced, because everyone believes the information exists."*
+
+**What.** The configuration diagnosis is emitted as REGISTERED STRUCTURED VALUES: the closed
+`configStage` enum, plus `domainConfigId`, `configPath` (the first offending dotted document path),
+`configVersion`, `configHashPinned` and `configHashRead` as observability id fields minted through
+`configurationDiagnosisId`, a shape-checked factory in `src/domain/observability/safe-values.ts`. The dead
+`AppError.context.detail` prose is DELETED so nobody believes it is carried. `versionMismatch` gets the
+same treatment: its message no longer interpolates the persisted and published version ids (the e-sign
+webhook returned it verbatim to the EXTERNAL provider and `/api/esign/simulate-sign` to the browser), the
+pair goes on the operator's line as `configVersion`/`configVersionStarted`, and the guard now emits that
+line on every path that can raise it - so a parked signature is operator-visible on the start path too,
+not only the webhook's.
+
+**Why.** D-227 said "narrow the wire message, keep the full diagnosis in the logs" and never checked that
+this repository HAS a prose channel. It deliberately does not: the observability vocabulary admits only
+registered enums and sealed ids precisely so an unregistered value degrades to `[REDACTED]`, which is a
+safety property rather than an obstacle. So the diagnosis went nowhere while a unit test asserted it was
+"preserved for the operator" - strictly worse than the leak, because everyone believed it existed.
+Widening the vocabulary to carry prose would trade a real safety property for a worse artifact, and
+putting the detail back on the wire re-opens the trust boundary. Structured is not a compromise but an
+improvement: STRUCTURED VALUES ARE QUERYABLE, so an operator can ask for every configuration refusal at a
+given stage for a given document, which free prose could never answer. The values are the deployment's own
+published document, never a request, so the provenance rule is a declared SHAPE per field rather than a
+mint ceremony. Proof PF-277.
+
+**Fenced by.** `src/__tests__/unit/domain-config-source.test.ts` reads the BYTES THE REAL LOGGER EMITS -
+the module's `log` is a `pino` built from the real `loggerOptions` writing into a capture stream - and
+asserts the stage, the document and the correlation id survive uncensored, that the id on the line is the
+one the client-facing sentence quotes, and that a value outside its declared shape degrades to
+`[REDACTED]` rather than riding through. That last pair is the check whose absence let a dead channel
+ship. The observability-vocabulary fence derives the new id fields from the real mints both ways.
+
+**Revert path.** Re-inline the detail into the message; the leak returns at three surfaces at once and the
+formatter proof above fails first.
+
+---
+
+## D-230 - Prompt 10 review: user-facing copy names no deployment internal, literal or generated
+
+**What.** The account-opening configuration-failure screen no longer tells an advisor to restore
+`config/domains/account-opening.yaml`. It states plainly that the deployment cannot start account openings
+and that operations must restore it, and shows the refusal's own correlation id as a reference to quote.
+The rule is stated about USER-FACING COPY GENERALLY - static literals in surfaces included - not only
+about generated `AppError` messages.
+
+**Why.** The screen survived D-227 only because it was a static literal rather than a generated message,
+which is the whole argument for stating the rule about copy rather than about error objects. An advisor
+staring at a failure cannot act on a repository path, and needs a reference they can quote to operations
+far more than a filename they have no access to - so narrowing the copy without adding the reference would
+have swapped one useless answer for another.
+
+**Fenced by.** `src/__tests__/fitness/domain-configuration.test.ts` RULE K: no rendered JSX text, copy-
+bearing JSX attribute, or string in a registered client-message module may name a repository path or a
+configuration/module file. A module specifier is resolution rather than copy and is exempt, which is what
+keeps the demo surface manifest's own `componentPath` entries (structure, correctly spelled) out of scope.
+
+**Revert path.** Put the path back in the copy; RULE K names the file and line.

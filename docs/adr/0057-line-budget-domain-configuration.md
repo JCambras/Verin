@@ -395,3 +395,45 @@ RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm
 
 Each ceiling moves to its own measurement plus the correction headroom a review round needs and no
 further, the same order as every figure above it.
+
+---
+
+## Amendment (2026-08-12, review round 14): all three raised for classification by cause
+
+The previous amendment answered a false binary at the webhook and left two holes behind it. The category
+was still being assigned PER CALL SITE, so one broken document produced three different instructions - the
+version guard said "come back", the start path said "resubmitting will not help; contact your operations
+team", and the resume path said nothing at all and fell through to an unpaced 500. And the diagnosis the
+previous round routed away from the wire went into `AppError.context` as prose, which nothing reads and
+which this repository's log formatter would have censored anyway: the observability vocabulary admits only
+registered enums and sealed ids, precisely so an unregistered value degrades to `[REDACTED]`. The
+information did not exist and everyone believed it did.
+
+`contracts` gains the classification rule stated where the categories are defined: an
+`operatorRecoverable` marker a mint applies at the point that knows why, and a `clientRetryFor` every
+surface asks instead of naming a category. Assigning by cause is what makes a refusal added later inherit
+the instruction without anyone remembering to.
+
+`domain` gains the configuration-diagnosis id vocabulary - the document id, the offending dotted path, the
+version, and the pinned and read hashes - with a shape-checked factory: these are values the deployment's
+own published document carries, so the provenance rule is a declared shape per field rather than a mint
+ceremony, and anything outside it degrades exactly as an unregistered value does. `plan-compiler.ts` gains
+the marks that make every compile refusal inherit the classification.
+
+`infrastructure` gains the structured emission of that diagnosis at the single mint, and a version guard
+that now logs the parked execution itself - on the start path as well as the webhook's - with the two
+version ids as registered id fields rather than interpolated into a message the external e-sign provider
+was reading verbatim.
+
+All three layers sat within ~30 lines of their ceilings, which is the zero-headroom condition ADR-0033
+exists to prevent, so each moves to its own measurement plus the correction headroom a review round needs.
+
+RE-MEASURED on the composed tree, in this commit, with the fence's own algorithm:
+
+| Layer | Measured | Ceiling | Headroom |
+|---|---:|---:|---:|
+| `contracts` | 6,752 | **6,782** | 30 |
+| `domain` | 9,333 | **9,393** | 60 |
+| `infrastructure` | 8,589 | **8,619** | 30 |
+| `presentation` | 928 | 6,000 | (ADR-0012 envelope, unchanged) |
+| `tooling` | 12,154 | 12,400 | (ADR-0052 bucket, unchanged) |

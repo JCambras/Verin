@@ -3,7 +3,8 @@ import { getDb, requireActionGrant, readJsonBody, errorResponse } from "@app/_se
 import { startAccountOpening, CLIENT_REQUEST_ID_RE, START_INPUT_FIELDS } from "@infra/wire";
 import { ACCOUNT_OPENING_DOMAIN, loadIntakeForm } from "@infra/config/domain-config-source";
 import { appError, logLevelFor } from "@contracts/errors";
-import { CLIENT_RETRY, RETRY_LATER_AFTER_SECONDS, type ClientRetry } from "@contracts/client-retry";
+import { CLIENT_RETRY, clientRetryFor } from "@contracts/client-retry";
+import { REFUSAL_MESSAGE, refusalResponse } from "@app/_server/refusal";
 import { log } from "@infra/observability/logger";
 import {
   admitIntakeSubmission,
@@ -16,55 +17,11 @@ import {
 export const runtime = "nodejs";
 
 /**
- * WHAT THE BROWSER IS TOLD WHEN THE FLOW ITSELF FAILS.
- *
- * The status and the body are a MESSAGE TO THE SUBMITTER ABOUT WHAT TO DO NEXT,
- * never a window into our error taxonomy (D-224). Forwarding the flow's own
- * `AppError` made the journey's behavior depend on which code a step happened to
- * raise: `accountTypeOf` raises a VALIDATION from INSIDE `application.create`,
- * after `household.create` and `contact.create` have committed, and a client
- * reading that as "the submitter can fix this" would mint a fresh request id and
- * open a duplicate household on the next submit. So the flow's instruction picks
- * the status and the sentence, and WHICH failure it was goes to the log line
- * beside it, where an operator actually looks.
- *
- * Boundary refusals above (authorization, malformed body, an undeclared
- * registration, a field this deployment cannot carry) keep their own code: those
- * ARE the answer to the submitter's request, and nothing has been written yet.
+ * Boundary refusals (authorization, malformed body, an undeclared registration, a
+ * field this deployment cannot carry) keep their own code: those ARE the answer to
+ * the submitter's request, and nothing has been written yet. Everything the FLOW
+ * refuses takes the shared instruction shape in `@app/_server/refusal`.
  */
-const REFUSAL_STATUS: Record<ClientRetry, number> = {
-  [CLIENT_RETRY.newIdentity]: 409,
-  [CLIENT_RETRY.sameIdentity]: 500,
-  [CLIENT_RETRY.later]: 503,
-  [CLIENT_RETRY.none]: 422,
-};
-
-const REFUSAL_MESSAGE: Record<ClientRetry, string> = {
-  [CLIENT_RETRY.newIdentity]:
-    "These details differ from the submission already sent under this form session. Submit again to send them as a new account opening.",
-  [CLIENT_RETRY.sameIdentity]:
-    "The account opening could not be completed. Submit again to continue it - resubmitting picks up where it stopped rather than opening a second one.",
-  [CLIENT_RETRY.later]:
-    "This deployment is not currently able to continue account openings. Nothing was lost - your operations team must restore it, and submitting again afterwards picks this up where it stopped.",
-  [CLIENT_RETRY.none]:
-    "This account opening cannot be continued on this deployment. Resubmitting will not help; contact your operations team.",
-};
-
-/**
- * One refusal shape: the typed instruction, a human sentence, and - for the arm
- * that says "come back" - the pacing that keeps a client from hammering a
- * deployment an operator is still repairing.
- */
-function refusalResponse(retry: ClientRetry, message: string): NextResponse {
-  const status = REFUSAL_STATUS[retry];
-  return NextResponse.json(
-    { retry, error: { message } },
-    retry === CLIENT_RETRY.later
-      ? { status, headers: { "retry-after": String(RETRY_LATER_AFTER_SECONDS) } }
-      : { status },
-  );
-}
-
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // Starting the flow is the governed "execution.initiate" action (v3 §15.3);
   // the allowed roles (advisor/ops/principal/admin) are unchanged from the
@@ -83,12 +40,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // select option this route then refuses.
   const form = loadIntakeForm(ACCOUNT_OPENING_DOMAIN);
   // A configuration this deployment cannot resolve is an OPERATOR-RECOVERABLE
-  // refusal, so it takes the third instruction rather than the taxonomy's code
-  // and the diagnosis that used to ride with it (D-227): the message is the
-  // generic sentence the source minted, carrying the correlation id its own log
-  // line carries, and the dotted document paths and SHA-256 hashes stay in the
-  // error's context where `toResponse` has never let them out.
-  if (!form.ok) return refusalResponse(CLIENT_RETRY.later, form.error.message);
+  // refusal, so it takes the third instruction (D-227/D-229) - read off the
+  // refusal's own cause rather than named here. The message is the generic
+  // sentence the source minted, carrying the correlation id its own log line
+  // carries; the document path, version and hashes are on that line as registered
+  // values, never on the wire.
+  if (!form.ok) {
+    return refusalResponse(clientRetryFor(form.error, CLIENT_RETRY.sameIdentity), form.error.message);
+  }
   const admitted = admitIntakeSubmission(form.value, b);
   if (!admitted.ok) return errorResponse(admitted.error);
   const supplied = admitted.value;
@@ -149,11 +108,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     clientRequestId,
   });
   if (result.status === "failed") {
-    // Every failure `startAccountOpening` can return names its own instruction;
+    // Every failure `startAccountOpening` can return carries its own instruction;
     // the fallback is the conservative one (stay attached to an execution that may
-    // already exist) and is here only so this mapping is total.
-    const retry = result.retry ?? CLIENT_RETRY.sameIdentity;
+    // already exist) and is here only so this mapping is total. The cause is asked
+    // again HERE rather than trusted, so a refusal that reaches this surface from a
+    // path that forgot still inherits the classification (D-228).
     const error = result.error ?? appError("INTERNAL", "The account-opening flow failed to start.");
+    const retry = clientRetryFor(error, result.retry ?? CLIENT_RETRY.sameIdentity);
     log[logLevelFor(error.code)]({ code: error.code, retry }, "account-opening flow start failed");
     return refusalResponse(retry, REFUSAL_MESSAGE[retry]);
   }

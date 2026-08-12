@@ -2,7 +2,10 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getDb, requirePrincipal, readJsonBody, errorResponse } from "@app/_server/context";
 import { computeEsignSignature, esignCallback } from "@infra/wire";
 import { getApplicationByToken } from "@infra/crm/application-store";
-import { appError } from "@contracts/errors";
+import { appError, logLevelFor } from "@contracts/errors";
+import { CLIENT_RETRY, clientRetryFor } from "@contracts/client-retry";
+import { REFUSAL_MESSAGE, refusalResponse } from "@app/_server/refusal";
+import { log } from "@infra/observability/logger";
 import { getConfig } from "@infra/config";
 
 export const runtime = "nodejs";
@@ -37,7 +40,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (result.status === "not-found") return errorResponse(appError("NOT_FOUND", "Unknown signing token."));
   if (result.status === "invalid-signature") return errorResponse(appError("INTERNAL", "signature mismatch"));
   if (result.status === "failed") {
-    return errorResponse(result.error ?? appError("INTERNAL", "Finalizing the account opening failed."));
+    // The SAME instruction shape the start path answers with (D-228). This
+    // affordance drives the same flow, so forwarding the raw AppError answered a
+    // superseded configuration version with 409 and the internal message on the
+    // one surface the shipped journey actually clicks - no typed instruction, and
+    // deployment internals across a trust boundary.
+    const error = result.error ?? appError("INTERNAL", "Finalizing the account opening failed.");
+    const retry = clientRetryFor(error, result.retry ?? CLIENT_RETRY.sameIdentity);
+    log[logLevelFor(error.code)]({ code: error.code, retry }, "e-sign callback finalization failed");
+    return refusalResponse(retry, REFUSAL_MESSAGE[retry]);
   }
   return NextResponse.json({ status: result.status });
 }

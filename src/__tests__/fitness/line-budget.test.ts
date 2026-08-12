@@ -254,10 +254,22 @@ const CEILINGS = {
 // zero-headroom condition the header above exists to prevent, so it moves too.
 // RE-MEASURED: contracts 6,710 / 6,740 (30), domain 9,271 / 9,330 (59),
 // infrastructure 8,485 / 8,515 (30).
+//
+// ADR-0057 amendment (review round 14) raises all three for CLASSIFICATION BY
+// CAUSE and a diagnosis channel that actually carries the diagnosis: `contracts`
+// carries the operator-recoverable marker and the `clientRetryFor` rule stated
+// where the categories are defined, `domain` the configuration-diagnosis id
+// vocabulary and its shape-checked factory plus the marked compile refusals,
+// `infrastructure` the structured refusal emission and a version guard that logs
+// the parked execution on every path that can raise one. All three were within
+// ~30 lines of their ceilings, which is the zero-headroom condition the header
+// above exists to prevent, so none is left to be corrected by an unrelated round.
+// RE-MEASURED: contracts 6,752 / 6,782 (30), domain 9,333 / 9,393 (60),
+// infrastructure 8,589 / 8,619 (30).
 const CEILINGS = {
-  contracts: 6740, // ADR-0057 as amended four times, on the retry-later instruction arm (6,710 measured)
-  domain: 9330, // ADR-0057 as amended eight times, on the resume guard and correlation vocabulary (9,271 measured)
-  infrastructure: 8515, // ADR-0057 as amended three times, on the single-mint configuration refusal (8,485 measured)
+  contracts: 6782, // ADR-0057 as amended five times, on classification by cause (6,752 measured)
+  domain: 9393, // ADR-0057 as amended nine times, on the configuration-diagnosis vocabulary (9,333 measured)
+  infrastructure: 8619, // ADR-0057 as amended four times, on the structured refusal diagnosis (8,589 measured)
   presentation: 6000, // grown only by an ADR bump (ADR-0012)
   // BUILD-TIME TOOLING under scripts/** (ADR-0052 amendment to ADR-0018). Until
   // v3 prompt 11 this tree was invisible to BOTH budget fences, so moving the

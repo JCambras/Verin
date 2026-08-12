@@ -38,6 +38,12 @@ const injected = vi.hoisted(() => ({
   extraField: null as null | { field: string; label: string; type: "text"; required: boolean },
   /** Ask for a document that is genuinely not published, so the REAL refusal is exercised. */
   unresolvableConfiguration: false,
+  /**
+   * The same real refusal, but reaching only the FLOW: the form still projects,
+   * so the request passes the boundary and the START PATH is the thing that
+   * refuses. That is the layer whose instruction was wrong (D-228).
+   */
+  unrunnableFlow: false,
 }));
 vi.mock("@infra/config/domain-config-source", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@infra/config/domain-config-source")>();
@@ -50,6 +56,10 @@ vi.mock("@infra/config/domain-config-source", async (importOriginal) => {
       if (injected.extraField === null || !form.ok) return form;
       return { ok: true as const, value: { ...form.value, fields: [...form.value.fields, injected.extraField] } };
     },
+    loadPublishedDomainConfig: (domainConfigId: string) =>
+      actual.loadPublishedDomainConfig(
+        injected.unrunnableFlow ? "no-such-published-domain" : domainConfigId,
+      ),
   };
 });
 
@@ -98,6 +108,7 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
     cookieStore.set.mockClear();
     injected.extraField = null;
     injected.unresolvableConfiguration = false;
+    injected.unrunnableFlow = false;
     db = await createMemoryDb();
     globalStore.__verinDb = Promise.resolve(db);
     const now = new Date().toISOString();
@@ -200,6 +211,28 @@ describe("POST /api/flows/account-opening refuses an undeclared registration at 
     expect(body.error?.message).toContain("Quote reference");
     expect(body.error?.message).not.toMatch(/[0-9a-f]{32}/);
     expect(body.error?.message).not.toContain("config/domains");
+    expect(await rowCounts()).toEqual({ households: 0, contacts: 0, applications: 0, executions: 0 });
+  });
+
+  /**
+   * THE SAME CAUSE ANSWERS THE SAME WAY ONE LAYER IN (D-228).
+   *
+   * The boundary case above and this one are the SAME broken document; the only
+   * difference is which layer notices. This one gets past the intake projection
+   * and is refused by the START PATH, which used to answer 422 with "resubmitting
+   * will not help; contact your operations team" - a false instruction, because an
+   * operator rollback WILL clear it. The classification now travels with the
+   * refusal's cause rather than being chosen per call site, so this path cannot
+   * disagree with that one.
+   */
+  it("answers a configuration-caused START refusal with retry-later, paced - not do-not-retry", async () => {
+    injected.unrunnableFlow = true;
+    const response = await post(SUBMISSION);
+    expect(response.status).toBe(503);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+    const body = (await response.json()) as { retry?: string; error?: { code?: string; message?: string } };
+    expect(body.retry).toBe("retry-later");
+    expect(body.error?.message).not.toContain("Resubmitting will not help");
     expect(await rowCounts()).toEqual({ households: 0, contacts: 0, applications: 0, executions: 0 });
   });
 

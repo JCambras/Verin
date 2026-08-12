@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseDocument } from "yaml";
-import { Project, SyntaxKind } from "ts-morph";
+import { Node, Project, SyntaxKind, type CallExpression } from "ts-morph";
 import {
   REPO_ROOT,
   callResolvesToDeclaration,
@@ -29,8 +29,8 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  * mechanism of v3 invariant 3 - "no core module, directory, or evaluator branch
  * is named for a decision domain").
  *
- * Five machine-enforced rules. The first is the invariant; the rest are what
- * stop it being flipped on a document nobody reads:
+ * Machine-enforced rules. The first is the invariant; the rest are what stop it
+ * being flipped on a document nobody reads, or on refusals nobody can act on:
  *
  *  RULE A - NO DOMAIN NAME IN DECISION-CORE. The forbidden vocabulary is DERIVED
  *    from `config/domains/*.yaml`'s own `domainConfigId` values (plus their word
@@ -90,6 +90,25 @@ import { inertnessProblems } from "@infra/config/domain-config-source";
  *    that cannot recover from one. Proven the only way that means anything: a
  *    registry built from nothing but the derivation must BIND each shipped
  *    document, and the companion proves dropping any one derived entry fails.
+ *
+ *  RULE I - A CONFIGURATION REFUSAL IS MINTED WITH ITS CAUSE MARKED. Every
+ *    refusal meaning "this deployment cannot resolve or compile its published
+ *    configuration" is operator-recoverable, so it carries `operatorRecoverable`
+ *    at the mint (D-228). Unmarked, it reads green everywhere and then tells an
+ *    advisor to stop trying about a document an operator rollback repairs. The
+ *    registry is anti-vacuous: a site that mints no refusal is reported stale.
+ *
+ *  RULE J - NO SURFACE STATES AN INSTRUCTION IT COULD READ FROM THE CAUSE.
+ *    Assigning a `ClientRetry` per call site is what produced the inconsistency
+ *    RULE I closes - the version guard said "come back", the start path said
+ *    "resubmitting will not help", and the resume path said nothing, for one
+ *    broken document. Every decision goes through `clientRetryFor(error, …)`.
+ *
+ *  RULE K - USER-FACING COPY NAMES NO DEPLOYMENT INTERNAL (D-230). The screen
+ *    that told an advisor to restore a YAML path survived D-227 only because it
+ *    was a STATIC LITERAL rather than a generated message, so the rule is stated
+ *    about copy generally. A module specifier is resolution, not copy, and is
+ *    exempt.
  *
 
  * NAMED DEFERRALS. `policyRegistriesFor` derives prompt 9's four pinned
@@ -478,6 +497,183 @@ export function storeVocabularyDrift(
   ];
 }
 
+/**
+ * Where a refusal whose CAUSE is "this deployment cannot resolve or compile its
+ * published configuration" is minted (RULE I). Every `appError` these produce owes
+ * the `operatorRecoverable` mark, because that is what every surface reads to
+ * choose its instruction (D-228).
+ */
+const CONFIGURATION_REFUSAL_MINTS = [
+  { file: "src/domain/config/plan-compiler.ts", owner: "orderedSteps" },
+  { file: "src/domain/config/plan-compiler.ts", owner: "compileFlowDefinition" },
+  { file: "src/infrastructure/wire.ts", owner: "configuredFlow" },
+  { file: "src/infrastructure/config/domain-config-source.ts", owner: "configurationRefusal" },
+  { file: "src/infrastructure/config/execution-version.ts", owner: "versionMismatch" },
+] as const;
+
+/** The declaration named `owner`, whether it is a function or an arrow constant. */
+function ownerBody(project: Project, file: string, owner: string): Node | null {
+  const sourceFile = project.getSourceFiles()
+    .find((candidate) => normalizedPath(candidate.getFilePath()) === file);
+  if (sourceFile === undefined) return null;
+  for (const declaration of sourceFile.getFunctions()) {
+    if (declaration.getName() === owner) return declaration;
+  }
+  for (const declaration of sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+    if (declaration.getName() === owner) return declaration;
+  }
+  return null;
+}
+
+const callsNamed = (owner: Node, name: string): CallExpression[] =>
+  owner.getDescendantsOfKind(SyntaxKind.CallExpression)
+    .filter((call) => call.getExpression().getText() === name);
+
+/**
+ * A configuration refusal minted WITHOUT its cause marked - the classification
+ * hole this rule closes. An unmarked mint reads green at every gate and then tells
+ * an advisor "resubmitting will not help; contact your operations team" about a
+ * document an operator rollback repairs.
+ */
+export function unmarkedConfigurationRefusals(
+  project: Project,
+  sites: readonly { readonly file: string; readonly owner: string }[],
+): string[] {
+  const out: string[] = [];
+  for (const site of sites) {
+    const owner = ownerBody(project, site.file, site.owner);
+    if (owner === null) {
+      out.push(`${site.file} :: ${site.owner} no longer exists - the registry is stale`);
+      continue;
+    }
+    const mints = callsNamed(owner, "appError");
+    // ANTI-VACUITY: a registered site that mints nothing proves nothing.
+    if (mints.length === 0) {
+      out.push(`${site.file} :: ${site.owner} mints no refusal - the registry is stale`);
+      continue;
+    }
+    for (const mint of mints) {
+      const parent = mint.getParent();
+      const marked = Node.isCallExpression(parent) &&
+        parent.getExpression().getText() === "operatorRecoverable" &&
+        parent.getArguments()[0] === mint;
+      if (!marked) {
+        out.push(`${site.file}:${mint.getStartLineNumber()}: ${site.owner} mints a configuration refusal without operatorRecoverable()`);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Surfaces that DECIDE what a submitter does next about the account-opening flow
+ * (RULE J). Each must ASK the cause - `clientRetryFor(error, fallback)` - rather
+ * than name a category, so a refusal added later inherits the classification
+ * without anyone remembering to.
+ */
+const RETRY_DECISION_SITES = [
+  "src/infrastructure/wire.ts",
+  "src/app/api/flows/account-opening/route.ts",
+  "src/app/api/esign/simulate-sign/route.ts",
+] as const;
+
+export function statedRetryInstructions(
+  project: Project,
+  sites: readonly string[],
+): string[] {
+  const out: string[] = [];
+  for (const file of sites) {
+    const sourceFile = project.getSourceFiles()
+      .find((candidate) => normalizedPath(candidate.getFilePath()) === file);
+    if (sourceFile === undefined) {
+      out.push(`${file} no longer exists - the registry is stale`);
+      continue;
+    }
+    const decisions: Node[] = [
+      ...sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAssignment)
+        .filter((property) => property.getName() === "retry")
+        .map((property) => property.getInitializerOrThrow()),
+      ...sourceFile.getDescendantsOfKind(SyntaxKind.VariableDeclaration)
+        .filter((declaration) => declaration.getName() === "retry")
+        .flatMap((declaration) => {
+          const initializer = declaration.getInitializer();
+          return initializer === undefined ? [] : [initializer];
+        }),
+    ];
+    if (decisions.length === 0) {
+      out.push(`${file} decides no instruction - the registry is stale`);
+      continue;
+    }
+    for (const decision of decisions) {
+      const derived = Node.isCallExpression(decision) &&
+        decision.getExpression().getText() === "clientRetryFor";
+      if (!derived) {
+        out.push(`${file}:${decision.getStartLineNumber()}: a client instruction is STATED here (${decision.getText()}) rather than read from the refusal's cause via clientRetryFor()`);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * DEPLOYMENT INTERNALS IN COPY A USER READS (RULE K). A repository path, a
+ * configuration file name, a module file - none of it is something the person
+ * staring at a failure can act on, and all of it is the trust-boundary class
+ * D-227 closed for generated messages. It survived there as a STATIC LITERAL, so
+ * the rule is stated about user-facing copy generally, not about error objects.
+ */
+const DEPLOYMENT_INTERNALS = /(?:[\w.-]+\/)+[\w.-]+\.(?:ya?ml|json|tsx?|jsx?|mjs|cjs|env)\b/;
+
+/**
+ * The JSX attributes that CARRY COPY. Every other attribute value is machinery -
+ * a class name, an href, a test hook - so a path in one is not something a person
+ * reads, and holding it to this rule would flag the demo surface manifest's own
+ * component paths (structure, correctly spelled).
+ */
+const COPY_ATTRIBUTES = new Set(["alt", "aria-label", "label", "placeholder", "title"]);
+
+/**
+ * The app-layer modules whose string values BECOME client-facing copy without
+ * passing through JSX - the wire's `error.message`. Registered explicitly because
+ * "a string in a server module" is otherwise indistinguishable from machinery.
+ */
+const CLIENT_MESSAGE_MODULES = ["src/app/_server/refusal.ts"] as const;
+
+/** Is this literal rendered, rather than machinery a user never sees? */
+function isUserFacing(node: Node): boolean {
+  const attribute = node.getFirstAncestorByKind(SyntaxKind.JsxAttribute);
+  if (attribute !== undefined) return COPY_ATTRIBUTES.has(attribute.getNameNode().getText());
+  return node.getFirstAncestorByKind(SyntaxKind.JsxElement) !== undefined ||
+    node.getFirstAncestorByKind(SyntaxKind.JsxSelfClosingElement) !== undefined ||
+    node.getFirstAncestorByKind(SyntaxKind.JsxFragment) !== undefined;
+}
+
+export function copyNamingDeploymentInternals(project: Project, roots: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const sourceFile of project.getSourceFiles()) {
+    const file = normalizedPath(sourceFile.getFilePath());
+    if (!roots.some((root) => file.startsWith(root)) || file.includes("/__tests__/")) continue;
+    const everyLiteral = CLIENT_MESSAGE_MODULES.includes(file as (typeof CLIENT_MESSAGE_MODULES)[number]);
+    for (const node of sourceFile.getDescendants()) {
+      // A module specifier is resolution, not copy - and it is the ONE place an
+      // app-layer file legitimately spells a path.
+      if (node.getFirstAncestorByKind(SyntaxKind.ImportDeclaration)) continue;
+      if (node.getFirstAncestorByKind(SyntaxKind.ExportDeclaration)) continue;
+      const text = Node.isJsxText(node)
+        ? node.getText()
+        : Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)
+        ? node.getLiteralText()
+        : Node.isTemplateExpression(node)
+        ? node.getText()
+        : null;
+      if (text === null || !DEPLOYMENT_INTERNALS.test(text)) continue;
+      if (!everyLiteral && !isUserFacing(node)) continue;
+      out.push(`${file}:${node.getStartLineNumber()}: user-facing copy names a deployment internal (${text.trim().slice(0, 80)})`);
+    }
+  }
+  return out.sort();
+}
+
 describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
   const vocabulary = domainVocabulary();
 
@@ -617,6 +813,21 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
     expect(Object.values(classes).flat().length).toBeGreaterThan(0);
   });
 
+  it("(I) enforces: every configuration refusal is minted with its cause marked", () => {
+    const unmarked = unmarkedConfigurationRefusals(realProject(), CONFIGURATION_REFUSAL_MINTS);
+    expect(unmarked, `configuration refusals whose cause is unmarked:\n${unmarked.join("\n")}`).toEqual([]);
+  });
+
+  it("(J) enforces: no surface STATES a client instruction it could read from the cause", () => {
+    const stated = statedRetryInstructions(realProject(), RETRY_DECISION_SITES);
+    expect(stated, `instructions chosen per call site:\n${stated.join("\n")}`).toEqual([]);
+  });
+
+  it("(K) enforces: no user-facing copy names a deployment internal", () => {
+    const named = copyNamingDeploymentInternals(realProject(), ["src/app/"]);
+    expect(named, `deployment internals in copy a user reads:\n${named.join("\n")}`).toEqual([]);
+  });
+
   it("enforces: every named deferral still has no shipped caller", () => {
     const stale: string[] = [];
     for (const [entry, reason] of Object.entries(NAMED_DEFERRALS)) {
@@ -639,6 +850,75 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
   });
 
   describe("detects (companion): incomplete or dishonest work CANNOT pass", () => {
+    it("(I) catches a configuration refusal minted without its cause marked", () => {
+      const project = inMemoryProject({
+        "/src/domain/config/plan-compiler.ts":
+          `export const compileFlowDefinition = () => err(appError("INTERNAL", "no such intent"));`,
+      });
+      expect(unmarkedConfigurationRefusals(project, [
+        { file: "src/domain/config/plan-compiler.ts", owner: "compileFlowDefinition" },
+      ]).some((hit) => hit.includes("without operatorRecoverable()"))).toBe(true);
+      const marked = inMemoryProject({
+        "/src/domain/config/plan-compiler.ts":
+          `export const compileFlowDefinition = () => err(operatorRecoverable(appError("INTERNAL", "no such intent")));`,
+      });
+      expect(unmarkedConfigurationRefusals(marked, [
+        { file: "src/domain/config/plan-compiler.ts", owner: "compileFlowDefinition" },
+      ])).toEqual([]);
+    });
+
+    it("(I) ANTI-VACUITY: a registered mint site that refuses nothing is reported stale", () => {
+      const project = inMemoryProject({
+        "/src/domain/config/plan-compiler.ts": `export const compileFlowDefinition = () => ok(1);`,
+      });
+      expect(unmarkedConfigurationRefusals(project, [
+        { file: "src/domain/config/plan-compiler.ts", owner: "compileFlowDefinition" },
+      ])).toEqual(["src/domain/config/plan-compiler.ts :: compileFlowDefinition mints no refusal - the registry is stale"]);
+      expect(unmarkedConfigurationRefusals(project, [
+        { file: "src/domain/config/gone.ts", owner: "compileFlowDefinition" },
+      ])).toEqual(["src/domain/config/gone.ts :: compileFlowDefinition no longer exists - the registry is stale"]);
+    });
+
+    it("(J) catches an instruction STATED at a call site instead of read from the cause", () => {
+      const project = inMemoryProject({
+        "/src/infrastructure/wire.ts":
+          `export const refused = (e) => ({ status: "failed", error: e, retry: CLIENT_RETRY.none });`,
+      });
+      expect(statedRetryInstructions(project, ["src/infrastructure/wire.ts"]).some(
+        (hit) => hit.includes("CLIENT_RETRY.none"),
+      )).toBe(true);
+      const derived = inMemoryProject({
+        "/src/infrastructure/wire.ts":
+          `export const refused = (e) => ({ status: "failed", error: e, retry: clientRetryFor(e, CLIENT_RETRY.none) });`,
+      });
+      expect(statedRetryInstructions(derived, ["src/infrastructure/wire.ts"])).toEqual([]);
+    });
+
+    it("(J) ANTI-VACUITY: a registered surface that decides nothing is reported stale", () => {
+      const project = inMemoryProject({ "/src/infrastructure/wire.ts": `export const x = 1;` });
+      expect(statedRetryInstructions(project, ["src/infrastructure/wire.ts"]))
+        .toEqual(["src/infrastructure/wire.ts decides no instruction - the registry is stale"]);
+    });
+
+    it("(K) catches a deployment path in copy a user reads, in JSX text and in a message map", () => {
+      const jsx = inMemoryProject({
+        "/src/app/app/account-opening/page.tsx":
+          `export const P = () => <p>Restore config/domains/account-opening.yaml and reload.</p>;`,
+      });
+      expect(copyNamingDeploymentInternals(jsx, ["src/app/"]).length).toBe(1);
+      const message = inMemoryProject({
+        "/src/app/_server/refusal.ts":
+          `export const M = { later: "Ask an operator to restore config/domains/account-opening.yaml." };`,
+      });
+      expect(copyNamingDeploymentInternals(message, ["src/app/"]).length).toBe(1);
+      // A module specifier is resolution, not copy - the one place a path belongs.
+      const imports = inMemoryProject({
+        "/src/app/app/account-opening/page.tsx":
+          `import { x } from "../../_server/refusal.ts";\nexport const P = () => <p>Ask your operations team.</p>;`,
+      });
+      expect(copyNamingDeploymentInternals(imports, ["src/app/"])).toEqual([]);
+    });
+
     it("catches a domain-named evaluator branch inside decision-core", () => {
       const project = inMemoryProject({
         "/src/domain/config/bind.ts": `export const f = (id: string): boolean => id === "money-movement";`,
@@ -712,7 +992,9 @@ describe("domain-configuration fence (v3 invariant 3, prompt 10)", () => {
       expect(configDirectoryReaders(inMemoryProject({
         "/src/domain/config/load.ts": `// reads config/domains/ elsewhere\nexport const t = 1;`,
       }))).toEqual([]);
-      // A user-facing message naming the file is an INSTRUCTION, not access.
+      // A message naming the file is not ACCESS, so this rule stays silent on it.
+      // RULE K is what forbids it, and for the other reason: a user cannot act on
+      // a path, and naming one crosses the same trust boundary D-227 closed.
       expect(configDirectoryReaders(inMemoryProject({
         "/src/app/page.ts": `export const help = "Restore config/domains/account-opening.yaml and reload.";`,
       }))).toEqual([]);

@@ -20,6 +20,7 @@
  * resolves, rather than faked.
  */
 import { appError, type AppError } from "@contracts/errors";
+import { operatorRecoverable } from "@contracts/client-retry";
 import type { PIIBearing } from "@contracts/pii";
 import { err, ok, type Result } from "@contracts/result";
 import type { TenantContext } from "@contracts/tenant";
@@ -86,10 +87,10 @@ const orderedSteps = (steps: readonly PlanStep[]): Result<readonly PlanStep[], A
     const next = ready[0];
     if (next === undefined) {
       return err(
-        appError(
+        operatorRecoverable(appError(
           "INTERNAL",
           `The plan template has no runnable order: ${[...remaining.keys()].sort().join(", ")} depend on a step that never becomes ready.`,
-        ),
+        )),
       );
     }
     out.push(next);
@@ -389,6 +390,12 @@ export type CompiledFlow = {
  * Compile one intent's plan template into a runnable flow definition. Returns a
  * typed error rather than throwing, so a configuration a deployment cannot run
  * surfaces at the surface that asked for it.
+ *
+ * EVERY refusal here is OPERATOR-RECOVERABLE by cause (D-228): it says this
+ * deployment cannot compile the document it publishes, which an operator clears
+ * by rolling that document back and no submitter clears by any means. Marking it
+ * at the mint is what lets each surface inherit the instruction rather than
+ * choosing one - the start path used to answer "resubmitting will not help" here.
  */
 export const compileFlowDefinition = (
   config: LoadedDomainConfig,
@@ -396,13 +403,13 @@ export const compileFlowDefinition = (
 ): Result<CompiledFlow, AppError> => {
   const intent = config.intents.get(actionId);
   if (intent === undefined) {
-    return err(appError("INTERNAL", `The configuration declares no intent named "${actionId}".`));
+    return err(operatorRecoverable(appError("INTERNAL", `The configuration declares no intent named "${actionId}".`)));
   }
   const template = config.document.execution.planTemplates.find(
     (candidate) => candidate.id === intent.intent.executionPlan,
   );
   if (template === undefined) {
-    return err(appError("INTERNAL", `The configuration declares no plan template for "${actionId}".`));
+    return err(operatorRecoverable(appError("INTERNAL", `The configuration declares no plan template for "${actionId}".`)));
   }
   const awaitingRules = new Set(
     config.document.verification.filter((rule) => rule.awaitsExternal).map((rule) => rule.id as string),
@@ -413,25 +420,25 @@ export const compileFlowDefinition = (
   for (const step of ordered.value) {
     const capability = config.document.execution.capabilities.find((entry) => entry.id === step.capability);
     if (capability === undefined) {
-      return err(appError("INTERNAL", `The plan step "${step.id}" names an undeclared capability.`));
+      return err(operatorRecoverable(appError("INTERNAL", `The plan step "${step.id}" names an undeclared capability.`)));
     }
     if (readsDecisionHash(capability)) {
       // Refusing here is what stops a compiled plan from inventing a stand-in
       // identity, or from silently omitting a value it cannot resolve.
       return err(
-        appError(
+        operatorRecoverable(appError(
           "INTERNAL",
           `Capability "${capability.id}" reads the decision hash - in an idempotency key or a command payload field - which the interim execution substrate does not have (prompt 25 lands it).`,
-        ),
+        )),
       );
     }
     const unreadable = unreadableSlot(capability, intent.slots, config.document.presentation.copy.commandText);
     if (unreadable !== null) {
       return err(
-        appError(
+        operatorRecoverable(appError(
           "INTERNAL",
           `Capability "${capability.id}" reads slot "${unreadable.id}", which resolves ${unreadable.resolution} and so carries no trigger field; the interim execution substrate reads a slot only from the request that started the flow, and that value arrives with the evaluator's context plane (prompt 16).`,
-        ),
+        )),
       );
     }
     plans.push({ step, capability, awaits: awaitingRules.has(capability.verificationRule) });

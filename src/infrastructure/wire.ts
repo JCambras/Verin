@@ -23,7 +23,7 @@ import {
   type GovernedOutput,
 } from "@contracts/authz";
 import { assertSameTenant, type TenantContext } from "@contracts/tenant";
-import { CLIENT_RETRY, type ClientRetry } from "@contracts/client-retry";
+import { CLIENT_RETRY, clientRetryFor, operatorRecoverable, type ClientRetry } from "@contracts/client-retry";
 import type { PIIBearing } from "@contracts/pii";
 import { type Result, ok, err } from "@contracts/result";
 import { appError, normalizeAppError, type AppError } from "@contracts/errors";
@@ -38,7 +38,7 @@ import {
   type ExecutionAdapters,
 } from "@domain/config/plan-compiler";
 import { ACCOUNT_OPENING_DOMAIN, loadPublishedDomainConfig } from "@infra/config/domain-config-source";
-import { versionMismatch } from "@infra/config/execution-version";
+import { versionMismatch, versionSuperseded } from "@infra/config/execution-version";
 import { makeExecutionAdapters, SUPPORTED_COMMAND_TYPES } from "@infra/execution-adapters";
 import { makeExecutionStore } from "@infra/store/execution-store";
 import { auditedWrite } from "@infra/audit/audited-write";
@@ -77,8 +77,11 @@ function configuredFlow(): Result<CompiledFlow, AppError> {
     .map((capability) => capability.commandType)
     .filter((commandType) => !SUPPORTED_COMMAND_TYPES.includes(commandType));
   if (unsupported.length > 0) {
+    // A document naming a command this build has no adapter for is the same
+    // operator-recoverable cause as one that fails to load or compile (D-228):
+    // rolling the document back clears it, and no submission can.
     return err(
-      appError("INTERNAL", `This deployment has no execution adapter for: ${[...new Set(unsupported)].sort().join(", ")}.`),
+      operatorRecoverable(appError("INTERNAL", `This deployment has no execution adapter for: ${[...new Set(unsupported)].sort().join(", ")}.`)),
     );
   }
   return compileFlowDefinition(config, ACCOUNT_OPENING_ACTION);
@@ -110,9 +113,16 @@ type AccountOpeningStartResult =
   & GovernedOutput<"execution.initiate">
   & { readonly retry?: ClientRetry };
 
-/** A refusal that carries its own instruction, decided at the point of knowledge. */
-function refused(executionId: string, error: AppError, retry: ClientRetry): AccountOpeningStartResult {
-  return { executionId, status: "failed", error, retry, data: {} };
+/**
+ * A refusal that carries its own instruction. The instruction is ASKED OF THE
+ * CAUSE, never stated by the call site (D-228): the caller supplies what it knows
+ * when the cause says nothing, and a configuration this deployment cannot resolve
+ * or compile overrides it with `later` wherever it arises. Choosing per call site
+ * is what left the start path telling an advisor "resubmitting will not help;
+ * contact your operations team" about a document an operator rollback repairs.
+ */
+function refused(executionId: string, error: AppError, otherwise: ClientRetry): AccountOpeningStartResult {
+  return { executionId, status: "failed", error, retry: clientRetryFor(error, otherwise), data: {} };
 }
 
 /**
@@ -125,7 +135,9 @@ function refused(executionId: string, error: AppError, retry: ClientRetry): Acco
  * did, since an adapter can raise a VALIDATION long after a step has committed.
  */
 function drivenOutcome(outcome: FlowRunResult): AccountOpeningStartResult {
-  return outcome.status === "failed" ? { ...outcome, retry: CLIENT_RETRY.sameIdentity } : outcome;
+  return outcome.status === "failed"
+    ? { ...outcome, retry: clientRetryFor(outcome.error, CLIENT_RETRY.sameIdentity) }
+    : outcome;
 }
 
 /**
@@ -149,7 +161,7 @@ function drivenOutcome(outcome: FlowRunResult): AccountOpeningStartResult {
  * steps still refuse.
  */
 function replayedRunResult(flow: CompiledFlow, state: ExecutionState): FlowRunResult {
-  const undetermined = state.status === "suspended" && versionMismatch(flow, state) !== null;
+  const undetermined = state.status === "suspended" && versionSuperseded(flow, state);
   return {
     executionId: state.id,
     status: state.status,
@@ -234,8 +246,8 @@ async function retryFailedStart(flow: CompiledFlow, store: ExecutionStore, deps:
   // configuration change an operator makes - so the submitter keeps this
   // execution's identity and is told to come back once that repair has landed,
   // never to give up on work that is still completable (D-226).
-  const stale = versionMismatch(flow, existing);
-  if (stale) return refused(existing.id, stale, CLIENT_RETRY.later);
+  const stale = versionMismatch(flow, existing, tenant);
+  if (stale) return refused(existing.id, stale, CLIENT_RETRY.sameIdentity);
   try {
     return drivenOutcome(await retryFlow(flow.definition, store, deps, existing, tenant));
   } catch (e) {
@@ -385,7 +397,16 @@ export async function resumeAccountOpeningByToken(
   const starter = systemWriteActor("esign-webhook", app.org_id);
   const flow = configuredFlow();
   if (!flow.ok) {
-    return { executionId: "", status: "failed", error: flow.error, data: {} };
+    // The same operator-recoverable cause the start path answers, answered the
+    // same way (D-228): without this the webhook fell through to an unpaced 500,
+    // which is the unbounded redelivery the do-not-redeliver status exists to stop.
+    return {
+      executionId: "",
+      status: "failed",
+      error: flow.error,
+      retry: clientRetryFor(flow.error, CLIENT_RETRY.sameIdentity),
+      data: {},
+    };
   }
   const deps = makeExecutionAdapters(db, starter);
   // The cursor this resume would drive is POSITIONAL, so it is only meaningful
@@ -396,25 +417,11 @@ export async function resumeAccountOpeningByToken(
   // Loading the row here to check it and letting `resumeFlow` load it again was a
   // third sequential round trip on the webhook path, against a store that
   // serializes every operation behind a mutex - and two snapshots, so the version
-  // checked was not provably the version driven.
-  const parked = { stale: false };
-  const refuseSupersededVersion: ResumeGuard = (state, tenant) => {
-    const stale = versionMismatch(flow.value, state);
-    if (!stale) return null;
-    parked.stale = true;
-    // A SIGNATURE THAT ARRIVED AND IS WAITING ON AN OPERATOR must never be
-    // discovered by a client phoning to ask why nothing happened. The keyed
-    // executionId is the same value the start path logged, so the parked callback
-    // joins to the execution that produced it.
-    log.error({
-      orgId: authorityObservabilityId("orgId", tenant),
-      executionId: keyedObservabilityId("executionId", tenant, state.id),
-      flow: "account-opening",
-      code: stale.code,
-      retry: CLIENT_RETRY.later,
-    }, "e-sign signature callback parked until an operator restores the configuration version");
-    return stale;
-  };
+  // checked was not provably the version driven. The guard emits the parked-callback
+  // line an operator watches, so a signature waiting on a rollback is never
+  // discovered by a client phoning to ask why nothing happened.
+  const refuseSupersededVersion: ResumeGuard = (state, tenant) =>
+    versionMismatch(flow.value, state, tenant);
   const outcome = await withSpan("flow.account-opening.resume", {
     orgId: authorityObservabilityId("orgId", starter.tenant),
   }, () =>
@@ -423,8 +430,10 @@ export async function resumeAccountOpeningByToken(
   // A superseded version CLEARS when an operator rolls the published document
   // back (or when PC-4 lands), so the sender is told to come back - never that
   // the callback is refused for good, which would discard the signature event.
-  return parked.stale && "executionId" in outcome
-    ? { ...outcome, retry: CLIENT_RETRY.later }
+  // Read off the refusal's own cause, so the webhook never has to know which
+  // failures those are.
+  return outcome.status === "failed"
+    ? { ...outcome, retry: clientRetryFor(outcome.error, CLIENT_RETRY.sameIdentity) }
     : outcome;
 }
 

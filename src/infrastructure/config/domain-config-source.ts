@@ -30,8 +30,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { LineCounter, parseDocument, visit } from "yaml";
 import { appError, type AppError } from "@contracts/errors";
+import { operatorRecoverable } from "@contracts/client-retry";
 import { err, ok, type Result } from "@contracts/result";
 import {
+  configurationDiagnosisId,
   generatedObservabilityId,
   type ConfigurationStage,
 } from "@domain/observability/safe-values";
@@ -47,7 +49,7 @@ import { intakeFormOf } from "@domain/config/intake";
 import type { IntakeForm } from "@domain/config/intake-view";
 import { domainLabelsOf, type DomainLabels } from "@domain/config/labels";
 import { loadDomainConfig, type LoadedDomainConfig } from "@domain/config/load";
-import { formatDomainConfigErrors, type DomainConfigError } from "@domain/config/errors";
+import type { DomainConfigError } from "@domain/config/errors";
 import { KEBAB_CASE_RE } from "@domain/config/vocabulary";
 
 /**
@@ -147,32 +149,62 @@ export const inertnessProblems = (text: string): readonly string[] =>
   readInertConfiguration(text).problems;
 
 /**
- * EVERY refusal this adapter can produce, minted in ONE place (D-227).
+ * WHAT A REFUSAL STATES TO THE OPERATOR - as STRUCTURE, because this repository
+ * has no prose channel (D-229). Every field is optional: a stage that never reads
+ * the pin file has no hashes to report, and reporting an absent one as an empty
+ * string would be a fact it does not have.
+ */
+interface ConfigurationDiagnosis {
+  /** The dotted document path the loader accumulated FIRST, in document order. */
+  readonly path?: string;
+  readonly version?: string;
+  readonly pinnedHash?: string;
+  readonly readHash?: string;
+}
+
+/**
+ * EVERY refusal this adapter can produce, minted in ONE place (D-227/D-229).
  *
- * The DIAGNOSIS - dotted document paths, per-stage loader messages, the pinned
- * and read SHA-256 hashes, the version id - is deployment internals, and
- * `toResponse` returns an `AppError`'s message verbatim to whoever asked. It
- * reached a browser through the intake route and an EXTERNAL e-sign provider
- * through the webhook's JSON body. So the message on the wire is one generic
- * sentence carrying a CORRELATION ID, the diagnosis goes to the operator's log
- * line under the same id, and the full text rides in `context` - which
- * `toResponse` has never returned and which is what a log sink able to carry
- * prose would read. Minting the reference through the observability id factory
- * rather than a bare uuid is what stops it degrading to "[REDACTED]" in the very
- * line it exists to join.
+ * The DIAGNOSIS - which document, which stage, which dotted path, the pinned and
+ * read SHA-256 hashes, the version id - is deployment internals, and `toResponse`
+ * returns an `AppError`'s message verbatim to whoever asked. It reached a browser
+ * through the intake route and an EXTERNAL e-sign provider through the webhook's
+ * JSON body. So the message on the wire is one generic sentence carrying a
+ * CORRELATION ID, and the diagnosis goes to the operator's log line under that
+ * same id.
+ *
+ * IT GOES THERE AS REGISTERED VALUES, NOT AS PROSE. The first attempt routed a
+ * formatted `detail` string into `AppError.context`, which nothing reads and which
+ * the log formatter would have censored anyway: the observability vocabulary
+ * admits registered enums and sealed ids precisely so an unregistered value
+ * degrades to "[REDACTED]", and that is a safety property rather than an obstacle.
+ * Structured is also the better artifact - an operator can ask for every refusal at
+ * a given stage for a given document, which free text could never answer.
  */
 const configurationRefusal = (
   domainConfigId: string,
   stage: ConfigurationStage,
-  detail: string,
+  diagnosis: ConfigurationDiagnosis = {},
 ): AppError => {
   const correlationId = generatedObservabilityId("correlationId", randomUUID());
-  log.error({ correlationId, configStage: stage }, "domain configuration could not be resolved");
-  return appError(
+  const { path, version, pinnedHash, readHash } = diagnosis;
+  // Each mint names its field as a LITERAL: the observability fence derives the
+  // id vocabulary from exactly that argument, so routing these through a helper
+  // that forwards the field would leave the whole diagnosis underivable.
+  log.error({
+    correlationId,
+    configStage: stage,
+    domainConfigId: configurationDiagnosisId("domainConfigId", domainConfigId),
+    configPath: path === undefined ? undefined : configurationDiagnosisId("configPath", path),
+    configVersion: version === undefined ? undefined : configurationDiagnosisId("configVersion", version),
+    configHashPinned: pinnedHash === undefined ? undefined : configurationDiagnosisId("configHashPinned", pinnedHash),
+    configHashRead: readHash === undefined ? undefined : configurationDiagnosisId("configHashRead", readHash),
+  }, "domain configuration could not be resolved");
+  return operatorRecoverable(appError(
     "INTERNAL",
     `This deployment's published configuration could not be resolved, so nothing can be started until an operator repairs it. Quote reference ${correlationId.value}.`,
-    { domainConfigId, stage, detail, correlationId: correlationId.value },
-  );
+    { stage, correlationId: correlationId.value },
+  ));
 };
 
 const readVersionPins = (domainConfigId: string): Result<readonly VersionPin[], AppError> => {
@@ -181,9 +213,9 @@ const readVersionPins = (domainConfigId: string): Result<readonly VersionPin[], 
     const versions = (parsed as { readonly versions?: readonly VersionPin[] }).versions;
     return Array.isArray(versions)
       ? ok(versions)
-      : err(configurationRefusal(domainConfigId, "unreadable-pins", "the domain-configuration version pin file is malformed"));
+      : err(configurationRefusal(domainConfigId, "malformed-pins"));
   } catch {
-    return err(configurationRefusal(domainConfigId, "unreadable-pins", "the domain-configuration version pin file could not be read"));
+    return err(configurationRefusal(domainConfigId, "unreadable-pins"));
   }
 };
 
@@ -205,24 +237,28 @@ const cache = new Map<string, SourcedDomainConfig>();
  */
 const readOnce = (domainConfigId: string): Result<SourcedDomainConfig, AppError> => {
   if (!KEBAB_CASE_RE.test(domainConfigId)) {
-    return err(configurationRefusal(domainConfigId, "unpublished", "not a published domain-configuration id"));
+    return err(configurationRefusal(domainConfigId, "unpublished"));
   }
   let text: string;
   try {
     text = readFileSync(projectPath(`${domainConfigId}.yaml`), "utf8");
   } catch {
-    return err(configurationRefusal(domainConfigId, "unpublished", "no domain configuration is published under that id"));
+    return err(configurationRefusal(domainConfigId, "unpublished"));
   }
   const inert = readInertConfiguration(text);
   if (inert.problems.length > 0) {
-    return err(configurationRefusal(domainConfigId, "not-inert", inert.problems.join("; ")));
+    return err(configurationRefusal(domainConfigId, "not-inert"));
   }
   const loaded = loadDomainConfig(inert.data);
   if (!loaded.ok) {
-    return err(configurationRefusal(domainConfigId, "invalid", formatDomainConfigErrors(loaded.error)));
+    return err(configurationRefusal(domainConfigId, "invalid", { path: firstPath(loaded.error) }));
   }
   const canonical = canonicalConfigJson(loaded.value.document);
-  if (!canonical.ok) return err(configurationRefusal(domainConfigId, "uncanonical", canonical.error.message));
+  if (!canonical.ok) {
+    return err(configurationRefusal(domainConfigId, "uncanonical", {
+      version: loaded.value.domainConfigVersionId,
+    }));
+  }
   const configHash = sha256(canonical.value);
   const pins = readVersionPins(domainConfigId);
   if (!pins.ok) return err(pins.error);
@@ -233,20 +269,19 @@ const readOnce = (domainConfigId: string): Result<SourcedDomainConfig, AppError>
   );
   if (pin === undefined) {
     return err(
-      configurationRefusal(
-        domainConfigId,
-        "unpinned",
-        `version ${loaded.value.domainConfigVersionId} is not a published domain-configuration version`,
-      ),
+      configurationRefusal(domainConfigId, "unpinned", {
+        version: loaded.value.domainConfigVersionId,
+        readHash: configHash,
+      }),
     );
   }
   if (pin.configHash !== configHash) {
     return err(
-      configurationRefusal(
-        domainConfigId,
-        "hash-mismatch",
-        `version ${loaded.value.domainConfigVersionId} changed without a version bump (pinned ${pin.configHash}, read ${configHash})`,
-      ),
+      configurationRefusal(domainConfigId, "hash-mismatch", {
+        version: loaded.value.domainConfigVersionId,
+        pinnedHash: pin.configHash,
+        readHash: configHash,
+      }),
     );
   }
   return ok({ config: loaded.value, configHash });
@@ -267,13 +302,13 @@ export const loadPublishedDomainConfig = (
   return result;
 };
 
-const configFailure = (
-  domainConfigId: string,
-  stage: ConfigurationStage,
-  what: string,
-  errors: readonly DomainConfigError[],
-): AppError =>
-  configurationRefusal(domainConfigId, stage, `${what}: ${formatDomainConfigErrors(errors)}`);
+/**
+ * The path an operator is sent to FIRST. The loader accumulates the whole failure
+ * surface in document order, so the earliest entry is the one to read first - and
+ * a single sealed id is the only shape the log channel carries, which is why this
+ * is a choice rather than a list.
+ */
+const firstPath = (errors: readonly DomainConfigError[]): string | undefined => errors[0]?.path;
 
 /**
  * PROJECTIONS FOR SURFACES. A screen asks for the shape it renders, never for
@@ -287,7 +322,10 @@ export const loadIntakeForm = (domainConfigId: string): Result<IntakeForm, AppEr
   const form = intakeFormOf(sourced.value.config);
   return form.ok
     ? ok(form.value)
-    : err(configFailure(domainConfigId, "invalid", "declares no usable intake form", form.error));
+    : err(configurationRefusal(domainConfigId, "no-intake-form", {
+      path: firstPath(form.error),
+      version: sourced.value.config.domainConfigVersionId,
+    }));
 };
 
 /**
@@ -312,5 +350,8 @@ export const loadDomainLabels = (
   const bound = bindDomainConfig(sourced.value.config, firm);
   return bound.ok
     ? ok(domainLabelsOf(bound.value))
-    : err(configFailure(domainConfigId, "unbindable", `could not bind for ${firm.firmId}`, bound.error));
+    : err(configurationRefusal(domainConfigId, "unbindable", {
+      path: firstPath(bound.error),
+      version: sourced.value.config.domainConfigVersionId,
+    }));
 };

@@ -15,11 +15,26 @@ export const OBSERVABILITY_ID_FIELDS = [
   "actor",
   "applicationId",
   /**
+   * THE CONFIGURATION DIAGNOSIS (D-229), as STRUCTURE rather than prose. This
+   * repository has no prose channel by design - the formatter admits registered
+   * enums and sealed ids precisely so an unregistered value degrades to
+   * "[REDACTED]" - so a diagnosis routed at a free-form `detail` string went
+   * nowhere while everyone believed it was carried. These are the same facts,
+   * expressed the way the channel can actually carry them, and queryable besides:
+   * an operator can ask for every refusal at a given stage for a given document.
+   */
+  "configHashPinned",
+  "configHashRead",
+  "configPath",
+  "configVersion",
+  "configVersionStarted",
+  /**
    * The reference a refused request carries on the WIRE and the operator's log
    * line carries beside the diagnosis, so narrowing a client-facing message to a
    * generic sentence never costs the ability to diagnose it (D-227).
    */
   "correlationId",
+  "domainConfigId",
   "entityId",
   "executionId",
   "orgId",
@@ -65,8 +80,9 @@ export type ObservabilityAction = (typeof ACTION_NAMES)[number];
  * `string` here would degrade to "[REDACTED]" in the one line naming what broke.
  */
 const CONFIGURATION_STAGE_NAMES = [
-  "hash-mismatch", "invalid", "not-inert", "unbindable", "uncanonical",
-  "unpinned", "unpublished", "unreadable-pins",
+  "hash-mismatch", "invalid", "malformed-pins", "no-intake-form", "not-inert",
+  "superseded-version", "unbindable", "uncanonical", "unpinned", "unpublished",
+  "unreadable-pins",
 ] as const;
 export type ConfigurationStage = (typeof CONFIGURATION_STAGE_NAMES)[number];
 const ENTITY_TYPE_NAMES = [
@@ -101,7 +117,7 @@ const LOG_MESSAGES = new Set([
   "decision ledger append failed",
   "domain configuration could not be resolved",
   "e-sign callback finalization failed",
-  "e-sign signature callback parked until an operator restores the configuration version",
+  "execution parked until an operator restores the configuration version",
   "failed sign-in attempt for an unknown email",
   "failure-audit entry could not be recorded",
   "flow retried",
@@ -221,6 +237,45 @@ export function authorityObservabilityId(
   assertTenantContext(tenant);
   const value = field === "orgId" ? tenant.orgId : tenant.actor.actorId;
   return sealId(field, isOpaqueId(field, value) ? value : REDACTED);
+}
+
+/**
+ * WHICH facts a configuration refusal states to the operator (D-229). Each is a
+ * value the DEPLOYMENT'S OWN published document (or its version pin file) carries,
+ * never a request value, so the provenance rule is a declared SHAPE per field
+ * rather than a mint ceremony: an alphabet with no whitespace plus a length cap is
+ * what makes these incapable of carrying prose or a person's name into a log line,
+ * and anything outside the shape degrades exactly as an unregistered value does.
+ */
+export type ConfigurationDiagnosisField = Extract<
+  ObservabilityIdField,
+  | "configHashPinned"
+  | "configHashRead"
+  | "configPath"
+  | "configVersion"
+  | "configVersionStarted"
+  | "domainConfigId"
+>;
+/** `${domainConfigId}@${version}` - the identity every golden fixture already pins. */
+const CONFIG_VERSION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*@[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/;
+const CONFIGURATION_DIAGNOSIS_SHAPES: Readonly<Record<ConfigurationDiagnosisField, RegExp>> = {
+  configHashPinned: /^[0-9a-f]{64}$/,
+  configHashRead: /^[0-9a-f]{64}$/,
+  // A dotted document path (`intents.open-account.slots.email`). Schema keys are
+  // legitimately camelCase, so the person-name shape isOpaqueId keys on would
+  // refuse `execution.planTemplates` - the closed alphabet and the segment cap
+  // are what bound this instead.
+  configPath: /^[A-Za-z0-9_-]{1,64}(?:\.[A-Za-z0-9_-]{1,64}){0,15}$/,
+  configVersion: CONFIG_VERSION_RE,
+  configVersionStarted: CONFIG_VERSION_RE,
+  domainConfigId: /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+};
+export function configurationDiagnosisId(
+  field: ConfigurationDiagnosisField,
+  value: string,
+): ObservabilityId {
+  const shaped = value.length <= 128 && CONFIGURATION_DIAGNOSIS_SHAPES[field].test(value);
+  return sealId(field, shaped ? value : REDACTED);
 }
 
 /**

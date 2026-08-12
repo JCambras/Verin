@@ -25,6 +25,8 @@
  * a condition no retry can change. Both audiences need the same third arm, so
  * both read it from HERE (D-226).
  */
+import type { AppError } from "@contracts/errors";
+
 export const CLIENT_RETRY = Object.freeze({
   /** The request identity is SPENT: resubmitting needs a freshly minted one. */
   newIdentity: "retry-with-new-identity",
@@ -46,6 +48,46 @@ export const CLIENT_RETRY = Object.freeze({
 } as const);
 
 export type ClientRetry = (typeof CLIENT_RETRY)[keyof typeof CLIENT_RETRY];
+
+/**
+ * THE CLASSIFICATION RULE, STATED WHERE THE CATEGORIES ARE (D-228).
+ *
+ * A category belongs to a CAUSE, not to a call site. Assigning it per call site
+ * is what produced the inconsistency this rule closes: the version guard and the
+ * intake projection answered `later` for a document this deployment cannot use,
+ * while the start path answered `none` ("resubmitting will not help; contact your
+ * operations team") for the SAME broken document one layer in, and the resume path
+ * answered nothing at all. Telling a submitter to give up on a refusal an operator
+ * rollback WILL clear is the same false instruction, one layer down.
+ *
+ * So the rule is: EVERY refusal whose cause is "this deployment cannot resolve or
+ * compile its published configuration" is operator-recoverable and therefore
+ * `later`, wherever it arises - the load, the version guard, the compile, and the
+ * missing execution adapter included. The mint site marks the cause, because that
+ * is where it is known; every surface then READS the instruction rather than
+ * choosing one, so a refusal added later inherits the classification without
+ * anyone remembering to.
+ */
+const OPERATOR_RECOVERABLE = new WeakSet<object>();
+
+/**
+ * Mark a refusal as operator-recoverable, at the point that knows why. Returns
+ * the same error, so a mint reads `operatorRecoverable(appError(...))`.
+ */
+export function operatorRecoverable(error: AppError): AppError {
+  OPERATOR_RECOVERABLE.add(error);
+  return error;
+}
+
+/**
+ * The instruction a refusal INHERITS from its cause, falling back to what the
+ * caller knows when the cause says nothing. Every surface that reports a refusal
+ * asks this instead of naming a category, which is what makes the rule above
+ * self-applying rather than a convention someone has to remember.
+ */
+export function clientRetryFor(error: AppError | undefined, otherwise: ClientRetry): ClientRetry {
+  return error !== undefined && OPERATOR_RECOVERABLE.has(error) ? CLIENT_RETRY.later : otherwise;
+}
 
 /**
  * How long a `later` sender waits before sending again - the pacing every surface

@@ -18,12 +18,19 @@ export const runtime = "nodejs";
 export default function AccountOpeningPage() {
   const view = loadIntakeForm(ACCOUNT_OPENING_DOMAIN);
   if (!view.ok) {
+    // A USER-FACING SCREEN NAMES NO DEPLOYMENT INTERNALS (D-230). This used to
+    // tell an advisor to restore a YAML path they have no access to and cannot
+    // act on, and gave them nothing to quote to operations. The reference is the
+    // one the refusal's own log line carries, so the person staring at the
+    // failure can hand it over and an operator finds the diagnosis under it.
+    const reference = view.error.context?.["correlationId"];
     return (
       <div className="flex flex-col gap-4">
         <h1 className="text-2xl font-semibold text-slate-900">Open an account</h1>
         <p role="alert" className="text-sm text-destructive">
-          This flow is configuration-driven and its published configuration could not be loaded, so no
-          application can be started. Restore <code>config/domains/account-opening.yaml</code> and reload.
+          This deployment is not currently able to start account openings, so no application can be
+          created. Your operations team must restore it.
+          {reference === undefined ? null : <> Quote reference <code>{String(reference)}</code>.</>}
         </p>
       </div>
     );

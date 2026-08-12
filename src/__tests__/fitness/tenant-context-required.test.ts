@@ -55,6 +55,11 @@ const REVIEWED_ESCAPES: Array<{ ref: string; why: string }> = [
 const PORT_ESCAPES = new Set([
   "src/domain/ledger/projections.ts :: foldDecisionProjection.<call>",
   "src/domain/observability/safe-values.ts :: isSafeObservabilityPrimitive.<call>",
+  // The configuration DIAGNOSIS names a published document, not a tenant's data:
+  // the document is firm-neutral by construction (tenancy enters only at
+  // bindDomainConfig), so there is no tenant to scope it by, and the value is
+  // shape-checked rather than trusted.
+  "src/domain/observability/safe-values.ts :: configurationDiagnosisId.<call>",
   "src/domain/observability/safe-values.ts :: generatedObservabilityId.<call>",
   "src/domain/observability/safe-values.ts :: keyedDigestObservabilityId.<call>",
   "src/domain/observability/safe-values.ts :: observabilityIdOrRedacted.<call>",
