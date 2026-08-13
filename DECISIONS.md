@@ -8477,6 +8477,12 @@ drifts; raise the ceiling for later Prompt 11b work - rejected as speculative he
 11 evidence entirely - rejected because that would narrow Gate B to what happens to be implemented;
 activate invariant 3 - rejected because Prompt 10 still owns its complete subject.
 
+**Documentation follow-up closed (2026-08-13).** D-203's `fu-platform-budget-remeasure` is now closed.
+The later ADR-0054 and populated-world rounds re-took the platform and presentation measurements, and
+this Prompt 11c slice re-took tooling. `FOUNDATION.md` now records the live 6,602/6,650 contracts,
+5,093/5,150 domain, 8,489/8,600 infrastructure, 2,240/6,000 presentation, and 14,317/14,350 tooling
+pairings and ends its proof inventory at PF-292. No ceiling moves in this documentation correction.
+
 **Revert path:** revert ADR-0058, the added charter-map tuples and their ratchet entries, the focused
 companions, and the Gate B requirement split. The pre-existing Prompt 11a corpus, budget enforcement,
 and Gate B registration remain, including their prior stale documentation; no generated fixture,

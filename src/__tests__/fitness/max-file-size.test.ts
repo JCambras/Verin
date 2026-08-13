@@ -15,9 +15,10 @@ import { relative, join } from "node:path";
  * known-larger files that ONLY SHRINKS — lower a ceiling when you split a file;
  * never raise one or add an entry without an architecture-review note.
  *
- * EXTENDED to `scripts/**` by ADR-0052 (v3 prompt 11): build-time tooling was
- * invisible to this fence, so a 2,000-line generator could have landed there
- * unnoticed. Tooling is held to the same per-file ceiling as shipped source.
+ * EXTENDED to `scripts/**` by ADR-0052 and ratified as the Prompt 11c slice by
+ * ADR-0058: build-time tooling was invisible to this fence, so a 2,000-line
+ * generator could have landed there unnoticed. Tooling is held to the same
+ * per-file ceiling as shipped source.
  */
 const DEFAULT_CEILING = 500;
 const CEILINGS: Record<string, number> = {

@@ -14,7 +14,9 @@ stability contract) and [`docs/v3/verin-core-contracts.ts`](./v3/verin-core-cont
 14 plus `ApprovalStageExpired`/`ApprovalStageEscalated`, ADR-0041) - the validator imports it rather than
 re-declaring it, so a vocabulary change cannot pass here and fail in the engine.
 **Acceptance:** the engine is later judged against these explicit domain outcomes instead of
-self-generated tests (all signed golden cases run at Gate B and again at prompt 28).
+self-generated tests. Prompt 11b must first materialize the signed cases as immutable replay fixtures
+with deterministic seeds, expected hashes, byte-identical regeneration, and validated domain/policy
+references before they satisfy Gate B; they run again at prompt 28 (ADR-0058).
 
 ---
 

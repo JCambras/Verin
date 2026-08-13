@@ -82,12 +82,13 @@ gate closes**. A gate declaring no machine-checkable requirement is rejected out
 set would read green the moment it was registered - empty sets never prove readiness.
 
 **Every declared outcome is represented by a typed requirement.** Invariants alone did not cover Gate
-B's prompt-11 stable corpus, Gate F's prompt-26 verification reconciler, or Gate H's seven-minute timing,
-measured-results, and cold-review clauses. Those clauses now remain explicit `evidence` requirements
-until their prompt-owned mechanisms land. They keep the gate non-green and preserve the full outcomes
-instead of narrowing the outcomes to whatever the current invariant list happens to prove. Invariant
-23's proof point now includes prompt 26 because its subject includes status occurrences, not execution
-events alone.
+B's prompt-11 corpus outcome, Gate F's prompt-26 verification reconciler, or Gate H's seven-minute
+timing, measured-results, and cold-review clauses. ADR-0058 splits the first one honestly: Prompt 11a's
+deterministic corpus is credited by the exact blocking `corpus` command, while Prompt 11b's complete
+signed-case stability contract remains an explicit `evidence` requirement. The still-unmechanized
+clauses keep their gates non-green and preserve the full outcomes instead of narrowing those outcomes
+to whatever the current invariant list happens to prove. Invariant 23's proof point now includes prompt
+26 because its subject includes status occurrences, not execution events alone.
 
 Gate B also carries a prompt-10 `evidence` requirement that both domain YAML files parse against the
 domain schema and bind through the shared engine without domain-specific core branches. The two artifact
@@ -478,7 +479,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Gate A owns invariants `{1, 2, 4, 5}` and additionally requires the prompt-5 structural guarantees
   `{7, 8, 9}` without moving their Gate D activation ownership. Gate B requires invariants 3 and 16,
   prompt 10's two `config/domains/*.yaml` artifacts, prompt 10's schema-and-shared-engine binding
-  evidence, and prompt 11's stable-corpus evidence. Gate C requires
+  evidence, Prompt 11a's exact blocking corpus command, and Prompt 11b's complete signed-case stability
+  evidence. Gate C requires
   invariants 1 and 11. Gate D requires 6-13 plus 18 and 19; Gate E still requires 14-17; Gate F still
   requires 18-25 plus prompt 26 verification-reconciler evidence. The merged `G/H` becomes Gate G
   (26, 28, 30) and Gate H (27, 29) plus timing, measured-results, and cold-review evidence. Beyond that split, no

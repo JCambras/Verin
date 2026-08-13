@@ -80,9 +80,10 @@ that gate closes.
 
 The complete rule set - the ordering rule, the five ratchets, the CI-evidence grammar (what makes a
 `ci-gate` command blocking evidence and what neutralizes it), gate readiness, and the
-registry-structural validation - is owned by [ADR-0055](../adr/0055-gate-a-invariant-ordering.md)
-(including its amendment log and "Revisit When" triggers) and implemented ONCE in the shared modules
-under `scripts/v3-gates/`, reached through `scripts/v3-gates.lib.ts` and enforced by BOTH the
+registry-structural validation - is owned by [ADR-0055](../adr/0055-gate-a-invariant-ordering.md), as
+amended for Prompt 11c by [ADR-0058](../adr/0058-tooling-budget-and-gate-b-registry.md), and implemented
+ONCE in the shared modules under `scripts/v3-gates/`, reached through `scripts/v3-gates.lib.ts` and
+enforced by BOTH the
 gate-ordering fence (`src/__tests__/fitness/v3-gate-ordering.test.ts`) and the blocking runner
 (`scripts/v3-invariants.ts`), so the two cannot drift and this index does not restate them. The
 charter-drift fence reads CI through the same `parseCiJobs` authority. The Gate 0

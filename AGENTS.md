@@ -19,10 +19,12 @@ originates nothing about them.
 
 **Then read [`docs/v3/README.md`](./docs/v3/README.md)** - current Verin's ratified v3 direction and
 fourth-generation oracle evidence, not a selected replacement architecture (Verin as the governed
-decision and execution layer; ADRs 0023-0029, 0055, 0058, and 0060). The 30 v3 invariants are phase-gated in
+decision and execution layer; ADRs 0023-0029, 0039, 0041, 0052, 0053, 0055, 0058, and 0060). The 30
+v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
 stores activation only - pass/fail is computed, never fake green). The gate model's authoritative owners
-are [ADR-0055](./docs/adr/0055-gate-a-invariant-ordering.md), as amended by ADR-0058 (the complete rule set, its amendment log,
+are [ADR-0055](./docs/adr/0055-gate-a-invariant-ordering.md), as amended by
+[ADR-0058](./docs/adr/0058-tooling-budget-and-gate-b-registry.md) (the complete rule set, its amendment log,
 and every "Revisit When" trigger), the registry itself, and the shared rule modules under
 `scripts/v3-gates/` reached through `scripts/v3-gates.lib.ts` - one implementation imported by BOTH the
 gate-ordering fence and the blocking runner, so read the rules there rather than from any prose

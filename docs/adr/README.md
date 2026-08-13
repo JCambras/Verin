@@ -85,4 +85,5 @@ Related governance: [`../security/threat-model.md`](../security/threat-model.md)
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),
 [`../sacrificial-components.md`](../sacrificial-components.md),
 [`../v3/README.md`](../v3/README.md) (current Verin's ratified v3 architecture direction,
-ADR-0023..0029 and ADR-0055, scoped for the fourth generation by ADR-0060).
+ADR-0023..0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, ADR-0055, and ADR-0058, scoped for the fourth
+generation by ADR-0060).
