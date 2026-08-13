@@ -157,7 +157,7 @@ describe("v3 gate-ordering fence", () => {
     });
     expect(registry.gates.B?.requires).toContainEqual({
       kind: "evidence",
-      ref: "captain-signed golden cases are materialized into replay inputs and validated against the prompt-10 domain configuration",
+      ref: "captain-signed golden cases are materialized as immutable replay fixtures with deterministic seeds and expected hashes; the same seed reproduces a byte-identical case bundle; every reference validates against the prompt-10 domain configuration and policy versions",
       prompt: 11,
       note: expect.stringContaining("Prompt 11b has not landed"),
     });
@@ -1416,9 +1416,9 @@ describe("v3 gate-ordering fence", () => {
       expect(requirementsOf(reg)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
     });
 
-    it("holds Gate B below green until Prompt 11b materializes the signed truth", () => {
-      const materialization =
-        "captain-signed golden cases are materialized into replay inputs and validated against the prompt-10 domain configuration";
+    it("holds Gate B below green until Prompt 11b proves signed fixture stability", () => {
+      const signedFixtureStability =
+        "captain-signed golden cases are materialized as immutable replay fixtures with deterministic seeds and expected hashes; the same seed reproduces a byte-identical case bundle; every reference validates against the prompt-10 domain configuration and policy versions";
       const reg = clone(registry);
       reg.gates = {
         B: {
@@ -1427,7 +1427,7 @@ describe("v3 gate-ordering fence", () => {
           entryCondition: "None.",
           requires: reg.gates.B!.requires.filter(
             (requirement) =>
-              requirement.ref === materialization ||
+              requirement.ref === signedFixtureStability ||
               (requirement.kind === "ci-gate" &&
                 requirement.ref === "corpus"),
           ),
@@ -1445,7 +1445,7 @@ describe("v3 gate-ordering fence", () => {
 
       const falsified = clone(registry);
       falsified.gates.B!.requires = falsified.gates.B!.requires.filter(
-        (requirement) => requirement.ref !== materialization,
+        (requirement) => requirement.ref !== signedFixtureStability,
       );
       expect(requirementsOf(falsified)).not.toEqual(
         GATE_REQUIREMENTS_RATCHET,

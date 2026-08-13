@@ -345,19 +345,33 @@ describe("line-budget fence (per-layer)", () => {
       const v = budgetViolations({ ...totals, tooling: 0 });
       expect(v.some((m) => m.startsWith("tooling:") && m.includes("stale"))).toBe(true);
     });
-    it("a planted script aggregate overage fails the real measurement and budget check", () => {
+    it("multiple sub-500-line scripts whose sum exceeds the tooling ceiling fail the aggregate check", () => {
       const dir = mkdtempSync(join(tmpdir(), "verin-tooling-overage-"));
       try {
-        writeFileSync(
-          join(dir, "planted-overage.ts"),
-          "// planted tooling line\n".repeat(CEILINGS.tooling),
+        const linesPerScript = 450;
+        const scriptCount = Math.floor(CEILINGS.tooling / linesPerScript) + 1;
+        for (let index = 0; index < scriptCount; index += 1) {
+          writeFileSync(
+            join(dir, `planted-overage-${index}.ts`),
+            "// planted tooling line\n".repeat(linesPerScript - 1),
+          );
+        }
+        const plantedFiles = toolingFiles(dir);
+        const perFileTotals = plantedFiles.map(
+          (file) => readFileSync(file, "utf8").split("\n").length,
+        );
+        expect(plantedFiles).toHaveLength(scriptCount);
+        expect(perFileTotals.every((total) => total < 500)).toBe(true);
+        expect(perFileTotals).toEqual(
+          Array.from({ length: scriptCount }, () => linesPerScript),
         );
         const plantedTotal = measureToolingLines(dir);
         const violations = budgetViolations({
           ...totals,
           tooling: plantedTotal,
         });
-        expect(plantedTotal).toBe(CEILINGS.tooling + 1);
+        expect(plantedTotal).toBe(linesPerScript * scriptCount);
+        expect(plantedTotal).toBeGreaterThan(CEILINGS.tooling);
         expect(
           violations.some(
             (violation) =>

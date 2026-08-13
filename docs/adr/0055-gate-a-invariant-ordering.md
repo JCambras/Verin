@@ -667,14 +667,16 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   deterministic regeneration and byte comparison are now credited by the mechanism that actually owns
   them.
 - Prompt 11b remains a separate `evidence` requirement: the captain-signed golden cases must be
-  materialized into replay inputs and validated against Prompt 10's domain configuration. No mechanism
-  decides that clause today, so Gate B remains below green.
+  materialized as immutable replay fixtures with deterministic seeds and expected hashes, the same seed
+  must reproduce a byte-identical case bundle, and every reference must validate against Prompt 10's
+  domain configuration and policy versions. No mechanism decides that clause today, so Gate B remains
+  below green.
 - Prompt 10's artifacts, shared-engine evidence, invariant 3 activation prerequisites, and Gate A entry
   condition are unchanged. This amendment activates zero invariants and leaves the active mechanism
   ratchet exactly `{1, 2, 5, 7, 8, 9, 16}`.
 - The complete Gate B requirement ratchet changes with the registry, and focused companions reject both
-  a false invariant-3 activation and deletion of the Prompt 11b blocker. This is the current-tree form of
-  the rule that a registry edit alone never changes readiness.
+  a false invariant-3 activation and deletion of the complete Prompt 11b stability blocker. This is the
+  current-tree form of the rule that a registry edit alone never changes readiness.
 
 ## Revisit When
 

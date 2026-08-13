@@ -14353,3 +14353,40 @@ charter-drift tuple ratchet binds both extended fences to charter #1 and #10.
 `pnpm v3:invariants` reported `7 active-pass`, `0 active-fail`, and `23 not-yet-active`.
 
 **Date:** 2026-08-12 (ADR-0058, D-220).
+
+## PF-292 · Prompt 11c review corrections preserve aggregation and signed-fixture stability · `src/__tests__/fitness/{line-budget,v3-gate-ordering}.test.ts`
+
+**Invariant:** the tooling ceiling is enforced over the sum of all discovered scripts independently of
+the per-file ceiling, and Gate B retains Prompt 11's complete signed-case stability contract: immutable
+fixtures, deterministic seeds, expected hashes, same-seed byte-identical regeneration, and references
+validated against Prompt 10 domain configuration and policy versions.
+
+**Injection A - replace aggregation with largest-file measurement.** Changed `measureToolingLines` to
+return the largest discovered script's line count. The earlier one-file companion passed this regression;
+the corrected companion plants 32 separate 450-line scripts whose combined 14,400 lines cross the
+14,350 ceiling.
+
+**Observed failure (`pnpm exec vitest run --project fitness src/__tests__/fitness/line-budget.test.ts`):**
+```
+multiple sub-500-line scripts whose sum exceeds the tooling ceiling fail the aggregate check
+AssertionError: expected 450 to be 14400
+Tests  1 failed | 9 passed (10)
+```
+
+**Injection B - narrow the registry and ratchet together.** Replaced the complete Prompt 11b evidence
+clause in both `v3-invariants.json` and `GATE_REQUIREMENTS_RATCHET` with materialization plus domain
+configuration validation only, dropping immutability, deterministic seeds, expected hashes,
+byte-identical regeneration, and policy-version validation.
+
+**Observed failure (`pnpm exec vitest run --project fitness src/__tests__/fitness/v3-gate-ordering.test.ts`):**
+```
+enforces: Gate B credits Prompt 11a but still waits on Prompt 10 and Prompt 11b
+holds Gate B below green until Prompt 11b proves signed fixture stability
+Expected: "not-yet-verifiable"
+Received: "green"
+Tests  2 failed | 67 passed (69)
+```
+
+**Reverted:** both injections restored. The focused two-file suite passed 79 tests.
+
+**Date:** 2026-08-13 (ADR-0058, D-220 review correction).

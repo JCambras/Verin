@@ -8447,20 +8447,21 @@ set in place.
 
 **One tooling scope, two limits.** `line-budget` and `max-file-size` both consume
 `toolingSourceFiles`, the recursive `scripts/**` executable-source walk. The aggregate's companion now
-plants a script whose measured lines exceed the real tooling ceiling and separately measures an empty
-root into the zero-total staleness failure. The physical companion plants a 502-line script and routes
-it through the same oversized-file detector as enforcement. The complete tree measures 14,317 tooling
-lines against the unchanged 14,350 ceiling, 33 lines of named correction room. The largest script is
-468 lines under the unchanged 500-line default. No code moved layers and no speculative Prompt 11b
-capacity was added.
+plants multiple individually sub-500-line scripts whose combined measurement exceeds the real tooling
+ceiling and separately measures an empty root into the zero-total staleness failure. The physical
+companion plants a 502-line script and routes it through the same oversized-file detector as enforcement.
+The complete tree measures 14,317 tooling lines against the unchanged 14,350 ceiling, 33 lines of named
+correction room. The largest script is 468 lines under the unchanged 500-line default. No code moved
+layers and no speculative Prompt 11b capacity was added.
 
 **Gate B credits only what exists.** Its stale Prompt 11 `evidence` entry is replaced by a typed
 `ci-gate` for `corpus` running `pnpm exec tsx scripts/corpus-validate.ts`, the blocking mechanism that
 owns Prompt 11a regeneration and byte comparison. A new explicit evidence clause keeps Prompt 11b's
-signed-case materialization against Prompt 10 configuration undecidable. Prompt 10's two artifacts,
-shared-engine proof, invariant 3 activation boundary, and Gate A predecessor remain unchanged. This
-slice activates zero invariants: no invariant names Prompt 11 in `activationPrompts`, no status changes,
-and the active ratchet stays `{1, 2, 5, 7, 8, 9, 16}`.
+immutable signed-case materialization, deterministic seeds, expected hashes, same-seed byte-identical
+regeneration, and validation against Prompt 10 configuration and policy versions undecidable. Prompt
+10's two artifacts, shared-engine proof, invariant 3 activation boundary, and Gate A predecessor remain
+unchanged. This slice activates zero invariants: no invariant names Prompt 11 in `activationPrompts`, no
+status changes, and the active ratchet stays `{1, 2, 5, 7, 8, 9, 16}`.
 
 **Charter ownership is no longer partial.** ADR-0058 plus both budget fences are mapped under charter
 #1, which explicitly requires per-layer and per-file ceilings, and ADR-0058 is mapped beside them under

@@ -18,7 +18,9 @@ file and identifier proposals exactly:
   set. Its Prompt 11 requirement still said no corpus mechanism existed, even though the blocking
   `corpus` job now regenerates and byte-compares the merged corpus.
 - Prompt 10 is not on the default branch, and Prompt 11b has not materialized the captain-signed golden
-  cases into replay inputs. Gate B therefore cannot honestly read green.
+  cases as immutable replay fixtures with deterministic seeds, expected hashes, byte-identical
+  regeneration, and validated domain-configuration and policy-version references. Gate B therefore
+  cannot honestly read green.
 - The charter map listed both budget fences under charter #10, but charter #1 is the obligation that
   explicitly requires per-layer and per-file ceilings. The extended tooling enforcement was live but
   not mapped to every obligation it governs.
@@ -36,9 +38,9 @@ JavaScript in plain, JSX, ESM, and CommonJS forms. It is the same `toolingSource
 the per-file fence, so the aggregate and physical limits cannot disagree about which script files exist.
 
 The aggregate retains the same zero-total staleness rule as every platform bucket. An empty tooling
-measurement is a failure, not a zero-line pass. Its companion now measures a planted over-budget script
-through the real file discovery and line counter, and separately proves an actually empty tooling root
-reaches the staleness failure.
+measurement is a failure, not a zero-line pass. Its companion now measures multiple individually
+sub-500-line scripts whose combined total exceeds the tooling ceiling through the real file discovery
+and line counter, and separately proves an actually empty tooling root reaches the staleness failure.
 
 Measured on the complete Prompt 11c tree with the fence's own algorithm:
 
@@ -65,8 +67,9 @@ entry rather than creating a duplicate or reviving the design report's obsolete 
 - Prompt 11a's delivered corpus stability proof is a typed `ci-gate` requirement for job `corpus` and
   exact command `pnpm exec tsx scripts/corpus-validate.ts`.
 - Prompt 11b remains a typed `evidence` requirement: the captain-signed golden cases must be materialized
-  into replay inputs and validated against the Prompt 10 domain configuration. No current mechanism
-  decides that clause, so it cannot read green.
+  as immutable replay fixtures with deterministic seeds and expected hashes, the same seed must reproduce
+  a byte-identical case bundle, and every reference must validate against the Prompt 10 domain
+  configuration and policy versions. No current mechanism decides that clause, so it cannot read green.
 - Prompt 10's two domain artifacts, shared-engine binding evidence, and invariant 3 remain unchanged and
   unmet. Gate A also remains a structural predecessor.
 
@@ -107,8 +110,10 @@ the obligations it answers.
 
 - Prompt 11c is complete as a budget and registry slice. Prompt 11 as a whole is not complete.
 - Prompt 10 still owns domain configuration and invariant 3 activation.
-- Prompt 11b still owns signed-case materialization. It may replace its `evidence` requirement only with
-  the exact artifact or fitness mechanism that proves the whole clause.
+- Prompt 11b still owns immutable signed-case materialization, deterministic seeds, expected hashes,
+  byte-identical regeneration, and reference validation against domain configuration and policy versions.
+  It may replace its `evidence` requirement only with the exact artifact or fitness mechanism that proves
+  the whole clause.
 - No captain-signed golden fixture, generated corpus file, demo behavior, runtime contract, or invariant
   status changes in this decision.
 - The `src/__tests__/**` budget gap remains deferred under `fu-corpus-test-tree-budget`; this slice does
@@ -116,8 +121,8 @@ the obligations it answers.
 
 ## Revisit When
 
-- Prompt 11b lands: replace its Gate B evidence with the exact mechanized requirement and amend the
-  complete requirement ratchet in the same PR.
+- Prompt 11b lands: replace its complete Gate B stability evidence with the exact mechanized requirement
+  and amend the complete requirement ratchet in the same PR.
 - Prompt 10 lands: follow ADR-0055's invariant 3 activation procedure and evaluate Gate B against the
   real domain configuration and shared engine.
 - A change to `scripts/**` would exceed 14,350 lines: re-measure the complete landing tree, explain the

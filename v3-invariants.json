@@ -159,9 +159,9 @@
         },
         {
           "kind": "evidence",
-          "ref": "captain-signed golden cases are materialized into replay inputs and validated against the prompt-10 domain configuration",
+          "ref": "captain-signed golden cases are materialized as immutable replay fixtures with deterministic seeds and expected hashes; the same seed reproduces a byte-identical case bundle; every reference validates against the prompt-10 domain configuration and policy versions",
           "prompt": 11,
-          "note": "NO MECHANISM YET: Prompt 11b has not landed. It must materialize the captain-signed golden cases without changing their outcomes and prove every materialized reference against the Prompt 10 domain configuration. Until then this requirement remains unverifiable and Gate B cannot read green."
+          "note": "NO MECHANISM YET: Prompt 11b has not landed. It must materialize the captain-signed golden cases as immutable replay fixtures with deterministic seeds and expected hashes, prove that the same seed reproduces a byte-identical case bundle, and validate every reference against the Prompt 10 domain configuration and policy versions without changing signed outcomes. Until then this requirement remains unverifiable and Gate B cannot read green."
         }
       ],
       "entryGates": [
