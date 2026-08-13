@@ -155,6 +155,10 @@ import { join, relative } from "node:path";
 // has 39 lines left, which is again the condition this header argues against and
 // is stated here so the next change to `scripts/**` reads it before spending it.
 // `contracts` and `presentation` are untouched by that work and do not move.
+// ADR-0058 / D-220 ratifies the Prompt 11c tooling slice against the integrated
+// tree and re-measures tooling at 14,317 under the UNCHANGED 14,350 ceiling.
+// The 33 remaining lines are named correction room, not capacity reserved for
+// Prompt 11b. No other bucket moves.
 const CEILINGS = {
   contracts: 6650, // ADR-0054, on the prompt-9 policy grammar (6,602 measured)
   domain: 5150, // ADR-0057, on the populated world's model and health computation (5,093 re-measured, D-214)
@@ -256,7 +260,7 @@ const CEILINGS = {
   // between the two columns off the DDL as well as off the store's catalog. 32
   // lines of headroom is the condition the paragraph above argues against, so
   // 118 are named again rather than banked.
-  tooling: 14350, // D-214 (ADR-0057), on the record-origin reading (14,232 re-measured)
+  tooling: 14350, // ADR-0058 / D-220 (14,317 re-measured; 33 correction lines)
 } as const;
 
 type Bucket = keyof typeof CEILINGS | "other";
@@ -276,12 +280,21 @@ export function toolingFiles(root?: string): string[] {
   return toolingSourceFiles(root);
 }
 
+/** Measure exactly the executable source files discovered under a tooling root. */
+export function measureToolingLines(root?: string): number {
+  return toolingFiles(root).reduce(
+    (total, file) => total + readFileSync(file, "utf8").split("\n").length,
+    0,
+  );
+}
+
 export function measureBudgets(): Record<keyof typeof CEILINGS, number> {
   const totals = { contracts: 0, domain: 0, infrastructure: 0, presentation: 0, tooling: 0 };
-  for (const f of [...shippedSourceFiles(), ...toolingFiles()]) {
+  for (const f of shippedSourceFiles()) {
     const b = bucket(f);
     if (b !== "other") totals[b] += readFileSync(f, "utf8").split("\n").length;
   }
+  totals.tooling = measureToolingLines();
   return totals;
 }
 
@@ -331,6 +344,47 @@ describe("line-budget fence (per-layer)", () => {
       expect(totals.tooling).toBeGreaterThan(0);
       const v = budgetViolations({ ...totals, tooling: 0 });
       expect(v.some((m) => m.startsWith("tooling:") && m.includes("stale"))).toBe(true);
+    });
+    it("a planted script aggregate overage fails the real measurement and budget check", () => {
+      const dir = mkdtempSync(join(tmpdir(), "verin-tooling-overage-"));
+      try {
+        writeFileSync(
+          join(dir, "planted-overage.ts"),
+          "// planted tooling line\n".repeat(CEILINGS.tooling),
+        );
+        const plantedTotal = measureToolingLines(dir);
+        const violations = budgetViolations({
+          ...totals,
+          tooling: plantedTotal,
+        });
+        expect(plantedTotal).toBe(CEILINGS.tooling + 1);
+        expect(
+          violations.some(
+            (violation) =>
+              violation.startsWith(`tooling: ${plantedTotal} lines`) &&
+              violation.includes("exceed ceiling") &&
+              violation.includes("amend ADR-0018"),
+          ),
+        ).toBe(true);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+    it("an actually empty tooling root reaches the zero-total staleness guard", () => {
+      const dir = mkdtempSync(join(tmpdir(), "verin-tooling-empty-"));
+      try {
+        const emptyTotal = measureToolingLines(dir);
+        expect(emptyTotal).toBe(0);
+        expect(
+          budgetViolations({ ...totals, tooling: emptyTotal }).some(
+            (violation) =>
+              violation.startsWith("tooling: 0 lines measured") &&
+              violation.includes("bucket path went stale"),
+          ),
+        ).toBe(true);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
     it("the tooling aggregate discovers every supported executable source extension", () => {
       const dir = mkdtempSync(join(tmpdir(), "verin-tooling-budget-"));

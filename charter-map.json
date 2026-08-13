@@ -12,6 +12,18 @@
           "ref": "docs/fences/proof-log.md"
         },
         {
+          "type": "adr",
+          "ref": "docs/adr/0058-tooling-budget-and-gate-b-registry.md"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/line-budget.test.ts"
+        },
+        {
+          "type": "fitness",
+          "ref": "src/__tests__/fitness/max-file-size.test.ts"
+        },
+        {
           "type": "fitness",
           "ref": "src/__tests__/fitness/no-bare-throw.test.ts"
         }
@@ -254,6 +266,11 @@
         {
           "type": "adr",
           "ref": "docs/adr/0012-presentation-tier-and-budgets.md",
+          "status": "enforced"
+        },
+        {
+          "type": "adr",
+          "ref": "docs/adr/0058-tooling-budget-and-gate-b-registry.md",
           "status": "enforced"
         },
         {
@@ -562,6 +579,10 @@
         {
           "type": "adr",
           "ref": "docs/adr/0055-gate-a-invariant-ordering.md"
+        },
+        {
+          "type": "adr",
+          "ref": "docs/adr/0058-tooling-budget-and-gate-b-registry.md"
         },
         {
           "type": "config",

@@ -19,10 +19,10 @@ originates nothing about them.
 
 **Then read [`docs/v3/README.md`](./docs/v3/README.md)** - current Verin's ratified v3 direction and
 fourth-generation oracle evidence, not a selected replacement architecture (Verin as the governed
-decision and execution layer; ADRs 0023-0029, 0055, and 0060). The 30 v3 invariants are phase-gated in
+decision and execution layer; ADRs 0023-0029, 0055, 0058, and 0060). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
 stores activation only - pass/fail is computed, never fake green). The gate model's authoritative owners
-are [ADR-0055](./docs/adr/0055-gate-a-invariant-ordering.md) (the complete rule set, its amendment log,
+are [ADR-0055](./docs/adr/0055-gate-a-invariant-ordering.md), as amended by ADR-0058 (the complete rule set, its amendment log,
 and every "Revisit When" trigger), the registry itself, and the shared rule modules under
 `scripts/v3-gates/` reached through `scripts/v3-gates.lib.ts` - one implementation imported by BOTH the
 gate-ordering fence and the blocking runner, so read the rules there rather than from any prose
@@ -498,13 +498,15 @@ reject duplicate exact results.
   shipped `REGISTERED_*` entry may live in the reserved namespace). A ledger export that no shipped
   surface or script can reach fails `ledger-reachability` unless it is a NAMED deferral (D-116)
   saying which prompt lands its caller - knip cannot see this, since every export has a test.
-- **`scripts/**` is budgeted AND dead-export-gated now (ADR-0052, D-171).** Both budget fences used to
+- **`scripts/**` is budgeted AND dead-export-gated now (ADR-0052/0058, D-171/D-220).** Both budget fences used to
   walk `src/` only, so moving code to `scripts/` was an escape hatch. `line-budget` has a `tooling` bucket
   and `max-file-size` walks `scripts/**` under the same 500-line per-file ceiling. `knip.json` entries are
   `scripts/*.ts` (top-level runners plus their shared library files), NOT `scripts/**/*.ts`, so a never-referenced
   export under `scripts/corpus/`, `scripts/v3-gates/`, or any future subdirectory now fails the dead-export gate. Build-time
   tooling is a legitimate home for generators — it is not an unmeasured one. `src/__tests__/**` is still
   in no bucket: that gap is DEFERRED, not exempt (D-172, follow-up `fu-corpus-test-tree-budget`).
+  Gate B credits Prompt 11a through the blocking corpus command but remains non-green on Prompt 10 and
+  Prompt 11b; Prompt 11c activates zero invariants (ADR-0058).
 
 ## Maintaining this file
 
@@ -512,3 +514,13 @@ Keep this file for knowledge useful to almost every future agent session in this
 Do not repeat what the codebase already shows; point to the authoritative file or command instead.
 Prefer rewriting or pruning existing entries over appending new ones.
 When updating this file, preserve this bar for all agents and keep entries concise.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes - APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` - verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

@@ -188,7 +188,8 @@ export const GATE_REQUIREMENTS_RATCHET: Readonly<
     "artifact:config/domains/account-opening.yaml @ prompt 10",
     "artifact:config/domains/money-movement.yaml @ prompt 10",
     "evidence:both domain YAML files parse against the domain schema and bind through the shared engine without domain-specific core branches @ prompt 10",
-    "evidence:the deterministic replay corpus and signed golden fixtures are stable @ prompt 11",
+    "ci-gate:corpus runs 'pnpm exec tsx scripts/corpus-validate.ts' @ prompt 11",
+    "evidence:captain-signed golden cases are materialized into replay inputs and validated against the prompt-10 domain configuration @ prompt 11",
   ],
   C: [
     "invariant:1",

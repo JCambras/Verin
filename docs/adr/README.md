@@ -78,6 +78,7 @@ architecture-neutral guarantees and obligations independently bind the fourth ge
 | [0055](./0055-gate-a-invariant-ordering.md) | Gate A owns invariants 1, 2, 4, 5 and requires prompt-5 guarantees 7, 8, 9; invariant 3 is gated at B | Accepted (amends ADR-0023) |
 | [0056](./0056-presentation-foundation-named-deferrals.md) | A presentation foundation primitive lands ahead of its first caller only under a named deferral that expires at the prompt it cites | Accepted (amends ADR-0012) |
 | [0057](./0057-populated-world.md) | The populated world is a deterministic fixture generated once, served as evidence through a port, and provably absent from production | Accepted (amends ADR-0018) |
+| [0058](./0058-tooling-budget-and-gate-b-registry.md) | Prompt 11c ratifies the tooling budget and records Gate B without claiming readiness | Accepted (amends ADR-0018 and ADR-0055) |
 | [0060](./0060-controlled-fourth-implementation-generation.md) | One controlled fourth implementation generation; current Verin becomes the read-only legacy oracle, destructive replacement and dual external effects are prohibited, and there is no fifth rewrite | Accepted (charter amendment) |
 
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),

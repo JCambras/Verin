@@ -151,10 +151,17 @@
           "note": "NO MECHANISM YET: the prompt-10 domain schema, loader, shared-engine binding, and both domain YAML files do not exist. File existence alone cannot prove valid configuration or shared-engine binding, so this clause stays unverifiable until prompt 10 replaces it with an adversarial fitness requirement covering invalid, empty, and domain-specific configurations."
         },
         {
-          "kind": "evidence",
-          "ref": "the deterministic replay corpus and signed golden fixtures are stable",
+          "kind": "ci-gate",
+          "ref": "corpus",
+          "command": "pnpm exec tsx scripts/corpus-validate.ts",
           "prompt": 11,
-          "note": "NO MECHANISM YET: prompt 11's deterministic synthetic corpus generator, immutable signed fixtures, expected hashes, and provenance-labeled real-derived cases do not exist, so nothing yet proves byte-identical regeneration or corpus reference integrity."
+          "note": "PROMPT 11A DELIVERED: the blocking corpus job regenerates and byte-compares the deterministic replay corpus, validates the provenance split and corpus references, and refuses unsigned or drifted corpus bytes."
+        },
+        {
+          "kind": "evidence",
+          "ref": "captain-signed golden cases are materialized into replay inputs and validated against the prompt-10 domain configuration",
+          "prompt": 11,
+          "note": "NO MECHANISM YET: Prompt 11b has not landed. It must materialize the captain-signed golden cases without changing their outcomes and prove every materialized reference against the Prompt 10 domain configuration. Until then this requirement remains unverifiable and Gate B cannot read green."
         }
       ],
       "entryGates": [

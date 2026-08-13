@@ -1,7 +1,6 @@
 # ADR-0018: Line budgets — ratchet-down platform ceilings, a separate growable presentation budget, a load gate
 
-**Status:** Accepted (amended by ADR-0029, the ADR-0030..0040 line-budget series, ADR-0041, and the ledger series ADR-0042..0045 and ADR-0047..0051, each via this ADR's own amendment path; ADR-0051 carries the live ceilings; amended by ADR-0052 §7: build-time tooling under `scripts/**` becomes a third
-measured envelope with its own ceiling, and the per-file ceiling walks that tree too)
+**Status:** Accepted (amended by ADR-0029, the ADR-0030..0040 line-budget series, ADR-0041, and the ledger series ADR-0042..0045 and ADR-0047..0051, each via this ADR's own amendment path; amended by ADR-0052 §7 and ratified as the Prompt 11c budget slice by ADR-0058: build-time tooling under `scripts/**` is a third measured envelope with its own ceiling, and the per-file ceiling walks that tree too; later live ceilings are recorded by their measured ADR amendments)
 **Date:** 2026-07-18
 **Deciders:** Founding architect
 **Relates to:** Charter non-negotiables #1, #10, #11
@@ -29,6 +28,12 @@ envelope of ADR-0052 §7:
   Same rules: its own ceiling, raised only by an ADR amendment, with the same zero-total staleness guard,
   so moving code out of `src/` measures it instead of hiding it.
 
+ADR-0058 ratifies this tooling envelope as the Prompt 11c slice against the integrated tree. The line
+budget and per-file fence share one executable-source discovery, the zero-total rule is proven from an
+actually empty tooling root, and a planted script overage is measured through the real counter. The
+complete tree measures 14,317 tooling lines under the unchanged 14,350 ceiling, with 33 lines of named
+correction room. The largest script measures 468 lines under the unchanged 500-line default.
+
 Separately, the **load gate** (charter #11): a deterministic pilot-scale seed (1,000 households × ~2,000
 accounts, D-010) with a **p95 step-latency assertion** as a regression gate. The identical pilot-scale run
 executes in both `ci.yml` (every push/PR) and `scheduled.yml` (on the schedule) — there is no fast-subset
@@ -51,8 +56,9 @@ A regression fails CI — the latency budget is owned (ADR-0014).
 
 ## Consequences
 
-Fences: `line-budget` (platform ratchet + presentation envelope), `max-file-size` (per-file ratchet), the
-load-smoke gate. Charter-map ids 10, 11.
+Fences: `line-budget` (platform, presentation, and tooling envelopes), `max-file-size` (shipped and
+tooling per-file ratchet), and the load-smoke gate. Charter-map ids 1, 10, 11. ADR-0058 maps both budget
+fences to charter #1 as well as the presentation obligation under #10.
 
 ## Revisit When
 

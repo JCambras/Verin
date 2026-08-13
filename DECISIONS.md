@@ -8436,6 +8436,51 @@ reverted; versions 9 and 10 keep their shipped bytes and `fixtures/world` is unt
 about which org is the demonstration one, so it reverts with the seed's imports and the upgrade case
 that proves the repair.
 
+### D-220 · 2026-08-12 · reversible · Prompt 11c ratifies the existing tooling envelope and keeps Gate B honest about the work still absent
+
+The Prompt 11 design's PR-11c assumptions were reconciled against the integrated tree rather than
+replayed literally. Prompt 11a and ADR-0052 had already added the `tooling` aggregate and extended the
+physical file walk, while ADR-0055 had already registered Gate B under a richer typed schema than the
+design report proposed. Prompt 11c therefore ratifies those mechanisms through ADR-0058, strengthens
+their planted companions, maps them to every charter owner, and amends the existing Gate B requirement
+set in place.
+
+**One tooling scope, two limits.** `line-budget` and `max-file-size` both consume
+`toolingSourceFiles`, the recursive `scripts/**` executable-source walk. The aggregate's companion now
+plants a script whose measured lines exceed the real tooling ceiling and separately measures an empty
+root into the zero-total staleness failure. The physical companion plants a 502-line script and routes
+it through the same oversized-file detector as enforcement. The complete tree measures 14,317 tooling
+lines against the unchanged 14,350 ceiling, 33 lines of named correction room. The largest script is
+468 lines under the unchanged 500-line default. No code moved layers and no speculative Prompt 11b
+capacity was added.
+
+**Gate B credits only what exists.** Its stale Prompt 11 `evidence` entry is replaced by a typed
+`ci-gate` for `corpus` running `pnpm exec tsx scripts/corpus-validate.ts`, the blocking mechanism that
+owns Prompt 11a regeneration and byte comparison. A new explicit evidence clause keeps Prompt 11b's
+signed-case materialization against Prompt 10 configuration undecidable. Prompt 10's two artifacts,
+shared-engine proof, invariant 3 activation boundary, and Gate A predecessor remain unchanged. This
+slice activates zero invariants: no invariant names Prompt 11 in `activationPrompts`, no status changes,
+and the active ratchet stays `{1, 2, 5, 7, 8, 9, 16}`.
+
+**Charter ownership is no longer partial.** ADR-0058 plus both budget fences are mapped under charter
+#1, which explicitly requires per-layer and per-file ceilings, and ADR-0058 is mapped beside them under
+#10, which owns the separate presentation envelope. The Gate B amendment is also mapped under the
+existing `v3-gate-ordering` operating-model entry. Charter drift ratchets every tuple.
+
+**Why:** a mechanism already present but mapped to only one of its two governing obligations is not
+fully governed; an evidence note that says the merged corpus does not exist is false; and registering a
+gate must never be confused with satisfying it.
+
+**Alternatives:** create a tooling-only parallel checker - rejected because duplicate scope discovery
+drifts; raise the ceiling for later Prompt 11b work - rejected as speculative headroom; drop the Prompt
+11 evidence entirely - rejected because that would narrow Gate B to what happens to be implemented;
+activate invariant 3 - rejected because Prompt 10 still owns its complete subject.
+
+**Revert path:** revert ADR-0058, the added charter-map tuples and their ratchet entries, the focused
+companions, and the Gate B requirement split. The pre-existing Prompt 11a corpus, budget enforcement,
+and Gate B registration remain, including their prior stale documentation; no generated fixture,
+captain-signed golden case, runtime behavior, or invariant status changes.
+
 ### D-271 · 2026-08-19 · captain-decision · One controlled fourth implementation generation; current Verin is the preserved legacy oracle
 
 The charter has opened since 2026-07-18 with "This is the THIRD AND FINAL build of this product," and the

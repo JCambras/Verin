@@ -68,6 +68,7 @@ interface Invariant {
   name: string;
   status: string;
   activatesWhen: string;
+  activationPrompts?: number[];
   mechanisms: Mechanism[];
   notes?: string;
 }
@@ -376,6 +377,16 @@ describe("v3-invariant registry fence", () => {
     ).toBe(false);
   });
 
+  it("enforces: Prompt 11c activates zero invariants", () => {
+    expect(
+      registry.invariants
+        .filter((invariant) =>
+          invariant.activationPrompts?.includes(11),
+        )
+        .map((invariant) => invariant.id),
+    ).toEqual([]);
+  });
+
   describe("detects (companion): a dishonest or hollow registry cannot pass", () => {
     const inv = (id: number, over: Partial<Invariant> = {}): Invariant => ({
       id,
@@ -508,6 +519,26 @@ describe("v3-invariant registry fence", () => {
       expect(
         validateRegistry(full(overrides), deps).some((p) =>
           p.includes(
+            "active invariant ids must exactly match the shipped mechanism ratchet",
+          ),
+        ),
+      ).toBe(true);
+    });
+    it("flags a Prompt 11c registry mutation that falsely activates invariant 3", () => {
+      const overrides = new Map(ratchetActive);
+      overrides.set(3, {
+        status: "active",
+        activationPrompts: [10],
+        mechanisms: [
+          {
+            type: "fitness",
+            ref: "src/__tests__/fitness/domain-configuration.test.ts",
+          },
+        ],
+      });
+      expect(
+        validateRegistry(full(overrides), deps).some((problem) =>
+          problem.includes(
             "active invariant ids must exactly match the shipped mechanism ratchet",
           ),
         ),
