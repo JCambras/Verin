@@ -6,17 +6,8 @@ changes it (a silent `CHARTER.md` edit fails review). [`charter-map.json`](./cha
 each non-negotiable to the fence/gate/procedure that enforces it, and the charter-drift fence
 (`src/__tests__/fitness/charter-drift.test.ts`) fails the build if any enforced mapping goes stale.
 
-**Fourth-generation scope (ADR-0060):** everything below that names current directories, layers, tiers,
-stack, store, or v3 module/build-sequence choices describes CURRENT VERIN and supplies oracle evidence.
-It is not selected fourth-generation composition. For fourth-generation work, follow F1-F9: only the
-matched disposable experiments are authorized before the later F8 captain decision and executable
-enforcement boundary. The charter separately carries forward the architecture-neutral substance and
-guarantees of all sixteen non-negotiables and the continuing product, human-authority, tenancy, PII,
-replay, accessibility, provenance, retry, evidence, and operational-readiness obligations.
-
-**Then read [`docs/v3/README.md`](./docs/v3/README.md)** - current Verin's ratified v3 direction and
-fourth-generation oracle evidence, not selected replacement composition (Verin as the governed decision
-and execution layer; ADRs 0023-0029, 0055, and 0060). The 30 v3 invariants are phase-gated in
+**Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
+governed decision and execution layer; ADRs 0023-0029 and 0055). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
 stores activation only - pass/fail is computed, never fake green). The gate model's authoritative owners
 are [ADR-0055](./docs/adr/0055-gate-a-invariant-ordering.md) (the complete rule set, its amendment log,
@@ -47,10 +38,8 @@ Then read [`PLAN.md`](./PLAN.md) and [`DECISIONS.md`](./DECISIONS.md) for what w
 
 The standing product thesis lives in [`docs/product-guide.md`](./docs/product-guide.md) (D-098) - test
 every design, prompt, and demo choice against it; it states the thesis
-[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md) serves. It is subordinate to the charter and, for
-current Verin, to v3, `PRODUCT-DIRECTION.md` itself, and the demo contract/design language - each
-applicable authority wins on conflict. For the fourth generation, v3 supplies oracle evidence rather
-than selected composition (ADR-0060).
+[`PRODUCT-DIRECTION.md`](./PRODUCT-DIRECTION.md) serves, and is subordinate to the charter, v3,
+`PRODUCT-DIRECTION.md` itself, and the demo contract/design language - each of those wins on conflict.
 
 Demo work is governed by [`docs/demo-contract.md`](./docs/demo-contract.md) (the normative Phase 1
 investor-demo contract, D-034) with its machine-usable matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
@@ -232,7 +221,7 @@ active on this module.
 - Reversible decisions proceed but are logged in `DECISIONS.md`; irreversible/architectural ones stop
   and ask (a `needs-decision`).
 
-## Current Verin architecture (authoritative source = the code)
+## Architecture (authoritative source = the code)
 
 Four layers under `src/`, dependency rule points inward (`contracts ← domain ← infrastructure ← app`).
 `app/` may import anything; `contracts/` imports nothing project-local. Enforced at edit-time by ESLint
