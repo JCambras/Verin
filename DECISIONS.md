@@ -8439,14 +8439,17 @@ that proves the repair.
 ### D-271 · 2026-08-19 · captain-decision · One controlled fourth implementation generation; current Verin is the preserved legacy oracle
 
 The charter has opened since 2026-07-18 with "This is the THIRD AND FINAL build of this product," and the
-captain has asked for a further ground-up rebuild. The Wayfinder exercise
-(`data/verin-rebuild-wayfinder/report.md`) refused to resolve that by reinterpretation and made a formal
-charter amendment its first blocking captain decision (WF-G01). Published SHA
+captain has asked for a further ground-up rebuild. The captain-reviewed Wayfinder report is a PRIVATE
+FIRSTMATE RECORD held outside the Verin tree and a NON-NORMATIVE decision input. The captain ratifies its
+premise directly here: the constitutional conflict is real, cannot be resolved by reinterpretation, and
+requires a formal charter amendment before later probes or implementation action. The external record is
+not required to interpret or enforce F1-F9. The captain-reviewed BASE-0 audit has the same private,
+external, non-normative standing. As a captain-ratified external audit premise, published SHA
 `a99c46ce492d69fe1e56296eaf597b9234f6461c` is only the divergent published Prompt 10 candidate snapshot
-on the unmerged prompt-10 branch. Its own fourteen blocking CI gates were
-independently re-run from a fresh clone and all passed. It is not an ancestor of this target, and that
-result does not verify this target, current main, or the current system. The oracle authority rests on
-F2, not on transferring that snapshot's green status.
+on the unmerged prompt-10 branch, whose own fourteen blocking CI gates were independently re-run from a
+fresh clone and all passed. That premise is not proof supplied by this checkout. The snapshot is not an
+ancestor of this target, and its result does not verify this target, current main, or the current system.
+The oracle authority rests on F2, not on transferring that snapshot's green status.
 
 **Captain ruling.** One controlled fourth implementation generation is authorized. Current Verin remains
 intact as the read-only behavioral, compatibility, and evidence oracle until an explicitly authorized
@@ -8503,7 +8506,7 @@ changed, and no v3 invariant, gate, or SHA pin moved. `AGENTS.md` and
 
 **Banked, not fixed (`fu-fourthgen-doc-propagation`).** The amendment's scoping is stated in
 `CHARTER.md`, ADR-0060, and this entry, and is routed from `README.md` and `PLAN.md`. It is NOT yet
-propagated into the five other governance documents that assert v3 or current-Verin architecture as
+propagated into the SIX other governance documents that assert v3 or current-Verin architecture as
 standing authority: `AGENTS.md`, `FOUNDATION.md`, `PRODUCT-DIRECTION.md`, `docs/product-guide.md`,
 `docs/v3/README.md`, and ADR-0023's amendment log. Those edits were drafted in this PR's documentation
 pass and RESTORED to their pre-amendment bytes by captain ruling, because the amendment was authorized

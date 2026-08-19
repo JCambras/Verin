@@ -4,29 +4,35 @@
 **Date:** 2026-08-19
 **Deciders:** captain (ratification 2026-08-19)
 **Relates to:** `CHARTER.md` opening identity sentence and the charter operating model (amended only by ADR); ADR-0023 (v3 adoption - unchanged for current Verin and as oracle evidence, not replacement selection); ADR-0024 (Salesforce deferral - unchanged); ADR-0041 (append-only decision ledger); ADR-0052 (corpus signoff contract, currently `pending-captain`); ADR-0057 (generated populated-world evidence)
-**Informed by:** `data/verin-rebuild-wayfinder/report.md` (WF-G01, WD-01, WD-03, section 12 "Charter amendment" row); `data/verin-base0-audit-o1/report.md` plus `data/verin-audit-recovery-final/base-0/` (the divergent published Prompt 10 candidate snapshot on the unmerged prompt-10 branch at `a99c46ce492d69fe1e56296eaf597b9234f6461c`; its own fourteen blocking CI gates were independently re-run from a fresh clone and all passed)
+**Informed by:** the captain-reviewed Wayfinder report and BASE-0 audit, which are PRIVATE FIRSTMATE
+RECORDS held outside the Verin tree. They are NON-NORMATIVE decision inputs, not repository evidence,
+and are not required to interpret or enforce F1-F9. Every premise this decision uses from them is stated
+below. The BASE-0 premise identifies the divergent published Prompt 10 candidate snapshot on the
+unmerged prompt-10 branch at `a99c46ce492d69fe1e56296eaf597b9234f6461c`, whose own fourteen
+blocking CI gates were independently re-run from a fresh clone and all passed.
 
 ## Context
 
 `CHARTER.md` has opened since 2026-07-18 with "This is the THIRD AND FINAL build of this product." The
 captain has since asked for a further ground-up rebuild. That is a direct constitutional conflict, and
-the Wayfinder exercise refused to resolve it by reinterpretation: it recorded the conflict as real
-(`report.md` section 2, "Contradictions and stale assumptions") and made a formal charter amendment the
-first and blocking captain decision (WF-G01), ahead of later probes and every implementation
-action.
+the captain ratifies as a premise that it cannot be resolved by reinterpretation: the conflict is real,
+and a formal charter amendment is the first blocking decision, ahead of later probes and every
+implementation action. This ADR states that premise directly; no external record is needed to apply it.
 
 Three facts shape the amendment's shape rather than its existence.
 
-1. **The Prompt 10 audit is scoped to its divergent candidate snapshot.** Published SHA
+1. **The external audit premise is scoped to its divergent candidate snapshot.** The captain ratifies
+   as an external audit premise that published SHA
    `a99c46ce492d69fe1e56296eaf597b9234f6461c` is only the divergent published Prompt 10 candidate
    snapshot on the unmerged prompt-10 branch. Its own fourteen blocking CI gates were independently
    re-run from a fresh clone and all passed, with two named environment deviations and one named coverage
-   gap. It is not an ancestor of this target, and that result does not verify this target, current main,
-   or the current system. The oracle authority instead rests on F2.
-2. **The architecture question is genuinely open.** Wayfinder Prompt 4 recommended incremental kernel
-   extraction; Prompt 6 returned that recommendation as `RERUN` because the comparison was unmatched and
-   the clean-sheet arm had no equivalent probe. Ratifying an architecture now would repeat exactly the
-   defect that verdict names.
+   gap. This is a captain-ratified premise, not proof supplied by this checkout. The snapshot is not an
+   ancestor of this target, and its result does not verify this target, current main, or the current
+   system. The oracle authority instead rests on F2.
+2. **The architecture question is genuinely open.** The captain ratifies that the prior comparison
+   recommended incremental kernel extraction before equivalent evidence existed for every arm, and that
+   the evaluation therefore required a rerun: the comparison was unmatched and the clean application
+   arm had no equivalent probe. Ratifying an architecture now would repeat that defect.
 3. **The failure mode being guarded against is a fifth rebuild.** Meridian, Iris, and current Verin are
    three generations. Without a binding stop rule, "once and for all" is a sentiment rather than a
    constraint, and the same trade the retro found (architecture gained, product experience lost) is
@@ -85,11 +91,11 @@ of that enforcement.
 
 | Alternative | Why Rejected |
 |-------------|--------------|
-| Read "THIRD AND FINAL" as compatible with a fourth build (the wording covers repositories, not generations) | The word-game reading the Wayfinder explicitly refused. It resolves the conflict by pretending it does not exist and leaves no stop rule behind |
+| Read "THIRD AND FINAL" as compatible with a fourth build (the wording covers repositories, not generations) | The word-game reading contradicts the captain-ratified premise that the constitutional conflict is real. It pretends the conflict does not exist and leaves no stop rule behind |
 | Delete or reword the historical sentence | Erases the record of what the captain intended on 2026-07-18. The charter's own amendment discipline exists so history is superseded in the open |
-| Amend the charter AND ratify the architecture in one decision | Contradicts Prompt 6's `RERUN` verdict: the architecture evidence does not exist yet. F6/F7/F8 keep the two decisions separate |
+| Amend the charter AND ratify the architecture in one decision | Contradicts the captain-ratified unmatched-comparison premise: equivalent architecture evidence does not exist yet. F6/F7/F8 keep the two decisions separate |
 | Authorize the rebuild without a no-fifth-rewrite rule | Leaves the recurring failure unbounded. F4 is the clause that makes "once and for all" a constraint rather than a hope |
-| Defer the amendment until after the disposable probes | The probes are themselves replacement work. Under the unamended charter no agent has authority to run them, so the constitutional question has to be settled first (WF-G01 blocks WF-P01) |
+| Defer the amendment until after the disposable probes | The probes are themselves replacement work. Under the unamended charter no agent has authority to run them, so the constitutional question has to be settled first |
 
 ## Trade-offs and Costs
 
@@ -126,10 +132,10 @@ the charter, including architecture ADRs such as ADR-0023..0029 / ADR-0055, cont
 Verin and provide oracle evidence, but do not bind replacement composition unless the later F8 captain
 ratification explicitly adopts them.
 
-**Open items this decision deliberately leaves open.** The Wayfinder register's remaining captain rows -
-architecture path (DG-01), third-domain falsifier (DG-02), ledger continuity (DG-03), governance archive
-(DG-04), product-story authority (DG-05/C7), self-configuration observation scope and phase placement,
-the real Salesforce target, cutover, and retirement - are each unresolved and are not granted by F1.
+**Open items this decision deliberately leaves open.** The architecture path; a third-domain falsifier
+for the comparison; ledger continuity and governance-archive requirements; product-story authority;
+self-configuration observation scope and phase placement; the real Salesforce target; cutover; and
+retirement are each unresolved and are not granted by F1.
 
 ## Revisit When
 
