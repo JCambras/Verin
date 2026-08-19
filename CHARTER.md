@@ -51,12 +51,17 @@ F9. CUTOVER AND RETIREMENT ARE THE CAPTAIN'S, AND THEY COME LAST. Tenant cutover
     each require later explicit captain authorization against exact release proof. Neither is implied by
     F1, by a winning comparison, or by any other gate passing.
 
-The sixteen non-negotiables below remain binding on the fourth generation. Existing architecture ADRs
-indexed in docs/adr/README.md, including the v3 adoption (ADR-0023..0029, ADR-0055), remain authoritative
-for CURRENT VERIN and as oracle evidence; they do NOT automatically bind replacement composition. Only
-the categories F5 names carry forward, and only on F5's terms. The replacement architecture remains
-undecided under F6-F8. This amendment adds authority and limits it; it weakens no fence, gate, or
-non-negotiable.
+The sixteen non-negotiables below remain binding on the fourth generation. Every pre-amendment
+architecture or composition mandate in CHARTER.md, including implementation-specific choices about
+layering, framework, storage and system-of-record choice, scaffolding, and architecture ADR stacks,
+remains binding on CURRENT VERIN and as oracle evidence; none binds fourth-generation composition unless
+the later F8 captain ratification explicitly adopts it. This scope does not weaken or reclassify the
+categories F5 names, product truth, human authority, tenant isolation, PII containment, deterministic
+replay, accessibility, provenance, retry safety, append-only evidence, or operational-readiness
+obligations; all bind the fourth generation regardless. F5 is the sole enumeration of its carry-forward
+categories; F2's oracle-preservation list is a distinct obligation, not a restatement of F5. Only the
+categories F5 names carry forward, and only on F5's terms. The replacement architecture remains undecided
+under F6-F8. This amendment adds authority and limits it; it weakens no fence, gate, or non-negotiable.
 
 THE OBJECTIVE: Verin is being built to become a $1B business. That means: SOC 2 Type II-ready (controls
 operating and evidenced over time, not bolted on), SEC-examiner-ready, enterprise-security-review-ready,

@@ -65,6 +65,9 @@ sentence:
 - **F9** - tenant cutover and legacy retirement each require later explicit captain authorization against
   exact release proof.
 
+F5 is the sole enumeration of its carry-forward categories. F2's oracle-preservation list is a distinct
+obligation, not a restatement of F5.
+
 The superseded sentence is left verbatim and carries an inline `[SUPERSEDED BY ADR-0060 ...]` marker.
 The charter records what was intended and what replaced it; it does not present the amended state as
 though it had always been the plan.
@@ -73,7 +76,7 @@ though it had always been the plan.
 accepted task forbids test changes, while the charter-drift mechanism ratchet is bidirectional: any new
 enforced `charter-map.json` mechanism would also require editing `RATCHETED_ENFORCED_MECHANISMS` in
 `src/__tests__/fitness/charter-drift.test.ts`. During the exception, the carriers are the charter text,
-this ADR, and D-220. The exception expires BEFORE any durable fourth-generation code, schema, migration,
+this ADR, and D-271. The exception expires BEFORE any durable fourth-generation code, schema, migration,
 or production-path PR may merge. After architecture ratification, a separate EXECUTABLE enforcement
 contract boundary must land first. Disposable experiments may not be promoted into durable work in place
 of that enforcement.
@@ -105,7 +108,7 @@ cites its authorizing clause or does not proceed. The disposable comparison arms
 are the next action; durable implementation is not.
 
 **Temporary enforcement exception and exact expiry.** The captain explicitly authorizes a TEMPORARY
-EXCEPTION to charter rule #1 for F1-F9. During it, the carriers are the charter text, this ADR, and D-220.
+EXCEPTION to charter rule #1 for F1-F9. During it, the carriers are the charter text, this ADR, and D-271.
 The accepted task forbids test changes, while the charter-drift mechanism ratchet is bidirectional:
 `mechanismRatchetProblems`, beginning at `src/__tests__/fitness/charter-drift.test.ts:313`, emits
 `enforced mechanism is absent from the ratchet` for any new enforced `charter-map.json` mechanism absent
@@ -118,9 +121,10 @@ into durable work in place of that enforcement.
 durable replacement schema, data migration, external effect, tenant cutover, or legacy retirement (F1,
 F9). It creates no implementation stories. It changes no product code, test, schema, migration, runtime
 configuration, fixture, or signed evidence, and it moves no v3 invariant, gate, or SHA pin. The sixteen
-non-negotiables are untouched and remain binding. Existing architecture ADRs, including ADR-0023..0029 /
-ADR-0055, continue to govern current Verin and provide oracle evidence, but do not automatically select
-or bind replacement composition under F6-F8.
+non-negotiables are untouched and remain binding. Pre-amendment architecture and composition mandates in
+the charter, including architecture ADRs such as ADR-0023..0029 / ADR-0055, continue to govern current
+Verin and provide oracle evidence, but do not bind replacement composition unless the later F8 captain
+ratification explicitly adopts them.
 
 **Open items this decision deliberately leaves open.** The Wayfinder register's remaining captain rows -
 architecture path (DG-01), third-domain falsifier (DG-02), ledger continuity (DG-03), governance archive

@@ -8436,7 +8436,7 @@ reverted; versions 9 and 10 keep their shipped bytes and `fixtures/world` is unt
 about which org is the demonstration one, so it reverts with the seed's imports and the upgrade case
 that proves the repair.
 
-### D-220 · 2026-08-19 · captain-decision · One controlled fourth implementation generation; current Verin is the preserved legacy oracle
+### D-271 · 2026-08-19 · captain-decision · One controlled fourth implementation generation; current Verin is the preserved legacy oracle
 
 The charter has opened since 2026-07-18 with "This is the THIRD AND FINAL build of this product," and the
 captain has asked for a further ground-up rebuild. The Wayfinder exercise
@@ -8471,6 +8471,9 @@ and rules on that evidence, and F8 itself grants no authority; F9 reserves cutov
 to later
 explicit captain authorization.
 
+F5 is the sole enumeration of its carry-forward categories. F2's oracle-preservation list is a distinct
+obligation, not a restatement of F5.
+
 **Explicit captain-authorized temporary enforcement exception.** F1-F9 temporarily carry in the charter
 text, ADR-0060, and this entry under an explicit captain-authorized TEMPORARY EXCEPTION to charter rule
 #1. The accepted task forbids test changes, while the charter-drift mechanism ratchet is bidirectional:
@@ -8484,12 +8487,15 @@ into durable work in place of that enforcement.
 **Routine mechanic, resolved rather than asked (reversible).** ADR numbers 0058 and 0059 are already
 claimed on unmerged branches - PR #38 uses both, PR #40 also uses 0058 - so this amendment takes 0060 to
 avoid a merge-order collision. If both of those PRs are abandoned, 0058/0059 stay unused; renumbering an
-ADR after it is cited is worse than a gap in the sequence.
+ADR after it is cited is worse than a gap in the sequence. Decision IDs D-220 through D-270 are claimed
+across the same open branches - PR #40 through D-220 and PR #38 through D-270 - so this entry takes
+D-271, the first identifier free across main and that verified open-PR range. The gap after D-219 is
+intentional for the same merge-order reason.
 
 **Revert path:** while this PR is unmerged, declining it means not merging it, and nothing from it is
 accepted. Once merged and ratified, reversal requires a new captain-ratified ADR that supersedes ADR-0060
 and updates `CHARTER.md`, `DECISIONS.md`, `README.md`, `PLAN.md`, and `docs/adr/README.md` as appropriate.
-ADR-0060 and D-220 remain in history: the index status becomes `Superseded by NNNN`, and the superseding
+ADR-0060 and D-271 remain in history: the index status becomes `Superseded by NNNN`, and the superseding
 ADR carries the replacement state. Accepted records are never deleted. This changeset is documentation
 only - no product code, test, schema, migration, runtime configuration, fixture, or signed evidence
 changed, and no v3 invariant, gate, or SHA pin moved. `AGENTS.md` and
