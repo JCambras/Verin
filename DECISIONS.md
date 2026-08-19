@@ -8499,18 +8499,17 @@ and updates `CHARTER.md`, `DECISIONS.md`, `README.md`, `PLAN.md`, and `docs/adr/
 ADR-0060 and D-271 remain in history: the index status becomes `Superseded by NNNN`, and the superseding
 ADR carries the replacement state. Accepted records are never deleted. This changeset is documentation
 only - no product code, test, schema, migration, runtime configuration, fixture, or signed evidence
-changed, and no v3 invariant, gate, or SHA pin moved. `AGENTS.md` and
-`.github/pull_request_template.md` remain at the merge-base and are not part of the contract.
+changed, and no v3 invariant, gate, or SHA pin moved. At amendment ratification, `AGENTS.md` and
+`.github/pull_request_template.md` remained at the merge-base and were not part of the contract. The
+follow-on documentation pass changes only `AGENTS.md` as operational memory, routing agents through
+F1-F9; the pull-request template remains unchanged.
 
-**Banked, not fixed (`fu-fourthgen-doc-propagation`).** The amendment's scoping is stated in
-`CHARTER.md`, ADR-0060, and this entry, and is routed from `README.md` and `PLAN.md`. It is NOT yet
-propagated into the SIX other governance documents that assert v3 or current-Verin architecture as
-standing authority: `AGENTS.md`, `FOUNDATION.md`, `PRODUCT-DIRECTION.md`, `docs/product-guide.md`,
-`docs/v3/README.md`, and ADR-0023's amendment log. Those edits were drafted in this PR's documentation
-pass and RESTORED to their pre-amendment bytes by captain ruling, because the amendment was authorized
-as exactly six files and one constitutional contract boundary; propagation is a second boundary and
-belongs in its own PR. This is a routing gap, never a conflict: `CHARTER.md` outranks all six documents,
-the general scoping clause reaches every pre-amendment architecture mandate whether or not a subordinate
-document repeats it, and each of those documents already declares itself subordinate to the charter. The
-follow-on PR marks v3 and the four-layer composition as current-Verin authority plus fourth-generation
-oracle evidence in each, and cites ADR-0060 in ADR-0023's `Amended by` line.
+**Banked at ratification; resolved by the follow-on documentation pass
+(`fu-fourthgen-doc-propagation`).** The amendment's scoping is stated in `CHARTER.md`, ADR-0060, and this
+entry, and routed from `README.md` and `PLAN.md`. At ratification it was not yet propagated into the SIX
+other governance documents that asserted v3 or current-Verin architecture as standing authority:
+`AGENTS.md`, `FOUNDATION.md`, `PRODUCT-DIRECTION.md`, `docs/product-guide.md`, `docs/v3/README.md`, and
+ADR-0023's amendment log. Those edits had been restored to their pre-amendment bytes because propagation
+was a second documentation boundary. The follow-on pass now scopes all six: v3 and the four-layer
+composition are current-Verin authority plus fourth-generation oracle evidence, not selected replacement
+composition.

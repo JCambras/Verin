@@ -12,6 +12,11 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 `Accepted (charter amendment)`, `Accepted (deferral with trigger)`, `Accepted (amends ADR-NNNN)`,
 `Superseded by NNNN`.
 
+ADR-0060 scopes every earlier architecture and composition decision: it remains accepted for current
+Verin and as fourth-generation oracle evidence, but does not select or bind replacement composition
+unless the later F8 captain ratification explicitly adopts it. The charter itself states which
+architecture-neutral guarantees and obligations independently bind the fourth generation.
+
 ## Index
 
 | # | Title | Status |
