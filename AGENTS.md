@@ -5,6 +5,15 @@ this repo and overrides convenience. The charter is amended only by an ADR refer
 changes it (a silent `CHARTER.md` edit fails review). [`charter-map.json`](./charter-map.json) links
 each non-negotiable to the fence/gate/procedure that enforces it, and the charter-drift fence
 (`src/__tests__/fitness/charter-drift.test.ts`) fails the build if any enforced mapping goes stale.
+The charter's opening "THIRD AND FINAL" sentence is SUPERSEDED, not rewritten: clauses F1-F9
+([ADR-0060](./docs/adr/0060-controlled-fourth-implementation-generation.md), D-220) authorize ONE
+controlled fourth implementation generation and make current Verin the read-only legacy oracle. F1
+authorizes this amendment and DISPOSABLE architecture experiments and nothing else - production
+implementation, durable replacement schemas, data migration, external effects, tenant cutover, and
+legacy retirement each need their own later captain decision, and their absence is a refusal. No
+replacement architecture is selected (F6); the choice runs through a matched disposable comparison (F7)
+and a separate captain ruling (F8). There is no fifth rewrite (F4). Read F1-F9 before proposing,
+planning, or building any replacement work.
 
 **Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
 governed decision and execution layer; ADRs 0023-0029 and 0055). The 30 v3 invariants are phase-gated in

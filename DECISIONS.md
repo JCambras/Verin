@@ -8435,3 +8435,52 @@ reverted; versions 9 and 10 keep their shipped bytes and `fixtures/world` is unt
 `src/infrastructure/store/demo-tenant.ts` alone would leave the seed and the migration free to disagree
 about which org is the demonstration one, so it reverts with the seed's imports and the upgrade case
 that proves the repair.
+
+### D-220 · 2026-08-19 · captain-decision · One controlled fourth implementation generation; current Verin is the preserved legacy oracle
+
+The charter has opened since 2026-07-18 with "This is the THIRD AND FINAL build of this product," and the
+captain has asked for a further ground-up rebuild. The Wayfinder exercise
+(`data/verin-rebuild-wayfinder/report.md`) refused to resolve that by reinterpretation and made a formal
+charter amendment its first blocking captain decision (WF-G01). BASE-0 is established independently at
+published SHA `a99c46ce492d69fe1e56296eaf597b9234f6461c` - fourteen of fourteen blocking CI gates re-run
+from a fresh clone, all PASS - so the current system is a verified oracle, not a liability to be cleared.
+
+**Captain ruling.** One controlled fourth implementation generation is authorized. Current Verin remains
+intact as the read-only behavioral, compatibility, and evidence oracle until an explicitly authorized
+cutover, preserving source history, signed truth, security semantics, decision records, audit evidence,
+and examiner-readable continuity. Destructive replacement, dual external effects, silent reinterpretation
+of history, and a fifth rewrite are prohibited. The ruling authorizes the charter amendment and
+subsequent disposable architecture experiments. It does NOT authorize production implementation, durable
+replacement schemas, data migration, external effects, tenant cutover, or legacy retirement.
+
+**Implemented as constitutional text, not a summary (ADR-0060).** `CHARTER.md` carries clauses F1-F9
+immediately below the superseded sentence, which is left verbatim with an inline `[SUPERSEDED BY
+ADR-0060 ...]` marker so the record of what was intended survives beside what replaced it. F1 authorizes
+one generation and names what it withholds; F2 makes current Verin the read-only oracle; F3 prohibits
+destructive replacement and dual external effects; F4 is the no-fifth-rewrite rule; F5 keeps signed
+truth, historical evidence, security semantics, and immutable records authoritative unless individually
+falsified through governed evidence; F6 states that no replacement architecture is selected; F7 requires
+a matched disposable comparison of stabilization, incremental kernel extraction, and clean application
+composition; F8 requires a separate captain decision on that evidence before durable implementation; F9
+reserves cutover and legacy retirement to later explicit captain authorization.
+
+**Carried by ADR and procedure, not by a fence.** F1-F9 are authority limits rather than code invariants,
+so they carry the way the DECISION PROTOCOL and the ADR-0024 Salesforce deferral carry:
+`.github/pull_request_template.md` - already the registered `charter-amended-by-adr-only` mechanism -
+now requires every PR doing replacement-generation work to name its authorizing clause and confirm it is
+not durable, migrating, externally-effecting, or cutover work. A `charter-map.json` entry was considered
+and rejected for this PR: the charter-drift mechanism ratchet is bidirectional
+(`charter-drift.test.ts:313`), so a new `enforced` mechanism must be added to
+`RATCHETED_ENFORCED_MECHANISMS` in the same change, and this PR is documentation-only by captain
+constraint. No fence is claimed to enforce F1-F9.
+
+**Routine mechanic, resolved rather than asked (reversible).** ADR numbers 0058 and 0059 are already
+claimed on unmerged branches - PR #38 uses both, PR #40 also uses 0058 - so this amendment takes 0060 to
+avoid a merge-order collision. If both of those PRs are abandoned, 0058/0059 stay unused; renumbering an
+ADR after it is cited is worse than a gap in the sequence.
+
+**Revert path:** revert this changeset. It is documentation only - no product code, test, schema,
+migration, runtime configuration, fixture, or signed evidence changed, and no v3 invariant, gate, or SHA
+pin moved - so reverting restores the unamended charter exactly. Reverting `CHARTER.md` alone would leave
+ADR-0060 and this entry claiming an authority the constitution no longer carries, so the four documents
+revert together.
