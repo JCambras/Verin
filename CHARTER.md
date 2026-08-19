@@ -51,18 +51,22 @@ F9. CUTOVER AND RETIREMENT ARE THE CAPTAIN'S, AND THEY COME LAST. Tenant cutover
     each require later explicit captain authorization against exact release proof. Neither is implied by
     F1, by a winning comparison, or by any other gate passing.
 
-The sixteen non-negotiables below remain binding on the fourth generation. Every pre-amendment
-architecture or composition mandate in CHARTER.md, including implementation-specific choices about
-layering, framework, storage and system-of-record choice, scaffolding, and architecture ADR stacks,
-remains binding on CURRENT VERIN and as oracle evidence; none binds fourth-generation composition unless
-the later F8 captain ratification explicitly adopts it. The categories F5 names are the only inherited
-truths carried forward from CURRENT VERIN subject to individual falsification, and F5 is their sole
-enumeration. The sixteen non-negotiables and the product truth, human authority, tenant isolation, PII
-containment, deterministic replay, accessibility, provenance, retry safety, append-only evidence, and
-operational-readiness obligations independently continue and bind the fourth generation in their own
-right; they are not subject to F5's falsification path. F2's oracle-preservation list is a distinct
-obligation, not a restatement of F5. The replacement architecture remains undecided under F6-F8. This
-amendment adds authority and limits it; it weakens no fence, gate, or non-negotiable.
+The architecture-neutral substance and guarantees of all sixteen non-negotiables below bind the fourth
+generation, including presentation as a first-class product surface, server-side authorization that is
+never trusted to the client, and horizontal scalability without a rewrite. Any directory, layer, tier,
+or other composition mechanism they name remains binding on CURRENT VERIN and as oracle evidence; it does
+not bind fourth-generation composition unless the later F8 captain ratification explicitly adopts it.
+Every other pre-amendment architecture or composition mandate in CHARTER.md, including
+implementation-specific choices about layering, framework, storage and system-of-record choice,
+scaffolding, and architecture ADR stacks, has that same current-Verin-only composition scope. The
+categories F5 names are the only inherited truths carried forward from CURRENT VERIN subject to
+individual falsification, and F5 is their sole enumeration. The product truth, human authority, tenant
+isolation, PII containment, deterministic replay, accessibility, provenance, retry safety, append-only
+evidence, operational-readiness obligations, and the architecture-neutral substance and guarantees of the
+sixteen non-negotiables independently continue and bind the fourth generation in their own right; they
+are not subject to F5's falsification path. F2's oracle-preservation list is a distinct obligation, not a
+restatement of F5. The replacement architecture remains undecided under F6-F8. This amendment adds
+authority and limits it; it weakens no fence, gate, or non-negotiable.
 
 THE OBJECTIVE: Verin is being built to become a $1B business. That means: SOC 2 Type II-ready (controls
 operating and evidenced over time, not bolted on), SEC-examiner-ready, enterprise-security-review-ready,

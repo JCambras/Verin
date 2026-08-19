@@ -83,11 +83,9 @@ accepted task forbids test changes, while the charter-drift mechanism ratchet is
 enforced `charter-map.json` mechanism would also require editing `RATCHETED_ENFORCED_MECHANISMS` in
 `src/__tests__/fitness/charter-drift.test.ts`. During the exception, the carriers are the charter text,
 this ADR, and D-271. The captain knowingly accepts this eyes-open, fail-open interval, which expires
-before any durable fourth-generation code, schema, migration, or production-path PR may merge. The
-exception expires BEFORE any durable fourth-generation code, schema, migration,
-or production-path PR may merge. After architecture ratification, a separate EXECUTABLE enforcement
-contract boundary must land first. Disposable experiments may not be promoted into durable work in place
-of that enforcement.
+before any durable fourth-generation code, schema, migration, or production-path PR may merge. After
+architecture ratification, a separate EXECUTABLE enforcement contract boundary must land first.
+Disposable experiments may not be promoted into durable work in place of that enforcement.
 
 ## Alternatives Rejected
 
