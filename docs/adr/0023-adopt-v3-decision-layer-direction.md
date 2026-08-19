@@ -5,7 +5,9 @@
 **Deciders:** captain (v3 ratification, 2026-07-26), founding architect
 **Relates to:** charter operating model (amended only by ADR; charter-drift fence); all 16 non-negotiables (unchanged); ADR-0024..0028 (the deviations and deferrals this adoption requires); ADR-0010 (workflow engine - repositioned, see Consequences)
 **Informed by:** `docs/v3/marriage-map.md` (the full alignment analysis; conflicts C1-C15), especially C9 (the two-constitutions risk)
-**Amended by:** ADR-0055 (Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B)
+**Amended by:** ADR-0055 (Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B); ADR-0060
+(v3 remains binding on current Verin and remains legacy-oracle evidence, but does not select or bind
+fourth-generation composition)
 
 ## Context
 

@@ -17,9 +17,10 @@
 > **The differentiating thesis.** The captain-directed product thesis this direction serves is
 > [`docs/product-guide.md`](./docs/product-guide.md) (D-098, 2026-08-05) - it states *what makes Verin
 > different*; this doc stays the north star for *what Verin feels like to use*. The guide binds nothing
-> on its own and is subordinate to the charter, v3, this document, and the demo contract/design language -
-> where it appears to conflict with any of them, that document wins and the conflict is a defect in the
-> guide.
+> on its own and is subordinate to the charter, this document, the demo contract/design language, and
+> current Verin's v3 direction. Under ADR-0060, v3 remains fourth-generation oracle evidence rather than
+> a selected replacement architecture. Where the guide appears to conflict with any applicable authority,
+> that authority wins and the conflict is a defect in the guide.
 >
 > **The Phase 1 demo contract.** Demo work is governed by the normative Phase 1 investor-demo contract,
 > [`docs/demo-contract.md`](./docs/demo-contract.md) (D-034, 2026-07-26), with its machine-usable matrix

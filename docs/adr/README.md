@@ -78,4 +78,5 @@ Status values: `Proposed`, `Accepted`, `Accepted (design contract — implementa
 Related governance: [`../security/threat-model.md`](../security/threat-model.md) (STRIDE),
 [`../compliance/controls.md`](../compliance/controls.md) (SOC 2 matrix),
 [`../sacrificial-components.md`](../sacrificial-components.md),
-[`../v3/README.md`](../v3/README.md) (the ratified v3 architecture direction, ADR-0023..0029 and ADR-0055).
+[`../v3/README.md`](../v3/README.md) (current Verin's ratified v3 architecture direction,
+ADR-0023..0029 and ADR-0055, scoped for the fourth generation by ADR-0060).
