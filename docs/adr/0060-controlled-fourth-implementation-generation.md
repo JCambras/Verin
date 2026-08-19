@@ -2,7 +2,7 @@
 
 **Status:** Accepted (charter amendment - the opening "THIRD AND FINAL" sentence is superseded, not rewritten)
 **Date:** 2026-08-19
-**Deciders:** captain (ratification 2026-08-19), Firstmate
+**Deciders:** captain (ratification 2026-08-19)
 **Relates to:** `CHARTER.md` opening identity sentence and the charter operating model (amended only by ADR); ADR-0023 (v3 adoption - unchanged for current Verin and as oracle evidence, not replacement selection); ADR-0024 (Salesforce deferral - unchanged); ADR-0041 (append-only decision ledger); ADR-0052 (corpus signoff contract, currently `pending-captain`); ADR-0057 (generated populated-world evidence)
 **Informed by:** `data/verin-rebuild-wayfinder/report.md` (WF-G01, WD-01, WD-03, section 12 "Charter amendment" row); `data/verin-base0-audit-o1/report.md` plus `data/verin-audit-recovery-final/base-0/` (the divergent published Prompt 10 candidate snapshot on the unmerged prompt-10 branch at `a99c46ce492d69fe1e56296eaf597b9234f6461c`; its own fourteen blocking CI gates were independently re-run from a fresh clone and all passed)
 
@@ -22,8 +22,7 @@ Three facts shape the amendment's shape rather than its existence.
    snapshot on the unmerged prompt-10 branch. Its own fourteen blocking CI gates were independently
    re-run from a fresh clone and all passed, with two named environment deviations and one named coverage
    gap. It is not an ancestor of this target, and that result does not verify this target, current main,
-   or the current system. The oracle authority instead rests on F2 and on preserved history and signed
-   truth.
+   or the current system. The oracle authority instead rests on F2.
 2. **The architecture question is genuinely open.** Wayfinder Prompt 4 recommended incremental kernel
    extraction; Prompt 6 returned that recommendation as `RERUN` because the comparison was unmatched and
    the clean-sheet arm had no equivalent probe. Ratifying an architecture now would repeat exactly the
@@ -56,8 +55,7 @@ sentence:
   design that would need a second live effect.
 - **F4** - there is no fifth rewrite. A proposal whose viability depends on a later rewrite is refused at
   proposal time.
-- **F5** - signed truth, historical evidence, security semantics, and immutable records stay authoritative
-  unless individually falsified through governed evidence and recorded as falsified.
+- **F5** - the categories F5 names stay authoritative, and only on F5's individual-falsification terms.
 - **F6** - no replacement architecture is selected by this amendment.
 - **F7** - the choice is made by a matched disposable comparison of three arms - stabilization,
   incremental kernel extraction, and clean application composition - under identical inputs, timebox, and
@@ -92,7 +90,7 @@ of that enforcement.
 
 ## Trade-offs and Costs
 
-- **Gained:** an honest constitution; a preserved oracle grounded in preserved history and signed truth;
+- **Gained:** an honest constitution; a preserved oracle grounded in F2;
   an architecture decision that stays open until matched evidence closes it; a binding stop rule; and
   explicit withholding of every irreversible step, so no later agent can infer authority it was not
   given.

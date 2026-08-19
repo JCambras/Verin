@@ -54,9 +54,8 @@ F9. CUTOVER AND RETIREMENT ARE THE CAPTAIN'S, AND THEY COME LAST. Tenant cutover
 The sixteen non-negotiables below remain binding on the fourth generation. Existing architecture ADRs
 indexed in docs/adr/README.md, including the v3 adoption (ADR-0023..0029, ADR-0055), remain authoritative
 for CURRENT VERIN and as oracle evidence; they do NOT automatically bind replacement composition. Only
-retained product truth, security semantics, signed evidence, and immutable-record contracts governed by
-F5 carry forward unless individually falsified through governed evidence. The replacement architecture
-remains undecided under F6-F8. This amendment adds authority and limits it; it weakens no fence, gate, or
+the categories F5 names carry forward, and only on F5's terms. The replacement architecture remains
+undecided under F6-F8. This amendment adds authority and limits it; it weakens no fence, gate, or
 non-negotiable.
 
 THE OBJECTIVE: Verin is being built to become a $1B business. That means: SOC 2 Type II-ready (controls
@@ -201,6 +200,8 @@ NON-NEGOTIABLES - each ships as a machine-enforced rule from commit #1, never pr
     stateless so horizontal scale is a deployment choice, not a rewrite.
 
 SYSTEM-OF-RECORD STRATEGY (DECIDED - do not reopen):
+This section remains binding for CURRENT VERIN and as oracle evidence. It does NOT bind fourth-generation
+composition unless the later captain decision required by F8 explicitly adopts it.
 - Verin ships its own HOUSE CRM as the system of record for the PoC. The CRM port is the boundary
   (as in Iris); the house CRM is its FIRST real adapter: genuine persistence, real CRUD, the canonical
   schema (rule 2) AS its schema, seeded with the populated world. Not a fixture, not a mock, not a
@@ -289,4 +290,6 @@ Open decisions that are mine: hosting, the production
 database (the house-CRM store must hide behind the port so this stays swappable - recommend with
 reasoning), the auth approach (build vs a WorkOS/Auth0-class provider - recommend with reasoning),
 and the real brand name behind the Verin code name. (The system-of-record question is already decided
-above: house CRM first, Salesforce as a later adapter.) Then STOP for my review.
+above for CURRENT VERIN only: house CRM first, Salesforce as a later adapter; it does not bind
+fourth-generation composition unless the later captain decision required by F8 explicitly adopts it.)
+Then STOP for my review.

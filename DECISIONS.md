@@ -8445,8 +8445,8 @@ charter amendment its first blocking captain decision (WF-G01). Published SHA
 `a99c46ce492d69fe1e56296eaf597b9234f6461c` is only the divergent published Prompt 10 candidate snapshot
 on the unmerged prompt-10 branch. Its own fourteen blocking CI gates were
 independently re-run from a fresh clone and all passed. It is not an ancestor of this target, and that
-result does not verify this target, current main, or the current system. F2's oracle authority rests on
-preserved history and signed truth, not on transferring that snapshot's green status.
+result does not verify this target, current main, or the current system. The oracle authority rests on
+F2, not on transferring that snapshot's green status.
 
 **Captain ruling.** One controlled fourth implementation generation is authorized. Current Verin remains
 intact as the read-only behavioral, compatibility, and evidence oracle until an explicitly authorized
@@ -8462,9 +8462,9 @@ implementation and F9 governing cutover and legacy retirement.
 immediately below the superseded sentence, which is left verbatim with an inline `[SUPERSEDED BY
 ADR-0060 ...]` marker so the record of what was intended survives beside what replaced it. F1 authorizes
 one generation and names what it withholds; F2 makes current Verin the read-only oracle; F3 prohibits
-destructive replacement and dual external effects; F4 is the no-fifth-rewrite rule; F5 keeps signed
-truth, historical evidence, security semantics, and immutable records authoritative unless individually
-falsified through governed evidence; F6 states that no replacement architecture is selected; F7 requires
+destructive replacement and dual external effects; F4 is the no-fifth-rewrite rule; F5 keeps the
+categories it names authoritative, and only on its individual-falsification terms; F6 states that no
+replacement architecture is selected; F7 requires
 a matched disposable comparison of stabilization, incremental kernel extraction, and clean application
 composition; F8 prohibits durable implementation until a later, separate captain decision is identified
 and rules on that evidence, and F8 itself grants no authority; F9 reserves cutover and legacy retirement
