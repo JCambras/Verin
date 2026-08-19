@@ -46,7 +46,8 @@ sentence:
 - **F1** - one further implementation generation is authorized, built beside the current system. What is
   authorized TODAY is this amendment and subsequent disposable architecture experiments. Production
   implementation, durable replacement schemas, data migration, external effects, tenant cutover, and
-  legacy retirement are each explicitly withheld pending their own later captain decision.
+  legacy retirement are explicitly withheld. Any later activity requires explicit captain authorization,
+  with F8 governing durable replacement implementation and F9 governing cutover and legacy retirement.
 - **F2** - current Verin at its shipped heads is the read-only behavioral, compatibility, and evidence
   oracle until an explicitly authorized cutover. Source history, signed truth, security semantics,
   decision records, audit evidence, and examiner-readable continuity are preserved intact, and the
@@ -55,9 +56,8 @@ sentence:
   design that would need a second live effect.
 - **F4** - there is no fifth rewrite. A proposal whose viability depends on a later rewrite is refused at
   proposal time.
-- **F5** - captain-signed truth, historical evidence, security semantics, and the immutable
-  decision and audit records stay authoritative unless individually falsified through governed evidence
-  and recorded as falsified.
+- **F5** - signed truth, historical evidence, security semantics, and immutable records stay authoritative
+  unless individually falsified through governed evidence and recorded as falsified.
 - **F6** - no replacement architecture is selected by this amendment.
 - **F7** - the choice is made by a matched disposable comparison of three arms - stabilization,
   incremental kernel extraction, and clean application composition - under identical inputs, timebox, and

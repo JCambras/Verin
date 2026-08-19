@@ -13,9 +13,10 @@ Meridian, Iris, and current Verin are generations one, two, and three.
 F1. ONE CONTROLLED FOURTH GENERATION IS AUTHORIZED. The captain authorizes exactly one further
     implementation generation of Verin, built BESIDE the current system under the limits below. What it
     authorizes today is this amendment and subsequent DISPOSABLE architecture experiments - nothing more.
-    It does NOT authorize production implementation, durable replacement schemas, data migration,
-    external effects, tenant cutover, or legacy retirement. Each of those needs its own later captain
-    decision, and the absence of one is a refusal, not an omission.
+    This amendment does NOT authorize production implementation, durable replacement schemas, data
+    migration, external effects, tenant cutover, or legacy retirement. Any later activity requires
+    explicit captain authorization, with F8 governing durable replacement implementation and F9
+    governing cutover and legacy retirement.
 F2. CURRENT VERIN IS THE PRESERVED LEGACY ORACLE. Until an explicitly authorized cutover, this repository
     at its shipped heads is the READ-ONLY behavioral, compatibility, and evidence oracle. Its source
     history, signed truth, security semantics, decision records, audit evidence, and examiner-readable
@@ -29,11 +30,11 @@ F3. DESTRUCTIVE REPLACEMENT AND DUAL EXTERNAL EFFECTS ARE PROHIBITED. No plan ma
 F4. THERE IS NO FIFTH REWRITE. A ground-up rebuild is not available again. If the fourth generation
     cannot reach its gates, the answers are to fix it in place or to stop - never to start a fifth. A
     proposal whose viability depends on a later rewrite is refused at proposal time.
-F5. INHERITED TRUTH STAYS AUTHORITATIVE UNTIL INDIVIDUALLY FALSIFIED. Captain-signed truth, historical
-    evidence, security semantics, and the immutable decision and audit records bind the fourth
-    generation exactly as they bind this one. One of them stops binding only when it is INDIVIDUALLY
-    falsified through governed evidence and recorded as falsified - never by age, by inconvenience, by a
-    clean-sheet redesign, or by a blanket claim that the rebuild supersedes it.
+F5. INHERITED TRUTH STAYS AUTHORITATIVE UNTIL INDIVIDUALLY FALSIFIED. Signed truth, historical evidence,
+    security semantics, and immutable records bind the fourth generation exactly as they bind this one.
+    One of them stops binding only when it is INDIVIDUALLY falsified through governed evidence and
+    recorded as falsified - never by age, by inconvenience, by a clean-sheet redesign, or by a blanket
+    claim that the rebuild supersedes it.
 F6. THE REPLACEMENT ARCHITECTURE IS NOT SELECTED. This amendment ratifies no architecture, module set,
     ownership map, or storage contract. Naming a candidate in a report, a plan, or an experiment does not
     make it chosen.

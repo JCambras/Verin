@@ -8455,6 +8455,8 @@ and examiner-readable continuity. Destructive replacement, dual external effects
 of history, and a fifth rewrite are prohibited. The ruling authorizes the charter amendment and
 subsequent disposable architecture experiments. It does NOT authorize production implementation, durable
 replacement schemas, data migration, external effects, tenant cutover, or legacy retirement.
+Any later activity requires explicit captain authorization, with F8 governing durable replacement
+implementation and F9 governing cutover and legacy retirement.
 
 **Implemented as constitutional text, not a summary (ADR-0060).** `CHARTER.md` carries clauses F1-F9
 immediately below the superseded sentence, which is left verbatim with an inline `[SUPERSEDED BY
