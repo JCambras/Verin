@@ -16,6 +16,12 @@ serves. This doc binds nothing on its own. Where it appears to conflict with any
 including PRODUCT-DIRECTION.md - that document wins, and the conflict is a defect here to be fixed or
 escalated to the captain, never resolved by overriding them.
 
+**ADR-0060 scope.** The chain above is CURRENT VERIN's. Under `CHARTER.md` clauses F1-F9 the ratified
+v3 direction and the current four-layer composition stay binding on current Verin and stand as
+fourth-generation oracle evidence; neither binds fourth-generation composition unless the later F8
+captain ratification explicitly adopts it. The thesis below is not a composition mandate. ADR-0060
+deliberately leaves product-story authority open, and this document still binds nothing on its own.
+
 **Relation to ADR-0023 C7:** orthogonal. This doc does **not** satisfy the open C7 item (a
 `PRODUCT-DIRECTION.md` v2 restating the product story under the v3 framing). That item stays open.
 

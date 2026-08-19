@@ -6,8 +6,20 @@ changes it (a silent `CHARTER.md` edit fails review). [`charter-map.json`](./cha
 each non-negotiable to the fence/gate/procedure that enforces it, and the charter-drift fence
 (`src/__tests__/fitness/charter-drift.test.ts`) fails the build if any enforced mapping goes stale.
 
-**Then read [`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 direction (Verin as the
-governed decision and execution layer; ADRs 0023-0029 and 0055). The 30 v3 invariants are phase-gated in
+**ADR-0060 scopes everything below.** `CHARTER.md` clauses F1-F9 authorize one controlled fourth
+implementation generation and preserve current Verin as the read-only legacy oracle. This file
+describes CURRENT VERIN: it stays binding here and stands as fourth-generation oracle evidence. Its
+COMPOSITION - the four layers, the module and file map, the fence and gate inventory - does not bind
+fourth-generation composition unless the later F8 captain ratification explicitly adopts it, and no
+replacement architecture is selected (F6). Nothing here scopes away the obligations the paragraph
+after F9 continues in their own right, or the architecture-neutral substance and guarantees of the
+sixteen non-negotiables the working rules below restate; read that paragraph for its own list, which
+this file does not repeat. The F-clauses live in `CHARTER.md`, ADR-0060, and D-271; this file
+originates nothing about them.
+
+**Then read [`docs/v3/README.md`](./docs/v3/README.md)** - current Verin's ratified v3 direction and
+fourth-generation oracle evidence, not a selected replacement architecture (Verin as the governed
+decision and execution layer; ADRs 0023-0029, 0055, and 0060). The 30 v3 invariants are phase-gated in
 [`v3-invariants.json`](./v3-invariants.json) (report: `pnpm v3:invariants`, blocking in CI; the registry
 stores activation only - pass/fail is computed, never fake green). The gate model's authoritative owners
 are [ADR-0055](./docs/adr/0055-gate-a-invariant-ordering.md) (the complete rule set, its amendment log,
@@ -221,7 +233,7 @@ active on this module.
 - Reversible decisions proceed but are logged in `DECISIONS.md`; irreversible/architectural ones stop
   and ask (a `needs-decision`).
 
-## Architecture (authoritative source = the code)
+## Current Verin architecture (authoritative source = the code)
 
 Four layers under `src/`, dependency rule points inward (`contracts ← domain ← infrastructure ← app`).
 `app/` may import anything; `contracts/` imports nothing project-local. Enforced at edit-time by ESLint
