@@ -8,7 +8,9 @@ architecture experiments until the separate captain decision required by F8.]
 ## Start here
 
 1. **[`CHARTER.md`](./CHARTER.md)** — the constitution. Read it first, in full. It is code: amended only
-   by an ADR, and its enforcement is self-checked by the charter-drift fence.
+   by an ADR. Existing enforced mappings are self-checked by the charter-drift fence; F1-F9 temporarily
+   carry under D-271's captain-authorized exception until ADR-0060's separate executable enforcement
+   boundary lands.
 2. **[`AGENTS.md`](./AGENTS.md)** — how to work in this repo (every session).
 3. **[`docs/v3/README.md`](./docs/v3/README.md)** - current Verin's ratified v3 architecture direction
    and fourth-generation oracle evidence, not a selected replacement architecture (ADRs 0023-0029, 0055,
