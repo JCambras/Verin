@@ -5,6 +5,12 @@ proof, the self-audit findings, the control-matrix gap list, the decision journa
 It is written so the **independent falsification session (Part 2)** can reproduce every claim **from this
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
+> **Document scope (ADR-0060).** This artifact records what CURRENT VERIN is and how each claim is
+> reproduced. It stays binding on current Verin and is exactly the fourth-generation oracle evidence
+> `CHARTER.md` F2 preserves. Its composition - the four layers, the fence set, the budgets - does
+> not bind fourth-generation composition unless the later F8 captain ratification explicitly adopts
+> it, and no replacement architecture is selected (F6).
+
 > **Reproduce everything in one place.** `corepack pnpm install` then:
 > `pnpm typecheck` · `pnpm lint` · `pnpm test` (the unit/integration/fitness suite; the command reports the
 > live count, non-UTC clock) · `pnpm knip` · `pnpm build` ·

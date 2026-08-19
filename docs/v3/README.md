@@ -1,6 +1,7 @@
 # docs/v3 - the ratified Verin v3 architecture direction
 
-**Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
+**Status: RATIFIED DIRECTION FOR CURRENT VERIN** (captain, 2026-07-26; scoped for the fourth
+generation by ADR-0060), implemented into this repo's charter machinery by
 **ADR-0023 through ADR-0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, and ADR-0055** (`docs/adr/`). The ratified documents in the table below are committed
 **verbatim** from the ratified sources; the arch-version fence
 (`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
@@ -18,6 +19,14 @@ There is exactly ONE constitution: [`CHARTER.md`](../../CHARTER.md). The v3 arch
 "supersedes prior documents" header is read through ADR-0023: v3 is ratified INTO the charter machinery,
 never beside it. Where v3 and the charter conflict, the resolution is recorded in an ADR below - never
 resolved silently (v3's own rule, §0.5 and orchestrator rule 4).
+
+**Scope under ADR-0060 (restated here, originated in the charter).** `CHARTER.md` clauses F1-F9
+authorize one controlled fourth implementation generation and preserve current Verin as the read-only
+legacy oracle. The ratified v3 direction indexed here is CURRENT VERIN's architecture direction and
+fourth-generation oracle evidence; it is not a selected replacement architecture, and it does not
+bind fourth-generation composition unless the later F8 captain ratification explicitly adopts it (F6,
+F8; ADR-0060, D-271). This index adds nothing to those clauses and states no rule of its own about
+them (D-099).
 
 The standing product thesis is [`docs/product-guide.md`](../product-guide.md) (D-098). It binds nothing
 on its own and is subordinate to the ratified documents below.
