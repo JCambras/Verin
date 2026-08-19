@@ -1,14 +1,20 @@
 # Verin.
 
 Practice intelligence for registered investment advisers. The third and final build (code name Verin).
+[SUPERSEDED BY ADR-0060 AND `CHARTER.md` CLAUSES F1-F9. This historical 2026-07-18 statement is retained.
+Current Verin is the preserved legacy oracle; fourth-generation work is limited to disposable
+architecture experiments until the separate captain decision required by F8.]
 
 ## Start here
 
 1. **[`CHARTER.md`](./CHARTER.md)** — the constitution. Read it first, in full. It is code: amended only
-   by an ADR, and its enforcement is self-checked by the charter-drift fence.
+   by an ADR. Existing enforced mappings are self-checked by the charter-drift fence; F1-F9 temporarily
+   carry under D-271's captain-authorized exception until ADR-0060's separate executable enforcement
+   boundary lands.
 2. **[`AGENTS.md`](./AGENTS.md)** — how to work in this repo (every session).
-3. **[`docs/v3/README.md`](./docs/v3/README.md)** - the ratified v3 architecture direction (ADRs
-   0023-0029 and 0055; the ratified documents registered in [`v3-invariants.json`](./v3-invariants.json) are
+3. **[`docs/v3/README.md`](./docs/v3/README.md)** - current Verin's ratified v3 architecture direction
+   and fourth-generation oracle evidence, not a selected replacement architecture (ADRs 0023-0029, 0055,
+   and 0060; the ratified documents registered in [`v3-invariants.json`](./v3-invariants.json) are
    SHA-256-pinned by the arch-version fence, which covers that registry rather than the whole directory -
    the index page is not registered, and originates nothing normative, only restating registered
    documents, ADRs, the charter, and `DECISIONS.md` entries, D-099).
@@ -19,9 +25,10 @@ Practice intelligence for registered investment advisers. The third and final bu
    subordinate to the charter and grounded in the foundation.
 8. **[`docs/product-guide.md`](./docs/product-guide.md)** - the captain-directed differentiating thesis
    (D-098) that the product direction serves; test every design, prompt, and demo choice against it. It
-   binds nothing on its own and is subordinate to the charter, v3, `PRODUCT-DIRECTION.md`, the demo
-   contract, and [`docs/demo-design-language.md`](./docs/demo-design-language.md) - on conflict, they
-   win.
+   binds nothing on its own and is subordinate to the charter, current Verin's v3 direction,
+   `PRODUCT-DIRECTION.md`, the demo contract, and
+   [`docs/demo-design-language.md`](./docs/demo-design-language.md) - on conflict, they win. For the
+   fourth generation, v3 supplies oracle evidence rather than selected composition (ADR-0060).
 9. **[`docs/demo-contract.md`](./docs/demo-contract.md)** - the normative Phase 1 investor-demo
    contract (D-034), with its scenario matrix [`config/demo/scenarios.yaml`](./config/demo/scenarios.yaml)
    and acceptance checklist [`docs/demo-contract-checklist.md`](./docs/demo-contract-checklist.md).
@@ -36,7 +43,7 @@ Practice intelligence for registered investment advisers. The third and final bu
     a port, and held to a clean-slate guarantee that is COUNTED (`pnpm world:validate`,
     `pnpm fixture:check`).
 
-## Stack
+## Current Verin stack
 
 Next.js 16 (App Router, Turbopack) · React 19 · TypeScript 6 · Tailwind v4 · Vitest 4 · Playwright ·
 PGlite/PostgreSQL behind the store interface (`SqlDb`, `src/infrastructure/store/db.ts`) · pnpm (via
@@ -63,7 +70,7 @@ corepack pnpm build
 Every command above except `dev` is also a **blocking** CI gate (`.github/workflows/ci.yml`), never
 advisory.
 
-## Architecture
+## Current Verin architecture
 
 Four layers under `src/` with an inward dependency rule
 (`contracts ← domain ← infrastructure ← app`), enforced by ESLint (edit-time) and the fitness fences in

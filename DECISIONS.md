@@ -8435,3 +8435,82 @@ reverted; versions 9 and 10 keep their shipped bytes and `fixtures/world` is unt
 `src/infrastructure/store/demo-tenant.ts` alone would leave the seed and the migration free to disagree
 about which org is the demonstration one, so it reverts with the seed's imports and the upgrade case
 that proves the repair.
+
+### D-271 · 2026-08-19 · captain-decision · One controlled fourth implementation generation; current Verin is the preserved legacy oracle
+
+The charter has opened since 2026-07-18 with "This is the THIRD AND FINAL build of this product," and the
+captain has asked for a further ground-up rebuild. The captain-reviewed Wayfinder report is a PRIVATE
+FIRSTMATE RECORD held outside the Verin tree and a NON-NORMATIVE decision input. The captain ratifies its
+premise directly here: the constitutional conflict is real, cannot be resolved by reinterpretation, and
+requires a formal charter amendment before later probes or implementation action. The external record is
+not required to interpret or enforce F1-F9. The captain-reviewed BASE-0 audit has the same private,
+external, non-normative standing. As a captain-ratified external audit premise, published SHA
+`a99c46ce492d69fe1e56296eaf597b9234f6461c` is only the divergent published Prompt 10 candidate snapshot
+on the unmerged prompt-10 branch, whose own fourteen blocking CI gates were independently re-run from a
+fresh clone and all passed. That premise is not proof supplied by this checkout. The snapshot is not an
+ancestor of this target, and its result does not verify this target, current main, or the current system.
+The oracle authority rests on F2, not on transferring that snapshot's green status.
+
+**Captain ruling.** One controlled fourth implementation generation is authorized. Current Verin remains
+intact as the read-only behavioral, compatibility, and evidence oracle until an explicitly authorized
+cutover, preserving source history, signed truth, security semantics, decision records, audit evidence,
+and examiner-readable continuity. Destructive replacement, dual external effects, silent reinterpretation
+of history, and a fifth rewrite are prohibited. The ruling authorizes the charter amendment and
+subsequent disposable architecture experiments. It does NOT authorize production implementation, durable
+replacement schemas, data migration, external effects, tenant cutover, or legacy retirement.
+Any later activity requires explicit captain authorization, with F8 governing durable replacement
+implementation and F9 governing cutover and legacy retirement.
+
+**Implemented as constitutional text, not a summary (ADR-0060).** `CHARTER.md` carries clauses F1-F9
+immediately below the superseded sentence, which is left verbatim with an inline `[SUPERSEDED BY
+ADR-0060 ...]` marker so the record of what was intended survives beside what replaced it. F1 authorizes
+one generation and names what it withholds; F2 makes current Verin the read-only oracle; F3 prohibits
+destructive replacement and dual external effects; F4 is the no-fifth-rewrite rule; F5 keeps the
+categories it names authoritative, and only on its individual-falsification terms; F6 states that no
+replacement architecture is selected; F7 requires a matched disposable comparison of stabilization,
+incremental kernel extraction, and clean application composition; F8 prohibits durable implementation
+until a later, separate captain decision is identified and rules on that evidence, and F8 itself grants
+no authority; F9 reserves cutover and legacy retirement to later explicit captain authorization.
+
+F5 is the sole enumeration of its carry-forward categories. F2's oracle-preservation list is a distinct
+obligation, not a restatement of F5.
+
+**Explicit captain-authorized temporary enforcement exception.** F1-F9 temporarily carry in the charter
+text, ADR-0060, and this entry under an explicit captain-authorized TEMPORARY EXCEPTION to charter rule
+#1. The accepted task forbids test changes, while the charter-drift mechanism ratchet is bidirectional:
+`mechanismRatchetProblems`, beginning at `src/__tests__/fitness/charter-drift.test.ts:313`, emits
+`enforced mechanism is absent from the ratchet` for any new enforced `charter-map.json` mechanism absent
+from `RATCHETED_ENFORCED_MECHANISMS`. The exception expires BEFORE any durable fourth-generation code,
+schema, migration, or production-path PR may merge. After architecture ratification, a separate
+EXECUTABLE enforcement contract boundary must land first. Disposable experiments may not be promoted
+into durable work in place of that enforcement.
+
+**Routine mechanic, resolved rather than asked (reversible).** ADR numbers 0058 and 0059 are already
+claimed on unmerged branches - PR #38 uses both, PR #40 also uses 0058 - so this amendment takes 0060 to
+avoid a merge-order collision. If both of those PRs are abandoned, 0058/0059 stay unused; renumbering an
+ADR after it is cited is worse than a gap in the sequence. Decision IDs D-220 through D-270 are claimed
+across the same open branches - PR #40 through D-220 and PR #38 through D-270 - so this entry takes
+D-271, the first identifier free across main and that verified open-PR range. The gap after D-219 is
+intentional for the same merge-order reason.
+
+**Revert path:** while this PR is unmerged, declining it means not merging it, and nothing from it is
+accepted. Once merged and ratified, reversal requires a new captain-ratified ADR that supersedes ADR-0060
+and updates `CHARTER.md`, `DECISIONS.md`, `README.md`, `PLAN.md`, and `docs/adr/README.md` as appropriate.
+ADR-0060 and D-271 remain in history: the index status becomes `Superseded by NNNN`, and the superseding
+ADR carries the replacement state. Accepted records are never deleted. This changeset is documentation
+only - no product code, test, schema, migration, runtime configuration, fixture, or signed evidence
+changed, and no v3 invariant, gate, or SHA pin moved. `AGENTS.md` and
+`.github/pull_request_template.md` remain at the merge-base and are not part of the contract.
+
+**Banked, not fixed (`fu-fourthgen-doc-propagation`).** The amendment's scoping is stated in
+`CHARTER.md`, ADR-0060, and this entry, and is routed from `README.md` and `PLAN.md`. It is NOT yet
+propagated into the SIX other governance documents that assert v3 or current-Verin architecture as
+standing authority: `AGENTS.md`, `FOUNDATION.md`, `PRODUCT-DIRECTION.md`, `docs/product-guide.md`,
+`docs/v3/README.md`, and ADR-0023's amendment log. Those six documents remain at their pre-amendment
+bytes because propagation is a SECOND CONSTITUTIONAL CONTRACT BOUNDARY and belongs in its own PR, which
+is why this amendment was authorized as exactly six files. This is a routing gap and NOT a conflict:
+`CHARTER.md` outranks all six documents, the general architecture-scoping clause reaches every
+pre-amendment architecture mandate whether or not a subordinate document repeats it, and each of those
+documents already declares itself subordinate to the charter. The follow-on PR will mark v3 and the
+four-layer composition as current-Verin authority plus fourth-generation oracle evidence in each, and
+will cite ADR-0060 in ADR-0023's `Amended by` line.
