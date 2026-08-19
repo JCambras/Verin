@@ -3,7 +3,7 @@
 **Status:** Accepted (charter amendment - the opening "THIRD AND FINAL" sentence is superseded, not rewritten)
 **Date:** 2026-08-19
 **Deciders:** captain (ratification 2026-08-19), Firstmate
-**Relates to:** `CHARTER.md` opening identity sentence and the charter operating model (amended only by ADR); ADR-0023 (v3 adoption - unchanged for current Verin and as oracle evidence, not replacement selection); ADR-0024 (Salesforce deferral - unchanged); ADR-0041 (append-only decision ledger); ADR-0052 / ADR-0057 (signed corpus and world artifacts)
+**Relates to:** `CHARTER.md` opening identity sentence and the charter operating model (amended only by ADR); ADR-0023 (v3 adoption - unchanged for current Verin and as oracle evidence, not replacement selection); ADR-0024 (Salesforce deferral - unchanged); ADR-0041 (append-only decision ledger); ADR-0052 (corpus signoff contract, currently `pending-captain`); ADR-0057 (generated populated-world evidence)
 **Informed by:** `data/verin-rebuild-wayfinder/report.md` (WF-G01, WD-01, WD-03, section 12 "Charter amendment" row); `data/verin-base0-audit-o1/report.md` plus `data/verin-audit-recovery-final/base-0/` (the divergent published Prompt 10 candidate snapshot on the unmerged prompt-10 branch at `a99c46ce492d69fe1e56296eaf597b9234f6461c`; its own fourteen blocking CI gates were independently re-run from a fresh clone and all passed)
 
 ## Context

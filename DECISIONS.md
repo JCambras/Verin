@@ -8486,9 +8486,11 @@ claimed on unmerged branches - PR #38 uses both, PR #40 also uses 0058 - so this
 avoid a merge-order collision. If both of those PRs are abandoned, 0058/0059 stay unused; renumbering an
 ADR after it is cited is worse than a gap in the sequence.
 
-**Revert path:** revert this six-file constitutional contract together: `CHARTER.md`, `DECISIONS.md`,
-`docs/adr/0060-controlled-fourth-implementation-generation.md`, `docs/adr/README.md`, `README.md`, and
-`PLAN.md`. It is documentation only - no product code, test, schema, migration, runtime configuration,
-fixture, or signed evidence changed, and no v3 invariant, gate, or SHA pin moved. `AGENTS.md` and
-`.github/pull_request_template.md` remain at the merge-base and are not part of the contract. Reverting
-only one of the six would leave constitutional authority or a supersession marker inconsistent.
+**Revert path:** while this PR is unmerged, declining it means not merging it, and nothing from it is
+accepted. Once merged and ratified, reversal requires a new captain-ratified ADR that supersedes ADR-0060
+and updates `CHARTER.md`, `DECISIONS.md`, `README.md`, `PLAN.md`, and `docs/adr/README.md` as appropriate.
+ADR-0060 and D-220 remain in history: the index status becomes `Superseded by NNNN`, and the superseding
+ADR carries the replacement state. Accepted records are never deleted. This changeset is documentation
+only - no product code, test, schema, migration, runtime configuration, fixture, or signed evidence
+changed, and no v3 invariant, gate, or SHA pin moved. `AGENTS.md` and
+`.github/pull_request_template.md` remain at the merge-base and are not part of the contract.
