@@ -1,7 +1,6 @@
-# docs/v3 - current Verin's ratified v3 architecture direction
+# docs/v3 - the ratified Verin v3 architecture direction
 
-**Status: RATIFIED DIRECTION FOR CURRENT VERIN; ORACLE EVIDENCE FOR THE FOURTH GENERATION** (captain,
-2026-07-26; scope amended by ADR-0060), implemented into this repo's charter machinery by
+**Status: RATIFIED DIRECTION** (captain, 2026-07-26), implemented into this repo's charter machinery by
 **ADR-0023 through ADR-0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, and ADR-0055** (`docs/adr/`). The ratified documents in the table below are committed
 **verbatim** from the ratified sources; the arch-version fence
 (`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
@@ -19,12 +18,6 @@ There is exactly ONE constitution: [`CHARTER.md`](../../CHARTER.md). The v3 arch
 "supersedes prior documents" header is read through ADR-0023: v3 is ratified INTO the charter machinery,
 never beside it. Where v3 and the charter conflict, the resolution is recorded in an ADR below - never
 resolved silently (v3's own rule, §0.5 and orchestrator rule 4).
-
-ADR-0060 scopes that adoption after the controlled-fourth-generation amendment: v3 continues to govern
-current Verin and remains evidence supplied by the preserved legacy oracle, but it does not select or
-bind fourth-generation composition. Fourth-generation authority instead starts with `CHARTER.md` F1-F9:
-only disposable architecture experiments are authorized now, F7 requires a matched comparison, and F8
-requires a later, separate captain decision before durable replacement implementation.
 
 The standing product thesis is [`docs/product-guide.md`](../product-guide.md) (D-098). It binds nothing
 on its own and is subordinate to the ratified documents below.
@@ -55,7 +48,6 @@ on its own and is subordinate to the ratified documents below.
 | [0052](../adr/0052-synthetic-corpus-and-provenance-split.md) | Prompt 11 landed: the §2.4 replay corpus as a deterministic synthetic substrate in `fixtures/corpus/` + `scripts/corpus/`, with a fenced provenance split, an honestly empty real-derived partition (deferred, no `detectionRate`), and digest-bound per-version captain signoff; `scripts/**` becomes a measured `tooling` budget (amends ADR-0018); no invariant is activated |
 | [0053](../adr/0053-policy-ast-and-interpreter.md) | Prompt 9 landed: the §6.1 constrained policy AST as a CLOSED grammar in `src/contracts/decision-core/policy.ts` (grammar 1.0.0 active; 1.1.0 adds only the reserved `elapsed` op, refused by the loader as grammar-only) plus the pure deterministic interpreter `src/domain/policy/` (seven-check loader, conservative effect-conflict rejection, four-phase fail-closed evaluator); invariant 16 activates; contracts and domain ceilings re-baselined by [ADR-0054](../adr/0054-line-budget-policy-ast.md) (amends ADR-0041 and ADR-0051) |
 | [0055](../adr/0055-gate-a-invariant-ordering.md) | Gate A owns invariants 1, 2, 4, and 5 and requires prompt-5 guarantees 7, 8, and 9; invariant 3 is gated at **B** (its prerequisite is prompt 10) |
-| [0060](../adr/0060-controlled-fourth-implementation-generation.md) | v3 remains current-Verin authority and legacy-oracle evidence, but it does not select or bind fourth-generation composition; F1-F9 govern the disposable comparison and withhold durable implementation pending F8 |
 
 ## The 30 invariants, phase-gated
 
@@ -94,11 +86,7 @@ invariant 3 is required at **Gate B**, because its prerequisite - prompt 10, whe
 opening becomes domain configuration - is in Wave B. Invariant 3 is not weakened or waived: until prompt
 10 exists, no document, proof, or UI may claim it is implemented.
 
-## What a current-Verin build session must do
-
-These steps govern work on current Verin. A fourth-generation experiment begins with `CHARTER.md`
-F1-F9 and ADR-0060, uses v3 as oracle evidence, and does not treat the steps below as a selected
-replacement composition.
+## What a build session must do
 
 1. Read `CHARTER.md` first (always), then this directory.
 2. Read `verin-architecture-v3.md` before any decision-core work; read the demo contract before any

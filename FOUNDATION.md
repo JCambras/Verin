@@ -5,12 +5,6 @@ proof, the self-audit findings, the control-matrix gap list, the decision journa
 It is written so the **independent falsification session (Part 2)** can reproduce every claim **from this
 repo alone** — if a proof cannot be reproduced without asking me, that is my defect.
 
-> **Authority after ADR-0060.** This artifact describes current Verin, which F2 preserves as the read-only
-> behavioral, compatibility, and evidence oracle until an explicitly authorized cutover. It is comparison
-> evidence, not a selected fourth-generation architecture; F1 authorizes only disposable experiments now,
-> while F6-F8 keep the architecture open and require a later captain decision before durable replacement
-> implementation.
-
 > **Reproduce everything in one place.** `corepack pnpm install` then:
 > `pnpm typecheck` · `pnpm lint` · `pnpm test` (the unit/integration/fitness suite; the command reports the
 > live count, non-UTC clock) · `pnpm knip` · `pnpm build` ·
@@ -108,7 +102,7 @@ field typed/nullable/united with provenance; golden-record survivorship; Salesfo
   decision ledger, register windowing/print) plus axe, green on a non-UTC clock; `pnpm test:e2e`
   reports the live count.
 
-**Governance:** 58 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
+**Governance:** 56 ADRs, STRIDE threat model, SOC 2 control matrix, sacrificial-components register,
 PORT-LEDGER (all 20 debrief non-data gaps catalogued with triggers), DO-NOT-PORT ledger, the persona board
 (3 seats), `DECISIONS.md`, the charter-as-code enforcement (`charter-map.json` + charter-drift fence),
 the phase-gated v3 invariant registry (`v3-invariants.json` + `pnpm v3:invariants`, ADR-0023), the
