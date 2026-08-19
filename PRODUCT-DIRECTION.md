@@ -19,7 +19,9 @@
 > the current workflow engine - does not bind fourth-generation composition unless the later F8
 > captain ratification explicitly adopts it (`CHARTER.md` clauses F1-F9). This scopes COMPOSITION
 > only. The obligations the paragraph after F9 continues in their own right are NOT scoped away by
-> anything here; that paragraph carries its own list and this document does not repeat it.
+> anything here; that paragraph carries its own list and this document does not repeat it. Ratified v3
+> stays binding on CURRENT VERIN and stands as fourth-generation oracle evidence; it does not bind
+> fourth-generation composition unless the later F8 captain ratification explicitly adopts it.
 >
 > **The differentiating thesis.** The captain-directed product thesis this direction serves is
 > [`docs/product-guide.md`](./docs/product-guide.md) (D-098, 2026-08-05) - it states *what makes Verin

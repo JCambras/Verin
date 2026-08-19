@@ -25,8 +25,10 @@ authorize one controlled fourth implementation generation and preserve current V
 legacy oracle. The ratified v3 direction indexed here is CURRENT VERIN's architecture direction and
 fourth-generation oracle evidence; it is not a selected replacement architecture, and it does not
 bind fourth-generation composition unless the later F8 captain ratification explicitly adopts it (F6,
-F8; ADR-0060, D-271). This index adds nothing to those clauses and states no rule of its own about
-them (D-099).
+F8; ADR-0060, D-271). The charter likewise keeps the four-layer composition that v3's module map lands
+inside binding on current Verin and as oracle evidence; it does not bind fourth-generation composition
+unless the later F8 captain ratification explicitly adopts it. This index adds nothing to those
+clauses and states no rule of its own about them (D-099).
 
 The standing product thesis is [`docs/product-guide.md`](../product-guide.md) (D-098). It binds nothing
 on its own and is subordinate to the ratified documents below.
