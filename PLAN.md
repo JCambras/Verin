@@ -15,6 +15,9 @@ citations captured in the appendix. Nothing below is derived from memory of thos
 
 ## (a) Mission, restated in my own words
 
+> **Historical supersession:** The "third and final" statement below records the 2026-07-18 read-back
+> gate and is superseded by ADR-0060 and `CHARTER.md` clauses F1-F9.
+
 Verin is the **third and final** build of an RIA (registered investment adviser) practice-intelligence
 platform, built to the bar of a **$1B business**: SOC 2 Type II-ready (controls *operating and evidenced
 over time*, not bolted on), SEC-examiner-ready, enterprise-security-review-ready, and scalable without a

@@ -8441,9 +8441,12 @@ that proves the repair.
 The charter has opened since 2026-07-18 with "This is the THIRD AND FINAL build of this product," and the
 captain has asked for a further ground-up rebuild. The Wayfinder exercise
 (`data/verin-rebuild-wayfinder/report.md`) refused to resolve that by reinterpretation and made a formal
-charter amendment its first blocking captain decision (WF-G01). BASE-0 is established independently at
-published SHA `a99c46ce492d69fe1e56296eaf597b9234f6461c` - fourteen of fourteen blocking CI gates re-run
-from a fresh clone, all PASS - so the current system is a verified oracle, not a liability to be cleared.
+charter amendment its first blocking captain decision (WF-G01). Published SHA
+`a99c46ce492d69fe1e56296eaf597b9234f6461c` is only the divergent published Prompt 10 candidate snapshot
+on the unmerged prompt-10 branch. Its own fourteen blocking CI gates were
+independently re-run from a fresh clone and all passed. It is not an ancestor of this target, and that
+result does not verify this target, current main, or the current system. F2's oracle authority rests on
+preserved history and signed truth, not on transferring that snapshot's green status.
 
 **Captain ruling.** One controlled fourth implementation generation is authorized. Current Verin remains
 intact as the read-only behavioral, compatibility, and evidence oracle until an explicitly authorized
@@ -8461,26 +8464,29 @@ destructive replacement and dual external effects; F4 is the no-fifth-rewrite ru
 truth, historical evidence, security semantics, and immutable records authoritative unless individually
 falsified through governed evidence; F6 states that no replacement architecture is selected; F7 requires
 a matched disposable comparison of stabilization, incremental kernel extraction, and clean application
-composition; F8 requires a separate captain decision on that evidence before durable implementation; F9
-reserves cutover and legacy retirement to later explicit captain authorization.
+composition; F8 prohibits durable implementation until a later, separate captain decision is identified
+and rules on that evidence, and F8 itself grants no authority; F9 reserves cutover and legacy retirement
+to later
+explicit captain authorization.
 
-**Carried by ADR and procedure, not by a fence.** F1-F9 are authority limits rather than code invariants,
-so they carry the way the DECISION PROTOCOL and the ADR-0024 Salesforce deferral carry:
-`.github/pull_request_template.md` - already the registered `charter-amended-by-adr-only` mechanism -
-now requires every PR doing replacement-generation work to name its authorizing clause and confirm it is
-not durable, migrating, externally-effecting, or cutover work. A `charter-map.json` entry was considered
-and rejected for this PR: the charter-drift mechanism ratchet is bidirectional
-(`charter-drift.test.ts:313`), so a new `enforced` mechanism must be added to
-`RATCHETED_ENFORCED_MECHANISMS` in the same change, and this PR is documentation-only by captain
-constraint. No fence is claimed to enforce F1-F9.
+**Explicit captain-authorized temporary enforcement exception.** F1-F9 temporarily carry in the charter
+text, ADR-0060, and this entry under an explicit captain-authorized TEMPORARY EXCEPTION to charter rule
+#1. The accepted task forbids test changes, while the charter-drift mechanism ratchet is bidirectional:
+`mechanismRatchetProblems`, beginning at `src/__tests__/fitness/charter-drift.test.ts:313`, emits
+`enforced mechanism is absent from the ratchet` for any new enforced `charter-map.json` mechanism absent
+from `RATCHETED_ENFORCED_MECHANISMS`. The exception expires BEFORE any durable fourth-generation code,
+schema, migration, or production-path PR may merge. After architecture ratification, a separate
+EXECUTABLE enforcement contract boundary must land first. Disposable experiments may not be promoted
+into durable work in place of that enforcement.
 
 **Routine mechanic, resolved rather than asked (reversible).** ADR numbers 0058 and 0059 are already
 claimed on unmerged branches - PR #38 uses both, PR #40 also uses 0058 - so this amendment takes 0060 to
 avoid a merge-order collision. If both of those PRs are abandoned, 0058/0059 stay unused; renumbering an
 ADR after it is cited is worse than a gap in the sequence.
 
-**Revert path:** revert this changeset. It is documentation only - no product code, test, schema,
-migration, runtime configuration, fixture, or signed evidence changed, and no v3 invariant, gate, or SHA
-pin moved - so reverting restores the unamended charter exactly. Reverting `CHARTER.md` alone would leave
-ADR-0060 and this entry claiming an authority the constitution no longer carries, so the four documents
-revert together.
+**Revert path:** revert this six-file constitutional contract together: `CHARTER.md`, `DECISIONS.md`,
+`docs/adr/0060-controlled-fourth-implementation-generation.md`, `docs/adr/README.md`, `README.md`, and
+`PLAN.md`. It is documentation only - no product code, test, schema, migration, runtime configuration,
+fixture, or signed evidence changed, and no v3 invariant, gate, or SHA pin moved. `AGENTS.md` and
+`.github/pull_request_template.md` remain at the merge-base and are not part of the contract. Reverting
+only one of the six would leave constitutional authority or a supersession marker inconsistent.

@@ -3,8 +3,8 @@
 **Status:** Accepted (charter amendment - the opening "THIRD AND FINAL" sentence is superseded, not rewritten)
 **Date:** 2026-08-19
 **Deciders:** captain (ratification 2026-08-19), Firstmate
-**Relates to:** `CHARTER.md` opening identity sentence and the charter operating model (amended only by ADR); ADR-0023 (v3 adoption - unchanged and still binding); ADR-0024 (Salesforce deferral - unchanged); ADR-0041 (append-only decision ledger); ADR-0052 / ADR-0057 (signed corpus and world artifacts)
-**Informed by:** `data/verin-rebuild-wayfinder/report.md` (WF-G01, WD-01, WD-03, section 12 "Charter amendment" row); `data/verin-base0-audit-o1/report.md` plus `data/verin-audit-recovery-final/base-0/` (BASE-0 established at `a99c46ce`, fourteen of fourteen blocking gates PASS)
+**Relates to:** `CHARTER.md` opening identity sentence and the charter operating model (amended only by ADR); ADR-0023 (v3 adoption - unchanged for current Verin and as oracle evidence, not replacement selection); ADR-0024 (Salesforce deferral - unchanged); ADR-0041 (append-only decision ledger); ADR-0052 / ADR-0057 (signed corpus and world artifacts)
+**Informed by:** `data/verin-rebuild-wayfinder/report.md` (WF-G01, WD-01, WD-03, section 12 "Charter amendment" row); `data/verin-base0-audit-o1/report.md` plus `data/verin-audit-recovery-final/base-0/` (the divergent published Prompt 10 candidate snapshot on the unmerged prompt-10 branch at `a99c46ce492d69fe1e56296eaf597b9234f6461c`; its own fourteen blocking CI gates were independently re-run from a fresh clone and all passed)
 
 ## Context
 
@@ -12,16 +12,18 @@
 captain has since asked for a further ground-up rebuild. That is a direct constitutional conflict, and
 the Wayfinder exercise refused to resolve it by reinterpretation: it recorded the conflict as real
 (`report.md` section 2, "Contradictions and stale assumptions") and made a formal charter amendment the
-first and blocking captain decision (WF-G01), ahead of BASE-0-dependent probes and every implementation
+first and blocking captain decision (WF-G01), ahead of later probes and every implementation
 action.
 
 Three facts shape the amendment's shape rather than its existence.
 
-1. **The current system is worth preserving as evidence, not as an obstacle.** BASE-0 was established
-   independently at published SHA `a99c46ce492d69fe1e56296eaf597b9234f6461c`: all fourteen blocking CI
-   gates were re-run from a fresh clone and all fourteen passed, with two named environment deviations
-   and one named coverage gap. A system with that much verified behavior is the only honest oracle a
-   replacement can be measured against.
+1. **The Prompt 10 audit is scoped to its divergent candidate snapshot.** Published SHA
+   `a99c46ce492d69fe1e56296eaf597b9234f6461c` is only the divergent published Prompt 10 candidate
+   snapshot on the unmerged prompt-10 branch. Its own fourteen blocking CI gates were independently
+   re-run from a fresh clone and all passed, with two named environment deviations and one named coverage
+   gap. It is not an ancestor of this target, and that result does not verify this target, current main,
+   or the current system. The oracle authority instead rests on F2 and on preserved history and signed
+   truth.
 2. **The architecture question is genuinely open.** Wayfinder Prompt 4 recommended incremental kernel
    extraction; Prompt 6 returned that recommendation as `RERUN` because the comparison was unmatched and
    the clean-sheet arm had no equivalent probe. Ratifying an architecture now would repeat exactly the
@@ -53,21 +55,30 @@ sentence:
   design that would need a second live effect.
 - **F4** - there is no fifth rewrite. A proposal whose viability depends on a later rewrite is refused at
   proposal time.
-- **F5** - captain-signed truth, historical evidence, sealed security semantics, and the immutable
+- **F5** - captain-signed truth, historical evidence, security semantics, and the immutable
   decision and audit records stay authoritative unless individually falsified through governed evidence
   and recorded as falsified.
 - **F6** - no replacement architecture is selected by this amendment.
 - **F7** - the choice is made by a matched disposable comparison of three arms - stabilization,
   incremental kernel extraction, and clean application composition - under identical inputs, timebox, and
   owner and gross-changed-line accounting.
-- **F8** - a separate captain decision follows that comparison, before any durable replacement
-  implementation.
+- **F8** - durable replacement implementation is prohibited until a later, separate captain decision is
+  identified and rules on the comparison evidence. F8 itself grants no authority.
 - **F9** - tenant cutover and legacy retirement each require later explicit captain authorization against
   exact release proof.
 
 The superseded sentence is left verbatim and carries an inline `[SUPERSEDED BY ADR-0060 ...]` marker.
 The charter records what was intended and what replaced it; it does not present the amended state as
 though it had always been the plan.
+
+**The captain explicitly authorizes a TEMPORARY EXCEPTION to charter rule #1 for F1-F9.** The
+accepted task forbids test changes, while the charter-drift mechanism ratchet is bidirectional: any new
+enforced `charter-map.json` mechanism would also require editing `RATCHETED_ENFORCED_MECHANISMS` in
+`src/__tests__/fitness/charter-drift.test.ts`. During the exception, the carriers are the charter text,
+this ADR, and D-220. The exception expires BEFORE any durable fourth-generation code, schema, migration,
+or production-path PR may merge. After architecture ratification, a separate EXECUTABLE enforcement
+contract boundary must land first. Disposable experiments may not be promoted into durable work in place
+of that enforcement.
 
 ## Alternatives Rejected
 
@@ -78,11 +89,10 @@ though it had always been the plan.
 | Amend the charter AND ratify the architecture in one decision | Contradicts Prompt 6's `RERUN` verdict: the architecture evidence does not exist yet. F6/F7/F8 keep the two decisions separate |
 | Authorize the rebuild without a no-fifth-rewrite rule | Leaves the recurring failure unbounded. F4 is the clause that makes "once and for all" a constraint rather than a hope |
 | Defer the amendment until after the disposable probes | The probes are themselves replacement work. Under the unamended charter no agent has authority to run them, so the constitutional question has to be settled first (WF-G01 blocks WF-P01) |
-| Register F1-F9 as a new `charter-map.json` entry in this PR | The charter-drift mechanism ratchet is bidirectional: a new `enforced` mechanism must be added to `RATCHETED_ENFORCED_MECHANISMS` in `src/__tests__/fitness/charter-drift.test.ts` in the same change. This PR is documentation-only by captain constraint. See Consequences for how F1-F9 are carried instead |
 
 ## Trade-offs and Costs
 
-- **Gained:** an honest constitution; a preserved oracle with an established BASE-0 to measure against;
+- **Gained:** an honest constitution; a preserved oracle grounded in preserved history and signed truth;
   an architecture decision that stays open until matched evidence closes it; a binding stop rule; and
   explicit withholding of every irreversible step, so no later agent can infer authority it was not
   given.
@@ -96,18 +106,23 @@ though it had always been the plan.
 cites its authorizing clause or does not proceed. The disposable comparison arms are now authorized and
 are the next action; durable implementation is not.
 
-**How F1-F9 are carried.** These are authority limits, not code invariants, so they carry the way the
-charter's other authority clauses carry (the DECISION PROTOCOL, the ADR-0024 Salesforce deferral): by
-this ADR and by a procedure. The procedure is `.github/pull_request_template.md`, already the registered
-`charter-amended-by-adr-only` mechanism in `charter-map.json`, which now requires every PR doing
-replacement-generation work to name its authorizing clause and to confirm it is not durable, migrating,
-externally-effecting, or cutover work. No fence claims to enforce F1-F9, and none is asserted to.
+**Temporary enforcement exception and exact expiry.** The captain explicitly authorizes a TEMPORARY
+EXCEPTION to charter rule #1 for F1-F9. During it, the carriers are the charter text, this ADR, and D-220.
+The accepted task forbids test changes, while the charter-drift mechanism ratchet is bidirectional:
+`mechanismRatchetProblems`, beginning at `src/__tests__/fitness/charter-drift.test.ts:313`, emits
+`enforced mechanism is absent from the ratchet` for any new enforced `charter-map.json` mechanism absent
+from `RATCHETED_ENFORCED_MECHANISMS`. The exception expires BEFORE any durable fourth-generation code,
+schema, migration, or production-path PR may merge. After architecture ratification, a separate
+EXECUTABLE enforcement contract boundary must land first. Disposable experiments may not be promoted
+into durable work in place of that enforcement.
 
 **What this does NOT do.** It selects no architecture (F6). It authorizes no production implementation,
 durable replacement schema, data migration, external effect, tenant cutover, or legacy retirement (F1,
 F9). It creates no implementation stories. It changes no product code, test, schema, migration, runtime
 configuration, fixture, or signed evidence, and it moves no v3 invariant, gate, or SHA pin. The sixteen
-non-negotiables and ADR-0023..0029 / ADR-0055 are untouched and bind the fourth generation unchanged.
+non-negotiables are untouched and remain binding. Existing architecture ADRs, including ADR-0023..0029 /
+ADR-0055, continue to govern current Verin and provide oracle evidence, but do not automatically select
+or bind replacement composition under F6-F8.
 
 **Open items this decision deliberately leaves open.** The Wayfinder register's remaining captain rows -
 architecture path (DG-01), third-domain falsifier (DG-02), ledger continuity (DG-03), governance archive
@@ -118,6 +133,10 @@ the real Salesforce target, cutover, and retirement - are each unresolved and ar
 
 - **The matched comparison (F7) completes.** Its evidence triggers the F8 captain decision; this ADR is
   then amended by the ADR that ratifies (or rejects) an architecture.
+- **Any durable fourth-generation code, schema, migration, or production-path PR is proposed.** The
+  temporary exception expires BEFORE such a PR may merge. After architecture ratification, a separate
+  EXECUTABLE enforcement contract boundary must land first, and no disposable experiment may be
+  promoted into durable work in place of that enforcement.
 - **Any arm cannot be built disposably** - if a comparison arm requires a durable schema, a migration, or
   a live external effect to be meaningful, F7 is unsatisfiable as written and the captain re-scopes it
   rather than an agent relaxing it.

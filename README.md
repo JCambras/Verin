@@ -1,6 +1,7 @@
 # Verin.
 
 Practice intelligence for registered investment advisers. The third and final build (code name Verin).
+[SUPERSEDED BY ADR-0060 AND `CHARTER.md` CLAUSES F1-F9. This historical 2026-07-18 statement is retained.]
 
 ## Start here
 

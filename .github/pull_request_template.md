@@ -28,13 +28,6 @@ pipeline). Fill this out honestly — a false checkbox is a control failure.
 
 - [ ] This PR changes `CHARTER.md`. It references the amending ADR: `docs/adr/____`. (Silent charter edits fail review — charter operating model.)
 
-## Fourth-generation authority (required - charter F1-F9, ADR-0060)
-
-- **Replacement-generation work?** <!-- "no - this PR serves the current system", or name the authorizing charter clause (F1 disposable experiment / F7 comparison arm / F8-ratified durable work) -->
-- [ ] If yes: this PR is **not** production implementation, a durable replacement schema, a data migration, an external effect, tenant cutover, or legacy retirement - none of which F1 authorizes; each needs its own later captain decision (F8, F9).
-- [ ] If yes: current Verin is untouched as the read-only legacy oracle (F2); nothing here deletes, rewrites, or reinterprets history, signed fixtures, canonical hashes, chain bytes, or examiner evidence, and no design leaves two systems able to issue the same external instruction (F3).
-- [ ] If this PR retires or contradicts inherited signed truth, historical evidence, security semantics, or an immutable record, it falsifies that item **individually** through governed evidence and says which one (F5). A blanket "the rebuild supersedes it" is a review failure.
-
 ## v3 index (only if `docs/v3/README.md` changed)
 
 - [ ] This PR changes `docs/v3/README.md`. The change is navigation only - the index originates nothing normative; every rule it states restates a registered document, an ADR, the charter, or a `DECISIONS.md` entry (D-099). That index is not registered in `v3-invariants.json`, so the arch-version fence does not byte-protect it, and a NEW normative statement originates in a registered document, an ADR, the charter, or a `DECISIONS.md` entry instead.
