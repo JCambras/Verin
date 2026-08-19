@@ -10,6 +10,8 @@ repo alone** — if a proof cannot be reproduced without asking me, that is my d
 > `CHARTER.md` F2 preserves. Its composition - the four layers, the fence set, the budgets - does
 > not bind fourth-generation composition unless the later F8 captain ratification explicitly adopts
 > it, and no replacement architecture is selected (F6).
+> Ratified v3 stays binding on current Verin and stands as fourth-generation oracle evidence; it does
+> not bind fourth-generation composition unless F8's later captain ratification explicitly adopts it.
 
 > **Reproduce everything in one place.** `corepack pnpm install` then:
 > `pnpm typecheck` · `pnpm lint` · `pnpm test` (the unit/integration/fitness suite; the command reports the
