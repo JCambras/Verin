@@ -24,11 +24,18 @@ export default async function Households() {
     return { principal, households };
   });
   if (!view) redirect("/");
-  if (!view.households) return <p className="alert" role="alert">Your role is not permitted to read households.</p>;
+  if (!view.households)
+    return (
+      <p className="alert" role="alert">
+        Your role is not permitted to read households.
+      </p>
+    );
   return (
     <section className="stack" data-testid="verin-register-loaded" aria-labelledby="households-heading">
       <h1 id="households-heading">Households</h1>
-      <p className="meta">Signed in as {view.principal.displayName} · {view.principal.role}</p>
+      <p className="meta">
+        Signed in as {view.principal.displayName} · {view.principal.role}
+      </p>
       {view.households.length === 0 ? (
         <div className="card-dashed">
           <p className="title">No household records yet</p>
@@ -38,7 +45,7 @@ export default async function Households() {
         <ul className="register" aria-label="Your firm's households">
           {view.households.map((h) => (
             <li key={h.id}>
-              <span>{h.name}</span>
+              <a href={`/households/${h.id}`}>{h.name}</a>
               {h.record_origin === "demo-seed" ? <span className="badge-demo">demonstration record</span> : null}
             </li>
           ))}

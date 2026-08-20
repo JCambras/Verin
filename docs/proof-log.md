@@ -311,3 +311,25 @@ and in the browser.
 Counter-run: with `ALTER TABLE household DISABLE ROW LEVEL SECURITY` in the scratch store the same
 test FAILS (`expected 5 to be 2` - every firm's rows suddenly visible), and with ENABLE + FORCE
 restored it passes: the test is load-bearing on the database, never on the application predicate.
+
+## PR-2b proofs (the workspace; raw transcripts: docs/evidence/pr2b-transcripts.tar, sha256 906d1134...)
+
+### The provenance rule against the first metric-class surface
+A naked figure injected beside the honest one fails at file:line:
+`metric-class render without provenance (no source/asOf): <p>{view.household.recordCount.count}</p>` -
+including inside the bracketed dynamic route. The shipped figure renders only through the
+provenance-carrying `DisplayMetric` (label, value, source, asOf, and the ADR-0022-style watermark
+whenever any input is a demonstration record). The first attempt of this arm used a mistyped base
+sha, so the collector honestly saw no diff; the transcript keeps both runs.
+
+### The watermark is load-bearing, not decorative
+Suppressing the demonstration flag on the workspace figure fails the browser proof at exactly the
+watermark assertion (`getByText('demonstration - not a compliance record') ... not found`); restored,
+it passes. A demonstration-derived figure cannot render clean while that assertion stands.
+
+### Honest absence and the no-leak workspace
+`recorded_at` lands NULLABLE with no default - a default cannot answer for rows that already exist,
+so a row without one renders "recorded date not on file" and the derived figure is withheld rather
+than minted. A malformed id parses before any store work; another firm's real id resolves to the same
+honest not-found through the grant-scoped read (committed suite and browser both), so existence never
+leaks across the tenant boundary.
