@@ -1,0 +1,6 @@
+{
+  "enforcement/signed-truth-pins.json": {
+    "regenerate": ["node", "enforcement/run.mjs", "--regenerate=enforcement/signed-truth-pins.json"],
+    "summary": "docs/review-summaries/signed-truth-pins.md"
+  }
+}
