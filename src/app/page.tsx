@@ -1,6 +1,6 @@
 // Sign-in. An authenticated advisor is sent straight to the household register at /households
 // (PR-2a' fulfilled the PR-2a shell's promise); everything server-side runs as governed operations.
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAccessContext, signIn } from "../access/context";
 import { getGateway, mintRequestId, requestCorrelation } from "../runtime/governed";
@@ -26,7 +26,7 @@ async function submitSignIn(formData: FormData) {
 export default async function Home({ searchParams }: { searchParams: Promise<{ refused?: string }> }) {
   const c = requestCorrelation(mintRequestId());
   const access = createAccessContext();
-  const principal = await access.authenticate(c, (await cookies()).get("verin_session")?.value);
+  const principal = await access.authenticate(c, (await headers()).get("x-verin-session") ?? (await cookies()).get("verin_session")?.value);
   if (principal) redirect("/households");
   const refused = (await searchParams).refused === "1";
   return (

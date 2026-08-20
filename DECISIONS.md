@@ -21,3 +21,16 @@ collector maps root-level bookkeeping files into one repository-cluster owner, n
 **Why:** Captain ruling, 2026-08-20 (option A on key `e5-foundation-seam-reconciliation`); both
 sharpenings carry companion mutation proofs in `docs/proof-log.md`.
 **Revert path:** a captain re-ruling; every recorded value stays a downward-only ratchet meanwhile.
+
+### GD-003 - 2026-08-20 - the E16 PII scan excludes exactly the runtime's own minted correlation ids
+
+**What:** PR-2b's independent pass found the scan ~4 percent value-flaky: a runtime-minted span id is
+16 hex chars, and an all-digit one matches the bare-account-reference pattern. The runtime now records
+every id it mints (`mintedCorrelationIds` in the capture), and the checker excludes exact matches of
+that list - shape-bounded to 16/32 unbroken hex, and only in the correlation keys `requestId`,
+`traceId`, `spanId` - from account-reference candidacy. Nothing else changes: genuine account
+references in bare, spaced or hyphenated form keep full sensitivity in every position, proven by the
+companion in `docs/proof-log.md`.
+**Why:** Ruled by the merge authority under the GD-002 pattern, 2026-08-20, on the falsification
+pass's recommendation.
+**Revert path:** a captain re-ruling; the sharpening only ever narrows the exclusion.

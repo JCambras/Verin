@@ -333,3 +333,33 @@ so a row without one renders "recorded date not on file" and the derived figure 
 than minted. A malformed id parses before any store work; another firm's real id resolves to the same
 honest not-found through the grant-scoped read (committed suite and browser both), so existence never
 leaks across the tenant boundary.
+
+## PR-2c proofs (the session and the journey; raw transcripts: docs/evidence/pr2c-transcripts.tar, sha256 e1263642...)
+
+### Renewal and rotation on the cookie-writing path only (5B, spec M-C)
+The proxy - Next's always-Node cookie-writing path - is the ONE place rotation lives: one closed
+store operation slides a session past its half-life (rotate token, reset created_at, extend expiry in
+a single guarded UPDATE), and the fresh value is handed to the downstream render through a stripped,
+proxy-owned header. The committed lifecycle test proves the arc: a fresh session does not rotate; the
+read-only path resolves the same cookie twice and never rotates; slid past the half-life from outside
+the app, the session rotates exactly once; the second resolution in the same request reads the
+handed-off id (M-C: never a 401 at the half-life); the rotated-away id is genuinely gone; a freshly
+rotated session does not rotate again. In the browser: the advisor stays signed in across the slide
+with the cookie value visibly rotated, twice. A probe transcript in the bundle records why migration
+004 replaces the session policy whole: PostgreSQL also requires the post-update row to satisfy USING.
+
+### The full section 6 battery, re-run with its counter-run
+The committed battery re-ran whole and green; with row-level security disabled it FAILS
+(`expected 5 to be 2`); restored with ENABLE + FORCE it passes again.
+
+### The journey anyone can complete
+The committed keyboard-only spec drives sign-in, the register and the workspace with no pointer:
+typed credentials, native Enter submission, the Tab ring walked to the first row, Enter opening the
+workspace, axe clean at the destination.
+
+### The GD-003 sharpening's companion (the E16 PII scan)
+Real account references still fail in every position and form: spaced, hyphenated and bare in
+ordinary log fields; bare in a correlation key when not a minted id; bare smuggled INTO the minted
+list but sitting in a non-correlation key; and a spaced reference can never be laundered through the
+minted list (shape-bounded). Exactly one case is excluded - an all-digit minted span id in its own
+correlation key - which is the ~4 percent flake the independent pass measured, cured.

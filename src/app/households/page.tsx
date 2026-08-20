@@ -3,7 +3,7 @@
 // surface closes over the grant's sealed tenant identity; the database's RLS is what guarantees an
 // advisor sees their own firm's households and no other firm's. Seeded rows are labelled: the
 // demonstration chip renders from the row's own record_origin, never from an assumption (5B.6).
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAccessContext } from "../../access/context";
 import { getGateway, mintRequestId, requestCorrelation } from "../../runtime/governed";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function Households() {
   const c = requestCorrelation(mintRequestId());
   const access = createAccessContext();
-  const cookieValue = (await cookies()).get("verin_session")?.value;
+  const cookieValue = (await headers()).get("x-verin-session") ?? (await cookies()).get("verin_session")?.value;
   const view = await getGateway().enterRouteHouseholds(c, async () => {
     const principal = await access.authenticate(c, cookieValue);
     if (!principal) return null;
