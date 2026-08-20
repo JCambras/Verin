@@ -22,6 +22,14 @@ jobs:
         with:
           node-version: 22.23.1
       - run: cat "$GITHUB_EVENT_PATH" # the real platform event payload, captured for the proof log
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0, pinned by commit; independent whole-history layer beside E13
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: > # the pinned semgrep engine over the repo-owned ruleset; E14 consumes the report and fails closed without it
+          docker run --rm -v "$PWD:/src" -w /src
+          semgrep/semgrep:1.174.0@sha256:f1f7b71861c7b28b6e0f661225a2c4f58a484f5d0f182465c6d6b3b22f972ade
+          semgrep scan --config enforcement/semgrep-rules.yml --json --output semgrep-report.json --metrics=off
       - run: node enforcement/run.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEMGREP_REPORT: semgrep-report.json

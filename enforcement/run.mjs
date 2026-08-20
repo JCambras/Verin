@@ -6,6 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { evaluateEnforcement, RULES } from "./contract.mjs";
 import { collectTreeFacts, regenerateSignedTruthPins } from "./rules-tree.mjs";
+import { collectSupplyFacts } from "./rules-supply.mjs";
 
 const regen = process.argv.find((a) => a.startsWith("--regenerate="));
 if (regen) {
@@ -58,7 +59,7 @@ async function collectInput() {
     roadmapSeamIds: readRoadmapSeamIds(),
     ...(await readDefaultBranch()),
   };
-  return { ...input, ...collectTreeFacts(input) };
+  return { ...input, ...collectTreeFacts(input), ...collectSupplyFacts() };
 }
 
 function proofLogViolations() {
@@ -74,8 +75,13 @@ function proofLogViolations() {
   return out;
 }
 
-const report = evaluateEnforcement(await collectInput());
+const input = await collectInput();
+const report = evaluateEnforcement(input);
 const violations = [...report.violations, ...proofLogViolations()];
+const s = input.supply; // the honest-empty states are POSITIVE results, printed, never "skipped" or "not-applicable"
+const declared = typeof s?.manifest === "object" && s?.manifest ? Object.keys({ ...s.manifest.dependencies, ...s.manifest.devDependencies }).length : 0;
+console.log(`E11 report: manifests=${s?.manifest ? 1 : 0} lockfiles=${s?.lockfiles.length ?? "?"} directDependencies=${declared}`);
+console.log(`E15 report: releaseArtifacts=${s?.release?.artifacts.length ?? "?"} sbomClaims=${s?.release?.sboms.length ?? "?"}`);
 for (const id of [...RULES.keys(), "proof-log"])
   console.log(violations.some((x) => x.rule === id) ? `${id} FAIL` : `${id} PASS`);
 for (const x of violations) console.log(`${x.rule} FAIL ${x.ref} - ${x.message}`);

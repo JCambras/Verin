@@ -104,6 +104,65 @@ injected on a detached head and discarded. Exact failure lines (exit 1 in every 
   9ef69c5abec88bc4ac, read 6fd9f136800692a09288d750500b1caf604d3d5a85577200731c3b9e9f679d75; refusing to
   continue` - both digests printed, no downstream step ran. Reverted: the clone's oracle ref re-fetched.
 
+## M-E11 (rule E11)
+The honest-empty tree first reported the required positive result, never skipped:
+`E11 report: manifests=0 lockfiles=0 directDependencies=0`. In disposable copies of that tree, each injected
+one-sided subject failed naming the subject and the missing proof (exit 1): an empty recognized manifest
+(`a dependency manifest appeared with no lockfile; the ratified baseline requires a complete frozen
+lockfile`), a lockfile alone (`a lockfile (pnpm-lock.yaml) appeared with no manifest; a partial subject
+leaves the honest-empty state and lacks the complete non-empty proof`), and a manifest declaring one
+dependency without the baseline (both failures above, subject named). In the separate scratch baseline -
+the complete ratified allowlists installed with corepack pnpm 10.15.0, frozen lockfile, all rules
+passing before injection - the four non-empty arms each failed: a hand-edited resolved version
+(`E11 FAIL react - 'react' is declared 19.2.8 but the lockfile resolves 19.2.9; manifest and lockfile
+disagree`, plus the frozen-lockfile install failing); a caret range (`'next' is declared as '^16.3.1', a range; every entry
+is an exact version`); an unratified package (`'left-pad' is in neither ratified allowlist; a new package
+needs captain ratification`); and `@types/node` moved to a real current non-22 major in manifest and lock
+(`the executing Node runtime major is 22 but @types/node is 24.13.3 (major 24); the majors must be
+equal` - the runtime side reads `process.versions.node`, not a manifest string). Reverted each time.
+
+## M-E12 (rule E12)
+- Injected into the passing baseline: `lodash@4.17.20` (exit 1): `E12 FAIL lodash - 'lodash' 4.17.20
+  carries advisory GHSA-35jh-r3h4-6jhm (high), at or above the declared floor` plus four more real advisories from the
+  live registry. Then `jszip@3.10.1`: `'jszip' 3.10.1 carries license '(MIT OR GPL-3.0-or-later)', which
+  is off the declared allowlist` - every arm of a dual expression must be allowed. Reverted.
+- Falsification note: the first baseline run genuinely failed E12 on the ratified set's own transitive
+  MPL-2.0 and LGPL-3.0-or-later licenses, and E11 on a pin-parser defect that swallowed sentence-ending
+  periods; the declared allowlist was extended by name in CONSTITUTION.md and the parser fixed, in this
+  same PR - the rule found two real defects before any mutation was injected.
+
+## M-E13 (rule E13)
+- Injected: in a disposable clone, an AWS-key-shaped string committed in `config-creds.js`, then removed
+  in a later commit; the shipped scan still failed (exit 1): `E13 FAIL 908e9e8e3785:config-creds.js -
+  gitleaks-class rule 'aws-access-key-id' matched a credential-shaped byte in commit 908e9e8e3785, file
+  config-creds.js` - the scan reads the whole history, not the tip diff. The injected value was a
+  documentation-reserved example key, not a live credential. Reverted with the clone. The pinned
+  gitleaks action runs beside this rule in CI as an independent whole-history layer.
+
+## M-E14 (rule E14)
+- Injected: a file calling `eval(input)`; the pinned semgrep engine (1.174.0) ran the repo-owned
+  `gen4-sast-rules v1` ruleset and the shipped rule failed (exit 1): `E14 FAIL src-probe.mjs:1 - SAST
+  rule 'enforcement.gen4-no-eval' (ERROR) matched at src-probe.mjs:1`. With no report present the rule
+  fails closed (`no SAST report was provided by the pinned semgrep step (SEMGREP_REPORT); failing
+  closed`). Reverted.
+
+## M-E15 (rule E15)
+The honest-empty tree first reported the required positive result: `E15 report: releaseArtifacts=0
+sbomClaims=0` - never skipped. One-sided subjects injected in disposable copies each failed (exit 1): an artifact
+alone (`release artifact 'release/orphan-artifact.tgz' is the subject of no SBOM`) and an SBOM claim
+alone (`SBOM 'sbom.cdx.json' names no release subject in this tree (subject: release/nothing.tgz)`). In
+the scratch baseline carrying one real packed release artifact and its matching 291-component SBOM (all
+rules passing before injection), removing one component failed in one direction
+(`E15 FAIL sbom.cdx.json - component 'zod@4.4.3' is in the resolved lockfile but missing from the SBOM`), adding one failed in the other
+(`component 'ghost-package@9.9.9' is in the SBOM but the resolved lockfile does not contain it`), and
+re-subjecting the SBOM failed both the orphaned artifact and the orphaned claim. Reverted each time.
+
+## M-V2 (rule E15)
+- Injected: on the non-empty scratch subject from M-E15, the SBOM's component list replaced with zero
+  components (exit 1): `SBOM 'sbom.cdx.json' carries zero components; an empty inventory is the easiest
+  false pass and never reports clean`. Reverted. This is the non-empty path, not the honest build-free
+  state.
+
 ## M-V1 (rule E5)
 - Injected: a simulated pull request whose base and head are the same commit, so the changed-path list is
   empty (exit 1): `E5 FAIL diff - E5 saw zero changed paths; a check that sees nothing must never report
