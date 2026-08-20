@@ -1,7 +1,8 @@
 # ADR-0061: Generation-4 ratification - F8 discharged, delivery constraints and dependency baseline ratified, one bootstrap push authorized
 
 **Status:** Accepted (captain rulings of 2026-08-20 applied from the ruled decision sheet; no
-placeholder remains)
+placeholder remains; the B-6 bootstrap record was appended in place 2026-08-20 by the post-push
+amendment PR this ADR itself directs, immediately after the authorized push ran)
 **Date:** 2026-08-20
 **Deciders:** captain
 **Relates to:** `CHARTER.md` F1-F9 (`CHARTER.md:41-52` at the head cited below; this ADR discharges
@@ -135,12 +136,34 @@ immediately after the push (house precedent: ADR-0055, amended in place with eac
 post-push facts, not rulings, so they are not decision-sheet placeholders and phase 7 does not fill
 them:
 
-- Pushed SHA: (appended by the post-push amendment PR)
-- File list from `git show --stat --name-only`: (appended)
-- Reviewable line count: (appended)
-- Root-commit and merge-base transcripts: (appended)
-- Platform-returned protection settings: (appended)
-- Refused-direct-push transcript: (appended)
+- Pushed SHA: `71ef1955c3f65710ab5010832a67f27a2aa76cfe` (pushed 2026-08-20 by
+  `git push origin refs/heads/generation-4:refs/heads/generation-4`, after the B-3 recheck
+  `git ls-remote --heads origin refs/heads/generation-4` returned nothing).
+- File list from `git show --stat --name-only 71ef1955c3f65710ab5010832a67f27a2aa76cfe`: `README.md`
+  and nothing else - `1 file changed, 14 insertions(+)`, `create mode 100644 README.md`.
+- Reviewable line count: 14, within the 30-preferred/50-hard bound; the pushed bytes are exactly the
+  authorized bytes reproduced below (SHA-256
+  `a93d9c31b93f28e4336f8a98861708dd5f05b58a9b6452bf32c03bc03bcc44fc`).
+- Root-commit and merge-base transcripts: `git rev-list --max-parents=0 generation-4` prints exactly
+  `71ef1955c3f65710ab5010832a67f27a2aa76cfe` (one root, no parent);
+  `git merge-base --all generation-4 origin/main` prints nothing and exits 1, with `origin/main` at
+  `644938fd628e7bdd5842c5b7941b0aba0b1d69ab`.
+- Platform-returned protection settings (as returned, not as requested): repository ruleset id
+  `21103072`, name `generation-4-protection`, `source: JCambras/Verin`, `target: branch`,
+  `enforcement: active`, conditions `ref_name.include = ["refs/heads/generation-4"]`, rules
+  `deletion`; `non_fast_forward`; `pull_request` with `required_approving_review_count: 0` (the X-1
+  amendment), `dismiss_stale_reviews_on_push: false`, `required_reviewers: []`,
+  `require_code_owner_review: false`, `require_last_push_approval: false`,
+  `required_review_thread_resolution: false`, `require_extra_approval_for_unattributed_changes: true`
+  (platform-added default), `allowed_merge_methods: ["merge", "squash", "rebase"]`;
+  `bypass_actors: []`; `current_user_can_bypass: never`; created `2026-08-20T13:47:16.998-04:00`.
+- Refused-direct-push transcript (B-4.3, a trivial local commit pushed and refused by the platform):
+  `remote: error: GH013: Repository rule violations found for refs/heads/generation-4.` /
+  `remote: - Changes must be made through a pull request.` /
+  `! [remote rejected] generation-4 -> generation-4 (push declined due to repository rule violations)`
+  / `error: failed to push some refs to 'https://github.com/JCambras/Verin'`. The trivial commit was
+  reverted; local and remote `generation-4` both stand at the pushed root
+  `71ef1955c3f65710ab5010832a67f27a2aa76cfe`, verified by a fresh `git ls-remote` after the reset.
 
 **The authorized `README.md`, verbatim, 14 lines, within the 30-preferred/50-hard bound:**
 
