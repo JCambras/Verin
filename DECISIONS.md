@@ -8514,3 +8514,48 @@ pre-amendment architecture mandate whether or not a subordinate document repeats
 documents already declares itself subordinate to the charter. The follow-on PR will mark v3 and the
 four-layer composition as current-Verin authority plus fourth-generation oracle evidence in each, and
 will cite ADR-0060 in ADR-0023's `Amended by` line.
+
+### D-272 · 2026-08-20 · captain-decision · Generation-4 ratification: F8 discharged, direction ruled, bootstrap bounded, dependency baseline pinned (ADR-0061)
+
+**What:** The captain rules on the F7 comparison evidence and discharges `CHARTER.md` F8. Direction:
+ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md). No F7 arm is promoted; arm C, arm K and arm S code is discarded, only measurements and
+findings survive: ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md). The seven generation-4 delivery constraints DC-1..DC-7 are ratified by
+name: ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md). Exactly one bootstrap push creating remote `generation-4` is authorized under bounds
+B-1..B-6, carrying only the 14-line `README.md` reproduced in ADR-0061: ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md). Charter
+non-negotiables #11, #14 and #15 land as ruled in ADR-0061 R-6: ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md). Both dependency allowlists
+(eleven application/runtime entries, thirteen development/test/build entries) are ratified by exact
+package name and exact version, lockfile frozen, later budgets counting additions after this
+baseline: ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md). The reviewer requirement is reduced for the program by explicit ruling (X-1, ruled
+2026-08-20: "Just keep me as collaborator for now. For the foreseeable future, it's just me and you."
+- JCambras stays the sole collaborator, required approving review count zero, every program PR
+mergeable by the captain alone). PR-1d's placement and its conditional: KEEP AS WRITTEN with the recorded conditional - the recommended option, both parts - ruled 2026-08-20, captain's words: "rule keep-as-written on X-2". The six comparison
+holds and the five produced-versus-signed-outcome decisions are ruled in ADR-0061's closing table:
+ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md) / ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md) / ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md) / ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md) / ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md) / ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md) / ACCEPT RECOMMENDATION on the main direction (demote from independent binding truth; re-derive explanation codes from the rules that fire) - ruled 2026-08-20 via "Accept all the package defaults". SUB-CHOICE: option (i) RE-SIGN - the re-derived sets are re-signed as outputs of the ratified rule set, keeping explanations falsifiable; the captain signs; ruled 2026-08-20 by firstmate under the captain's explicit delegation, captain's words: "Go with your recommendations and keep moving" (see captain-rulings-2026-08-20.md addendum) / ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md) /
+STATE THE GRAMMAR NORMATIVELY. GC-10 is re-signed to conform to the uniform grammar rather than carrying a one-case exception no rule justifies. The normative statement must define every segment, its order, and what an absent optional segment means, and a regression test pins the grammar; ruled 2026-08-20 by firstmate under the captain's explicit delegation, captain's words: "Go with your recommendations and keep moving" (see captain-rulings-2026-08-20.md addendum) / RESERVE ONLY AFTER RE-APPROVAL - the signed GC-15 ordering stands unedited. Authority-complete-before-commitment is the compliance-coherent rule, the oracle is preserved per DC-2 rather than re-signed to match the replacement, and the concurrency risk is owned by execution-time revalidation either way; ruled 2026-08-20 by firstmate under the captain's explicit delegation, captain's words: "Go with your recommendations and keep moving" (see captain-rulings-2026-08-20.md addendum) / ACCEPT RECOMMENDATION - ruled 2026-08-20, captain's words: "Accept all the package defaults, and rule keep-as-written on X-2" (recorded by firstmate; scope: every gating entry carrying a package recommendation; see captain-rulings-2026-08-20.md).
+
+**Why:** ADR-0060 authorized one controlled fourth generation and required a matched disposable
+comparison (F7) followed by a separate captain decision on its evidence (F8). The comparison ran; no
+arm is ratifiable on it, and the evidence supports a direction. The rebuild program's first prompt
+refuses to run until this ruling exists on `main` as R-1..R-7, so this entry and ADR-0061 are the
+records that unblock it. The bootstrap push needs captain bounds because a root commit has no base
+for anyone to review; the dependency baseline needs ratification because a clean branch has no
+inherited manifest and a program without a ratified baseline has no legal way to install one.
+
+**Alternatives:** Ratify an arm (forbidden by F8/E8 and unsupported: no arm is rankable on the
+evidence); a different direction - incremental kernel extraction or stabilization in place (ranked
+below clean composition on evidence strength, and stabilization failed reproducibility on its own
+record); refuse the bootstrap push (no pull request can create a parentless root, so refusal is
+refusal of the program); leave #11/#14/#15 unplaced (unavailable - `CHARTER.md:63-66` keeps them
+binding outside F5's falsification path); install dependencies without a ratified baseline
+(unavailable by construction on the clean branch).
+
+**Revert path (drafted; the captain edits):** While the ratification PR is unmerged, declining it
+means not merging it, and nothing from it is accepted. Once merged but before the bootstrap push
+runs, reversal is a new captain-ratified ADR superseding ADR-0061; nothing exists on `origin` to
+unwind, `generation-4` is never created, and ADR-0061's index status becomes `Superseded by NNNN`.
+After the bootstrap push, the push is not undone: `generation-4` and its branch protection remain
+(the branch is left frozen - protection stays on, no force push, no deletion, no further merges), a
+superseding captain ADR records that the program is stopped and why, and any later restart requires
+a fresh captain ratification against the then-current evidence. Accepted records are never deleted,
+on `main` or on `generation-4`. The legacy oracle is untouched under every branch of this path:
+`main`'s bytes, history, default-branch status and running system are never part of what reverts.
