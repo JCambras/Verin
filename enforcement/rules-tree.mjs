@@ -159,7 +159,7 @@ export function e5ReviewBudget(input) {
   const measures = [
     ["Bucket H, reviewable text lines", hLines],
     ["Files touched", input.changed.length],
-    ["Canonical owners touched", new Set(input.changed.map((c) => /^(enforcement\/|\.github\/|docs\/|CONSTITUTION\.md|README\.md)/.test(c.path) ? "enforcement-contract" : c.path.split("/")[0])).size],
+    ["Canonical owners touched", new Set(input.changed.map((c) => /^(enforcement\/|\.github\/|docs\/|CONSTITUTION\.md|README\.md|DECISIONS\.md)/.test(c.path) ? "enforcement-contract" : c.path.split("/")[0])).size],
     ["New public seam symbols", SEAM_MODULES.flatMap((mod) => input.diffAdded[mod] ?? []).filter((l) => /^export\s/.test(l)).length],
     ["New database objects", Object.entries(input.diffAdded).filter(([p]) => p.endsWith(".sql")).flatMap(([, a]) => a).filter((l) => /^\s*CREATE\s+(TABLE|INDEX|VIEW|SEQUENCE|TRIGGER|FUNCTION)/i.test(l)).length],
     ["New direct dependencies, application/runtime allowlist", input.deps?.runtimeAdded?.length ?? 0],

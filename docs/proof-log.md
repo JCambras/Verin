@@ -163,6 +163,61 @@ re-subjecting the SBOM failed both the orphaned artifact and the orphaned claim.
   false pass and never reports clean`. Reverted. This is the non-empty path, not the honest build-free
   state.
 
+## M-E16 (rule E16)
+Subject: a disposable scratch clone carrying the complete ratified baseline, a real `GovernedRuntime` in
+TypeScript over a real PostgreSQL client (`pg` 8.23.0 against the pinned `postgres:18.6` image, by digest)
+and a real fake provider, a typed seven-row registry spanning all six classes (the class-6 external row
+carries an explicit `unreachableInSlice` classification), OpenTelemetry in-memory span and metric capture,
+and a real end-to-end test exercising the flow. The happy path passes all six comparisons whole. Every
+subcase was injected, observed failing with the exact operation and defect, reverted, and none is caught
+by a substring search. Selected exact lines (the full battery transcript is in the PR-1d body):
+1. Missing span: `... 'store.insert-account' has 0 completed span(s); exactly one is required (span)`.
+2. Missing metric: `... its required metric 'count' recorded a total of 0; exactly once per node is
+   required (metric)`. 3. Missing log: `... emitted 0 structured log record(s); ... (log)`.
+4. Phantom entry (exit 1): `E16 FAIL store.never-run - registered operation was never exercised and
+   carries no unreachableInSlice classification` - the other direction.
+5. Source shape is not emission: every emission call left in the source, made unreachable at runtime; the
+   source greps clean and E16 still failed all three, because it reads the capture and not the text.
+6. Unregistered internal step: unobtainable identity by construction - `tsc` refused all three forcings
+   (TS2339 no such gateway entry; TS2339 no generic `enter`; TS2305 the raw interpreter is not exported) -
+   and the behavioral relabel failed `exercised operation 'flow.sneaky-read' is absent from the typed
+   registry`.
+7. Adapter direct-call path: the product-target scan named each raw acquisition at file:line (pg import,
+   `new pg.Pool`+`process.env`, `globalThis.fetch`), and the undenied probe failed
+   `the start-up probe found 'fetch'/'rawClient' available in the capability-denied product target`.
+8. Raw-capability bypass: direct pool work outside the interpreter failed the multiset comparison
+   (`invocations count 1 != rawExecutions count 0` naming op, gateway and id); a forged token drew the
+   typed refusal naming op, gateway and SemanticEffectId.
+9. Semantic-effect smuggling: with every non-semantic field held byte-constant, changing only the SQL
+   predicate (and separately only the provider endpoint) refused construction printing both digests
+   (`registry digest semfx.v1:9ac7... != constructed digest semfx.v1:4c51...`); two callers of the
+   unmodified entry reproduced its one id `semfx.v1:11fb...` in both raw captures.
+10. Vacuous/open/misclassified definitions: empty object, truncated validator, unresolved reference,
+    generic query form, function-valued constructor and caller-controlled slot each rejected before
+    construction naming the closed-language rule; missing fields failed on one row of each effect class
+    (store, provider, external); forbidden fields failed on class 1, 2 and 3 rows; a raw effect moved
+    under a flow-step failed `no legal multiset row and cannot hide beneath its parent`; empty comparator
+    maps beside governed rows failed per-row on the broken bijection, never equality over zero.
+11. Missing correlation field: `tsc` refused the wrong kind at the typed entry (TS2345); a parsed value
+    forced past the types drew `runtime refusal: correlation for 'decision.record' is missing required
+    field 'decisionId'`.
+12. False alias: `tsc` refused `RequestId` where `DecisionId` is required (TS2322); forced past the types,
+    the purpose tag refused: `field 'decisionId' carries purpose tag 'requestId'; an identifier cannot
+    pose as another`. The static sealed-factory fence lands with the runtime it guards in prompt 2.
+13. Unsafe emissions: a free-form attribute failed on cardinality against its declared enum domain; a raw
+    account reference failed as a PII defect in each of the hyphenated, spaced and bare forms; an ad-hoc
+    span name failed `not produced by the declared naming function`.
+14. Build tooling in a production bundle: the evidence-tooling import failed the web bundle, then the
+    worker bundle, each naming module and bundle; the clean re-run proved both bundles free of it.
+- Reverted: every arm was an env-selected mutation in the disposable clone; nothing was promoted, and the
+  merged tree gains no line and no dependency from the subject.
+
+## M-V3 (rule E16)
+- Injected: a non-empty registry with a capture holding zero telemetry and an empty graph (exit 1):
+  `the registry is non-empty but the capture holds zero telemetry and an empty graph; the flow was never
+  exercised at all`. A PR that registers no governed operation passes E16 honestly on its empty registry
+  delta; a PR that registers one and never ran it does not. Reverted.
+
 ## M-V1 (rule E5)
 - Injected: a simulated pull request whose base and head are the same commit, so the changed-path list is
   empty (exit 1): `E5 FAIL diff - E5 saw zero changed paths; a check that sees nothing must never report
