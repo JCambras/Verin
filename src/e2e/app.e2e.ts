@@ -29,15 +29,29 @@ test("a wrong credential is refused with a visible, announced reason", async ({ 
   expect((await settledAxe(page)).violations).toEqual([]);
 });
 
-test("an advisor signs in and lands on the honest empty shell", async ({ page }) => {
+async function signInAs(page: Page, email: string, phrase: string) {
   await page.goto("/");
-  await page.getByLabel("Work email").fill("advisor@firm-a.example");
-  await page.getByLabel("Password").fill("meridian-slate-88");
+  await page.getByLabel("Work email").fill(email);
+  await page.getByLabel("Password").fill(phrase);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByTestId("verin-shell-loaded")).toBeVisible();
-  expect(page.url()).toBe("http://localhost:3000/");
-  await expect(page.getByText("No household records exist yet")).toBeVisible();
+  await expect(page.getByTestId("verin-register-loaded")).toBeVisible();
+  expect(page.url()).toBe("http://localhost:3000/households");
+}
+
+test("an advisor signs in and sees their own firm's households, and no other firm's", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   await expect(page.getByText("Signed in as Alex Rivera")).toBeVisible();
+  for (const name of ["Henderson Family", "Delgado Household", "Okonkwo Trust"]) await expect(page.getByText(name)).toBeVisible();
+  for (const other of ["Vance Household", "Mensah Family"]) await expect(page.getByText(other)).toHaveCount(0);
+  await expect(page.getByText("demonstration record").first()).toBeVisible();
   expect((await settledAxe(page)).violations).toEqual([]);
-  await page.screenshot({ path: "test-results/pr2a-shell.png" });
+  await page.screenshot({ path: "test-results/pr2a2-households.png" });
+});
+
+test("the second firm's advisor sees only their own book over the same tables", async ({ page }) => {
+  await signInAs(page, "advisor@firm-b.example", "harbor-quartz-42");
+  await expect(page.getByText("Signed in as Priya Nair")).toBeVisible();
+  for (const name of ["Vance Household", "Mensah Family"]) await expect(page.getByText(name)).toBeVisible();
+  for (const other of ["Henderson Family", "Delgado Household", "Okonkwo Trust"]) await expect(page.getByText(other)).toHaveCount(0);
+  expect((await settledAxe(page)).violations).toEqual([]);
 });

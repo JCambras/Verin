@@ -8,8 +8,8 @@ import { Client } from "pg";
 
 const MIGRATIONS_DIR = "src/store/migrations";
 const DEMO = [
-  { org: "Meridian Wealth Partners", email: "advisor@firm-a.example", name: "Alex Rivera", role: "advisor", phrase: "meridian-slate-88" },
-  { org: "Harbor Point Advisors", email: "advisor@firm-b.example", name: "Priya Nair", role: "advisor", phrase: "harbor-quartz-42" },
+  { org: "Meridian Wealth Partners", email: "advisor@firm-a.example", name: "Alex Rivera", role: "advisor", phrase: "meridian-slate-88", households: ["Henderson Family", "Delgado Household", "Okonkwo Trust"] },
+  { org: "Harbor Point Advisors", email: "advisor@firm-b.example", name: "Priya Nair", role: "advisor", phrase: "harbor-quartz-42", households: ["Vance Household", "Mensah Family"] },
 ];
 const url = (name: string, fallback: string) => process.env[name] ?? fallback;
 async function withClient<T>(connectionString: string, fn: (c: Client) => Promise<T>): Promise<T> {
@@ -62,16 +62,21 @@ async function seed() {
     for (const d of DEMO) {
       await c.query("BEGIN");
       await c.query("SELECT set_config('verin.login_email', $1, true)", [d.email]);
-      const existing = await c.query("SELECT 1 FROM identity WHERE login_email = $1", [d.email]);
-      if (existing.rowCount) { await c.query("ROLLBACK"); console.log(`seed: ${d.email} already present; skipped`); continue; }
-      const orgId = randomUUID();
-      const salt = randomBytes(16).toString("hex");
+      const existing = await c.query("SELECT org_id FROM identity WHERE login_email = $1", [d.email]);
+      let orgId = existing.rowCount ? (existing.rows[0] as { org_id: string }).org_id : randomUUID();
       await c.query("SELECT set_config('verin.org_id', $1, true)", [orgId]);
-      await c.query("INSERT INTO org (id, name, record_origin) VALUES ($1, $2, 'demo-seed')", [orgId, d.org]);
-      await c.query("INSERT INTO identity (id, org_id, login_email, display_name, role, credential_hash, credential_salt, record_origin) VALUES ($1, $2, $3, $4, $5, $6, $7, 'demo-seed')",
-        [randomUUID(), orgId, d.email, d.name, d.role, scryptSync(d.phrase, salt, 32).toString("hex"), salt]);
+      if (!existing.rowCount) {
+        const salt = randomBytes(16).toString("hex");
+        await c.query("INSERT INTO org (id, name, record_origin) VALUES ($1, $2, 'demo-seed')", [orgId, d.org]);
+        await c.query("INSERT INTO identity (id, org_id, login_email, display_name, role, credential_hash, credential_salt, record_origin) VALUES ($1, $2, $3, $4, $5, $6, $7, 'demo-seed')",
+          [randomUUID(), orgId, d.email, d.name, d.role, scryptSync(d.phrase, salt, 32).toString("hex"), salt]);
+      }
+      const have = await c.query("SELECT 1 FROM household WHERE org_id = $1 LIMIT 1", [orgId]);
+      if (have.rowCount) { await c.query("ROLLBACK"); console.log(`seed: ${d.email} and its households already present; skipped`); continue; }
+      for (const h of d.households)
+        await c.query("INSERT INTO household (id, org_id, name, record_origin) VALUES ($1, $2, $3, 'demo-seed')", [randomUUID(), orgId, h]);
       await c.query("COMMIT");
-      console.log(`seed: demonstration org '${d.org}' and advisor ${d.email} written with record_origin='demo-seed'`);
+      console.log(`seed: demonstration org '${d.org}', advisor ${d.email} and ${d.households.length} households written with record_origin='demo-seed'`);
     }
   });
 }
