@@ -41,11 +41,19 @@ function e4OneSeamPerPr(input) {
   return [];
 }
 
+import { e5ReviewBudget, e6Reachability, e7Provenance, e8CompanionProof, e9NoExternalEffect, e10SignedTruthImmutable } from "./rules-tree.mjs";
+
 export const RULES = new Map([
   ["E1", e1NoSharedHistory],
   ["E2", e2PrTarget],
   ["E3", e3DefaultBranchUnchanged],
   ["E4", e4OneSeamPerPr],
+  ["E5", e5ReviewBudget],
+  ["E6", e6Reachability],
+  ["E7", e7Provenance],
+  ["E8", e8CompanionProof],
+  ["E9", e9NoExternalEffect],
+  ["E10", e10SignedTruthImmutable],
 ]);
 
 export function evaluateEnforcement(input) {

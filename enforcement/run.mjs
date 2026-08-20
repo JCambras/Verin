@@ -5,6 +5,14 @@
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { evaluateEnforcement, RULES } from "./contract.mjs";
+import { collectTreeFacts, regenerateSignedTruthPins } from "./rules-tree.mjs";
+
+const regen = process.argv.find((a) => a.startsWith("--regenerate="));
+if (regen) {
+  if (regen.slice(13) !== "enforcement/signed-truth-pins.json") { console.error(`unknown regenerable artifact '${regen.slice(13)}'`); process.exit(2); }
+  process.stdout.write(regenerateSignedTruthPins());
+  process.exit(0);
+}
 
 function mergeBaseSet() {
   try { execFileSync("git", ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]); } catch { return null; }
@@ -35,18 +43,22 @@ async function collectInput() {
   const event = process.env.GITHUB_EVENT_PATH && existsSync(process.env.GITHUB_EVENT_PATH)
     ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")) : {};
   const body = event.pull_request?.body ?? "";
-  return {
+  const input = {
     eventName: process.env.GITHUB_EVENT_NAME ?? null,
     baseRef: event.pull_request?.base?.ref ?? null,
     headRef: event.pull_request?.head?.ref ?? null,
+    baseSha: event.pull_request?.base?.sha ?? null,
+    headSha: event.pull_request?.head?.sha ?? null,
     pushedRef: event.ref ?? null,
+    beforeSha: event.before ?? null,
+    headPushSha: event.after ?? null,
     mergeBaseWithMain: mergeBaseSet(),
-    changedPaths: null, // classified per path by E5 when it lands (PR-1b); collected there
     declaredSeamIds: [...body.matchAll(/^Seam:[ \t]*(\S+)[ \t]*$/gm)].map((m) => m[1]),
     declaredSliceClass: body.match(/^Slice-Class:[ \t]*(\S+)[ \t]*$/m)?.[1] ?? null,
     roadmapSeamIds: readRoadmapSeamIds(),
     ...(await readDefaultBranch()),
   };
+  return { ...input, ...collectTreeFacts(input) };
 }
 
 function proofLogViolations() {
