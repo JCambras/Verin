@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { Client as PgClient } from "pg";
 import { Project, SyntaxKind, type SourceFile } from "ts-morph";
 import { createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, snapshotEvidence } from "../runtime/governed";
-import { createAccessContext, signIn, type Principal } from "../access/context";
+import { createAccessContext, renewSession, signIn, type Principal } from "../access/context";
 
 const KERNEL = "src/runtime/governed.ts";
 const COMPOSITION_ROOTS = [KERNEL, "src/instrumentation.ts"];
@@ -26,7 +26,7 @@ const project = new Project({ tsConfigFilePath: "tsconfig.json" });
 function webBundleGraph() {
   const modules = new Set<string>(),
     unresolved: string[] = [];
-  const queue = project.getSourceFiles(["src/instrumentation.ts", "src/app/**/page.tsx", "src/app/**/layout.tsx"]);
+  const queue = project.getSourceFiles(["src/instrumentation.ts", "src/proxy.ts", "src/app/**/page.tsx", "src/app/**/layout.tsx"]);
   while (queue.length) {
     const sf = queue.pop()!;
     if (modules.has(rel(sf))) continue;
@@ -176,6 +176,28 @@ describe("the governed access flows, exercised end to end", () => {
       return access.withTenant(cA, grantA!, (tx) => tx.getHousehold(view[0].id));
     });
     expect(probed).toBeNull();
+  });
+});
+
+describe("session lifecycle: renewal and rotation happen only on the cookie-writing path (PR-2c)", () => {
+  const superUrl = process.env.VERIN_SUPER_DATABASE_URL?.replace(/\/postgres$/, "/verin") ?? "postgresql://postgres:postgres@localhost:5432/verin";
+  it("a session slides past its half-life with its id rotated, and the read-only path never rotates", async () => {
+    const access = createAccessContext();
+    const s1 = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-a.example", "meridian-slate-88");
+    expect(await renewSession(s1!.cookieValue)).toBeNull(); // fresh session: the writing path has nothing to write
+    expect((await access.authenticate(requestCorrelation(mintRequestId()), s1!.cookieValue))?.displayName).toBe("Alex Rivera");
+    expect((await access.authenticate(requestCorrelation(mintRequestId()), s1!.cookieValue))?.displayName).toBe("Alex Rivera"); // read twice, rotated never
+    const su = new PgClient({ connectionString: superUrl });
+    await su.connect();
+    await su.query("UPDATE session SET created_at = now() - interval '7 hours'"); // slide the clock from outside the app
+    await su.end();
+    const renewed = await renewSession(s1!.cookieValue);
+    expect(renewed).not.toBeNull();
+    expect(renewed!.cookieValue).not.toBe(s1!.cookieValue); // rotated
+    // M-C: the second resolution in the same request reads the handed-off value and never a rotated-away id
+    expect((await access.authenticate(requestCorrelation(mintRequestId()), renewed!.cookieValue))?.displayName).toBe("Alex Rivera");
+    expect(await access.authenticate(requestCorrelation(mintRequestId()), s1!.cookieValue)).toBeNull(); // the old id is genuinely gone - why the handoff exists
+    expect(await renewSession(renewed!.cookieValue)).toBeNull(); // a freshly rotated session does not rotate again
   });
 });
 

@@ -4,6 +4,7 @@
 // URL and the loaded-state marker first, so a route that renders nothing can never pass (M-D).
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { Client as PgClient } from "pg";
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
 async function settledAxe(page: Page) {
@@ -77,5 +78,41 @@ test("another firm's workspace URL resolves to an honest not-found, never a leak
   await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Household not on file" })).toBeVisible();
   await expect(page.getByText("Vance")).toHaveCount(0);
+  expect((await settledAxe(page)).violations).toEqual([]);
+});
+
+test("an advisor stays signed in through a long sitting - the session slides and rotates", async ({ page, context }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  const before = (await context.cookies()).find((c) => c.name === "verin_session")!.value;
+  const su = new PgClient({ connectionString: "postgresql://postgres:postgres@localhost:5432/verin" });
+  await su.connect();
+  await su.query("UPDATE session SET created_at = now() - interval '7 hours'");
+  await su.end();
+  await page.reload();
+  await expect(page.getByTestId("verin-register-loaded")).toBeVisible(); // not thrown out mid-journey
+  const after = (await context.cookies()).find((c) => c.name === "verin_session")!.value;
+  expect(after).not.toBe(before); // rotated on the cookie-writing path
+  await page.reload();
+  await expect(page.getByTestId("verin-register-loaded")).toBeVisible(); // and the renewed session holds
+});
+
+test("the whole journey is completable from the keyboard alone", async ({ page }) => {
+  await page.goto("/");
+  await page.keyboard.press("Tab"); // the chrome's Households link
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Work email")).toBeFocused();
+  await page.keyboard.type("advisor@firm-a.example");
+  await page.keyboard.press("Tab");
+  await expect(page.getByLabel("Password")).toBeFocused();
+  await page.keyboard.type("meridian-slate-88");
+  await page.keyboard.press("Enter"); // native implicit submission
+  await expect(page.getByTestId("verin-register-loaded")).toBeVisible();
+  // Walk the Tab ring the way a keyboard user does; the first register row must be reachable fast.
+  const target = page.getByRole("link", { name: "Delgado Household" });
+  for (let i = 0; i < 8 && !(await target.evaluate((el) => el === document.activeElement)); i++) await page.keyboard.press("Tab");
+  await expect(target).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Delgado Household" })).toBeVisible();
   expect((await settledAxe(page)).violations).toEqual([]);
 });

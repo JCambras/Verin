@@ -8,7 +8,7 @@
 // per-row salt, constant-time compare, and a burned compare when the identity is unknown.
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { getGateway, type RequestCorrelation } from "../runtime/governed";
+import { getGateway, mintRequestId, requestCorrelation, type RequestCorrelation } from "../runtime/governed";
 
 declare const sealed: unique symbol;
 type TenantIdentity = { readonly [sealed]: "TenantIdentity"; readonly orgId: string };
@@ -67,6 +67,23 @@ export function createAccessContext(): AccessContext {
       );
     },
   };
+}
+
+// Session renewal (PR-2c): rotation lives ONLY here, called from the cookie-writing proxy - never
+// from the read-only authenticate the pages use. One closed store operation slides a session past its
+// half-life: it rotates the token and extends the expiry in a single guarded UPDATE, and returns null
+// (nothing to write) for a fresh, expired or unknown session.
+export async function renewSession(presentedCookie: string): Promise<{ cookieValue: string; expiresAt: Date; secureCookies: boolean } | null> {
+  const gw = getGateway();
+  const token = gw.openCookieValue(presentedCookie);
+  if (!token) return null;
+  const c = requestCorrelation(mintRequestId());
+  return gw.enterAccessRenewSession(c, async () => {
+    const next = randomBytes(32).toString("hex");
+    const rotated = await gw.enterSessionRotate(c, { presentedTokenHash: sha256(token), nextTokenHash: sha256(next) });
+    if (rotated !== 1) return null;
+    return { cookieValue: gw.sealCookieValue(next), expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000), secureCookies: gw.secureCookies };
+  });
 }
 
 // The sign-in credential exchange (governed use case route.sign-in). Returns the sealed cookie value

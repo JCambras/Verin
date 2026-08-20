@@ -27,9 +27,14 @@ export type GovernedOperationId = { readonly [sealed]: "GovernedOperationId"; re
 // Minted values are registered in a process-wide private WeakSet, so a structurally valid value forced
 // past the type system from a second factory is still refused at the gateway (M-B's forced-value arm).
 const MINTED: WeakSet<object> = ((globalThis as { [k: symbol]: WeakSet<object> })[Symbol.for("verin.minted")] ??= new WeakSet());
+// Every id the runtime itself mints (requestId, and each span/trace id at emission) is recorded so
+// the E16 PII scan can exclude exactly these values - and nothing else - from account-reference
+// candidacy in correlation-key positions (GD-003).
+const MINTED_IDS: string[] = ((globalThis as { [k: symbol]: string[] })[Symbol.for("verin.minted-ids")] ??= []);
 export const mintRequestId = (): RequestId => {
   const r = { value: randomBytes(16).toString("hex"), purpose: "requestId" } as RequestId;
   MINTED.add(r);
+  MINTED_IDS.push(r.value);
   return r;
 };
 export const requestCorrelation = (r: RequestId): RequestCorrelation => {
@@ -47,9 +52,11 @@ export type OpKey =
   | "access.authenticate"
   | "access.authorize"
   | "access.withTenant"
+  | "access.renewSession"
   | "identity.lookupForLogin"
   | "session.create"
   | "session.lookupByTokenHash"
+  | "session.rotate"
   | "household.listForTenant"
   | "household.getForTenant";
 type Row = {
@@ -82,9 +89,11 @@ const REGISTRY: readonly Row[] = [
   row("access.authenticate", "module-operation", ["entry", "route.households", "route.household-workspace"], "enterAccessAuthenticate"),
   row("access.authorize", "module-operation", ["entry", "route.households", "route.household-workspace"], "enterAccessAuthorize"),
   row("access.withTenant", "module-operation", ["route.households", "route.household-workspace"], "enterAccessWithTenant"),
+  row("access.renewSession", "module-operation", ["entry"], "enterAccessRenewSession"),
   row("identity.lookupForLogin", "store", ["route.sign-in"], "enterIdentityLookupForLogin"),
   row("session.create", "store", ["route.sign-in"], "enterSessionCreate"),
   row("session.lookupByTokenHash", "store", ["access.authenticate"], "enterSessionLookupByTokenHash"),
+  row("session.rotate", "store", ["access.renewSession"], "enterSessionRotate"),
   row("household.listForTenant", "store", ["access.withTenant"], "enterHouseholdListForTenant"),
   row("household.getForTenant", "store", ["access.withTenant"], "enterHouseholdGetForTenant"),
 ];
@@ -129,6 +138,20 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
     cardinality: "at-most-one",
     transactionClass: "session-token-guc-from-p1",
     authorityClass: "pre-tenant",
+  },
+  "session.rotate": {
+    kind: "prepared-query",
+    statementName: "session_rotate_v1",
+    canonicalSql:
+      "UPDATE session SET token_hash = $2, created_at = now(), expires_at = now() + interval '12 hours' WHERE token_hash = $1 AND expires_at > now() AND created_at < now() - interval '6 hours'",
+    parameters: [
+      { name: "presentedTokenHash", type: "text" },
+      { name: "nextTokenHash", type: "text" },
+    ],
+    resultValidator: "rowCount.v1",
+    cardinality: "write-at-most-one",
+    transactionClass: "session-rotate-guc-from-p1-p2",
+    authorityClass: "session-renewal",
   },
   "household.listForTenant": {
     kind: "prepared-query",
@@ -202,6 +225,23 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       authorityClass: "pre-tenant",
     },
   },
+  "session.rotate": {
+    gatewayEntry: "enterSessionRotate",
+    constructedDefinition: {
+      kind: "prepared-query",
+      statementName: "session_rotate_v1",
+      canonicalSql:
+        "UPDATE session SET token_hash = $2, created_at = now(), expires_at = now() + interval '12 hours' WHERE token_hash = $1 AND expires_at > now() AND created_at < now() - interval '6 hours'",
+      parameters: [
+        { name: "presentedTokenHash", type: "text" },
+        { name: "nextTokenHash", type: "text" },
+      ],
+      resultValidator: "rowCount.v1",
+      cardinality: "write-at-most-one",
+      transactionClass: "session-rotate-guc-from-p1-p2",
+      authorityClass: "session-renewal",
+    },
+  },
   "household.listForTenant": {
     gatewayEntry: "enterHouseholdListForTenant",
     constructedDefinition: {
@@ -272,9 +312,11 @@ export type Gateway = {
   enterAccessAuthenticate: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterAccessAuthorize: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterAccessWithTenant: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterAccessRenewSession: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterIdentityLookupForLogin: (c: RequestCorrelation, v: { loginEmail: string }) => Promise<unknown>;
   enterSessionCreate: (c: RequestCorrelation, v: { id: string; tokenHash: string; identityId: string; orgId: string; displayName: string; role: string; expiresAt: string }) => Promise<unknown>;
   enterSessionLookupByTokenHash: (c: RequestCorrelation, v: { tokenHash: string }) => Promise<unknown>;
+  enterSessionRotate: (c: RequestCorrelation, v: { presentedTokenHash: string; nextTokenHash: string }) => Promise<unknown>;
   enterHouseholdListForTenant: (c: RequestCorrelation, v: { orgId: string }) => Promise<unknown>;
   enterHouseholdGetForTenant: (c: RequestCorrelation, v: { orgId: string; householdId: string }) => Promise<unknown>;
   sealCookieValue: (token: string) => string;
@@ -289,6 +331,7 @@ const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
   "identityLoginRow.v1": (r) =>
     atMostOne(r, z.strictObject({ id: z.string(), org_id: z.string(), display_name: z.string(), role: z.string(), credential_hash: z.string(), credential_salt: z.string() })),
   "sessionRow.v1": (r) => atMostOne(r, z.strictObject({ identity_id: z.string(), org_id: z.string(), display_name: z.string(), role: z.string(), expires_at: z.date() })),
+  "rowCount.v1": (r) => r.rowCount ?? 0,
   "writeOne.v1": (r) => {
     if (r.rowCount !== 1) throw new Error("cardinality write-one violated");
     return null;
@@ -359,6 +402,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     graph.push({ node, op: id, gatewayEntry: r.gatewayEntry, parent: parent ? parent.node : "entry", ...(fx ? { semanticEffectId: fx } : {}), correlation: { kind: c.kind, fields: c.fields } });
     const span = tracer.startSpan(opName(id));
     spanToNode.set(span.spanContext().spanId, node);
+    MINTED_IDS.push(span.spanContext().spanId, span.spanContext().traceId);
     let outcome = "ok";
     try {
       return await als.run({ node, op: id }, fn);
@@ -394,7 +438,10 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
         else if (tc === "session-token-guc-from-p1") await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[0]]);
         else if (tc === "session-token-guc-from-p2") await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[1]]);
         else if (tc === "tenant-guc-from-p1") await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
-        else throw new Error(`transaction class '${String(tc)}' is not admitted`);
+        else if (tc === "session-rotate-guc-from-p1-p2") {
+          await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[0]]);
+          await client.query("SELECT set_config('verin.session_token_next', $1, true)", [params[1]]);
+        } else throw new Error(`transaction class '${String(tc)}' is not admitted`);
         const res = await client.query({ name: String(def["statementName"]), text: String(def["canonicalSql"]), values: params });
         rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
         const out = VALIDATORS[String(def["resultValidator"])](res);
@@ -416,9 +463,11 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterAccessAuthenticate: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("access.authenticate", c, fn),
     enterAccessAuthorize: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("access.authorize", c, fn),
     enterAccessWithTenant: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("access.withTenant", c, fn),
+    enterAccessRenewSession: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("access.renewSession", c, fn),
     enterIdentityLookupForLogin: (c: RequestCorrelation, v: { loginEmail: string }) => runStore("identity.lookupForLogin", c, v),
     enterSessionCreate: (c: RequestCorrelation, v: Parameters<Gateway["enterSessionCreate"]>[1]) => runStore("session.create", c, v),
     enterSessionLookupByTokenHash: (c: RequestCorrelation, v: { tokenHash: string }) => runStore("session.lookupByTokenHash", c, v),
+    enterSessionRotate: (c: RequestCorrelation, v: { presentedTokenHash: string; nextTokenHash: string }) => runStore("session.rotate", c, v),
     enterHouseholdListForTenant: (c: RequestCorrelation, v: { orgId: string }) => runStore("household.listForTenant", c, v),
     enterHouseholdGetForTenant: (c: RequestCorrelation, v: { orgId: string; householdId: string }) => runStore("household.getForTenant", c, v),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
@@ -462,6 +511,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       rawExecutions,
       emissions: { spans, metrics: metricsOut, logs },
       correlationTable: Object.fromEntries(REGISTRY.map((r) => [r.id.id, r.correlation])),
+      mintedCorrelationIds: [...MINTED_IDS],
       namingPattern: NAMING_PATTERN,
     };
   };

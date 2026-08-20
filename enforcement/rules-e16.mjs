@@ -19,6 +19,12 @@ const SHAPES = {
   "provider-action": ["provider", "action", "method", "endpointTemplate", "requestConstructor", "responseValidator", "authorityClass"],
 };
 const PII_FORMS = [["bare-account-reference", /\b\d{8,16}\b/], ["spaced-account-reference", /\b\d{2,4}( \d{2,4}){2,}\b/], ["hyphenated-account-reference", /\b\d{2,4}(-\d{2,4}){2,}\b/]];
+// GD-003 sharpening: the runtime's own minted correlation ids (16/32 unbroken hex) are excluded from
+// account-reference candidacy in correlation-key positions ONLY - by exact value from the capture's
+// minted list, shape-bounded, so a genuine account reference in any form anywhere else (and any value
+// in a non-correlation key) keeps full sensitivity. Cures the ~4 percent all-digit-hex flake.
+const CORRELATION_KEYS = new Set(["requestId", "traceId", "spanId"]);
+const MINTED_ID_SHAPE = /^[0-9a-f]{16}$|^[0-9a-f]{32}$/;
 
 function canonicalize(x, path, problems) {
   if (typeof x === "string") { if (x === "") problems.push(`${path} is empty`); return JSON.stringify(x); }
@@ -145,6 +151,8 @@ export function e16GovernedRuntimeObservability() {
     if (spans.filter((s) => s.completed).length !== 1) out.push(v(g.node, `operation '${g.op}' has ${spans.filter((s) => s.completed).length} completed span(s); exactly one is required (span)`));
     if ((em.logs ?? []).filter((l) => l.node === g.node).length !== 1) out.push(v(g.node, `operation '${g.op}' emitted ${(em.logs ?? []).filter((l) => l.node === g.node).length} structured log record(s); exactly one is required (log)`));
   }
+  const mintedIds = new Set((ev.mintedCorrelationIds ?? []).filter((x) => MINTED_ID_SHAPE.test(String(x))));
+  const mintedCorrelationValue = (k, val) => CORRELATION_KEYS.has(k) && mintedIds.has(String(val));
   const checkAttrs = (e, r, where) => {
     for (const [k, val] of Object.entries(e.attributes ?? {})) {
       if (k === "semanticEffectId") continue; // the constant identity attribute, verified separately
@@ -152,9 +160,9 @@ export function e16GovernedRuntimeObservability() {
       if (!dom) { out.push(v(where, `attribute '${k}' on '${r.id}' has no declared value domain; unbounded cardinality`)); continue; }
       const ok = dom.domain === "boolean" ? typeof val === "boolean" : dom.domain === "enum" || dom.domain === "bucketed" ? (dom.values ?? []).includes(val) : dom.domain === "digest" ? /^[0-9a-f]{16,64}$/.test(String(val)) : false;
       if (!ok) out.push(v(where, `attribute '${k}'='${val}' on '${r.id}' is outside its declared ${dom.domain} domain; failing on cardinality`));
-      for (const [form, re] of PII_FORMS) if (re.test(String(val))) out.push(v(where, `attribute '${k}' on '${r.id}' carries a ${form}; a raw identifier in telemetry is a PII defect`));
+      if (!mintedCorrelationValue(k, val)) for (const [form, re] of PII_FORMS) if (re.test(String(val))) out.push(v(where, `attribute '${k}' on '${r.id}' carries a ${form}; a raw identifier in telemetry is a PII defect`));
     }
-    for (const val of Object.values(e.fields ?? {})) for (const [form, re] of PII_FORMS) if (re.test(String(val))) out.push(v(where, `a structured-log field on '${r.id}' carries a ${form}; a raw identifier in telemetry is a PII defect`));
+    for (const [k, val] of Object.entries(e.fields ?? {})) { if (mintedCorrelationValue(k, val)) continue; for (const [form, re] of PII_FORMS) if (re.test(String(val))) out.push(v(where, `a structured-log field on '${r.id}' carries a ${form}; a raw identifier in telemetry is a PII defect`)); }
   };
   for (const [type, list] of Object.entries({ spans: em.spans ?? [], logs: em.logs ?? [] }))
     for (const e of list) {

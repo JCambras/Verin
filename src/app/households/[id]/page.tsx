@@ -3,7 +3,7 @@
 // figure renders through the provenance-carrying metric component; a household another firm holds
 // (or a malformed id) resolves to the same honest not-found, so existence never leaks across the
 // tenant boundary. Nothing here is filled in with a plausible-looking number.
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAccessContext } from "../../../access/context";
 import { getGateway, mintRequestId, requestCorrelation } from "../../../runtime/governed";
@@ -21,7 +21,7 @@ const ABSENT: { title: string; body: string }[] = [
 export default async function Workspace({ params }: { params: Promise<{ id: string }> }) {
   const c = requestCorrelation(mintRequestId());
   const access = createAccessContext();
-  const cookieValue = (await cookies()).get("verin_session")?.value;
+  const cookieValue = (await headers()).get("x-verin-session") ?? (await cookies()).get("verin_session")?.value;
   const { id } = await params;
   const view = await getGateway().enterRouteHouseholdWorkspace(c, async () => {
     const principal = await access.authenticate(c, cookieValue);
