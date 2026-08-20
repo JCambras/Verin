@@ -223,7 +223,7 @@ by a substring search. Selected exact lines (the full battery transcript is in t
   empty (exit 1): `E5 FAIL diff - E5 saw zero changed paths; a check that sees nothing must never report
   clean`. Reverted. A check that sees nothing must never report clean.
 
-## PR-2a proofs (prompt 2 section 6; raw transcripts: docs/evidence/pr2a-transcripts.tar, sha256 99e80f46...)
+## PR-2a proofs (prompt 2 section 6; raw transcripts: docs/evidence/pr2a-transcripts.tar, sha256 91bf9415...)
 
 Every arm was injected, observed failing with the exact line quoted, and reverted; the restored tree's
 green run closes the bundle. No heading here names a rule id: the canonical `M-*` mapping above stays total.
