@@ -13,14 +13,19 @@ import { createAccessContext, signIn, type Principal } from "../access/context";
 const KERNEL = "src/runtime/governed.ts";
 const COMPOSITION_ROOTS = [KERNEL, "src/instrumentation.ts"];
 const SEALED: Record<string, string> = {
-  Principal: "src/access/context.ts", ActionGrant: "src/access/context.ts", TenantIdentity: "src/access/context.ts",
-  RequestId: KERNEL, RequestCorrelation: KERNEL, GovernedOperationId: KERNEL,
+  Principal: "src/access/context.ts",
+  ActionGrant: "src/access/context.ts",
+  TenantIdentity: "src/access/context.ts",
+  RequestId: KERNEL,
+  RequestCorrelation: KERNEL,
+  GovernedOperationId: KERNEL,
 };
 const rel = (sf: SourceFile) => relative(process.cwd(), sf.getFilePath());
 const project = new Project({ tsConfigFilePath: "tsconfig.json" });
 
 function webBundleGraph() {
-  const modules = new Set<string>(), unresolved: string[] = [];
+  const modules = new Set<string>(),
+    unresolved: string[] = [];
   const queue = project.getSourceFiles(["src/instrumentation.ts", "src/app/**/page.tsx", "src/app/**/layout.tsx"]);
   while (queue.length) {
     const sf = queue.pop()!;
@@ -46,8 +51,7 @@ function productTargetViolations(webModules: string[]) {
       if (spec === "pg" || spec.startsWith("pg/")) out.push(`${path}:${d.getStartLineNumber()} imports the raw database driver directly`);
     }
     sf.forEachDescendant((n) => {
-      if (n.getKind() === SyntaxKind.PropertyAccessExpression && n.getText() === "process.env")
-        out.push(`${path}:${n.getStartLineNumber()} reads the credential environment outside the kernel`);
+      if (n.getKind() === SyntaxKind.PropertyAccessExpression && n.getText() === "process.env") out.push(`${path}:${n.getStartLineNumber()} reads the credential environment outside the kernel`);
       if (n.getKind() === SyntaxKind.CallExpression) {
         const callee = n.getChildAtIndex(0).getText();
         if (callee === "fetch" || callee === "globalThis.fetch") out.push(`${path}:${n.getStartLineNumber()} calls fetch in a product module`);
@@ -80,8 +84,7 @@ function sealedFactoryViolations() {
         const d = n as unknown as { getTypeNode?: () => { getText(): string } | undefined; getInitializer?: () => { getType(): { isAny(): boolean; isUnknown(): boolean } } | undefined };
         const hit = naming(d.getTypeNode?.()?.getText());
         const init = d.getInitializer?.();
-        if (hit && init && (init.getType().isAny() || init.getType().isUnknown()))
-          out.push(`${path}:${n.getStartLineNumber()} fills sealed type ${hit} from an any/unknown value`);
+        if (hit && init && (init.getType().isAny() || init.getType().isUnknown())) out.push(`${path}:${n.getStartLineNumber()} fills sealed type ${hit} from an any/unknown value`);
       }
     });
   }
@@ -98,7 +101,9 @@ function nodejsRuntimeViolations() {
 
 let principal: Principal;
 let cookieValue: string;
-beforeAll(() => { createGovernedRuntime("tooling"); });
+beforeAll(() => {
+  createGovernedRuntime("tooling");
+});
 
 describe("the governed access flows, exercised end to end", () => {
   it("refuses a wrong credential with one null and no session write", async () => {
@@ -137,17 +142,40 @@ describe("the governed access flows, exercised end to end", () => {
     });
     expect(names).toEqual(["Delgado Household", "Henderson Family", "Okonkwo Trust"]);
   });
+  it("the workspace flow: what Verin knows, and a cross-tenant id resolving to an honest nothing", async () => {
+    const c = requestCorrelation(mintRequestId());
+    const access = createAccessContext();
+    const view = await getGateway().enterRouteHouseholdWorkspace(c, async () => {
+      const p = await access.authenticate(c, cookieValue);
+      const grant = await access.authorize(c, p!, "household.read");
+      return access.withTenant(c, grant!, async (tx) => {
+        const henderson = (await tx.listHouseholds()).find((h) => h.name === "Henderson Family")!;
+        return { detail: await tx.getHousehold(henderson.id), malformed: await tx.getHousehold("not-a-uuid") };
+      });
+    });
+    expect(view.detail?.name).toBe("Henderson Family");
+    expect(view.detail?.recorded_at).toBeInstanceOf(Date);
+    expect(view.malformed).toBeNull();
+  });
   it("a second firm's real token sees only its own book - the cross-tenant-token arm", async () => {
     const c = requestCorrelation(mintRequestId());
     const access = createAccessContext();
     const sB = await signIn(c, "advisor@firm-b.example", "harbor-quartz-42");
-    const names = await getGateway().enterRouteHouseholds(requestCorrelation(mintRequestId()), async () => {
+    const view = await getGateway().enterRouteHouseholds(requestCorrelation(mintRequestId()), async () => {
       const c2 = requestCorrelation(mintRequestId());
       const pB = await access.authenticate(c2, sB!.cookieValue);
       const grantB = await access.authorize(c2, pB!, "household.read");
-      return (await access.withTenant(c2, grantB!, (tx) => tx.listHouseholds())).map((h) => h.name);
+      return access.withTenant(c2, grantB!, async (tx) => (await tx.listHouseholds()).map((h) => ({ id: h.id, name: h.name })));
     });
-    expect(names).toEqual(["Mensah Family", "Vance Household"]);
+    expect(view.map((h) => h.name)).toEqual(["Mensah Family", "Vance Household"]);
+    // The other firm's real id through THIS firm's grant is the same honest nothing - no existence leak.
+    const cA = requestCorrelation(mintRequestId());
+    const probed = await getGateway().enterRouteHouseholdWorkspace(cA, async () => {
+      const pA = await access.authenticate(cA, cookieValue);
+      const grantA = await access.authorize(cA, pA!, "household.read");
+      return access.withTenant(cA, grantA!, (tx) => tx.getHousehold(view[0].id));
+    });
+    expect(probed).toBeNull();
   });
 });
 
@@ -163,7 +191,8 @@ describe("database-enforced isolation (5B.2, section 6 core; the full battery re
     try {
       const who = (await c.query("SELECT current_user, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS rolsuper")).rows[0] as { current_user: string; rolsuper: boolean };
       expect(who).toEqual({ current_user: "verin_app", rolsuper: false });
-      const orgA = await orgOf(c, "advisor@firm-a.example"), orgB = await orgOf(c, "advisor@firm-b.example");
+      const orgA = await orgOf(c, "advisor@firm-a.example"),
+        orgB = await orgOf(c, "advisor@firm-b.example");
       await c.query("SELECT set_config('verin.org_id', $1, false)", [orgB]);
       expect(Number((await c.query("SELECT count(*)::int AS n FROM household")).rows[0].n)).toBe(2); // the other tenant's rows genuinely exist
       await c.query("SELECT set_config('verin.org_id', $1, false)", [orgA]);
@@ -174,7 +203,9 @@ describe("database-enforced isolation (5B.2, section 6 core; the full battery re
       expect(Number(bypass.n)).toBe(3); // 'or 1=1' still sees only the scoped firm
       await expect(c.query("INSERT INTO household (id, org_id, name, record_origin) VALUES (gen_random_uuid(), $1, 'Smuggled Household', 'demo-seed')", [orgB])).rejects.toThrow(/row-level security/); // wrong-tenant write
       await expect(c.query("CREATE TABLE exfil (x int)")).rejects.toThrow(/permission denied/); // no DDL for the application role
-    } finally { await c.end(); }
+    } finally {
+      await c.end();
+    }
   });
 });
 
@@ -213,6 +244,10 @@ describe("construction rules and the E16 capture", () => {
     // Written first, asserted after: the capture must reflect reality even when an assertion below
     // is about to fail the build, or a mutation run would hand the rules a stale, passing capture.
     expect(Object.values(probe).every((v) => v === "denied")).toBe(true);
-    for (const r of registry) expect(graph.some((g) => g.op === r.id), `registry row ${r.id} was never exercised`).toBe(true);
+    for (const r of registry)
+      expect(
+        graph.some((g) => g.op === r.id),
+        `registry row ${r.id} was never exercised`,
+      ).toBe(true);
   });
 });

@@ -55,3 +55,27 @@ test("the second firm's advisor sees only their own book over the same tables", 
   for (const other of ["Henderson Family", "Delgado Household", "Okonkwo Trust"]) await expect(page.getByText(other)).toHaveCount(0);
   expect((await settledAxe(page)).violations).toEqual([]);
 });
+
+test("the workspace shows what Verin knows, honest absent states, and one watermarked figure", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.getByRole("link", { name: "Henderson Family" }).click();
+  await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Henderson Family" })).toBeVisible();
+  await expect(page.getByText("Days on record")).toBeVisible();
+  await expect(page.getByText("demonstration - not a compliance record")).toBeVisible();
+  for (const absent of ["People", "Financial accounts", "Compliance evidence"]) await expect(page.getByText(absent, { exact: true })).toBeVisible();
+  expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr2b-workspace.png" });
+});
+
+test("another firm's workspace URL resolves to an honest not-found, never a leak", async ({ page, context }) => {
+  await signInAs(page, "advisor@firm-b.example", "harbor-quartz-42");
+  const vanceHref = await page.getByRole("link", { name: "Vance Household" }).getAttribute("href");
+  await context.clearCookies();
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.goto(vanceHref!);
+  await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Household not on file" })).toBeVisible();
+  await expect(page.getByText("Vance")).toHaveCount(0);
+  expect((await settledAxe(page)).violations).toEqual([]);
+});

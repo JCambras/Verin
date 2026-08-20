@@ -2,7 +2,9 @@
   "name": "verin",
   "private": true,
   "version": "0.2.0",
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "dev": "next dev",
@@ -10,7 +12,9 @@
     "start": "next start",
     "test": "vitest run",
     "e2e": "playwright test",
-    "db": "tsx src/tools/cli.ts"
+    "db": "tsx src/tools/cli.ts",
+    "lint": "eslint .",
+    "format": "prettier --check \"src/**/*.{ts,tsx}\" \"*.mjs\" playwright.config.ts"
   },
   "dependencies": {
     "next": "16.3.1",

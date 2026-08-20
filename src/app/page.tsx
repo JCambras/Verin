@@ -14,7 +14,11 @@ async function submitSignIn(formData: FormData) {
   const session = await signIn(c, String(formData.get("loginEmail") ?? ""), String(formData.get("secretText") ?? ""));
   if (!session) redirect("/?refused=1");
   (await cookies()).set("verin_session", session.cookieValue, {
-    httpOnly: true, sameSite: "lax", path: "/", secure: getGateway().secureCookies, expires: session.expiresAt,
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: getGateway().secureCookies,
+    expires: session.expiresAt,
   });
   redirect("/households");
 }
@@ -28,7 +32,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ r
   return (
     <form action={submitSignIn} className="stack" data-testid="verin-signin-loaded">
       <h1>Sign in to Verin</h1>
-      {refused ? <p className="alert" role="alert">That email and password combination was not accepted.</p> : null}
+      {refused ? (
+        <p className="alert" role="alert">
+          That email and password combination was not accepted.
+        </p>
+      ) : null}
       <div className="field">
         <label htmlFor="loginEmail">Work email</label>
         <input id="loginEmail" name="loginEmail" type="email" autoComplete="email" required />
@@ -37,7 +45,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ r
         <label htmlFor="secretText">Password</label>
         <input id="secretText" name="secretText" type="password" autoComplete="current-password" required />
       </div>
-      <button className="btn-primary" type="submit">Sign in</button>
+      <button className="btn-primary" type="submit">
+        Sign in
+      </button>
     </form>
   );
 }

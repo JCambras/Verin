@@ -15,7 +15,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <header className="chrome">
           <span className="wordmark">Verin.</span>
-          <nav aria-label="Primary"><a href="/">Households</a></nav>
+          <nav aria-label="Primary">
+            <a href="/">Households</a>
+          </nav>
         </header>
         <main>{children}</main>
       </body>

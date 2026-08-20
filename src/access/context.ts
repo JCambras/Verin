@@ -30,8 +30,12 @@ export interface AccessContext {
   // own transaction with the tenant GUC set, and the database's RLS is the isolation guarantee.
   withTenant<T>(c: RequestCorrelation, grant: ActionGrant, fn: (tx: TenantTransaction) => Promise<T>): Promise<T>;
 }
-interface TenantTransaction { listHouseholds(): Promise<{ id: string; name: string; record_origin: string }[]> }
+interface TenantTransaction {
+  listHouseholds(): Promise<{ id: string; name: string; record_origin: string }[]>;
+  getHousehold(householdId: string): Promise<{ id: string; name: string; record_origin: string; recorded_at: Date | null } | null>;
+}
 const householdRow = z.strictObject({ id: z.string(), name: z.string(), record_origin: z.string() });
+const householdDetail = z.strictObject({ id: z.string(), name: z.string(), record_origin: z.string(), recorded_at: z.date().nullable() });
 
 export function createAccessContext(): AccessContext {
   const gw = getGateway();
@@ -48,15 +52,17 @@ export function createAccessContext(): AccessContext {
       });
     },
     async authorize(c, principal, action) {
-      return gw.enterAccessAuthorize(c, async () =>
-        (ROLE_ACTIONS[principal.role] ?? []).includes(action) ? ({ action, principal } as ActionGrant) : null,
-      );
+      return gw.enterAccessAuthorize(c, async () => ((ROLE_ACTIONS[principal.role] ?? []).includes(action) ? ({ action, principal } as ActionGrant) : null));
     },
     async withTenant(c, grant, fn) {
       return gw.enterAccessWithTenant(c, async () =>
         fn({
-          listHouseholds: async () =>
-            z.array(householdRow).parse(await gw.enterHouseholdListForTenant(c, { orgId: grant.principal.tenant.orgId })),
+          listHouseholds: async () => z.array(householdRow).parse(await gw.enterHouseholdListForTenant(c, { orgId: grant.principal.tenant.orgId })),
+          getHousehold: async (householdId) => {
+            if (!z.uuid().safeParse(householdId).success) return null; // a client-supplied id parses before any store work
+            const raw = await gw.enterHouseholdGetForTenant(c, { orgId: grant.principal.tenant.orgId, householdId });
+            return raw === null ? null : householdDetail.parse(raw);
+          },
         }),
       );
     },
@@ -77,7 +83,15 @@ export async function signIn(c: RequestCorrelation, loginEmail: string, secretTe
     if (id === null || stored.length !== derivedKey.length || !timingSafeEqual(derivedKey, stored)) return null;
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
-    await gw.enterSessionCreate(c, { id: randomUUID(), tokenHash: sha256(token), identityId: id.id, orgId: id.org_id, displayName: id.display_name, role: id.role, expiresAt: expiresAt.toISOString() });
+    await gw.enterSessionCreate(c, {
+      id: randomUUID(),
+      tokenHash: sha256(token),
+      identityId: id.id,
+      orgId: id.org_id,
+      displayName: id.display_name,
+      role: id.role,
+      expiresAt: expiresAt.toISOString(),
+    });
     return { cookieValue: gw.sealCookieValue(token), expiresAt };
   });
 }

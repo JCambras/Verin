@@ -40,6 +40,12 @@ h1 { font-size: 1.5rem; font-weight: 600; }
 .register li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; font-size: 0.875rem; }
 .register li + li { border-top: 1px solid var(--border); }
 .badge-demo { border: 1px dashed var(--input-border); color: var(--muted-foreground); border-radius: 9999px; padding: 0.125rem 0.625rem; font-size: 0.75rem; white-space: nowrap; }
+.register a { color: var(--foreground); text-decoration: none; }
+.register a:hover { text-decoration: underline; }
+.metric { display: flex; flex-direction: column; gap: 0.25rem; border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; align-items: flex-start; }
+.metric-value { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 1.5rem; }
+.section-heading { font-size: 1rem; font-weight: 600; }
+.card-dashed a { color: var(--strong); }
 .alert { color: var(--destructive); font-size: 0.875rem; }
 :where(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: calc(var(--radius) - 4px); }
 @media (prefers-reduced-motion: reduce) {
