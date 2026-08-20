@@ -200,7 +200,7 @@ export function e8CompanionProof(input) {
   for (const id of newIds) {
     const section = input.proofLogAdded.split(/^## /m).find((s) => s.startsWith(`M-${id} (rule ${id})`));
     if (!section) { out.push(v("E8", id, `new PASS-emitting check ${id} ships with no companion mutation entry added to docs/proof-log.md in this PR`)); continue; }
-    if (!/Injected/.test(section) || !/FAIL/.test(section))
+    if (!/injected/i.test(section) || !/FAIL/.test(section))
       out.push(v("E8", id, `companion entry for ${id} records no observed failure; a companion that never failed proves nothing`));
   }
   return out;
