@@ -19,9 +19,14 @@ real repository state; no mutation writes to any remote.
   platform-supplied base ref is the entire input; a genuinely mistargeted PR would be the violation itself,
   and creating a second repository is a network write section 3 forbids. This limitation is recorded here
   rather than smoothed.
-- The three arms (real payload passing; `base.ref` altered to `main` failing; base ref deleted failing
-  closed) are executed against that captured payload and their exact transcripts are appended to this entry
-  in this same pull request, before it merges - the capture cannot exist before the pull request does.
+- Captured: run 32402570676's payload for PR #46 - event `pull_request`, `base.ref: generation-4`,
+  `base.sha: 71ef1955c3f65710ab5010832a67f27a2aa76cfe`, `head.ref: fm/gen4-pr-1a`.
+- Arm 1, the real payload unaltered, through the shipped stack: `E2 PASS`.
+- Arm 2, the same real payload with `base.ref` set to `main` (exit 1): `E2 FAIL base.ref - this pull
+  request targets 'main', not generation-4`.
+- Arm 3, the same real payload with the base ref deleted (exit 1): `E2 FAIL base.ref - pull_request
+  payload carries no base ref; a missing field is not agreement; failing closed`.
+- Reverted: the altered copies were temporary files; the shipped rule and the captured payload are unchanged.
 
 ## M-E3 (rule E3)
 - Subject: the real API answer for this repository (`GET /repos/JCambras/Verin`, `default_branch: main`).
