@@ -1,0 +1,27 @@
+# The blocking generation-4 enforcement job (CONSTITUTION.md; prompt 1 deliverable 5). Dedicated, unfiltered,
+# non-neutralized: no path filter, no condition, no continue-on-error; every shipped rule runs in the one
+# runner and any violation fails the job. pull_request runs carry no branch filter so a mistargeted PR whose
+# head carries this workflow is caught by E2 rather than silently skipped; the push trigger names
+# generation-4 because that is the ref whose head this gate attests (section 9 evidence is a push-run URL).
+name: enforcement
+on:
+  pull_request:
+  push:
+    branches: [generation-4]
+permissions:
+  contents: read
+jobs:
+  enforce:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, pinned by commit
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin main
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0, pinned by commit
+        with:
+          node-version: 22.23.1
+      - run: cat "$GITHUB_EVENT_PATH" # the real platform event payload, captured for the proof log
+      - run: node enforcement/run.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
