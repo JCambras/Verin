@@ -25,7 +25,13 @@ const loginRow = z.strictObject({ id: z.string(), org_id: z.string(), display_na
 export interface AccessContext {
   authenticate(c: RequestCorrelation, sessionCookie: string | undefined): Promise<Principal | null>;
   authorize(c: RequestCorrelation, principal: Principal, action: Action): Promise<ActionGrant | null>;
+  // The tenant-scoped surface fn receives closes over the GRANT's sealed tenant identity, so a caller
+  // can neither choose an org nor reach a bare connection; every store operation inside runs in its
+  // own transaction with the tenant GUC set, and the database's RLS is the isolation guarantee.
+  withTenant<T>(c: RequestCorrelation, grant: ActionGrant, fn: (tx: TenantTransaction) => Promise<T>): Promise<T>;
 }
+interface TenantTransaction { listHouseholds(): Promise<{ id: string; name: string; record_origin: string }[]> }
+const householdRow = z.strictObject({ id: z.string(), name: z.string(), record_origin: z.string() });
 
 export function createAccessContext(): AccessContext {
   const gw = getGateway();
@@ -44,6 +50,14 @@ export function createAccessContext(): AccessContext {
     async authorize(c, principal, action) {
       return gw.enterAccessAuthorize(c, async () =>
         (ROLE_ACTIONS[principal.role] ?? []).includes(action) ? ({ action, principal } as ActionGrant) : null,
+      );
+    },
+    async withTenant(c, grant, fn) {
+      return gw.enterAccessWithTenant(c, async () =>
+        fn({
+          listHouseholds: async () =>
+            z.array(householdRow).parse(await gw.enterHouseholdListForTenant(c, { orgId: grant.principal.tenant.orgId })),
+        }),
       );
     },
   };

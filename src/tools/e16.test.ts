@@ -5,6 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
+import { Client as PgClient } from "pg";
 import { Project, SyntaxKind, type SourceFile } from "ts-morph";
 import { createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, snapshotEvidence } from "../runtime/governed";
 import { createAccessContext, signIn, type Principal } from "../access/context";
@@ -125,6 +126,55 @@ describe("the governed access flows, exercised end to end", () => {
   });
   it("refuses a second runtime construction in one process", () => {
     expect(() => createGovernedRuntime("tooling")).toThrow(/refused, not cached/);
+  });
+  it("the register flow: withTenant scopes the read to the grant's own firm", async () => {
+    const c = requestCorrelation(mintRequestId());
+    const access = createAccessContext();
+    const names = await getGateway().enterRouteHouseholds(c, async () => {
+      const p = await access.authenticate(c, cookieValue);
+      const grant = await access.authorize(c, p!, "household.read");
+      return (await access.withTenant(c, grant!, (tx) => tx.listHouseholds())).map((h) => h.name);
+    });
+    expect(names).toEqual(["Delgado Household", "Henderson Family", "Okonkwo Trust"]);
+  });
+  it("a second firm's real token sees only its own book - the cross-tenant-token arm", async () => {
+    const c = requestCorrelation(mintRequestId());
+    const access = createAccessContext();
+    const sB = await signIn(c, "advisor@firm-b.example", "harbor-quartz-42");
+    const names = await getGateway().enterRouteHouseholds(requestCorrelation(mintRequestId()), async () => {
+      const c2 = requestCorrelation(mintRequestId());
+      const pB = await access.authenticate(c2, sB!.cookieValue);
+      const grantB = await access.authorize(c2, pB!, "household.read");
+      return (await access.withTenant(c2, grantB!, (tx) => tx.listHouseholds())).map((h) => h.name);
+    });
+    expect(names).toEqual(["Mensah Family", "Vance Household"]);
+  });
+});
+
+describe("database-enforced isolation (5B.2, section 6 core; the full battery re-runs in PR-2c)", () => {
+  const appUrl = process.env.VERIN_APP_DATABASE_URL ?? "postgresql://verin_app:verin-app-local@localhost:5432/verin";
+  const orgOf = async (c: PgClient, email: string) => {
+    await c.query("SELECT set_config('verin.login_email', $1, false)", [email]);
+    return ((await c.query("SELECT org_id FROM identity WHERE login_email = $1", [email])).rows[0] as { org_id: string }).org_id;
+  };
+  it("the session is not a superuser, cross-tenant reads and writes die at the database, and DDL is refused", async () => {
+    const c = new PgClient({ connectionString: appUrl });
+    await c.connect();
+    try {
+      const who = (await c.query("SELECT current_user, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS rolsuper")).rows[0] as { current_user: string; rolsuper: boolean };
+      expect(who).toEqual({ current_user: "verin_app", rolsuper: false });
+      const orgA = await orgOf(c, "advisor@firm-a.example"), orgB = await orgOf(c, "advisor@firm-b.example");
+      await c.query("SELECT set_config('verin.org_id', $1, false)", [orgB]);
+      expect(Number((await c.query("SELECT count(*)::int AS n FROM household")).rows[0].n)).toBe(2); // the other tenant's rows genuinely exist
+      await c.query("SELECT set_config('verin.org_id', $1, false)", [orgA]);
+      expect(Number((await c.query("SELECT count(*)::int AS n FROM household WHERE org_id = $1", [orgB])).rows[0].n)).toBe(0); // wrong-tenant read
+      const unscoped = (await c.query("SELECT name FROM household")).rows.map((r) => (r as { name: string }).name).sort(); // application predicate deleted
+      expect(unscoped).toEqual(["Delgado Household", "Henderson Family", "Okonkwo Trust"]);
+      const bypass = (await c.query("SELECT count(*)::int AS n FROM household WHERE org_id = $1 OR 1=1", [orgB])).rows[0] as { n: number };
+      expect(Number(bypass.n)).toBe(3); // 'or 1=1' still sees only the scoped firm
+      await expect(c.query("INSERT INTO household (id, org_id, name, record_origin) VALUES (gen_random_uuid(), $1, 'Smuggled Household', 'demo-seed')", [orgB])).rejects.toThrow(/row-level security/); // wrong-tenant write
+      await expect(c.query("CREATE TABLE exfil (x int)")).rejects.toThrow(/permission denied/); // no DDL for the application role
+    } finally { await c.end(); }
   });
 });
 

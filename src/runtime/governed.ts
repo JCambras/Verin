@@ -31,18 +31,21 @@ export const requestCorrelation = (r: RequestId): RequestCorrelation => {
 };
 const opId = (id: OpKey): GovernedOperationId => ({ id } as GovernedOperationId);
 
-export type OpKey = "route.sign-in" | "access.authenticate" | "access.authorize" | "identity.lookupForLogin" | "session.create" | "session.lookupByTokenHash";
+export type OpKey = "route.sign-in" | "route.households" | "access.authenticate" | "access.authorize" | "access.withTenant" | "identity.lookupForLogin" | "session.create" | "session.lookupByTokenHash" | "household.listForTenant";
 type Row = { id: GovernedOperationId; class: "use-case" | "module-operation" | "store"; owner: "Access"; correlation: "RequestCorrelation"; metric: "count"; attributes: typeof ATTRS; permittedParents: readonly (OpKey | "entry")[]; gatewayEntry: string; slice: 2 };
 const ATTRS = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } } as const;
 const row = (id: OpKey, cls: Row["class"], permittedParents: Row["permittedParents"], gatewayEntry: string): Row =>
   ({ id: opId(id), class: cls, owner: "Access", correlation: "RequestCorrelation", metric: "count", attributes: ATTRS, permittedParents, gatewayEntry, slice: 2 });
 const REGISTRY: readonly Row[] = [
   row("route.sign-in", "use-case", ["entry"], "enterRouteSignIn"),
-  row("access.authenticate", "module-operation", ["entry"], "enterAccessAuthenticate"),
-  row("access.authorize", "module-operation", ["entry"], "enterAccessAuthorize"),
+  row("route.households", "use-case", ["entry"], "enterRouteHouseholds"),
+  row("access.authenticate", "module-operation", ["entry", "route.households"], "enterAccessAuthenticate"),
+  row("access.authorize", "module-operation", ["entry", "route.households"], "enterAccessAuthorize"),
+  row("access.withTenant", "module-operation", ["route.households"], "enterAccessWithTenant"),
   row("identity.lookupForLogin", "store", ["route.sign-in"], "enterIdentityLookupForLogin"),
   row("session.create", "store", ["route.sign-in"], "enterSessionCreate"),
   row("session.lookupByTokenHash", "store", ["access.authenticate"], "enterSessionLookupByTokenHash"),
+  row("household.listForTenant", "store", ["access.withTenant"], "enterHouseholdListForTenant"),
 ];
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -51,11 +54,13 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
   "identity.lookupForLogin": { kind: "prepared-query", statementName: "identity_lookup_for_login_v1", canonicalSql: "SELECT id, org_id, display_name, role, credential_hash, credential_salt FROM identity WHERE login_email = $1", parameters: [{ name: "loginEmail", type: "text" }], resultValidator: "identityLoginRow.v1", cardinality: "at-most-one", transactionClass: "login-email-guc-from-p1", authorityClass: "credential-exchange" },
   "session.create": { kind: "prepared-query", statementName: "session_create_v1", canonicalSql: "INSERT INTO session (id, token_hash, identity_id, org_id, display_name, role, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)", parameters: [{ name: "id", type: "uuid" }, { name: "tokenHash", type: "text" }, { name: "identityId", type: "uuid" }, { name: "orgId", type: "uuid" }, { name: "displayName", type: "text" }, { name: "role", type: "text" }, { name: "expiresAt", type: "timestamptz" }], resultValidator: "writeOne.v1", cardinality: "write-one", transactionClass: "session-token-guc-from-p2", authorityClass: "credential-exchange" },
   "session.lookupByTokenHash": { kind: "prepared-query", statementName: "session_lookup_by_token_hash_v1", canonicalSql: "SELECT identity_id, org_id, display_name, role, expires_at FROM session WHERE token_hash = $1 AND expires_at > now()", parameters: [{ name: "tokenHash", type: "text" }], resultValidator: "sessionRow.v1", cardinality: "at-most-one", transactionClass: "session-token-guc-from-p1", authorityClass: "pre-tenant" },
+  "household.listForTenant": { kind: "prepared-query", statementName: "household_list_for_tenant_v1", canonicalSql: "SELECT id, name, record_origin FROM household WHERE org_id = $1 ORDER BY name", parameters: [{ name: "orgId", type: "uuid" }], resultValidator: "householdRows.v1", cardinality: "many", transactionClass: "tenant-guc-from-p1", authorityClass: "tenant" },
 };
 const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Record<string, unknown> }> = {
   "identity.lookupForLogin": { gatewayEntry: "enterIdentityLookupForLogin", constructedDefinition: { kind: "prepared-query", statementName: "identity_lookup_for_login_v1", canonicalSql: "SELECT id, org_id, display_name, role, credential_hash, credential_salt FROM identity WHERE login_email = $1", parameters: [{ name: "loginEmail", type: "text" }], resultValidator: "identityLoginRow.v1", cardinality: "at-most-one", transactionClass: "login-email-guc-from-p1", authorityClass: "credential-exchange" } },
   "session.create": { gatewayEntry: "enterSessionCreate", constructedDefinition: { kind: "prepared-query", statementName: "session_create_v1", canonicalSql: "INSERT INTO session (id, token_hash, identity_id, org_id, display_name, role, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)", parameters: [{ name: "id", type: "uuid" }, { name: "tokenHash", type: "text" }, { name: "identityId", type: "uuid" }, { name: "orgId", type: "uuid" }, { name: "displayName", type: "text" }, { name: "role", type: "text" }, { name: "expiresAt", type: "timestamptz" }], resultValidator: "writeOne.v1", cardinality: "write-one", transactionClass: "session-token-guc-from-p2", authorityClass: "credential-exchange" } },
   "session.lookupByTokenHash": { gatewayEntry: "enterSessionLookupByTokenHash", constructedDefinition: { kind: "prepared-query", statementName: "session_lookup_by_token_hash_v1", canonicalSql: "SELECT identity_id, org_id, display_name, role, expires_at FROM session WHERE token_hash = $1 AND expires_at > now()", parameters: [{ name: "tokenHash", type: "text" }], resultValidator: "sessionRow.v1", cardinality: "at-most-one", transactionClass: "session-token-guc-from-p1", authorityClass: "pre-tenant" } },
+  "household.listForTenant": { gatewayEntry: "enterHouseholdListForTenant", constructedDefinition: { kind: "prepared-query", statementName: "household_list_for_tenant_v1", canonicalSql: "SELECT id, name, record_origin FROM household WHERE org_id = $1 ORDER BY name", parameters: [{ name: "orgId", type: "uuid" }], resultValidator: "householdRows.v1", cardinality: "many", transactionClass: "tenant-guc-from-p1", authorityClass: "tenant" } },
 };
 
 export const NAMING_PATTERN = "verin.op.{id}";
@@ -88,11 +93,14 @@ function deriveEffect(def: Record<string, unknown>): { id: string; bytes: string
 type StoreValues = Record<string, string>;
 export type Gateway = {
   enterRouteSignIn: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterRouteHouseholds: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterAccessAuthenticate: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterAccessAuthorize: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterAccessWithTenant: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterIdentityLookupForLogin: (c: RequestCorrelation, v: { loginEmail: string }) => Promise<unknown>;
   enterSessionCreate: (c: RequestCorrelation, v: { id: string; tokenHash: string; identityId: string; orgId: string; displayName: string; role: string; expiresAt: string }) => Promise<unknown>;
   enterSessionLookupByTokenHash: (c: RequestCorrelation, v: { tokenHash: string }) => Promise<unknown>;
+  enterHouseholdListForTenant: (c: RequestCorrelation, v: { orgId: string }) => Promise<unknown>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -102,6 +110,7 @@ const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
   "identityLoginRow.v1": (r) => atMostOne(r, z.strictObject({ id: z.string(), org_id: z.string(), display_name: z.string(), role: z.string(), credential_hash: z.string(), credential_salt: z.string() })),
   "sessionRow.v1": (r) => atMostOne(r, z.strictObject({ identity_id: z.string(), org_id: z.string(), display_name: z.string(), role: z.string(), expires_at: z.date() })),
   "writeOne.v1": (r) => { if (r.rowCount !== 1) throw new Error("cardinality write-one violated"); return null; },
+  "householdRows.v1": (r) => r.rows.map((x) => z.strictObject({ id: z.string(), name: z.string(), record_origin: z.string() }).parse(x)),
 };
 
 // The one-per-process slot lives on globalThis, not a module-local variable: the framework bundles
@@ -183,6 +192,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
         if (tc === "login-email-guc-from-p1") await client.query("SELECT set_config('verin.login_email', $1, true)", [params[0]]);
         else if (tc === "session-token-guc-from-p1") await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[0]]);
         else if (tc === "session-token-guc-from-p2") await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[1]]);
+        else if (tc === "tenant-guc-from-p1") await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
         else throw new Error(`transaction class '${String(tc)}' is not admitted`);
         const res = await client.query({ name: String(def["statementName"]), text: String(def["canonicalSql"]), values: params });
         rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
@@ -195,11 +205,14 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
   const hmac = (t: string) => createHmac("sha256", cookieKey).update(t).digest("hex");
   G = Object.freeze({
     enterRouteSignIn: <T,>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.sign-in", c, fn),
+    enterRouteHouseholds: <T,>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.households", c, fn),
     enterAccessAuthenticate: <T,>(c: RequestCorrelation, fn: () => Promise<T>) => enter("access.authenticate", c, fn),
     enterAccessAuthorize: <T,>(c: RequestCorrelation, fn: () => Promise<T>) => enter("access.authorize", c, fn),
+    enterAccessWithTenant: <T,>(c: RequestCorrelation, fn: () => Promise<T>) => enter("access.withTenant", c, fn),
     enterIdentityLookupForLogin: (c: RequestCorrelation, v: { loginEmail: string }) => runStore("identity.lookupForLogin", c, v),
     enterSessionCreate: (c: RequestCorrelation, v: Parameters<Gateway["enterSessionCreate"]>[1]) => runStore("session.create", c, v),
     enterSessionLookupByTokenHash: (c: RequestCorrelation, v: { tokenHash: string }) => runStore("session.lookupByTokenHash", c, v),
+    enterHouseholdListForTenant: (c: RequestCorrelation, v: { orgId: string }) => runStore("household.listForTenant", c, v),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf("."); if (dot < 1) return null;

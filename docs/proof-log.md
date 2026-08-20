@@ -290,3 +290,24 @@ exceeds hard ceiling 5`); the same lines in an undeclared module measure zero, w
 A forged token hash and a tampered signature each resolve to no principal (zero rows under the
 session-token GUC policy), proven in the committed suite; exactly one registry operation carries
 `authorityClass: 'pre-tenant'`. The full section 6 battery lands with the tenant tables (PR-2a', 2c).
+
+## PR-2a' proofs (the split's second unit; raw transcripts: docs/evidence/pr2a2-transcripts.tar, sha256 de1b444e...)
+
+### The named semantic-effect-smuggling mutation, on the household-register query itself (spec M-E 8's target)
+With every non-semantic byte held constant, only the ADMITTED copy's canonicalSql lost its tenant
+predicate - the exact mutated bytes are `SELECT id, name, record_origin FROM household ORDER BY name`
+(` WHERE org_id = $1` deleted). Construction refused printing both digests: registry
+`semfx.v1:0b428c3e...` != constructed `semfx.v1:b24a652f...`. An unregistered internal step against
+the household table cannot obtain an id: `TS2339: Property 'enterHouseholdSneakyRead' does not exist`.
+
+### The isolation companion for the tenant-RLS invariant this PR states (section 6 core; full battery in PR-2c)
+In the committed suite, one non-superuser session (`current_user=verin_app, rolsuper=false`) proves:
+the other tenant's rows genuinely exist (B-scoped count 2), a wrong-tenant read counts 0, the read
+with the application predicate deleted returns only the scoped firm's three rows, an `or 1=1` bypass
+still sees only them, a wrong-tenant write dies on the policy (`row-level security`), and
+`CREATE TABLE` is refused (`permission denied`). The cross-tenant-token arm deferred from PR-2a runs
+here too: Firm B's real token lists exactly Mensah and Vance, none of Firm A's book - in the suite
+and in the browser.
+Counter-run: with `ALTER TABLE household DISABLE ROW LEVEL SECURITY` in the scratch store the same
+test FAILS (`expected 5 to be 2` - every firm's rows suddenly visible), and with ENABLE + FORCE
+restored it passes: the test is load-bearing on the database, never on the application predicate.

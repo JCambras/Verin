@@ -36,6 +36,10 @@ h1 { font-size: 1.5rem; font-weight: 600; }
 .card-dashed .title { font-size: 0.875rem; font-weight: 500; color: var(--strong); }
 .card-dashed p { max-width: 24rem; font-size: 0.875rem; color: var(--muted-foreground); }
 .meta { font-size: 0.75rem; color: var(--muted-foreground); }
+.register { list-style: none; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.register li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; font-size: 0.875rem; }
+.register li + li { border-top: 1px solid var(--border); }
+.badge-demo { border: 1px dashed var(--input-border); color: var(--muted-foreground); border-radius: 9999px; padding: 0.125rem 0.625rem; font-size: 0.75rem; white-space: nowrap; }
 .alert { color: var(--destructive); font-size: 0.875rem; }
 :where(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: calc(var(--radius) - 4px); }
 @media (prefers-reduced-motion: reduce) {
