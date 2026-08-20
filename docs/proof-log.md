@@ -222,3 +222,71 @@ by a substring search. Selected exact lines (the full battery transcript is in t
 - Injected: a simulated pull request whose base and head are the same commit, so the changed-path list is
   empty (exit 1): `E5 FAIL diff - E5 saw zero changed paths; a check that sees nothing must never report
   clean`. Reverted. A check that sees nothing must never report clean.
+
+## PR-2a proofs (prompt 2 section 6; raw transcripts: docs/evidence/pr2a-transcripts.tar, sha256 91bf9415...)
+
+Every arm was injected, observed failing with the exact line quoted, and reverted; the restored tree's
+green run closes the bundle. No heading here names a rule id: the canonical `M-*` mapping above stays total.
+
+### The baseline (spec M-G, rule E11's non-empty path)
+1. Caret range: `'next' is declared as '^16.3.1', a range; every entry is an exact version`.
+2. Off-allowlist package: `'left-pad' is in neither ratified allowlist; a new package needs captain ratification`.
+3. Lockfile deleted: `ERR_PNPM_NO_LOCKFILE  Cannot install with "frozen-lockfile" because pnpm-lock.yaml is absent`.
+4. `@types/node` at major 24 under Node 22: `the executing Node runtime major is 22 but @types/node is 24.13.3 (major 24); the majors must be equal`.
+5. `NEXT_TELEMETRY_DISABLED` unset under the capability-denied fixture: this build attempted no
+   telemetry, and the armed fixture was proven on a real outbound attempt (`deny-net: refused outbound
+   tls connect to 'telemetry.nextjs.org'`); restored, the build completes with zero refusals.
+
+### Sealed authority (spec M-B; the sealed-factory construction rule plus the runtime gateway)
+Typed: a cast to `Principal`, a `JSON.parse` fill, casts to `GovernedOperationId` and `RequestId` each
+fail the build with file:line; a bare literal fails `tsc` (TS2741, the brand is missing); an
+unregistered gateway entry and a generic `enter` fail TS2339. Forced past the types: missing
+`requestId`, a wrong purpose tag, a wrong kind, and a structurally valid correlation minted by a
+second factory are each refused at the gateway naming the defect; the factory-minted control is accepted.
+
+### The E16 battery against the first real flow (spec M-E, all twelve, plus attributes and naming)
+1. Span deleted from sign-in: `operation 'route.sign-in' has 0 completed span(s); exactly one is required (span)`.
+2. Metric deleted from the shell's session read: `... its required metric 'count' recorded a total of 0 ... (metric)`.
+3. Log deleted from the session-write transaction: `operation 'session.create' emitted 0 structured log record(s) ... (log)`.
+4. Phantom row: `registered operation was never exercised and carries no unreachableInSlice classification`.
+5. Emissions present in source (grep count 3) but unreachable at runtime: 28 failures - E16 reads the capture, not the text.
+6. Unregistered internal step: TS2339 (no entry, no generic `enter`); relabelled in the capture:
+   `exercised operation 'flow.sneaky-read' is absent from the typed registry`.
+7. Product raw acquisition: `src/app/page.tsx:9 imports the raw database driver directly`, `:10 reads
+   the credential environment outside the kernel`, `:11 calls fetch in a product module`; the probe's
+   denials stand independently (credential env consumed and deleted by the kernel).
+8. Semantic-effect smuggling (only the admitted predicate changed): `refusing construction: registry
+   digest semfx.v1:f3ea46e8... != constructed digest semfx.v1:06d0a513...`; two ordinary callers of the
+   unmodified entry reproduced one admitted id in both raw captures.
+9. Empty, truncated, unresolved, generic, function-valued and caller-controlled definitions each
+   refused before construction naming the closed-language rule; a store row stripped of both required
+   fields, the fields added to class 1, 2 and 3 rows, a raw execution hidden beneath a non-effect
+   parent, and both definition sides emptied all fail per row - never equality over zero.
+10. Tampered raw bytes under a kept id: `raw-execution bytes do not reproduce semfx.v1:f3ea46e8...`.
+11. Correlation without `requestId`: TS2741 at the typed entry; forced past it: `missing required
+    field 'requestId'; the runtime fails closed`.
+12. False alias before any second identifier exists: a value with purpose tag `sessionId` in the
+    `requestId` slot: `a value cannot pose as another identifier`.
+Attributes: an account-shaped `requestId` fails both its digest domain and as a
+`hyphenated-account-reference` PII defect; a raw session token, a raw email and a free-form household
+name fail on undeclared domains. Naming: a concatenated span name fails the declared naming function.
+
+### The empty capture (spec M-F, vacuity)
+With the exercising suite disabled the gate fails, never passes: `the registry is non-empty but the
+capture holds zero telemetry and an empty graph; the flow was never exercised at all`.
+
+### The vacuous axe scan (spec M-D)
+Pointed at a route that renders nothing, the required loaded-state marker fails first
+(`expect(locator).toBeVisible() failed ... element(s) not found`) - an empty render can never pass.
+
+### The two ruled collector sharpenings (GD-002), each with its companion
+Owner collector: an over-owner layout still fails (`Canonical owners touched: measured 4 exceeds hard
+ceiling 3`) while root bookkeeping files fold into one repository-cluster owner (control clean).
+Seam modules: six export lines in the declared seam module fail (`New public seam symbols: measured 6
+exceeds hard ceiling 5`); the same lines in an undeclared module measure zero, which is why
+`SEAM_MODULES` additions are recorded per slice - the declaration list is the fence.
+
+### The pre-tenant session boundary (5B.2a, this PR's own invariant)
+A forged token hash and a tampered signature each resolve to no principal (zero rows under the
+session-token GUC policy), proven in the committed suite; exactly one registry operation carries
+`authorityClass: 'pre-tenant'`. The full section 6 battery lands with the tenant tables (PR-2a', 2c).

@@ -3,6 +3,11 @@
 # runner and any violation fails the job. pull_request runs carry no branch filter so a mistargeted PR whose
 # head carries this workflow is caught by E2 rather than silently skipped; the push trigger names
 # generation-4 because that is the ref whose head this gate attests (section 9 evidence is a push-run URL).
+#
+# Step order is prompt 2 5B.0 and is load-bearing: install, migrate (twice - the second run is the
+# upgraded-ledger preflight proof), the instrumented run that writes the E16 capture, the
+# capability-denied build, the browser proof - and only then E1..E16, which reads the capture and
+# fails closed on governed source without one.
 name: enforcement
 on:
   pull_request:
@@ -10,9 +15,20 @@ on:
     branches: [generation-4]
 permissions:
   contents: read
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  APP_ENV: development
+  E16_EVIDENCE: test-results/e16-capture.json
 jobs:
   enforce:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18.6@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, pinned by commit
         with:
@@ -25,11 +41,21 @@ jobs:
       - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0, pinned by commit; independent whole-history layer beside E13
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: mkdir -p test-results # runner-owned before the container writes into it; the whole directory is ignored, so the clean-status proof below stays honest
       - run: > # the pinned semgrep engine over the repo-owned ruleset; E14 consumes the report and fails closed without it
           docker run --rm -v "$PWD:/src" -w /src
           semgrep/semgrep:1.174.0@sha256:f1f7b71861c7b28b6e0f661225a2c4f58a484f5d0f182465c6d6b3b22f972ade
-          semgrep scan --config enforcement/semgrep-rules.yml --json --output semgrep-report.json --metrics=off
+          semgrep scan --config enforcement/semgrep-rules.yml --json --output test-results/semgrep-report.json --metrics=off
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm db bootstrap && corepack pnpm db migrate && corepack pnpm db migrate && corepack pnpm db seed
+      - run: corepack pnpm test # the instrumented run - exercises every governed operation and writes the E16 capture
+      - run: NODE_OPTIONS="--require ./src/tools/deny-net.cjs" corepack pnpm build # a build that reaches any host fails here
+      - run: corepack pnpm exec playwright install --with-deps chromium
+      - run: corepack pnpm e2e
+      # Nothing the build produces may be left untracked; the one exclusion is the pinned gitleaks
+      # action's own SARIF report at the workspace root - scanner output, not a build product.
+      - run: git status --porcelain -- ':(exclude)results.sarif' && test -z "$(git status --porcelain -- ':(exclude)results.sarif')"
       - run: node enforcement/run.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SEMGREP_REPORT: semgrep-report.json
+          SEMGREP_REPORT: test-results/semgrep-report.json
