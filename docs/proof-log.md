@@ -334,7 +334,7 @@ than minted. A malformed id parses before any store work; another firm's real id
 honest not-found through the grant-scoped read (committed suite and browser both), so existence never
 leaks across the tenant boundary.
 
-## PR-2c proofs (the session and the journey; raw transcripts: docs/evidence/pr2c-transcripts.tar, sha256 83715776...)
+## PR-2c proofs (the session and the journey; raw transcripts: docs/evidence/pr2c-transcripts.tar, sha256 e1263642...)
 
 ### Renewal and rotation on the cookie-writing path only (5B, spec M-C)
 The proxy - Next's always-Node cookie-writing path - is the ONE place rotation lives: one closed
