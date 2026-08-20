@@ -11,7 +11,7 @@ const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 1 << 26 });
 const gitBuf = (...a) => execFileSync("git", a, { maxBuffer: 1 << 26 });
 const PINS_PATH = "enforcement/signed-truth-pins.json";
-const SEAM_MODULES = ["enforcement/contract.mjs"]; // the declared seam's home; later slices extend this list
+const SEAM_MODULES = ["enforcement/contract.mjs", "src/access/context.ts"]; // the declared seam's home per slice; slice 2 adds exactly AccessContext (captain ruling 2026-08-20, GD-002) and any later addition is its own recorded per-slice change
 const PRODUCT_DIRS = ["src", "app", "pages", "components", "lib"]; // product code; enforcement/ and CI are tooling
 const isTestPath = (p) => /(^|\/)(__tests__|tests?)\/|\.test\.|\.spec\./.test(p);
 
@@ -159,7 +159,10 @@ export function e5ReviewBudget(input) {
   const measures = [
     ["Bucket H, reviewable text lines", hLines],
     ["Files touched", input.changed.length],
-    ["Canonical owners touched", new Set(input.changed.map((c) => /^(enforcement\/|\.github\/|docs\/|CONSTITUTION\.md|README\.md|DECISIONS\.md)/.test(c.path) ? "enforcement-contract" : c.path.split("/")[0])).size],
+    // Root-level bookkeeping files (manifest, lockfile, .npmrc, .gitignore, tsconfig, tool configs and
+    // peers - anything with no path separator, which in this program is never product code) are one
+    // repository-cluster owner; nothing under src/ or enforcement/ is affected (GD-002, captain ruling).
+    ["Canonical owners touched", new Set(input.changed.map((c) => /^(enforcement\/|\.github\/|docs\/|CONSTITUTION\.md|README\.md|DECISIONS\.md)/.test(c.path) ? "enforcement-contract" : c.path.includes("/") ? c.path.split("/")[0] : "repository-cluster")).size],
     ["New public seam symbols", SEAM_MODULES.flatMap((mod) => input.diffAdded[mod] ?? []).filter((l) => /^export\s/.test(l)).length],
     ["New database objects", Object.entries(input.diffAdded).filter(([p]) => p.endsWith(".sql")).flatMap(([, a]) => a).filter((l) => /^\s*CREATE\s+(TABLE|INDEX|VIEW|SEQUENCE|TRIGGER|FUNCTION)/i.test(l)).length],
     ["New direct dependencies, application/runtime allowlist", input.deps?.runtimeAdded?.length ?? 0],

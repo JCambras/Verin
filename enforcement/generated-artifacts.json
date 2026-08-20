@@ -2,5 +2,13 @@
   "enforcement/signed-truth-pins.json": {
     "regenerate": ["node", "enforcement/run.mjs", "--regenerate=enforcement/signed-truth-pins.json"],
     "summary": "docs/review-summaries/signed-truth-pins.md"
+  },
+  "pnpm-lock.yaml": {
+    "regenerate": ["bash", "-lc", "corepack pnpm install --frozen-lockfile --ignore-scripts --reporter=silent 1>&2 && cat pnpm-lock.yaml"],
+    "summary": "docs/review-summaries/dependency-baseline.md"
+  },
+  "docs/evidence/verin-0.2.0.cdx.json": {
+    "regenerate": ["corepack", "pnpm", "exec", "tsx", "src/tools/cli.ts", "sbom", "--print"],
+    "summary": "docs/review-summaries/dependency-baseline.md"
   }
 }

@@ -110,6 +110,25 @@ declared slice class with no ceilings recorded in this table.
 | Bucket B, binary and captured-evidence artifacts | 4 files / 3 MB | 8 files / 6 MB |
 | Review surface (H at 8 lines/min + B at 2 artifacts/min) | 33 min | 54 min |
 
+The `foundation-seam` row-set below is prompt 2 section 7's ratified table in `E5`'s own measure names and
+numeric formats (the transcription the row-set above received). Its one first-recording adjustment is
+captain-ruled (2026-08-20, `DECISIONS.md` GD-002): Files touched hard is 32 - the 26 predates `E5`'s
+file-counting semantics, and mandated bookkeeping plus committed evidence is 15 files before product code.
+Once recorded, every value here is a downward-only ratchet like any other.
+
+| Slice class `foundation-seam` - measure | Preferred | Hard |
+|---|---:|---:|
+| Bucket H, reviewable text lines | 700 | 1,100 |
+| Files touched | 18 | 32 |
+| Canonical owners touched | 2 | 3 |
+| New public seam symbols | 3 | 5 |
+| New database objects | 10 | 16 |
+| New direct dependencies, application/runtime allowlist | 11 | 13 |
+| New direct dependencies, development/test/build allowlist | 13 | 15 |
+| Bucket G, generated-deterministic artifacts | 8 files / 3 MB | 16 files / 8 MB |
+| Bucket B, binary and captured-evidence artifacts | 10 files / 8 MB | 16 files / 12 MB |
+| Review surface (H at 8 lines/min + B at 2 artifacts/min) | 93 min | 146 min |
+
 ## The two ratified dependency allowlists (ADR-0061 R-7; prompt 2 section 5A)
 
 Both lists are exact-pinned - no range anywhere in any manifest; the lockfile is frozen; the manifest, the
@@ -169,6 +188,10 @@ emits request correlation and cannot emit a decision identifier; that is the rul
 | `grafana/k6` image | 2.2.0 @ `sha256:9bd01d6941fca969cb61bb57d2da5ee9b385fe2aa8881df3798c196564d6ace6` | prompt 10 deliverable 6 load generator |
 | `prom/prometheus` image | v3.14.0 @ `sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0` | `promtool`, prompt 10 deliverable 15 offline alerting-rule evaluator |
 | telemetry-register verifier | program-owned `E16` checker under `enforcement/`, pinned by the release candidate's git SHA, executed by the pinned Node runtime | prompt 10 deliverable 14 |
+
+`NEXT_TELEMETRY_DISABLED=1` is set in the repository's committed `.env` and in the blocking workflow's
+environment: no build-time or dev-time network write, and the capability-denied fixture
+(`src/tools/deny-net.cjs`) wraps `next build` in CI so a build that reaches any host fails.
 
 `E12` declared severity floor: **moderate**. `E12` license allowlist (closed): MIT, ISC, Apache-2.0,
 BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0, CC0-1.0, Unlicense, CC-BY-4.0, Python-2.0, MPL-2.0,
