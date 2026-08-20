@@ -1,0 +1,18 @@
+# gen4-sast-rules v1 - the repo-owned semgrep ruleset E14 runs through the pinned engine
+# (semgrep/semgrep 1.174.0 by digest; CONSTITUTION.md). Versioned in-tree so the ruleset cannot float.
+rules:
+  - id: gen4-no-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: eval() executes attacker-shaped strings; there is no governed path through it
+    pattern: eval(...)
+  - id: gen4-no-function-constructor
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: new Function() is eval by another name
+    pattern: new Function(...)
+  - id: gen4-no-dangerously-set-inner-html
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: dangerouslySetInnerHTML renders unsanitized markup
+    pattern: dangerouslySetInnerHTML

@@ -171,7 +171,11 @@ emits request correlation and cannot emit a decision identifier; that is the rul
 | telemetry-register verifier | program-owned `E16` checker under `enforcement/`, pinned by the release candidate's git SHA, executed by the pinned Node runtime | prompt 10 deliverable 14 |
 
 `E12` declared severity floor: **moderate**. `E12` license allowlist (closed): MIT, ISC, Apache-2.0,
-BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0, CC0-1.0, Unlicense, CC-BY-4.0, Python-2.0.
+BSD-2-Clause, BSD-3-Clause, 0BSD, BlueOak-1.0.0, CC0-1.0, Unlicense, CC-BY-4.0, Python-2.0, MPL-2.0,
+LGPL-3.0-or-later. The last two are weak copyleft, admitted for unmodified dynamic use because the
+ratified baseline transitively carries them (axe-core and lightningcss are MPL-2.0; the libvips
+binaries behind Next image optimization are LGPL-3.0-or-later); a dual-licensed package is admitted
+only when every arm of its expression is on this list.
 
 ## The section 5A bootstrap record (B-6; also recorded in ADR-0061 on `main`)
 

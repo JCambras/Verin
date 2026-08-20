@@ -42,6 +42,7 @@ function e4OneSeamPerPr(input) {
 }
 
 import { e5ReviewBudget, e6Reachability, e7Provenance, e8CompanionProof, e9NoExternalEffect, e10SignedTruthImmutable } from "./rules-tree.mjs";
+import { e11DependencyIntegrity, e12DependencyAudit, e13SecretScanning, e14StaticAnalysis, e15Sbom } from "./rules-supply.mjs";
 
 export const RULES = new Map([
   ["E1", e1NoSharedHistory],
@@ -54,6 +55,11 @@ export const RULES = new Map([
   ["E8", e8CompanionProof],
   ["E9", e9NoExternalEffect],
   ["E10", e10SignedTruthImmutable],
+  ["E11", e11DependencyIntegrity],
+  ["E12", e12DependencyAudit],
+  ["E13", e13SecretScanning],
+  ["E14", e14StaticAnalysis],
+  ["E15", e15Sbom],
 ]);
 
 export function evaluateEnforcement(input) {
