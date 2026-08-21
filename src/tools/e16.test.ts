@@ -21,12 +21,15 @@ import {
   type RequestCorrelation,
 } from "../runtime/governed";
 import { createAccessContext, renewSession, signIn, type ActionGrant, type Principal } from "../access/context";
-import { NOT_STATED as POLICY_NOT_STATED, POLICY_OPERATION_DEADLINE_MS, assertSequenceSound, createPolicyVersionRegistry, parsePolicyVersionId } from "../policy/registry";
+import { NOT_STATED as POLICY_NOT_STATED, POLICY_OPERATION_DEADLINE_MS, assertSequenceSound, createPolicyVersionRegistry, parseFirmPolicy, parsePolicyVersionId } from "../policy/registry";
 import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } from "../evidence/bundle";
 import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
 import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
 import { NOT_STATED as DECISION_NOT_STATED, REFERENCE_FORMS, evaluate, outcomeDigest } from "../decision/outcome";
 import { SAMPLE_INPUTS } from "./decision-samples";
+import { COMPARISON_ARCHETYPES } from "../decision/comparison-archetypes";
+import { engineIdentity } from "./decision-engine-identity";
+import { computeManifestRows } from "./decision-replay-manifest";
 import { loadSignedCaseInputs } from "./signed-cases";
 import { compareProducibleBindingFields, loadSignedCaseExpectations } from "./signed-expectations";
 
@@ -698,6 +701,51 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
     await expect(gw["enterDecisionRenderOutcome"](c, async () => null)).rejects.toThrow(/requires correlation kind 'DecisionCorrelation'/);
     // The pre-evaluate arm is a CONSTRUCTION result (proof log): no factory exists to call.
   });
+  it("PR-5b: the comparison route evaluates both archetypes over ONE bundle - one engine identity, two policy identities, each side its own decision correlation", async () => {
+    const requestId = mintRequestId();
+    const c = requestCorrelation(requestId);
+    const access = createAccessContext();
+    const result = await getGateway().enterRouteDecisionCompare(c, async () => {
+      const p = await access.authenticate(c, cookieValue);
+      const grant = (await access.authorize(c, p!, "decision.evaluate"))!;
+      const household = await access.withTenant(c, grant, async (tx) => (await tx.listHouseholds()).find((h) => h.name === "Henderson Family")!);
+      const asOf = new Date().toISOString();
+      const bundle = await assembleEvidence(c, grant, { householdId: household.id }, asOf, { milliseconds: 2_000 });
+      const request = { requestRef: "req:rcomparecase0001", householdSlug: "henderson-family", amountUsd: 150_000, purpose: "home-renovation" as const, deadline: "2026-12-31" };
+      const identities = {
+        firm: `f${grant.principal.tenant.orgId.replaceAll("-", "")}`,
+        household: `h${household.id.replaceAll("-", "")}`,
+        requesterRole: `r${createHash("sha256").update("role|advisor").digest("hex").slice(0, 32)}`,
+      };
+      const sides = [];
+      for (const archetype of COMPARISON_ARCHETYPES) {
+        const digest = sha256hex(enc(archetype.document));
+        const outcome = evaluate({ request, evidenceBundle: bundle, policyDocument: { id: { version: "fpd.v1", digest }, policy: parseFirmPolicy(enc(archetype.document)) }, identities, asOf });
+        const decisionId = decisionIdFromOutcomeDigest(outcomeDigest(outcome));
+        sides.push(await getGateway().enterDecisionCompareSide(decisionCorrelation(requestId, decisionId), async () => ({ digest, outcome, decisionId })));
+      }
+      return sides;
+    });
+    const [a, b] = result;
+    expect(a.digest).not.toBe(b.digest); // two policy content hashes differ (never assert the firms share one)
+    expect(a.decisionId.value).not.toBe(b.decisionId.value); // each side its own decision identity
+    expect(a.outcome.citations.evidenceBundle).toBe(b.outcome.citations.evidenceBundle); // ONE bundle
+    expect(a.outcome.citations.request).toBe(b.outcome.citations.request); // ONE request
+    expect(a.outcome.disposition).toBe("proceed"); // Firm A archetype: dual approval above its stated threshold
+    if (a.outcome.disposition === "proceed") expect(a.outcome.authority.stages.map((st) => st.stageId)).toEqual(["operations-dual-approval"]);
+    expect(b.outcome.disposition).toBe("blocked"); // Firm B archetype: over ITS threshold the not-stated approver role refuses honestly
+    if (b.outcome.disposition === "blocked") expect(b.outcome.blockers.map((x) => x.code)).toEqual(["approval-authority-not-stated"]);
+  });
+  it("PR-5b: the den.v1 engine identity is the committed one, the archetypes are the seed's exact bytes, and every replay-manifest row recomputes exactly", () => {
+    const committed = JSON.parse(readFileSync("src/decision/engine-identity.json", "utf8"));
+    expect(engineIdentity()).toEqual(committed); // one mechanism, two uses, regenerable by anyone
+    const seedSource = readFileSync("src/tools/cli.ts", "utf8");
+    for (const archetype of COMPARISON_ARCHETYPES) expect(seedSource).toContain(archetype.document); // byte-equal to what the seed publishes per firm
+    const manifest = JSON.parse(readFileSync("docs/evidence/decision-replay-manifest.json", "utf8"));
+    expect(manifest.attestedTimeZones).toEqual(["America/New_York", "Asia/Tokyo"]);
+    expect(computeManifestRows()).toEqual(manifest.rows); // every case's resolved identity set equals its manifest set exactly
+    for (const row of manifest.rows) expect(row.engine).toBe(committed.engine);
+  }, 120_000);
   it("the decision module's silence token and account-reference forms agree byte-for-byte with their authorities", () => {
     expect(DECISION_NOT_STATED).toBe(POLICY_NOT_STATED);
     expect(REFERENCE_FORMS.map(([n, r]) => [n, r.source])).toEqual(ACCOUNT_REFERENCE_FORMS.map(([n, r]) => [n, r.source]));

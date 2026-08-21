@@ -12,9 +12,9 @@ import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Project, SyntaxKind, type SourceFile } from "ts-morph";
 
-const ROOT_MODULE = "src/decision/outcome.ts";
-const ROOT_SYMBOL = "evaluate";
-const ALLOWLIST = ["src/decision/outcome.ts"];
+import { CLOSURE_ALLOWLIST, ROOT_MODULE, ROOT_SYMBOL } from "./decision-closure-allowlist";
+
+const ALLOWLIST: readonly string[] = CLOSURE_ALLOWLIST;
 const ALLOWED_EXTERNALS: ReadonlyMap<string, readonly string[]> = new Map([["node:crypto", ["createHash"]]]); // the digest primitive, and nothing else
 // prettier-ignore
 const FORBIDDEN_GLOBALS = "process globalThis fetch require eval Function Intl setTimeout setInterval setImmediate queueMicrotask performance navigator window document XMLHttpRequest WebSocket".split(" ");

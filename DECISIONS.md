@@ -85,3 +85,17 @@ and household-directory) recorded there and in the PR bodies.
 **Why:** Captain ratification of the revised prompt 5, 2026-08-21 ("Ratify - let prompt 5 sail"),
 under the GD-002/GD-004/GD-006 pattern; companions in `docs/proof-log.md` (PR-5a units).
 **Revert path:** a captain re-ruling; every recorded ceiling stays a downward-only ratchet meanwhile.
+
+### GD-008 - 2026-08-21 - PR-5b's recorded per-slice changes: the comparison rows and the two identity artifacts
+
+**What:** The registry gains `route.decision-compare` (use-case, Request) and `decision.compareSide`
+(flow-step, Decision - entered once per firm side, each side its own minted identity); the compare
+route joins the permittedParents of `access.authenticate`, `access.authorize`, `access.withTenant`
+and `evidence.assemble`; and two generated-deterministic artifacts enter the regeneration registry:
+`src/decision/engine-identity.json` (den.v1 - SHA-256 over the exact closure DecisionPureClosure
+resolves, one mechanism two uses) and `docs/evidence/decision-replay-manifest.json` (per case the
+complete resolved identity set, attested byte-identical under America/New_York and Asia/Tokyo).
+The comparison surface evaluates the two COMMITTED archetype documents (byte-equal to the seed's
+per-firm publishes, asserted by test, labelled demonstrations) - no tenant boundary is crossed.
+**Why:** Prompt 5 PR-5b's deliverables under the ratified prompt; companions in `docs/proof-log.md`.
+**Revert path:** a captain re-ruling; rows and artifacts retire only with their surfaces.

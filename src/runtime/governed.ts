@@ -102,7 +102,9 @@ export type OpKey =
   | "policy.history"
   | "policy.versionsForFirm"
   | "route.decision"
-  | "decision.renderOutcome";
+  | "decision.renderOutcome"
+  | "route.decision-compare"
+  | "decision.compareSide";
 type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum"; values: readonly string[] };
 type Row = {
   id: GovernedOperationId;
@@ -143,9 +145,9 @@ const REGISTRY: readonly Row[] = [
   row("route.sign-in", "use-case", ["entry"], "enterRouteSignIn"),
   row("route.households", "use-case", ["entry"], "enterRouteHouseholds"),
   row("route.household-workspace", "use-case", ["entry"], "enterRouteHouseholdWorkspace"),
-  row("access.authenticate", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision"], "enterAccessAuthenticate"),
-  row("access.authorize", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision"], "enterAccessAuthorize"),
-  row("access.withTenant", "module-operation", ["route.households", "route.household-workspace", "route.decision"], "enterAccessWithTenant"),
+  row("access.authenticate", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare"], "enterAccessAuthenticate"),
+  row("access.authorize", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare"], "enterAccessAuthorize"),
+  row("access.withTenant", "module-operation", ["route.households", "route.household-workspace", "route.decision", "route.decision-compare"], "enterAccessWithTenant"),
   row("access.renewSession", "module-operation", ["entry"], "enterAccessRenewSession"),
   row("identity.lookupForLogin", "store", ["route.sign-in"], "enterIdentityLookupForLogin"),
   row("session.create", "store", ["route.sign-in"], "enterSessionCreate"),
@@ -155,7 +157,7 @@ const REGISTRY: readonly Row[] = [
   row("household.getForTenant", "store", ["access.withTenant"], "enterHouseholdGetForTenant"),
   // Slice 3 (prompt 3 deliverable 7): the workspace use case gains assemble in its permitted children
   // (no new route row), and the bounded observation read is its own store row - not a seam operation.
-  row("evidence.assemble", "module-operation", ["route.household-workspace", "route.decision"], "enterEvidenceAssemble", "Evidence", 3),
+  row("evidence.assemble", "module-operation", ["route.household-workspace", "route.decision", "route.decision-compare"], "enterEvidenceAssemble", "Evidence", 3),
   row("observation.listForHousehold", "store", ["evidence.assemble"], "enterObservationListForHousehold", "Evidence", 3),
   row("route.policy", "use-case", ["entry"], "enterRoutePolicy", "Configuration", 4),
   row("policy.publish", "module-operation", ["entry", "route.policy"], "enterPolicyPublish", "Configuration", 4),
@@ -170,6 +172,10 @@ const REGISTRY: readonly Row[] = [
   // and evidence calls the route makes are the EXISTING slice-3/4 rows, reused via permittedParents.
   row("route.decision", "use-case", ["entry"], "enterRouteDecision", "Product", 5),
   row("decision.renderOutcome", "flow-step", ["route.decision"], "enterDecisionRenderOutcome", "Product", 5, "DecisionCorrelation"),
+  // PR-5b: the comparison route, and its paired evaluation step entered once per firm side - each
+  // side under its OWN decision correlation, because each side's outcome mints its own identity.
+  row("route.decision-compare", "use-case", ["entry"], "enterRouteDecisionCompare", "Product", 5),
+  row("decision.compareSide", "flow-step", ["route.decision-compare"], "enterDecisionCompareSide", "Product", 5, "DecisionCorrelation"),
 ];
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -539,6 +545,8 @@ export type Gateway = {
   enterPolicyVersionsForFirm: (c: RequestCorrelation, v: { orgId: string; statementTimeoutMs: string }) => Promise<unknown>;
   enterRouteDecision: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterDecisionRenderOutcome: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterRouteDecisionCompare: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionCompareSide: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -773,6 +781,8 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterPolicyVersionsForFirm: (c: RequestCorrelation, v: { orgId: string; statementTimeoutMs: string }) => runStore("policy.versionsForFirm", c, v),
     enterRouteDecision: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.decision", c, fn),
     enterDecisionRenderOutcome: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decision.renderOutcome", c, fn),
+    enterRouteDecisionCompare: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.decision-compare", c, fn),
+    enterDecisionCompareSide: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decision.compareSide", c, fn),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");
