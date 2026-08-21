@@ -61,26 +61,44 @@ export type OpKey =
   | "household.listForTenant"
   | "household.getForTenant"
   | "evidence.assemble"
-  | "observation.listForHousehold";
+  | "observation.listForHousehold"
+  | "route.policy"
+  | "policy.publish"
+  | "policy.resolveByHash"
+  | "policy.appendVersion"
+  | "policy.documentByDigest";
+type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum"; values: readonly string[] };
 type Row = {
   id: GovernedOperationId;
   class: "use-case" | "module-operation" | "store";
-  owner: "Access" | "Evidence";
+  owner: "Access" | "Evidence" | "Configuration";
   correlation: "RequestCorrelation";
   metric: "count";
-  attributes: typeof ATTRS;
+  attributes: Readonly<Record<string, AttributeDomain>>;
   permittedParents: readonly (OpKey | "entry")[];
   gatewayEntry: string;
-  slice: 2 | 3;
+  slice: 2 | 3 | 4;
 };
-const ATTRS = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } } as const;
-const row = (id: OpKey, cls: Row["class"], permittedParents: Row["permittedParents"], gatewayEntry: string, owner: Row["owner"] = "Access", slice: Row["slice"] = 2): Row => ({
+const ATTRS: Row["attributes"] = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } };
+// Slice 4's declared value domains: the span carries the BARE 64-hex content digest - never the
+// prefixed identity string, which sits outside every domain and is refused on cardinality - and a
+// NotFound refusal carries its reason from this closed enum so an operator sees it in the trace.
+const POLICY_ATTRS: Row["attributes"] = { ...ATTRS, documentDigest: { domain: "digest" }, refusalReason: { domain: "enum", values: ["version-not-found"] } };
+const row = (
+  id: OpKey,
+  cls: Row["class"],
+  permittedParents: Row["permittedParents"],
+  gatewayEntry: string,
+  owner: Row["owner"] = "Access",
+  slice: Row["slice"] = 2,
+  attributes: Row["attributes"] = ATTRS,
+): Row => ({
   id: opId(id),
   class: cls,
   owner,
   correlation: "RequestCorrelation",
   metric: "count",
-  attributes: ATTRS,
+  attributes,
   permittedParents,
   gatewayEntry,
   slice,
@@ -89,8 +107,8 @@ const REGISTRY: readonly Row[] = [
   row("route.sign-in", "use-case", ["entry"], "enterRouteSignIn"),
   row("route.households", "use-case", ["entry"], "enterRouteHouseholds"),
   row("route.household-workspace", "use-case", ["entry"], "enterRouteHouseholdWorkspace"),
-  row("access.authenticate", "module-operation", ["entry", "route.households", "route.household-workspace"], "enterAccessAuthenticate"),
-  row("access.authorize", "module-operation", ["entry", "route.households", "route.household-workspace"], "enterAccessAuthorize"),
+  row("access.authenticate", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy"], "enterAccessAuthenticate"),
+  row("access.authorize", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy"], "enterAccessAuthorize"),
   row("access.withTenant", "module-operation", ["route.households", "route.household-workspace"], "enterAccessWithTenant"),
   row("access.renewSession", "module-operation", ["entry"], "enterAccessRenewSession"),
   row("identity.lookupForLogin", "store", ["route.sign-in"], "enterIdentityLookupForLogin"),
@@ -103,6 +121,14 @@ const REGISTRY: readonly Row[] = [
   // (no new route row), and the bounded observation read is its own store row - not a seam operation.
   row("evidence.assemble", "module-operation", ["route.household-workspace"], "enterEvidenceAssemble", "Evidence", 3),
   row("observation.listForHousehold", "store", ["evidence.assemble"], "enterObservationListForHousehold", "Evidence", 3),
+  // Slice 4 (prompt 4 deliverable 7): the policy shelf route, the two shipped seam operations of the
+  // PR-4a restack unit, and their store reads and writes - registered in their own right. "entry"
+  // parents serve the tooling composition roots (the seed publishes through the real path).
+  row("route.policy", "use-case", ["entry"], "enterRoutePolicy", "Configuration", 4),
+  row("policy.publish", "module-operation", ["entry", "route.policy"], "enterPolicyPublish", "Configuration", 4, POLICY_ATTRS),
+  row("policy.resolveByHash", "module-operation", ["entry", "route.policy"], "enterPolicyResolveByHash", "Configuration", 4, POLICY_ATTRS),
+  row("policy.appendVersion", "store", ["policy.publish"], "enterPolicyAppendVersion", "Configuration", 4),
+  row("policy.documentByDigest", "store", ["policy.publish", "policy.resolveByHash"], "enterPolicyDocumentByDigest", "Configuration", 4),
 ];
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -197,6 +223,38 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
     resultValidator: "observationRows.v1",
     cardinality: "many",
     transactionClass: "tenant-statement-deadline-from-p1-p4",
+    authorityClass: "tenant",
+  },
+  "policy.appendVersion": {
+    kind: "prepared-query",
+    statementName: "policy_append_version_v1",
+    canonicalSql:
+      "WITH doc AS (INSERT INTO policy_document (org_id, digest, bytes, record_origin) VALUES ($1, $2, $3, $4) ON CONFLICT (org_id, digest) DO NOTHING) INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, COALESCE((SELECT max(seq) FROM policy_version WHERE org_id = $1), 0) + 1, $2, now(), $4) RETURNING seq",
+    parameters: [
+      { name: "orgId", type: "uuid" },
+      { name: "digest", type: "text" },
+      { name: "bytes", type: "bytea" },
+      { name: "recordOrigin", type: "text" },
+      { name: "statementTimeoutMs", type: "text" },
+    ],
+    resultValidator: "publishedSeq.v1",
+    cardinality: "write-one",
+    transactionClass: "tenant-statement-deadline-from-p1-p5",
+    authorityClass: "tenant",
+  },
+  "policy.documentByDigest": {
+    kind: "prepared-query",
+    statementName: "policy_document_by_digest_v1",
+    canonicalSql:
+      "SELECT v.seq, v.published_at, d.bytes, d.record_origin FROM policy_version v JOIN policy_document d ON d.org_id = v.org_id AND d.digest = v.digest WHERE v.org_id = $1 AND v.digest = $2 LIMIT 1",
+    parameters: [
+      { name: "orgId", type: "uuid" },
+      { name: "digest", type: "text" },
+      { name: "statementTimeoutMs", type: "text" },
+    ],
+    resultValidator: "policyVersionRow.v1",
+    cardinality: "at-most-one",
+    transactionClass: "tenant-statement-deadline-from-p1-p3",
     authorityClass: "tenant",
   },
 };
@@ -313,6 +371,44 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       authorityClass: "tenant",
     },
   },
+  "policy.appendVersion": {
+    gatewayEntry: "enterPolicyAppendVersion",
+    constructedDefinition: {
+      kind: "prepared-query",
+      statementName: "policy_append_version_v1",
+      canonicalSql:
+        "WITH doc AS (INSERT INTO policy_document (org_id, digest, bytes, record_origin) VALUES ($1, $2, $3, $4) ON CONFLICT (org_id, digest) DO NOTHING) INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, COALESCE((SELECT max(seq) FROM policy_version WHERE org_id = $1), 0) + 1, $2, now(), $4) RETURNING seq",
+      parameters: [
+        { name: "orgId", type: "uuid" },
+        { name: "digest", type: "text" },
+        { name: "bytes", type: "bytea" },
+        { name: "recordOrigin", type: "text" },
+        { name: "statementTimeoutMs", type: "text" },
+      ],
+      resultValidator: "publishedSeq.v1",
+      cardinality: "write-one",
+      transactionClass: "tenant-statement-deadline-from-p1-p5",
+      authorityClass: "tenant",
+    },
+  },
+  "policy.documentByDigest": {
+    gatewayEntry: "enterPolicyDocumentByDigest",
+    constructedDefinition: {
+      kind: "prepared-query",
+      statementName: "policy_document_by_digest_v1",
+      canonicalSql:
+        "SELECT v.seq, v.published_at, d.bytes, d.record_origin FROM policy_version v JOIN policy_document d ON d.org_id = v.org_id AND d.digest = v.digest WHERE v.org_id = $1 AND v.digest = $2 LIMIT 1",
+      parameters: [
+        { name: "orgId", type: "uuid" },
+        { name: "digest", type: "text" },
+        { name: "statementTimeoutMs", type: "text" },
+      ],
+      resultValidator: "policyVersionRow.v1",
+      cardinality: "at-most-one",
+      transactionClass: "tenant-statement-deadline-from-p1-p3",
+      authorityClass: "tenant",
+    },
+  },
 };
 
 export const NAMING_PATTERN = "verin.op.{id}";
@@ -346,7 +442,7 @@ function deriveEffect(def: Record<string, unknown>): { id: string; bytes: string
   return { id: "semfx.v1:" + sha256(bytes), bytes };
 }
 
-type StoreValues = Record<string, string>;
+type StoreValues = Record<string, string | Uint8Array>;
 export type Gateway = {
   enterRouteSignIn: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterRouteHouseholds: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
@@ -363,9 +459,15 @@ export type Gateway = {
   enterHouseholdGetForTenant: (c: RequestCorrelation, v: { orgId: string; householdId: string }) => Promise<unknown>;
   enterEvidenceAssemble: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterObservationListForHousehold: (c: RequestCorrelation, v: { orgId: string; householdId: string; asOf: string; statementTimeoutMs: string }) => Promise<unknown>;
+  enterRoutePolicy: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterPolicyPublish: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterPolicyResolveByHash: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterPolicyAppendVersion: (c: RequestCorrelation, v: { orgId: string; digest: string; bytes: Uint8Array; recordOrigin: string; statementTimeoutMs: string }) => Promise<unknown>;
+  enterPolicyDocumentByDigest: (c: RequestCorrelation, v: { orgId: string; digest: string; statementTimeoutMs: string }) => Promise<unknown>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
+  runtimeRole: "web" | "tooling";
 };
 const atMostOne = (r: QueryResult, schema: z.ZodType) => {
   if (r.rows.length > 1) throw new Error("cardinality at-most-one violated");
@@ -397,14 +499,29 @@ const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
         })
         .parse(x),
     ),
+  "publishedSeq.v1": (r) => {
+    if (r.rowCount !== 1) throw new Error("cardinality write-one violated");
+    return z.strictObject({ seq: z.number().int() }).parse(r.rows[0]);
+  },
+  "policyVersionRow.v1": (r) => atMostOne(r, z.strictObject({ seq: z.number().int(), published_at: z.date(), bytes: z.instanceof(Uint8Array), record_origin: z.string() })),
 };
 
 // The one-per-process slot lives on globalThis, not a module-local variable: the framework bundles
 // the instrumentation root and route handlers into separate module instances (the oracle's store
 // sharp edge, main:CLAUDE.md), and a module-local slot would leave the page's copy unconstructed.
-type Slot = { gateway: Gateway; snapshot: () => Promise<Record<string, unknown>> };
+type Slot = { gateway: Gateway; snapshot: () => Promise<Record<string, unknown>>; annotate: (attrs: Record<string, string | boolean>) => void };
 const SLOT = Symbol.for("verin.governed-runtime");
 const slot = () => (globalThis as { [SLOT]?: Slot })[SLOT];
+
+// Declared-domain span annotation (prompt 4 deliverable 7): the ambient governed operation may attach
+// ONLY attributes its registry row declares, each validated against its closed domain BEFORE emission -
+// a prefixed identity string, whole document bytes, or any unbounded value is refused on cardinality
+// here, and the E16 checker re-validates the same domains independently from the capture.
+export function annotateOperation(attrs: Record<string, string | boolean>): void {
+  const s = slot();
+  if (!s) throw new Error("annotateOperation requires a constructed governed runtime");
+  s.annotate(attrs);
+}
 
 export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
   if (slot()) throw new Error("the governed runtime is already constructed in this process; a second construction is refused, not cached");
@@ -443,8 +560,25 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     rawExecutions: Record<string, unknown>[] = [],
     logs: Record<string, unknown>[] = [];
   const spanToNode = new Map<string, string>();
-  const als = new AsyncLocalStorage<{ node: string; op: OpKey }>();
+  const als = new AsyncLocalStorage<{ node: string; op: OpKey; pending: Record<string, string | boolean> }>();
   let seq = 0;
+  const annotate = (attrs: Record<string, string | boolean>): void => {
+    const store = als.getStore();
+    if (!store) throw new Error("annotateOperation requires an ambient governed operation");
+    const r = rows.get(store.op)!;
+    for (const [key, value] of Object.entries(attrs)) {
+      const dom = r.attributes[key];
+      if (!dom) throw new Error(`operation '${store.op}' declares no attribute '${key}'; an undeclared attribute is unbounded cardinality and is refused`);
+      const ok =
+        dom.domain === "boolean"
+          ? typeof value === "boolean"
+          : dom.domain === "enum"
+            ? typeof value === "string" && dom.values.includes(value)
+            : typeof value === "string" && /^[0-9a-f]{16,64}$/.test(value);
+      if (!ok) throw new Error(`attribute '${key}' on '${store.op}' is outside its declared ${dom.domain} domain; refusing on cardinality`);
+      store.pending[key] = value;
+    }
+  };
 
   async function enter<T>(id: OpKey, c: RequestCorrelation, fn: () => Promise<T>): Promise<T> {
     const r = rows.get(id)!;
@@ -463,20 +597,30 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     spanToNode.set(span.spanContext().spanId, node);
     MINTED_IDS.push(span.spanContext().spanId, span.spanContext().traceId);
     let outcome = "ok";
+    const ctx = { node, op: id, pending: {} as Record<string, string | boolean> };
     try {
-      return await als.run({ node, op: id }, fn);
+      return await als.run(ctx, fn);
     } catch (e) {
       outcome = "error";
       throw e;
     } finally {
       // The product-side detector at the emission boundary (prompt 3, GD-003): every attribute and
       // log field is scanned with the checker's exact forms before it leaves; a refusal fails closed.
-      const attrs = { requestId: String(rid.value), outcome };
+      // Annotated attributes were already validated against their declared domains; an annotated
+      // outcome (a typed refusal) overrides the computed one.
+      const finalOutcome = typeof ctx.pending["outcome"] === "string" ? (ctx.pending["outcome"] as string) : outcome;
+      const attrs = { requestId: String(rid.value), ...ctx.pending, outcome: finalOutcome };
       const rec = {
         name: opName(id),
         node,
         ...(fx ? { semanticEffectId: fx } : {}),
-        fields: { requestId: String(rid.value), outcome, traceId: span.spanContext().traceId, spanId: span.spanContext().spanId },
+        fields: {
+          ...Object.fromEntries(Object.entries(ctx.pending).map(([k, x]) => [k, String(x)])),
+          requestId: String(rid.value),
+          outcome: finalOutcome,
+          traceId: span.spanContext().traceId,
+          spanId: span.spanContext().spanId,
+        },
       };
       const metricAttrs = { requestId: String(rid.value), ...(fx ? { semanticEffectId: fx } : {}) };
       for (const emitted of [attrs, rec.fields, metricAttrs]) refuseAccountReferences(emitted, { operation: id, boundary: "log" });
@@ -511,6 +655,14 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
           await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
           await client.query("SELECT set_config('statement_timeout', $1, true)", [params[3]]);
           queryParams = params.slice(0, 3);
+        } else if (tc === "tenant-statement-deadline-from-p1-p5") {
+          await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
+          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[4]]);
+          queryParams = params.slice(0, 4);
+        } else if (tc === "tenant-statement-deadline-from-p1-p3") {
+          await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
+          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[2]]);
+          queryParams = params.slice(0, 2);
         } else throw new Error(`transaction class '${String(tc)}' is not admitted`);
         const res = await client.query({ name: String(def["statementName"]), text: String(def["canonicalSql"]), values: queryParams });
         rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
@@ -542,6 +694,11 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterHouseholdGetForTenant: (c: RequestCorrelation, v: { orgId: string; householdId: string }) => runStore("household.getForTenant", c, v),
     enterEvidenceAssemble: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("evidence.assemble", c, fn),
     enterObservationListForHousehold: (c: RequestCorrelation, v: { orgId: string; householdId: string; asOf: string; statementTimeoutMs: string }) => runStore("observation.listForHousehold", c, v),
+    enterRoutePolicy: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.policy", c, fn),
+    enterPolicyPublish: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("policy.publish", c, fn),
+    enterPolicyResolveByHash: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("policy.resolveByHash", c, fn),
+    enterPolicyAppendVersion: (c: RequestCorrelation, v: Parameters<Gateway["enterPolicyAppendVersion"]>[1]) => runStore("policy.appendVersion", c, v),
+    enterPolicyDocumentByDigest: (c: RequestCorrelation, v: { orgId: string; digest: string; statementTimeoutMs: string }) => runStore("policy.documentByDigest", c, v),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");
@@ -552,6 +709,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       return sig.length === want.length && timingSafeEqual(sig, want) ? token : null;
     },
     secureCookies,
+    runtimeRole: role,
   });
   const SNAP: Slot["snapshot"] = async () => {
     await metricReader.forceFlush();
@@ -587,7 +745,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       namingPattern: NAMING_PATTERN,
     };
   };
-  (globalThis as { [SLOT]?: Slot })[SLOT] = { gateway: G, snapshot: SNAP };
+  (globalThis as { [SLOT]?: Slot })[SLOT] = { gateway: G, snapshot: SNAP, annotate };
   return G;
 }
 export function getGateway(): Gateway {

@@ -3,12 +3,14 @@
 // production-bundle graph, the nodejs-runtime declaration), and writes the E16 capture. Evidence
 // tooling under src/tools/ - proven absent from the web bundle - and a tooling composition root.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, relative } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Client as PgClient } from "pg";
 import { Project, SyntaxKind, type SourceFile } from "ts-morph";
-import { createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, snapshotEvidence, type RequestCorrelation } from "../runtime/governed";
+import { annotateOperation, createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, snapshotEvidence, type RequestCorrelation } from "../runtime/governed";
 import { createAccessContext, renewSession, signIn, type ActionGrant, type Principal } from "../access/context";
+import { POLICY_OPERATION_DEADLINE_MS, createPolicyVersionRegistry, parsePolicyVersionId } from "../policy/registry";
 import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } from "../evidence/bundle";
 import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
 import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
@@ -353,6 +355,121 @@ const houseRetrieval: EvidenceRetrieval = {
 };
 evidenceRetrievalConformance("the house record store, through the governed runtime", houseRetrieval);
 
+// The policy battery (prompt 4 section 6, PR-4a of the restack). Each run's documents carry a fresh
+// randomized threshold so re-running the suite against an already-seeded store never collides with a
+// prior run's content addresses; every mutated byte here is quoted in the PR's transcript bundle.
+const POLICY_DEADLINE = { milliseconds: POLICY_OPERATION_DEADLINE_MS };
+const policyDoc = (months: number, thresholdUsd: number) =>
+  `{"reserveHorizonMonths":${months},"dualApproval":{"thresholdUsd":${thresholdUsd},"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
+const enc = (s: string) => new TextEncoder().encode(s);
+const sha256hex = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+const freshThreshold = () => 10_000 + Math.floor(Math.random() * 900_000_000);
+const withPolicyGrant = async <T>(action: "policy.read" | "policy.publish", fn: (c: RequestCorrelation, grant: ActionGrant) => Promise<T>, cookie?: string): Promise<T> => {
+  const c = requestCorrelation(mintRequestId());
+  const access = createAccessContext();
+  return getGateway().enterRoutePolicy(c, async () => {
+    const p = await access.authenticate(c, cookie ?? cookieValue);
+    const grant = await access.authorize(c, p!, action);
+    return fn(c, grant!);
+  });
+};
+async function superSession(fn: (su: PgClient) => Promise<void>) {
+  const su = new PgClient({ connectionString: SUPER_URL });
+  await su.connect();
+  try {
+    await fn(su);
+  } finally {
+    await su.end();
+  }
+}
+
+describe("the policy version registry (prompt 4, PR-4a): content-addressed, immutable, fail-closed", () => {
+  const appUrl = process.env.VERIN_APP_DATABASE_URL ?? "postgresql://verin_app:verin-app-local@localhost:5432/verin";
+  it("publishes through the governed path, resolves byte-exactly by content address, and refuses a duplicate identity", async () => {
+    const registry = createPolicyVersionRegistry();
+    const bytes = enc(policyDoc(6, freshThreshold()));
+    const id = await withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, bytes, POLICY_DEADLINE));
+    expect(id.digest).toBe(sha256hex(bytes)); // the address IS the document's digest
+    const out = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE));
+    if (out.kind !== "policy-version") throw new Error("expected the published version to resolve");
+    expect(out.policy.reserveHorizonMonths).toBe(6);
+    expect(out.origin).toBe("demo-seed"); // the tooling role's publishes are demonstrations, named at the insert
+    expect(out.sequence).toBeGreaterThanOrEqual(1);
+    await expect(withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, bytes, POLICY_DEADLINE))).rejects.toThrow(/duplicate identity/);
+    await expect(withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, { milliseconds: 0 }))).rejects.toThrow(/deadline/); // stop 9
+    await expect(withPolicyGrant("policy.publish", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE))).rejects.toThrow(/requires a 'policy.read' grant/);
+  });
+  it("M-A: published bytes edited in place fail closed naming the identity and both digests - the oracle's inert delta cannot happen here", async () => {
+    const registry = createPolicyVersionRegistry();
+    const threshold = freshThreshold();
+    const original = enc(policyDoc(6, threshold));
+    const id = await withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, original, POLICY_DEADLINE));
+    const tampered = Buffer.from(policyDoc(9, threshold)); // six months quietly re-inked to nine
+    await superSession(async (su) => {
+      await su.query("SET session_replication_role = replica"); // the trigger refuses even a superuser (M-D); only disabling triggers can force the oracle's defect into the store
+      await su.query("UPDATE policy_document SET bytes = $1 WHERE digest = $2", [tampered, id.digest]);
+    });
+    await expect(withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE))).rejects.toThrow(
+      new RegExp(`refusing to parse fpd\\.v1:${id.digest}: the version's bytes were edited in place \\(declared digest ${id.digest}, stored bytes digest ${sha256hex(tampered)}\\)`),
+    );
+    await superSession(async (su) => {
+      await su.query("SET session_replication_role = replica");
+      await su.query("UPDATE policy_document SET bytes = $1 WHERE digest = $2", [Buffer.from(original), id.digest]);
+    });
+    const restored = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE));
+    expect(restored.kind).toBe("policy-version"); // the exact original bytes resolve again
+  });
+  it("M-C: a never-published hash returns the typed NotFound naming the identity and carrying no policy field at all", async () => {
+    const registry = createPolicyVersionRegistry();
+    const id = parsePolicyVersionId(`fpd.v1:${"e".repeat(64)}`)!;
+    const out = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE));
+    expect(out).toEqual({ kind: "not-found", reason: "version-not-found", subject: `fpd.v1:${"e".repeat(64)}` }); // not an empty policy, not a default - no policy field exists to go on
+  });
+  it("M-D: the identity currently bound cannot be rebound - the app role cannot write the shelf, and the trigger refuses even a superuser", async () => {
+    const bound = (await superQuery("SELECT digest FROM policy_version ORDER BY published_at, seq LIMIT 1")).rows[0] as { digest: string }; // reads what is currently bound, never a hardcoded string
+    const app = new PgClient({ connectionString: appUrl });
+    await app.connect();
+    try {
+      await expect(app.query("UPDATE policy_document SET bytes = 'rebound' WHERE digest = $1", [bound.digest])).rejects.toThrow(/permission denied/);
+      await expect(app.query("DELETE FROM policy_version WHERE digest = $1", [bound.digest])).rejects.toThrow(/permission denied/);
+    } finally {
+      await app.end();
+    }
+    await expect(superQuery("UPDATE policy_document SET bytes = 'rebound' WHERE digest = $1", [bound.digest])).rejects.toThrow(/immutable/);
+    await expect(superQuery("DELETE FROM policy_document WHERE digest = $1", [bound.digest])).rejects.toThrow(/immutable/);
+  });
+  it("M-F: an expression, an unknown key, and an out-of-vocabulary value are each refused naming the offending path, before any store work", async () => {
+    const registry = createPolicyVersionRegistry();
+    const base = policyDoc(6, freshThreshold());
+    const before = (await superQuery("SELECT count(*)::int AS n FROM policy_version")).rows[0] as { n: number };
+    const refusals: [string, RegExp][] = [
+      [base.replace('"reserveHorizonMonths":6', '"reserveHorizonMonths":"6 + 3"'), /refuses 'reserveHorizonMonths'/],
+      [base.replace('"eligibleApproverRole":"operations"', '"eligibleApproverRole":"${process.env.HOME}"'), /refuses 'dualApproval\.eligibleApproverRole'/],
+      [base.replace('"bankInstructionChange":"specialist-review"', '"bankInstructionChange":"specialist-review; SELECT pg_sleep(10)"'), /refuses 'bankInstructionChange'/],
+      [base.replace('"reserveHorizonMonths":6', '"hook":"x","reserveHorizonMonths":6'), /refuses '\(document root\)':.*"hook"/],
+    ];
+    for (const [doc, re] of refusals) await expect(withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, enc(doc), POLICY_DEADLINE))).rejects.toThrow(re);
+    expect((await superQuery("SELECT count(*)::int AS n FROM policy_version")).rows[0]).toEqual(before); // nothing reached the store
+  });
+  it("the firm is the grant's sealed tenant identity: another firm's version is unreachable even by exact address", async () => {
+    const registry = createPolicyVersionRegistry();
+    const bytes = enc(policyDoc(6, freshThreshold()));
+    const id = await withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, bytes, POLICY_DEADLINE)); // published on firm A's shelf
+    const sB = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-b.example", "harbor-quartz-42");
+    const probed = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE), sB!.cookieValue);
+    expect(probed.kind).toBe("not-found"); // row-level security is the database guarantee - no existence leak
+  });
+  it("a span attribute is validated against its declared domain before emission: the prefixed identity and whole document bytes are refused on cardinality", async () => {
+    const c = requestCorrelation(mintRequestId());
+    await getGateway().enterPolicyResolveByHash(c, async () => {
+      expect(() => annotateOperation({ documentDigest: `fpd.v1:${"a".repeat(64)}` })).toThrow(/outside its declared digest domain/); // the prefixed identity string
+      expect(() => annotateOperation({ documentDigest: policyDoc(6, 25_000) })).toThrow(/outside its declared digest domain/); // whole document bytes
+      expect(() => annotateOperation({ freeText: "anything" })).toThrow(/declares no attribute 'freeText'/);
+      annotateOperation({ documentDigest: "a".repeat(64) }); // the bare 64-hex digest is inside the declared domain
+    });
+  });
+});
+
 describe("database-enforced isolation (5B.2, section 6 core; the full battery re-runs in PR-2c)", () => {
   const appUrl = process.env.VERIN_APP_DATABASE_URL ?? "postgresql://verin_app:verin-app-local@localhost:5432/verin";
   const orgOf = async (c: PgClient, email: string) => {
@@ -433,9 +550,11 @@ describe("construction rules and the E16 capture", () => {
         graph.some((g) => g.op === r.id),
         `registry row ${r.id} was never exercised`,
       ).toBe(true);
-    // The bounded-read rule (deliverable 1): a slice-3 collection read carries an explicit limit in its SQL text; deleting the LIMIT fails here naming the statement.
+    // The bounded-read rule (prompt 3 deliverable 1; prompt 4 tightens it to EVERY slice-4 read): a
+    // slice-3 collection read, and every slice-4 store read of any cardinality, carries an explicit
+    // limit in its SQL text; deleting the LIMIT fails here naming the statement.
     for (const r of ev.registry as { id: string; slice: number; class: string; semanticEffect?: { statementName: string; canonicalSql: string; cardinality: string } }[])
-      if (r.slice >= 3 && r.class === "store" && r.semanticEffect?.cardinality === "many")
-        expect(/\bLIMIT \d+\b/.test(r.semanticEffect.canonicalSql), `store operation '${r.id}' ships an unbounded collection read: no LIMIT in '${r.semanticEffect.statementName}'`).toBe(true);
+      if (r.slice >= 3 && r.class === "store" && (r.semanticEffect?.cardinality === "many" || (r.slice >= 4 && r.semanticEffect?.cardinality === "at-most-one")))
+        expect(/\bLIMIT \d+\b/.test(r.semanticEffect!.canonicalSql), `store operation '${r.id}' ships an unbounded read: no LIMIT in '${r.semanticEffect!.statementName}'`).toBe(true);
   });
 });

@@ -16,8 +16,10 @@ type Principal = { readonly [sealed]: "Principal"; readonly identityId: string; 
 type ActionGrant = { readonly [sealed]: "ActionGrant"; readonly action: Action; readonly principal: Principal };
 export type { Principal, ActionGrant, TenantIdentity };
 
-type Action = "household.read";
-const ROLE_ACTIONS: Record<string, readonly Action[]> = { advisor: ["household.read"] };
+// Slice 4 widens the closed union by exactly policy.read and policy.publish, both held by the
+// advisor role in this slice - real publish-role separation is prompt 8's governed loop.
+type Action = "household.read" | "policy.read" | "policy.publish";
+const ROLE_ACTIONS: Record<string, readonly Action[]> = { advisor: ["household.read", "policy.read", "policy.publish"] };
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 const sessionRow = z.strictObject({ identity_id: z.string(), org_id: z.string(), display_name: z.string(), role: z.string(), expires_at: z.date() });
 const loginRow = z.strictObject({ id: z.string(), org_id: z.string(), display_name: z.string(), role: z.string(), credential_hash: z.string(), credential_salt: z.string() });

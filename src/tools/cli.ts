@@ -6,6 +6,9 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { Client } from "pg";
 import { maskAccountReference } from "../evidence/pii";
+import { createGovernedRuntime, mintRequestId, requestCorrelation } from "../runtime/governed";
+import { createAccessContext, signIn } from "../access/context";
+import { POLICY_OPERATION_DEADLINE_MS, createPolicyVersionRegistry } from "../policy/registry";
 
 const MIGRATIONS_DIR = "src/store/migrations";
 const DEMO = [
@@ -46,6 +49,39 @@ const DELGADO: Omit<SeedObservation, "household">[] = [
   { kind: "bank-instruction", subject: "instruction:coastal-savings", body: { Bank: "Coastal Savings", Account: masked("ending 9911"), Standing: "reported changed by client" }, observedDaysAgo: 8 },
 ];
 const OBSERVATIONS: SeedObservation[] = [...HENDERSON.map((o) => ({ household: "Henderson Family", ...o })), ...DELGADO.map((o) => ({ household: "Delgado Household", ...o }))];
+// The two firm policy documents (prompt 4 deliverable 3): hand-authored re-expressions of the
+// ratified matrix (config/demo/scenarios.yaml on main, read detached - DC-5; the parameter-by-
+// parameter derivation is recorded in PR-4a's body). Silence is typed: every field the matrix does
+// not state - Firm B's approver role and requester rule are null there by design, and no stage
+// shape or reservation window exists in it at all - is "not-stated", never invented, never defaulted.
+const FIRM_POLICY: Record<string, string> = {
+  "advisor@firm-a.example": `{
+  "reserveHorizonMonths": 6,
+  "dualApproval": {
+    "thresholdUsd": 25000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleApproverRole": "operations",
+    "requesterRule": "may-not-satisfy-both-approvals"
+  },
+  "bankInstructionChange": "specialist-review",
+  "approvalStages": "not-stated",
+  "reservationWindowDays": "not-stated"
+}`,
+  "advisor@firm-b.example": `{
+  "reserveHorizonMonths": 12,
+  "dualApproval": {
+    "thresholdUsd": 100000,
+    "approvalsRequired": 2,
+    "distinctActorsRequired": true,
+    "eligibleApproverRole": "not-stated",
+    "requesterRule": "not-stated"
+  },
+  "bankInstructionChange": "block-until-independently-verified",
+  "approvalStages": "not-stated",
+  "reservationWindowDays": "not-stated"
+}`,
+};
 const url = (name: string, fallback: string) => process.env[name] ?? fallback;
 async function withClient<T>(connectionString: string, fn: (c: Client) => Promise<T>): Promise<T> {
   const c = new Client({ connectionString });
@@ -157,6 +193,28 @@ async function seed() {
       await c.query("COMMIT");
     }
   });
+  // Publish each firm's policy document through the REAL publish path (prompt 4 deliverable 8): the
+  // tooling composition root constructs the governed runtime, signs in as the firm's advisor, and the
+  // registry's publish binds the version to that grant's own firm - the seam the product uses, not a
+  // second mechanism. The tooling role's publishes carry record_origin='demo-seed', named at the
+  // insert; a re-run is refused as a duplicate identity and skipped.
+  createGovernedRuntime("tooling");
+  const access = createAccessContext();
+  const registry = createPolicyVersionRegistry();
+  for (const d of DEMO) {
+    const c = requestCorrelation(mintRequestId());
+    const session = await signIn(c, d.email, d.phrase);
+    if (!session) throw new Error(`seed: could not sign in as ${d.email} to publish its firm policy`);
+    const principal = await access.authenticate(c, session.cookieValue);
+    const grant = await access.authorize(c, principal!, "policy.publish");
+    try {
+      const id = await registry.publish(c, grant!, new TextEncoder().encode(FIRM_POLICY[d.email]), { milliseconds: POLICY_OPERATION_DEADLINE_MS });
+      console.log(`seed: published ${d.org}'s firm policy as fpd.v1:${id.digest} with record_origin='demo-seed'`);
+    } catch (e) {
+      if (!/already in this firm's sequence/.test(String(e))) throw e;
+      console.log(`seed: ${d.org}'s firm policy is already on its shelf; skipped (no duplicate identities)`);
+    }
+  }
 }
 
 // The release subject's SBOM, generated deterministically from the frozen lockfile (bucket G): the
@@ -184,7 +242,12 @@ if (!run) {
   console.error("usage: tsx src/tools/cli.ts bootstrap|migrate|seed|sbom");
   process.exit(2);
 }
-run().catch((e) => {
-  console.error(String(e));
-  process.exit(1);
-});
+// An explicit exit: the seed's governed runtime holds a connection pool that only the kernel may
+// own, so the process ends by stating its result rather than by waiting on a handle it cannot reach.
+run().then(
+  () => process.exit(0),
+  (e) => {
+    console.error(String(e));
+    process.exit(1);
+  },
+);

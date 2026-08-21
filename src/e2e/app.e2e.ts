@@ -7,6 +7,9 @@ import AxeBuilder from "@axe-core/playwright";
 import { Client as PgClient } from "pg";
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
+// Env-overridable like the suite's other connections (the PR-3b falsification pass's note 2: a
+// hardcoded superuser localhost:5432 is not re-executable on an isolated non-default-port store).
+const SUPER_URL = process.env.VERIN_SUPER_DATABASE_URL?.replace(/\/postgres$/, "/verin") ?? "postgresql://postgres:postgres@localhost:5432/verin";
 async function settledAxe(page: Page) {
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)).then(() => undefined));
   return new AxeBuilder({ page }).withTags(TAGS).analyze();
@@ -116,10 +119,41 @@ test("another firm's workspace URL resolves to an honest not-found, never a leak
   expect((await settledAxe(page)).violations).toEqual([]);
 });
 
+test("the policy shelf resolves a published version by content address, and refuses a missing one with no substitution", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.getByRole("link", { name: "Firm policy" }).click();
+  await expect(page.getByTestId("verin-policy-loaded")).toBeVisible();
+  expect(page.url()).toBe("http://localhost:3000/policy");
+  expect((await settledAxe(page)).violations).toEqual([]); // the base inspect state
+  const su = new PgClient({ connectionString: SUPER_URL });
+  await su.connect();
+  const digest = ((await su.query("SELECT v.digest FROM policy_version v JOIN org o ON o.id = v.org_id WHERE o.name = 'Meridian Wealth Partners' AND v.seq = 1")).rows[0] as { digest: string }).digest;
+  await su.end();
+  await page.getByLabel("Version identity").fill(`fpd.v1:${digest}`);
+  await page.getByRole("button", { name: "Inspect version" }).click();
+  await expect(page.getByRole("heading", { name: /Version 1 on your firm's shelf/ })).toBeVisible();
+  await expect(page.getByText("6 months of planned withdrawals")).toBeVisible(); // the seeded Firm A re-expression
+  await expect(page.getByText("$25,000")).toBeVisible();
+  await expect(page.getByText("The requester may not satisfy both approvals")).toBeVisible();
+  await expect(page.getByText("Not stated - the ratified contract is silent, and Verin does not invent firm policy").first()).toBeVisible(); // typed silence, rendered as itself
+  await expect(page.getByText(`fpd.v1:${digest}`)).toBeVisible();
+  await expect(page.getByText("demonstration record")).toBeVisible(); // the seeded version wears its origin
+  expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr4a-policy.png" });
+  await page.goto(`/policy?id=fpd.v1:${"e".repeat(64)}`);
+  await expect(page.getByText("No such version on your firm's shelf")).toBeVisible();
+  await expect(page.getByText("a missing version yields no policy at all", { exact: false })).toBeVisible();
+  await expect(page.getByText("months of planned withdrawals")).toHaveCount(0); // nothing substituted
+  expect((await settledAxe(page)).violations).toEqual([]); // the NotFound refusal state
+  await page.goto("/policy?id=not-an-identity");
+  await expect(page.getByText("Not a policy version identity")).toBeVisible();
+  expect((await settledAxe(page)).violations).toEqual([]); // the malformed-identity refusal state
+});
+
 test("an advisor stays signed in through a long sitting - the session slides and rotates", async ({ page, context }) => {
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   const before = (await context.cookies()).find((c) => c.name === "verin_session")!.value;
-  const su = new PgClient({ connectionString: "postgresql://postgres:postgres@localhost:5432/verin" });
+  const su = new PgClient({ connectionString: SUPER_URL });
   await su.connect();
   await su.query("UPDATE session SET created_at = now() - interval '7 hours'");
   await su.end();
@@ -134,6 +168,7 @@ test("an advisor stays signed in through a long sitting - the session slides and
 test("the whole journey is completable from the keyboard alone", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("Tab"); // the chrome's Households link
+  await page.keyboard.press("Tab"); // the chrome's Firm policy link (slice 4)
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("Work email")).toBeFocused();
   await page.keyboard.type("advisor@firm-a.example");
