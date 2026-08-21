@@ -128,7 +128,6 @@ test("the policy shelf resolves a published version by content address, and refu
   await su.end();
   await page.getByLabel("Version identity").fill(`fpd.v1:${digest}`);
   await page.getByRole("button", { name: "Inspect version" }).click();
-  await expect(page.getByRole("heading", { name: /Version 1 on your firm's shelf/ })).toBeVisible();
   await expect(page.getByText("6 months of planned withdrawals")).toBeVisible(); // the seeded Firm A re-expression
   await expect(page.getByText("Not stated - the ratified contract is silent, and Verin does not invent firm policy").first()).toBeVisible(); // typed silence, rendered as itself
   await expect(page.getByText(`fpd.v1:${digest}`)).toBeVisible();

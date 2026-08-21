@@ -102,8 +102,7 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
         parseFirmPolicy(bytes); // refused before any store work (M-F)
         const digest = sha256hex(bytes);
         annotateOperation({ documentDigest: digest });
-        // One write binds the version to the grant's own firm, naming the origin at the insert
-        // (tooling publishes are demonstrations); zero rows written is a refused duplicate.
+        // One write binds the version to the grant's own firm, origin named at the insert.
         const recordOrigin = gw.runtimeRole === "web" ? "operator-entry" : "demo-seed";
         const wrote = await gw.enterPolicyAppendVersion(c, { orgId: grant.principal.tenant.orgId, digest, bytes, recordOrigin, statementTimeoutMs: String(deadline.milliseconds) });
         if (wrote !== 1) throw new Error(`publish refuses a duplicate identity: fpd.v1:${digest} is already in this firm's sequence (no duplicate identities)`);

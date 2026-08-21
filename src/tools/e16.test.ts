@@ -355,7 +355,6 @@ const houseRetrieval: EvidenceRetrieval = {
 };
 evidenceRetrievalConformance("the house record store, through the governed runtime", houseRetrieval);
 
-// The policy battery (prompt 4 section 6, PR-4a); fresh thresholds keep re-runs collision-free.
 const POLICY_DEADLINE = { milliseconds: POLICY_OPERATION_DEADLINE_MS };
 const policyDoc = (months: number, thresholdUsd: number) =>
   `{"reserveHorizonMonths":${months},"dualApproval":{"thresholdUsd":${thresholdUsd},"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
