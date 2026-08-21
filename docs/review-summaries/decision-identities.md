@@ -5,8 +5,9 @@ closure's sorted canonical source bytes, the exact files DecisionPureClosure res
 by `corepack pnpm exec tsx src/tools/decision-engine-identity.ts --print` and byte-compared in the
 blocking job. It moves exactly when the engine's bytes move.
 
-`docs/evidence/decision-replay-manifest.json`: per case (two committed samples plus the four
-canonical signed cases), the complete resolved identity set - request `drq.v1`, configuration
+`docs/evidence/decision-replay-manifest.json`: per case (two committed samples plus ALL SIXTEEN
+signed cases - PR-5c-i widened the reader's scope, so the manifest widened with it), the complete
+resolved identity set - request `drq.v1`, configuration
 `fpd.v1`, evidence bundle `evb.v1`, engine `den.v1`, serializer `dov.v1`, the observation-vocabulary
 version and the produced `dov.v1` outcome digest - attested under BOTH America/New_York and
 Asia/Tokyo: the generator spawns the row computation under each zone and refuses to write unless

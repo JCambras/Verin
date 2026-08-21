@@ -99,3 +99,24 @@ The comparison surface evaluates the two COMMITTED archetype documents (byte-equ
 per-firm publishes, asserted by test, labelled demonstrations) - no tenant boundary is crossed.
 **Why:** Prompt 5 PR-5b's deliverables under the ratified prompt; companions in `docs/proof-log.md`.
 **Revert path:** a captain re-ruling; rows and artifacts retire only with their surfaces.
+
+### GD-009 - 2026-08-21 - PR-5c-i's recorded per-slice changes: the sixteen graded in public
+
+**What:** The signed-case reader widens to ALL SIXTEEN cases (three reader corrections it forced are
+recorded in the PR body: the stale-before-missing precedence inside the reserve rule, the "still
+shows" balance pattern, attestation read independent of the figure); the registry gains
+`route.conformance` (use-case, Request - renders the COMMITTED conformance file),
+`conformance.runner` (module-operation), `conformance.readSignedCase` (module-operation, one
+pin-verified oracle read per case) and `conformance.grade` (flow-step, Decision - each grade under
+the DecisionCorrelation of the outcome it grades); the conformance route joins the permittedParents
+of `access.authenticate` and `access.authorize`; `conformance.read` enters the closed Action union,
+held by advisor. Two artifacts land: `docs/evidence/decision-conformance.json` (generated - the
+three-valued per-field grade, regenerated and byte-compared; its generator REFUSES an unreconciled
+ledger) and `docs/decision-reconciliation-ledger.json` (hand-owned - the 31 captain rulings, one per
+DIFFERS: 10 CD-4b explanation sets, 16 CD-4c prose-quantity pendencies, GC-10's CD-4d key, 4 CD-4e
+reservation orderings), reconciled in BOTH directions in suite - an unledgered difference and a
+stale entry both fail. The replay manifest widens with the reader to eighteen rows.
+**Why:** Prompt 5 PR-5c-i's deliverables under the ratified prompt: the engine re-derives every
+signed disposition from evidence and configuration alone, and every field-level difference is
+public, ruled, and awaiting the captain's signature sitting - never absorbed.
+**Revert path:** a captain re-ruling; the register retires only with the slice.

@@ -48,5 +48,16 @@
       "--print"
     ],
     "summary": "docs/review-summaries/decision-identities.md"
+  },
+  "docs/evidence/decision-conformance.json": {
+    "regenerate": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "tsx",
+      "src/tools/signed-truth-conformance.ts",
+      "--print"
+    ],
+    "summary": "docs/review-summaries/decision-conformance.md"
   }
 }
