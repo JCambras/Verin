@@ -80,25 +80,16 @@ type Row = {
   slice: 2 | 3 | 4;
 };
 const ATTRS: Row["attributes"] = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } };
-// Slice 4's declared value domains: the span carries the BARE 64-hex content digest - never the
-// prefixed identity string, which sits outside every domain and is refused on cardinality - and a
-// NotFound refusal carries its reason from this closed enum so an operator sees it in the trace.
+// Slice 4's declared domains: spans carry the BARE 64-hex content digest (never the prefixed
+// identity string, refused on cardinality) and a NotFound reason from this closed enum.
 const POLICY_ATTRS: Row["attributes"] = { ...ATTRS, documentDigest: { domain: "digest" }, refusalReason: { domain: "enum", values: ["version-not-found"] } };
-const row = (
-  id: OpKey,
-  cls: Row["class"],
-  permittedParents: Row["permittedParents"],
-  gatewayEntry: string,
-  owner: Row["owner"] = "Access",
-  slice: Row["slice"] = 2,
-  attributes: Row["attributes"] = ATTRS,
-): Row => ({
+const row = (id: OpKey, cls: Row["class"], permittedParents: Row["permittedParents"], gatewayEntry: string, owner: Row["owner"] = "Access", slice: Row["slice"] = 2): Row => ({
   id: opId(id),
   class: cls,
   owner,
   correlation: "RequestCorrelation",
   metric: "count",
-  attributes,
+  attributes: cls === "module-operation" && id.startsWith("policy.") ? POLICY_ATTRS : ATTRS,
   permittedParents,
   gatewayEntry,
   slice,
@@ -121,12 +112,11 @@ const REGISTRY: readonly Row[] = [
   // (no new route row), and the bounded observation read is its own store row - not a seam operation.
   row("evidence.assemble", "module-operation", ["route.household-workspace"], "enterEvidenceAssemble", "Evidence", 3),
   row("observation.listForHousehold", "store", ["evidence.assemble"], "enterObservationListForHousehold", "Evidence", 3),
-  // Slice 4 (prompt 4 deliverable 7): the policy shelf route, the two shipped seam operations of the
-  // PR-4a restack unit, and their store reads and writes - registered in their own right. "entry"
-  // parents serve the tooling composition roots (the seed publishes through the real path).
+  // Slice 4 (prompt 4 deliverable 7): the policy route, PR-4a's two seam operations, and their store
+  // reads and writes; "entry" parents serve tooling roots (the seed publishes through the real path).
   row("route.policy", "use-case", ["entry"], "enterRoutePolicy", "Configuration", 4),
-  row("policy.publish", "module-operation", ["entry", "route.policy"], "enterPolicyPublish", "Configuration", 4, POLICY_ATTRS),
-  row("policy.resolveByHash", "module-operation", ["entry", "route.policy"], "enterPolicyResolveByHash", "Configuration", 4, POLICY_ATTRS),
+  row("policy.publish", "module-operation", ["entry", "route.policy"], "enterPolicyPublish", "Configuration", 4),
+  row("policy.resolveByHash", "module-operation", ["entry", "route.policy"], "enterPolicyResolveByHash", "Configuration", 4),
   row("policy.appendVersion", "store", ["policy.publish"], "enterPolicyAppendVersion", "Configuration", 4),
   row("policy.documentByDigest", "store", ["policy.resolveByHash"], "enterPolicyDocumentByDigest", "Configuration", 4),
 ];
@@ -510,9 +500,7 @@ const SLOT = Symbol.for("verin.governed-runtime");
 const slot = () => (globalThis as { [SLOT]?: Slot })[SLOT];
 
 // Declared-domain span annotation (prompt 4 deliverable 7): the ambient governed operation may attach
-// ONLY attributes its registry row declares, each validated against its closed domain BEFORE emission -
-// a prefixed identity string, whole document bytes, or any unbounded value is refused on cardinality
-// here, and the E16 checker re-validates the same domains independently from the capture.
+// ONLY attributes its registry row declares, each validated BEFORE emission; the checker re-validates.
 export function annotateOperation(attrs: Record<string, string | boolean>): void {
   const s = slot();
   if (!s) throw new Error("annotateOperation requires a constructed governed runtime");

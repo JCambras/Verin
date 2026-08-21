@@ -49,20 +49,40 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
   const access = createAccessContext();
   const cookieValue = (await headers()).get("x-verin-session") ?? (await cookies()).get("verin_session")?.value;
   const requested = (await searchParams).id?.trim() ?? "";
-  const view = await getGateway().enterRoutePolicy(c, async () => {
+  type View = { denied: boolean; refusal?: { title: string; body: string; alert?: boolean }; version?: PublishedPolicyVersion } | null;
+  const view: View = await getGateway().enterRoutePolicy(c, async () => {
     const principal = await access.authenticate(c, cookieValue);
     if (!principal) return null;
     const grant = await access.authorize(c, principal, "policy.read");
-    if (!grant) return { denied: true as const };
-    if (!requested) return { denied: false as const };
+    if (!grant) return { denied: true };
+    if (!requested) return { denied: false };
     const id = parsePolicyVersionId(requested);
-    if (!id) return { denied: false as const, malformed: requested };
+    if (!id)
+      return { denied: false, refusal: { title: "Not a policy version identity", body: "A version identity reads fpd.v1: followed by 64 hexadecimal characters, so there is nothing to resolve." } };
+    let resolved: PublishedPolicyVersion | PolicyNotFound;
     try {
-      return { denied: false as const, resolved: await createPolicyVersionRegistry().resolveByHash(c, grant, id, { milliseconds: POLICY_OPERATION_DEADLINE_MS }) };
+      resolved = await createPolicyVersionRegistry().resolveByHash(c, grant, id, { milliseconds: POLICY_OPERATION_DEADLINE_MS });
     } catch (e) {
       if (!/edited in place/.test(String(e))) throw e;
-      return { denied: false as const, integrity: (e as Error).message };
+      // The fail-closed integrity refusal, naming both digests: rendered, never substituted (M-A).
+      return {
+        denied: false,
+        refusal: {
+          title: "This version's stored bytes no longer match their address",
+          body: `${(e as Error).message}. Verin refuses to parse or display a tampered document; no policy was substituted.`,
+          alert: true,
+        },
+      };
     }
+    if (resolved.kind === "not-found")
+      return {
+        denied: false,
+        refusal: {
+          title: "No such version on your firm's shelf",
+          body: `Verin holds no published version ${resolved.subject} for your firm. Nothing was substituted: a missing version yields no policy at all.`,
+        },
+      };
+    return { denied: false, version: resolved };
   });
   if (!view) redirect("/");
   if (view.denied)
@@ -71,7 +91,6 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
         Your role is not permitted to read firm policy.
       </p>
     );
-  const resolved = "resolved" in view ? (view.resolved as PublishedPolicyVersion | PolicyNotFound) : null;
   return (
     <section className="stack" data-testid="verin-policy-loaded" aria-labelledby="policy-heading">
       <h1 id="policy-heading">Firm policy</h1>
@@ -87,35 +106,22 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
           Inspect version
         </button>
       </form>
-      {"malformed" in view && view.malformed !== undefined ? (
-        <div className="card-dashed" role="status">
-          <p className="title">Not a policy version identity</p>
-          <p>A version identity reads fpd.v1: followed by 64 hexadecimal characters, so there is nothing to resolve.</p>
+      {view.refusal ? (
+        <div className="card-dashed" role={view.refusal.alert ? "alert" : "status"}>
+          <p className="title">{view.refusal.title}</p>
+          <p>{view.refusal.body}</p>
         </div>
       ) : null}
-      {"integrity" in view && view.integrity !== undefined ? (
-        <div className="card-dashed" role="alert">
-          <p className="title">This version's stored bytes no longer match their address</p>
-          <p>{view.integrity}</p>
-          <p>Verin refuses to parse or display a tampered document. No policy was substituted.</p>
-        </div>
-      ) : null}
-      {resolved?.kind === "not-found" ? (
-        <div className="card-dashed" role="status">
-          <p className="title">No such version on your firm's shelf</p>
-          <p>Verin holds no published version {resolved.subject} for your firm. Nothing was substituted: a missing version yields no policy at all.</p>
-        </div>
-      ) : null}
-      {resolved?.kind === "policy-version" ? (
+      {view.version ? (
         <>
-          <h2 className="section-heading">Version {resolved.sequence} on your firm's shelf</h2>
+          <h2 className="section-heading">Version {view.version.sequence} on your firm's shelf</h2>
           <p className="meta">
-            Published {formatObservationDate(resolved.publishedAt)} &middot; {renderPolicyVersionId(resolved.id)}
-            {resolved.origin === "demo-seed" ? " · " : ""}
-            {resolved.origin === "demo-seed" ? <span className="badge-demo">demonstration record</span> : null}
+            Published {formatObservationDate(view.version.publishedAt)} &middot; {renderPolicyVersionId(view.version.id)}
+            {view.version.origin === "demo-seed" ? " · " : ""}
+            {view.version.origin === "demo-seed" ? <span className="badge-demo">demonstration record</span> : null}
           </p>
           <ul className="register" aria-label="The policy this version resolves to">
-            {policyRows(resolved.policy).map(([label, value]) => (
+            {policyRows(view.version.policy).map(([label, value]) => (
               <li key={label}>
                 <strong>{label}</strong>
                 <span>{value}</span>
