@@ -67,3 +67,21 @@ owner, slice 4, and the declared domains (`documentDigest` bare hex; `refusalRea
 **Why:** Captain ratification of the revised prompt 4, 2026-08-21 ("Lets do it"), under the
 GD-002/GD-004 pattern; companions in `docs/proof-log.md` (PR-4a).
 **Revert path:** a captain re-ruling; every recorded ceiling stays a downward-only ratchet meanwhile.
+
+### GD-007 - 2026-08-21 - the decision slice's ceiling row-set and its recorded per-slice changes
+
+**What:** Prompt 5 section 7's ceilings enter `CONSTITUTION.md` under the slice-specific slug
+`core-semantics/decision` in `E5`'s measure names and formats, per PR in the stack; `SEAM_MODULES`
+gains exactly `src/decision/outcome.ts`; the runtime widens by exactly `flow-step` (non-effect),
+owner `Product`, slice `5`, the per-row declared correlation kind with the sealed
+`DecisionId`/`DecisionCorrelation` factories in the kernel, and the `decisionId` digest-domain
+attribute (GD-003 unwidened); the decision route joins the permittedParents of the six existing
+rows it reuses; and the `AccessContext` action union widens by exactly `decision.evaluate` now and
+`conformance.read` when PR-5c lands its surface. The measured PR-5a diff (1,853 H lines against the
+900 hard) forces the announced by-surface split PR-5a-i/-ii/-iii (unit count 31 -> 33): the
+observation-vocabulary bump and seed states land with PR-5a-ii, with its enumeration correction
+(five classes, not three - GC-11's binding disposition and GC-08's blocker force pending-actions
+and household-directory) recorded there and in the PR bodies.
+**Why:** Captain ratification of the revised prompt 5, 2026-08-21 ("Ratify - let prompt 5 sail"),
+under the GD-002/GD-004/GD-006 pattern; companions in `docs/proof-log.md` (PR-5a units).
+**Revert path:** a captain re-ruling; every recorded ceiling stays a downward-only ratchet meanwhile.

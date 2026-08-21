@@ -23,6 +23,18 @@ export type RequestCorrelation = {
   readonly kind: "RequestCorrelation";
   readonly fields: { readonly requestId: { readonly value: string; readonly purpose: "requestId" } };
 };
+// The second identity (prompt 5 section 5B): a DecisionId exists only AFTER evaluate returns - its
+// factory takes a dov.v1 outcome digest and nothing else mints one; 64 bare hex cannot match any
+// account-reference form (GD-003 unwidened).
+export type DecisionId = { readonly [sealed]: "DecisionId"; readonly value: string; readonly purpose: "decisionId" };
+export type DecisionCorrelation = {
+  readonly [sealed]: "DecisionCorrelation";
+  readonly kind: "DecisionCorrelation";
+  readonly fields: {
+    readonly requestId: { readonly value: string; readonly purpose: "requestId" };
+    readonly decisionId: { readonly value: string; readonly purpose: "decisionId" };
+  };
+};
 export type GovernedOperationId = { readonly [sealed]: "GovernedOperationId"; readonly id: OpKey };
 // The sealed factories. 32 unbroken hex chars, so no identifier can match an account-reference form.
 // Minted values are registered in a process-wide private WeakSet, so a structurally valid value forced
@@ -41,6 +53,25 @@ export const mintRequestId = (): RequestId => {
 export const requestCorrelation = (r: RequestId): RequestCorrelation => {
   if (!MINTED.has(r)) throw new Error("this RequestId was not minted by its sealed factory; a second factory's value is refused");
   const c = { kind: "RequestCorrelation", fields: { requestId: { value: r.value, purpose: r.purpose } } } as RequestCorrelation;
+  MINTED.add(c);
+  return c;
+};
+// Before an outcome is serialized no dov.v1 digest exists, so no decision identity can exist
+// before evaluate returns - by construction. A request id is 32 bare hex under purpose requestId;
+// it carries no dov.v1 domain and is refused by name, never relabelled (prompt 1 deliverable 3A).
+export const decisionIdFromOutcomeDigest = (outcomeDigest: string): DecisionId => {
+  const m = /^dov\.v1:([0-9a-f]{64})$/.exec(outcomeDigest);
+  if (!m)
+    throw new Error(
+      `a DecisionId mints only from a dov.v1 outcome digest; '${outcomeDigest.slice(0, 24)}' carries no dov.v1 domain (a request identifier's purpose tag says requestId, and a value cannot pose as another identifier)`,
+    );
+  const d = { value: m[1], purpose: "decisionId" } as DecisionId;
+  MINTED.add(d);
+  return d;
+};
+export const decisionCorrelation = (r: RequestId, d: DecisionId): DecisionCorrelation => {
+  if (!MINTED.has(r) || !MINTED.has(d)) throw new Error("this correlation's identifiers were not minted by their sealed factories; a second factory's value is refused");
+  const c = { kind: "DecisionCorrelation", fields: { requestId: { value: r.value, purpose: r.purpose }, decisionId: { value: d.value, purpose: d.purpose } } } as DecisionCorrelation;
   MINTED.add(c);
   return c;
 };
@@ -69,29 +100,41 @@ export type OpKey =
   | "policy.documentByDigest"
   | "policy.resolveInForce"
   | "policy.history"
-  | "policy.versionsForFirm";
+  | "policy.versionsForFirm"
+  | "route.decision"
+  | "decision.renderOutcome";
 type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum"; values: readonly string[] };
 type Row = {
   id: GovernedOperationId;
-  class: "use-case" | "module-operation" | "store";
-  owner: "Access" | "Evidence" | "Configuration";
-  correlation: "RequestCorrelation";
+  class: "use-case" | "module-operation" | "store" | "flow-step";
+  owner: "Access" | "Evidence" | "Configuration" | "Product";
+  correlation: "RequestCorrelation" | "DecisionCorrelation";
   metric: "count";
   attributes: Readonly<Record<string, AttributeDomain>>;
   permittedParents: readonly (OpKey | "entry")[];
   gatewayEntry: string;
-  slice: 2 | 3 | 4;
+  slice: 2 | 3 | 4 | 5;
 };
 const ATTRS: Row["attributes"] = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } };
 // Slice 4's declared domains: the BARE 64-hex digest and the NotFound reason's closed enum.
 const POLICY_ATTRS: Row["attributes"] = { ...ATTRS, documentDigest: { domain: "digest" }, refusalReason: { domain: "enum", values: ["version-not-found", "no-version-in-force"] } };
-const row = (id: OpKey, cls: Row["class"], permittedParents: Row["permittedParents"], gatewayEntry: string, owner: Row["owner"] = "Access", slice: Row["slice"] = 2): Row => ({
+// Slice 5's declared domain: the bare 64-hex decision digest under its own attribute (GD-003 unwidened).
+const DECISION_ATTRS: Row["attributes"] = { ...ATTRS, decisionId: { domain: "digest" } };
+const row = (
+  id: OpKey,
+  cls: Row["class"],
+  permittedParents: Row["permittedParents"],
+  gatewayEntry: string,
+  owner: Row["owner"] = "Access",
+  slice: Row["slice"] = 2,
+  correlation: Row["correlation"] = "RequestCorrelation",
+): Row => ({
   id: opId(id),
   class: cls,
   owner,
-  correlation: "RequestCorrelation",
+  correlation,
   metric: "count",
-  attributes: cls === "module-operation" && id.startsWith("policy.") ? POLICY_ATTRS : ATTRS,
+  attributes: correlation === "DecisionCorrelation" ? DECISION_ATTRS : cls === "module-operation" && id.startsWith("policy.") ? POLICY_ATTRS : ATTRS,
   permittedParents,
   gatewayEntry,
   slice,
@@ -100,9 +143,9 @@ const REGISTRY: readonly Row[] = [
   row("route.sign-in", "use-case", ["entry"], "enterRouteSignIn"),
   row("route.households", "use-case", ["entry"], "enterRouteHouseholds"),
   row("route.household-workspace", "use-case", ["entry"], "enterRouteHouseholdWorkspace"),
-  row("access.authenticate", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy"], "enterAccessAuthenticate"),
-  row("access.authorize", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy"], "enterAccessAuthorize"),
-  row("access.withTenant", "module-operation", ["route.households", "route.household-workspace"], "enterAccessWithTenant"),
+  row("access.authenticate", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision"], "enterAccessAuthenticate"),
+  row("access.authorize", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision"], "enterAccessAuthorize"),
+  row("access.withTenant", "module-operation", ["route.households", "route.household-workspace", "route.decision"], "enterAccessWithTenant"),
   row("access.renewSession", "module-operation", ["entry"], "enterAccessRenewSession"),
   row("identity.lookupForLogin", "store", ["route.sign-in"], "enterIdentityLookupForLogin"),
   row("session.create", "store", ["route.sign-in"], "enterSessionCreate"),
@@ -112,16 +155,21 @@ const REGISTRY: readonly Row[] = [
   row("household.getForTenant", "store", ["access.withTenant"], "enterHouseholdGetForTenant"),
   // Slice 3 (prompt 3 deliverable 7): the workspace use case gains assemble in its permitted children
   // (no new route row), and the bounded observation read is its own store row - not a seam operation.
-  row("evidence.assemble", "module-operation", ["route.household-workspace"], "enterEvidenceAssemble", "Evidence", 3),
+  row("evidence.assemble", "module-operation", ["route.household-workspace", "route.decision"], "enterEvidenceAssemble", "Evidence", 3),
   row("observation.listForHousehold", "store", ["evidence.assemble"], "enterObservationListForHousehold", "Evidence", 3),
   row("route.policy", "use-case", ["entry"], "enterRoutePolicy", "Configuration", 4),
   row("policy.publish", "module-operation", ["entry", "route.policy"], "enterPolicyPublish", "Configuration", 4),
-  row("policy.resolveByHash", "module-operation", ["entry", "route.policy"], "enterPolicyResolveByHash", "Configuration", 4),
+  row("policy.resolveByHash", "module-operation", ["entry", "route.policy", "route.decision"], "enterPolicyResolveByHash", "Configuration", 4),
   row("policy.appendVersion", "store", ["policy.publish"], "enterPolicyAppendVersion", "Configuration", 4),
   row("policy.documentByDigest", "store", ["policy.resolveByHash"], "enterPolicyDocumentByDigest", "Configuration", 4),
-  row("policy.resolveInForce", "module-operation", ["entry", "route.policy"], "enterPolicyResolveInForce", "Configuration", 4),
+  row("policy.resolveInForce", "module-operation", ["entry", "route.policy", "route.decision"], "enterPolicyResolveInForce", "Configuration", 4),
   row("policy.history", "module-operation", ["entry", "route.policy"], "enterPolicyHistory", "Configuration", 4),
   row("policy.versionsForFirm", "store", ["policy.resolveInForce", "policy.history"], "enterPolicyVersionsForFirm", "Configuration", 4),
+  // Slice 5 (prompt 5 section 5D): the route enters under REQUEST correlation (no decision exists
+  // yet); the outcome-rendering flow-step under DECISION correlation, after the mint. The policy
+  // and evidence calls the route makes are the EXISTING slice-3/4 rows, reused via permittedParents.
+  row("route.decision", "use-case", ["entry"], "enterRouteDecision", "Product", 5),
+  row("decision.renderOutcome", "flow-step", ["route.decision"], "enterDecisionRenderOutcome", "Product", 5, "DecisionCorrelation"),
 ];
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -489,6 +537,8 @@ export type Gateway = {
   enterPolicyResolveInForce: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterPolicyHistory: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterPolicyVersionsForFirm: (c: RequestCorrelation, v: { orgId: string; statementTimeoutMs: string }) => Promise<unknown>;
+  enterRouteDecision: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionRenderOutcome: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -599,12 +649,17 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     }
   };
 
-  async function enter<T>(id: OpKey, c: RequestCorrelation, fn: () => Promise<T>): Promise<T> {
+  // The sealed correlation contract, validated per the row's DECLARED kind: every required field
+  // must carry the exact purpose tag it was minted under - a value cannot pose as another identifier.
+  const KIND_FIELDS: Record<Row["correlation"], readonly ("requestId" | "decisionId")[]> = { RequestCorrelation: ["requestId"], DecisionCorrelation: ["requestId", "decisionId"] };
+  async function enter<T>(id: OpKey, c: RequestCorrelation | DecisionCorrelation, fn: () => Promise<T>): Promise<T> {
     const r = rows.get(id)!;
-    const rid = (c as { fields?: { requestId?: { value?: unknown; purpose?: unknown } } })?.fields?.requestId;
+    const fields = (c as { fields?: Record<string, { value?: unknown; purpose?: unknown } | undefined> })?.fields ?? {};
     if ((c as { kind?: unknown })?.kind !== r.correlation) throw new Error(`operation '${id}' requires correlation kind '${r.correlation}'; refusing`);
-    if (!rid?.value) throw new Error(`correlation for '${id}' is missing required field 'requestId'; the runtime fails closed`);
-    if (rid.purpose !== "requestId") throw new Error(`correlation field 'requestId' carries purpose tag '${String(rid.purpose)}'; a value cannot pose as another identifier`);
+    for (const f of KIND_FIELDS[r.correlation]) {
+      if (!fields[f]?.value) throw new Error(`correlation for '${id}' is missing required field '${f}'; the runtime fails closed`);
+      if (fields[f]!.purpose !== f) throw new Error(`correlation field '${f}' carries purpose tag '${String(fields[f]!.purpose)}'; a value cannot pose as another identifier`);
+    }
     if (!MINTED.has(c as object)) throw new Error(`correlation for '${id}' was not minted by the sealed factory; a forged value is refused at the gateway`);
     const parent = als.getStore();
     if (!r.permittedParents.includes(parent ? parent.op : "entry"))
@@ -628,20 +683,21 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       // Annotated attributes were already validated against their declared domains; an annotated
       // outcome (a typed refusal) overrides the computed one.
       const finalOutcome = typeof ctx.pending["outcome"] === "string" ? (ctx.pending["outcome"] as string) : outcome;
-      const attrs = { requestId: String(rid.value), ...ctx.pending, outcome: finalOutcome };
+      const idAttrs = Object.fromEntries(KIND_FIELDS[r.correlation].map((f) => [f, String(fields[f]!.value)]));
+      const attrs = { ...idAttrs, ...ctx.pending, outcome: finalOutcome };
       const rec = {
         name: opName(id),
         node,
         ...(fx ? { semanticEffectId: fx } : {}),
         fields: {
           ...Object.fromEntries(Object.entries(ctx.pending).map(([k, x]) => [k, String(x)])),
-          requestId: String(rid.value),
+          ...idAttrs,
           outcome: finalOutcome,
           traceId: span.spanContext().traceId,
           spanId: span.spanContext().spanId,
         },
       };
-      const metricAttrs = { requestId: String(rid.value), ...(fx ? { semanticEffectId: fx } : {}) };
+      const metricAttrs = { ...idAttrs, ...(fx ? { semanticEffectId: fx } : {}) };
       for (const emitted of [attrs, rec.fields, metricAttrs]) refuseAccountReferences(emitted, { operation: id, boundary: "log" });
       span.setAttributes(attrs);
       span.end();
@@ -715,6 +771,8 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterPolicyResolveInForce: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("policy.resolveInForce", c, fn),
     enterPolicyHistory: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("policy.history", c, fn),
     enterPolicyVersionsForFirm: (c: RequestCorrelation, v: { orgId: string; statementTimeoutMs: string }) => runStore("policy.versionsForFirm", c, v),
+    enterRouteDecision: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.decision", c, fn),
+    enterDecisionRenderOutcome: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decision.renderOutcome", c, fn),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");
