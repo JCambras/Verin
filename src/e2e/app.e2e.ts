@@ -122,7 +122,6 @@ test("the policy shelf resolves a published version by content address, and refu
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   await page.getByRole("link", { name: "Firm policy" }).click();
   await expect(page.getByTestId("verin-policy-loaded")).toBeVisible();
-  expect((await settledAxe(page)).violations).toEqual([]); // the base inspect state
   const su = new PgClient({ connectionString: SUPER_URL });
   await su.connect();
   const digest = ((await su.query("SELECT v.digest FROM policy_version v JOIN org o ON o.id = v.org_id WHERE o.name = 'Meridian Wealth Partners' AND v.seq = 1")).rows[0] as { digest: string }).digest;

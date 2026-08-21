@@ -371,7 +371,6 @@ const withPolicyGrant = async <T>(action: "policy.read" | "policy.publish", fn: 
     return fn(c, grant!);
   });
 };
-// Forcing the oracle's defect into the store requires disabling triggers whole (M-D proves them).
 async function replicaWrite(sql: string, params: unknown[]) {
   const su = new PgClient({ connectionString: SUPER_URL });
   await su.connect();

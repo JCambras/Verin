@@ -1,8 +1,8 @@
 -- 006-policy (prompt 4 deliverable 8): the content-addressed firm-policy shelf. Exact published
 -- bytes keyed by their own SHA-256; the append-only sequence owns ordering; in-force is DERIVED (no
 -- pointer column exists). The trigger is the database's word for rule 2, record_origin is named at
--- every insert (never a default), verin_app holds no UPDATE or DELETE, and FORCE RLS on the tenant
--- GUC is the isolation guarantee. Forward-only, never edited once shipped.
+-- every insert, verin_app holds no UPDATE or DELETE, and FORCE RLS on the tenant GUC is the
+-- isolation guarantee. Forward-only, never edited once shipped.
 CREATE TABLE policy_document (
   org_id uuid NOT NULL REFERENCES org(id),
   digest text NOT NULL,

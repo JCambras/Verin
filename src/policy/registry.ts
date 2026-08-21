@@ -3,7 +3,7 @@
 // path anywhere, a missing identity is a typed NotFound carrying no policy field, the firm is the
 // grant's sealed tenant identity (never a parameter; RLS is the guarantee), and stored bytes are
 // re-hashed BEFORE parsing, refusing on mismatch naming both digests. Matrix silence is the typed
-// "not-stated" (captain ratification 2026-08-21). PR-4a ships publish and resolveByHash.
+// "not-stated" (captain ratification 2026-08-21); PR-4a ships publish and resolveByHash.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { annotateOperation, getGateway, type RequestCorrelation } from "../runtime/governed";

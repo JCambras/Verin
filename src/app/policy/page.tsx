@@ -1,7 +1,6 @@
 // The firm-policy shelf's inspect view (prompt 4 deliverable 5; history, in-force and the publish
 // form are PR-4b). A missing identity renders the typed NotFound naming it; tampered bytes render
-// the fail-closed integrity refusal naming both digests - never a quiet substitution. Dates are
-// worded, never YYYY-MM-DD; the figures carry the version's own provenance line and origin chip.
+// the fail-closed refusal naming both digests. Dates worded, never YYYY-MM-DD; provenance carried.
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAccessContext } from "../../access/context";

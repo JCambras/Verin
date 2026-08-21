@@ -496,8 +496,7 @@ type Slot = { gateway: Gateway; snapshot: () => Promise<Record<string, unknown>>
 const SLOT = Symbol.for("verin.governed-runtime");
 const slot = () => (globalThis as { [SLOT]?: Slot })[SLOT];
 
-// Declared-domain annotation (prompt 4): only attributes the ambient operation's row declares,
-// validated BEFORE emission; the checker re-validates the same domains from the capture.
+// Declared-domain annotation (prompt 4): only declared attributes, validated BEFORE emission.
 export function annotateOperation(attrs: Record<string, string | boolean>): void {
   const s = slot();
   if (!s) throw new Error("annotateOperation requires a constructed governed runtime");
