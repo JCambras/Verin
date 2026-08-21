@@ -147,9 +147,8 @@ slug is slice-specific (prompt 4's table differs on one measure) and every value
 | Review surface (H at 8 lines/min + B at 2 artifacts/min) | 54 min | 88 min |
 
 The `ordinary-vertical/configuration` row-set below is prompt 4 section 7's ratified table (captain
-ratification 2026-08-21; GD-006) in `E5`'s measure names and numeric formats, recorded by PR-4a; the
-slug is slice-specific (its seam-symbol values differ from prompt 3's) and every value ratchets
-downward only.
+ratification 2026-08-21; GD-006) in `E5`'s measure names and formats, recorded by PR-4a; the slug is
+slice-specific (its seam-symbol values differ from prompt 3's) and every value ratchets downward only.
 
 | Slice class `ordinary-vertical/configuration` - measure | Preferred | Hard |
 |---|---:|---:|

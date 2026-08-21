@@ -50,10 +50,8 @@ const DELGADO: Omit<SeedObservation, "household">[] = [
 ];
 const OBSERVATIONS: SeedObservation[] = [...HENDERSON.map((o) => ({ household: "Henderson Family", ...o })), ...DELGADO.map((o) => ({ household: "Delgado Household", ...o }))];
 // The two firm policy documents (prompt 4 deliverable 3): hand-authored re-expressions of the
-// ratified matrix (config/demo/scenarios.yaml on main, read detached - DC-5), one compact JSON line
-// each; the parameter-by-parameter derivation is in PR-4a's body. Silence is typed: every field the
-// matrix does not state - Firm B's approver role and requester rule are null there by design, and no
-// stage shape or reservation window exists in it at all - is "not-stated", never invented.
+// ratified matrix (config/demo/scenarios.yaml on main, read detached - DC-5; derivation in PR-4a's
+// body). Every field the matrix does not state is the typed "not-stated", never invented.
 const FIRM_POLICY: Record<string, string> = {
   "advisor@firm-a.example": `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":25000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`,
   "advisor@firm-b.example": `{"reserveHorizonMonths":12,"dualApproval":{"thresholdUsd":100000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"not-stated","requesterRule":"not-stated"},"bankInstructionChange":"block-until-independently-verified","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`,
@@ -169,11 +167,9 @@ async function seed() {
       await c.query("COMMIT");
     }
   });
-  // Publish each firm's policy document through the REAL publish path (prompt 4 deliverable 8): the
-  // tooling composition root constructs the governed runtime, signs in as the firm's advisor, and the
-  // registry's publish binds the version to that grant's own firm - the seam the product uses, not a
-  // second mechanism. The tooling role's publishes carry record_origin='demo-seed', named at the
-  // insert; a re-run is refused as a duplicate identity and skipped.
+  // Publish each firm's policy through the REAL publish path (deliverable 8): construct the governed
+  // runtime, sign in as the firm's advisor, and publish under that grant's own firm - the seam the
+  // product uses. Tooling publishes carry record_origin='demo-seed'; a re-run duplicate is skipped.
   createGovernedRuntime("tooling");
   const access = createAccessContext();
   const registry = createPolicyVersionRegistry();
@@ -218,8 +214,7 @@ if (!run) {
   console.error("usage: tsx src/tools/cli.ts bootstrap|migrate|seed|sbom");
   process.exit(2);
 }
-// An explicit exit: the seed's governed runtime holds a connection pool that only the kernel may
-// own, so the process ends by stating its result rather than by waiting on a handle it cannot reach.
+// Explicit exit: the seed's governed runtime holds a kernel-owned pool no caller can close.
 run().then(
   () => process.exit(0),
   (e) => {

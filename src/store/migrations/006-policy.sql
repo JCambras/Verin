@@ -1,10 +1,9 @@
 -- 006-policy (prompt 4 deliverable 8): the content-addressed firm-policy shelf. policy_document holds
--- exact published bytes keyed by their own SHA-256 (the address IS the digest, so a store is a cache
--- and never the authority); policy_version is the append-only sequence that owns ordering. In-force is
--- DERIVED from the sequence - there is deliberately no in-force pointer column anywhere. The trigger
--- is the database's own word for rule 2, record_origin is named at every insert (never a default),
--- verin_app holds no UPDATE or DELETE, and FORCE ROW LEVEL SECURITY keyed on the tenant GUC is the
--- firm-isolation guarantee. Forward-only, never edited once shipped.
+-- exact published bytes keyed by their own SHA-256; policy_version is the append-only sequence that
+-- owns ordering, and in-force is DERIVED from it - there is deliberately no in-force pointer column.
+-- The trigger is the database's own word for rule 2, record_origin is named at every insert (never a
+-- default), verin_app holds no UPDATE or DELETE, and FORCE RLS on the tenant GUC is the isolation
+-- guarantee. Forward-only, never edited once shipped.
 CREATE TABLE policy_document (
   org_id uuid NOT NULL REFERENCES org(id),
   digest text NOT NULL,

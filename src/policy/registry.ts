@@ -1,14 +1,10 @@
-// The PolicyVersionRegistry seam (prompt 4 section 4) - slice 4's one named contract seam. The
-// address IS the document's SHA-256 (`fpd.v1:` from the first byte - the `semfx.v1`/`evb.v1`
-// precedent, because prompt 6 records these identities immutably); there is NO current-bytes read
-// path anywhere - resolveByHash is the only way to obtain a document, and a missing identity is a
-// typed NotFound carrying no policy field at all. The firm is the grant's sealed tenant identity,
-// never a parameter; row-level security is the database guarantee. Stored bytes are re-hashed and
-// compared BEFORE parsing, refusing on mismatch naming both digests - the oracle's inert-delta
-// defect cannot happen here. Configuration is inert data: every string field is a closed vocabulary,
-// and a field the ratified matrix records as silence is the typed value "not-stated" - never
-// invented, never defaulted (captain ratification 2026-08-21). PR-4a of the section 7 restack ships
-// publish and resolveByHash; history, resolveInForce and the amplification harness are PR-4b.
+// The PolicyVersionRegistry seam (prompt 4 section 4). The address IS the document's SHA-256
+// (`fpd.v1:` from the first byte - the `semfx.v1`/`evb.v1` precedent); there is NO current-bytes
+// read path anywhere, a missing identity is a typed NotFound carrying no policy field at all, the
+// firm is the grant's sealed tenant identity (never a parameter; RLS is the guarantee), and stored
+// bytes are re-hashed BEFORE parsing, refusing on mismatch naming both digests. Every string field
+// is a closed vocabulary; matrix silence is the typed "not-stated" (captain ratification
+// 2026-08-21). PR-4a of the restack ships publish and resolveByHash; the rest is PR-4b.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { annotateOperation, getGateway, type RequestCorrelation } from "../runtime/governed";
@@ -29,8 +25,8 @@ type PublishedPolicyVersion = {
   readonly policy: FirmPolicy;
 };
 
-// The closed vocabularies (deliverable 2): exactly what the ratified matrix and demo contract name.
-// Widening any list is a reviewed schema change, never a quiet edit; "not-stated" is recorded silence.
+// The closed vocabularies (deliverable 2): exactly what the ratified matrix and demo contract name;
+// widening one is a reviewed schema change.
 const NOT_STATED = "not-stated";
 const APPROVER_ROLES = ["operations"] as const;
 const REQUESTER_RULES = ["may-not-satisfy-both-approvals"] as const;
@@ -39,9 +35,8 @@ const STAGE_KINDS = ["dual-approval", "specialist-review", "independent-verifica
 const POLICY_RECORD_ORIGINS = ["demo-seed", "operator-entry"] as const;
 type PolicyRecordOrigin = (typeof POLICY_RECORD_ORIGINS)[number];
 const notStatedOr = <T extends z.ZodType>(schema: T) => z.union([z.literal(NOT_STATED), schema]);
-// The approval stage shape comes from configuration, never from a signed expected outcome (stop 4);
-// no stage numbers exist in the ratified matrix, so slice-4 documents carry "not-stated" whole, and
-// real values later arrive as NEW published versions at zero code change.
+// The stage shape comes from configuration, never from a signed expected outcome (stop 4); no stage
+// values exist in the matrix, so slice-4 documents carry "not-stated" whole until real ones arrive.
 const approvalStage = z.strictObject({
   kind: z.enum(STAGE_KINDS),
   order: z.number().int().min(1).max(8),
@@ -67,17 +62,11 @@ type FirmPolicy = z.infer<typeof firmPolicySchema>;
 // Strict boundary parsing (M-F): invalid UTF-8, non-JSON bytes, an unknown key, a value outside a
 // closed vocabulary, or anything shaped like an expression is refused naming the offending path.
 function parseFirmPolicy(bytes: Uint8Array): FirmPolicy {
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    throw new Error("the firm policy parser refuses document bytes that are not valid UTF-8");
-  }
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch (e) {
-    throw new Error(`the firm policy parser refuses non-JSON document bytes: ${(e as Error).message}`);
+    throw new Error(`the firm policy parser refuses bytes that are not UTF-8 JSON: ${(e as Error).message}`);
   }
   const parsed = firmPolicySchema.safeParse(value);
   if (!parsed.success) {
@@ -94,8 +83,7 @@ const parsePolicyVersionId = (text: string): PolicyVersionId | null => {
   const m = /^fpd\.v1:([0-9a-f]{64})$/.exec(text);
   return m ? { version: "fpd.v1", digest: m[1] } : null;
 };
-// The deadline configuration constant this slice owns; the route boundary mints from it exactly once,
-// and the store's statement timeout derives from the carried value (section 4; stop 9).
+// The deadline constant this slice owns; the route boundary mints from it exactly once (stop 9).
 const POLICY_OPERATION_DEADLINE_MS = 2_000;
 const requireDeadline = (deadline: Deadline, op: string) => {
   if (!Number.isInteger(deadline?.milliseconds) || deadline.milliseconds <= 0) throw new Error(`${op} accepts no call without a usable deadline; the route boundary mints it (stop 9)`);
@@ -124,10 +112,8 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
         parseFirmPolicy(bytes); // refused before any store work (M-F)
         const digest = sha256hex(bytes);
         annotateOperation({ documentDigest: digest });
-        // One idempotency-aware write binds the version to the publishing grant's own firm with an
-        // explicit origin marker at the insert (the tooling role's publishers - the seed and the
-        // instrumented run - are demonstrations; the web role's are operator entries). Zero rows
-        // written means the identity is already on this firm's shelf, which is refused, never reused.
+        // One idempotency-aware write binds the version to the grant's own firm, naming the origin at
+        // the insert (tooling publishes are demonstrations); zero rows written is a refused duplicate.
         const wrote = await gw.enterPolicyAppendVersion(c, {
           orgId: grant.principal.tenant.orgId,
           digest,
@@ -150,8 +136,7 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
           return { kind: "not-found", reason: "version-not-found", subject: renderPolicyVersionId(id) };
         }
         const row = versionRow.parse(raw);
-        // Verification before parse (rule 2): recompute the digest from the stored bytes and refuse
-        // on mismatch naming both digests - not one byte is parsed from a tampered document.
+        // Verification before parse (rule 2): not one byte of a tampered document is parsed.
         const stored = sha256hex(row.bytes);
         if (stored !== id.digest)
           throw new Error(`refusing to parse ${renderPolicyVersionId(id)}: the version's bytes were edited in place (declared digest ${id.digest}, stored bytes digest ${stored})`);
