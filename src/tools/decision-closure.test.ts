@@ -7,7 +7,7 @@
 // capability-denied execution (decision-determinism.ts) runs the committed sample cases
 // byte-identically under two process time zones - M-F, and the capture-off half of M-I.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { Project, SyntaxKind, type SourceFile } from "ts-morph";
@@ -85,10 +85,13 @@ describe("DecisionPureClosure: the exact-root, closed-allowlist construction pro
     expect(graph.violations).toEqual([]);
     expect([...graph.externals.keys()]).toEqual(["node:crypto"]);
   });
-  it("excludes every tooling module from the closure, and the decision path reads no answer-key field", () => {
+  it("excludes every tooling module from the closure - the answer-key reader by name - and the decision path reads no answer-key field (M-A)", () => {
     expect(ALLOWLIST.every((m) => m.startsWith("src/decision/"))).toBe(true); // the answer-key reader lives under src/tools and can never join
     expect(graph.modules.filter((m) => !m.startsWith("src/decision/"))).toEqual([]);
-    for (const path of ALLOWLIST) {
+    expect(existsSync("src/tools/signed-expectations.ts")).toBe(true); // the answer-key reader exists...
+    expect(ALLOWLIST).not.toContain("src/tools/signed-expectations.ts"); // ...and the closure allowlist excludes it, by name
+    expect(graph.modules).not.toContain("src/tools/signed-expectations.ts");
+    for (const path of [...ALLOWLIST, "src/tools/signed-cases.ts"]) {
       const hits = [...readFileSync(path, "utf8").matchAll(/\bexpected[A-Z]\w*/g)].map((m) => m[0]);
       expect(hits, `${path} reads answer-key fields: ${hits.join(", ")}`).toEqual([]);
     }
