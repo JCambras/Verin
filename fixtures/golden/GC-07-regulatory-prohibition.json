@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the regulatory source as an active legal hold recorded against the source account; the captain confirms the example is the right regulatory archetype for the demo."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the regulatory source as an active legal hold recorded against the source account; the captain confirms the example is the right regulatory archetype for the demo. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -57,7 +57,9 @@
   "policyVersions": {
     "domainConfigVersionId": "money-movement@2026.07.0",
     "firmPolicyVersionId": "firm-a-policy@2026.07.1",
-    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "householdInstructionVersionIds": [
+      "smiths-destination-restriction@v2"
+    ],
     "regulatoryVersionId": "reg-distribution-holds@2026.02"
   },
   "householdInstructions": [
@@ -65,6 +67,44 @@
       "instructionKind": "destination-restriction",
       "versionId": "smiths-destination-restriction@v2",
       "summary": "The destination is on-list; the household instruction is satisfied and is NOT the prohibition source here."
+    }
+  ],
+  "typedQuantities": [
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "Sufficiency",
+      "value": "attested-sufficient",
+      "fromAssertedParse": "attestation phrase"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "RegistrationClass",
+      "value": "taxable",
+      "fromAssertedParse": "subjectRef/summary names taxable"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "HoldActive",
+      "value": true,
+      "fromAssertedParse": "active-legal-hold phrase"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "canonical-request reference -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "canonical-request",
+      "value": "home-renovation|2026-08-15",
+      "fromAssertedParse": "the $75,000 request -> canonical purpose/deadline"
     }
   ],
   "expectedDisposition": "prohibited",
@@ -81,18 +121,34 @@
     "preconditions": []
   },
   "prohibition": {
-    "source": { "sourceType": "regulatory", "sourceId": "reg-distribution-holds", "versionId": "reg-distribution-holds@2026.02" },
+    "source": {
+      "sourceType": "regulatory",
+      "sourceId": "reg-distribution-holds",
+      "versionId": "reg-distribution-holds@2026.02"
+    },
     "scope": "scope:account:subject:smiths-joint-taxable",
     "reasonCode": "active-legal-hold",
     "explanation": "An active legal hold on the source account prohibits all distributions while it stands. Regulatory sources take precedence over firm policy and household instructions."
   },
   "expectedExplanationNodes": [
-    { "code": "legal-hold-detected", "summary": "The account-restriction evidence shows an active legal hold recorded 2026-07-18 against the source account." },
-    { "code": "regulatory-precedence-applied", "summary": "The precedence trace shows the regulatory rule outranking firm policy and household instructions - the prohibition cites reg-distribution-holds@2026.02, and the UI shows the stamp with zero affordances." }
+    {
+      "code": "legal-hold-detected",
+      "summary": "The account-restriction evidence shows an active legal hold recorded 2026-07-18 against the source account."
+    },
+    {
+      "code": "regulatory-precedence-applied",
+      "summary": "The precedence trace shows the regulatory rule outranking firm policy and household instructions - the prohibition cites reg-distribution-holds@2026.02, and the UI shows the stamp with zero affordances."
+    }
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Account-restriction snapshot (the hold) pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Prohibited decision citing the regulatory source and precedence trace; no authority, no execution plan." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "Account-restriction snapshot (the hold) pinned into the bundle."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Prohibited decision citing the regulatory source and precedence trace; no authority, no execution plan."
+    }
   ],
   "expectedVerificationState": {
     "reached": false,

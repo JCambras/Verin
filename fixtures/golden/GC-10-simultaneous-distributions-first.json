@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that reservation order is decided by decision commit order, deterministically - never by racing external submissions."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that reservation order is decided by decision commit order, deterministically - never by racing external submissions. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c, CD-4b, CD-4d); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -67,7 +67,10 @@
   "policyVersions": {
     "domainConfigVersionId": "money-movement@2026.07.0",
     "firmPolicyVersionId": "firm-a-policy@2026.07.1",
-    "householdInstructionVersionIds": ["smiths-destination-restriction@v2", "smiths-liquidity-preference@v1"],
+    "householdInstructionVersionIds": [
+      "smiths-destination-restriction@v2",
+      "smiths-liquidity-preference@v1"
+    ],
     "regulatoryVersionId": null
   },
   "householdInstructions": [
@@ -82,6 +85,56 @@
       "summary": "Taxable source preferred; applied."
     }
   ],
+  "typedQuantities": [
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "AvailableUsd",
+      "value": 160000,
+      "fromAssertedParse": "(?:available balance|[Bb]alance)(?: still shows)? (\\d{1,7}) USD"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "RegistrationClass",
+      "value": "taxable",
+      "fromAssertedParse": "subjectRef/summary names taxable"
+    },
+    {
+      "ref": "subject:smiths-household",
+      "field": "MonthlyUsd",
+      "value": 8000,
+      "fromAssertedParse": "withdrawals (\\d{1,7}) USD\\/month"
+    },
+    {
+      "ref": "subject:smiths-household",
+      "field": "PendingTotalUsd",
+      "value": 0,
+      "fromAssertedParse": "no-pending-at-first-evaluation phrase (later postings are the execution tail)"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "the Smiths -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "purpose",
+      "value": "home-renovation",
+      "fromAssertedParse": "for ([a-z][a-z-]*)"
+    },
+    {
+      "ref": "trigger",
+      "field": "deadline",
+      "value": "2026-08-15",
+      "fromAssertedParse": "by/on <Month> <day>, year from asOf"
+    }
+  ],
   "expectedDisposition": "proceed",
   "expectedAuthority": {
     "mode": "approval",
@@ -90,13 +143,21 @@
         "stageId": "ops-dual-approval",
         "order": 1,
         "executionMode": "parallel",
-        "eligibleRoleIds": ["operations"],
+        "eligibleRoleIds": [
+          "operations"
+        ],
         "approvalsRequired": 2,
         "distinctActorsRequired": true,
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {
+            "after": "P1D",
+            "roleIds": [
+              "operations-manager"
+            ],
+            "reasonCode": "approval-stage-idle"
+          }
         ]
       }
     ],
@@ -105,28 +166,89 @@
   "expectedExecutionEligibility": {
     "eligible": true,
     "reason": "This request's reservation on conflict:smiths-liquidity commits FIRST; approvals recorded; revalidation confirms the reservation still holds and the sibling request cannot jointly violate the reserve.",
-    "idempotencyKey": "idem:GC-10:smiths-75000-renovation",
+    "idempotencyKey": "idem:GC-10:smiths-75000-2026-08-15",
     "reservations": [
-      { "reservationId": "res:GC-10:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+      {
+        "reservationId": "res:GC-10:liquidity",
+        "conflictKeys": [
+          "conflict:smiths-liquidity"
+        ],
+        "expiresAfter": "PT30M"
+      }
     ],
     "preconditions": [
-      { "code": "reservation-still-held", "requiredEvidence": [], "mustStillHoldAtExecution": true },
-      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+      {
+        "code": "reservation-still-held",
+        "requiredEvidence": [],
+        "mustStillHoldAtExecution": true
+      },
+      {
+        "code": "material-evidence-fresh-at-execution",
+        "requiredEvidence": [
+          "subject:smiths-joint-taxable"
+        ],
+        "mustStillHoldAtExecution": true
+      }
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "individually-valid", "summary": "Alone, this 75000 USD movement preserves the 48000 USD reserve (160000 - 75000 = 85000)." },
-    { "code": "reservation-acquired", "summary": "The liquidity conflict key for the household was free at commit time; this decision holds the reservation, making the joint constraint visible to every later evaluation." }
+    {
+      "code": "source-account-selected",
+      "summary": "A taxable source account was selected; a retirement account is never chosen silently."
+    },
+    {
+      "code": "cash-reserve-preserved",
+      "summary": "After this movement the household still holds its policy-required months of planned withdrawals."
+    },
+    {
+      "code": "individually-valid",
+      "summary": "Alone, this 75000 USD movement preserves the 48000 USD reserve (160000 - 75000 = 85000)."
+    },
+    {
+      "code": "dual-approval-required",
+      "summary": "The amount exceeds the firm's dual-approval threshold, so distinct approvers are required before execution."
+    }
   ],
+  "commentaryNodes": [
+    {
+      "code": "reservation-acquired",
+      "summary": "The liquidity conflict key for the household was free at commit time; this decision holds the reservation, making the joint constraint visible to every later evaluation."
+    }
+  ],
+  "commentaryNote": "Demoted from the binding explanation set to non-binding commentary by the captain's CD-4b ruling (2026-08-21). Retained as signed intent; describes lifecycle behavior outside the prompt-5 decision engine or comparative context the engine does not emit.",
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Balance, planned-withdrawal, and pending-action snapshots pinned; no sibling reservation visible yet." },
-    { "type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and an execution plan carrying conflict:smiths-liquidity." },
-    { "type": "ReservationCreated", "note": "Reservation res:GC-10:liquidity created on conflict:smiths-liquidity - the ordering fact that decides the pair." },
-    { "type": "ApprovalRecorded", "note": "First operations approver approves." },
-    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves; quorum satisfied." },
-    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
-    { "type": "ExecutionSucceeded", "note": "External capability accepts the instruction." },
-    { "type": "StatusObserved", "note": "Returned status observed as submitted." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "Balance, planned-withdrawal, and pending-action snapshots pinned; no sibling reservation visible yet."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Proceed decision with dual-approval authority and an execution plan carrying conflict:smiths-liquidity."
+    },
+    {
+      "type": "ReservationCreated",
+      "note": "Reservation res:GC-10:liquidity created on conflict:smiths-liquidity - the ordering fact that decides the pair."
+    },
+    {
+      "type": "ApprovalRecorded",
+      "note": "First operations approver approves."
+    },
+    {
+      "type": "ApprovalRecorded",
+      "note": "Second, distinct operations approver approves; quorum satisfied."
+    },
+    {
+      "type": "ExecutionStarted",
+      "note": "Single external instruction started under the stable idempotency key."
+    },
+    {
+      "type": "ExecutionSucceeded",
+      "note": "External capability accepts the instruction."
+    },
+    {
+      "type": "StatusObserved",
+      "note": "Returned status observed as submitted."
+    }
   ],
   "expectedVerificationState": {
     "reached": true,

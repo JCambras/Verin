@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that the model NEVER guesses between candidate households - the ambiguity becomes a structured human question, never a probabilistic pick."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that the model NEVER guesses between candidate households - the ambiguity becomes a structured human question, never a probabilistic pick. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -51,6 +51,38 @@
     "regulatoryVersionId": null
   },
   "householdInstructions": [],
+  "typedQuantities": [
+    {
+      "ref": "subject:advisor-book",
+      "field": "CandidateCount",
+      "value": "two",
+      "fromAssertedParse": "returns (two|three|\\d) candidate"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "the Smiths -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "purpose",
+      "value": "home-renovation",
+      "fromAssertedParse": "for ([a-z][a-z-]*)"
+    },
+    {
+      "ref": "trigger",
+      "field": "deadline",
+      "value": "2026-08-15",
+      "fromAssertedParse": "by/on <Month> <day>, year from asOf"
+    }
+  ],
   "householdInstructionsNote": "No household-instruction versions can bind while the household slot itself is ambiguous - pinning either candidate's instructions would presuppose the answer to the human question. Recorded as silence, never filled in.",
   "expectedDisposition": "blocked",
   "expectedAuthority": {
@@ -70,17 +102,35 @@
       "code": "household-slot-ambiguous",
       "explanation": "'The Smiths' matches two households in the requesting advisor's book; Verin does not guess between candidates.",
       "resolvingEvidence": [
-        { "evidenceKind": "household-disambiguation", "subjectRef": "subject:advisor-book", "suppliableBy": ["advisor"] }
+        {
+          "evidenceKind": "household-disambiguation",
+          "subjectRef": "subject:advisor-book",
+          "suppliableBy": [
+            "advisor"
+          ]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "household-candidates-found", "summary": "Two candidate households match 'the Smiths': Robert & Ana Smith and the Smith Family Trust. Both candidates are shown with distinguishing context." },
-    { "code": "human-disambiguation-required", "summary": "Verin asks the advisor a structured question (which household?) instead of guessing - the resolving affordance IS the question, and the answer is recorded evidence attributed to the advisor." }
+    {
+      "code": "household-candidates-found",
+      "summary": "Two candidate households match 'the Smiths': Robert & Ana Smith and the Smith Family Trust. Both candidates are shown with distinguishing context."
+    },
+    {
+      "code": "human-disambiguation-required",
+      "summary": "Verin asks the advisor a structured question (which household?) instead of guessing - the resolving affordance IS the question, and the answer is recorded evidence attributed to the advisor."
+    }
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "The household-directory snapshot with both candidate refs is pinned - the ambiguity itself is recorded evidence." },
-    { "type": "DecisionRecorded", "note": "Blocked decision carrying the ambiguity's structured human question as its resolving evidence; no authority, no execution plan." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "The household-directory snapshot with both candidate refs is pinned - the ambiguity itself is recorded evidence."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Blocked decision carrying the ambiguity's structured human question as its resolving evidence; no authority, no execution plan."
+    }
   ],
   "expectedVerificationState": {
     "reached": false,

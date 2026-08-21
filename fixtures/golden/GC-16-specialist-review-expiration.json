@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that expiration escalates (it does not auto-approve and does not silently cancel): the stage re-arms for the escalation roles with a fresh expiry, and every lapse is a recorded, attributed fact."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that expiration escalates (it does not auto-approve and does not silently cancel): the stage re-arms for the escalation roles with a fresh expiry, and every lapse is a recorded, attributed fact. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c, CD-4b); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -57,7 +57,9 @@
   "policyVersions": {
     "domainConfigVersionId": "money-movement@2026.07.0",
     "firmPolicyVersionId": "firm-a-policy@2026.07.1",
-    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "householdInstructionVersionIds": [
+      "smiths-destination-restriction@v2"
+    ],
     "regulatoryVersionId": null
   },
   "householdInstructions": [
@@ -65,6 +67,44 @@
       "instructionKind": "destination-restriction",
       "versionId": "smiths-destination-restriction@v2",
       "summary": "Destination on-list (the changed instruction remains household-titled); satisfied."
+    }
+  ],
+  "typedQuantities": [
+    {
+      "ref": "bank-instruction:smiths-primary",
+      "field": "ChangedAt",
+      "value": "2026-07-22",
+      "fromAssertedParse": "(?:changed(?: on)?|unchanged since) (\\d{4}-\\d{2}-\\d{2})"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "Sufficiency",
+      "value": "attested-sufficient",
+      "fromAssertedParse": "attestation phrase"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "RegistrationClass",
+      "value": "taxable",
+      "fromAssertedParse": "subjectRef/summary names taxable"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "canonical-request reference -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "canonical-request",
+      "value": "home-renovation|2026-08-15",
+      "fromAssertedParse": "the $75,000 request -> canonical purpose/deadline"
     }
   ],
   "expectedDisposition": "proceed",
@@ -75,26 +115,42 @@
         "stageId": "bank-change-specialist-review",
         "order": 1,
         "executionMode": "sequential",
-        "eligibleRoleIds": ["bank-change-specialist"],
+        "eligibleRoleIds": [
+          "bank-change-specialist"
+        ],
         "approvalsRequired": 1,
         "distinctActorsRequired": false,
         "requesterMayApprove": false,
         "expiresAfter": "P2D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "specialist-review-idle" }
+          {
+            "after": "P1D",
+            "roleIds": [
+              "operations-manager"
+            ],
+            "reasonCode": "specialist-review-idle"
+          }
         ]
       },
       {
         "stageId": "ops-dual-approval",
         "order": 2,
         "executionMode": "parallel",
-        "eligibleRoleIds": ["operations"],
+        "eligibleRoleIds": [
+          "operations"
+        ],
         "approvalsRequired": 2,
         "distinctActorsRequired": true,
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {
+            "after": "P1D",
+            "roleIds": [
+              "operations-manager"
+            ],
+            "reasonCode": "approval-stage-idle"
+          }
         ]
       }
     ],
@@ -108,14 +164,47 @@
     "preconditions": []
   },
   "expectedExplanationNodes": [
-    { "code": "specialist-review-required", "summary": "Firm A routes the recent bank-instruction change to a bank-change specialist (stage 1 of 2)." },
-    { "code": "stage-expired-escalated", "summary": "No specialist acted within the configured window; the stage escalated along its configured path to the operations manager - visibly, with the expiration and escalation shown as recorded facts, and nothing auto-approved." }
+    {
+      "code": "source-account-selected",
+      "summary": "A taxable source account was selected; a retirement account is never chosen silently."
+    },
+    {
+      "code": "recent-bank-change-detected",
+      "summary": "The destination bank instruction changed recently and is not yet independently verified."
+    },
+    {
+      "code": "specialist-review-required",
+      "summary": "Firm A routes the recent bank-instruction change to a bank-change specialist (stage 1 of 2)."
+    },
+    {
+      "code": "dual-approval-required",
+      "summary": "The amount exceeds the firm's dual-approval threshold, so distinct approvers are required before execution."
+    }
   ],
+  "commentaryNodes": [
+    {
+      "code": "stage-expired-escalated",
+      "summary": "No specialist acted within the configured window; the stage escalated along its configured path to the operations manager - visibly, with the expiration and escalation shown as recorded facts, and nothing auto-approved."
+    }
+  ],
+  "commentaryNote": "Demoted from the binding explanation set to non-binding commentary by the captain's CD-4b ruling (2026-08-21). Retained as signed intent; describes lifecycle behavior outside the prompt-5 decision engine or comparative context the engine does not emit.",
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Bank-instruction change and evaluation snapshots pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Proceed decision requiring specialist review (stage 1) then dual approval (stage 2); the stage instance's expiresAt is computed and recorded at instantiation." },
-    { "type": "ApprovalInvalidated", "note": "The lapsed specialist stage is closed with reason approval-expired: the unactioned window is a recorded authority fact (the reevaluateWhen condition approval_expired fires), and the stage re-arms for the escalation roles with a fresh expiry." },
-    { "type": "ExceptionDecisionRequested", "note": "The idle-past-escalation condition derives an attention decision for the operations manager referencing the prior decision and the lapse - the stall never disappears into a queue." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "Bank-instruction change and evaluation snapshots pinned into the bundle."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Proceed decision requiring specialist review (stage 1) then dual approval (stage 2); the stage instance's expiresAt is computed and recorded at instantiation."
+    },
+    {
+      "type": "ApprovalInvalidated",
+      "note": "The lapsed specialist stage is closed with reason approval-expired: the unactioned window is a recorded authority fact (the reevaluateWhen condition approval_expired fires), and the stage re-arms for the escalation roles with a fresh expiry."
+    },
+    {
+      "type": "ExceptionDecisionRequested",
+      "note": "The idle-past-escalation condition derives an attention decision for the operations manager referencing the prior decision and the lapse - the stall never disappears into a queue."
+    }
   ],
   "expectedVerificationState": {
     "reached": false,

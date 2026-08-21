@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a delayed NIGO reopens NOTHING retroactively: the original decision stays as recorded, the NIGO is a new observed fact, and remediation is a derived exception decision."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules that a delayed NIGO reopens NOTHING retroactively: the original decision stays as recorded, the NIGO is a new observed fact, and remediation is a derived exception decision. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c, CD-4b); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -57,7 +57,9 @@
   "policyVersions": {
     "domainConfigVersionId": "money-movement@2026.07.0",
     "firmPolicyVersionId": "firm-b-policy@2026.07.1",
-    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "householdInstructionVersionIds": [
+      "smiths-destination-restriction@v2"
+    ],
     "regulatoryVersionId": null
   },
   "householdInstructions": [
@@ -65,6 +67,50 @@
       "instructionKind": "destination-restriction",
       "versionId": "smiths-destination-restriction@v2",
       "summary": "Destination on-list; satisfied."
+    }
+  ],
+  "typedQuantities": [
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "AvailableUsd",
+      "value": 420000,
+      "fromAssertedParse": "(?:available balance|[Bb]alance)(?: still shows)? (\\d{1,7}) USD"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "Sufficiency",
+      "value": "attested-sufficient",
+      "fromAssertedParse": "attestation phrase"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "RegistrationClass",
+      "value": "taxable",
+      "fromAssertedParse": "subjectRef/summary names taxable"
+    },
+    {
+      "ref": "bank-instruction:smiths-primary",
+      "field": "Verified",
+      "value": true,
+      "fromAssertedParse": "verification phrase"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "canonical-request reference -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "canonical-request",
+      "value": "home-renovation|2026-08-15",
+      "fromAssertedParse": "the $75,000 request -> canonical purpose/deadline"
     }
   ],
   "expectedDisposition": "proceed",
@@ -78,25 +124,78 @@
     "reason": "Automatic authority and clean revalidation - the submission is legitimate; the NIGO is a later external fact.",
     "idempotencyKey": "idem:GC-14:smiths-75000-2026-08-15",
     "reservations": [
-      { "reservationId": "res:GC-14:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+      {
+        "reservationId": "res:GC-14:liquidity",
+        "conflictKeys": [
+          "conflict:smiths-liquidity"
+        ],
+        "expiresAfter": "PT30M"
+      }
     ],
     "preconditions": [
-      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+      {
+        "code": "material-evidence-fresh-at-execution",
+        "requiredEvidence": [
+          "subject:smiths-joint-taxable"
+        ],
+        "mustStillHoldAtExecution": true
+      }
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "submitted-not-settled-vindicated", "summary": "The verification surface never claimed settlement - 'submitted' stayed submitted with a next-poll expectation, so the late NIGO contradicts nothing the product asserted." },
-    { "code": "delayed-nigo-ingested", "summary": "The NIGO return (signature date predates form version) is ingested two days late as a StatusObserved fact with the custodian's exact reason preserved, and remediation is routed as a derived exception decision - not a silent retry, not a log line (v3 invariant 24)." }
+    {
+      "code": "source-account-selected",
+      "summary": "A taxable source account was selected; a retirement account is never chosen silently."
+    },
+    {
+      "code": "dual-approval-not-required",
+      "summary": "The amount is below the firm's dual-approval threshold - the policy differs, not the code."
+    }
   ],
+  "commentaryNodes": [
+    {
+      "code": "submitted-not-settled-vindicated",
+      "summary": "The verification surface never claimed settlement - 'submitted' stayed submitted with a next-poll expectation, so the late NIGO contradicts nothing the product asserted."
+    },
+    {
+      "code": "delayed-nigo-ingested",
+      "summary": "The NIGO return (signature date predates form version) is ingested two days late as a StatusObserved fact with the custodian's exact reason preserved, and remediation is routed as a derived exception decision - not a silent retry, not a log line (v3 invariant 24)."
+    }
+  ],
+  "commentaryNote": "Demoted from the binding explanation set to non-binding commentary by the captain's CD-4b ruling (2026-08-21). Retained as signed intent; describes lifecycle behavior outside the prompt-5 decision engine or comparative context the engine does not emit.",
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Proceed decision with automatic authority under Firm B." },
-    { "type": "ReservationCreated", "note": "Liquidity reservation created before execution." },
-    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
-    { "type": "ExecutionSucceeded", "note": "Instruction accepted; handle returned; status submitted." },
-    { "type": "StatusObserved", "note": "Initial poll observes Submitted - displayed as submitted, never settled." },
-    { "type": "StatusObserved", "note": "Two business days later the delayed return is ingested: status NIGO, sourceStatus carrying the custodian's exact reason." },
-    { "type": "ExceptionDecisionRequested", "note": "The NIGO derives a new decision request (correct paperwork and resubmit vs cancel) referencing the prior decision and the NIGO ledger entry." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "Evaluation snapshots pinned into the bundle."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Proceed decision with automatic authority under Firm B."
+    },
+    {
+      "type": "ReservationCreated",
+      "note": "Liquidity reservation created before execution."
+    },
+    {
+      "type": "ExecutionStarted",
+      "note": "Single external instruction started under the stable idempotency key."
+    },
+    {
+      "type": "ExecutionSucceeded",
+      "note": "Instruction accepted; handle returned; status submitted."
+    },
+    {
+      "type": "StatusObserved",
+      "note": "Initial poll observes Submitted - displayed as submitted, never settled."
+    },
+    {
+      "type": "StatusObserved",
+      "note": "Two business days later the delayed return is ingested: status NIGO, sourceStatus carrying the custodian's exact reason."
+    },
+    {
+      "type": "ExceptionDecisionRequested",
+      "note": "The NIGO derives a new decision request (correct paperwork and resubmit vs cancel) referencing the prior decision and the NIGO ledger entry."
+    }
   ],
   "expectedVerificationState": {
     "reached": true,
