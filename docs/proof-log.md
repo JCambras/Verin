@@ -389,3 +389,26 @@ demonstration row reads record_origin='demo-seed' and APP_ENV=production refuses
 Three extra exports in the declared seam module fail E5 (measured 5 exceeds hard 4), the same lines
 undeclared measure nothing, the table removed fails E5 closed, and the correlation table disagreeing
 fails E16 naming the row.
+
+## PR-3b proofs (prompt 3 section 6, the restack's second unit; raw transcripts with exact injected bytes: docs/evidence/pr3b-transcripts.tar, sha256 85bae983...; the restored green runs close the bundle)
+
+### Vacuity (M-D), conflict, freshness
+The assembly against a household with no observations returns typed absences for every vocabulary
+kind and the surface renders each with its real next step, asserted in the committed suite and
+against the rendered page; the absent-card render deleted from the surface fails the browser proof at
+`toHaveCount(4)` - a vacuity page can never pass as fine. The assembly mutated to reconcile a
+disagreement by recency fails exactly `retains BOTH sides of a disagreement as a typed conflict`
+(31 others green); the band mutated to measure against the process clock instead of the supplied asOf
+fails exactly `measures freshness against the supplied asOf`.
+
+### The two P1 findings from PR-3a's review, fixed with companions (GD-005)
+The as-of filter deleted from both declared copies fails exactly `retrieves at the bundle's own
+instant: an observation recorded after asOf does not exist yet`; the over-fetch refusal deleted fails
+exactly `refuses to derive completeness claims over a truncated read` (`promise resolved ... instead
+of rejecting`). Shipped, the year-2000 retrieval returns typed absences and 201-of-201 rows refuses.
+
+### The receded treatment and the complete axe scan
+Delgado renders stale faded-but-readable, aging banded, both conflict sides retained with pills
+outside the fade; Okonkwo renders four typed-absence cards; both pass the complete WCAG 2.2 AA set.
+The meta-darkening rule deleted from the fade fails the scan with a real `color-contrast` violation -
+the treatment is load-bearing, not decorative.

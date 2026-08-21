@@ -11,6 +11,7 @@ import { createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, s
 import { createAccessContext, renewSession, signIn, type ActionGrant, type Principal } from "../access/context";
 import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } from "../evidence/bundle";
 import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
+import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
 
 const KERNEL = "src/runtime/governed.ts";
 const COMPOSITION_ROOTS = [KERNEL, "src/instrumentation.ts"];
@@ -251,12 +252,15 @@ const withHouseholdGrant = async <T>(fn: (c: RequestCorrelation, grant: ActionGr
     return fn(c, grant!);
   });
 };
-const hendersonRef = async () =>
+const subjectByName = (name: string) => async () =>
   withHouseholdGrant(async (c, grant) => {
     const access = createAccessContext();
     const rows = await access.withTenant(c, grant, (tx) => tx.listHouseholds());
-    return { householdId: rows.find((h) => h.name === "Henderson Family")!.id };
+    return { householdId: rows.find((h) => h.name === name)!.id };
   });
+const hendersonRef = subjectByName("Henderson Family");
+const INJECT_SQL =
+  "INSERT INTO observation (id, org_id, household_id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin) SELECT gen_random_uuid(), h.org_id, h.id, 'account-balance', 'account:injected', $2::jsonb, 'house-record-store', now(), now(), 'demo-seed' FROM household h WHERE h.id = $1";
 
 const RAW_FORMS = [
   ["bare-account-reference", "48219930117455"],
@@ -284,10 +288,8 @@ describe("the evidence slice, exercised end to end (prompt 3; the port-contract 
   });
   it("refuses a raw account reference INTO the bundle in all three forms, naming the operation - end to end", async () => {
     const subject = await hendersonRef();
-    const inject =
-      "INSERT INTO observation (id, org_id, household_id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin) SELECT gen_random_uuid(), h.org_id, h.id, 'account-balance', 'account:injected', $2::jsonb, 'house-record-store', now(), now(), 'demo-seed' FROM household h WHERE h.id = $1";
     for (const [form, raw] of RAW_FORMS) {
-      await superQuery(inject, [subject.householdId, JSON.stringify({ Account: raw })]);
+      await superQuery(INJECT_SQL, [subject.householdId, JSON.stringify({ Account: raw })]);
       try {
         await expect(withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, new Date().toISOString(), { milliseconds: 2_000 }))).rejects.toThrow(
           new RegExp(`evidence\\.assemble' refuses a ${form} at the bundle boundary`),
@@ -313,6 +315,43 @@ describe("the evidence slice, exercised end to end (prompt 3; the port-contract 
     expect(() => maskAccountReference("not a reference")).toThrow(/refused/);
   });
 });
+
+describe("the receding and absent states, and the bounded read's honesty (PR-3b)", () => {
+  it("refuses to derive completeness claims over a truncated read, naming the bound", async () => {
+    const subject = await hendersonRef();
+    await superQuery(
+      "INSERT INTO observation (id, org_id, household_id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin) SELECT gen_random_uuid(), h.org_id, h.id, 'people', 'person:bulk-' || g, '{\"Name\":\"Bulk\"}'::jsonb, 'house-record-store', now(), now(), 'demo-seed' FROM household h, generate_series(1, 196) g WHERE h.id = $1",
+      [subject.householdId],
+    );
+    try {
+      await expect(withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, new Date().toISOString(), { milliseconds: 2_000 }))).rejects.toThrow(/truncated read/);
+    } finally {
+      await superQuery("DELETE FROM observation WHERE subject LIKE 'person:bulk-%'");
+    }
+  });
+  it("renders the vacuity case as typed absence with a real next step (M-D, the bundle and view-model half)", async () => {
+    const subject = await subjectByName("Okonkwo Trust")();
+    const bundle = await withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, new Date().toISOString(), { milliseconds: 2_000 }));
+    const view = renderableBundle(bundle);
+    expect(view.items).toEqual([]);
+    expect(view.absent.map((a) => a.label)).toEqual(["People", "Account balance", "Bank instruction", "Beneficiary designation"]);
+    expect(view.absent.every((a) => a.nextStep.length > 0)).toBe(true); // a real next step, asserted again against the rendered page in the browser proof
+  });
+});
+
+const houseRetrieval: EvidenceRetrieval = {
+  retrieve: (subject, asOf, deadline) => withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, asOf, deadline)),
+  presentSubject: hendersonRef,
+  recededSubject: subjectByName("Delgado Household"),
+  absentSubject: subjectByName("Okonkwo Trust"),
+  injectRawReference: async (subject, rawReference) => {
+    await superQuery(INJECT_SQL, [subject.householdId, JSON.stringify({ Account: rawReference })]);
+    return async () => {
+      await superQuery("DELETE FROM observation WHERE subject = 'account:injected'");
+    };
+  },
+};
+evidenceRetrievalConformance("the house record store, through the governed runtime", houseRetrieval);
 
 describe("database-enforced isolation (5B.2, section 6 core; the full battery re-runs in PR-2c)", () => {
   const appUrl = process.env.VERIN_APP_DATABASE_URL ?? "postgresql://verin_app:verin-app-local@localhost:5432/verin";

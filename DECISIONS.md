@@ -44,3 +44,15 @@ prompt-owned correlation table the `E16` checker cross-checks, each declaring `R
 **Why:** Captain ratification of the revised prompt 3, 2026-08-20 ("Ratify - let prompt 3 sail"),
 under the GD-002 pattern; companions in `docs/proof-log.md` (PR-3a).
 **Revert path:** a captain re-ruling; every recorded ceiling stays a downward-only ratchet meanwhile.
+
+### GD-005 - 2026-08-21 - the observation read retrieves at the bundle's own instant and refuses truncation
+
+**What:** The observation store effect moves to `observation_list_for_household_v2`: the canonical SQL
+filters `observed_at <= asOf`, so a bundle contains exactly what was observable at its own instant (a
+replay property prompt 6's hashing relies on, and no negative-age observation can read as fresh), and
+the read over-fetches one row past its 200 bound so a truncated result is DETECTED - the assembly
+refuses to derive absence or conflict claims from a cut result rather than stating them over unread
+rows. Both registry copies changed together; the `SemanticEffectId` moved with the bytes.
+**Why:** Two P1 findings from the automated review of merged PR-3a; a reversible product decision
+under the standing rules, with companions in `docs/proof-log.md` (PR-3b).
+**Revert path:** a later statement version; the registry and admission table pin every shipped tuple.

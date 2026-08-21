@@ -185,17 +185,18 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
   },
   "observation.listForHousehold": {
     kind: "prepared-query",
-    statementName: "observation_list_for_household_v1",
+    statementName: "observation_list_for_household_v2",
     canonicalSql:
-      "SELECT id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin FROM observation WHERE org_id = $1 AND household_id = $2 ORDER BY kind, subject, observed_at, id LIMIT 200",
+      "SELECT id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin FROM observation WHERE org_id = $1 AND household_id = $2 AND observed_at <= $3 ORDER BY kind, subject, observed_at, id LIMIT 201",
     parameters: [
       { name: "orgId", type: "uuid" },
       { name: "householdId", type: "uuid" },
+      { name: "asOf", type: "timestamptz" },
       { name: "statementTimeoutMs", type: "text" },
     ],
     resultValidator: "observationRows.v1",
     cardinality: "many",
-    transactionClass: "tenant-statement-deadline-from-p1-p3",
+    transactionClass: "tenant-statement-deadline-from-p1-p4",
     authorityClass: "tenant",
   },
 };
@@ -297,17 +298,18 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
     gatewayEntry: "enterObservationListForHousehold",
     constructedDefinition: {
       kind: "prepared-query",
-      statementName: "observation_list_for_household_v1",
+      statementName: "observation_list_for_household_v2",
       canonicalSql:
-        "SELECT id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin FROM observation WHERE org_id = $1 AND household_id = $2 ORDER BY kind, subject, observed_at, id LIMIT 200",
+        "SELECT id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin FROM observation WHERE org_id = $1 AND household_id = $2 AND observed_at <= $3 ORDER BY kind, subject, observed_at, id LIMIT 201",
       parameters: [
         { name: "orgId", type: "uuid" },
         { name: "householdId", type: "uuid" },
+        { name: "asOf", type: "timestamptz" },
         { name: "statementTimeoutMs", type: "text" },
       ],
       resultValidator: "observationRows.v1",
       cardinality: "many",
-      transactionClass: "tenant-statement-deadline-from-p1-p3",
+      transactionClass: "tenant-statement-deadline-from-p1-p4",
       authorityClass: "tenant",
     },
   },
@@ -360,7 +362,7 @@ export type Gateway = {
   enterHouseholdListForTenant: (c: RequestCorrelation, v: { orgId: string }) => Promise<unknown>;
   enterHouseholdGetForTenant: (c: RequestCorrelation, v: { orgId: string; householdId: string }) => Promise<unknown>;
   enterEvidenceAssemble: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
-  enterObservationListForHousehold: (c: RequestCorrelation, v: { orgId: string; householdId: string; statementTimeoutMs: string }) => Promise<unknown>;
+  enterObservationListForHousehold: (c: RequestCorrelation, v: { orgId: string; householdId: string; asOf: string; statementTimeoutMs: string }) => Promise<unknown>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -504,11 +506,11 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
         else if (tc === "session-rotate-guc-from-p1-p2") {
           await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[0]]);
           await client.query("SELECT set_config('verin.session_token_next', $1, true)", [params[1]]);
-        } else if (tc === "tenant-statement-deadline-from-p1-p3") {
+        } else if (tc === "tenant-statement-deadline-from-p1-p4") {
           // The timeout derives from the route-minted deadline; the GUC parameter never reaches the binds.
           await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
-          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[2]]);
-          queryParams = params.slice(0, 2);
+          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[3]]);
+          queryParams = params.slice(0, 3);
         } else throw new Error(`transaction class '${String(tc)}' is not admitted`);
         const res = await client.query({ name: String(def["statementName"]), text: String(def["canonicalSql"]), values: queryParams });
         rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
@@ -539,7 +541,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterHouseholdListForTenant: (c: RequestCorrelation, v: { orgId: string }) => runStore("household.listForTenant", c, v),
     enterHouseholdGetForTenant: (c: RequestCorrelation, v: { orgId: string; householdId: string }) => runStore("household.getForTenant", c, v),
     enterEvidenceAssemble: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("evidence.assemble", c, fn),
-    enterObservationListForHousehold: (c: RequestCorrelation, v: { orgId: string; householdId: string; statementTimeoutMs: string }) => runStore("observation.listForHousehold", c, v),
+    enterObservationListForHousehold: (c: RequestCorrelation, v: { orgId: string; householdId: string; asOf: string; statementTimeoutMs: string }) => runStore("observation.listForHousehold", c, v),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");
