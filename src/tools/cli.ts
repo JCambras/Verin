@@ -49,9 +49,8 @@ const DELGADO: Omit<SeedObservation, "household">[] = [
   { kind: "bank-instruction", subject: "instruction:coastal-savings", body: { Bank: "Coastal Savings", Account: masked("ending 9911"), Standing: "reported changed by client" }, observedDaysAgo: 8 },
 ];
 const OBSERVATIONS: SeedObservation[] = [...HENDERSON.map((o) => ({ household: "Henderson Family", ...o })), ...DELGADO.map((o) => ({ household: "Delgado Household", ...o }))];
-// The two firm policy documents (prompt 4 deliverable 3): hand-authored re-expressions of the
-// ratified matrix (config/demo/scenarios.yaml on main, read detached - DC-5; derivation in PR-4a's
-// body). Every field the matrix does not state is the typed "not-stated", never invented.
+// The two firm policy documents (deliverable 3): hand-authored re-expressions of the ratified matrix
+// (DC-5; derivation in PR-4a's body); every matrix-silent field is the typed "not-stated".
 const FIRM_POLICY: Record<string, string> = {
   "advisor@firm-a.example": `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":25000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`,
   "advisor@firm-b.example": `{"reserveHorizonMonths":12,"dualApproval":{"thresholdUsd":100000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"not-stated","requesterRule":"not-stated"},"bankInstructionChange":"block-until-independently-verified","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`,
@@ -167,9 +166,8 @@ async function seed() {
       await c.query("COMMIT");
     }
   });
-  // Publish each firm's policy through the REAL publish path (deliverable 8): construct the governed
-  // runtime, sign in as the firm's advisor, and publish under that grant's own firm - the seam the
-  // product uses. Tooling publishes carry record_origin='demo-seed'; a re-run duplicate is skipped.
+  // Publish each firm's policy through the REAL publish path (deliverable 8), signed in as the
+  // firm's advisor; tooling publishes carry record_origin='demo-seed', and a re-run is skipped.
   createGovernedRuntime("tooling");
   const access = createAccessContext();
   const registry = createPolicyVersionRegistry();

@@ -1,8 +1,7 @@
-// The firm-policy shelf's inspect view (prompt 4 deliverable 5; PR-4a of the restack - history,
-// in-force and the publish form land in PR-4b). A missing identity renders the typed NotFound naming
-// it, and tampered stored bytes render the fail-closed integrity refusal naming both digests - never
-// a quiet substitution. Dates are worded, never YYYY-MM-DD (the PR-3a hyphenated-form lesson); the
-// figures carry the version's own provenance line, and a demonstration record wears its chip.
+// The firm-policy shelf's inspect view (prompt 4 deliverable 5; history, in-force and the publish
+// form are PR-4b). A missing identity renders the typed NotFound naming it; tampered bytes render
+// the fail-closed integrity refusal naming both digests - never a quiet substitution. Dates are
+// worded, never YYYY-MM-DD; the figures carry the version's own provenance line and origin chip.
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAccessContext } from "../../access/context";
@@ -76,9 +75,7 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
   return (
     <section className="stack" data-testid="verin-policy-loaded" aria-labelledby="policy-heading">
       <h1 id="policy-heading">Firm policy</h1>
-      <p className="meta">
-        Every published version of your firm's policy is addressed by the fingerprint of its exact bytes. Enter a version identity to inspect the document it will always resolve to.
-      </p>
+      <p className="meta">Enter a version identity to inspect the exact document it will always resolve to; every published version is addressed by the fingerprint of its bytes.</p>
       <form method="get" action="/policy" className="stack">
         <div className="field">
           <label htmlFor="id">Version identity</label>

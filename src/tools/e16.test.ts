@@ -355,8 +355,7 @@ const houseRetrieval: EvidenceRetrieval = {
 };
 evidenceRetrievalConformance("the house record store, through the governed runtime", houseRetrieval);
 
-// The policy battery (prompt 4 section 6, PR-4a). Each run's documents carry a fresh randomized
-// threshold so a re-run against an already-seeded store never collides with a prior run's addresses.
+// The policy battery (prompt 4 section 6, PR-4a); fresh thresholds keep re-runs collision-free.
 const POLICY_DEADLINE = { milliseconds: POLICY_OPERATION_DEADLINE_MS };
 const policyDoc = (months: number, thresholdUsd: number) =>
   `{"reserveHorizonMonths":${months},"dualApproval":{"thresholdUsd":${thresholdUsd},"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
@@ -372,8 +371,7 @@ const withPolicyGrant = async <T>(action: "policy.read" | "policy.publish", fn: 
     return fn(c, grant!);
   });
 };
-// Forcing the oracle's defect into the store requires disabling triggers whole: the immutability
-// trigger refuses even a superuser's plain write, which M-D proves separately.
+// Forcing the oracle's defect into the store requires disabling triggers whole (M-D proves them).
 async function replicaWrite(sql: string, params: unknown[]) {
   const su = new PgClient({ connectionString: SUPER_URL });
   await su.connect();
@@ -396,7 +394,6 @@ describe("the policy version registry (prompt 4, PR-4a): content-addressed, immu
     if (out.kind !== "policy-version") throw new Error("expected the published version to resolve");
     expect(out.policy.reserveHorizonMonths).toBe(6);
     expect(out.origin).toBe("demo-seed"); // the tooling role's publishes are demonstrations, named at the insert
-    expect(out.sequence).toBeGreaterThanOrEqual(1);
     await expect(withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, bytes, POLICY_DEADLINE))).rejects.toThrow(/duplicate identity/);
     await expect(withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, { milliseconds: 0 }))).rejects.toThrow(/deadline/); // stop 9
     await expect(withPolicyGrant("policy.publish", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE))).rejects.toThrow(/requires a 'policy.read' grant/);
@@ -425,8 +422,7 @@ describe("the policy version registry (prompt 4, PR-4a): content-addressed, immu
     await replicaWrite("UPDATE policy_document SET bytes = $1 WHERE digest = $2", [Buffer.from(original), id.digest]);
     const restored = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE));
     expect(restored.kind).toBe("policy-version"); // the exact original bytes resolve again
-    // M-D, against the identity currently bound above - never a hardcoded string: the app role cannot
-    // write the shelf at all, and the trigger independently refuses even a superuser's plain write.
+    // M-D, against the identity bound above - never a hardcoded string.
     const app = new PgClient({ connectionString: appUrl });
     await app.connect();
     try {

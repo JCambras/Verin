@@ -61,11 +61,9 @@ under the standing rules, with companions in `docs/proof-log.md` (PR-3b).
 
 **What:** Prompt 4 section 7's ceilings enter `CONSTITUTION.md` under the slice-specific slug
 `ordinary-vertical/configuration` in `E5`'s measure names and formats; `SEAM_MODULES` gains exactly
-`src/policy/registry.ts` (the PolicyVersionRegistry seam); the slice-4 registry rows join the
-prompt-owned correlation table, each declaring `RequestCorrelation`; and the registry's closed
-vocabularies widen by exactly this slice - a Configuration owner, slice value 4, and the declared
-attribute domains (`documentDigest` bare 16-64 hex; `refusalReason` closed enum), validated at
-emission and re-validated by the checker.
+`src/policy/registry.ts`; the slice-4 registry rows join the prompt-owned correlation table, each
+declaring `RequestCorrelation`; and the vocabularies widen by exactly this slice - a Configuration
+owner, slice 4, and the declared domains (`documentDigest` bare hex; `refusalReason` closed enum).
 **Why:** Captain ratification of the revised prompt 4, 2026-08-21 ("Lets do it"), under the
 GD-002/GD-004 pattern; companions in `docs/proof-log.md` (PR-4a).
 **Revert path:** a captain re-ruling; every recorded ceiling stays a downward-only ratchet meanwhile.

@@ -1,10 +1,9 @@
 // The PolicyVersionRegistry seam (prompt 4 section 4). The address IS the document's SHA-256
-// (`fpd.v1:` from the first byte - the `semfx.v1`/`evb.v1` precedent); there is NO current-bytes
-// read path anywhere, a missing identity is a typed NotFound carrying no policy field at all, the
-// firm is the grant's sealed tenant identity (never a parameter; RLS is the guarantee), and stored
-// bytes are re-hashed BEFORE parsing, refusing on mismatch naming both digests. Every string field
-// is a closed vocabulary; matrix silence is the typed "not-stated" (captain ratification
-// 2026-08-21). PR-4a of the restack ships publish and resolveByHash; the rest is PR-4b.
+// (`fpd.v1:` from the first byte - the `semfx.v1`/`evb.v1` precedent); there is NO current-bytes read
+// path anywhere, a missing identity is a typed NotFound carrying no policy field, the firm is the
+// grant's sealed tenant identity (never a parameter; RLS is the guarantee), and stored bytes are
+// re-hashed BEFORE parsing, refusing on mismatch naming both digests. Matrix silence is the typed
+// "not-stated" (captain ratification 2026-08-21). PR-4a ships publish and resolveByHash.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { annotateOperation, getGateway, type RequestCorrelation } from "../runtime/governed";
@@ -24,8 +23,7 @@ type PublishedPolicyVersion = {
   readonly policy: FirmPolicy;
 };
 
-// The closed vocabularies (deliverable 2): exactly what the ratified matrix and demo contract name;
-// widening one is a reviewed schema change.
+// The closed vocabularies (deliverable 2): exactly what the ratified matrix and demo contract name.
 const NOT_STATED = "not-stated";
 const APPROVER_ROLES = ["operations"] as const;
 const REQUESTER_RULES = ["may-not-satisfy-both-approvals"] as const;
@@ -34,8 +32,7 @@ const STAGE_KINDS = ["dual-approval", "specialist-review", "independent-verifica
 const POLICY_RECORD_ORIGINS = ["demo-seed", "operator-entry"] as const;
 type PolicyRecordOrigin = (typeof POLICY_RECORD_ORIGINS)[number];
 const notStatedOr = <T extends z.ZodType>(schema: T) => z.union([z.literal(NOT_STATED), schema]);
-// The stage shape comes from configuration, never from a signed expected outcome (stop 4); no stage
-// values exist in the matrix, so slice-4 documents carry "not-stated" whole until real ones arrive.
+// The stage shape comes from configuration, never from a signed expected outcome (stop 4).
 const approvalStage = z.strictObject({
   kind: z.enum(STAGE_KINDS),
   order: z.number().int().min(1).max(8),
@@ -58,8 +55,7 @@ const firmPolicySchema = z.strictObject({
 });
 type FirmPolicy = z.infer<typeof firmPolicySchema>;
 
-// Strict boundary parsing (M-F): invalid UTF-8, non-JSON bytes, an unknown key, a value outside a
-// closed vocabulary, or anything shaped like an expression is refused naming the offending path.
+// Strict boundary parsing (M-F): anything but a closed-vocabulary document is refused naming the path.
 function parseFirmPolicy(bytes: Uint8Array): FirmPolicy {
   let value: unknown;
   try {
@@ -107,8 +103,8 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
         parseFirmPolicy(bytes); // refused before any store work (M-F)
         const digest = sha256hex(bytes);
         annotateOperation({ documentDigest: digest });
-        // One idempotency-aware write binds the version to the grant's own firm, naming the origin at
-        // the insert (tooling publishes are demonstrations); zero rows written is a refused duplicate.
+        // One write binds the version to the grant's own firm, naming the origin at the insert
+        // (tooling publishes are demonstrations); zero rows written is a refused duplicate.
         const wrote = await gw.enterPolicyAppendVersion(c, {
           orgId: grant.principal.tenant.orgId,
           digest,

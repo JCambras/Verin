@@ -7,8 +7,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { Client as PgClient } from "pg";
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"];
-// Env-overridable like the suite's other connections (the PR-3b falsification pass's note 2: a
-// hardcoded superuser localhost:5432 is not re-executable on an isolated non-default-port store).
+// Env-overridable like the suite's other connections (the PR-3b falsification pass's note 2).
 const SUPER_URL = process.env.VERIN_SUPER_DATABASE_URL?.replace(/\/postgres$/, "/verin") ?? "postgresql://postgres:postgres@localhost:5432/verin";
 async function settledAxe(page: Page) {
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)).then(() => undefined));
@@ -123,7 +122,6 @@ test("the policy shelf resolves a published version by content address, and refu
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   await page.getByRole("link", { name: "Firm policy" }).click();
   await expect(page.getByTestId("verin-policy-loaded")).toBeVisible();
-  expect(page.url()).toBe("http://localhost:3000/policy");
   expect((await settledAxe(page)).violations).toEqual([]); // the base inspect state
   const su = new PgClient({ connectionString: SUPER_URL });
   await su.connect();

@@ -80,8 +80,7 @@ type Row = {
   slice: 2 | 3 | 4;
 };
 const ATTRS: Row["attributes"] = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } };
-// Slice 4's declared domains: spans carry the BARE 64-hex content digest (never the prefixed
-// identity string, refused on cardinality) and a NotFound reason from this closed enum.
+// Slice 4's declared domains: the BARE 64-hex digest and the NotFound reason's closed enum.
 const POLICY_ATTRS: Row["attributes"] = { ...ATTRS, documentDigest: { domain: "digest" }, refusalReason: { domain: "enum", values: ["version-not-found"] } };
 const row = (id: OpKey, cls: Row["class"], permittedParents: Row["permittedParents"], gatewayEntry: string, owner: Row["owner"] = "Access", slice: Row["slice"] = 2): Row => ({
   id: opId(id),
@@ -112,8 +111,7 @@ const REGISTRY: readonly Row[] = [
   // (no new route row), and the bounded observation read is its own store row - not a seam operation.
   row("evidence.assemble", "module-operation", ["route.household-workspace"], "enterEvidenceAssemble", "Evidence", 3),
   row("observation.listForHousehold", "store", ["evidence.assemble"], "enterObservationListForHousehold", "Evidence", 3),
-  // Slice 4 (prompt 4 deliverable 7): the policy route, PR-4a's two seam operations, and their store
-  // reads and writes; "entry" parents serve tooling roots (the seed publishes through the real path).
+  // Slice 4 (prompt 4 deliverable 7); "entry" parents serve tooling roots (the seed publishes).
   row("route.policy", "use-case", ["entry"], "enterRoutePolicy", "Configuration", 4),
   row("policy.publish", "module-operation", ["entry", "route.policy"], "enterPolicyPublish", "Configuration", 4),
   row("policy.resolveByHash", "module-operation", ["entry", "route.policy"], "enterPolicyResolveByHash", "Configuration", 4),
@@ -499,8 +497,8 @@ type Slot = { gateway: Gateway; snapshot: () => Promise<Record<string, unknown>>
 const SLOT = Symbol.for("verin.governed-runtime");
 const slot = () => (globalThis as { [SLOT]?: Slot })[SLOT];
 
-// Declared-domain span annotation (prompt 4 deliverable 7): the ambient governed operation may attach
-// ONLY attributes its registry row declares, each validated BEFORE emission; the checker re-validates.
+// Declared-domain annotation (prompt 4): only attributes the ambient operation's row declares,
+// validated BEFORE emission; the checker re-validates the same domains from the capture.
 export function annotateOperation(attrs: Record<string, string | boolean>): void {
   const s = slot();
   if (!s) throw new Error("annotateOperation requires a constructed governed runtime");
@@ -635,8 +633,8 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
           await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[0]]);
           await client.query("SELECT set_config('verin.session_token_next', $1, true)", [params[1]]);
         } else if (typeof tc === "string" && /^tenant-statement-deadline-from-p1-p[2-9]$/.test(tc)) {
-          // The timeout derives from the route-minted deadline the class names as its LAST parameter;
-          // the GUC parameters never reach the binds (slice 3's p4 form; slice 4 adds p3 and p5).
+          // The timeout derives from the route-minted deadline, the class's LAST parameter, which
+          // never reaches the binds (slice 3's p4 form; slice 4 adds p3 and p5).
           const last = Number(tc.slice(-1));
           await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
           await client.query("SELECT set_config('statement_timeout', $1, true)", [params[last - 1]]);
