@@ -11,7 +11,7 @@ import type { ActionGrant } from "../access/context";
 
 type Deadline = { readonly milliseconds: number };
 type PolicyVersionId = { readonly version: "fpd.v1"; readonly digest: string };
-type PolicyRefusalReason = "version-not-found";
+type PolicyRefusalReason = "version-not-found" | "no-version-in-force";
 type PolicyNotFound = { readonly kind: "not-found"; readonly reason: PolicyRefusalReason; readonly subject: string };
 type PublishedPolicyVersion = {
   readonly kind: "policy-version";
@@ -90,6 +90,22 @@ const versionRow = z.strictObject({ seq: z.number().int(), published_at: z.date(
 interface PolicyVersionRegistry {
   publish(c: RequestCorrelation, grant: ActionGrant, bytes: Uint8Array, deadline: Deadline): Promise<PolicyVersionId>;
   resolveByHash(c: RequestCorrelation, grant: ActionGrant, id: PolicyVersionId, deadline: Deadline): Promise<PublishedPolicyVersion | PolicyNotFound>;
+  resolveInForce(c: RequestCorrelation, grant: ActionGrant, at: string, deadline: Deadline): Promise<PolicyVersionId | PolicyNotFound>;
+  history(c: RequestCorrelation, grant: ActionGrant, deadline: Deadline): Promise<PolicyVersionId[]>;
+}
+
+type SequenceRow = { seq: number; digest: string; published_at: Date; record_origin: string };
+const sequenceRows = z.array(z.strictObject({ seq: z.number().int(), digest: z.string(), published_at: z.date(), record_origin: z.enum(POLICY_RECORD_ORIGINS) }));
+const renderFirm = (orgId: string) => `f${orgId.replaceAll("-", "")}`; // letter-prefixed unbroken hex, the runtime's idiom
+// The sequence checks (section 4 rule 3; M-E): a check that sees nothing must never report clean, a
+// gap or a fork is named, and claims are never derived from a truncated read (the GD-005 pattern).
+function assertSequenceSound(rows: readonly SequenceRow[]): void {
+  if (rows.length === 0) throw new Error("the sequence check refuses an empty history: a check that sees nothing must never report clean");
+  if (rows.length > 200) throw new Error("the sequence check refuses to certify a history past its 200-version bound: claims over a truncated read are refused");
+  rows.forEach((row, i) => {
+    if (row.seq !== i + 1) throw new Error(`the sequence check refuses this firm's history: sequence number ${i + 1} is missing (a gap in the append-only sequence; found ${row.seq})`);
+  });
+  if (new Set(rows.map((r) => r.digest)).size !== rows.length) throw new Error("the sequence check refuses this firm's history: one identity is bound at two sequence numbers (a fork)");
 }
 
 function createPolicyVersionRegistry(): PolicyVersionRegistry {
@@ -127,8 +143,42 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
         return { kind: "policy-version", id, sequence: row.seq, publishedAt: row.published_at.toISOString(), origin: row.record_origin, policy: parseFirmPolicy(row.bytes) };
       });
     },
+    async resolveInForce(c, grant, at, deadline) {
+      return gw.enterPolicyResolveInForce(c, async () => {
+        requireDeadline(deadline, "policy.resolveInForce");
+        requireAction(grant, "policy.read", "policy.resolveInForce");
+        const instant = Date.parse(at);
+        if (!Number.isFinite(instant)) throw new Error("policy.resolveInForce refuses a non-instant 'at'; the route boundary mints it");
+        const orgId = grant.principal.tenant.orgId;
+        const rows = sequenceRows.parse(await gw.enterPolicyVersionsForFirm(c, { orgId, statementTimeoutMs: String(deadline.milliseconds) }));
+        if (rows.length === 0) {
+          annotateOperation({ outcome: "refused", refusalReason: "no-version-in-force" });
+          return { kind: "not-found", reason: "no-version-in-force", subject: renderFirm(orgId) };
+        }
+        assertSequenceSound(rows);
+        // In-force is DERIVED, never stored: the greatest sequence number whose publish instant is at
+        // or before T, from the append-only sequence alone (section 4 rule 3).
+        const inForce = [...rows].reverse().find((r) => r.published_at.getTime() <= instant);
+        if (!inForce) {
+          annotateOperation({ outcome: "refused", refusalReason: "no-version-in-force" });
+          return { kind: "not-found", reason: "no-version-in-force", subject: renderFirm(orgId) };
+        }
+        annotateOperation({ documentDigest: inForce.digest });
+        return { version: "fpd.v1", digest: inForce.digest };
+      });
+    },
+    async history(c, grant, deadline) {
+      return gw.enterPolicyHistory(c, async () => {
+        requireDeadline(deadline, "policy.history");
+        requireAction(grant, "policy.read", "policy.history");
+        const rows = sequenceRows.parse(await gw.enterPolicyVersionsForFirm(c, { orgId: grant.principal.tenant.orgId, statementTimeoutMs: String(deadline.milliseconds) }));
+        if (rows.length === 0) return []; // a typed empty shelf - no soundness claim is made over nothing
+        assertSequenceSound(rows);
+        return rows.map((r) => ({ version: "fpd.v1", digest: r.digest }));
+      });
+    },
   };
 }
 
 export type { Deadline, FirmPolicy, PolicyNotFound, PolicyRecordOrigin, PolicyVersionId, PolicyVersionRegistry, PublishedPolicyVersion };
-export { NOT_STATED, POLICY_OPERATION_DEADLINE_MS, POLICY_RECORD_ORIGINS, createPolicyVersionRegistry, parseFirmPolicy, parsePolicyVersionId, renderPolicyVersionId };
+export { NOT_STATED, POLICY_OPERATION_DEADLINE_MS, POLICY_RECORD_ORIGINS, assertSequenceSound, createPolicyVersionRegistry, parseFirmPolicy, parsePolicyVersionId, renderPolicyVersionId };

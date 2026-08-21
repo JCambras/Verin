@@ -431,3 +431,19 @@ resolveByHash fails parent linkage; the raw client fails by import (registry.ts:
 pool trips the probe; the prefixed identity and whole document bytes refuse on cardinality. Five
 extra seam exports fail E5 (7 exceeds hard 6), the same lines undeclared measure nothing, the removed
 row-set fails E5 closed, and the correlation table disagreeing fails E16 naming the row.
+
+## PR-4b proofs (prompt 4 section 6, the restack's second unit; raw transcripts with exact injected bytes: docs/evidence/pr4b-transcripts.tar, sha256 d10dc210...; the restored green run closes the bundle)
+
+### The batteries, the harness, and the companions
+M-B: nine months published as a NEW version becomes what the sequence derives as in force, while
+every previously recorded identity keeps resolving to its own bytes and figures, and nothing was in
+force before the first publish (NotFound naming the firm, no policy field). M-C: a superuser-deleted
+interior row refuses naming the gap ("sequence number 2 is missing") on both history and in-force;
+an empty firm resolves to the typed NotFound naming the firm. M-E: the sequence check refuses an
+empty history outright. M-G: the log deleted from resolveInForce fails E16 naming the operation and
+emission; the LIMIT deleted from both copies fails the committed bounded-read assertion naming the
+statement, and from one copy refuses construction printing both digests; in-force mutated off the
+greatest-at-or-before rule fails M-B by name; the vacuous empty-history check fails M-C/M-E by name.
+The amplification harness prints BOTH regimes with their diffs (first-encounter gross 4, steady-state
+gross 4 - the coupled browser assertion recurs, so the ruled clause excludes nothing) and states the
+product path: a firm's policy change is a published version at zero repository diff.
