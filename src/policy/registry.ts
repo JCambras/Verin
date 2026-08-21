@@ -105,13 +105,8 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
         annotateOperation({ documentDigest: digest });
         // One write binds the version to the grant's own firm, naming the origin at the insert
         // (tooling publishes are demonstrations); zero rows written is a refused duplicate.
-        const wrote = await gw.enterPolicyAppendVersion(c, {
-          orgId: grant.principal.tenant.orgId,
-          digest,
-          bytes,
-          recordOrigin: gw.runtimeRole === "web" ? "operator-entry" : "demo-seed",
-          statementTimeoutMs: String(deadline.milliseconds),
-        });
+        const recordOrigin = gw.runtimeRole === "web" ? "operator-entry" : "demo-seed";
+        const wrote = await gw.enterPolicyAppendVersion(c, { orgId: grant.principal.tenant.orgId, digest, bytes, recordOrigin, statementTimeoutMs: String(deadline.milliseconds) });
         if (wrote !== 1) throw new Error(`publish refuses a duplicate identity: fpd.v1:${digest} is already in this firm's sequence (no duplicate identities)`);
         return { version: "fpd.v1", digest };
       });

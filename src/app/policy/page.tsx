@@ -69,7 +69,7 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
   if (view.denied)
     return (
       <p className="alert" role="alert">
-        Your role is not permitted to read firm policy.
+        {"Your role is not permitted to read firm policy."}
       </p>
     );
   return (
@@ -82,7 +82,7 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
           <input id="id" name="id" type="text" defaultValue={requested} placeholder={"fpd.v1:…"} required />
         </div>
         <button className="btn-primary" type="submit">
-          Inspect version
+          {"Inspect version"}
         </button>
       </form>
       {view.refusal ? (
