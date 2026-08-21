@@ -2,13 +2,15 @@
 // PostgreSQL, runs the construction rules E16 consumes (sealed-factory, raw-client boundary,
 // production-bundle graph, the nodejs-runtime declaration), and writes the E16 capture. Evidence
 // tooling under src/tools/ - proven absent from the web bundle - and a tooling composition root.
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Client as PgClient } from "pg";
 import { Project, SyntaxKind, type SourceFile } from "ts-morph";
-import { createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, snapshotEvidence } from "../runtime/governed";
-import { createAccessContext, renewSession, signIn, type Principal } from "../access/context";
+import { createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, snapshotEvidence, type RequestCorrelation } from "../runtime/governed";
+import { createAccessContext, renewSession, signIn, type ActionGrant, type Principal } from "../access/context";
+import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } from "../evidence/bundle";
+import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
 
 const KERNEL = "src/runtime/governed.ts";
 const COMPOSITION_ROOTS = [KERNEL, "src/instrumentation.ts"];
@@ -19,6 +21,7 @@ const SEALED: Record<string, string> = {
   RequestId: KERNEL,
   RequestCorrelation: KERNEL,
   GovernedOperationId: KERNEL,
+  MaskedAccountReference: "src/evidence/pii.ts",
 };
 const rel = (sf: SourceFile) => relative(process.cwd(), sf.getFilePath());
 const project = new Project({ tsConfigFilePath: "tsconfig.json" });
@@ -96,6 +99,34 @@ function nodejsRuntimeViolations() {
     if (!/export const runtime = "nodejs"/.test(sf.getFullText())) out.push(`${rel(sf)} does not declare export const runtime = "nodejs"; the edge runtime is forbidden`);
   for (const sf of project.getSourceFiles("src/**/*.{ts,tsx}"))
     if (sf.getFullText().includes('"use server"') && !/export const runtime = "nodejs"/.test(sf.getFullText())) out.push(`${rel(sf)} holds a server action without the nodejs runtime declaration`);
+  return out;
+}
+// PII containment (prompt 3 deliverable 3): no module in the DECLARED outbound-projection set may
+// transitively import a PII-bearing type or value - a file is PII-bearing when it references the
+// PIIBearing marker outside the marker's own home. Fails with the importing file:line.
+function containmentViolations() {
+  const out: string[] = [];
+  const bearing = new Set<string>();
+  for (const sf of project.getSourceFiles("src/**/*.{ts,tsx}"))
+    if (rel(sf) !== "src/evidence/pii.ts" && sf.forEachDescendant((n) => (n.getKind() === SyntaxKind.Identifier && n.getText() === "PIIBearing" ? true : undefined))) bearing.add(rel(sf));
+  const queue = OUTBOUND_PROJECTION_MODULES.map((declared) => {
+    const sf = project.getSourceFile((f) => rel(f) === declared);
+    if (!sf) out.push(`${declared} is declared into the outbound-projection set but does not exist; a boundary with a missing member is unproven`);
+    return sf;
+  }).filter((sf): sf is SourceFile => sf !== undefined);
+  const seen = new Set<string>();
+  while (queue.length) {
+    const sf = queue.pop()!;
+    if (seen.has(rel(sf))) continue;
+    seen.add(rel(sf));
+    if (bearing.has(rel(sf))) out.push(`${rel(sf)}:1 sits in the outbound-projection set but references a PII-bearing type itself`);
+    for (const d of sf.getImportDeclarations()) {
+      const target = d.getModuleSpecifierSourceFile();
+      if (!target || !rel(target).startsWith("src/")) continue;
+      if (bearing.has(rel(target))) out.push(`${rel(sf)}:${d.getStartLineNumber()} imports PII-bearing module ${rel(target)}; the outbound-projection boundary refuses it`);
+      else queue.push(target);
+    }
+  }
   return out;
 }
 
@@ -201,6 +232,88 @@ describe("session lifecycle: renewal and rotation happen only on the cookie-writ
   });
 });
 
+const SUPER_URL = process.env.VERIN_SUPER_DATABASE_URL?.replace(/\/postgres$/, "/verin") ?? "postgresql://postgres:postgres@localhost:5432/verin";
+async function superQuery(sql: string, params: unknown[] = []) {
+  const su = new PgClient({ connectionString: SUPER_URL });
+  await su.connect();
+  try {
+    return await su.query(sql, params);
+  } finally {
+    await su.end();
+  }
+}
+const withHouseholdGrant = async <T>(fn: (c: RequestCorrelation, grant: ActionGrant) => Promise<T>): Promise<T> => {
+  const c = requestCorrelation(mintRequestId());
+  const access = createAccessContext();
+  return getGateway().enterRouteHouseholdWorkspace(c, async () => {
+    const p = await access.authenticate(c, cookieValue);
+    const grant = await access.authorize(c, p!, "household.read");
+    return fn(c, grant!);
+  });
+};
+const hendersonRef = async () =>
+  withHouseholdGrant(async (c, grant) => {
+    const access = createAccessContext();
+    const rows = await access.withTenant(c, grant, (tx) => tx.listHouseholds());
+    return { householdId: rows.find((h) => h.name === "Henderson Family")!.id };
+  });
+
+const RAW_FORMS = [
+  ["bare-account-reference", "48219930117455"],
+  ["spaced-account-reference", "4821 9930 1174 5588"],
+  ["hyphenated-account-reference", "4821-9930-1174-5588"],
+] as const;
+
+describe("the evidence slice, exercised end to end (prompt 3; the port-contract conformance suite lands whole in PR-3b)", () => {
+  it("assembles the present case canonically: typed whole, byte-identical serialization, the assembly's band rendered", async () => {
+    const asOf = new Date().toISOString();
+    const subject = await hendersonRef();
+    const bundle = await withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, asOf, { milliseconds: 2_000 }));
+    expect(bundle.observations.map((o) => o.kind)).toEqual(["account-balance", "bank-instruction", "beneficiary-designation", "people", "people"]);
+    expect(bundle.absences).toEqual([]); // the present case: nothing missing, and nothing silently filled
+    expect(bundle.conflicts).toEqual([]);
+    expect(bundle.observations.every((o) => o.origin === "demo-seed" && o.provenance.retrievedAt >= o.provenance.observedAt)).toBe(true);
+    const again = await withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, asOf, { milliseconds: 2_000 }));
+    expect(serializeBundle(again)).toBe(serializeBundle(bundle)); // same inputs, same evb.v1 bytes
+    expect(serializeBundle(bundle).startsWith("evb.v1|")).toBe(true);
+    expect(bundleDigest(again)).toBe(bundleDigest(bundle));
+    const view = renderableBundle(bundle);
+    expect(view.items.map((i) => i.band)).toEqual(bundle.observations.map((o) => o.freshness)); // the band the assembly computed IS the band the surface renders
+    expect(view.items.every((i) => i.demonstration)).toBe(true); // no unlabeled synthetic data
+    await expect(withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, asOf, { milliseconds: 0 }))).rejects.toThrow(/deadline/); // stop condition 3
+  });
+  it("refuses a raw account reference INTO the bundle in all three forms, naming the operation - end to end", async () => {
+    const subject = await hendersonRef();
+    const inject =
+      "INSERT INTO observation (id, org_id, household_id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin) SELECT gen_random_uuid(), h.org_id, h.id, 'account-balance', 'account:injected', $2::jsonb, 'house-record-store', now(), now(), 'demo-seed' FROM household h WHERE h.id = $1";
+    for (const [form, raw] of RAW_FORMS) {
+      await superQuery(inject, [subject.householdId, JSON.stringify({ Account: raw })]);
+      try {
+        await expect(withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, new Date().toISOString(), { milliseconds: 2_000 }))).rejects.toThrow(
+          new RegExp(`evidence\\.assemble' refuses a ${form} at the bundle boundary`),
+        );
+      } finally {
+        await superQuery("DELETE FROM observation WHERE subject = 'account:injected'");
+      }
+    }
+  });
+  it("passes the three legitimate identifiers untouched - the GD-003 minted-correlation-id arm named explicitly", () => {
+    const minted = (globalThis as { [k: symbol]: string[] })[Symbol.for("verin.minted-ids")];
+    minted.push("1234567812345678", "4821 9930 1174 5588");
+    const ctx = { operation: "evidence.assemble", boundary: "log" } as const;
+    expect(() => refuseAccountReferences({ spanId: "1234567812345678" }, ctx)).not.toThrow(); // a runtime-minted all-digit id in a correlation key (GD-003's exact ruled value class)
+    expect(() => refuseAccountReferences({ Household: "d5ab04c2-6b70-4f3a-9d0e-1b2c3d4e5f60" }, ctx)).not.toThrow(); // a product uuid
+    expect(() => refuseAccountReferences({ Account: maskAccountReference("ending 4821").display }, ctx)).not.toThrow(); // the masked display
+    expect(() => refuseAccountReferences({ Note: "1234567812345678" }, ctx)).toThrow(/bare-account-reference/); // the same digits OUTSIDE a correlation key keep full sensitivity
+    expect(() => refuseAccountReferences({ spanId: "4821 9930 1174 5588" }, ctx)).toThrow(/spaced-account-reference/); // a spaced reference can never be laundered through the minted list (shape-bounded)
+  });
+  it("masked account references construct only through the factory, which masks a raw form to its last four", () => {
+    expect(maskAccountReference("4821 9930 1174 5588").display).toBe("ending 5588");
+    expect(maskAccountReference("ending 2210").display).toBe("ending 2210");
+    expect(() => maskAccountReference("not a reference")).toThrow(/refused/);
+  });
+});
+
 describe("database-enforced isolation (5B.2, section 6 core; the full battery re-runs in PR-2c)", () => {
   const appUrl = process.env.VERIN_APP_DATABASE_URL ?? "postgresql://verin_app:verin-app-local@localhost:5432/verin";
   const orgOf = async (c: PgClient, email: string) => {
@@ -247,6 +360,16 @@ describe("construction rules and the E16 capture", () => {
   it("every route, layout and server action declares the nodejs runtime", () => {
     expect(nodejsRuntimeViolations()).toEqual([]);
   });
+  it("no outbound-projection module transitively imports a PII-bearing type (the declared boundary membership)", () => {
+    expect(containmentViolations()).toEqual([]);
+  });
+  it("the shipped detector and the checker's scan agree byte-for-byte on the three forms and the GD-003 exclusion", () => {
+    const checker = readFileSync("enforcement/rules-e16.mjs", "utf8");
+    expect(ACCOUNT_REFERENCE_FORMS).toHaveLength(3);
+    for (const [form, re] of ACCOUNT_REFERENCE_FORMS) expect(checker).toContain(`["${form}", ${re.toString()}]`);
+    expect(checker).toContain('new Set(["requestId", "traceId", "spanId"])');
+    expect(checker).toContain("/^[0-9a-f]{16}$|^[0-9a-f]{32}$/");
+  });
   it("assembles and writes the exercised capture", async () => {
     const ev = await snapshotEvidence();
     const registry = ev.registry as { id: string }[];
@@ -271,5 +394,9 @@ describe("construction rules and the E16 capture", () => {
         graph.some((g) => g.op === r.id),
         `registry row ${r.id} was never exercised`,
       ).toBe(true);
+    // The bounded-read rule (deliverable 1): a slice-3 collection read carries an explicit limit in its SQL text; deleting the LIMIT fails here naming the statement.
+    for (const r of ev.registry as { id: string; slice: number; class: string; semanticEffect?: { statementName: string; canonicalSql: string; cardinality: string } }[])
+      if (r.slice >= 3 && r.class === "store" && r.semanticEffect?.cardinality === "many")
+        expect(/\bLIMIT \d+\b/.test(r.semanticEffect.canonicalSql), `store operation '${r.id}' ships an unbounded collection read: no LIMIT in '${r.semanticEffect.statementName}'`).toBe(true);
   });
 });

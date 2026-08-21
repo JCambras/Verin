@@ -5,6 +5,7 @@
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { Client } from "pg";
+import { maskAccountReference } from "../evidence/pii";
 
 const MIGRATIONS_DIR = "src/store/migrations";
 const DEMO = [
@@ -18,6 +19,24 @@ const DEMO = [
   },
   { org: "Harbor Point Advisors", email: "advisor@firm-b.example", name: "Priya Nair", role: "advisor", phrase: "harbor-quartz-42", households: ["Vance Household", "Mensah Family"] },
 ];
+// The labelled demonstration observations (prompt 3 deliverable 6): the present case, every kind
+// observed and fresh. Account references enter ONLY through the PII module's masked factory; each
+// row's origin is named at its insert, never a column default.
+const masked = (display: string) => maskAccountReference(display).display;
+type SeedObservation = { household: string; kind: string; subject: string; body: Record<string, string>; observedDaysAgo: number };
+const HENDERSON: Omit<SeedObservation, "household">[] = [
+  { kind: "people", subject: "person:margaret-henderson", body: { Name: "Margaret Henderson", Role: "Primary client", Born: "1958" }, observedDaysAgo: 6 },
+  { kind: "people", subject: "person:robert-henderson", body: { Name: "Robert Henderson", Role: "Joint client", Born: "1956" }, observedDaysAgo: 6 },
+  { kind: "account-balance", subject: `account:${masked("ending 4821")}`, body: { Registration: "Joint brokerage", Account: masked("ending 4821"), Balance: "$412,000" }, observedDaysAgo: 6 },
+  { kind: "bank-instruction", subject: "instruction:first-national", body: { Bank: "First National", Account: masked("ending 2210"), Standing: "verified on file" }, observedDaysAgo: 12 },
+  {
+    kind: "beneficiary-designation",
+    subject: `account:${masked("ending 7753")}`,
+    body: { Registration: "Traditional IRA", Primary: "Robert Henderson", Contingent: "Henderson Family Trust" },
+    observedDaysAgo: 21,
+  },
+];
+const OBSERVATIONS: SeedObservation[] = HENDERSON.map((o) => ({ household: "Henderson Family", ...o }));
 const url = (name: string, fallback: string) => process.env[name] ?? fallback;
 async function withClient<T>(connectionString: string, fn: (c: Client) => Promise<T>): Promise<T> {
   const c = new Client({ connectionString });
@@ -79,6 +98,9 @@ async function migrate() {
 }
 
 async function seed() {
+  // The seed refuses a production deployment outright (prompt 3 deliverable 6): demonstration rows
+  // never enter a store the flag says is real, and APP_ENV is the deployment flag (never NODE_ENV).
+  if (process.env.APP_ENV === "production") throw new Error("seed: refusing to write demonstration rows into a production deployment (APP_ENV=production)");
   await withClient(migratorUrl(), async (c) => {
     for (const d of DEMO) {
       await c.query("BEGIN");
@@ -100,14 +122,27 @@ async function seed() {
         ]);
       }
       const have = await c.query("SELECT 1 FROM household WHERE org_id = $1 LIMIT 1", [orgId]);
-      if (have.rowCount) {
-        await c.query("ROLLBACK");
-        console.log(`seed: ${d.email} and its households already present; skipped`);
-        continue;
+      if (!have.rowCount) {
+        for (const h of d.households) await c.query("INSERT INTO household (id, org_id, name, record_origin, recorded_at) VALUES ($1, $2, $3, 'demo-seed', now())", [randomUUID(), orgId, h]);
+        console.log(`seed: demonstration org '${d.org}', advisor ${d.email} and ${d.households.length} households written with record_origin='demo-seed'`);
       }
-      for (const h of d.households) await c.query("INSERT INTO household (id, org_id, name, record_origin, recorded_at) VALUES ($1, $2, $3, 'demo-seed', now())", [randomUUID(), orgId, h]);
+      // Observations seed independently of the household skip, so an upgraded slice-2 store still receives them.
+      const haveObs = await c.query("SELECT 1 FROM observation WHERE org_id = $1 LIMIT 1", [orgId]);
+      let written = 0;
+      if (!haveObs.rowCount) {
+        for (const o of OBSERVATIONS) {
+          const home = await c.query("SELECT id FROM household WHERE org_id = $1 AND name = $2", [orgId, o.household]);
+          if (!home.rowCount) continue;
+          await c.query(
+            "INSERT INTO observation (id, org_id, household_id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin) VALUES ($1, $2, $3, $4, $5, $6, 'house-record-store', now() - make_interval(days => $7), now(), 'demo-seed')",
+            [randomUUID(), orgId, (home.rows[0] as { id: string }).id, o.kind, o.subject, JSON.stringify(o.body), o.observedDaysAgo],
+          );
+          written += 1;
+        }
+        if (written) console.log(`seed: ${written} demonstration observations written for '${d.org}' with record_origin='demo-seed'`);
+      }
+      if (have.rowCount && haveObs.rowCount) console.log(`seed: ${d.email}, its households and observations already present; skipped`);
       await c.query("COMMIT");
-      console.log(`seed: demonstration org '${d.org}', advisor ${d.email} and ${d.households.length} households written with record_origin='demo-seed'`);
     }
   });
 }

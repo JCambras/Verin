@@ -57,16 +57,29 @@ test("the second firm's advisor sees only their own book over the same tables", 
   expect((await settledAxe(page)).violations).toEqual([]);
 });
 
-test("the workspace shows what Verin knows, honest absent states, and one watermarked figure", async ({ page }) => {
+test("the workspace shows the evidence surface: every observation with source, both timestamps and its band", async ({ page }) => {
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   await page.getByRole("link", { name: "Henderson Family" }).click();
   await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Henderson Family" })).toBeVisible();
   await expect(page.getByText("Days on record")).toBeVisible();
   await expect(page.getByText("demonstration - not a compliance record")).toBeVisible();
-  for (const absent of ["People", "Financial accounts", "Compliance evidence"]) await expect(page.getByText(absent, { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What Verin can prove" })).toBeVisible();
+  const evidence = page.getByRole("list", { name: "Evidence on file for this household" });
+  for (const label of ["People", "Account balance", "Bank instruction", "Beneficiary designation"]) await expect(evidence.getByText(label, { exact: true }).first()).toBeVisible();
+  await expect(evidence.getByText(/House record store · observed [A-Z][a-z]{2} \d{1,2}, \d{4} · retrieved [A-Z][a-z]{2} \d{1,2}, \d{4} · fresh/).first()).toBeVisible();
+  await expect(evidence.getByText("Account: ending 4821")).toBeVisible(); // masked, never a raw reference
+  await expect(evidence.getByText("demonstration record").first()).toBeVisible(); // seeded evidence is labelled
+  await expect(page.getByText(/confidence/i)).toHaveCount(0); // no numeric AI confidence anywhere
   expect((await settledAxe(page)).violations).toEqual([]);
-  await page.screenshot({ path: "test-results/pr2b-workspace.png" });
+  await page.screenshot({ path: "test-results/pr3a-evidence.png" });
+});
+
+test("a household with nothing observed renders typed absence, never an empty success", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.getByRole("link", { name: "Delgado Household" }).click();
+  await expect(page.getByText("Not yet observed: People, Account balance, Bank instruction, Beneficiary designation")).toBeVisible();
+  expect((await settledAxe(page)).violations).toEqual([]);
 });
 
 test("another firm's workspace URL resolves to an honest not-found, never a leak", async ({ page, context }) => {

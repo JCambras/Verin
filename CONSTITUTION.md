@@ -129,6 +129,23 @@ Once recorded, every value here is a downward-only ratchet like any other.
 | Bucket B, binary and captured-evidence artifacts | 10 files / 8 MB | 16 files / 12 MB |
 | Review surface (H at 8 lines/min + B at 2 artifacts/min) | 93 min | 146 min |
 
+The `ordinary-vertical/evidence` row-set below is prompt 3 section 7's ratified table (captain
+ratification 2026-08-20; GD-004) in `E5`'s measure names and numeric formats, recorded by PR-3a; the
+slug is slice-specific (prompt 4's table differs on one measure) and every value ratchets downward only.
+
+| Slice class `ordinary-vertical/evidence` - measure | Preferred | Hard |
+|---|---:|---:|
+| Bucket H, reviewable text lines | 400 | 650 |
+| Files touched | 12 | 18 |
+| Canonical owners touched | 2 | 3 |
+| New public seam symbols | 2 | 4 |
+| New database objects | 4 | 8 |
+| New direct dependencies, application/runtime allowlist | 0 | 0 |
+| New direct dependencies, development/test/build allowlist | 0 | 0 |
+| Bucket G, generated-deterministic artifacts | 8 files / 3 MB | 16 files / 8 MB |
+| Bucket B, binary and captured-evidence artifacts | 8 files / 6 MB | 14 files / 10 MB |
+| Review surface (H at 8 lines/min + B at 2 artifacts/min) | 54 min | 88 min |
+
 ## The two ratified dependency allowlists (ADR-0061 R-7; prompt 2 section 5A)
 
 Both lists are exact-pinned - no range anywhere in any manifest; the lockfile is frozen; the manifest, the

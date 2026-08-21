@@ -14,6 +14,7 @@ import type { Counter } from "@opentelemetry/api";
 import { MeterProvider, PeriodicExportingMetricReader, InMemoryMetricExporter, AggregationTemporality } from "@opentelemetry/sdk-metrics";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { refuseAccountReferences } from "../evidence/pii";
 
 declare const sealed: unique symbol;
 export type RequestId = { readonly [sealed]: "RequestId"; readonly value: string; readonly purpose: "requestId" };
@@ -58,29 +59,31 @@ export type OpKey =
   | "session.lookupByTokenHash"
   | "session.rotate"
   | "household.listForTenant"
-  | "household.getForTenant";
+  | "household.getForTenant"
+  | "evidence.assemble"
+  | "observation.listForHousehold";
 type Row = {
   id: GovernedOperationId;
   class: "use-case" | "module-operation" | "store";
-  owner: "Access";
+  owner: "Access" | "Evidence";
   correlation: "RequestCorrelation";
   metric: "count";
   attributes: typeof ATTRS;
   permittedParents: readonly (OpKey | "entry")[];
   gatewayEntry: string;
-  slice: 2;
+  slice: 2 | 3;
 };
 const ATTRS = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } } as const;
-const row = (id: OpKey, cls: Row["class"], permittedParents: Row["permittedParents"], gatewayEntry: string): Row => ({
+const row = (id: OpKey, cls: Row["class"], permittedParents: Row["permittedParents"], gatewayEntry: string, owner: Row["owner"] = "Access", slice: Row["slice"] = 2): Row => ({
   id: opId(id),
   class: cls,
-  owner: "Access",
+  owner,
   correlation: "RequestCorrelation",
   metric: "count",
   attributes: ATTRS,
   permittedParents,
   gatewayEntry,
-  slice: 2,
+  slice,
 });
 const REGISTRY: readonly Row[] = [
   row("route.sign-in", "use-case", ["entry"], "enterRouteSignIn"),
@@ -96,6 +99,10 @@ const REGISTRY: readonly Row[] = [
   row("session.rotate", "store", ["access.renewSession"], "enterSessionRotate"),
   row("household.listForTenant", "store", ["access.withTenant"], "enterHouseholdListForTenant"),
   row("household.getForTenant", "store", ["access.withTenant"], "enterHouseholdGetForTenant"),
+  // Slice 3 (prompt 3 deliverable 7): the workspace use case gains assemble in its permitted children
+  // (no new route row), and the bounded observation read is its own store row - not a seam operation.
+  row("evidence.assemble", "module-operation", ["route.household-workspace"], "enterEvidenceAssemble", "Evidence", 3),
+  row("observation.listForHousehold", "store", ["evidence.assemble"], "enterObservationListForHousehold", "Evidence", 3),
 ];
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -174,6 +181,21 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
     resultValidator: "householdDetail.v1",
     cardinality: "at-most-one",
     transactionClass: "tenant-guc-from-p1",
+    authorityClass: "tenant",
+  },
+  "observation.listForHousehold": {
+    kind: "prepared-query",
+    statementName: "observation_list_for_household_v1",
+    canonicalSql:
+      "SELECT id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin FROM observation WHERE org_id = $1 AND household_id = $2 ORDER BY kind, subject, observed_at, id LIMIT 200",
+    parameters: [
+      { name: "orgId", type: "uuid" },
+      { name: "householdId", type: "uuid" },
+      { name: "statementTimeoutMs", type: "text" },
+    ],
+    resultValidator: "observationRows.v1",
+    cardinality: "many",
+    transactionClass: "tenant-statement-deadline-from-p1-p3",
     authorityClass: "tenant",
   },
 };
@@ -271,6 +293,24 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       authorityClass: "tenant",
     },
   },
+  "observation.listForHousehold": {
+    gatewayEntry: "enterObservationListForHousehold",
+    constructedDefinition: {
+      kind: "prepared-query",
+      statementName: "observation_list_for_household_v1",
+      canonicalSql:
+        "SELECT id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin FROM observation WHERE org_id = $1 AND household_id = $2 ORDER BY kind, subject, observed_at, id LIMIT 200",
+      parameters: [
+        { name: "orgId", type: "uuid" },
+        { name: "householdId", type: "uuid" },
+        { name: "statementTimeoutMs", type: "text" },
+      ],
+      resultValidator: "observationRows.v1",
+      cardinality: "many",
+      transactionClass: "tenant-statement-deadline-from-p1-p3",
+      authorityClass: "tenant",
+    },
+  },
 };
 
 export const NAMING_PATTERN = "verin.op.{id}";
@@ -319,6 +359,8 @@ export type Gateway = {
   enterSessionRotate: (c: RequestCorrelation, v: { presentedTokenHash: string; nextTokenHash: string }) => Promise<unknown>;
   enterHouseholdListForTenant: (c: RequestCorrelation, v: { orgId: string }) => Promise<unknown>;
   enterHouseholdGetForTenant: (c: RequestCorrelation, v: { orgId: string; householdId: string }) => Promise<unknown>;
+  enterEvidenceAssemble: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterObservationListForHousehold: (c: RequestCorrelation, v: { orgId: string; householdId: string; statementTimeoutMs: string }) => Promise<unknown>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -338,6 +380,21 @@ const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
   },
   "householdRows.v1": (r) => r.rows.map((x) => z.strictObject({ id: z.string(), name: z.string(), record_origin: z.string() }).parse(x)),
   "householdDetail.v1": (r) => atMostOne(r, z.strictObject({ id: z.string(), name: z.string(), record_origin: z.string(), recorded_at: z.date().nullable() })),
+  "observationRows.v1": (r) =>
+    r.rows.map((x) =>
+      z
+        .strictObject({
+          id: z.string(),
+          kind: z.string(),
+          subject: z.string(),
+          body_json: z.record(z.string(), z.string()),
+          source: z.string(),
+          observed_at: z.date(),
+          retrieved_at: z.date(),
+          record_origin: z.string(),
+        })
+        .parse(x),
+    ),
 };
 
 // The one-per-process slot lives on globalThis, not a module-local variable: the framework bundles
@@ -410,15 +467,20 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       outcome = "error";
       throw e;
     } finally {
-      span.setAttributes({ requestId: String(rid.value), outcome });
-      span.end();
-      counters.get(id)!.add(1, { requestId: String(rid.value), ...(fx ? { semanticEffectId: fx } : {}) });
+      // The product-side detector at the emission boundary (prompt 3, GD-003): every attribute and
+      // log field is scanned with the checker's exact forms before it leaves; a refusal fails closed.
+      const attrs = { requestId: String(rid.value), outcome };
       const rec = {
         name: opName(id),
         node,
         ...(fx ? { semanticEffectId: fx } : {}),
         fields: { requestId: String(rid.value), outcome, traceId: span.spanContext().traceId, spanId: span.spanContext().spanId },
       };
+      const metricAttrs = { requestId: String(rid.value), ...(fx ? { semanticEffectId: fx } : {}) };
+      for (const emitted of [attrs, rec.fields, metricAttrs]) refuseAccountReferences(emitted, { operation: id, boundary: "log" });
+      span.setAttributes(attrs);
+      span.end();
+      counters.get(id)!.add(1, metricAttrs);
       logs.push(rec);
       process.stdout.write(JSON.stringify(rec) + "\n");
     }
@@ -430,6 +492,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       const def = ADMITTED[id].constructedDefinition,
         fx = deriveEffect(def);
       const params = (def["parameters"] as { name: string }[]).map((p) => values[p.name]);
+      let queryParams = params;
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
@@ -441,8 +504,13 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
         else if (tc === "session-rotate-guc-from-p1-p2") {
           await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[0]]);
           await client.query("SELECT set_config('verin.session_token_next', $1, true)", [params[1]]);
+        } else if (tc === "tenant-statement-deadline-from-p1-p3") {
+          // The timeout derives from the route-minted deadline; the GUC parameter never reaches the binds.
+          await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
+          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[2]]);
+          queryParams = params.slice(0, 2);
         } else throw new Error(`transaction class '${String(tc)}' is not admitted`);
-        const res = await client.query({ name: String(def["statementName"]), text: String(def["canonicalSql"]), values: params });
+        const res = await client.query({ name: String(def["statementName"]), text: String(def["canonicalSql"]), values: queryParams });
         rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
         const out = VALIDATORS[String(def["resultValidator"])](res);
         await client.query("COMMIT");
@@ -470,6 +538,8 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterSessionRotate: (c: RequestCorrelation, v: { presentedTokenHash: string; nextTokenHash: string }) => runStore("session.rotate", c, v),
     enterHouseholdListForTenant: (c: RequestCorrelation, v: { orgId: string }) => runStore("household.listForTenant", c, v),
     enterHouseholdGetForTenant: (c: RequestCorrelation, v: { orgId: string; householdId: string }) => runStore("household.getForTenant", c, v),
+    enterEvidenceAssemble: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("evidence.assemble", c, fn),
+    enterObservationListForHousehold: (c: RequestCorrelation, v: { orgId: string; householdId: string; statementTimeoutMs: string }) => runStore("observation.listForHousehold", c, v),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");

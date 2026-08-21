@@ -363,3 +363,29 @@ ordinary log fields; bare in a correlation key when not a minted id; bare smuggl
 list but sitting in a non-correlation key; and a spaced reference can never be laundered through the
 minted list (shape-bounded). Exactly one case is excluded - an all-digit minted span id in its own
 correlation key - which is the ~4 percent flake the independent pass measured, cured.
+
+## PR-3a proofs (prompt 3 section 6; raw transcripts with every arm's exact injected bytes and its revert: docs/evidence/pr3a-transcripts.tar, sha256 78e6a1f4...; the restored green run closes the bundle)
+
+### The PII battery (M-A), containment (M-B), bounds (M-C)
+Four sinks x three reference forms refused naming operation, form and boundary (bundle end to end via
+a superuser-injected row; serialization; render; the emission guard); the three legitimate
+identifiers pass, the minted all-digit correlation id in its correlation key named explicitly
+(GD-003's exact ruled class), while smuggled or out-of-key digits still refuse; a cast and a
+JSON.parse fill fail the build at src/evidence/projection.ts:23/:24. M-B: scratch-projection.ts:2
+imports PII-bearing bundle.ts, build FAIL. M-C: the LIMIT deleted from both declared copies fails
+naming observation_list_for_household_v1; from one copy, construction refuses printing both digests.
+
+### The E16 battery (M-E)
+Span, metric and log each deleted from evidence.assemble fail naming the operation and emission while
+the source still greps clean; an unshipped registered row with no unreachableInSlice fails the other
+direction; the unregistered bounded read refuses three ways (TS2339 twice, the sealed rule at
+sneaky.ts:3); the raw client fails by import (bundle.ts:10) and by parameter (the multiset naming op,
+gateway, id); a raw span-attribute label refuses at runtime in all three forms; minted-list smuggling still fails the shape-bounded scan.
+
+### Serialization, the store, and the GD-004 companions
+One digest across TZ=America/New_York and Asia/Tokyo (evb.v1:f927338c...); preflight proven on a
+virgin store (0 of 5) and an upgraded slice-2 store (4 of 5, only 005, then observations only); every
+demonstration row reads record_origin='demo-seed' and APP_ENV=production refuses the seed whole.
+Three extra exports in the declared seam module fail E5 (measured 5 exceeds hard 4), the same lines
+undeclared measure nothing, the table removed fails E5 closed, and the correlation table disagreeing
+fails E16 naming the row.

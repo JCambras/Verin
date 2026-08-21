@@ -1,37 +1,36 @@
-// The household workspace (prompt 2 section 7, PR-2b): an advisor opens a household and sees what
-// Verin knows - and an honest absent state with a plain next step where it knows nothing. The one
-// figure renders through the provenance-carrying metric component; a household another firm holds
-// (or a malformed id) resolves to the same honest not-found, so existence never leaks across the
-// tenant boundary. Nothing here is filled in with a plausible-looking number.
+// The household workspace (PR-2b; prompt 3 delivers the evidence surface it promised): an advisor
+// sees exactly what Verin can prove - each observation with source and both timestamps, freshness
+// computed by the assembly against the request's own asOf, typed absence rendered honestly, and no
+// numeric AI confidence anywhere. This route boundary mints asOf and the deadline exactly once.
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAccessContext } from "../../../access/context";
 import { getGateway, mintRequestId, requestCorrelation } from "../../../runtime/governed";
+import { assembleEvidence, renderableBundle } from "../../../evidence/bundle";
+import { EVIDENCE_ASSEMBLY_DEADLINE_MS } from "../../../evidence/vocabulary";
 import { DisplayMetric } from "../../metric";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const ABSENT: { title: string; body: string }[] = [
-  { title: "People", body: "Verin has no evidence source for this household's people yet." },
-  { title: "Financial accounts", body: "Verin has no evidence source for accounts or balances yet." },
-  { title: "Compliance evidence", body: "No evidence has been assembled for this household yet." },
-];
 
 export default async function Workspace({ params }: { params: Promise<{ id: string }> }) {
   const c = requestCorrelation(mintRequestId());
   const access = createAccessContext();
   const cookieValue = (await headers()).get("x-verin-session") ?? (await cookies()).get("verin_session")?.value;
   const { id } = await params;
+  const asOf = new Date().toISOString();
   const view = await getGateway().enterRouteHouseholdWorkspace(c, async () => {
     const principal = await access.authenticate(c, cookieValue);
     if (!principal) return null;
     const grant = await access.authorize(c, principal, "household.read");
-    if (!grant) return { household: null };
-    return { household: await access.withTenant(c, grant, (tx) => tx.getHousehold(id)) };
+    if (!grant) return { household: null, evidence: null };
+    const household = await access.withTenant(c, grant, (tx) => tx.getHousehold(id));
+    if (!household) return { household: null, evidence: null };
+    const bundle = await assembleEvidence(c, grant, { householdId: id }, asOf, { milliseconds: EVIDENCE_ASSEMBLY_DEADLINE_MS });
+    return { household, evidence: renderableBundle(bundle) };
   });
   if (!view) redirect("/");
-  if (!view.household) {
+  if (!view.household || !view.evidence) {
     return (
       <section className="stack" data-testid="verin-workspace-loaded" aria-labelledby="ws-heading">
         <h1 id="ws-heading">Household not on file</h1>
@@ -45,6 +44,7 @@ export default async function Workspace({ params }: { params: Promise<{ id: stri
     );
   }
   const h = view.household;
+  const evidence = view.evidence;
   const days = h.recorded_at ? Math.floor((Date.now() - h.recorded_at.getTime()) / 86_400_000) : null;
   return (
     <section className="stack" data-testid="verin-workspace-loaded" aria-labelledby="ws-heading">
@@ -71,13 +71,32 @@ export default async function Workspace({ params }: { params: Promise<{ id: stri
           }}
         />
       )}
-      <h2 className="section-heading">What Verin does not know yet</h2>
-      {ABSENT.map((a) => (
-        <div className="card-dashed" key={a.title}>
-          <p className="title">{a.title}</p>
-          <p>{a.body} Evidence assembly arrives with the evidence slice of this program; nothing is filled in until it does.</p>
+      <h2 className="section-heading">What Verin can prove</h2>
+      <p className="meta">{evidence.assembledLine}</p>
+      {evidence.items.length > 0 ? (
+        <ul className="register" aria-label="Evidence on file for this household">
+          {evidence.items.map((item) => (
+            <li key={item.id}>
+              <div>
+                <strong>{item.label}</strong>
+                {item.entries.map(([field, value]) => (
+                  <p key={field}>
+                    {field}: {value}
+                  </p>
+                ))}
+                <p className="meta">{item.provenanceLine}</p>
+              </div>
+              {item.demonstration ? <span className="badge-demo">demonstration record</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {evidence.absent.length > 0 ? (
+        <div className="card-dashed">
+          <p className="title">Not yet observed: {evidence.absent.join(", ")}</p>
+          <p>Each gap is a typed absence in this household's evidence bundle, never a silent skip; record the missing evidence in the house record store to close it.</p>
         </div>
-      ))}
+      ) : null}
     </section>
   );
 }
