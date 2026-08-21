@@ -56,3 +56,14 @@ rows. Both registry copies changed together; the `SemanticEffectId` moved with t
 **Why:** Two P1 findings from the automated review of merged PR-3a; a reversible product decision
 under the standing rules, with companions in `docs/proof-log.md` (PR-3b).
 **Revert path:** a later statement version; the registry and admission table pin every shipped tuple.
+
+### GD-006 - 2026-08-21 - the configuration slice's ceiling row-set and its recorded per-slice collector changes
+
+**What:** Prompt 4 section 7's ceilings enter `CONSTITUTION.md` under the slice-specific slug
+`ordinary-vertical/configuration` in `E5`'s measure names and formats; `SEAM_MODULES` gains exactly
+`src/policy/registry.ts`; the slice-4 registry rows join the prompt-owned correlation table, each
+declaring `RequestCorrelation`; and the vocabularies widen by exactly this slice - a Configuration
+owner, slice 4, and the declared domains (`documentDigest` bare hex; `refusalReason` closed enum).
+**Why:** Captain ratification of the revised prompt 4, 2026-08-21 ("Lets do it"), under the
+GD-002/GD-004 pattern; companions in `docs/proof-log.md` (PR-4a).
+**Revert path:** a captain re-ruling; every recorded ceiling stays a downward-only ratchet meanwhile.

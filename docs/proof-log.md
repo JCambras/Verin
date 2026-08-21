@@ -412,3 +412,22 @@ Delgado renders stale faded-but-readable, aging banded, both conflict sides reta
 outside the fade; Okonkwo renders four typed-absence cards; both pass the complete WCAG 2.2 AA set.
 The meta-darkening rule deleted from the fade fails the scan with a real `color-contrast` violation -
 the treatment is load-bearing, not decorative.
+
+## PR-4a proofs (prompt 4 section 6, the restack's first unit; raw transcripts with exact injected bytes: docs/evidence/pr4a-transcripts.tar, sha256 ea0afe85...; the restored green run closes the bundle)
+
+### The batteries, the migration and seed, and the GD-006 companions
+M-A: bytes edited in place (six months re-inked to nine under replica role) refuse naming BOTH
+digests, then the exact original bytes resolve again. M-C: a never-published hash returns the typed
+NotFound carrying no policy field. M-D: the bound identity cannot be rebound - no app-role write, and
+the trigger refuses a superuser's UPDATE and DELETE. M-F: expression, interpolation, embedded query,
+unknown key and out-of-vocabulary value each refuse naming the path, zero store writes. Preflight
+proven virgin (0 of 6) and upgraded (6 of 6); the seed publishes both firm documents through the real
+publish path, origin named at every insert, duplicates skipped, APP_ENV=production refused whole.
+M-G: the span deleted from publish, the metric from resolveByHash, and every policy emission left in
+source but unreachable each fail E16 naming the operation and emission; the phantom activate fails
+the other direction; the unregistered store write fails to build (TS2339), a forged
+GovernedOperationId fails the sealed rule at sneaky.ts:2, and appendVersion borrowed under
+resolveByHash fails parent linkage; the raw client fails by import (registry.ts:8) and the exported
+pool trips the probe; the prefixed identity and whole document bytes refuse on cardinality. Five
+extra seam exports fail E5 (7 exceeds hard 6), the same lines undeclared measure nothing, the removed
+row-set fails E5 closed, and the correlation table disagreeing fails E16 naming the row.

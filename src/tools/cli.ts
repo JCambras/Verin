@@ -6,6 +6,9 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { Client } from "pg";
 import { maskAccountReference } from "../evidence/pii";
+import { createGovernedRuntime, mintRequestId, requestCorrelation } from "../runtime/governed";
+import { createAccessContext, signIn } from "../access/context";
+import { POLICY_OPERATION_DEADLINE_MS, createPolicyVersionRegistry } from "../policy/registry";
 
 const MIGRATIONS_DIR = "src/store/migrations";
 const DEMO = [
@@ -46,6 +49,12 @@ const DELGADO: Omit<SeedObservation, "household">[] = [
   { kind: "bank-instruction", subject: "instruction:coastal-savings", body: { Bank: "Coastal Savings", Account: masked("ending 9911"), Standing: "reported changed by client" }, observedDaysAgo: 8 },
 ];
 const OBSERVATIONS: SeedObservation[] = [...HENDERSON.map((o) => ({ household: "Henderson Family", ...o })), ...DELGADO.map((o) => ({ household: "Delgado Household", ...o }))];
+// The two firm policy documents (deliverable 3): hand-authored re-expressions of the ratified matrix
+// (DC-5; derivation in PR-4a's body); every matrix-silent field is the typed "not-stated".
+const FIRM_POLICY: Record<string, string> = {
+  "advisor@firm-a.example": `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":25000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`,
+  "advisor@firm-b.example": `{"reserveHorizonMonths":12,"dualApproval":{"thresholdUsd":100000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"not-stated","requesterRule":"not-stated"},"bankInstructionChange":"block-until-independently-verified","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`,
+};
 const url = (name: string, fallback: string) => process.env[name] ?? fallback;
 async function withClient<T>(connectionString: string, fn: (c: Client) => Promise<T>): Promise<T> {
   const c = new Client({ connectionString });
@@ -157,6 +166,25 @@ async function seed() {
       await c.query("COMMIT");
     }
   });
+  // Publish each firm's policy through the REAL publish path (deliverable 8), signed in as the
+  // firm's advisor; tooling publishes carry record_origin='demo-seed', and a re-run is skipped.
+  createGovernedRuntime("tooling");
+  const access = createAccessContext();
+  const registry = createPolicyVersionRegistry();
+  for (const d of DEMO) {
+    const c = requestCorrelation(mintRequestId());
+    const session = await signIn(c, d.email, d.phrase);
+    if (!session) throw new Error(`seed: could not sign in as ${d.email} to publish its firm policy`);
+    const principal = await access.authenticate(c, session.cookieValue);
+    const grant = await access.authorize(c, principal!, "policy.publish");
+    try {
+      const id = await registry.publish(c, grant!, new TextEncoder().encode(FIRM_POLICY[d.email]), { milliseconds: POLICY_OPERATION_DEADLINE_MS });
+      console.log(`seed: published ${d.org}'s firm policy as fpd.v1:${id.digest} with record_origin='demo-seed'`);
+    } catch (e) {
+      if (!/already in this firm's sequence/.test(String(e))) throw e;
+      console.log(`seed: ${d.org}'s firm policy is already on its shelf; skipped (no duplicate identities)`);
+    }
+  }
 }
 
 // The release subject's SBOM, generated deterministically from the frozen lockfile (bucket G): the
@@ -184,7 +212,10 @@ if (!run) {
   console.error("usage: tsx src/tools/cli.ts bootstrap|migrate|seed|sbom");
   process.exit(2);
 }
-run().catch((e) => {
-  console.error(String(e));
-  process.exit(1);
-});
+run().then(
+  () => process.exit(0),
+  (e) => {
+    console.error(String(e));
+    process.exit(1);
+  },
+);
