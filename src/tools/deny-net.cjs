@@ -17,30 +17,18 @@ function hostOfArgs(args) {
   return typeof args[1] === "string" ? args[1] : null;
 }
 const netConnect = net.Socket.prototype.connect;
-net.Socket.prototype.connect = function (...args) {
-  refuse(hostOfArgs(args), "socket connect");
-  return netConnect.apply(this, args);
-};
+net.Socket.prototype.connect = function (...args) { refuse(hostOfArgs(args), "socket connect"); return netConnect.apply(this, args); };
 const tlsConnect = tls.connect;
-tls.connect = (...args) => {
-  refuse(hostOfArgs(args), "tls connect");
-  return tlsConnect(...args);
-};
+tls.connect = (...args) => { refuse(hostOfArgs(args), "tls connect"); return tlsConnect(...args); };
 for (const fn of ["lookup", "resolve", "resolve4", "resolve6"]) {
   const orig = dns[fn];
-  dns[fn] = (...args) => {
-    refuse(args[0], `dns ${fn}`);
-    return orig(...args);
-  };
+  dns[fn] = (...args) => { refuse(args[0], `dns ${fn}`); return orig(...args); };
 }
 if (typeof globalThis.fetch === "function") {
   const origFetch = globalThis.fetch;
   globalThis.fetch = (input, init) => {
-    try {
-      refuse(new URL(typeof input === "string" || input instanceof URL ? input : input.url, "http://localhost").hostname, "fetch");
-    } catch (e) {
-      if (String(e).includes("deny-net")) throw e;
-    }
+    try { refuse(new URL(typeof input === "string" || input instanceof URL ? input : input.url, "http://localhost").hostname, "fetch"); }
+    catch (e) { if (String(e).includes("deny-net")) throw e; }
     return origFetch(input, init);
   };
 }

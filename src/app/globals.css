@@ -18,201 +18,40 @@
   --ring: oklch(0.55 0.12 260);
   --surface: oklch(0.98 0.004 260);
 }
-* {
-  box-sizing: border-box;
-  margin: 0;
-}
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-}
-.chrome {
-  display: flex;
-  align-items: baseline;
-  gap: 1.5rem;
-  border-bottom: 1px solid var(--border);
-  padding: 0.75rem 1.5rem;
-}
-.wordmark {
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  color: var(--foreground);
-  font-size: 1.125rem;
-}
-.chrome a {
-  color: var(--muted-foreground);
-  text-decoration: none;
-  font-size: 0.875rem;
-}
-.chrome a:hover {
-  color: var(--foreground);
-}
-main {
-  max-width: 48rem;
-  margin-inline: auto;
-  padding: 2rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  max-width: 24rem;
-}
-.field label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--label);
-}
-.field input {
-  border-radius: calc(var(--radius) - 2px);
-  border: 1px solid var(--input-border);
-  background: var(--background);
-  padding: 0.5rem 0.75rem;
-  font: inherit;
-  color: var(--foreground);
-}
-.btn-primary {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  border: 0;
-  border-radius: calc(var(--radius) - 2px);
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  align-self: flex-start;
-}
-.btn-primary:hover {
-  background: var(--primary-hover);
-}
-.card-dashed {
-  border: 1px dashed var(--input-border);
-  background: var(--surface);
-  border-radius: var(--radius);
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  text-align: center;
-}
-.card-dashed .title {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--strong);
-}
-.card-dashed p {
-  max-width: 24rem;
-  font-size: 0.875rem;
-  color: var(--muted-foreground);
-}
-.meta {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-.register {
-  list-style: none;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-.register li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  font-size: 0.875rem;
-}
-.register li + li {
-  border-top: 1px solid var(--border);
-}
-.badge-demo {
-  border: 1px dashed var(--input-border);
-  color: var(--muted-foreground);
-  border-radius: 9999px;
-  padding: 0.125rem 0.625rem;
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-.badge-band {
-  border: 1px solid var(--input-border);
-  background: var(--surface);
-  color: var(--strong);
-  border-radius: 9999px;
-  padding: 0.125rem 0.625rem;
-  font-size: 0.75rem;
-  white-space: nowrap;
-}
-.badges {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  align-items: flex-end;
-}
-.receded {
-  opacity: 0.7;
-} /* fades content only - badges live outside it, and its meta darkens below */
-.receded .meta {
-  color: var(--foreground);
-}
-.register a {
-  color: var(--foreground);
-  text-decoration: none;
-}
-.register a:hover {
-  text-decoration: underline;
-}
-.metric {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
-  align-items: flex-start;
-}
-.metric-value {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  font-size: 1.5rem;
-}
-.section-heading {
-  font-size: 1rem;
-  font-weight: 600;
-}
-.card-dashed a {
-  color: var(--strong);
-}
-.alert {
-  color: var(--destructive);
-  font-size: 0.875rem;
-}
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: calc(var(--radius) - 4px);
-}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--background); color: var(--foreground); font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif; }
+.chrome { display: flex; align-items: baseline; gap: 1.5rem; border-bottom: 1px solid var(--border); padding: 0.75rem 1.5rem; }
+.wordmark { font-weight: 700; letter-spacing: -0.025em; color: var(--foreground); font-size: 1.125rem; }
+.chrome a { color: var(--muted-foreground); text-decoration: none; font-size: 0.875rem; }
+.chrome a:hover { color: var(--foreground); }
+main { max-width: 48rem; margin-inline: auto; padding: 2rem 1.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
+h1 { font-size: 1.5rem; font-weight: 600; }
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+.field { display: flex; flex-direction: column; gap: 0.375rem; max-width: 24rem; }
+.field label { font-size: 0.875rem; font-weight: 500; color: var(--label); }
+.field input { border-radius: calc(var(--radius) - 2px); border: 1px solid var(--input-border); background: var(--background); padding: 0.5rem 0.75rem; font: inherit; color: var(--foreground); }
+.btn-primary { background: var(--primary); color: var(--primary-foreground); border: 0; border-radius: calc(var(--radius) - 2px); padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 500; font-family: inherit; cursor: pointer; align-self: flex-start; }
+.btn-primary:hover { background: var(--primary-hover); }
+.card-dashed { border: 1px dashed var(--input-border); background: var(--surface); border-radius: var(--radius); padding: 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; }
+.card-dashed .title { font-size: 0.875rem; font-weight: 500; color: var(--strong); }
+.card-dashed p { max-width: 24rem; font-size: 0.875rem; color: var(--muted-foreground); }
+.meta { font-size: 0.75rem; color: var(--muted-foreground); }
+.register { list-style: none; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); }
+.register li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; font-size: 0.875rem; }
+.register li + li { border-top: 1px solid var(--border); }
+.badge-demo { border: 1px dashed var(--input-border); color: var(--muted-foreground); border-radius: 9999px; padding: 0.125rem 0.625rem; font-size: 0.75rem; white-space: nowrap; }
+.badge-band { border: 1px solid var(--input-border); background: var(--surface); color: var(--strong); border-radius: 9999px; padding: 0.125rem 0.625rem; font-size: 0.75rem; white-space: nowrap; }
+.badges { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-end; }
+.receded { opacity: 0.7; } /* fades content only - badges live outside it, and its meta darkens below */
+.receded .meta { color: var(--foreground); }
+.register a { color: var(--foreground); text-decoration: none; }
+.register a:hover { text-decoration: underline; }
+.metric { display: flex; flex-direction: column; gap: 0.25rem; border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; align-items: flex-start; }
+.metric-value { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 1.5rem; }
+.section-heading { font-size: 1rem; font-weight: 600; }
+.card-dashed a { color: var(--strong); }
+.alert { color: var(--destructive); font-size: 0.875rem; }
+:where(a, button, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: calc(var(--radius) - 4px); }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-  }
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
