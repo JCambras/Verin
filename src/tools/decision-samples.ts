@@ -23,7 +23,7 @@ const base = (request: DecisionInput["request"], observations: EvidenceBundle["o
   request,
   evidenceBundle: {
     version: "evb.v1",
-    vocabulary: "1.0.0",
+    vocabulary: "1.1.0",
     subject: { household: `h${hex32("sample|household")}` },
     asOf: ASOF,
     source: "house-record-store",

@@ -55,7 +55,7 @@ test("the second firm's advisor sees only their own book over the same tables", 
   await signInAs(page, "advisor@firm-b.example", "harbor-quartz-42");
   await expect(page.getByText("Signed in as Priya Nair")).toBeVisible();
   for (const name of ["Vance Household", "Mensah Family"]) await expect(page.getByText(name)).toBeVisible();
-  for (const other of ["Henderson Family", "Delgado Household", "Okonkwo Trust"]) await expect(page.getByText(other)).toHaveCount(0);
+  for (const other of ["Henderson Family", "Delgado Household", "Okonkwo Trust", "Ashford Grantor Trust"]) await expect(page.getByText(other)).toHaveCount(0);
   expect((await settledAxe(page)).violations).toEqual([]);
 });
 
@@ -100,32 +100,106 @@ test("a household with nothing observed renders typed absence with next steps, n
   await page.getByRole("link", { name: "Okonkwo Trust" }).click();
   await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
   await expect(page.getByRole("list", { name: "Evidence on file for this household" })).toHaveCount(0); // nothing is rendered as if it were fine
-  await expect(page.getByText(/^Not yet observed: /)).toHaveCount(4); // every vocabulary kind, each a typed absence
+  await expect(page.getByText(/^Not yet observed: /)).toHaveCount(9); // every vocabulary kind (1.1.0), each a typed absence
   await expect(page.getByText("This gap is a typed absence in the household's evidence bundle, never a silent skip.", { exact: false }).first()).toBeVisible();
   expect((await settledAxe(page)).violations).toEqual([]);
   await page.screenshot({ path: "test-results/pr3b-okonkwo.png" });
 });
 
-test("the decision surface computes a REAL decision from live evidence and the in-force policy version - honest refusal included", async ({ page }) => {
+test("the decision surface computes a real LIVE proceed: stages, key, citations, figures, honesty lines", async ({ page }) => {
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  // Pin the in-force version for this proof deterministically on any shelf state (unique bytes per
+  // run; both amounts below sit on the same side of any threshold this document can carry).
+  await page.goto("/policy");
+  const decisionDoc = `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":${30_000 + (Date.now() % 1_000)},"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
+  await page.getByLabel(/Policy document/).fill(decisionDoc);
+  await page.getByRole("button", { name: "Publish version" }).click();
+  await expect(page.getByText(/^Published as /)).toBeVisible();
+  await page.goto("/households");
   await page.getByRole("link", { name: "Henderson Family" }).click();
   await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
   await page.getByRole("link", { name: "Decide a distribution" }).click();
   await expect(page.getByTestId("verin-decide-loaded")).toBeVisible();
   await expect(page.getByText("recorded nowhere until prompt 6", { exact: false })).toBeVisible();
   await expect(page.getByText("a changed world yields a new decision", { exact: false })).toBeVisible(); // both honesty lines
-  // The seeded world carries no machine-usable reserve evidence yet, so the honest LIVE decision is
-  // a refusal - PR-5a-ii's seeds light up the other dispositions.
-  await expect(page.locator('[data-disposition="blocked"]')).toBeVisible();
-  await expect(page.locator('[data-disposition="blocked"]').getByText("reserve evidence missing")).toBeVisible();
-  await expect(page.locator('[data-disposition="proceed"]')).toHaveCount(0);
-  await expect(page.getByText(/idem:/)).toHaveCount(0); // a refusal carries no idempotency key anywhere on the page
-  await expect(page.getByText(/Decision d[0-9a-f]{64}/)).toBeVisible(); // minted from the outcome digest, letter-prefixed
+  await expect(page.locator('[data-disposition="proceed"]')).toBeVisible();
+  await expect(page.getByText("Stage 1: operations-dual-approval", { exact: false })).toBeVisible(); // derived from the STATED block, never an answer key
+  await expect(page.getByText(/idem:r[0-9a-f]{15}:henderson-family-50000-2026-12-31/)).toBeVisible(); // the CD-4d grammar from request properties alone
+  await expect(page.getByText("committed only after authority is complete", { exact: false })).toBeVisible(); // CD-4e on screen
+  await expect(page.getByText(/Decision d[0-9a-f]{64}/)).toBeVisible();
   await expect(page.getByText(/evidence evb\.v1:[0-9a-f]{64}/)).toBeVisible();
   await expect(page.getByText(/policy fpd\.v1:[0-9a-f]{64}/)).toBeVisible();
-  await expect(page.getByText("demonstration - not a compliance record").first()).toBeVisible(); // a decision from demonstration evidence is watermarked
+  await expect(page.getByRole("list", { name: "Every rule evaluated, in precedence order" }).getByText("Cash reserve")).toBeVisible();
+  await expect(page.getByText("demonstration - not a compliance record").first()).toBeVisible();
   expect((await settledAxe(page)).violations).toEqual([]);
-  await page.screenshot({ path: "test-results/pr5a1-decide-blocked.png" });
+  await page.screenshot({ path: "test-results/pr5a2-decide-proceed.png" });
+});
+
+test("the decision surface blocks a breach with the arithmetic shown and a real resolving step", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  const href = await page.getByRole("link", { name: "Henderson Family" }).getAttribute("href");
+  await page.goto(`${href}/decide?amount=400000&purpose=home-renovation&deadline=2026-12-31`);
+  await expect(page.locator('[data-disposition="blocked"]')).toBeVisible();
+  await expect(page.locator('[data-disposition="blocked"]').getByText("cash reserve breach")).toBeVisible();
+  await expect(page.getByText(/\$12,000 vs \$48,000/)).toBeVisible(); // the figures, provenance-carried and watermarked
+  await expect(page.locator('[data-disposition="proceed"]')).toHaveCount(0);
+  await expect(page.getByText(/idem:/)).toHaveCount(0); // a refusal carries no idempotency key anywhere on the page
+  expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr5a2-decide-blocked.png" });
+});
+
+test("the decision surface prohibits an active legal hold: the stamp, the regulatory source, zero affordances", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.getByRole("link", { name: "Ashford Grantor Trust" }).click();
+  await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
+  await page.getByRole("link", { name: "Decide a distribution" }).click();
+  await expect(page.locator('[data-disposition="prohibited"]')).toBeVisible();
+  await expect(page.getByText("Prohibited - active legal hold")).toBeVisible();
+  await expect(page.getByText("reg-distribution-holds@2026.02", { exact: false })).toBeVisible(); // the exact regulatory version cited
+  await expect(page.getByText("No approval can waive this", { exact: false })).toBeVisible();
+  await expect(page.locator('[data-disposition="prohibited"]').getByRole("link")).toHaveCount(0); // zero affordances inside the stamp
+  await expect(page.locator('[data-disposition="prohibited"]').getByRole("button")).toHaveCount(0);
+  expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr5a2-decide-prohibited.png" });
+});
+
+test("firm B blocks the same recent-bank-change class from configuration alone, live", async ({ page }) => {
+  await signInAs(page, "advisor@firm-b.example", "harbor-quartz-42");
+  await page.getByRole("link", { name: "Vance Household" }).click();
+  await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
+  await page.getByRole("link", { name: "Decide a distribution" }).click();
+  await expect(page.locator('[data-disposition="blocked"]')).toBeVisible();
+  await expect(page.locator('[data-disposition="blocked"]').getByText("bank instruction change unverified")).toBeVisible();
+  await expect(page.getByText("Record a standing bank instruction", { exact: false })).toBeVisible(); // the resolving affordance
+  expect((await settledAxe(page)).violations).toEqual([]);
+});
+
+test("a policy silence refuses honestly, live: no stage is invented where the contract states none", async ({ page }) => {
+  await signInAs(page, "advisor@firm-b.example", "harbor-quartz-42");
+  const href = await page.getByRole("link", { name: "Mensah Family" }).getAttribute("href");
+  await page.goto(`${href}/decide?amount=150000&purpose=home-renovation&deadline=2026-12-31`);
+  await expect(page.locator('[data-disposition="blocked"]')).toBeVisible();
+  await expect(page.locator('[data-disposition="blocked"]').getByText("approval authority not stated")).toBeVisible();
+  await expect(page.getByText("resolved only by a policy version stating the missing value", { exact: false })).toBeVisible();
+  await expect(page.locator('[data-disposition="proceed"]')).toHaveCount(0);
+  expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr5a2-decide-silence.png" });
+});
+
+test("the request form refuses what its closed vocabulary cannot carry, and the bare form is accessible", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  const href = await page.getByRole("link", { name: "Henderson Family" }).getAttribute("href");
+  await page.goto(`${href}/decide`);
+  await expect(page.getByTestId("verin-decide-loaded")).toBeVisible();
+  await expect(page.locator("[data-disposition]")).toHaveCount(0); // nothing computed before a request exists
+  expect((await settledAxe(page)).violations).toEqual([]); // the bare request-form state
+  await page.getByLabel("Amount (whole USD)").fill("12.50");
+  await page.getByLabel("Deadline").fill("2026-12-31");
+  await page.getByRole("button", { name: "Compute decision" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "cannot be evaluated as entered" })).toBeVisible();
+  await expect(page.getByText("whole-USD figure", { exact: false })).toBeVisible();
+  await expect(page.locator("[data-disposition]")).toHaveCount(0); // nothing was computed from a refused request
+  expect((await settledAxe(page)).violations).toEqual([]);
 });
 
 test("another firm's workspace URL resolves to an honest not-found, never a leak", async ({ page, context }) => {

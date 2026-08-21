@@ -18,7 +18,7 @@ const DEMO = [
     name: "Alex Rivera",
     role: "advisor",
     phrase: "meridian-slate-88",
-    households: ["Henderson Family", "Delgado Household", "Okonkwo Trust"],
+    households: ["Henderson Family", "Delgado Household", "Okonkwo Trust", "Ashford Grantor Trust"],
   },
   { org: "Harbor Point Advisors", email: "advisor@firm-b.example", name: "Priya Nair", role: "advisor", phrase: "harbor-quartz-42", households: ["Vance Household", "Mensah Family"] },
 ];
@@ -30,13 +30,47 @@ type SeedObservation = { household: string; kind: string; subject: string; body:
 const HENDERSON: Omit<SeedObservation, "household">[] = [
   { kind: "people", subject: "person:margaret-henderson", body: { Name: "Margaret Henderson", Role: "Primary client", Born: "1958" }, observedDaysAgo: 6 },
   { kind: "people", subject: "person:robert-henderson", body: { Name: "Robert Henderson", Role: "Joint client", Born: "1956" }, observedDaysAgo: 6 },
-  { kind: "account-balance", subject: `account:${masked("ending 4821")}`, body: { Registration: "Joint brokerage", Account: masked("ending 4821"), Balance: "$412,000" }, observedDaysAgo: 6 },
+  // The balance carries machine-usable keys (AvailableUsd, RegistrationClass) beside the worded
+  // ones: the decision engine's fact extraction is strict and fail-closed, and a figure it cannot
+  // read is a figure it refuses to decide on (slice 5; REVISED_BODIES repairs upgraded stores).
+  {
+    kind: "account-balance",
+    subject: `account:${masked("ending 4821")}`,
+    body: { Registration: "Joint brokerage", Account: masked("ending 4821"), Balance: "$412,000", AvailableUsd: "412000", RegistrationClass: "taxable" },
+    observedDaysAgo: 6,
+  },
   { kind: "bank-instruction", subject: "instruction:first-national", body: { Bank: "First National", Account: masked("ending 2210"), Standing: "verified on file" }, observedDaysAgo: 12 },
   {
     kind: "beneficiary-designation",
     subject: `account:${masked("ending 7753")}`,
     body: { Registration: "Traditional IRA", Primary: "Robert Henderson", Contingent: "Henderson Family Trust" },
     observedDaysAgo: 21,
+  },
+  // Slice 5 (vocabulary 1.1.0): the five decision-read classes, observed for the present-case
+  // household so the present case stays absence-free and a LIVE proceed is reachable.
+  { kind: "planned-withdrawals", subject: "schedule:henderson-household", body: { Schedule: "Recurring monthly withdrawals", MonthlyUsd: "8000" }, observedDaysAgo: 6 },
+  { kind: "pending-actions", subject: "pending:henderson-household", body: { Standing: "No pending approved activity", PendingTotalUsd: "0" }, observedDaysAgo: 6 },
+  {
+    kind: "household-instruction",
+    subject: "instruction:henderson-liquidity-preference",
+    body: { InstructionKind: "liquidity-preference", Preference: "taxable-before-retirement", VersionId: "henderson-liquidity-preference@v1" },
+    observedDaysAgo: 20,
+  },
+  { kind: "regulatory-status", subject: "status:henderson-household", body: { Standing: "No known restriction", HoldActive: "false" }, observedDaysAgo: 6 },
+  { kind: "household-directory", subject: "directory:henderson-family", body: { Resolution: "Resolves uniquely in the advisor's book", CandidateCount: "1" }, observedDaysAgo: 6 },
+];
+// Bodies revised since an earlier seed shipped them. The repair rewrites the seed's OWN
+// demonstration rows - matched by household, kind, subject AND the exact prior body, only at
+// record_origin 'demo-seed' - so an upgraded store carries the same evidence a virgin one does.
+// Its reach stops there: operator-entered rows are never touched, and a row already revised is a
+// no-op because the per-row seed guard below matches on the exact current body.
+const REVISED_BODIES: { household: string; kind: string; subject: string; from: Record<string, string>; to: Record<string, string> }[] = [
+  {
+    household: "Henderson Family",
+    kind: "account-balance",
+    subject: `account:${masked("ending 4821")}`,
+    from: { Registration: "Joint brokerage", Account: masked("ending 4821"), Balance: "$412,000" },
+    to: { Registration: "Joint brokerage", Account: masked("ending 4821"), Balance: "$412,000", AvailableUsd: "412000", RegistrationClass: "taxable" },
   },
 ];
 // Delgado renders the receded states (prompt 3 PR-3b): one stale, one aging, two DISAGREEING
@@ -48,7 +82,55 @@ const DELGADO: Omit<SeedObservation, "household">[] = [
   { kind: "bank-instruction", subject: "instruction:coastal-savings", body: { Bank: "Coastal Savings", Account: masked("ending 8845"), Standing: "verified on file" }, observedDaysAgo: 30 },
   { kind: "bank-instruction", subject: "instruction:coastal-savings", body: { Bank: "Coastal Savings", Account: masked("ending 9911"), Standing: "reported changed by client" }, observedDaysAgo: 8 },
 ];
-const OBSERVATIONS: SeedObservation[] = [...HENDERSON.map((o) => ({ household: "Henderson Family", ...o })), ...DELGADO.map((o) => ({ household: "Delgado Household", ...o }))];
+// Ashford renders the PROHIBITED live state: clean figures, but an active legal hold - the stamp,
+// zero affordances. Vance renders firm B's BLOCKED live state: a recently changed, unverified
+// destination instruction under block-until-independently-verified (the Standing marking is the
+// Delgado idiom, evergreen - no fixed date to decay stale).
+const ASHFORD: Omit<SeedObservation, "household">[] = [
+  {
+    kind: "account-balance",
+    subject: `account:${masked("ending 6612")}`,
+    body: { Registration: "Trust brokerage", Account: masked("ending 6612"), Balance: "$620,000", AvailableUsd: "620000", RegistrationClass: "taxable" },
+    observedDaysAgo: 3,
+  },
+  { kind: "planned-withdrawals", subject: "schedule:ashford-trust", body: { Schedule: "Recurring monthly withdrawals", MonthlyUsd: "12000" }, observedDaysAgo: 3 },
+  {
+    kind: "regulatory-status",
+    subject: "status:ashford-trust",
+    body: { Standing: "Active legal hold recorded by operations", HoldActive: "true", VersionId: "reg-distribution-holds@2026.02" },
+    observedDaysAgo: 9,
+  },
+];
+// Mensah renders the TYPED-SILENCE live state: clean verified evidence, so an over-threshold
+// request meets firm B's not-stated approver role and requester rule - and refuses honestly, the
+// ratified behavior (not-stated values produce honest refusals, never invented approvals).
+const MENSAH: Omit<SeedObservation, "household">[] = [
+  {
+    kind: "account-balance",
+    subject: `account:${masked("ending 9034")}`,
+    body: { Registration: "Family brokerage", Account: masked("ending 9034"), Balance: "$910,000", AvailableUsd: "910000", RegistrationClass: "taxable" },
+    observedDaysAgo: 5,
+  },
+  { kind: "planned-withdrawals", subject: "schedule:mensah-family", body: { Schedule: "Recurring monthly withdrawals", MonthlyUsd: "15000" }, observedDaysAgo: 5 },
+  { kind: "bank-instruction", subject: "instruction:accra-first", body: { Bank: "Accra First", Account: masked("ending 3321"), Standing: "verified on file" }, observedDaysAgo: 10 },
+];
+const VANCE: Omit<SeedObservation, "household">[] = [
+  {
+    kind: "account-balance",
+    subject: `account:${masked("ending 5540")}`,
+    body: { Registration: "Joint brokerage", Account: masked("ending 5540"), Balance: "$530,000", AvailableUsd: "530000", RegistrationClass: "taxable" },
+    observedDaysAgo: 4,
+  },
+  { kind: "planned-withdrawals", subject: "schedule:vance-household", body: { Schedule: "Recurring monthly withdrawals", MonthlyUsd: "9000" }, observedDaysAgo: 4 },
+  { kind: "bank-instruction", subject: "instruction:harborside-bank", body: { Bank: "Harborside Bank", Account: masked("ending 7788"), Standing: "reported changed by client" }, observedDaysAgo: 2 },
+];
+const OBSERVATIONS: SeedObservation[] = [
+  ...HENDERSON.map((o) => ({ household: "Henderson Family", ...o })),
+  ...DELGADO.map((o) => ({ household: "Delgado Household", ...o })),
+  ...ASHFORD.map((o) => ({ household: "Ashford Grantor Trust", ...o })),
+  ...VANCE.map((o) => ({ household: "Vance Household", ...o })),
+  ...MENSAH.map((o) => ({ household: "Mensah Family", ...o })),
+];
 // The two firm policy documents (deliverable 3): hand-authored re-expressions of the ratified matrix
 // (DC-5; derivation in PR-4a's body); every matrix-silent field is the typed "not-stated".
 const FIRM_POLICY: Record<string, string> = {
@@ -139,21 +221,40 @@ async function seed() {
           salt,
         ]);
       }
-      const have = await c.query("SELECT 1 FROM household WHERE org_id = $1 LIMIT 1", [orgId]);
-      if (!have.rowCount) {
-        for (const h of d.households) await c.query("INSERT INTO household (id, org_id, name, record_origin, recorded_at) VALUES ($1, $2, $3, 'demo-seed', now())", [randomUUID(), orgId, h]);
-        console.log(`seed: demonstration org '${d.org}', advisor ${d.email} and ${d.households.length} households written with record_origin='demo-seed'`);
+      // Households seed PER NAME, so an upgraded store receives a household a later slice adds.
+      let households = 0;
+      for (const h of d.households) {
+        const have = await c.query("SELECT 1 FROM household WHERE org_id = $1 AND name = $2 LIMIT 1", [orgId, h]);
+        if (have.rowCount) continue;
+        await c.query("INSERT INTO household (id, org_id, name, record_origin, recorded_at) VALUES ($1, $2, $3, 'demo-seed', now())", [randomUUID(), orgId, h]);
+        households += 1;
       }
-      // Observations seed independently of the household skip, and PER HOUSEHOLD, so an upgraded
-      // store that already carries one household's evidence still receives another's.
+      if (households) console.log(`seed: demonstration org '${d.org}', advisor ${d.email} and ${households} households written with record_origin='demo-seed'`);
+      // Observations seed PER ROW: a row is written unless a row with the same household, kind,
+      // subject and exact body already exists, so an upgraded store receives what it lacks (a new
+      // vocabulary class, a revised body) without ever duplicating what it has - and the Delgado
+      // conflict pair (same subject, two bodies) still seeds both sides. Revised bodies are
+      // repaired FIRST, so the guard then matches the current bytes and writes nothing twice.
       let written = 0;
       for (const name of [...new Set(OBSERVATIONS.map((o) => o.household))]) {
         const home = await c.query("SELECT id FROM household WHERE org_id = $1 AND name = $2", [orgId, name]);
         if (!home.rowCount) continue;
         const homeId = (home.rows[0] as { id: string }).id;
-        const haveObs = await c.query("SELECT 1 FROM observation WHERE household_id = $1 LIMIT 1", [homeId]);
-        if (haveObs.rowCount) continue;
+        for (const r of REVISED_BODIES.filter((x) => x.household === name)) {
+          const repaired = await c.query(
+            "UPDATE observation SET body_json = $4::jsonb WHERE household_id = $1 AND kind = $2 AND subject = $3 AND body_json = $5::jsonb AND record_origin = 'demo-seed'",
+            [homeId, r.kind, r.subject, JSON.stringify(r.to), JSON.stringify(r.from)],
+          );
+          if (repaired.rowCount) console.log(`seed: revised ${r.kind} body for '${name}' (${repaired.rowCount} demo-seed row repaired in place)`);
+        }
         for (const o of OBSERVATIONS.filter((x) => x.household === name)) {
+          const dup = await c.query("SELECT 1 FROM observation WHERE household_id = $1 AND kind = $2 AND subject = $3 AND body_json = $4::jsonb LIMIT 1", [
+            homeId,
+            o.kind,
+            o.subject,
+            JSON.stringify(o.body),
+          ]);
+          if (dup.rowCount) continue;
           await c.query(
             "INSERT INTO observation (id, org_id, household_id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin) VALUES ($1, $2, $3, $4, $5, $6, 'house-record-store', now() - make_interval(days => $7), now(), 'demo-seed')",
             [randomUUID(), orgId, homeId, o.kind, o.subject, JSON.stringify(o.body), o.observedDaysAgo],
@@ -162,7 +263,7 @@ async function seed() {
         }
       }
       if (written) console.log(`seed: ${written} demonstration observations written for '${d.org}' with record_origin='demo-seed'`);
-      if (have.rowCount && !written) console.log(`seed: ${d.email} and its book already present; skipped`);
+      if (!households && !written) console.log(`seed: ${d.email} and its book already present; skipped`);
       await c.query("COMMIT");
     }
   });

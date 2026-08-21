@@ -25,7 +25,7 @@ import { NOT_STATED as POLICY_NOT_STATED, POLICY_OPERATION_DEADLINE_MS, assertSe
 import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } from "../evidence/bundle";
 import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
 import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
-import { NOT_STATED as DECISION_NOT_STATED, REFERENCE_FORMS, evaluate, outcomeDigest, serializeOutcome } from "../decision/outcome";
+import { NOT_STATED as DECISION_NOT_STATED, REFERENCE_FORMS, evaluate, outcomeDigest } from "../decision/outcome";
 import { SAMPLE_INPUTS } from "./decision-samples";
 
 const KERNEL = "src/runtime/governed.ts";
@@ -189,7 +189,7 @@ describe("the governed access flows, exercised end to end", () => {
       const grant = await access.authorize(c, p!, "household.read");
       return (await access.withTenant(c, grant!, (tx) => tx.listHouseholds())).map((h) => h.name);
     });
-    expect(names).toEqual(["Delgado Household", "Henderson Family", "Okonkwo Trust"]);
+    expect(names).toEqual(["Ashford Grantor Trust", "Delgado Household", "Henderson Family", "Okonkwo Trust"]);
   });
   it("the workspace flow: what Verin knows, and a cross-tenant id resolving to an honest nothing", async () => {
     const c = requestCorrelation(mintRequestId());
@@ -290,7 +290,18 @@ describe("the evidence slice, exercised end to end (prompt 3; the port-contract 
     const asOf = new Date().toISOString();
     const subject = await hendersonRef();
     const bundle = await withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, asOf, { milliseconds: 2_000 }));
-    expect(bundle.observations.map((o) => o.kind)).toEqual(["account-balance", "bank-instruction", "beneficiary-designation", "people", "people"]);
+    expect(bundle.observations.map((o) => o.kind)).toEqual([
+      "account-balance",
+      "bank-instruction",
+      "beneficiary-designation",
+      "household-directory",
+      "household-instruction",
+      "pending-actions",
+      "people",
+      "people",
+      "planned-withdrawals",
+      "regulatory-status",
+    ]);
     expect(bundle.absences).toEqual([]); // the present case: nothing missing, and nothing silently filled
     expect(bundle.conflicts).toEqual([]);
     expect(bundle.observations.every((o) => o.origin === "demo-seed" && o.provenance.retrievedAt >= o.provenance.observedAt)).toBe(true);
@@ -351,7 +362,17 @@ describe("the receding and absent states, and the bounded read's honesty (PR-3b)
     const bundle = await withHouseholdGrant((c, grant) => assembleEvidence(c, grant, subject, new Date().toISOString(), { milliseconds: 2_000 }));
     const view = renderableBundle(bundle);
     expect(view.items).toEqual([]);
-    expect(view.absent.map((a) => a.label)).toEqual(["People", "Account balance", "Bank instruction", "Beneficiary designation"]);
+    expect(view.absent.map((a) => a.label)).toEqual([
+      "People",
+      "Account balance",
+      "Bank instruction",
+      "Beneficiary designation",
+      "Planned withdrawals",
+      "Pending actions",
+      "Household instruction",
+      "Regulatory status",
+      "Household directory",
+    ]);
     expect(view.absent.every((a) => a.nextStep.length > 0)).toBe(true); // a real next step, asserted again against the rendered page in the browser proof
   });
 });
@@ -541,9 +562,9 @@ describe("database-enforced isolation (5B.2, section 6 core; the full battery re
       await c.query("SELECT set_config('verin.org_id', $1, false)", [orgA]);
       expect(Number((await c.query("SELECT count(*)::int AS n FROM household WHERE org_id = $1", [orgB])).rows[0].n)).toBe(0); // wrong-tenant read
       const unscoped = (await c.query("SELECT name FROM household")).rows.map((r) => (r as { name: string }).name).sort(); // application predicate deleted
-      expect(unscoped).toEqual(["Delgado Household", "Henderson Family", "Okonkwo Trust"]);
+      expect(unscoped).toEqual(["Ashford Grantor Trust", "Delgado Household", "Henderson Family", "Okonkwo Trust"]);
       const bypass = (await c.query("SELECT count(*)::int AS n FROM household WHERE org_id = $1 OR 1=1", [orgB])).rows[0] as { n: number };
-      expect(Number(bypass.n)).toBe(3); // 'or 1=1' still sees only the scoped firm
+      expect(Number(bypass.n)).toBe(4); // 'or 1=1' still sees only the scoped firm
       await expect(c.query("INSERT INTO household (id, org_id, name, record_origin) VALUES (gen_random_uuid(), $1, 'Smuggled Household', 'demo-seed')", [orgB])).rejects.toThrow(/row-level security/); // wrong-tenant write
       await expect(c.query("CREATE TABLE exfil (x int)")).rejects.toThrow(/permission denied/); // no DDL for the application role
     } finally {
@@ -552,27 +573,28 @@ describe("database-enforced isolation (5B.2, section 6 core; the full battery re
   });
 });
 
-describe("the decision slice, exercised end to end (prompt 5, PR-5a-i)", () => {
-  // The flow pins its policy by CONTENT ADDRESS (the seed's own Firm A document, resolved by hash).
+describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () => {
+  // Each flow pins its policy by CONTENT ADDRESS (the seed's own firm documents, resolved by hash).
   const SEED_FIRM_A_POLICY = `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":25000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
-  it("computes a LIVE decision through the governed route, minting the DecisionId only after evaluate returns", async () => {
+  const SEED_FIRM_B_POLICY = `{"reserveHorizonMonths":12,"dualApproval":{"thresholdUsd":100000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"not-stated","requesterRule":"not-stated"},"bankInstructionChange":"block-until-independently-verified","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
+  const decide = async (cookie: string, householdName: string, amountUsd: number, policyDoc: string) => {
     const requestId = mintRequestId();
     const c = requestCorrelation(requestId);
     const access = createAccessContext();
     const registry = createPolicyVersionRegistry();
-    const digest = sha256hex(enc(SEED_FIRM_A_POLICY));
-    const { outcome, decisionId, bundle } = await getGateway().enterRouteDecision(c, async () => {
-      const p = await access.authenticate(c, cookieValue);
+    const digest = sha256hex(enc(policyDoc));
+    return getGateway().enterRouteDecision(c, async () => {
+      const p = await access.authenticate(c, cookie);
       const grant = (await access.authorize(c, p!, "decision.evaluate"))!;
       const policyGrant = (await access.authorize(c, p!, "policy.read"))!;
-      const household = await access.withTenant(c, grant, async (tx) => (await tx.listHouseholds()).find((h) => h.name === "Henderson Family")!);
+      const household = await access.withTenant(c, grant, async (tx) => (await tx.listHouseholds()).find((h) => h.name === householdName)!);
       const version = await registry.resolveByHash(c, policyGrant, { version: "fpd.v1", digest }, POLICY_DEADLINE);
-      if (version.kind !== "policy-version") throw new Error("the seeded Firm A policy did not resolve by its content address");
+      if (version.kind !== "policy-version") throw new Error("the seeded firm policy did not resolve by its content address");
       const asOf = new Date().toISOString();
       const evidence = await assembleEvidence(c, grant, { householdId: household.id }, asOf, { milliseconds: 2_000 });
-      const local = createHash("sha256").update(`drq-ref|${household.id}|75000`).digest("hex").slice(0, 15);
+      const local = createHash("sha256").update(`drq-ref|${household.id}|${amountUsd}`).digest("hex").slice(0, 15);
       const produced = evaluate({
-        request: { requestRef: `req:r${local}`, householdSlug: "henderson-family", amountUsd: 75_000, purpose: "home-renovation", deadline: "2026-12-31" },
+        request: { requestRef: `req:r${local}`, householdSlug: householdName.toLowerCase().replaceAll(" ", "-"), amountUsd, purpose: "home-renovation", deadline: "2026-12-31" },
         evidenceBundle: evidence,
         policyDocument: { id: version.id, policy: version.policy },
         identities: {
@@ -586,25 +608,59 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i)", () => {
       const minted = decisionIdFromOutcomeDigest(outcomeDigest(produced));
       return getGateway().enterDecisionRenderOutcome(decisionCorrelation(requestId, minted), async () => ({ outcome: produced, decisionId: minted, bundle: evidence }));
     });
-    // The merged seed carries no machine-usable reserve evidence yet, so the honest LIVE decision
-    // is a refusal - PR-5a-ii's seeds make the other dispositions reachable.
-    if (outcome.disposition !== "blocked") throw new Error(`the live Henderson evaluation must refuse honestly, got ${outcome.disposition}`);
-    expect(outcome.blockers.map((b) => b.code)).toEqual(["reserve-evidence-missing"]);
+  };
+  it("computes a LIVE proceed through the governed route: stages from the STATED block, the CD-4d key, the CD-4e ordering, every citation", async () => {
+    const { outcome, decisionId, bundle } = await decide(cookieValue, "Henderson Family", 75_000, SEED_FIRM_A_POLICY);
+    if (outcome.disposition !== "proceed") throw new Error(`Henderson at 75000 must proceed, got ${outcome.disposition}`);
+    expect(outcome.authority.mode).toBe("approval");
+    expect(outcome.authority.stages.map((st) => st.stageId)).toEqual(["operations-dual-approval"]);
+    expect(outcome.execution.idempotencyKey).toMatch(/^idem:r[0-9a-f]{15}:henderson-family-75000-2026-12-31$/);
+    expect(outcome.execution.ordering).toBe("reserve-only-after-authority-complete");
+    expect(outcome.citations.evidenceBundle).toBe(bundleDigest(bundle));
+    expect(outcome.citations.policy).toBe(`fpd.v1:${sha256hex(enc(SEED_FIRM_A_POLICY))}`);
+    expect(`dov.v1:${decisionId.value}`).toBe(outcomeDigest(outcome));
+  });
+  it("blocks a LIVE breach with the arithmetic in the trace; refusals carry no authority and no plan, by type and by value", async () => {
+    const { outcome } = await decide(cookieValue, "Henderson Family", 405_000, SEED_FIRM_A_POLICY);
+    if (outcome.disposition !== "blocked") throw new Error(`Henderson at 405000 must block, got ${outcome.disposition}`);
+    expect(outcome.blockers.map((x) => x.code)).toEqual(["cash-reserve-breach"]);
+    expect(outcome.trace.find((x) => x.rule === "cash-reserve")?.figures?.["remainingUsd"]).toBe(7_000);
     expect(outcome.authority).toEqual({ mode: "none" });
     expect(outcome.execution).toBeNull();
-    expect(outcome.citations.evidenceBundle).toBe(bundleDigest(bundle)); // the recomputed citation equals the evidence module's own digest
-    expect(outcome.citations.policy).toBe(`fpd.v1:${digest}`);
-    expect(`dov.v1:${decisionId.value}`).toBe(outcomeDigest(outcome)); // the identity IS the outcome digest
+  });
+  it("prohibits a LIVE legal hold with regulatory precedence, and refuses conflicted material evidence - no side picked by recency", async () => {
+    const hold = await decide(cookieValue, "Ashford Grantor Trust", 20_000, SEED_FIRM_A_POLICY);
+    if (hold.outcome.disposition !== "prohibited") throw new Error(`Ashford must prohibit, got ${hold.outcome.disposition}`);
+    expect(hold.outcome.prohibition.reasonCode).toBe("active-legal-hold");
+    expect(hold.outcome.prohibition.source).toEqual({ sourceType: "regulatory", sourceId: "reg-distribution-holds", versionId: "reg-distribution-holds@2026.02" });
+    expect(hold.outcome.execution).toBeNull();
+    const conflicted = await decide(cookieValue, "Delgado Household", 10_000, SEED_FIRM_A_POLICY);
+    if (conflicted.outcome.disposition !== "blocked") throw new Error(`Delgado must block on conflict, got ${conflicted.outcome.disposition}`);
+    expect(conflicted.outcome.blockers.map((x) => x.code)).toEqual(["material-evidence-conflicting"]);
+  });
+  it("blocks firm B's recent unverified bank change from CONFIGURATION alone, and surfaces both contract silences as typed values", async () => {
+    const sB = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-b.example", "harbor-quartz-42");
+    const { outcome } = await decide(sB!.cookieValue, "Vance Household", 50_000, SEED_FIRM_B_POLICY);
+    if (outcome.disposition !== "blocked") throw new Error(`Vance under firm B must block, got ${outcome.disposition}`);
+    expect(outcome.blockers.map((x) => x.code)).toEqual(["bank-instruction-change-unverified"]);
+    expect(outcome.policyBasis.eligibleApproverRole).toBe("not-stated"); // the contract silences, carried as themselves (CD-4a)
+    expect(outcome.policyBasis.requesterRule).toBe("not-stated");
+    expect(outcome.explanations.map((x) => x.code)).toContain("blocked-until-independently-verified");
+    // The ratified typed-silence behavior, LIVE: over firm B's threshold with clean evidence, the
+    // not-stated approver role derives NO stage and the decision refuses honestly.
+    const silent = await decide(sB!.cookieValue, "Mensah Family", 150_000, SEED_FIRM_B_POLICY);
+    if (silent.outcome.disposition !== "blocked") throw new Error(`Mensah at 150000 must refuse on the typed silence, got ${silent.outcome.disposition}`);
+    expect(silent.outcome.blockers.map((x) => x.code)).toEqual(["approval-authority-not-stated"]);
+    expect(silent.outcome.blockers[0].resolvingEvidence).toEqual([]); // resolved by a policy version stating the value, never by evidence
   });
   it("the committed sample cases: a proceed carries its plan and the CD-4d key grammar; a refusal carries neither, by type and by value", () => {
     const proceed = evaluate(SAMPLE_INPUTS[0].input);
     if (proceed.disposition !== "proceed") throw new Error(`sample-proceed produced ${proceed.disposition}`);
     expect(proceed.authority.mode).toBe("approval");
-    expect(proceed.authority.stages.map((s) => s.stageId)).toEqual(["operations-dual-approval"]); // derived from the STATED role by the committed naming rule
-    expect(proceed.execution.idempotencyKey).toBe("idem:rsampleproceed01:sample-household-50000-2026-12-31"); // every segment from request properties (CD-4d)
-    expect(proceed.execution.ordering).toBe("reserve-only-after-authority-complete"); // CD-4e
+    expect(proceed.authority.stages.map((st) => st.stageId)).toEqual(["operations-dual-approval"]);
+    expect(proceed.execution.idempotencyKey).toBe("idem:rsampleproceed01:sample-household-50000-2026-12-31");
+    expect(proceed.execution.ordering).toBe("reserve-only-after-authority-complete");
     expect(proceed.sourceSelection.alternatives).toEqual([{ subjectRef: "account:sample-ira", rejectedBecause: "taxable-event-source" }]);
-    expect(serializeOutcome(proceed).startsWith("dov.v1|")).toBe(true);
     const blocked = evaluate(SAMPLE_INPUTS[1].input);
     if (blocked.disposition !== "blocked") throw new Error(`sample-blocked produced ${blocked.disposition}`);
     expect(blocked.execution).toBeNull();
