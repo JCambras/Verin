@@ -27,6 +27,8 @@ import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountRefere
 import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
 import { NOT_STATED as DECISION_NOT_STATED, REFERENCE_FORMS, evaluate, outcomeDigest } from "../decision/outcome";
 import { SAMPLE_INPUTS } from "./decision-samples";
+import { loadSignedCaseInputs } from "./signed-cases";
+import { compareProducibleBindingFields, loadSignedCaseExpectations } from "./signed-expectations";
 
 const KERNEL = "src/runtime/governed.ts";
 const COMPOSITION_ROOTS = [KERNEL, "src/instrumentation.ts"];
@@ -652,6 +654,20 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
     if (silent.outcome.disposition !== "blocked") throw new Error(`Mensah at 150000 must refuse on the typed silence, got ${silent.outcome.disposition}`);
     expect(silent.outcome.blockers.map((x) => x.code)).toEqual(["approval-authority-not-stated"]);
     expect(silent.outcome.blockers[0].resolvingEvidence).toEqual([]); // resolved by a policy version stating the value, never by evidence
+  });
+  it("the FOUR canonical cases match the signed truth EXACTLY on every producible binding field, through the recorded comparison vocabulary", () => {
+    const inputs = loadSignedCaseInputs();
+    const exps = loadSignedCaseExpectations();
+    expect(inputs.map((x) => x.caseId)).toEqual(["GC-01-firm-a-happy-path", "GC-02-firm-b-happy-path", "GC-03-recent-bank-change-firm-a", "GC-04-recent-bank-change-firm-b"]);
+    for (const { caseId, input, parseTable } of inputs) {
+      const produced = evaluate(input);
+      expect(parseTable.length, `${caseId} records its prose parses (CD-4c: read by asserted patterns, and paid for)`).toBeGreaterThan(0);
+      const mismatches = compareProducibleBindingFields(
+        exps.find((e) => e.caseId === caseId)!,
+        produced,
+      );
+      expect(mismatches, `${caseId} must match the signed truth exactly`).toEqual([]);
+    }
   });
   it("the committed sample cases: a proceed carries its plan and the CD-4d key grammar; a refusal carries neither, by type and by value", () => {
     const proceed = evaluate(SAMPLE_INPUTS[0].input);
