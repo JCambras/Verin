@@ -3,8 +3,10 @@
 // version, citing every identity it stands on. The request arrives as typed, request-scoped query
 // parameters, UNPERSISTED; the route boundary mints asOf and the request correlation once; the
 // DecisionId exists only after evaluate returns, and the outcome-rendering step enters under
-// DecisionCorrelation - the correlation kind changes inside the request, which is the point. The
-// operator-entered form, trace and explanation registers join with PR-5a-ii, per the announced split.
+// DecisionCorrelation - the correlation kind changes inside the request, which is the point.
+// PR-5a-ii completes the surface: the operator-entered typed form, the precedence trace, the
+// explanation register, the reserve figures through the provenance-carrying metric, and the
+// prohibited stamp with zero affordances.
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createHash } from "node:crypto";
@@ -14,12 +16,48 @@ import { assembleEvidence } from "../../../../evidence/bundle";
 import { EVIDENCE_ASSEMBLY_DEADLINE_MS } from "../../../../evidence/vocabulary";
 import { KIND_NEXT_STEPS, formatObservationDate } from "../../../../evidence/projection";
 import { POLICY_OPERATION_DEADLINE_MS, createPolicyVersionRegistry } from "../../../../policy/registry";
-import { MAX_USD, PURPOSES, evaluate, outcomeDigest, type DecisionOutcome, type Purpose } from "../../../../decision/outcome";
+import { MAX_USD, PURPOSES, evaluate, outcomeDigest, type DecisionOutcome, type ExplanationCode, type Purpose } from "../../../../decision/outcome";
+import { DisplayMetric } from "../../../metric";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PURPOSE_LABELS: Record<Purpose, string> = { "home-renovation": "Home renovation", "property-closing": "Property closing", "renovation-deposit": "Renovation deposit" };
+// Committed static templates per code (the projection idiom): the engine produces CODES; prose is presentation.
+const EXPLANATION_TEXT: Record<ExplanationCode, string> = {
+  "source-account-selected": "A taxable source account was selected; a retirement account is never chosen silently.",
+  "cash-reserve-preserved": "After this movement the household still holds its policy-required months of planned withdrawals.",
+  "cash-reserve-breach": "This movement would leave less than the policy-required cash reserve.",
+  "effective-liquidity-computed": "Pending approved activity counts against the household, so effective liquidity sits below the raw balance.",
+  "individually-valid": "Alone, this movement preserves the reserve; the joint constraint was checked against pending activity.",
+  "individually-valid-jointly-overcommitted": "Alone this request is valid; together with the reserved sibling movement it would breach the reserve.",
+  "reservation-prevents-joint-violation": "The sibling reservation makes the joint constraint visible, so two valid requests cannot jointly violate policy.",
+  "dual-approval-required": "The amount exceeds the firm's dual-approval threshold, so distinct approvers are required before execution.",
+  "dual-approval-not-required": "The amount is below the firm's dual-approval threshold - the policy differs, not the code.",
+  "recent-bank-change-detected": "The destination bank instruction changed recently and is not yet independently verified.",
+  "specialist-review-required": "This firm routes a recent bank-instruction change to specialist review, not an execution block.",
+  "blocked-until-independently-verified": "This firm blocks execution until the changed instruction is independently verified.",
+  "destination-restriction-applies": "The household's standing destination restriction governs every outbound movement.",
+  "destination-off-list": "The requested destination is not titled to the household; no approval affordance exists.",
+  "legal-hold-detected": "The account-restriction evidence shows an active legal hold on the source account.",
+  "regulatory-precedence-applied": "Regulatory sources outrank firm policy and household instructions in the precedence trace.",
+  "household-candidates-found": "More than one household matches; the candidates are shown with context.",
+  "human-disambiguation-required": "Verin asks a structured question instead of guessing; the answer becomes recorded evidence.",
+  "freshness-window-exceeded": "Reserve-material evidence is older than the freshness window allows.",
+  "stale-cannot-silently-proceed": "Present-but-stale evidence cannot silently proceed; the resolving step is a refresh, never an override.",
+  "material-evidence-conflicting": "Observations of the same subject disagree; no side is picked by recency.",
+  "approval-authority-not-stated": "The firm's policy does not state who may approve; Verin refuses honestly rather than inventing an approver.",
+};
+const RULE_LABELS: Record<string, string> = {
+  "household-resolution": "Household resolution",
+  "regulatory-precedence": "Regulatory precedence",
+  "destination-restriction": "Destination restriction",
+  "evidence-conflict": "Evidence agreement",
+  "source-selection": "Source selection",
+  "cash-reserve": "Cash reserve",
+  "bank-instruction-change": "Bank-instruction change",
+  "authority-derivation": "Authority derivation",
+};
 const usdText = (n: number) => `$${n.toLocaleString("en-US")}`;
 const worded = (code: string) => code.replaceAll("-", " ").replaceAll("_", " ");
 const nextStepFor = (kind: string) => (kind in KIND_NEXT_STEPS ? KIND_NEXT_STEPS[kind as keyof typeof KIND_NEXT_STEPS] : `Record the household's ${worded(kind)} evidence in the house record store.`);
@@ -38,7 +76,7 @@ export default async function Decide({ params, searchParams }: { params: Promise
   const form = await searchParams;
   const asOf = new Date().toISOString();
   // prettier-ignore
-  type View = null | { state: "denied" } | { state: "refused"; household: { id: string; name: string }; problems: string[] } | { state: "no-policy"; household: { id: string; name: string } }
+  type View = null | { state: "denied" } | { state: "form"; household: { id: string; name: string } } | { state: "refused"; household: { id: string; name: string }; problems: string[] } | { state: "no-policy"; household: { id: string; name: string } }
     | { state: "decided"; household: { id: string; name: string }; outcome: DecisionOutcome; decisionIdText: string; demonstration: boolean; requested: { amountUsd: number; purpose: Purpose; deadline: string } };
   const view: View | "no-household" = await getGateway().enterRouteDecision(c, async () => {
     const principal = await access.authenticate(c, cookieValue);
@@ -47,6 +85,7 @@ export default async function Decide({ params, searchParams }: { params: Promise
     if (!grant) return { state: "denied" } as const;
     const household = await access.withTenant(c, grant, (tx) => tx.getHousehold(id));
     if (!household) return "no-household" as const;
+    if (form.amount === undefined && form.purpose === undefined && form.deadline === undefined) return { state: "form", household } as const;
     const problems: string[] = [];
     const amountUsd = /^\d{1,7}$/.test(form.amount ?? "") ? Number(form.amount) : null;
     if (amountUsd === null || amountUsd < 1 || amountUsd > MAX_USD) problems.push(`The amount must be a whole-USD figure between $1 and ${usdText(MAX_USD)} - never cents, never free text.`);
@@ -158,6 +197,55 @@ export default async function Decide({ params, searchParams }: { params: Promise
               ))}
             </div>
           ) : null}
+          {o.disposition === "prohibited" ? (
+            <div className="card-dashed" role="status" data-disposition="prohibited" style={{ borderColor: "var(--destructive)", borderStyle: "solid" }}>
+              <p className="title" style={{ color: "var(--destructive)" }}>
+                Prohibited - {worded(o.prohibition.reasonCode)}
+              </p>
+              <p>
+                Source: {worded(o.prohibition.source.sourceType)} {o.prohibition.source.versionId ?? o.prohibition.source.sourceId}. No approval can waive this; no affordance is offered.
+              </p>
+            </div>
+          ) : null}
+          {(() => {
+            const figures = o.trace.find((x) => x.rule === "cash-reserve" && x.figures && typeof x.figures["remainingUsd"] === "number")?.figures;
+            return figures ? (
+              <DisplayMetric
+                metric={{
+                  label: "Remaining after this movement, against the required reserve",
+                  value: `${usdText(figures["remainingUsd"])} vs ${usdText(figures["requiredReserveUsd"])}`,
+                  source: "derived from the household's evidence bundle and the in-force policy version",
+                  asOf: new Date(o.citations.asOf),
+                  demonstration: view.demonstration,
+                }}
+              />
+            ) : null;
+          })()}
+          <h2 className="section-heading">Why</h2>
+          <ul className="register" aria-label="The explanation behind this decision">
+            {o.explanations.map((e) => (
+              <li key={e.code}>
+                <strong>{worded(e.code)}</strong>
+                <span>{EXPLANATION_TEXT[e.code]}</span>
+              </li>
+            ))}
+          </ul>
+          <h2 className="section-heading">Precedence trace</h2>
+          <ul className="register" aria-label="Every rule evaluated, in precedence order">
+            {o.trace.map((x) => (
+              <li key={x.rule}>
+                <strong>{RULE_LABELS[x.rule] ?? x.rule}</strong>
+                <span>
+                  {x.result}
+                  {x.figures
+                    ? ` (${Object.entries(x.figures)
+                        .map(([k, v]) => `${k} ${usdText(v)}`)
+                        .join(", ")})`
+                    : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
           <p className="meta">
             Decision {view.decisionIdText} · request {o.citations.request} · evidence {o.citations.evidenceBundle} · policy {o.citations.policy} · as of {formatObservationDate(o.citations.asOf)}
             {view.demonstration ? " · " : ""}
@@ -165,9 +253,30 @@ export default async function Decide({ params, searchParams }: { params: Promise
           </p>
         </>
       ) : null}
+      <h2 className="section-heading">Request a distribution decision</h2>
+      <form method="get" className="stack">
+        <div className="field">
+          <label htmlFor="amount">Amount (whole USD)</label> <input id="amount" name="amount" type="text" inputMode="numeric" defaultValue={form.amount ?? ""} required />
+        </div>
+        <div className="field">
+          <label htmlFor="purpose">Purpose</label>{" "}
+          <select id="purpose" name="purpose" defaultValue={form.purpose ?? "home-renovation"}>
+            {PURPOSES.map((p) => (
+              <option key={p} value={p}>
+                {PURPOSE_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="deadline">Deadline</label> <input id="deadline" name="deadline" type="date" defaultValue={form.deadline ?? ""} required />
+        </div>
+        <button className="btn-primary" type="submit">
+          {"Compute decision"}
+        </button>
+      </form>
       <p className="meta">
-        The request is typed and request-scoped; nothing in it is persisted. The operator-entered form arrives with PR-5a-ii.{" "}
-        <a href={`/households/${view.household.id}`}>Back to the household workspace</a>.
+        The request is typed and request-scoped; nothing entered here is persisted. <a href={`/households/${view.household.id}`}>Back to the household workspace</a>.
       </p>
     </section>
   );

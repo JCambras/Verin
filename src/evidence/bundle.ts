@@ -86,7 +86,7 @@ async function assembleEvidence(c: RequestCorrelation, grant: ActionGrant, subje
     const absences = vocab.OBSERVATION_KINDS.filter((k) => !seen.has(k)).map((kind): TypedAbsence => ({ kind, status: "not-observed", reason: "no-observation-in-house-records" }));
     const bundle: EvidenceBundle = {
       version: "evb.v1",
-      vocabulary: "1.0.0",
+      vocabulary: vocab.OBSERVATION_VOCABULARY_VERSION,
       subject: { household: safeId("h", subject.householdId) },
       asOf,
       source: "house-record-store",
@@ -139,7 +139,7 @@ function renderableBundle(bundle: EvidenceBundle): RenderableEvidence {
       entries: Object.entries(o.body),
       provenanceLine: `House record store · observed ${formatObservationDate(o.provenance.observedAt)} · retrieved ${formatObservationDate(o.provenance.retrievedAt)} · ${o.freshness}`,
       band: o.freshness,
-      demonstration: o.origin === "demo-seed",
+      demonstration: vocab.DEMONSTRATION_ORIGINS.includes(o.origin),
       conflicted: bundle.conflicts.some((x) => x.observationIds.includes(o.id)),
     })),
     absent: bundle.absences.map((a) => ({ label: KIND_LABELS[a.kind], nextStep: KIND_NEXT_STEPS[a.kind] })),

@@ -14,10 +14,25 @@ import type { EvidenceBundle, EvidenceObservation } from "../evidence/bundle";
 import type { FirmPolicy, PolicyVersionId } from "../policy/registry";
 
 const PURPOSES = ["home-renovation", "property-closing", "renovation-deposit"] as const;
-const BLOCKER_CODES = ["reserve-evidence-missing", "reserve-evidence-stale", "approval-authority-not-stated"] as const;
 // prettier-ignore
-const EXPLANATION_CODES = ["source-account-selected", "dual-approval-required", "dual-approval-not-required", "freshness-window-exceeded", "stale-cannot-silently-proceed", "approval-authority-not-stated"] as const;
-const RULE_IDS = ["source-selection", "cash-reserve", "authority-derivation"] as const;
+const BLOCKER_CODES = [
+  "bank-instruction-change-unverified", "cash-reserve-breach", "household-slot-ambiguous", "reserve-evidence-stale",
+  "reserve-evidence-missing", "liquidity-reserved-by-sibling", "material-evidence-conflicting", "approval-authority-not-stated",
+] as const;
+const PROHIBITION_REASONS = ["destination-not-household-titled", "active-legal-hold"] as const;
+// prettier-ignore
+const EXPLANATION_CODES = [
+  "source-account-selected", "cash-reserve-preserved", "cash-reserve-breach", "effective-liquidity-computed", "individually-valid",
+  "individually-valid-jointly-overcommitted", "reservation-prevents-joint-violation", "dual-approval-required", "dual-approval-not-required",
+  "recent-bank-change-detected", "specialist-review-required", "blocked-until-independently-verified", "destination-restriction-applies",
+  "destination-off-list", "legal-hold-detected", "regulatory-precedence-applied", "household-candidates-found", "human-disambiguation-required",
+  "freshness-window-exceeded", "stale-cannot-silently-proceed", "material-evidence-conflicting", "approval-authority-not-stated",
+] as const;
+// prettier-ignore
+const RULE_IDS = [
+  "household-resolution", "regulatory-precedence", "destination-restriction", "evidence-conflict",
+  "source-selection", "cash-reserve", "bank-instruction-change", "authority-derivation",
+] as const;
 // The typed policy silence, byte-equal to the policy module's token (asserted by test, never imported at runtime).
 const NOT_STATED = "not-stated" as const;
 // Seven digits: strictly below the eight-digit floor of the bare account-reference form, so no
@@ -26,6 +41,7 @@ const MAX_USD = 9_999_999;
 
 type Purpose = (typeof PURPOSES)[number];
 type BlockerCode = (typeof BLOCKER_CODES)[number];
+type ProhibitionReason = (typeof PROHIBITION_REASONS)[number];
 type ExplanationCode = (typeof EXPLANATION_CODES)[number];
 type RuleId = (typeof RULE_IDS)[number];
 type DecisionRequest = { readonly requestRef: string; readonly householdSlug: string; readonly amountUsd: number; readonly purpose: Purpose; readonly deadline?: string };
@@ -57,6 +73,12 @@ type ExecutionPlan = {
   readonly preconditions: readonly string[];
 };
 type Blocker = { readonly code: BlockerCode; readonly resolvingEvidence: readonly { readonly kind: string; readonly subjectRef: string }[] };
+// prettier-ignore
+type Prohibition = {
+  readonly reasonCode: ProhibitionReason;
+  readonly source: { readonly sourceType: "household_instruction" | "regulatory"; readonly sourceId: string; readonly versionId: string | null };
+  readonly scope: string;
+};
 type TraceEntry = { readonly rule: RuleId; readonly result: "fired" | "satisfied" | "not-applicable" | "unevaluable"; readonly figures?: Readonly<Record<string, number>> };
 type SourceSelection = { readonly selected: string; readonly alternatives: readonly { readonly subjectRef: string; readonly rejectedBecause: string }[] };
 // prettier-ignore
@@ -70,6 +92,7 @@ type DecisionCore = {
 type DecisionOutcome = DecisionCore & (
   | { readonly disposition: "proceed"; readonly authority: AuthorityRequirement; readonly execution: ExecutionPlan; readonly sourceSelection: SourceSelection }
   | { readonly disposition: "blocked"; readonly authority: { readonly mode: "none" }; readonly execution: null; readonly blockers: readonly Blocker[] }
+  | { readonly disposition: "prohibited"; readonly authority: { readonly mode: "none" }; readonly execution: null; readonly prohibition: Prohibition }
 );
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -162,10 +185,23 @@ function validateInput(input: DecisionInput): void {
 // bundle's closed bodies - never a case id, never an answer key, never a default where the contract
 // is silent: a not-stated value produces an honest refusal, NEVER an invented approval (rule 3).
 const usd = (v: string | undefined): number | null => (v !== undefined && /^\d{1,7}$/.test(v) ? Number(v) : null);
+const count3 = (v: string | undefined): number | null => (v !== undefined && /^\d{1,3}$/.test(v) ? Number(v) : null);
 const daysBetween = (earlier: string, later: string): number => Math.floor((Date.parse(later) - Date.parse(earlier)) / 86_400_000);
 const attested = (o: EvidenceObservation) => o.body["Sufficiency"] === "attested-sufficient";
+// Body dates are WORDED (the projection idiom - a worded date can never collide with the checker's
+// hyphenated reference form), parsed against the same fixed month list; locale-free, clock-free.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const wordedToInstant = (v: string | undefined): string | null => {
+  const m = v !== undefined ? /^([A-Z][a-z]{2}) (\d{1,2}), (\d{4})$/.exec(v) : null;
+  const month = m ? MONTHS.indexOf(m[1]) + 1 : 0;
+  return m && month > 0 ? `${m[3]}-${String(month).padStart(2, "0")}-${m[2].padStart(2, "0")}T00:00:00.000Z` : null;
+};
+// The evidence classes whose disagreement refuses a decision: a side is never picked by recency.
+const MATERIAL_KINDS = new Set(["account-balance", "planned-withdrawals", "pending-actions", "bank-instruction", "household-instruction", "regulatory-status"]);
+const RECENT_CHANGE_DAYS = 30; // the committed recency window: the vocabulary's own aging threshold
 function evaluate(input: DecisionInput): DecisionOutcome {
   validateInput(input);
+  const b = input.evidenceBundle;
   const p = input.policyDocument.policy;
   // prettier-ignore
   const policyBasis: PolicyBasis = {
@@ -175,11 +211,79 @@ function evaluate(input: DecisionInput): DecisionOutcome {
   const trace: TraceEntry[] = [];
   const explanations: ExplanationCode[] = [];
   const blockers: Blocker[] = [];
+  let prohibition: Prohibition | null = null;
   const t = (rule: RuleId, result: TraceEntry["result"], figures?: Record<string, number>) => trace.push({ rule, result, ...(figures && Object.keys(figures).length ? { figures } : {}) });
+  const byKind = (kind: string) => b.observations.filter((o) => o.kind === kind);
+  const finish = (core: DecisionCore): DecisionOutcome =>
+    prohibition
+      ? { ...core, disposition: "prohibited", authority: { mode: "none" }, execution: null, prohibition }
+      : { ...core, disposition: "blocked", authority: { mode: "none" }, execution: null, blockers };
+  const coreOf = (): DecisionCore => ({
+    version: "dov.v1",
+    citations: { request: requestIdentity(input.request), evidenceBundle: evidenceIdentity(b), policy: `${input.policyDocument.id.version}:${input.policyDocument.id.digest}`, asOf: input.asOf },
+    request: input.request,
+    identities: input.identities,
+    policyBasis,
+    trace,
+    explanations: explanations.map((code) => ({ code })),
+  });
 
-  // 1. Source selection: a retirement account is never chosen silently; among usable taxable
+  // 1. Household resolution: an ambiguous directory PRE-EMPTS everything - no household-scoped rule
+  // may run while the slot itself is unresolved, and Verin never guesses between candidates.
+  const directories = byKind("household-directory");
+  const candidates = directories.map((o) => count3(o.body["CandidateCount"])).find((n) => n !== null && n > 1);
+  if (candidates !== undefined && candidates !== null) {
+    t("household-resolution", "fired", { candidateCount: candidates });
+    blockers.push({ code: "household-slot-ambiguous", resolvingEvidence: directories.map((o) => ({ kind: "household-directory", subjectRef: o.subject })) });
+    explanations.push("household-candidates-found", "human-disambiguation-required");
+    return finish(coreOf());
+  }
+  t("household-resolution", directories.length ? "satisfied" : "not-applicable");
+
+  // 2. Regulatory precedence: an active hold outranks firm policy and household instructions whole.
+  const hold = byKind("regulatory-status").find((o) => o.body["HoldActive"] === "true");
+  if (hold) {
+    t("regulatory-precedence", "fired");
+    prohibition = {
+      reasonCode: "active-legal-hold",
+      source: { sourceType: "regulatory", sourceId: (hold.body["VersionId"] ?? "regulatory-hold").split("@")[0], versionId: hold.body["VersionId"] ?? null },
+      scope: `scope:account:${hold.body["ScopeRef"] ?? hold.subject}`,
+    };
+    explanations.push("legal-hold-detected", "regulatory-precedence-applied");
+    return finish(coreOf());
+  }
+  t("regulatory-precedence", byKind("regulatory-status").length ? "satisfied" : "not-applicable");
+
+  // 3. Destination restriction: a standing client mandate admits no approval path. Off-list is the
+  // instruction's own stated conclusion, or derived from a third-party-titled destination.
+  const restrictions = byKind("household-instruction").filter((o) => o.body["InstructionKind"] === "destination-restriction");
+  const thirdParty = byKind("bank-instruction").find((o) => o.body["TitledTo"] === "third-party");
+  const violated = restrictions.find((o) => o.body["DestinationOnList"] === "false" || (o.body["DestinationOnList"] === undefined && thirdParty !== undefined));
+  if (violated) {
+    t("destination-restriction", "fired");
+    prohibition = {
+      reasonCode: "destination-not-household-titled",
+      source: { sourceType: "household_instruction", sourceId: (violated.body["VersionId"] ?? "destination-restriction").split("@")[0], versionId: violated.body["VersionId"] ?? null },
+      scope: `scope:destination:${thirdParty?.subject ?? violated.subject}`,
+    };
+    explanations.push("destination-restriction-applies", "destination-off-list");
+    return finish(coreOf());
+  }
+  t("destination-restriction", restrictions.length ? "satisfied" : "not-applicable");
+
+  // 4. Material conflict: the bundle retains BOTH sides of a disagreement; a decision refuses them.
+  const conflicted = b.conflicts.filter((c) => MATERIAL_KINDS.has(c.kind));
+  if (conflicted.length) {
+    t("evidence-conflict", "fired");
+    blockers.push({ code: "material-evidence-conflicting", resolvingEvidence: conflicted.map((c) => ({ kind: c.kind, subjectRef: c.subject })) });
+    explanations.push("material-evidence-conflicting");
+    return finish(coreOf());
+  }
+  t("evidence-conflict", "satisfied");
+
+  // 5. Source selection: a retirement account is never chosen silently; among usable taxable
   // candidates the largest available balance wins, and every rejected alternative carries its reason.
-  const balances = input.evidenceBundle.observations.filter((o) => o.kind === "account-balance");
+  const balances = byKind("account-balance");
   const usable = balances.map((o) => ({ o, available: usd(o.body["AvailableUsd"]), cls: o.body["RegistrationClass"] }));
   const taxable = usable.filter((x) => x.cls === "taxable" && (x.available !== null || attested(x.o))).sort((a, z) => (z.available ?? 0) - (a.available ?? 0));
   const selected = taxable[0];
@@ -198,27 +302,92 @@ function evaluate(input: DecisionInput): DecisionOutcome {
     explanations.push("source-account-selected");
   } else t("source-selection", balances.length ? "unevaluable" : "not-applicable");
 
-  // 2. Cash reserve, the PR-5a-i form: attested sufficiency stands as evidence; anything less
-  // refuses honestly. The full arithmetic lands with the planned-withdrawals class in PR-5a-ii -
-  // until that class exists, no figure can honestly answer the reserve question.
-  if (balances.some(attested)) t("cash-reserve", "satisfied");
-  else if (!selected || selected.available === null) {
+  // 6. Cash reserve: attested sufficiency stands as evidence; otherwise the arithmetic runs only on
+  // FRESH machine figures - present-but-stale reserve evidence cannot silently proceed, a figure
+  // the extraction cannot read is refused, pending approved activity counts against the household,
+  // and a breach that exists only because a sibling reservation holds the liquidity is that
+  // sibling's blocker, not a plain reserve breach.
+  const schedules = byKind("planned-withdrawals");
+  const pendings = byKind("pending-actions");
+  const schedule = schedules[0];
+  if (balances.some(attested) || schedules.some(attested)) t("cash-reserve", "satisfied");
+  else if (!schedule || !selected || selected.available === null || usd(schedule.body["MonthlyUsd"]) === null) {
     t("cash-reserve", "unevaluable");
-    blockers.push({ code: "reserve-evidence-missing", resolvingEvidence: [{ kind: "account-balance", subjectRef: input.evidenceBundle.subject.household }] });
-  } else if (selected.o.freshness !== "fresh") {
-    t("cash-reserve", "fired", { evidenceAgeDays: daysBetween(selected.o.provenance.observedAt, input.asOf) });
-    blockers.push({ code: "reserve-evidence-stale", resolvingEvidence: [{ kind: selected.o.kind, subjectRef: selected.o.subject }] });
+    const missingKind = !schedule || usd(schedule?.body["MonthlyUsd"]) === null ? "planned-withdrawals" : "account-balance";
+    blockers.push({ code: "reserve-evidence-missing", resolvingEvidence: [{ kind: missingKind, subjectRef: b.subject.household }] });
+  } else if (schedule.freshness !== "fresh" || selected.o.freshness !== "fresh") {
+    const staleOne = schedule.freshness !== "fresh" ? schedule : selected.o;
+    t("cash-reserve", "fired", { evidenceAgeDays: daysBetween(staleOne.provenance.observedAt, input.asOf) });
+    blockers.push({ code: "reserve-evidence-stale", resolvingEvidence: [{ kind: staleOne.kind, subjectRef: staleOne.subject }] });
     explanations.push("freshness-window-exceeded", "stale-cannot-silently-proceed");
   } else {
-    t("cash-reserve", "unevaluable");
-    blockers.push({ code: "reserve-evidence-missing", resolvingEvidence: [{ kind: "planned-withdrawals", subjectRef: input.evidenceBundle.subject.household }] });
+    const monthly = usd(schedule.body["MonthlyUsd"])!;
+    const pendingUsd = pendings.reduce((n, o) => n + (usd(o.body["PendingTotalUsd"]) ?? 0), 0);
+    const siblingUsd = pendings.reduce((n, o) => n + (usd(o.body["SiblingReservationUsd"]) ?? 0), 0);
+    const effective = selected.available - pendingUsd - siblingUsd;
+    const required = monthly * policyBasis.reserveHorizonMonths;
+    const remaining = effective - input.request.amountUsd;
+    const figures = {
+      availableUsd: selected.available,
+      pendingUsd: pendingUsd + siblingUsd,
+      effectiveUsd: effective,
+      amountUsd: input.request.amountUsd,
+      remainingUsd: remaining,
+      requiredReserveUsd: required,
+    };
+    if (pendingUsd + siblingUsd > 0) explanations.push("effective-liquidity-computed");
+    if (remaining < required) {
+      t("cash-reserve", "fired", figures);
+      if (siblingUsd > 0 && remaining + siblingUsd >= required) {
+        blockers.push({ code: "liquidity-reserved-by-sibling", resolvingEvidence: pendings.map((o) => ({ kind: "pending-actions", subjectRef: o.subject })) });
+        explanations.push("individually-valid-jointly-overcommitted", "reservation-prevents-joint-violation");
+      } else {
+        blockers.push({
+          code: "cash-reserve-breach",
+          resolvingEvidence: [{ kind: "account-balance", subjectRef: selected.o.subject }, ...pendings.map((o) => ({ kind: "pending-actions", subjectRef: o.subject }))],
+        });
+        explanations.push("cash-reserve-breach");
+      }
+    } else {
+      t("cash-reserve", "satisfied", figures);
+      explanations.push("cash-reserve-preserved");
+      if (pendings.length) explanations.push("individually-valid");
+    }
   }
 
-  // 3. Authority derivation from the STATED dual-approval block alone: the stage id is
-  // <role>-dual-approval by the committed naming rule; a silent role or requester rule derives NO stage.
+  // 7. Bank-instruction change: a recent unverified change takes the firm's STATED handling - a
+  // review stage under one configuration, an execution block under the other. Same facts, both
+  // correct, from configuration alone.
+  let bankChangeReviewRequired = false;
+  const instructions = byKind("bank-instruction");
+  const recentUnverified = instructions.find((o) => {
+    const verified = o.body["Verified"] === "true" || o.body["Standing"] === "verified on file";
+    if (verified) return false;
+    const changedInstant = wordedToInstant(o.body["ChangedAt"]);
+    const changedDays = changedInstant !== null ? daysBetween(changedInstant, input.asOf) : o.body["Standing"] === "reported changed by client" ? 0 : null;
+    return changedDays !== null && changedDays <= RECENT_CHANGE_DAYS;
+  });
+  if (recentUnverified) {
+    t("bank-instruction-change", "fired");
+    explanations.push("recent-bank-change-detected");
+    if (policyBasis.bankInstructionChange === "specialist-review") {
+      bankChangeReviewRequired = true;
+      explanations.push("specialist-review-required");
+    } else {
+      blockers.push({ code: "bank-instruction-change-unverified", resolvingEvidence: [{ kind: "bank-instruction", subjectRef: recentUnverified.subject }] });
+      explanations.push("blocked-until-independently-verified");
+    }
+  } else t("bank-instruction-change", instructions.length ? "satisfied" : "not-applicable");
+
+  // 8. Authority derivation from the STATED dual-approval block and the STATED handling alone: the
+  // dual stage id is <role>-dual-approval by the committed naming rule; the specialist stage is the
+  // stated handling's archetype (one bank-change specialist, sequential, never the requester); a
+  // silent approver role or requester rule derives NO stage - the decision refuses honestly.
   let authority: AuthorityRequirement | null = null;
   if (blockers.length === 0 && sourceSelection) {
     const stages: StageRequirement[] = [];
+    if (bankChangeReviewRequired)
+      stages.push({ stageId: "bank-change-specialist-review", order: 1, eligibleRoleIds: ["bank-change-specialist"], approvalsRequired: 1, distinctActorsRequired: false, requesterMayApprove: false });
     if (input.request.amountUsd > policyBasis.dualApprovalThresholdUsd) {
       if (policyBasis.eligibleApproverRole === NOT_STATED || policyBasis.requesterRule === NOT_STATED) {
         t("authority-derivation", "unevaluable");
@@ -227,7 +396,7 @@ function evaluate(input: DecisionInput): DecisionOutcome {
       } else {
         stages.push({
           stageId: `${policyBasis.eligibleApproverRole}-dual-approval`,
-          order: 1,
+          order: stages.length + 1,
           eligibleRoleIds: [policyBasis.eligibleApproverRole],
           approvalsRequired: policyBasis.approvalsRequired,
           distinctActorsRequired: policyBasis.distinctActorsRequired,
@@ -235,28 +404,15 @@ function evaluate(input: DecisionInput): DecisionOutcome {
         });
         explanations.push("dual-approval-required");
       }
-    } else explanations.push("dual-approval-not-required");
+    } else if (stages.length === 0) explanations.push("dual-approval-not-required");
     if (blockers.length === 0) {
       t("authority-derivation", stages.length ? "fired" : "satisfied", { stageCount: stages.length });
-      authority = stages.length === 0 ? { mode: "automatic", stages: [] } : { mode: "approval", stages };
+      authority = stages.length === 0 ? { mode: "automatic", stages: [] } : { mode: bankChangeReviewRequired ? "specialist-review" : "approval", stages };
     }
-  } else if (blockers.length === 0) blockers.push({ code: "reserve-evidence-missing", resolvingEvidence: [{ kind: "account-balance", subjectRef: input.evidenceBundle.subject.household }] });
+  } else if (blockers.length === 0) blockers.push({ code: "reserve-evidence-missing", resolvingEvidence: [{ kind: "account-balance", subjectRef: b.subject.household }] });
 
-  const core: DecisionCore = {
-    version: "dov.v1",
-    citations: {
-      request: requestIdentity(input.request),
-      evidenceBundle: evidenceIdentity(input.evidenceBundle),
-      policy: `${input.policyDocument.id.version}:${input.policyDocument.id.digest}`,
-      asOf: input.asOf,
-    },
-    request: input.request,
-    identities: input.identities,
-    policyBasis,
-    trace,
-    explanations: explanations.map((code) => ({ code })),
-  };
-  if (blockers.length > 0) return { ...core, disposition: "blocked", authority: { mode: "none" }, execution: null, blockers };
+  const core: DecisionCore = coreOf();
+  if (blockers.length > 0) return finish(core);
   return {
     ...core,
     disposition: "proceed",
@@ -265,13 +421,18 @@ function evaluate(input: DecisionInput): DecisionOutcome {
       idempotencyKey: idempotencyKeyFor(input.request),
       reservation: { reservationRef: `res:${input.request.requestRef.slice(4)}:liquidity`, conflictKeys: [`conflict:${input.request.householdSlug}-liquidity`] },
       ordering: "reserve-only-after-authority-complete",
-      preconditions: ["material-evidence-fresh-at-execution", ...(authority!.stages.length > 0 ? ["approval-bound-to-decision-hash"] : []), "reservation-still-held"],
+      preconditions: [
+        "material-evidence-fresh-at-execution",
+        ...(authority!.stages.length > 0 ? ["approval-bound-to-decision-hash"] : []),
+        ...(bankChangeReviewRequired ? ["bank-instruction-independently-verified"] : []),
+        "reservation-still-held",
+      ],
     },
     sourceSelection: sourceSelection!,
   };
 }
 
 // prettier-ignore
-export type { AuthorityRequirement, Blocker, BlockerCode, DecisionIdentities, DecisionInput, DecisionOutcome, DecisionRequest, ExecutionPlan, ExplanationCode, PolicyBasis, Purpose, RuleId, SourceSelection, StageRequirement, TraceEntry };
+export type { AuthorityRequirement, Blocker, BlockerCode, DecisionIdentities, DecisionInput, DecisionOutcome, DecisionRequest, ExecutionPlan, ExplanationCode, PolicyBasis, Prohibition, ProhibitionReason, Purpose, RuleId, SourceSelection, StageRequirement, TraceEntry };
 // prettier-ignore
-export { BLOCKER_CODES, EXPLANATION_CODES, MAX_USD, NOT_STATED, PURPOSES, REFERENCE_FORMS, RULE_IDS, evaluate, idempotencyKeyFor, outcomeDigest, requestIdentity, serializeOutcome, serializeRequest };
+export { BLOCKER_CODES, EXPLANATION_CODES, MAX_USD, NOT_STATED, PROHIBITION_REASONS, PURPOSES, REFERENCE_FORMS, RULE_IDS, evaluate, idempotencyKeyFor, outcomeDigest, requestIdentity, serializeOutcome, serializeRequest };
