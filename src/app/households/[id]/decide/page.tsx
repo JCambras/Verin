@@ -74,6 +74,10 @@ export default async function Decide({ params, searchParams }: { params: Promise
   const cookieValue = (await headers()).get("x-verin-session") ?? (await cookies()).get("verin_session")?.value;
   const { id } = await params;
   const form = await searchParams;
+  const requery = new URLSearchParams();
+  requery.set("amount", form.amount ?? "");
+  requery.set("purpose", form.purpose ?? "");
+  requery.set("deadline", form.deadline ?? "");
   const asOf = new Date().toISOString();
   // prettier-ignore
   type View = null | { state: "denied" } | { state: "form"; household: { id: string; name: string } } | { state: "refused"; household: { id: string; name: string }; problems: string[] } | { state: "no-policy"; household: { id: string; name: string } }
@@ -246,6 +250,9 @@ export default async function Decide({ params, searchParams }: { params: Promise
               </li>
             ))}
           </ul>
+          <p className="meta">
+            <a href={`/households/${view.household.id}/decide/compare?${requery.toString()}`}>Compare this request under both ratified configurations</a> - same facts, different policy, both correct.
+          </p>
           <p className="meta">
             Decision {view.decisionIdText} · request {o.citations.request} · evidence {o.citations.evidenceBundle} · policy {o.citations.policy} · as of {formatObservationDate(o.citations.asOf)}
             {view.demonstration ? " · " : ""}

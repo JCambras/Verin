@@ -1,0 +1,74 @@
+{
+  "attestedTimeZones": [
+    "America/New_York",
+    "Asia/Tokyo"
+  ],
+  "rows": [
+    {
+      "case": "sample-proceed",
+      "request": "drq.v1:d2fd2918fd68ce1a6140501aef81cb028d29e9af6fe34ee17e92b3b530f742a0",
+      "configuration": "fpd.v1:6951a9ed7c3aec28445ad05bbc02049248798ca9be2150fb75c4490fd2276584",
+      "evidenceBundle": "evb.v1:0ececea3e1ab72d418cc1f831d55605a14e905eb94c5bd53d14c13fe8ccf704e",
+      "engine": "den.v1:0f6801dc78f5e804787560d56993b932b5293230d92f166e57a96f855519a0a4",
+      "serializer": "dov.v1",
+      "vocabulary": "1.1.0",
+      "outcome": "dov.v1:a2097df9e4c6aa7a38d04eecb28c3c2e82bb42393511ff4ab277d01bee1c4626",
+      "requestIdentityRecomputed": "drq.v1:d2fd2918fd68ce1a6140501aef81cb028d29e9af6fe34ee17e92b3b530f742a0"
+    },
+    {
+      "case": "sample-blocked-unattested-reserve",
+      "request": "drq.v1:5fbe3bba0eb4b59e298127024f33dbd7e3b336c5df3b9529c74004a72f6e48ba",
+      "configuration": "fpd.v1:6951a9ed7c3aec28445ad05bbc02049248798ca9be2150fb75c4490fd2276584",
+      "evidenceBundle": "evb.v1:5d1643dbd2b5ca3cf5f4b8378e8a465846e35dc62c1579d764d3288d8c0a776b",
+      "engine": "den.v1:0f6801dc78f5e804787560d56993b932b5293230d92f166e57a96f855519a0a4",
+      "serializer": "dov.v1",
+      "vocabulary": "1.1.0",
+      "outcome": "dov.v1:9acce43050b5fc7139b3665a546d859597517c9612c8605e93de7cc8c462cb50",
+      "requestIdentityRecomputed": "drq.v1:5fbe3bba0eb4b59e298127024f33dbd7e3b336c5df3b9529c74004a72f6e48ba"
+    },
+    {
+      "case": "GC-01-firm-a-happy-path",
+      "request": "drq.v1:c6ce6434e683ad160b78fdccd424a341a0de71350edc838287962065d5bda011",
+      "configuration": "fpd.v1:6951a9ed7c3aec28445ad05bbc02049248798ca9be2150fb75c4490fd2276584",
+      "evidenceBundle": "evb.v1:e612cd1520a83336ce4a03957db9ce3b8766882d5302fef14f06a0d3ae287010",
+      "engine": "den.v1:0f6801dc78f5e804787560d56993b932b5293230d92f166e57a96f855519a0a4",
+      "serializer": "dov.v1",
+      "vocabulary": "1.1.0",
+      "outcome": "dov.v1:d5f0eb793050ce74ceba7ee6d68340a6cf39a48c331e8540c775c21bb58b0aa8",
+      "requestIdentityRecomputed": "drq.v1:c6ce6434e683ad160b78fdccd424a341a0de71350edc838287962065d5bda011"
+    },
+    {
+      "case": "GC-02-firm-b-happy-path",
+      "request": "drq.v1:b5c36745f071aa352da5eac10e27947be9308e83d03cd059e03f80f7389bc6dd",
+      "configuration": "fpd.v1:3eef6abc01dd8af85e79e62ecf0f0b97a415d1a87bf016ede10a8b44f1deecf8",
+      "evidenceBundle": "evb.v1:5cd0537d26c3366a805d935884b71cec457087349aaf6cfa38455db9e49b2a9a",
+      "engine": "den.v1:0f6801dc78f5e804787560d56993b932b5293230d92f166e57a96f855519a0a4",
+      "serializer": "dov.v1",
+      "vocabulary": "1.1.0",
+      "outcome": "dov.v1:547dfd8dc3026b2bd4ffed8dd56f47903c431aa70875350b9ead20d5c61c5b60",
+      "requestIdentityRecomputed": "drq.v1:b5c36745f071aa352da5eac10e27947be9308e83d03cd059e03f80f7389bc6dd"
+    },
+    {
+      "case": "GC-03-recent-bank-change-firm-a",
+      "request": "drq.v1:89f92310c10cb9ea589d918fd172ca87f4d242c9b4e160b4ca159da3e54c2373",
+      "configuration": "fpd.v1:6951a9ed7c3aec28445ad05bbc02049248798ca9be2150fb75c4490fd2276584",
+      "evidenceBundle": "evb.v1:7276239a5bf819eb0ee9abf2d45e9c4b197e14b06ed331e3bf08ceba8d866aab",
+      "engine": "den.v1:0f6801dc78f5e804787560d56993b932b5293230d92f166e57a96f855519a0a4",
+      "serializer": "dov.v1",
+      "vocabulary": "1.1.0",
+      "outcome": "dov.v1:7432ed4dabe796157f0fc730dfab76f92171c8b99bffe21b9d1d225dc03d55d1",
+      "requestIdentityRecomputed": "drq.v1:89f92310c10cb9ea589d918fd172ca87f4d242c9b4e160b4ca159da3e54c2373"
+    },
+    {
+      "case": "GC-04-recent-bank-change-firm-b",
+      "request": "drq.v1:6a06f964f4cd98aad1902e2a98d3e26e426ca688a78af9143475574b58aa8e56",
+      "configuration": "fpd.v1:3eef6abc01dd8af85e79e62ecf0f0b97a415d1a87bf016ede10a8b44f1deecf8",
+      "evidenceBundle": "evb.v1:5cfd3b7218da919c38719b1783d9804e251828827e59d6eb34efe12109e03b10",
+      "engine": "den.v1:0f6801dc78f5e804787560d56993b932b5293230d92f166e57a96f855519a0a4",
+      "serializer": "dov.v1",
+      "vocabulary": "1.1.0",
+      "outcome": "dov.v1:e27522b7eae9f814d78561d1940bf533101fd39304bae3e641fce87458451ec7",
+      "requestIdentityRecomputed": "drq.v1:6a06f964f4cd98aad1902e2a98d3e26e426ca688a78af9143475574b58aa8e56"
+    }
+  ]
+}

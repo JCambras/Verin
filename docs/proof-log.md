@@ -471,3 +471,10 @@ product path: a firm's policy change is a published version at zero repository d
 - The comparison vocabulary is load-bearing (arm 34): one mapping broken and the four-canonical test fails on 'GC-01-firm-a-happy-path must match the signed truth exactly'.
 - The carried PR-5a-ii obligation, discharged here: transcripts 20b/21b/22b regenerate the three vacuous arms under the FULL-FILE battery with passing clean-tree controls (see the reconciled PR-5a-ii entries above).
 - The restored green run (green-restored.txt): 53 unit tests at the battery head.
+
+## PR-5b proofs (prompt 5 section 6; raw transcripts with every arm's exact injected bytes and its revert: docs/evidence/pr5b-transcripts.tar, sha256 ae033b3e...; battery head 2d35ee52 - the PR head differs only by this evidence commit). Every transcript opens with the CLEAN-TREE CONTROL of its exact check command PASSING before the mutation lands (the standing rule from the PR-5a-iii ruling), and every check runs the FULL test file - never a narrow filter, which that ruling showed is always vacuous on this order-dependent suite.
+- The den.v1 identity cannot drift (arm 40): one nibble changed in the committed engine-identity.json fails the in-suite equality AND the registry's regenerate-and-byte-compare jaw (REGEN-CHECK reproduced: false), the control passing 55/55 first.
+- The replay manifest cannot rot (arm 41): one mutated row fails the in-suite recomputation equality; the committed file regenerates byte-identically with both time zones attested inside the generator.
+- The archetypes are the seed's exact bytes (arm 42): one byte changed fails the byte-agreement test against src/tools/cli.ts.
+- Each comparison side owns its identity (arm 43): side B made to reuse side A's DecisionId fails the per-side inequality assertion (and the sealed-factory rule fires on the mutation's own cast) - two evaluations, two outcomes, two minted identities under one request correlation.
+- The restored green run (green-restored.txt): 55 unit tests; both generated artifacts regenerate byte-identically.

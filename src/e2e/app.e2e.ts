@@ -174,6 +174,23 @@ test("firm B blocks the same recent-bank-change class from configuration alone, 
   expect((await settledAxe(page)).violations).toEqual([]);
 });
 
+test("the comparison surface: one request, one bundle, one engine - two configurations, two correct answers", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  const href = await page.getByRole("link", { name: "Henderson Family" }).getAttribute("href");
+  await page.goto(`${href}/decide/compare?amount=150000&purpose=home-renovation&deadline=2026-12-31`);
+  await expect(page.getByTestId("verin-compare-loaded")).toBeVisible();
+  await expect(page.locator('[data-compare-side="proceed"]')).toBeVisible(); // Firm A archetype: dual approval
+  await expect(page.locator('[data-compare-side="proceed"]').getByText("operations-dual-approval")).toBeVisible();
+  await expect(page.locator('[data-compare-side="blocked"]')).toBeVisible(); // Firm B archetype: the typed silence refuses
+  await expect(page.locator('[data-compare-side="blocked"]').getByText("approval authority not stated")).toBeVisible();
+  await expect(page.getByText(/one engine \(den\.v1:[0-9a-f]{64}\)/)).toBeVisible(); // the committed engine identity, on screen
+  await expect(page.getByText(/evidence bundle \(evb\.v1:[0-9a-f]{64}\)/)).toBeVisible(); // ONE bundle across both columns
+  await expect(page.getByText(/policy fpd\.v1:[0-9a-f]{64}/).first()).toBeVisible();
+  await expect(page.getByText("demonstration - not a compliance record").first()).toBeVisible();
+  expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr5b-compare.png" });
+});
+
 test("a policy silence refuses honestly, live: no stage is invented where the contract states none", async ({ page }) => {
   await signInAs(page, "advisor@firm-b.example", "harbor-quartz-42");
   const href = await page.getByRole("link", { name: "Mensah Family" }).getAttribute("href");
