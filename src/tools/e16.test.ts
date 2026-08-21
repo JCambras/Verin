@@ -3,17 +3,30 @@
 // production-bundle graph, the nodejs-runtime declaration), and writes the E16 capture. Evidence
 // tooling under src/tools/ - proven absent from the web bundle - and a tooling composition root.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, relative } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Client as PgClient } from "pg";
 import { Project, SyntaxKind, type SourceFile } from "ts-morph";
-import { annotateOperation, createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, snapshotEvidence, type RequestCorrelation } from "../runtime/governed";
+import {
+  annotateOperation,
+  createGovernedRuntime,
+  decisionCorrelation,
+  decisionIdFromOutcomeDigest,
+  getGateway,
+  mintRequestId,
+  requestCorrelation,
+  snapshotEvidence,
+  type RequestCorrelation,
+} from "../runtime/governed";
 import { createAccessContext, renewSession, signIn, type ActionGrant, type Principal } from "../access/context";
-import { POLICY_OPERATION_DEADLINE_MS, assertSequenceSound, createPolicyVersionRegistry, parsePolicyVersionId } from "../policy/registry";
+import { NOT_STATED as POLICY_NOT_STATED, POLICY_OPERATION_DEADLINE_MS, assertSequenceSound, createPolicyVersionRegistry, parsePolicyVersionId } from "../policy/registry";
 import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } from "../evidence/bundle";
 import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
 import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
+import { NOT_STATED as DECISION_NOT_STATED, REFERENCE_FORMS, evaluate, outcomeDigest, serializeOutcome } from "../decision/outcome";
+import { SAMPLE_INPUTS } from "./decision-samples";
 
 const KERNEL = "src/runtime/governed.ts";
 const COMPOSITION_ROOTS = [KERNEL, "src/instrumentation.ts"];
@@ -23,6 +36,8 @@ const SEALED: Record<string, string> = {
   TenantIdentity: "src/access/context.ts",
   RequestId: KERNEL,
   RequestCorrelation: KERNEL,
+  DecisionId: KERNEL,
+  DecisionCorrelation: KERNEL,
   GovernedOperationId: KERNEL,
   MaskedAccountReference: "src/evidence/pii.ts",
 };
@@ -534,6 +549,86 @@ describe("database-enforced isolation (5B.2, section 6 core; the full battery re
     } finally {
       await c.end();
     }
+  });
+});
+
+describe("the decision slice, exercised end to end (prompt 5, PR-5a-i)", () => {
+  // The flow pins its policy by CONTENT ADDRESS (the seed's own Firm A document, resolved by hash).
+  const SEED_FIRM_A_POLICY = `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":25000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
+  it("computes a LIVE decision through the governed route, minting the DecisionId only after evaluate returns", async () => {
+    const requestId = mintRequestId();
+    const c = requestCorrelation(requestId);
+    const access = createAccessContext();
+    const registry = createPolicyVersionRegistry();
+    const digest = sha256hex(enc(SEED_FIRM_A_POLICY));
+    const { outcome, decisionId, bundle } = await getGateway().enterRouteDecision(c, async () => {
+      const p = await access.authenticate(c, cookieValue);
+      const grant = (await access.authorize(c, p!, "decision.evaluate"))!;
+      const policyGrant = (await access.authorize(c, p!, "policy.read"))!;
+      const household = await access.withTenant(c, grant, async (tx) => (await tx.listHouseholds()).find((h) => h.name === "Henderson Family")!);
+      const version = await registry.resolveByHash(c, policyGrant, { version: "fpd.v1", digest }, POLICY_DEADLINE);
+      if (version.kind !== "policy-version") throw new Error("the seeded Firm A policy did not resolve by its content address");
+      const asOf = new Date().toISOString();
+      const evidence = await assembleEvidence(c, grant, { householdId: household.id }, asOf, { milliseconds: 2_000 });
+      const local = createHash("sha256").update(`drq-ref|${household.id}|75000`).digest("hex").slice(0, 15);
+      const produced = evaluate({
+        request: { requestRef: `req:r${local}`, householdSlug: "henderson-family", amountUsd: 75_000, purpose: "home-renovation", deadline: "2026-12-31" },
+        evidenceBundle: evidence,
+        policyDocument: { id: version.id, policy: version.policy },
+        identities: {
+          firm: `f${grant.principal.tenant.orgId.replaceAll("-", "")}`,
+          household: `h${household.id.replaceAll("-", "")}`,
+          requesterRole: `r${createHash("sha256").update("role|advisor").digest("hex").slice(0, 32)}`,
+        },
+        asOf,
+      });
+      // The first moment a decision identity CAN exist: after evaluate returns, from the outcome's own digest.
+      const minted = decisionIdFromOutcomeDigest(outcomeDigest(produced));
+      return getGateway().enterDecisionRenderOutcome(decisionCorrelation(requestId, minted), async () => ({ outcome: produced, decisionId: minted, bundle: evidence }));
+    });
+    // The merged seed carries no machine-usable reserve evidence yet, so the honest LIVE decision
+    // is a refusal - PR-5a-ii's seeds make the other dispositions reachable.
+    if (outcome.disposition !== "blocked") throw new Error(`the live Henderson evaluation must refuse honestly, got ${outcome.disposition}`);
+    expect(outcome.blockers.map((b) => b.code)).toEqual(["reserve-evidence-missing"]);
+    expect(outcome.authority).toEqual({ mode: "none" });
+    expect(outcome.execution).toBeNull();
+    expect(outcome.citations.evidenceBundle).toBe(bundleDigest(bundle)); // the recomputed citation equals the evidence module's own digest
+    expect(outcome.citations.policy).toBe(`fpd.v1:${digest}`);
+    expect(`dov.v1:${decisionId.value}`).toBe(outcomeDigest(outcome)); // the identity IS the outcome digest
+  });
+  it("the committed sample cases: a proceed carries its plan and the CD-4d key grammar; a refusal carries neither, by type and by value", () => {
+    const proceed = evaluate(SAMPLE_INPUTS[0].input);
+    if (proceed.disposition !== "proceed") throw new Error(`sample-proceed produced ${proceed.disposition}`);
+    expect(proceed.authority.mode).toBe("approval");
+    expect(proceed.authority.stages.map((s) => s.stageId)).toEqual(["operations-dual-approval"]); // derived from the STATED role by the committed naming rule
+    expect(proceed.execution.idempotencyKey).toBe("idem:rsampleproceed01:sample-household-50000-2026-12-31"); // every segment from request properties (CD-4d)
+    expect(proceed.execution.ordering).toBe("reserve-only-after-authority-complete"); // CD-4e
+    expect(proceed.sourceSelection.alternatives).toEqual([{ subjectRef: "account:sample-ira", rejectedBecause: "taxable-event-source" }]);
+    expect(serializeOutcome(proceed).startsWith("dov.v1|")).toBe(true);
+    const blocked = evaluate(SAMPLE_INPUTS[1].input);
+    if (blocked.disposition !== "blocked") throw new Error(`sample-blocked produced ${blocked.disposition}`);
+    expect(blocked.execution).toBeNull();
+    expect(blocked.authority).toEqual({ mode: "none" });
+  });
+  it("M-I: outcome digests are byte-identical with telemetry capture on and off - a decision that changes when someone is watching is not deterministic", () => {
+    const off = execFileSync("corepack", ["pnpm", "exec", "tsx", "src/tools/decision-determinism.ts"], { encoding: "utf8", env: { ...process.env, TZ: "America/New_York" } });
+    for (const { name, input } of SAMPLE_INPUTS) {
+      const on = evaluate(input); // this process's telemetry runtime is constructed and capturing
+      expect(off.split("\n").find((l) => l.startsWith(name))).toContain(`outcome=${outcomeDigest(on)}`);
+    }
+  }, 120_000);
+  it("M-H: the factories refuse a relabelled request identity and the gateway refuses the wrong correlation kind at runtime", async () => {
+    const requestId = mintRequestId();
+    expect(() => decisionIdFromOutcomeDigest(requestId.value)).toThrow(/carries no dov\.v1 domain/); // a request id relabelled as a decision id is the same lie told with better manners
+    expect(() => decisionIdFromOutcomeDigest(`req:${requestId.value}`)).toThrow(/carries no dov\.v1 domain/);
+    const c = requestCorrelation(requestId);
+    const gw = getGateway() as unknown as Record<string, (cc: unknown, fn: () => Promise<unknown>) => Promise<unknown>>;
+    await expect(gw["enterDecisionRenderOutcome"](c, async () => null)).rejects.toThrow(/requires correlation kind 'DecisionCorrelation'/);
+    // The pre-evaluate arm is a CONSTRUCTION result (proof log): no factory exists to call.
+  });
+  it("the decision module's silence token and account-reference forms agree byte-for-byte with their authorities", () => {
+    expect(DECISION_NOT_STATED).toBe(POLICY_NOT_STATED);
+    expect(REFERENCE_FORMS.map(([n, r]) => [n, r.source])).toEqual(ACCOUNT_REFERENCE_FORMS.map(([n, r]) => [n, r.source]));
   });
 });
 

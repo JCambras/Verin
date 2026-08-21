@@ -106,6 +106,28 @@ test("a household with nothing observed renders typed absence with next steps, n
   await page.screenshot({ path: "test-results/pr3b-okonkwo.png" });
 });
 
+test("the decision surface computes a REAL decision from live evidence and the in-force policy version - honest refusal included", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.getByRole("link", { name: "Henderson Family" }).click();
+  await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
+  await page.getByRole("link", { name: "Decide a distribution" }).click();
+  await expect(page.getByTestId("verin-decide-loaded")).toBeVisible();
+  await expect(page.getByText("recorded nowhere until prompt 6", { exact: false })).toBeVisible();
+  await expect(page.getByText("a changed world yields a new decision", { exact: false })).toBeVisible(); // both honesty lines
+  // The seeded world carries no machine-usable reserve evidence yet, so the honest LIVE decision is
+  // a refusal - PR-5a-ii's seeds light up the other dispositions.
+  await expect(page.locator('[data-disposition="blocked"]')).toBeVisible();
+  await expect(page.locator('[data-disposition="blocked"]').getByText("reserve evidence missing")).toBeVisible();
+  await expect(page.locator('[data-disposition="proceed"]')).toHaveCount(0);
+  await expect(page.getByText(/idem:/)).toHaveCount(0); // a refusal carries no idempotency key anywhere on the page
+  await expect(page.getByText(/Decision d[0-9a-f]{64}/)).toBeVisible(); // minted from the outcome digest, letter-prefixed
+  await expect(page.getByText(/evidence evb\.v1:[0-9a-f]{64}/)).toBeVisible();
+  await expect(page.getByText(/policy fpd\.v1:[0-9a-f]{64}/)).toBeVisible();
+  await expect(page.getByText("demonstration - not a compliance record").first()).toBeVisible(); // a decision from demonstration evidence is watermarked
+  expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr5a1-decide-blocked.png" });
+});
+
 test("another firm's workspace URL resolves to an honest not-found, never a leak", async ({ page, context }) => {
   await signInAs(page, "advisor@firm-b.example", "harbor-quartz-42");
   const vanceHref = await page.getByRole("link", { name: "Vance Household" }).getAttribute("href");

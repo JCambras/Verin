@@ -71,6 +71,10 @@ export default async function Workspace({ params }: { params: Promise<{ id: stri
           }}
         />
       )}
+      <p className="meta">
+        <a href={`/households/${h.id}/decide?amount=50000&purpose=home-renovation&deadline=2026-12-31`}>Decide a distribution</a> - a fixed demonstration request ($50,000 home renovation by year-end),
+        computed from this household's evidence and the firm's in-force policy version.
+      </p>
       <h2 className="section-heading">What Verin can prove</h2>
       <p className="meta">{evidence.assembledLine}</p>
       {evidence.conflicts.map((x, i) => (

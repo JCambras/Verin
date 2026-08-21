@@ -50,6 +50,7 @@ jobs:
       - run: corepack pnpm lint && corepack pnpm format # blocking from PR-2b on, as the PR-2a body promised
       - run: corepack pnpm db bootstrap && corepack pnpm db migrate && corepack pnpm db migrate && corepack pnpm db seed
       - run: corepack pnpm test # the instrumented run - exercises every governed operation and writes the E16 capture
+      - run: corepack pnpm exec vitest run src/tools/decision-closure.test.ts # DecisionPureClosure, its own blocking step (prompt 5 rule 2; also inside pnpm test above - explicit here so the purity proof can never be lost to include drift)
       - run: NODE_OPTIONS="--require ./src/tools/deny-net.cjs" corepack pnpm build # a build that reaches any host fails here
       - run: corepack pnpm exec playwright install --with-deps chromium
       - run: corepack pnpm e2e
