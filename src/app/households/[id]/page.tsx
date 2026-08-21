@@ -73,11 +73,19 @@ export default async function Workspace({ params }: { params: Promise<{ id: stri
       )}
       <h2 className="section-heading">What Verin can prove</h2>
       <p className="meta">{evidence.assembledLine}</p>
+      {evidence.conflicts.map((x, i) => (
+        <div className="card-dashed" key={`${x.label}-${i}`} role="status">
+          <p className="title">Records disagree: {x.label}</p>
+          <p>Observations of the same subject conflict. All are retained below; none is treated as the truth, and recency never decides.</p>
+        </div>
+      ))}
       {evidence.items.length > 0 ? (
         <ul className="register" aria-label="Evidence on file for this household">
           {evidence.items.map((item) => (
             <li key={item.id}>
-              <div>
+              {/* The stale treatment fades CONTENT only; every badge stays outside the faded block
+                  and meta text inside it darkens to full foreground, or the blend fails contrast. */}
+              <div className={item.band === "stale" ? "receded" : undefined}>
                 <strong>{item.label}</strong>
                 {item.entries.map(([field, value]) => (
                   <p key={field}>
@@ -86,17 +94,21 @@ export default async function Workspace({ params }: { params: Promise<{ id: stri
                 ))}
                 <p className="meta">{item.provenanceLine}</p>
               </div>
-              {item.demonstration ? <span className="badge-demo">demonstration record</span> : null}
+              <p className="badges">
+                {item.band !== "fresh" ? <span className="badge-band">{item.band}</span> : null}
+                {item.conflicted ? <span className="badge-band">conflicting record</span> : null}
+                {item.demonstration ? <span className="badge-demo">demonstration record</span> : null}
+              </p>
             </li>
           ))}
         </ul>
       ) : null}
-      {evidence.absent.length > 0 ? (
-        <div className="card-dashed">
-          <p className="title">Not yet observed: {evidence.absent.join(", ")}</p>
-          <p>Each gap is a typed absence in this household's evidence bundle, never a silent skip; record the missing evidence in the house record store to close it.</p>
+      {evidence.absent.map((a) => (
+        <div className="card-dashed" key={a.label}>
+          <p className="title">Not yet observed: {a.label}</p>
+          <p>This gap is a typed absence in the household's evidence bundle, never a silent skip. {a.nextStep}</p>
         </div>
-      ) : null}
+      ))}
     </section>
   );
 }

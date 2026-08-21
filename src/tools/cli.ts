@@ -36,7 +36,16 @@ const HENDERSON: Omit<SeedObservation, "household">[] = [
     observedDaysAgo: 21,
   },
 ];
-const OBSERVATIONS: SeedObservation[] = HENDERSON.map((o) => ({ household: "Henderson Family", ...o }));
+// Delgado renders the receded states (prompt 3 PR-3b): one stale, one aging, two DISAGREEING
+// bank-instruction observations of the SAME subject (both retained, never reconciled by recency),
+// and beneficiary-designation left genuinely absent; Okonkwo carries nothing at all (the M-D state).
+const DELGADO: Omit<SeedObservation, "household">[] = [
+  { kind: "people", subject: "person:luis-delgado", body: { Name: "Luis Delgado", Role: "Primary client", Born: "1962" }, observedDaysAgo: 45 },
+  { kind: "account-balance", subject: `account:${masked("ending 3377")}`, body: { Registration: "Individual brokerage", Account: masked("ending 3377"), Balance: "$188,000" }, observedDaysAgo: 140 },
+  { kind: "bank-instruction", subject: "instruction:coastal-savings", body: { Bank: "Coastal Savings", Account: masked("ending 8845"), Standing: "verified on file" }, observedDaysAgo: 30 },
+  { kind: "bank-instruction", subject: "instruction:coastal-savings", body: { Bank: "Coastal Savings", Account: masked("ending 9911"), Standing: "reported changed by client" }, observedDaysAgo: 8 },
+];
+const OBSERVATIONS: SeedObservation[] = [...HENDERSON.map((o) => ({ household: "Henderson Family", ...o })), ...DELGADO.map((o) => ({ household: "Delgado Household", ...o }))];
 const url = (name: string, fallback: string) => process.env[name] ?? fallback;
 async function withClient<T>(connectionString: string, fn: (c: Client) => Promise<T>): Promise<T> {
   const c = new Client({ connectionString });
@@ -126,22 +135,25 @@ async function seed() {
         for (const h of d.households) await c.query("INSERT INTO household (id, org_id, name, record_origin, recorded_at) VALUES ($1, $2, $3, 'demo-seed', now())", [randomUUID(), orgId, h]);
         console.log(`seed: demonstration org '${d.org}', advisor ${d.email} and ${d.households.length} households written with record_origin='demo-seed'`);
       }
-      // Observations seed independently of the household skip, so an upgraded slice-2 store still receives them.
-      const haveObs = await c.query("SELECT 1 FROM observation WHERE org_id = $1 LIMIT 1", [orgId]);
+      // Observations seed independently of the household skip, and PER HOUSEHOLD, so an upgraded
+      // store that already carries one household's evidence still receives another's.
       let written = 0;
-      if (!haveObs.rowCount) {
-        for (const o of OBSERVATIONS) {
-          const home = await c.query("SELECT id FROM household WHERE org_id = $1 AND name = $2", [orgId, o.household]);
-          if (!home.rowCount) continue;
+      for (const name of [...new Set(OBSERVATIONS.map((o) => o.household))]) {
+        const home = await c.query("SELECT id FROM household WHERE org_id = $1 AND name = $2", [orgId, name]);
+        if (!home.rowCount) continue;
+        const homeId = (home.rows[0] as { id: string }).id;
+        const haveObs = await c.query("SELECT 1 FROM observation WHERE household_id = $1 LIMIT 1", [homeId]);
+        if (haveObs.rowCount) continue;
+        for (const o of OBSERVATIONS.filter((x) => x.household === name)) {
           await c.query(
             "INSERT INTO observation (id, org_id, household_id, kind, subject, body_json, source, observed_at, retrieved_at, record_origin) VALUES ($1, $2, $3, $4, $5, $6, 'house-record-store', now() - make_interval(days => $7), now(), 'demo-seed')",
-            [randomUUID(), orgId, (home.rows[0] as { id: string }).id, o.kind, o.subject, JSON.stringify(o.body), o.observedDaysAgo],
+            [randomUUID(), orgId, homeId, o.kind, o.subject, JSON.stringify(o.body), o.observedDaysAgo],
           );
           written += 1;
         }
-        if (written) console.log(`seed: ${written} demonstration observations written for '${d.org}' with record_origin='demo-seed'`);
       }
-      if (have.rowCount && haveObs.rowCount) console.log(`seed: ${d.email}, its households and observations already present; skipped`);
+      if (written) console.log(`seed: ${written} demonstration observations written for '${d.org}' with record_origin='demo-seed'`);
+      if (have.rowCount && !written) console.log(`seed: ${d.email} and its book already present; skipped`);
       await c.query("COMMIT");
     }
   });

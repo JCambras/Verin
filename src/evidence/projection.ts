@@ -11,6 +11,13 @@ export const KIND_LABELS: Record<ObservationKind, string> = {
   "bank-instruction": "Bank instruction",
   "beneficiary-designation": "Beneficiary designation",
 };
+// The missing-item presentation's real next step, per kind (deliverable 4, PR-3b).
+export const KIND_NEXT_STEPS: Record<ObservationKind, string> = {
+  people: "Record the household's members in the house record store to put its people on evidence.",
+  "account-balance": "Record a custodial balance in the house record store to put an account balance on evidence.",
+  "bank-instruction": "Record a standing bank instruction in the house record store before any movement relies on one.",
+  "beneficiary-designation": "Record each account's beneficiary designation in the house record store to close this gap.",
+};
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 // Textual, time-zone-free, locale-free: read from the ISO string's own bytes, never through a Date -

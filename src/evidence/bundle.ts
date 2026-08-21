@@ -13,7 +13,7 @@ import type { ActionGrant } from "../access/context";
 import { refuseAccountReferences, type PIIBearing } from "./pii";
 import * as vocab from "./vocabulary";
 import type { AbsenceReason, FreshnessBand, ObservationKind, ObservationOrigin } from "./vocabulary";
-import { KIND_LABELS, formatObservationDate } from "./projection";
+import { KIND_LABELS, KIND_NEXT_STEPS, formatObservationDate } from "./projection";
 
 type Instant = string; // ISO-8601 UTC, minted at the route boundary from the process clock
 type Deadline = { readonly milliseconds: number };
@@ -58,24 +58,25 @@ async function assembleEvidence(c: RequestCorrelation, grant: ActionGrant, subje
   return gw.enterEvidenceAssemble(c, async () => {
     if (!Number.isInteger(deadline?.milliseconds) || deadline.milliseconds <= 0) throw new Error("evidence.assemble accepts no call without a usable deadline; the route boundary mints it (stop 3)");
     if (!z.uuid().safeParse(subject?.householdId).success) throw new Error("evidence.assemble refuses a malformed household reference before any store work");
-    const raw = await gw.enterObservationListForHousehold(c, { orgId: grant.principal.tenant.orgId, householdId: subject.householdId, statementTimeoutMs: String(deadline.milliseconds) });
-    const observations = z
-      .array(observationRow)
-      .parse(raw)
-      .map((row): EvidenceObservation => {
-        const kind = inVocabulary(vocab.OBSERVATION_KINDS, row.kind, "an observation kind");
-        if (row.retrieved_at.getTime() < row.observed_at.getTime()) throw new Error(`evidence.assemble refuses observation '${safeId("o", row.id)}': retrieval cannot precede observation`);
-        return {
-          id: safeId("o", row.id),
-          kind,
-          subject: row.subject,
-          body: row.body_json,
-          provenance: { source: row.source, observedAt: row.observed_at.toISOString(), retrievedAt: row.retrieved_at.toISOString() },
-          freshness: vocab.freshnessBand(asOf, row.observed_at.toISOString()),
-          pii: vocab.KIND_PII_CLASS[kind],
-          origin: inVocabulary(vocab.OBSERVATION_ORIGINS, row.record_origin, "an observation origin"),
-        };
-      });
+    const raw = await gw.enterObservationListForHousehold(c, { orgId: grant.principal.tenant.orgId, householdId: subject.householdId, asOf, statementTimeoutMs: String(deadline.milliseconds) });
+    const rows = z.array(observationRow).parse(raw);
+    // The read is bounded at 201 so truncation is DETECTABLE: absence and conflict are completeness
+    // claims, and a bundle derived from a silently cut result would state them over unread rows.
+    if (rows.length > 200) throw new Error("evidence.assemble refuses to derive completeness claims over a truncated read: this household exceeds the 200-observation bound");
+    const observations = rows.map((row): EvidenceObservation => {
+      const kind = inVocabulary(vocab.OBSERVATION_KINDS, row.kind, "an observation kind");
+      if (row.retrieved_at.getTime() < row.observed_at.getTime()) throw new Error(`evidence.assemble refuses observation '${safeId("o", row.id)}': retrieval cannot precede observation`);
+      return {
+        id: safeId("o", row.id),
+        kind,
+        subject: row.subject,
+        body: row.body_json,
+        provenance: { source: row.source, observedAt: row.observed_at.toISOString(), retrievedAt: row.retrieved_at.toISOString() },
+        freshness: vocab.freshnessBand(asOf, row.observed_at.toISOString()),
+        pii: vocab.KIND_PII_CLASS[kind],
+        origin: inVocabulary(vocab.OBSERVATION_ORIGINS, row.record_origin, "an observation origin"),
+      };
+    });
     const bySubject = new Map<string, EvidenceObservation[]>();
     for (const o of observations) bySubject.set(`${o.kind} ${o.subject}`, [...(bySubject.get(`${o.kind} ${o.subject}`) ?? []), o]);
     const conflicts: TypedConflict[] = [...bySubject.values()]
@@ -125,8 +126,8 @@ function serializeBundle(bundle: EvidenceBundle): string {
 }
 const bundleDigest = (bundle: EvidenceBundle): string => "evb.v1:" + createHash("sha256").update(serializeBundle(bundle)).digest("hex");
 
-type RenderableItem = { id: string; label: string; entries: [string, string][]; provenanceLine: string; band: FreshnessBand; demonstration: boolean };
-type RenderableEvidence = { assembledLine: string; items: RenderableItem[]; absent: string[] };
+type RenderableItem = { id: string; label: string; entries: [string, string][]; provenanceLine: string; band: FreshnessBand; demonstration: boolean; conflicted: boolean };
+type RenderableEvidence = { assembledLine: string; items: RenderableItem[]; absent: { label: string; nextStep: string }[]; conflicts: { label: string }[] };
 // The render boundary: the surface renders THIS view model and nothing else from the bundle, so the
 // same detector that guards the bundle guards every rendered string.
 function renderableBundle(bundle: EvidenceBundle): RenderableEvidence {
@@ -139,8 +140,10 @@ function renderableBundle(bundle: EvidenceBundle): RenderableEvidence {
       provenanceLine: `House record store · observed ${formatObservationDate(o.provenance.observedAt)} · retrieved ${formatObservationDate(o.provenance.retrievedAt)} · ${o.freshness}`,
       band: o.freshness,
       demonstration: o.origin === "demo-seed",
+      conflicted: bundle.conflicts.some((x) => x.observationIds.includes(o.id)),
     })),
-    absent: bundle.absences.map((a) => KIND_LABELS[a.kind]),
+    absent: bundle.absences.map((a) => ({ label: KIND_LABELS[a.kind], nextStep: KIND_NEXT_STEPS[a.kind] })),
+    conflicts: bundle.conflicts.map((x) => ({ label: KIND_LABELS[x.kind] })),
   };
   refuseAccountReferences(view, { operation: "evidence.assemble", boundary: "render" });
   return view;

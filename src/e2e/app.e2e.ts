@@ -75,11 +75,33 @@ test("the workspace shows the evidence surface: every observation with source, b
   await page.screenshot({ path: "test-results/pr3a-evidence.png" });
 });
 
-test("a household with nothing observed renders typed absence, never an empty success", async ({ page }) => {
+test("the receded workspace: stale faded but readable, aging banded, and both sides of a conflict retained", async ({ page }) => {
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   await page.getByRole("link", { name: "Delgado Household" }).click();
-  await expect(page.getByText("Not yet observed: People, Account balance, Bank instruction, Beneficiary designation")).toBeVisible();
+  await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
+  await expect(page.getByText("Records disagree: Bank instruction")).toBeVisible();
+  await expect(page.getByText("none is treated as the truth, and recency never decides", { exact: false })).toBeVisible();
+  await expect(page.getByText("Account: ending 8845")).toBeVisible(); // the older side of the disagreement, retained
+  await expect(page.getByText("Account: ending 9911")).toBeVisible(); // and the newer side - recency never reconciles
+  await expect(page.locator(".badge-band", { hasText: "conflicting record" })).toHaveCount(2);
+  await expect(page.locator(".badge-band", { hasText: "stale" })).toBeVisible();
+  await expect(page.locator(".badge-band", { hasText: "aging" })).toBeVisible();
+  await expect(page.locator(".receded").getByText("Balance: $188,000")).toBeVisible(); // faded content, still readable
+  await expect(page.getByText("Not yet observed: Beneficiary designation")).toBeVisible();
+  await expect(page.getByText("Record each account's beneficiary designation", { exact: false })).toBeVisible(); // the real next step
+  expect((await settledAxe(page)).violations).toEqual([]); // the stale fade and every badge pass the complete WCAG 2.2 AA set
+  await page.screenshot({ path: "test-results/pr3b-delgado.png" });
+});
+
+test("a household with nothing observed renders typed absence with next steps, never an empty success (M-D)", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.getByRole("link", { name: "Okonkwo Trust" }).click();
+  await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Evidence on file for this household" })).toHaveCount(0); // nothing is rendered as if it were fine
+  await expect(page.getByText(/^Not yet observed: /)).toHaveCount(4); // every vocabulary kind, each a typed absence
+  await expect(page.getByText("This gap is a typed absence in the household's evidence bundle, never a silent skip.", { exact: false }).first()).toBeVisible();
   expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr3b-okonkwo.png" });
 });
 
 test("another firm's workspace URL resolves to an honest not-found, never a leak", async ({ page, context }) => {
