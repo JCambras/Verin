@@ -1,4 +1,4 @@
-// The typed signed-case INPUTS reader (prompt 5, PR-5a-iii scope: the four canonical cases). It reads the oracle's signed bytes at the PINNED head through git, verifies each blob
+// The typed signed-case INPUTS reader (prompt 5; PR-5c-i completes it to all sixteen). It reads the oracle's signed bytes at the PINNED head through git, verifies each blob
 // against enforcement/signed-truth-pins.json BEFORE a single byte is parsed (refusing on mismatch
 // naming both digests), and produces typed DecisionInputs: trigger, firm configuration, household
 // evidence and instructions. It reads NO answer-key field: the schema below names only input-side
@@ -10,13 +10,20 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
+import { PURPOSES } from "../decision/outcome";
 import type { DecisionIdentities, DecisionInput, DecisionRequest, Purpose } from "../decision/outcome";
 import type { EvidenceBundle, EvidenceObservation } from "../evidence/bundle";
 import { KIND_PII_CLASS, OBSERVATION_KINDS, freshnessBand, type ObservationKind } from "../evidence/vocabulary";
 import { formatObservationDate } from "../evidence/projection";
 import { parseFirmPolicy } from "../policy/registry";
 
-const SCOPE = ["GC-01-firm-a-happy-path", "GC-02-firm-b-happy-path", "GC-03-recent-bank-change-firm-a", "GC-04-recent-bank-change-firm-b"] as const;
+// prettier-ignore
+const SCOPE = [
+  "GC-01-firm-a-happy-path", "GC-02-firm-b-happy-path", "GC-03-recent-bank-change-firm-a", "GC-04-recent-bank-change-firm-b",
+  "GC-05-insufficient-liquidity", "GC-06-household-restriction", "GC-07-regulatory-prohibition", "GC-08-ambiguous-household",
+  "GC-09-stale-evidence", "GC-10-simultaneous-distributions-first", "GC-11-simultaneous-distributions-second", "GC-12-duplicate-retry",
+  "GC-13-partial-salesforce-success", "GC-14-delayed-nigo", "GC-15-approval-invalidation", "GC-16-specialist-review-expiration",
+] as const;
 const PINS_PATH = "enforcement/signed-truth-pins.json";
 type ParseRecord = { caseId: string; ref: string; field: string; pattern: string; value: string };
 const sha256 = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
@@ -103,6 +110,14 @@ function parseRequest(f: FixtureInputs, t: ParseRecord[]): DecisionRequest {
     deadline = deadline ?? CANONICAL.deadline;
     t.push({ caseId: f.caseId, ref: "trigger", field: "canonical-request", pattern: "the $75,000 request -> canonical purpose/deadline", value: `${purpose}|${deadline}` });
   }
+  if (purpose === null) {
+    const w = /for (?:the |their )?([a-z][a-z ]+?)(?: by | on |\.|,|;)/.exec(desc);
+    const slug = w ? w[1].trim().replaceAll(" ", "-") : null;
+    if (slug !== null && (PURPOSES as readonly string[]).includes(slug)) {
+      purpose = slug as Purpose;
+      t.push({ caseId: f.caseId, ref: "trigger", field: "purpose", pattern: "description worded purpose -> closed slug", value: slug });
+    }
+  }
   if (purpose === null) throw new Error(`${f.caseId}: no asserted pattern reads the purpose; failing closed`);
   return { requestRef: f.trigger.requestRef, householdSlug: "smiths", amountUsd: Number(amount), purpose, ...(deadline !== undefined ? { deadline } : {}) };
 }
@@ -118,9 +133,9 @@ function bodyFor(f: FixtureInputs, row: z.infer<typeof evidenceRow>, t: ParseRec
   switch (row.evidenceKind) {
     case "account-balance": {
       const body: Record<string, string> = {};
-      const available = one(t, f.caseId, row.subjectRef, "AvailableUsd", s, /(?:available balance|[Bb]alance) (\d{1,7}) USD/);
+      const available = one(t, f.caseId, row.subjectRef, "AvailableUsd", s, /(?:available balance|[Bb]alance)(?: still shows)? (\d{1,7}) USD/);
       if (available !== null) body["AvailableUsd"] = available;
-      else if (ATTESTED.test(s)) put("Sufficiency", "attestation phrase", "attested-sufficient", body);
+      if (ATTESTED.test(s)) put("Sufficiency", "attestation phrase", "attested-sufficient", body); // independent of the figure: a fixture may state both
       // The subject ref dominates and retirement wording is checked before the word taxable,
       // because "a distribution here is a taxable event" is exactly how a fixture describes an IRA.
       if (/-ira\b/.test(row.subjectRef) || /\bIRA\b|retirement/.test(s)) put("RegistrationClass", "subjectRef/summary names an IRA or retirement account", "retirement", body);
@@ -253,13 +268,12 @@ function toInput(f: FixtureInputs, t: ParseRecord[]): DecisionInput {
 }
 
 export type SignedCaseInput = { caseId: string; input: DecisionInput; parseTable: ParseRecord[] };
-export function loadSignedCaseInputs(): SignedCaseInput[] {
-  return SCOPE.map((caseId) => {
-    const bytes = readSignedBytes(`fixtures/golden/${caseId}.json`);
-    const f = fixtureInputs.parse(JSON.parse(bytes.toString("utf8")));
-    if (f.caseId !== caseId) throw new Error(`fixture ${caseId} names itself '${f.caseId}'; refusing`);
-    const parseTable: ParseRecord[] = [];
-    return { caseId, input: toInput(f, parseTable), parseTable };
-  });
+export function loadSignedCaseInput(caseId: string): SignedCaseInput {
+  const bytes = readSignedBytes(`fixtures/golden/${caseId}.json`);
+  const f = fixtureInputs.parse(JSON.parse(bytes.toString("utf8")));
+  if (f.caseId !== caseId) throw new Error(`fixture ${caseId} names itself '${f.caseId}'; refusing`);
+  const parseTable: ParseRecord[] = [];
+  return { caseId, input: toInput(f, parseTable), parseTable };
 }
+export const loadSignedCaseInputs = (): SignedCaseInput[] => SCOPE.map(loadSignedCaseInput);
 export { SCOPE as SIGNED_CASE_SCOPE, readSignedBytes };

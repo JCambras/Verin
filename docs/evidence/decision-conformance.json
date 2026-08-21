@@ -1,0 +1,1289 @@
+{
+  "oracleHead": "644938fd628e7bdd5842c5b7941b0aba0b1d69ab",
+  "totals": {
+    "MATCHED": 183,
+    "DIFFERS": 31,
+    "NOT-YET-PRODUCIBLE": 28
+  },
+  "ledgerEntries": 31,
+  "cases": [
+    {
+      "caseId": "GC-01-firm-a-happy-path",
+      "disposition": "proceed",
+      "parseCount": 13,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[0]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4e",
+          "signed": "reserve-at-decision",
+          "produced": "reserve-only-after-authority-complete"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "13 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-02-firm-b-happy-path",
+      "disposition": "proceed",
+      "parseCount": 11,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "11 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-03-recent-bank-change-firm-a",
+      "disposition": "proceed",
+      "parseCount": 9,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[0]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[1]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "dual-approval-required",
+            "recent-bank-change-detected",
+            "specialist-review-required"
+          ],
+          "produced": [
+            "cash-reserve-preserved",
+            "dual-approval-required",
+            "recent-bank-change-detected",
+            "source-account-selected",
+            "specialist-review-required"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "9 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-04-recent-bank-change-firm-b",
+      "disposition": "blocked",
+      "parseCount": 7,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.reached",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "firm-b-blocks-until-verified",
+            "recent-bank-change-detected"
+          ],
+          "produced": [
+            "blocked-until-independently-verified",
+            "recent-bank-change-detected",
+            "source-account-selected"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "7 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-05-insufficient-liquidity",
+      "disposition": "blocked",
+      "parseCount": 8,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.reached",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "cash-reserve-breach",
+            "effective-liquidity-computed",
+            "firm-divergence-noted"
+          ],
+          "produced": [
+            "cash-reserve-breach",
+            "effective-liquidity-computed",
+            "source-account-selected"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "8 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-06-household-restriction",
+      "disposition": "prohibited",
+      "parseCount": 7,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.reached",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "7 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-07-regulatory-prohibition",
+      "disposition": "prohibited",
+      "parseCount": 6,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.reached",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "6 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-08-ambiguous-household",
+      "disposition": "blocked",
+      "parseCount": 5,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.reached",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "5 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-09-stale-evidence",
+      "disposition": "blocked",
+      "parseCount": 4,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.reached",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "4 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-10-simultaneous-distributions-first",
+      "disposition": "proceed",
+      "parseCount": 8,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[0]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4d",
+          "signed": "idem:GC-10:smiths-75000-renovation",
+          "produced": "idem:GC-10:smiths-75000-2026-08-15"
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4e",
+          "signed": "reserve-at-decision",
+          "produced": "reserve-only-after-authority-complete"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "individually-valid",
+            "reservation-acquired"
+          ],
+          "produced": [
+            "cash-reserve-preserved",
+            "dual-approval-required",
+            "individually-valid",
+            "source-account-selected"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "8 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-11-simultaneous-distributions-second",
+      "disposition": "blocked",
+      "parseCount": 9,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.reached",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "individually-valid-jointly-overcommitted",
+            "reservation-prevents-joint-violation"
+          ],
+          "produced": [
+            "effective-liquidity-computed",
+            "individually-valid-jointly-overcommitted",
+            "reservation-prevents-joint-violation",
+            "source-account-selected"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "9 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-12-duplicate-retry",
+      "disposition": "proceed",
+      "parseCount": 6,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[0]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4e",
+          "signed": "reserve-at-decision",
+          "produced": "reserve-only-after-authority-complete"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "duplicate-suppressed",
+            "stable-idempotency-key"
+          ],
+          "produced": [
+            "cash-reserve-preserved",
+            "dual-approval-required",
+            "source-account-selected"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "6 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-13-partial-salesforce-success",
+      "disposition": "proceed",
+      "parseCount": 6,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[0]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4e",
+          "signed": "reserve-at-decision",
+          "produced": "reserve-only-after-authority-complete"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "exception-requires-judgment",
+            "partial-outcome-recorded"
+          ],
+          "produced": [
+            "dual-approval-required",
+            "source-account-selected"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "6 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-14-delayed-nigo",
+      "disposition": "proceed",
+      "parseCount": 7,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "delayed-nigo-ingested",
+            "submitted-not-settled-vindicated"
+          ],
+          "produced": [
+            "dual-approval-not-required",
+            "source-account-selected"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "7 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-15-approval-invalidation",
+      "disposition": "proceed",
+      "parseCount": 7,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[0]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "approval-bound-to-hash",
+            "material-change-detected",
+            "re-approval-on-new-bundle"
+          ],
+          "produced": [
+            "cash-reserve-preserved",
+            "dual-approval-required",
+            "individually-valid",
+            "source-account-selected"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "7 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    },
+    {
+      "caseId": "GC-16-specialist-review-expiration",
+      "disposition": "proceed",
+      "parseCount": 6,
+      "verdicts": [
+        {
+          "field": "disposition",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.mode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages.length",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[0]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "authority.stages[1]",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.eligibleApproverRole",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "contract-silence.requesterRule",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "blockers.codes",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "prohibition.reasonCode",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "execution.eligible",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 7
+        },
+        {
+          "field": "execution.idempotencyKey",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 7
+        },
+        {
+          "field": "execution.reservations",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 7
+        },
+        {
+          "field": "verification.state",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 9
+        },
+        {
+          "field": "ledger.reservationOrdering",
+          "verdict": "MATCHED"
+        },
+        {
+          "field": "ledger.eventSequence",
+          "verdict": "NOT-YET-PRODUCIBLE",
+          "landingPrompt": 6
+        },
+        {
+          "field": "explanations.codes",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4b",
+          "signed": [
+            "specialist-review-required",
+            "stage-expired-escalated"
+          ],
+          "produced": [
+            "dual-approval-required",
+            "recent-bank-change-detected",
+            "source-account-selected",
+            "specialist-review-required"
+          ]
+        },
+        {
+          "field": "inputs.proseQuantities",
+          "verdict": "DIFFERS",
+          "ruling": "CD-4c",
+          "signed": "load-bearing quantities live in summary prose",
+          "produced": "6 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+        }
+      ]
+    }
+  ]
+}

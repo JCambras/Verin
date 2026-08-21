@@ -1,5 +1,5 @@
 {
-  "engine": "den.v1:0f6801dc78f5e804787560d56993b932b5293230d92f166e57a96f855519a0a4",
+  "engine": "den.v1:edd38856d5ef1b81ab10ddc4a0d61fabdbc27c7146d6f992bdd62d78019ba3b3",
   "closure": [
     "src/decision/outcome.ts"
   ]

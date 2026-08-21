@@ -32,6 +32,7 @@ import { engineIdentity } from "./decision-engine-identity";
 import { computeManifestRows } from "./decision-replay-manifest";
 import { loadSignedCaseInputs } from "./signed-cases";
 import { compareProducibleBindingFields, loadSignedCaseExpectations } from "./signed-expectations";
+import { KNOWN_KEY_DIVERGENCES_BEFORE_SIGNATURE, gradeAllCases, keyGrammarViolations, reconcile, runConformance } from "./signed-truth-conformance";
 
 const KERNEL = "src/runtime/governed.ts";
 const COMPOSITION_ROOTS = [KERNEL, "src/instrumentation.ts"];
@@ -659,9 +660,10 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
     expect(silent.outcome.blockers[0].resolvingEvidence).toEqual([]); // resolved by a policy version stating the value, never by evidence
   });
   it("the FOUR canonical cases match the signed truth EXACTLY on every producible binding field, through the recorded comparison vocabulary", () => {
-    const inputs = loadSignedCaseInputs();
+    const canonical = ["GC-01-firm-a-happy-path", "GC-02-firm-b-happy-path", "GC-03-recent-bank-change-firm-a", "GC-04-recent-bank-change-firm-b"];
+    const inputs = loadSignedCaseInputs().filter((x) => canonical.includes(x.caseId)); // PR-5c-i widened the reader to all sixteen; the exact-match bar stays on the canonical four
     const exps = loadSignedCaseExpectations();
-    expect(inputs.map((x) => x.caseId)).toEqual(["GC-01-firm-a-happy-path", "GC-02-firm-b-happy-path", "GC-03-recent-bank-change-firm-a", "GC-04-recent-bank-change-firm-b"]);
+    expect(inputs.map((x) => x.caseId)).toEqual(canonical);
     for (const { caseId, input, parseTable } of inputs) {
       const produced = evaluate(input);
       expect(parseTable.length, `${caseId} records its prose parses (CD-4c: read by asserted patterns, and paid for)`).toBeGreaterThan(0);
@@ -749,6 +751,52 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
   it("the decision module's silence token and account-reference forms agree byte-for-byte with their authorities", () => {
     expect(DECISION_NOT_STATED).toBe(POLICY_NOT_STATED);
     expect(REFERENCE_FORMS.map(([n, r]) => [n, r.source])).toEqual(ACCOUNT_REFERENCE_FORMS.map(([n, r]) => [n, r.source]));
+  });
+  it("PR-5c-i: the GOVERNED conformance run equals the committed file exactly, and the reconciliation ledger closes in both directions", async () => {
+    const grades = await runConformance(mintRequestId()); // exercises conformance.runner, sixteen readSignedCase module-operations, sixteen grade flow-steps under their own decision correlations
+    const committed = JSON.parse(readFileSync("docs/evidence/decision-conformance.json", "utf8"));
+    expect(JSON.parse(JSON.stringify(grades))).toEqual(committed.cases); // the register renders exactly what the governed run produces - the two paths cannot drift
+    expect(grades).toHaveLength(16);
+    const ledger = JSON.parse(readFileSync("docs/decision-reconciliation-ledger.json", "utf8"));
+    expect(reconcile(grades, ledger)).toEqual([]); // every DIFFERS ruled, no stale entry
+    const totals = { MATCHED: 0, DIFFERS: 0, "NOT-YET-PRODUCIBLE": 0 } as Record<string, number>;
+    for (const g of grades) for (const v of g.verdicts) totals[v.verdict] += 1;
+    expect(totals).toEqual(committed.totals);
+    for (const g of grades) expect(g.disposition).toBe(loadSignedCaseExpectations().find((e) => e.caseId === g.caseId)!.expectedDisposition); // all sixteen dispositions re-derived exactly
+  }, 120_000);
+  it("M-D: the reconciler refuses an unledgered difference, a stale entry, and an entry without a captain ruling", async () => {
+    const grades = gradeAllCases();
+    const ledger: { id: string; caseId: string; field: string; ruling: "CD-4b"; note: string }[] = JSON.parse(readFileSync("docs/decision-reconciliation-ledger.json", "utf8"));
+    const doctored = grades.map((g) =>
+      g.caseId === "GC-01-firm-a-happy-path" ? { ...g, verdicts: [...g.verdicts, { field: "invented", verdict: "DIFFERS", ruling: null, signed: 1, produced: 2 } as const] } : g,
+    );
+    expect(reconcile(doctored, ledger).join("\n")).toContain("unledgered difference GC-01-firm-a-happy-path:invented");
+    expect(reconcile(grades, [...ledger, { id: "GC-02-firm-b-happy-path:disposition", caseId: "GC-02-firm-b-happy-path", field: "disposition", ruling: "CD-4b", note: "stale" }]).join("\n")).toContain(
+      "stale ledger entry GC-02-firm-b-happy-path:disposition",
+    );
+    expect(
+      reconcile(
+        grades,
+        ledger.map((e, i) => (i === 0 ? { ...e, ruling: "editorial" as unknown as "CD-4b" } : e)),
+      ).join("\n"),
+    ).toContain("no captain ruling");
+  });
+  it("M-J: every produced idempotency key conforms to the CD-4d grammar, and among the SIGNED keys exactly the named pre-signature divergence deviates", () => {
+    const { produced, signedDivergent } = keyGrammarViolations();
+    expect(produced).toEqual([]);
+    expect(signedDivergent).toEqual(KNOWN_KEY_DIVERGENCES_BEFORE_SIGNATURE); // after the pin moves to the signing commit this list must empty for the test to keep passing
+  });
+  it("PR-5c-i: the conformance route authenticates and authorizes conformance.read before anything renders", async () => {
+    const c = requestCorrelation(mintRequestId());
+    const access = createAccessContext();
+    const view = await getGateway().enterRouteConformance(c, async () => {
+      const p = await access.authenticate(c, cookieValue);
+      if (!p) return null;
+      return (await access.authorize(c, p, "conformance.read")) ? "granted" : "denied";
+    });
+    expect(view).toBe("granted");
+    const anonymous = await getGateway().enterRouteConformance(requestCorrelation(mintRequestId()), async () => (await access.authenticate(c, undefined)) ?? "refused");
+    expect(anonymous).toBe("refused");
   });
 });
 

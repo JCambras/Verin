@@ -314,6 +314,7 @@ test("the whole journey is completable from the keyboard alone", async ({ page }
   await page.goto("/");
   await page.keyboard.press("Tab"); // the chrome's Households link
   await page.keyboard.press("Tab"); // the chrome's Firm policy link (slice 4)
+  await page.keyboard.press("Tab"); // the chrome's Conformance link (slice 5)
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("Work email")).toBeFocused();
   await page.keyboard.type("advisor@firm-a.example");
@@ -330,4 +331,21 @@ test("the whole journey is completable from the keyboard alone", async ({ page }
   await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Delgado Household" })).toBeVisible();
   expect((await settledAxe(page)).violations).toEqual([]);
+});
+
+test("the conformance register: all sixteen signed cases, every binding field, three-valued and ruled - in public", async ({ page }) => {
+  await page.goto("/conformance");
+  await expect(page.getByTestId("verin-signin-loaded")).toBeVisible(); // signed out, the register redirects to sign-in - it is governed, not published
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.goto("/conformance");
+  await expect(page.getByTestId("verin-conformance-loaded")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /GC-01-firm-a-happy-path/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /GC-16-specialist-review-expiration - re-derived disposition: proceed/ })).toBeVisible(); // all sixteen render, each naming its re-derived disposition
+  await expect(page.locator('[data-verdict="MATCHED"]')).toHaveCount(183);
+  await expect(page.locator('[data-verdict="DIFFERS"]')).toHaveCount(31); // the differing fields stay VISIBLE until the captain's sitting - never absorbed
+  await expect(page.locator('[data-verdict="NOT-YET-PRODUCIBLE"]')).toHaveCount(28);
+  await expect(page.getByText("differs · ruling CD-4d")).toBeVisible(); // GC-10's idempotency key, the named pre-signature divergence
+  await expect(page.getByText("differs · ruling missing")).toHaveCount(0); // no unruled difference reaches the screen
+  expect((await settledAxe(page)).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/pr5c1-conformance.png", fullPage: true });
 });

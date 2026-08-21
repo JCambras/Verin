@@ -104,7 +104,11 @@ export type OpKey =
   | "route.decision"
   | "decision.renderOutcome"
   | "route.decision-compare"
-  | "decision.compareSide";
+  | "decision.compareSide"
+  | "route.conformance"
+  | "conformance.runner"
+  | "conformance.readSignedCase"
+  | "conformance.grade";
 type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum"; values: readonly string[] };
 type Row = {
   id: GovernedOperationId;
@@ -145,8 +149,18 @@ const REGISTRY: readonly Row[] = [
   row("route.sign-in", "use-case", ["entry"], "enterRouteSignIn"),
   row("route.households", "use-case", ["entry"], "enterRouteHouseholds"),
   row("route.household-workspace", "use-case", ["entry"], "enterRouteHouseholdWorkspace"),
-  row("access.authenticate", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare"], "enterAccessAuthenticate"),
-  row("access.authorize", "module-operation", ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare"], "enterAccessAuthorize"),
+  row(
+    "access.authenticate",
+    "module-operation",
+    ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare", "route.conformance"],
+    "enterAccessAuthenticate",
+  ),
+  row(
+    "access.authorize",
+    "module-operation",
+    ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare", "route.conformance"],
+    "enterAccessAuthorize",
+  ),
   row("access.withTenant", "module-operation", ["route.households", "route.household-workspace", "route.decision", "route.decision-compare"], "enterAccessWithTenant"),
   row("access.renewSession", "module-operation", ["entry"], "enterAccessRenewSession"),
   row("identity.lookupForLogin", "store", ["route.sign-in"], "enterIdentityLookupForLogin"),
@@ -176,6 +190,13 @@ const REGISTRY: readonly Row[] = [
   // side under its OWN decision correlation, because each side's outcome mints its own identity.
   row("route.decision-compare", "use-case", ["entry"], "enterRouteDecisionCompare", "Product", 5),
   row("decision.compareSide", "flow-step", ["route.decision-compare"], "enterDecisionCompareSide", "Product", 5, "DecisionCorrelation"),
+  // PR-5c-i: the conformance register route (renders the COMMITTED conformance file); the runner,
+  // the hash-verified signed-case read (a module-operation - a git read of pinned oracle bytes is
+  // not a database effect), and the per-case grade step under each case's own decision identity.
+  row("route.conformance", "use-case", ["entry"], "enterRouteConformance", "Product", 5),
+  row("conformance.runner", "module-operation", ["entry"], "enterConformanceRunner", "Product", 5),
+  row("conformance.readSignedCase", "module-operation", ["conformance.runner"], "enterConformanceReadSignedCase", "Product", 5),
+  row("conformance.grade", "flow-step", ["conformance.runner"], "enterConformanceGrade", "Product", 5, "DecisionCorrelation"),
 ];
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -547,6 +568,10 @@ export type Gateway = {
   enterDecisionRenderOutcome: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterRouteDecisionCompare: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterDecisionCompareSide: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterRouteConformance: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterConformanceRunner: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterConformanceReadSignedCase: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterConformanceGrade: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -783,6 +808,10 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterDecisionRenderOutcome: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decision.renderOutcome", c, fn),
     enterRouteDecisionCompare: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.decision-compare", c, fn),
     enterDecisionCompareSide: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decision.compareSide", c, fn),
+    enterRouteConformance: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.conformance", c, fn),
+    enterConformanceRunner: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("conformance.runner", c, fn),
+    enterConformanceReadSignedCase: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("conformance.readSignedCase", c, fn),
+    enterConformanceGrade: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("conformance.grade", c, fn),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");

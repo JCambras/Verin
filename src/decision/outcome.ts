@@ -311,15 +311,17 @@ function evaluate(input: DecisionInput): DecisionOutcome {
   const pendings = byKind("pending-actions");
   const schedule = schedules[0];
   if (balances.some(attested) || schedules.some(attested)) t("cash-reserve", "satisfied");
-  else if (!schedule || !selected || selected.available === null || usd(schedule.body["MonthlyUsd"]) === null) {
-    t("cash-reserve", "unevaluable");
-    const missingKind = !schedule || usd(schedule?.body["MonthlyUsd"]) === null ? "planned-withdrawals" : "account-balance";
-    blockers.push({ code: "reserve-evidence-missing", resolvingEvidence: [{ kind: missingKind, subjectRef: b.subject.household }] });
-  } else if (schedule.freshness !== "fresh" || selected.o.freshness !== "fresh") {
-    const staleOne = schedule.freshness !== "fresh" ? schedule : selected.o;
+  else if ((schedule && schedule.freshness !== "fresh") || (selected && selected.available !== null && selected.o.freshness !== "fresh")) {
+    // Stale before missing: a present-but-stale reserve input refuses as STALE even when its
+    // figure is unreadable - the resolving step is a refresh, and no arithmetic runs on it.
+    const staleOne = schedule && schedule.freshness !== "fresh" ? schedule : selected!.o;
     t("cash-reserve", "fired", { evidenceAgeDays: daysBetween(staleOne.provenance.observedAt, input.asOf) });
     blockers.push({ code: "reserve-evidence-stale", resolvingEvidence: [{ kind: staleOne.kind, subjectRef: staleOne.subject }] });
     explanations.push("freshness-window-exceeded", "stale-cannot-silently-proceed");
+  } else if (!schedule || !selected || selected.available === null || usd(schedule.body["MonthlyUsd"]) === null) {
+    t("cash-reserve", "unevaluable");
+    const missingKind = !schedule || usd(schedule?.body["MonthlyUsd"]) === null ? "planned-withdrawals" : "account-balance";
+    blockers.push({ code: "reserve-evidence-missing", resolvingEvidence: [{ kind: missingKind, subjectRef: b.subject.household }] });
   } else {
     const monthly = usd(schedule.body["MonthlyUsd"])!;
     const pendingUsd = pendings.reduce((n, o) => n + (usd(o.body["PendingTotalUsd"]) ?? 0), 0);
