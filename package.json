@@ -13,6 +13,7 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "db": "tsx src/tools/cli.ts",
+    "amp": "tsx src/tools/amplification.ts",
     "lint": "eslint .",
     "format": "prettier --check \"src/**/*.{ts,tsx}\" \"*.mjs\" playwright.config.ts"
   },

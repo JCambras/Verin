@@ -130,13 +130,56 @@ test("the policy shelf resolves a published version by content address, and refu
   await page.getByRole("button", { name: "Inspect version" }).click();
   await expect(page.getByText("6 months of planned withdrawals")).toBeVisible(); // the seeded Firm A re-expression
   await expect(page.getByText("Not stated - the ratified contract is silent, and Verin does not invent firm policy").first()).toBeVisible(); // typed silence, rendered as itself
-  await expect(page.getByText(`fpd.v1:${digest}`)).toBeVisible();
+  await expect(page.getByText(`fpd.v1:${digest}`).first()).toBeVisible(); // appears in both the history register and the inspect provenance
   expect((await settledAxe(page)).violations).toEqual([]);
   await page.screenshot({ path: "test-results/pr4a-policy.png" });
   await page.goto(`/policy?id=fpd.v1:${"e".repeat(64)}`);
   await expect(page.getByText("No such version on your firm's shelf")).toBeVisible();
   await expect(page.getByText("months of planned withdrawals")).toHaveCount(0); // no policy substituted for a missing version
   expect((await settledAxe(page)).violations).toEqual([]); // the NotFound refusal state
+});
+
+test("the policy shelf shows what is in force and the history, and publishes a new version through the real path", async ({ page }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.goto("/policy");
+  await expect(page.getByTestId("verin-policy-loaded")).toBeVisible();
+  await expect(page.getByText(/^In force as of /)).toBeVisible(); // derived from the sequence, on screen
+  const history = page.getByRole("list", { name: "Every published version of your firm's policy, in publish order" });
+  await expect(history.getByText("Version 1", { exact: true })).toBeVisible();
+  expect((await settledAxe(page)).violations).toEqual([]); // the in-force and history states
+  await page.screenshot({ path: "test-results/pr4b-policy.png" });
+  const doc = `{"reserveHorizonMonths":7,"dualApproval":{"thresholdUsd":${10_000 + (Date.now() % 900_000_000)},"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
+  await page.getByLabel(/Policy document/).fill(doc);
+  await page.getByRole("button", { name: "Publish version" }).click();
+  await expect(page.getByText(/^Published as /)).toBeVisible();
+  await page.getByRole("status").filter({ hasText: "Published as" }).getByRole("link").click(); // inspect the version just published
+  await expect(page.getByText("7 months of planned withdrawals")).toBeVisible();
+  await expect(page.getByText("demonstration record")).toHaveCount(0); // an operator entry, not a demonstration - no chip anywhere on the page
+  await expect(page.getByText(/^In force as of /)).toBeVisible(); // and the sequence now derives the new version as in force
+  await page.getByLabel(/Policy document/).fill('{"reserveHorizonMonths":"6 + 3"}');
+  await page.getByRole("button", { name: "Publish version" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "refuses 'reserveHorizonMonths'" })).toBeVisible(); // the parse refusal names the offending path, on screen
+  expect((await settledAxe(page)).violations).toEqual([]); // the refused-publish state
+});
+
+test("a firm with nothing published sees the honest empty shelf, never an invented policy", async ({ page }) => {
+  const su = new PgClient({ connectionString: SUPER_URL });
+  await su.connect();
+  const saved = (
+    await su.query("SELECT v.org_id, v.seq, v.digest, v.published_at, v.record_origin FROM policy_version v JOIN org o ON o.id = v.org_id WHERE o.name = 'Harbor Point Advisors' ORDER BY v.seq")
+  ).rows as Record<string, unknown>[];
+  await su.query("DELETE FROM policy_version WHERE org_id = $1", [saved[0].org_id]);
+  try {
+    await signInAs(page, "advisor@firm-b.example", "harbor-quartz-42");
+    await page.goto("/policy");
+    await expect(page.getByText("No policy is on your firm's shelf yet")).toBeVisible();
+    await expect(page.getByText(/^In force as of /)).toHaveCount(0); // nothing is in force and nothing is invented
+    expect((await settledAxe(page)).violations).toEqual([]); // the empty no-versions state
+  } finally {
+    for (const r of saved)
+      await su.query("INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, $2, $3, $4, $5)", [r.org_id, r.seq, r.digest, r.published_at, r.record_origin]);
+    await su.end();
+  }
 });
 
 test("an advisor stays signed in through a long sitting - the session slides and rotates", async ({ page, context }) => {

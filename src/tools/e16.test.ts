@@ -10,7 +10,7 @@ import { Client as PgClient } from "pg";
 import { Project, SyntaxKind, type SourceFile } from "ts-morph";
 import { annotateOperation, createGovernedRuntime, getGateway, mintRequestId, requestCorrelation, snapshotEvidence, type RequestCorrelation } from "../runtime/governed";
 import { createAccessContext, renewSession, signIn, type ActionGrant, type Principal } from "../access/context";
-import { POLICY_OPERATION_DEADLINE_MS, createPolicyVersionRegistry, parsePolicyVersionId } from "../policy/registry";
+import { POLICY_OPERATION_DEADLINE_MS, assertSequenceSound, createPolicyVersionRegistry, parsePolicyVersionId } from "../policy/registry";
 import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } from "../evidence/bundle";
 import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
 import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
@@ -436,6 +436,61 @@ describe("the policy version registry (prompt 4, PR-4a): content-addressed, immu
     const id = parsePolicyVersionId(`fpd.v1:${"e".repeat(64)}`)!;
     const out = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE));
     expect(out).toEqual({ kind: "not-found", reason: "version-not-found", subject: `fpd.v1:${"e".repeat(64)}` }); // not an empty policy, not a default - no policy field exists to go on
+  });
+  it("M-B: publishing nine months as a NEW version leaves every previously recorded identity resolving to its own bytes and figures", async () => {
+    const registry = createPolicyVersionRegistry();
+    const t = freshThreshold();
+    const six = enc(policyDoc(6, t));
+    const idSix = await withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, six, POLICY_DEADLINE));
+    const recorded = await withPolicyGrant("policy.read", (c, g) => registry.history(c, g, POLICY_DEADLINE)); // recorded PolicyVersionIds alone - no decision exists and none is minted
+    const idNine = await withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, enc(policyDoc(9, t)), POLICY_DEADLINE));
+    const inForce = await withPolicyGrant("policy.read", (c, g) => registry.resolveInForce(c, g, new Date().toISOString(), POLICY_DEADLINE));
+    expect("digest" in inForce ? inForce.digest : inForce).toBe(idNine.digest); // in-force is DERIVED from the sequence: the new version governs now
+    const again = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, idSix, POLICY_DEADLINE));
+    if (again.kind !== "policy-version") throw new Error("the old identity must still resolve to its own bytes");
+    expect(again.policy.reserveHorizonMonths).toBe(6); // its own derived figures, never the new version's
+    for (const id of recorded) expect((await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE))).kind).toBe("policy-version"); // every previously recorded identity keeps resolving
+    const epoch = await withPolicyGrant("policy.read", (c, g) => registry.resolveInForce(c, g, "1970-01-01T00:00:00.000Z", POLICY_DEADLINE));
+    expect(epoch).toEqual({ kind: "not-found", reason: "no-version-in-force", subject: expect.stringMatching(/^f[0-9a-f]{32}$/) }); // nothing was in force before the first publish - and nothing is invented
+  });
+  it("M-C and M-E: a deleted interior row is a NAMED gap, and the sequence checks refuse an empty history", async () => {
+    const registry = createPolicyVersionRegistry();
+    const before = await withPolicyGrant("policy.read", (c, g) => registry.history(c, g, POLICY_DEADLINE));
+    expect(before.length).toBeGreaterThanOrEqual(3);
+    const interior = (await superQuery("SELECT org_id, seq, digest, published_at, record_origin FROM policy_version WHERE digest = $1", [before[1].digest])).rows[0] as Record<string, unknown>;
+    await superQuery("DELETE FROM policy_version WHERE org_id = $1 AND seq = $2", [interior.org_id, interior.seq]);
+    try {
+      await expect(withPolicyGrant("policy.read", (c, g) => registry.history(c, g, POLICY_DEADLINE))).rejects.toThrow(/sequence number 2 is missing \(a gap in the append-only sequence/);
+      await expect(withPolicyGrant("policy.read", (c, g) => registry.resolveInForce(c, g, new Date().toISOString(), POLICY_DEADLINE))).rejects.toThrow(/a gap in the append-only sequence/);
+    } finally {
+      await superQuery("INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, $2, $3, $4, $5)", [
+        interior.org_id,
+        interior.seq,
+        interior.digest,
+        interior.published_at,
+        interior.record_origin,
+      ]);
+    }
+    expect((await withPolicyGrant("policy.read", (c, g) => registry.history(c, g, POLICY_DEADLINE))).map((i) => i.digest)).toEqual(before.map((i) => i.digest)); // restored whole
+    expect(() => assertSequenceSound([])).toThrow(/refuses an empty history/); // M-E: a check that sees nothing must never report clean
+  });
+  it("M-C: a firm with no published versions resolves to NotFound naming the firm and carrying no policy", async () => {
+    const registry = createPolicyVersionRegistry();
+    const sB = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-b.example", "harbor-quartz-42");
+    const cB = requestCorrelation(mintRequestId());
+    const access = createAccessContext();
+    const pB = await access.authenticate(cB, sB!.cookieValue);
+    const gB = await access.authorize(cB, pB!, "policy.read");
+    const orgB = pB!.tenant.orgId;
+    const saved = (await superQuery("SELECT seq, digest, published_at, record_origin FROM policy_version WHERE org_id = $1 ORDER BY seq", [orgB])).rows as Record<string, unknown>[];
+    await superQuery("DELETE FROM policy_version WHERE org_id = $1", [orgB]);
+    try {
+      expect(await registry.resolveInForce(cB, gB!, new Date().toISOString(), POLICY_DEADLINE)).toEqual({ kind: "not-found", reason: "no-version-in-force", subject: `f${orgB.replaceAll("-", "")}` });
+      expect(await registry.history(cB, gB!, POLICY_DEADLINE)).toEqual([]); // a typed empty shelf - no soundness claim over nothing
+    } finally {
+      for (const r of saved)
+        await superQuery("INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, $2, $3, $4, $5)", [orgB, r.seq, r.digest, r.published_at, r.record_origin]);
+    }
   });
   it("M-F: an expression, an unknown key, and an out-of-vocabulary value are each refused naming the offending path, before any store work", async () => {
     const registry = createPolicyVersionRegistry();

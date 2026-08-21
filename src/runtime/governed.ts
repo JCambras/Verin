@@ -66,7 +66,10 @@ export type OpKey =
   | "policy.publish"
   | "policy.resolveByHash"
   | "policy.appendVersion"
-  | "policy.documentByDigest";
+  | "policy.documentByDigest"
+  | "policy.resolveInForce"
+  | "policy.history"
+  | "policy.versionsForFirm";
 type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum"; values: readonly string[] };
 type Row = {
   id: GovernedOperationId;
@@ -81,7 +84,7 @@ type Row = {
 };
 const ATTRS: Row["attributes"] = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } };
 // Slice 4's declared domains: the BARE 64-hex digest and the NotFound reason's closed enum.
-const POLICY_ATTRS: Row["attributes"] = { ...ATTRS, documentDigest: { domain: "digest" }, refusalReason: { domain: "enum", values: ["version-not-found"] } };
+const POLICY_ATTRS: Row["attributes"] = { ...ATTRS, documentDigest: { domain: "digest" }, refusalReason: { domain: "enum", values: ["version-not-found", "no-version-in-force"] } };
 const row = (id: OpKey, cls: Row["class"], permittedParents: Row["permittedParents"], gatewayEntry: string, owner: Row["owner"] = "Access", slice: Row["slice"] = 2): Row => ({
   id: opId(id),
   class: cls,
@@ -116,6 +119,9 @@ const REGISTRY: readonly Row[] = [
   row("policy.resolveByHash", "module-operation", ["entry", "route.policy"], "enterPolicyResolveByHash", "Configuration", 4),
   row("policy.appendVersion", "store", ["policy.publish"], "enterPolicyAppendVersion", "Configuration", 4),
   row("policy.documentByDigest", "store", ["policy.resolveByHash"], "enterPolicyDocumentByDigest", "Configuration", 4),
+  row("policy.resolveInForce", "module-operation", ["entry", "route.policy"], "enterPolicyResolveInForce", "Configuration", 4),
+  row("policy.history", "module-operation", ["entry", "route.policy"], "enterPolicyHistory", "Configuration", 4),
+  row("policy.versionsForFirm", "store", ["policy.resolveInForce", "policy.history"], "enterPolicyVersionsForFirm", "Configuration", 4),
 ];
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -242,6 +248,19 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
     resultValidator: "policyVersionRow.v1",
     cardinality: "at-most-one",
     transactionClass: "tenant-statement-deadline-from-p1-p3",
+    authorityClass: "tenant",
+  },
+  "policy.versionsForFirm": {
+    kind: "prepared-query",
+    statementName: "policy_versions_for_firm_v1",
+    canonicalSql: "SELECT seq, digest, published_at, record_origin FROM policy_version WHERE org_id = $1 ORDER BY seq LIMIT 201",
+    parameters: [
+      { name: "orgId", type: "uuid" },
+      { name: "statementTimeoutMs", type: "text" },
+    ],
+    resultValidator: "policyVersionRows.v1",
+    cardinality: "many",
+    transactionClass: "tenant-statement-deadline-from-p1-p2",
     authorityClass: "tenant",
   },
 };
@@ -396,6 +415,22 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       authorityClass: "tenant",
     },
   },
+  "policy.versionsForFirm": {
+    gatewayEntry: "enterPolicyVersionsForFirm",
+    constructedDefinition: {
+      kind: "prepared-query",
+      statementName: "policy_versions_for_firm_v1",
+      canonicalSql: "SELECT seq, digest, published_at, record_origin FROM policy_version WHERE org_id = $1 ORDER BY seq LIMIT 201",
+      parameters: [
+        { name: "orgId", type: "uuid" },
+        { name: "statementTimeoutMs", type: "text" },
+      ],
+      resultValidator: "policyVersionRows.v1",
+      cardinality: "many",
+      transactionClass: "tenant-statement-deadline-from-p1-p2",
+      authorityClass: "tenant",
+    },
+  },
 };
 
 export const NAMING_PATTERN = "verin.op.{id}";
@@ -451,6 +486,9 @@ export type Gateway = {
   enterPolicyResolveByHash: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterPolicyAppendVersion: (c: RequestCorrelation, v: { orgId: string; digest: string; bytes: Uint8Array; recordOrigin: string; statementTimeoutMs: string }) => Promise<unknown>;
   enterPolicyDocumentByDigest: (c: RequestCorrelation, v: { orgId: string; digest: string; statementTimeoutMs: string }) => Promise<unknown>;
+  enterPolicyResolveInForce: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterPolicyHistory: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterPolicyVersionsForFirm: (c: RequestCorrelation, v: { orgId: string; statementTimeoutMs: string }) => Promise<unknown>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -487,6 +525,7 @@ const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
         .parse(x),
     ),
   "policyVersionRow.v1": (r) => atMostOne(r, z.strictObject({ seq: z.number().int(), published_at: z.date(), bytes: z.instanceof(Uint8Array), record_origin: z.string() })),
+  "policyVersionRows.v1": (r) => r.rows.map((x) => z.strictObject({ seq: z.number().int(), digest: z.string(), published_at: z.date(), record_origin: z.string() }).parse(x)),
 };
 
 // The one-per-process slot lives on globalThis, not a module-local variable: the framework bundles
@@ -673,6 +712,9 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterPolicyResolveByHash: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("policy.resolveByHash", c, fn),
     enterPolicyAppendVersion: (c: RequestCorrelation, v: Parameters<Gateway["enterPolicyAppendVersion"]>[1]) => runStore("policy.appendVersion", c, v),
     enterPolicyDocumentByDigest: (c: RequestCorrelation, v: { orgId: string; digest: string; statementTimeoutMs: string }) => runStore("policy.documentByDigest", c, v),
+    enterPolicyResolveInForce: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("policy.resolveInForce", c, fn),
+    enterPolicyHistory: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("policy.history", c, fn),
+    enterPolicyVersionsForFirm: (c: RequestCorrelation, v: { orgId: string; statementTimeoutMs: string }) => runStore("policy.versionsForFirm", c, v),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");
