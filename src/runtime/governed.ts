@@ -128,7 +128,7 @@ const REGISTRY: readonly Row[] = [
   row("policy.publish", "module-operation", ["entry", "route.policy"], "enterPolicyPublish", "Configuration", 4, POLICY_ATTRS),
   row("policy.resolveByHash", "module-operation", ["entry", "route.policy"], "enterPolicyResolveByHash", "Configuration", 4, POLICY_ATTRS),
   row("policy.appendVersion", "store", ["policy.publish"], "enterPolicyAppendVersion", "Configuration", 4),
-  row("policy.documentByDigest", "store", ["policy.publish", "policy.resolveByHash"], "enterPolicyDocumentByDigest", "Configuration", 4),
+  row("policy.documentByDigest", "store", ["policy.resolveByHash"], "enterPolicyDocumentByDigest", "Configuration", 4),
 ];
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -229,7 +229,7 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
     kind: "prepared-query",
     statementName: "policy_append_version_v1",
     canonicalSql:
-      "WITH doc AS (INSERT INTO policy_document (org_id, digest, bytes, record_origin) VALUES ($1, $2, $3, $4) ON CONFLICT (org_id, digest) DO NOTHING) INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, COALESCE((SELECT max(seq) FROM policy_version WHERE org_id = $1), 0) + 1, $2, now(), $4) RETURNING seq",
+      "WITH doc AS (INSERT INTO policy_document (org_id, digest, bytes, record_origin) VALUES ($1, $2, $3, $4) ON CONFLICT (org_id, digest) DO NOTHING) INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, COALESCE((SELECT max(seq) FROM policy_version WHERE org_id = $1), 0) + 1, $2, now(), $4) ON CONFLICT (org_id, digest) DO NOTHING RETURNING seq",
     parameters: [
       { name: "orgId", type: "uuid" },
       { name: "digest", type: "text" },
@@ -237,8 +237,8 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
       { name: "recordOrigin", type: "text" },
       { name: "statementTimeoutMs", type: "text" },
     ],
-    resultValidator: "publishedSeq.v1",
-    cardinality: "write-one",
+    resultValidator: "rowCount.v1",
+    cardinality: "write-at-most-one",
     transactionClass: "tenant-statement-deadline-from-p1-p5",
     authorityClass: "tenant",
   },
@@ -377,7 +377,7 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       kind: "prepared-query",
       statementName: "policy_append_version_v1",
       canonicalSql:
-        "WITH doc AS (INSERT INTO policy_document (org_id, digest, bytes, record_origin) VALUES ($1, $2, $3, $4) ON CONFLICT (org_id, digest) DO NOTHING) INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, COALESCE((SELECT max(seq) FROM policy_version WHERE org_id = $1), 0) + 1, $2, now(), $4) RETURNING seq",
+        "WITH doc AS (INSERT INTO policy_document (org_id, digest, bytes, record_origin) VALUES ($1, $2, $3, $4) ON CONFLICT (org_id, digest) DO NOTHING) INSERT INTO policy_version (org_id, seq, digest, published_at, record_origin) VALUES ($1, COALESCE((SELECT max(seq) FROM policy_version WHERE org_id = $1), 0) + 1, $2, now(), $4) ON CONFLICT (org_id, digest) DO NOTHING RETURNING seq",
       parameters: [
         { name: "orgId", type: "uuid" },
         { name: "digest", type: "text" },
@@ -385,8 +385,8 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
         { name: "recordOrigin", type: "text" },
         { name: "statementTimeoutMs", type: "text" },
       ],
-      resultValidator: "publishedSeq.v1",
-      cardinality: "write-one",
+      resultValidator: "rowCount.v1",
+      cardinality: "write-at-most-one",
       transactionClass: "tenant-statement-deadline-from-p1-p5",
       authorityClass: "tenant",
     },
@@ -499,10 +499,6 @@ const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
         })
         .parse(x),
     ),
-  "publishedSeq.v1": (r) => {
-    if (r.rowCount !== 1) throw new Error("cardinality write-one violated");
-    return z.strictObject({ seq: z.number().int() }).parse(r.rows[0]);
-  },
   "policyVersionRow.v1": (r) => atMostOne(r, z.strictObject({ seq: z.number().int(), published_at: z.date(), bytes: z.instanceof(Uint8Array), record_origin: z.string() })),
 };
 
@@ -650,19 +646,13 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
         else if (tc === "session-rotate-guc-from-p1-p2") {
           await client.query("SELECT set_config('verin.session_token_hash', $1, true)", [params[0]]);
           await client.query("SELECT set_config('verin.session_token_next', $1, true)", [params[1]]);
-        } else if (tc === "tenant-statement-deadline-from-p1-p4") {
-          // The timeout derives from the route-minted deadline; the GUC parameter never reaches the binds.
+        } else if (typeof tc === "string" && /^tenant-statement-deadline-from-p1-p[2-9]$/.test(tc)) {
+          // The timeout derives from the route-minted deadline the class names as its LAST parameter;
+          // the GUC parameters never reach the binds (slice 3's p4 form; slice 4 adds p3 and p5).
+          const last = Number(tc.slice(-1));
           await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
-          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[3]]);
-          queryParams = params.slice(0, 3);
-        } else if (tc === "tenant-statement-deadline-from-p1-p5") {
-          await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
-          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[4]]);
-          queryParams = params.slice(0, 4);
-        } else if (tc === "tenant-statement-deadline-from-p1-p3") {
-          await client.query("SELECT set_config('verin.org_id', $1, true)", [params[0]]);
-          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[2]]);
-          queryParams = params.slice(0, 2);
+          await client.query("SELECT set_config('statement_timeout', $1, true)", [params[last - 1]]);
+          queryParams = params.slice(0, last - 1);
         } else throw new Error(`transaction class '${String(tc)}' is not admitted`);
         const res = await client.query({ name: String(def["statementName"]), text: String(def["canonicalSql"]), values: queryParams });
         rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });

@@ -1,17 +1,14 @@
-// The PolicyVersionRegistry seam (prompt 4 section 4) - slice 4's one named contract seam. A firm's
-// decision policy is an immutable content-addressed identity with a decidable history: the address IS
-// the document's SHA-256 (`fpd.v1:` from the first byte, the `semfx.v1`/`evb.v1` precedent, because
-// prompt 6 records these identities immutably), there is NO current-bytes read path anywhere -
-// resolveByHash is the only way to obtain a document, and a missing identity is a typed NotFound
-// carrying no policy field at all, so a caller has nothing to fall back on. The firm is the grant's
-// sealed tenant identity, never a parameter; row-level security is the database guarantee. Every
-// stored byte is re-hashed and compared BEFORE it is parsed, refusing on mismatch naming both
-// digests - the oracle's inert-delta defect (change the rulebook, every gate stays green) is
-// structurally impossible here. Configuration is inert data: every string field is a closed
-// vocabulary, so an expression has no field to hide in, and a field the ratified matrix records as
-// silence is the typed value "not-stated" - never invented, never defaulted (captain ratification
-// 2026-08-21). PR-4a of the section 7 restack ships publish and resolveByHash; history and
-// resolveInForce, their views and the amplification harness are PR-4b.
+// The PolicyVersionRegistry seam (prompt 4 section 4) - slice 4's one named contract seam. The
+// address IS the document's SHA-256 (`fpd.v1:` from the first byte - the `semfx.v1`/`evb.v1`
+// precedent, because prompt 6 records these identities immutably); there is NO current-bytes read
+// path anywhere - resolveByHash is the only way to obtain a document, and a missing identity is a
+// typed NotFound carrying no policy field at all. The firm is the grant's sealed tenant identity,
+// never a parameter; row-level security is the database guarantee. Stored bytes are re-hashed and
+// compared BEFORE parsing, refusing on mismatch naming both digests - the oracle's inert-delta
+// defect cannot happen here. Configuration is inert data: every string field is a closed vocabulary,
+// and a field the ratified matrix records as silence is the typed value "not-stated" - never
+// invented, never defaulted (captain ratification 2026-08-21). PR-4a of the section 7 restack ships
+// publish and resolveByHash; history, resolveInForce and the amplification harness are PR-4b.
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { annotateOperation, getGateway, type RequestCorrelation } from "../runtime/governed";
@@ -127,14 +124,18 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
         parseFirmPolicy(bytes); // refused before any store work (M-F)
         const digest = sha256hex(bytes);
         annotateOperation({ documentDigest: digest });
-        const orgId = grant.principal.tenant.orgId;
-        const statementTimeoutMs = String(deadline.milliseconds);
-        const existing = await gw.enterPolicyDocumentByDigest(c, { orgId, digest, statementTimeoutMs });
-        if (existing !== null) throw new Error(`publish refuses a duplicate identity: fpd.v1:${digest} is already in this firm's sequence (no duplicate identities)`);
-        // The publishing grant's own firm, the exact offered bytes, and an explicit origin marker at
-        // the insert: the tooling role's publishers (the seed, the instrumented run) are
-        // demonstrations; the web role's are operator entries.
-        await gw.enterPolicyAppendVersion(c, { orgId, digest, bytes, recordOrigin: gw.runtimeRole === "web" ? "operator-entry" : "demo-seed", statementTimeoutMs });
+        // One idempotency-aware write binds the version to the publishing grant's own firm with an
+        // explicit origin marker at the insert (the tooling role's publishers - the seed and the
+        // instrumented run - are demonstrations; the web role's are operator entries). Zero rows
+        // written means the identity is already on this firm's shelf, which is refused, never reused.
+        const wrote = await gw.enterPolicyAppendVersion(c, {
+          orgId: grant.principal.tenant.orgId,
+          digest,
+          bytes,
+          recordOrigin: gw.runtimeRole === "web" ? "operator-entry" : "demo-seed",
+          statementTimeoutMs: String(deadline.milliseconds),
+        });
+        if (wrote !== 1) throw new Error(`publish refuses a duplicate identity: fpd.v1:${digest} is already in this firm's sequence (no duplicate identities)`);
         return { version: "fpd.v1", digest };
       });
     },

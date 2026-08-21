@@ -50,37 +50,13 @@ const DELGADO: Omit<SeedObservation, "household">[] = [
 ];
 const OBSERVATIONS: SeedObservation[] = [...HENDERSON.map((o) => ({ household: "Henderson Family", ...o })), ...DELGADO.map((o) => ({ household: "Delgado Household", ...o }))];
 // The two firm policy documents (prompt 4 deliverable 3): hand-authored re-expressions of the
-// ratified matrix (config/demo/scenarios.yaml on main, read detached - DC-5; the parameter-by-
-// parameter derivation is recorded in PR-4a's body). Silence is typed: every field the matrix does
-// not state - Firm B's approver role and requester rule are null there by design, and no stage
-// shape or reservation window exists in it at all - is "not-stated", never invented, never defaulted.
+// ratified matrix (config/demo/scenarios.yaml on main, read detached - DC-5), one compact JSON line
+// each; the parameter-by-parameter derivation is in PR-4a's body. Silence is typed: every field the
+// matrix does not state - Firm B's approver role and requester rule are null there by design, and no
+// stage shape or reservation window exists in it at all - is "not-stated", never invented.
 const FIRM_POLICY: Record<string, string> = {
-  "advisor@firm-a.example": `{
-  "reserveHorizonMonths": 6,
-  "dualApproval": {
-    "thresholdUsd": 25000,
-    "approvalsRequired": 2,
-    "distinctActorsRequired": true,
-    "eligibleApproverRole": "operations",
-    "requesterRule": "may-not-satisfy-both-approvals"
-  },
-  "bankInstructionChange": "specialist-review",
-  "approvalStages": "not-stated",
-  "reservationWindowDays": "not-stated"
-}`,
-  "advisor@firm-b.example": `{
-  "reserveHorizonMonths": 12,
-  "dualApproval": {
-    "thresholdUsd": 100000,
-    "approvalsRequired": 2,
-    "distinctActorsRequired": true,
-    "eligibleApproverRole": "not-stated",
-    "requesterRule": "not-stated"
-  },
-  "bankInstructionChange": "block-until-independently-verified",
-  "approvalStages": "not-stated",
-  "reservationWindowDays": "not-stated"
-}`,
+  "advisor@firm-a.example": `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":25000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`,
+  "advisor@firm-b.example": `{"reserveHorizonMonths":12,"dualApproval":{"thresholdUsd":100000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"not-stated","requesterRule":"not-stated"},"bankInstructionChange":"block-until-independently-verified","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`,
 };
 const url = (name: string, fallback: string) => process.env[name] ?? fallback;
 async function withClient<T>(connectionString: string, fn: (c: Client) => Promise<T>): Promise<T> {

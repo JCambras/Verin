@@ -364,20 +364,23 @@ const policyDoc = (months: number, thresholdUsd: number) =>
 const enc = (s: string) => new TextEncoder().encode(s);
 const sha256hex = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const freshThreshold = () => 10_000 + Math.floor(Math.random() * 900_000_000);
-const withPolicyGrant = async <T>(action: "policy.read" | "policy.publish", fn: (c: RequestCorrelation, grant: ActionGrant) => Promise<T>, cookie?: string): Promise<T> => {
+const withPolicyGrant = async <T>(action: "policy.read" | "policy.publish", fn: (c: RequestCorrelation, grant: ActionGrant) => Promise<T>): Promise<T> => {
   const c = requestCorrelation(mintRequestId());
   const access = createAccessContext();
   return getGateway().enterRoutePolicy(c, async () => {
-    const p = await access.authenticate(c, cookie ?? cookieValue);
+    const p = await access.authenticate(c, cookieValue);
     const grant = await access.authorize(c, p!, action);
     return fn(c, grant!);
   });
 };
-async function superSession(fn: (su: PgClient) => Promise<void>) {
+// Forcing the oracle's defect into the store requires disabling triggers whole: the immutability
+// trigger refuses even a superuser's plain write, which M-D proves separately.
+async function replicaWrite(sql: string, params: unknown[]) {
   const su = new PgClient({ connectionString: SUPER_URL });
   await su.connect();
   try {
-    await fn(su);
+    await su.query("SET session_replication_role = replica");
+    await su.query(sql, params);
   } finally {
     await su.end();
   }
@@ -398,6 +401,21 @@ describe("the policy version registry (prompt 4, PR-4a): content-addressed, immu
     await expect(withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, bytes, POLICY_DEADLINE))).rejects.toThrow(/duplicate identity/);
     await expect(withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, { milliseconds: 0 }))).rejects.toThrow(/deadline/); // stop 9
     await expect(withPolicyGrant("policy.publish", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE))).rejects.toThrow(/requires a 'policy.read' grant/);
+    await getGateway().enterPolicyResolveByHash(requestCorrelation(mintRequestId()), async () => {
+      expect(() => annotateOperation({ documentDigest: `fpd.v1:${id.digest}` })).toThrow(/outside its declared digest domain/); // the prefixed identity string never enters telemetry
+      expect(() => annotateOperation({ documentDigest: policyDoc(6, 25_000) })).toThrow(/outside its declared digest domain/); // nor whole document bytes - refused on cardinality
+      expect(() => annotateOperation({ freeText: "anything" })).toThrow(/declares no attribute 'freeText'/);
+      annotateOperation({ documentDigest: id.digest }); // the bare 64-hex digest is inside the declared domain
+    });
+    const sB = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-b.example", "harbor-quartz-42");
+    const cB = requestCorrelation(mintRequestId());
+    const probed = await getGateway().enterRoutePolicy(cB, async () => {
+      const access = createAccessContext();
+      const pB = await access.authenticate(cB, sB!.cookieValue);
+      const gB = await access.authorize(cB, pB!, "policy.read");
+      return registry.resolveByHash(cB, gB!, id, POLICY_DEADLINE);
+    });
+    expect(probed.kind).toBe("not-found"); // another firm's shelf is unreachable even by exact address - the firm is the grant's sealed tenant identity and RLS is the guarantee
   });
   it("M-A: published bytes edited in place fail closed naming the identity and both digests - the oracle's inert delta cannot happen here", async () => {
     const registry = createPolicyVersionRegistry();
@@ -405,17 +423,11 @@ describe("the policy version registry (prompt 4, PR-4a): content-addressed, immu
     const original = enc(policyDoc(6, threshold));
     const id = await withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, original, POLICY_DEADLINE));
     const tampered = Buffer.from(policyDoc(9, threshold)); // six months quietly re-inked to nine
-    await superSession(async (su) => {
-      await su.query("SET session_replication_role = replica"); // the trigger refuses even a superuser (M-D); only disabling triggers can force the oracle's defect into the store
-      await su.query("UPDATE policy_document SET bytes = $1 WHERE digest = $2", [tampered, id.digest]);
-    });
+    await replicaWrite("UPDATE policy_document SET bytes = $1 WHERE digest = $2", [tampered, id.digest]);
     await expect(withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE))).rejects.toThrow(
       new RegExp(`refusing to parse fpd\\.v1:${id.digest}: the version's bytes were edited in place \\(declared digest ${id.digest}, stored bytes digest ${sha256hex(tampered)}\\)`),
     );
-    await superSession(async (su) => {
-      await su.query("SET session_replication_role = replica");
-      await su.query("UPDATE policy_document SET bytes = $1 WHERE digest = $2", [Buffer.from(original), id.digest]);
-    });
+    await replicaWrite("UPDATE policy_document SET bytes = $1 WHERE digest = $2", [Buffer.from(original), id.digest]);
     const restored = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE));
     expect(restored.kind).toBe("policy-version"); // the exact original bytes resolve again
   });
@@ -450,23 +462,6 @@ describe("the policy version registry (prompt 4, PR-4a): content-addressed, immu
     ];
     for (const [doc, re] of refusals) await expect(withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, enc(doc), POLICY_DEADLINE))).rejects.toThrow(re);
     expect((await superQuery("SELECT count(*)::int AS n FROM policy_version")).rows[0]).toEqual(before); // nothing reached the store
-  });
-  it("the firm is the grant's sealed tenant identity: another firm's version is unreachable even by exact address", async () => {
-    const registry = createPolicyVersionRegistry();
-    const bytes = enc(policyDoc(6, freshThreshold()));
-    const id = await withPolicyGrant("policy.publish", (c, g) => registry.publish(c, g, bytes, POLICY_DEADLINE)); // published on firm A's shelf
-    const sB = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-b.example", "harbor-quartz-42");
-    const probed = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE), sB!.cookieValue);
-    expect(probed.kind).toBe("not-found"); // row-level security is the database guarantee - no existence leak
-  });
-  it("a span attribute is validated against its declared domain before emission: the prefixed identity and whole document bytes are refused on cardinality", async () => {
-    const c = requestCorrelation(mintRequestId());
-    await getGateway().enterPolicyResolveByHash(c, async () => {
-      expect(() => annotateOperation({ documentDigest: `fpd.v1:${"a".repeat(64)}` })).toThrow(/outside its declared digest domain/); // the prefixed identity string
-      expect(() => annotateOperation({ documentDigest: policyDoc(6, 25_000) })).toThrow(/outside its declared digest domain/); // whole document bytes
-      expect(() => annotateOperation({ freeText: "anything" })).toThrow(/declares no attribute 'freeText'/);
-      annotateOperation({ documentDigest: "a".repeat(64) }); // the bare 64-hex digest is inside the declared domain
-    });
   });
 });
 

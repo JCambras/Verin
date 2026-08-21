@@ -1,10 +1,8 @@
-// The firm-policy shelf's inspect view (prompt 4 deliverable 5; PR-4a of the section 7 restack -
-// history, in-force and the publish form land in PR-4b). An operator resolves a published version by
-// its content address; a missing identity renders the typed NotFound naming it, a malformed identity
-// renders a typed refusal, and a version whose stored bytes no longer hash to their address renders
-// the fail-closed integrity refusal naming both digests - never a quiet substitution. Dates are
-// worded, never YYYY-MM-DD (the PR-3a hyphenated-form lesson); every displayed figure carries the
-// version's own provenance line, and a demonstration record wears its chip.
+// The firm-policy shelf's inspect view (prompt 4 deliverable 5; PR-4a of the restack - history,
+// in-force and the publish form land in PR-4b). A missing identity renders the typed NotFound naming
+// it, and tampered stored bytes render the fail-closed integrity refusal naming both digests - never
+// a quiet substitution. Dates are worded, never YYYY-MM-DD (the PR-3a hyphenated-form lesson); the
+// figures carry the version's own provenance line, and a demonstration record wears its chip.
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAccessContext } from "../../access/context";
@@ -92,7 +90,7 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
       {"malformed" in view && view.malformed !== undefined ? (
         <div className="card-dashed" role="status">
           <p className="title">Not a policy version identity</p>
-          <p>A version identity reads fpd.v1: followed by 64 hexadecimal characters. What was entered is not one, so there is nothing to resolve.</p>
+          <p>A version identity reads fpd.v1: followed by 64 hexadecimal characters, so there is nothing to resolve.</p>
         </div>
       ) : null}
       {"integrity" in view && view.integrity !== undefined ? (
