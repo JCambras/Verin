@@ -78,8 +78,7 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
       <p className="meta">Enter a version identity to inspect the exact document it will always resolve to; every published version is addressed by the fingerprint of its bytes.</p>
       <form method="get" action="/policy" className="stack">
         <div className="field">
-          <label htmlFor="id">Version identity</label>
-          <input id="id" name="id" type="text" defaultValue={requested} placeholder={"fpd.v1:…"} required />
+          <label htmlFor="id">Version identity</label> <input id="id" name="id" type="text" defaultValue={requested} placeholder={"fpd.v1:…"} required />
         </div>
         <button className="btn-primary" type="submit">
           {"Inspect version"}

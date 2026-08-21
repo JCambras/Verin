@@ -212,7 +212,6 @@ if (!run) {
   console.error("usage: tsx src/tools/cli.ts bootstrap|migrate|seed|sbom");
   process.exit(2);
 }
-// Explicit exit: the seed's governed runtime holds a kernel-owned pool no caller can close.
 run().then(
   () => process.exit(0),
   (e) => {

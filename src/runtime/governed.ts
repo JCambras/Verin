@@ -111,7 +111,6 @@ const REGISTRY: readonly Row[] = [
   // (no new route row), and the bounded observation read is its own store row - not a seam operation.
   row("evidence.assemble", "module-operation", ["route.household-workspace"], "enterEvidenceAssemble", "Evidence", 3),
   row("observation.listForHousehold", "store", ["evidence.assemble"], "enterObservationListForHousehold", "Evidence", 3),
-  // Slice 4 (prompt 4 deliverable 7); "entry" parents serve tooling roots (the seed publishes).
   row("route.policy", "use-case", ["entry"], "enterRoutePolicy", "Configuration", 4),
   row("policy.publish", "module-operation", ["entry", "route.policy"], "enterPolicyPublish", "Configuration", 4),
   row("policy.resolveByHash", "module-operation", ["entry", "route.policy"], "enterPolicyResolveByHash", "Configuration", 4),

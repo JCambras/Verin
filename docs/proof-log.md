@@ -415,24 +415,19 @@ the treatment is load-bearing, not decorative.
 
 ## PR-4a proofs (prompt 4 section 6, the restack's first unit; raw transcripts with exact injected bytes: docs/evidence/pr4a-transcripts.tar, sha256 ea0afe85...; the restored green run closes the bundle)
 
-### The committed battery (M-A, M-C, M-D, M-F), the migration, and the seed
-Published bytes edited in place (six months re-inked to nine under session_replication_role=replica)
-refuse naming the identity and BOTH digests, then the exact original bytes resolve again; a
-never-published hash returns the typed NotFound carrying no policy field at all; the bound identity
-cannot be rebound - the app role holds no write and the trigger refuses even a superuser's UPDATE and
-DELETE; an expression, an interpolation, an embedded query, an unknown key and an out-of-vocabulary
-value each refuse naming the path, with zero store writes. Preflight proven on a virgin store (0 of
-6) and an upgraded one (6 of 6); the seed publishes both firm documents through the real publish path
-with record_origin='demo-seed' at every insert, skips re-run duplicates, and APP_ENV=production
-refuses it whole.
-
-### The E16 battery (M-G) and the GD-006 companions
-The span deleted from publish, the metric from resolveByHash, and every policy emission left in
-source but unreachable each fail E16 naming the operation and the missing emission; the phantom
-activate registration fails the other direction; the unregistered store write fails to build
-(TS2339), a forged GovernedOperationId fails the sealed rule at sneaky.ts:2, and appendVersion
-borrowed under resolveByHash fails parent linkage at runtime; the raw client fails by import
-(registry.ts:8) and the kernel-exported pool trips the capability probe; the prefixed identity and
-whole document bytes are refused on cardinality at annotation, before any emission. Five extra seam
-exports fail E5 (measured 7 exceeds hard 6), the same lines undeclared measure nothing, the removed
+### The batteries, the migration and seed, and the GD-006 companions
+M-A: bytes edited in place (six months re-inked to nine under replica role) refuse naming BOTH
+digests, then the exact original bytes resolve again. M-C: a never-published hash returns the typed
+NotFound carrying no policy field. M-D: the bound identity cannot be rebound - no app-role write, and
+the trigger refuses a superuser's UPDATE and DELETE. M-F: expression, interpolation, embedded query,
+unknown key and out-of-vocabulary value each refuse naming the path, zero store writes. Preflight
+proven virgin (0 of 6) and upgraded (6 of 6); the seed publishes both firm documents through the real
+publish path, origin named at every insert, duplicates skipped, APP_ENV=production refused whole.
+M-G: the span deleted from publish, the metric from resolveByHash, and every policy emission left in
+source but unreachable each fail E16 naming the operation and emission; the phantom activate fails
+the other direction; the unregistered store write fails to build (TS2339), a forged
+GovernedOperationId fails the sealed rule at sneaky.ts:2, and appendVersion borrowed under
+resolveByHash fails parent linkage; the raw client fails by import (registry.ts:8) and the exported
+pool trips the probe; the prefixed identity and whole document bytes refuse on cardinality. Five
+extra seam exports fail E5 (7 exceeds hard 6), the same lines undeclared measure nothing, the removed
 row-set fails E5 closed, and the correlation table disagreeing fails E16 naming the row.

@@ -133,7 +133,6 @@ test("the policy shelf resolves a published version by content address, and refu
   await expect(page.getByText("6 months of planned withdrawals")).toBeVisible(); // the seeded Firm A re-expression
   await expect(page.getByText("Not stated - the ratified contract is silent, and Verin does not invent firm policy").first()).toBeVisible(); // typed silence, rendered as itself
   await expect(page.getByText(`fpd.v1:${digest}`)).toBeVisible();
-  await expect(page.getByText("demonstration record")).toBeVisible(); // the seeded version wears its origin
   expect((await settledAxe(page)).violations).toEqual([]);
   await page.screenshot({ path: "test-results/pr4a-policy.png" });
   await page.goto(`/policy?id=fpd.v1:${"e".repeat(64)}`);

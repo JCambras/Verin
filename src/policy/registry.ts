@@ -12,7 +12,6 @@ import type { ActionGrant } from "../access/context";
 type Deadline = { readonly milliseconds: number };
 type PolicyVersionId = { readonly version: "fpd.v1"; readonly digest: string };
 type PolicyRefusalReason = "version-not-found";
-// The typed refusal: no policy field at all - not an empty policy, not a default (M-C).
 type PolicyNotFound = { readonly kind: "not-found"; readonly reason: PolicyRefusalReason; readonly subject: string };
 type PublishedPolicyVersion = {
   readonly kind: "policy-version";
