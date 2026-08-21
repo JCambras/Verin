@@ -34,3 +34,13 @@ companion in `docs/proof-log.md`.
 **Why:** Ruled by the merge authority under the GD-002 pattern, 2026-08-20, on the falsification
 pass's recommendation.
 **Revert path:** a captain re-ruling; the sharpening only ever narrows the exclusion.
+
+### GD-004 - 2026-08-20 - the evidence slice's ceiling row-set and its two recorded per-slice collector changes
+
+**What:** Prompt 3 section 7's ceilings enter `CONSTITUTION.md` under the slice-specific slug
+`ordinary-vertical/evidence` in `E5`'s measure names and formats; `SEAM_MODULES` gains exactly
+`src/evidence/bundle.ts` (the EvidenceBundle seam); and the two slice-3 registry rows join the
+prompt-owned correlation table the `E16` checker cross-checks, each declaring `RequestCorrelation`.
+**Why:** Captain ratification of the revised prompt 3, 2026-08-20 ("Ratify - let prompt 3 sail"),
+under the GD-002 pattern; companions in `docs/proof-log.md` (PR-3a).
+**Revert path:** a captain re-ruling; every recorded ceiling stays a downward-only ratchet meanwhile.
