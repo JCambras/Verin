@@ -412,7 +412,7 @@ describe("the policy version registry (prompt 4, PR-4a): content-addressed, immu
     const gB = await access.authorize(cB, (await access.authenticate(cB, sB!.cookieValue))!, "policy.read");
     expect((await registry.resolveByHash(cB, gB!, id, POLICY_DEADLINE)).kind).toBe("not-found"); // another firm's shelf is unreachable even by exact address (RLS)
   });
-  it("M-A: published bytes edited in place fail closed naming the identity and both digests - the oracle's inert delta cannot happen here", async () => {
+  it("M-A and M-D: bytes edited in place fail closed naming both digests, and the bound identity cannot be rebound by the app role or a superuser", async () => {
     const registry = createPolicyVersionRegistry();
     const threshold = freshThreshold();
     const original = enc(policyDoc(6, threshold));
@@ -425,24 +425,23 @@ describe("the policy version registry (prompt 4, PR-4a): content-addressed, immu
     await replicaWrite("UPDATE policy_document SET bytes = $1 WHERE digest = $2", [Buffer.from(original), id.digest]);
     const restored = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE));
     expect(restored.kind).toBe("policy-version"); // the exact original bytes resolve again
+    // M-D, against the identity currently bound above - never a hardcoded string: the app role cannot
+    // write the shelf at all, and the trigger independently refuses even a superuser's plain write.
+    const app = new PgClient({ connectionString: appUrl });
+    await app.connect();
+    try {
+      await expect(app.query("UPDATE policy_document SET bytes = 'rebound' WHERE digest = $1", [id.digest])).rejects.toThrow(/permission denied/);
+    } finally {
+      await app.end();
+    }
+    await expect(superQuery("UPDATE policy_document SET bytes = 'rebound' WHERE digest = $1", [id.digest])).rejects.toThrow(/immutable/);
+    await expect(superQuery("DELETE FROM policy_document WHERE digest = $1", [id.digest])).rejects.toThrow(/immutable/);
   });
   it("M-C: a never-published hash returns the typed NotFound naming the identity and carrying no policy field at all", async () => {
     const registry = createPolicyVersionRegistry();
     const id = parsePolicyVersionId(`fpd.v1:${"e".repeat(64)}`)!;
     const out = await withPolicyGrant("policy.read", (c, g) => registry.resolveByHash(c, g, id, POLICY_DEADLINE));
     expect(out).toEqual({ kind: "not-found", reason: "version-not-found", subject: `fpd.v1:${"e".repeat(64)}` }); // not an empty policy, not a default - no policy field exists to go on
-  });
-  it("M-D: the identity currently bound cannot be rebound - the app role cannot write the shelf, and the trigger refuses even a superuser", async () => {
-    const bound = (await superQuery("SELECT digest FROM policy_version ORDER BY published_at, seq LIMIT 1")).rows[0] as { digest: string }; // reads what is currently bound, never a hardcoded string
-    const app = new PgClient({ connectionString: appUrl });
-    await app.connect();
-    try {
-      await expect(app.query("UPDATE policy_document SET bytes = 'rebound' WHERE digest = $1", [bound.digest])).rejects.toThrow(/permission denied/);
-    } finally {
-      await app.end();
-    }
-    await expect(superQuery("UPDATE policy_document SET bytes = 'rebound' WHERE digest = $1", [bound.digest])).rejects.toThrow(/immutable/);
-    await expect(superQuery("DELETE FROM policy_document WHERE digest = $1", [bound.digest])).rejects.toThrow(/immutable/);
   });
   it("M-F: an expression, an unknown key, and an out-of-vocabulary value are each refused naming the offending path, before any store work", async () => {
     const registry = createPolicyVersionRegistry();

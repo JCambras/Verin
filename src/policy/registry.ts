@@ -10,7 +10,6 @@ import { z } from "zod";
 import { annotateOperation, getGateway, type RequestCorrelation } from "../runtime/governed";
 import type { ActionGrant } from "../access/context";
 
-type Instant = string; // ISO-8601 UTC, minted at the route boundary
 type Deadline = { readonly milliseconds: number };
 type PolicyVersionId = { readonly version: "fpd.v1"; readonly digest: string };
 type PolicyRefusalReason = "version-not-found";
@@ -20,7 +19,7 @@ type PublishedPolicyVersion = {
   readonly kind: "policy-version";
   readonly id: PolicyVersionId;
   readonly sequence: number;
-  readonly publishedAt: Instant;
+  readonly publishedAt: string; // ISO-8601 UTC
   readonly origin: PolicyRecordOrigin;
   readonly policy: FirmPolicy;
 };
@@ -91,11 +90,7 @@ const requireDeadline = (deadline: Deadline, op: string) => {
 const requireAction = (grant: ActionGrant, action: "policy.read" | "policy.publish", op: string) => {
   if (grant.action !== action) throw new Error(`${op} requires a '${action}' grant; a '${grant.action}' grant does not authorize it`);
 };
-const originInVocabulary = (value: string): PolicyRecordOrigin => {
-  if (!(POLICY_RECORD_ORIGINS as readonly string[]).includes(value)) throw new Error(`the policy registry refuses a stored record origin '${value}' outside its closed vocabulary`);
-  return value as PolicyRecordOrigin;
-};
-const versionRow = z.strictObject({ seq: z.number().int(), published_at: z.date(), bytes: z.instanceof(Uint8Array), record_origin: z.string() });
+const versionRow = z.strictObject({ seq: z.number().int(), published_at: z.date(), bytes: z.instanceof(Uint8Array), record_origin: z.enum(POLICY_RECORD_ORIGINS) });
 
 interface PolicyVersionRegistry {
   publish(c: RequestCorrelation, grant: ActionGrant, bytes: Uint8Array, deadline: Deadline): Promise<PolicyVersionId>;
@@ -140,11 +135,11 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
         const stored = sha256hex(row.bytes);
         if (stored !== id.digest)
           throw new Error(`refusing to parse ${renderPolicyVersionId(id)}: the version's bytes were edited in place (declared digest ${id.digest}, stored bytes digest ${stored})`);
-        return { kind: "policy-version", id, sequence: row.seq, publishedAt: row.published_at.toISOString(), origin: originInVocabulary(row.record_origin), policy: parseFirmPolicy(row.bytes) };
+        return { kind: "policy-version", id, sequence: row.seq, publishedAt: row.published_at.toISOString(), origin: row.record_origin, policy: parseFirmPolicy(row.bytes) };
       });
     },
   };
 }
 
-export type { Deadline, FirmPolicy, Instant, PolicyNotFound, PolicyRecordOrigin, PolicyVersionId, PolicyVersionRegistry, PublishedPolicyVersion };
+export type { Deadline, FirmPolicy, PolicyNotFound, PolicyRecordOrigin, PolicyVersionId, PolicyVersionRegistry, PublishedPolicyVersion };
 export { NOT_STATED, POLICY_OPERATION_DEADLINE_MS, POLICY_RECORD_ORIGINS, createPolicyVersionRegistry, parseFirmPolicy, parsePolicyVersionId, renderPolicyVersionId };

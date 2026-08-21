@@ -22,23 +22,18 @@ import { formatObservationDate } from "../../evidence/projection";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ROLE_LABELS: Record<string, string> = { operations: "Operations" };
-const REQUESTER_LABELS: Record<string, string> = { "may-not-satisfy-both-approvals": "The requester may not satisfy both approvals" };
-const HANDLING_LABELS: Record<string, string> = {
-  "specialist-review": "A recent bank-instruction change requires specialist review",
-  "block-until-independently-verified": "A recent bank-instruction change blocks execution until independently verified",
-};
 const NOT_STATED_LABEL = "Not stated - the ratified contract is silent, and Verin does not invent firm policy";
-const orStated = (value: string, labels: Record<string, string>) => (value === NOT_STATED ? NOT_STATED_LABEL : labels[value]);
+// Closed vocabulary tokens render as their own worded form; recorded silence renders as itself.
+const worded = (value: string) => (value === NOT_STATED ? NOT_STATED_LABEL : value.replaceAll("-", " "));
 function policyRows(policy: FirmPolicy): [string, string][] {
   return [
     ["Cash reserve horizon", `${policy.reserveHorizonMonths} months of planned withdrawals`],
     ["Dual-approval threshold", `$${policy.dualApproval.thresholdUsd.toLocaleString("en-US")}`],
     ["Approvals required", `${policy.dualApproval.approvalsRequired}`],
     ["Distinct approvers required", policy.dualApproval.distinctActorsRequired ? "Yes" : "No"],
-    ["Eligible approver role", orStated(policy.dualApproval.eligibleApproverRole, ROLE_LABELS)],
-    ["Requester rule", orStated(policy.dualApproval.requesterRule, REQUESTER_LABELS)],
-    ["Bank-instruction change", HANDLING_LABELS[policy.bankInstructionChange]],
+    ["Eligible approver role", worded(policy.dualApproval.eligibleApproverRole)],
+    ["Requester rule", worded(policy.dualApproval.requesterRule)],
+    ["Bank-instruction change", worded(policy.bankInstructionChange)],
     ["Approval stage shape", policy.approvalStages === NOT_STATED ? NOT_STATED_LABEL : `${policy.approvalStages.length} configured stages`],
     ["Reservation window", policy.reservationWindowDays === NOT_STATED ? NOT_STATED_LABEL : `${policy.reservationWindowDays} days`],
   ];
@@ -50,6 +45,7 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
   const cookieValue = (await headers()).get("x-verin-session") ?? (await cookies()).get("verin_session")?.value;
   const requested = (await searchParams).id?.trim() ?? "";
   type View = { denied: boolean; refusal?: { title: string; body: string; alert?: boolean }; version?: PublishedPolicyVersion } | null;
+  const refuse = (title: string, body: string, alert = false): View => ({ denied: false, refusal: { title, body, alert } });
   const view: View = await getGateway().enterRoutePolicy(c, async () => {
     const principal = await access.authenticate(c, cookieValue);
     if (!principal) return null;
@@ -57,31 +53,17 @@ export default async function Policy({ searchParams }: { searchParams: Promise<{
     if (!grant) return { denied: true };
     if (!requested) return { denied: false };
     const id = parsePolicyVersionId(requested);
-    if (!id)
-      return { denied: false, refusal: { title: "Not a policy version identity", body: "A version identity reads fpd.v1: followed by 64 hexadecimal characters, so there is nothing to resolve." } };
+    if (!id) return refuse("Not a policy version identity", "A version identity reads fpd.v1: followed by 64 hexadecimal characters, so there is nothing to resolve.");
     let resolved: PublishedPolicyVersion | PolicyNotFound;
     try {
       resolved = await createPolicyVersionRegistry().resolveByHash(c, grant, id, { milliseconds: POLICY_OPERATION_DEADLINE_MS });
     } catch (e) {
       if (!/edited in place/.test(String(e))) throw e;
       // The fail-closed integrity refusal, naming both digests: rendered, never substituted (M-A).
-      return {
-        denied: false,
-        refusal: {
-          title: "This version's stored bytes no longer match their address",
-          body: `${(e as Error).message}. Verin refuses to parse or display a tampered document; no policy was substituted.`,
-          alert: true,
-        },
-      };
+      return refuse("This version's stored bytes no longer match their address", `${(e as Error).message}. Verin refuses to parse or display a tampered document; no policy was substituted.`, true);
     }
     if (resolved.kind === "not-found")
-      return {
-        denied: false,
-        refusal: {
-          title: "No such version on your firm's shelf",
-          body: `Verin holds no published version ${resolved.subject} for your firm. Nothing was substituted: a missing version yields no policy at all.`,
-        },
-      };
+      return refuse("No such version on your firm's shelf", `Verin holds no published version ${resolved.subject} for your firm. Nothing was substituted: a missing version yields no policy at all.`);
     return { denied: false, version: resolved };
   });
   if (!view) redirect("/");
