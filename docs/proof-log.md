@@ -517,3 +517,16 @@ product path: a firm's policy change is a published version at zero repository d
   21/21 browser tests. Its full-page capture shows all sixteen cases and the direct signed-row label.
 - The bundle index marks the first missing-super-URL control and the first statistics expression
   HISTORICAL. Neither is cited as evidence; the named operative replacements above carry the claims.
+
+## PR-6a-iii proofs (the verifier-proof corrective unit; raw transcripts: docs/evidence/pr6aiii-transcripts.tar, sha256 14ac4db2...; product head 997ec1ea - the final head adds only this evidence record)
+
+- The separately invocable `corepack pnpm test:decision-record-verifier` command builds its own real
+  record fixture, damages the sequence-1 envelope bytes, and calls public `DecisionRecord.verify()`.
+  The exact command passes on the clean committed tree before each arm.
+- Replacing public `verify()` with the recorded exact `ok: true` bytes fails the command on the expected
+  `payload-rewritten` refusal; restoring the exact bytes passes again.
+- Inserting the recorded total early return ahead of the intact verifier body fails the same behavioral
+  command on the same refusal; restoring the exact bytes passes again. The source-text assertion remains
+  a cheap third check and carries neither required behavioral jaw.
+- All 22 browser tests pass. Axe is asserted while the examiner loaded state is still present, and the
+  refreshed full-page capture shows the demonstration watermark aligned to its content width.
