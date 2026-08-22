@@ -138,3 +138,28 @@ deliberate E10-red window; no signed byte was ever touched from generation-4.
 **Why:** Prompt 5 section 5C steps 5-6 under the ratified protocol; M-D's two-directional rule is
 the proof of convergence - the suite fails until exactly the right entries are gone.
 **Revert path:** a captain re-ruling; the pins only ever move forward with a signing act.
+
+### GD-011 - 2026-08-21 - PR-6-pre makes signed typed quantities the only DecisionInput source
+
+**What:** Direct prerequisite inspection found that the signed-case reader still derived engine inputs
+from regular-expression matches over summary prose, then compared those values with the signed
+`typedQuantities` rows. Under the recorded CD-4c intent, PR-6-pre deletes that load-bearing prose parse.
+Every previously parsed `DecisionInput` value now comes from exactly one signed typed row; a missing,
+duplicate, wrong-kind, or unused row fails closed naming its case, reference, and field. Summary prose
+is not an engine input. The prompt 6 `core-semantics/record` E5 row-set is therefore recorded now,
+before this preliminary product diff, and `SEAM_MODULES` gains exactly
+`src/record/decision-record.ts` for the later DecisionRecord seam.
+
+**Stack and aggregate recomputation:** This bounded prerequisite correction moves the program count
+**36 -> 37**. The revised order is PR-6-pre, PR-6a, PR-6b, PR-6c. Across those four units, the per-PR
+row-set sums to H 2,400 preferred / 3,600 hard; files 56 / 80; canonical owners 8 / 12; public seam
+symbols 16 / 24; database objects 32 / 56; direct dependencies 0 / 0 in both allowlists; G 32 files / 12
+MB preferred and 64 files / 32 MB hard; B 32 files / 24 MB preferred and 56 files / 40 MB hard. The
+aggregate review formula is 316 preferred minutes and 478 hard minutes; summing the table's individually
+rounded hard rows reports 480 minutes because each 119.5-minute row displays as 120.
+
+**Why:** The product owner resolved the Prompt 6 prerequisite stop under CD-4c's stated intent: no engine
+input may ride on a regular expression again. The committed mutation battery proves a changed typed value
+is detected after the exact clean-tree control passes, while the replay manifest remains byte-identical.
+**Revert path:** a later product-owner ruling; restoring prose-derived inputs would reopen Prompt 6's
+signed-input prerequisite and is not an implementation-level revert.

@@ -178,6 +178,23 @@ ratification 2026-08-21; GD-007), recorded by PR-5a-i; per PR in the stack, down
 | Bucket B, binary and captured-evidence artifacts | 8 files / 6 MB | 14 files / 10 MB |
 | Review surface (H at 8 lines/min + B at 2 artifacts/min) | 79 min | 120 min |
 
+The `core-semantics/record` row-set below is prompt 6 section 9's ratified table (product-owner
+ratification 2026-08-21; GD-011), recorded by PR-6-pre before its first product diff; per PR in the
+stack, downward-only ratchet.
+
+| Slice class `core-semantics/record` - measure | Preferred | Hard |
+|---|---:|---:|
+| Bucket H, reviewable text lines | 600 | 900 |
+| Files touched | 14 | 20 |
+| Canonical owners touched | 2 | 3 |
+| New public seam symbols | 4 | 6 |
+| New database objects | 8 | 14 |
+| New direct dependencies, application/runtime allowlist | 0 | 0 |
+| New direct dependencies, development/test/build allowlist | 0 | 0 |
+| Bucket G, generated-deterministic artifacts | 8 files / 3 MB | 16 files / 8 MB |
+| Bucket B, binary and captured-evidence artifacts | 8 files / 6 MB | 14 files / 10 MB |
+| Review surface (H at 8 lines/min + B at 2 artifacts/min) | 79 min | 120 min |
+
 ## The two ratified dependency allowlists (ADR-0061 R-7; prompt 2 section 5A)
 
 Both lists are exact-pinned - no range anywhere in any manifest; the lockfile is frozen; the manifest, the

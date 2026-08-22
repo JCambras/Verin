@@ -11,7 +11,7 @@ const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 1 << 26 });
 const gitBuf = (...a) => execFileSync("git", a, { maxBuffer: 1 << 26 });
 const PINS_PATH = "enforcement/signed-truth-pins.json";
-const SEAM_MODULES = ["enforcement/contract.mjs", "src/access/context.ts", "src/evidence/bundle.ts", "src/policy/registry.ts", "src/decision/outcome.ts"]; // the declared seam's home per slice; slice 2 adds exactly AccessContext (captain ruling 2026-08-20, GD-002), slice 3 adds exactly EvidenceBundle (GD-004), slice 4 adds exactly PolicyVersionRegistry (GD-006), slice 5 adds exactly DecisionOutcome (GD-007), and any later addition is its own recorded per-slice change
+const SEAM_MODULES = ["enforcement/contract.mjs", "src/access/context.ts", "src/evidence/bundle.ts", "src/policy/registry.ts", "src/decision/outcome.ts", "src/record/decision-record.ts"]; // the declared seam's home per slice; slices 2-6 add exactly AccessContext, EvidenceBundle, PolicyVersionRegistry, DecisionOutcome, and DecisionRecord respectively (GD-002, GD-004, GD-006, GD-007, GD-011); any later addition is its own recorded per-slice change
 const PRODUCT_DIRS = ["src", "app", "pages", "components", "lib"]; // product code; enforcement/ and CI are tooling
 const isTestPath = (p) => /(^|\/)(__tests__|tests?)\/|\.test\.|\.spec\./.test(p);
 
