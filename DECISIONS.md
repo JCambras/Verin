@@ -163,3 +163,26 @@ input may ride on a regular expression again. The committed mutation battery pro
 is detected after the exact clean-tree control passes, while the replay manifest remains byte-identical.
 **Revert path:** a later product-owner ruling; restoring prose-derived inputs would reopen Prompt 6's
 signed-input prerequisite and is not an implementation-level revert.
+
+### GD-012 - 2026-08-21 - PR-6a splits at the committed E5 hard ceiling
+
+**What:** The smallest compileable record/load/verify skeleton was committed at `6dcc0288` and measured
+by the committed E5 collector over the exact `72f69161..6dcc0288` range. It measured H 1,162 against
+900 hard and a 145-minute review surface against 120 hard. No further product code proceeded on that
+shape. PR-6a is split into PR-6a-i for the governed atomic record path and its reachable decision
+surface, then PR-6a-ii for bounded pre-identity reads, load, whole-chain verification and the examiner
+surface. PR-6b replay/conformance and PR-6c continuity retain their order and scope.
+
+**Stack and aggregate recomputation:** This mandatory split moves the program count **37 -> 38**. The
+order is PR-6-pre, PR-6a-i, PR-6a-ii, PR-6b, PR-6c. Across five units, the per-PR row-set sums to H 3,000
+preferred / 4,500 hard; files 70 / 100; canonical owners 10 / 15; public seam symbols 20 / 30; database
+objects 40 / 70; direct dependencies 0 / 0 in both allowlists; G 40 files / 15 MB preferred and 80 files
+/ 40 MB hard; B 40 files / 30 MB preferred and 70 files / 50 MB hard. The aggregate review formula is
+395 preferred minutes and 598 hard minutes; summing the table's individually rounded hard rows reports
+600 minutes.
+
+**Why:** Prompt 6 section 9 makes every hard ceiling a stop and specifically anticipates a split between
+atomic record and full verification/product examination. The measured skeleton proved that split was
+required, not optional.
+**Revert path:** recombine only if the committed collector proves the complete unit remains below every
+downward-only hard ceiling; review convenience cannot waive a measured stop.

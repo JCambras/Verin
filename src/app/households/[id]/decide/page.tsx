@@ -17,6 +17,7 @@ import { EVIDENCE_ASSEMBLY_DEADLINE_MS } from "../../../../evidence/vocabulary";
 import { KIND_NEXT_STEPS, formatObservationDate } from "../../../../evidence/projection";
 import { POLICY_OPERATION_DEADLINE_MS, createPolicyVersionRegistry } from "../../../../policy/registry";
 import { MAX_USD, PURPOSES, evaluate, outcomeDigest, type DecisionOutcome, type ExplanationCode, type Purpose } from "../../../../decision/outcome";
+import { createDecisionRecord } from "../../../../record/decision-record";
 import { DisplayMetric } from "../../../metric";
 
 export const runtime = "nodejs";
@@ -81,7 +82,7 @@ export default async function Decide({ params, searchParams }: { params: Promise
   const asOf = new Date().toISOString();
   // prettier-ignore
   type View = null | { state: "denied" } | { state: "form"; household: { id: string; name: string } } | { state: "refused"; household: { id: string; name: string }; problems: string[] } | { state: "no-policy"; household: { id: string; name: string } }
-    | { state: "decided"; household: { id: string; name: string }; outcome: DecisionOutcome; decisionIdText: string; demonstration: boolean; requested: { amountUsd: number; purpose: Purpose; deadline: string } };
+    | { state: "decided"; household: { id: string; name: string }; outcome: DecisionOutcome; decisionIdText: string; demonstration: boolean; requested: { amountUsd: number; purpose: Purpose; deadline: string }; recording: { state: "recorded"; sequence: number; entryId: string; reused: boolean } | { state: "awaiting-continuity" } };
   const view: View | "no-household" = await getGateway().enterRouteDecision(c, async () => {
     const principal = await access.authenticate(c, cookieValue);
     if (!principal) return null;
@@ -122,7 +123,8 @@ export default async function Decide({ params, searchParams }: { params: Promise
     // The first moment a decision identity CAN exist: minted from the outcome's own digest, never
     // before, never from a request id. The rendering step below runs under DecisionCorrelation.
     const decisionId = decisionIdFromOutcomeDigest(outcomeDigest(outcome));
-    return getGateway().enterDecisionRenderOutcome(decisionCorrelation(requestId, decisionId), async () => ({
+    const dc = decisionCorrelation(requestId, decisionId);
+    const base = await getGateway().enterDecisionRenderOutcome(dc, async () => ({
       state: "decided" as const,
       household,
       outcome,
@@ -130,6 +132,23 @@ export default async function Decide({ params, searchParams }: { params: Promise
       demonstration: bundle.observations.some((o) => o.origin === "demo-seed"),
       requested: { amountUsd, purpose, deadline },
     }));
+    const recordGrant = await access.authorize(c, principal, "decision.record");
+    if (!recordGrant) return { state: "denied" } as const;
+    const recordedAt = new Date().toISOString();
+    try {
+      const recorded = await createDecisionRecord(dc, recordGrant).record({
+        outcome,
+        evidence: bundle,
+        policy: version,
+        recordedAt,
+        producer: { kind: "web", id: `i${principal.identityId.replaceAll("-", "")}`, producedAt: recordedAt },
+        recordOrigin: base.demonstration ? "demo-seed" : "operator-entry",
+      });
+      return { ...base, recording: { state: "recorded" as const, sequence: recorded.sequence, entryId: recorded.entryId, reused: recorded.alreadyRecorded } };
+    } catch (error) {
+      if ((error as Error).message.startsWith("continuity-boundary-not-authorized:")) return { ...base, recording: { state: "awaiting-continuity" as const } };
+      throw error;
+    }
   });
   if (!view) redirect("/");
   if (view === "no-household") redirect("/households");
@@ -144,8 +163,8 @@ export default async function Decide({ params, searchParams }: { params: Promise
     <section className="stack" data-testid="verin-decide-loaded" aria-labelledby="decide-heading">
       <h1 id="decide-heading">Decide a distribution - {view.household.name}</h1>
       <p className="meta">
-        This decision is computed now and recorded nowhere until prompt 6's decision ledger lands. A re-render re-assembles evidence at a new as-of instant, so a changed world yields a new decision
-        citing the new bundle identity.
+        This decision is computed from freshly assembled evidence and its exact policy version. Recording is atomic once this tenant has an authorized continuity boundary; a re-render with a changed
+        world yields a new identity.
       </p>
       {view.state === "refused" ? (
         <div className="card-dashed" role="alert">
@@ -166,6 +185,14 @@ export default async function Decide({ params, searchParams }: { params: Promise
       ) : null}
       {view.state === "decided" && o ? (
         <>
+          <div className="card-dashed" role="status" data-recording={view.recording.state}>
+            <p className="title">{view.recording.state === "recorded" ? `Recorded atomically at sequence ${view.recording.sequence}` : "Recording awaits the authorized continuity boundary"}</p>
+            <p>
+              {view.recording.state === "recorded"
+                ? `${view.recording.reused ? "The exact retry reused" : "The append created"} entry ${view.recording.entryId}; exact sources, genesis, chain entry, anchor and projection committed together.`
+                : "No partial source or ledger row was written. The first genesis will cite only the separately authorized lcm.v1 digest."}
+            </p>
+          </div>
           {o.disposition === "proceed" ? (
             <div className="card-dashed" role="status" data-disposition="proceed">
               <p className="title">

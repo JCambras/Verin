@@ -110,18 +110,8 @@ export type OpKey =
   | "conformance.runner"
   | "conformance.readSignedCase"
   | "conformance.grade"
-  | "route.decision-records"
-  | "decisionRecord.list"
-  | "decisionRecord.listForTenant"
-  | "route.decision-chain-verify"
-  | "decisionRecord.resolveHead"
-  | "route.decision-record"
   | "decisionRecord.record"
-  | "decisionRecord.append"
-  | "decisionRecord.load"
-  | "decisionRecord.loadById"
-  | "decisionRecord.verify"
-  | "decisionRecord.readChain";
+  | "decisionRecord.append";
 type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum" | "bucketed"; values: readonly string[] };
 type Row = {
   id: GovernedOperationId;
@@ -141,12 +131,8 @@ const POLICY_ATTRS: Row["attributes"] = { ...ATTRS, documentDigest: { domain: "d
 const DECISION_ATTRS: Row["attributes"] = { ...ATTRS, decisionId: { domain: "digest" } };
 const RECORD_ATTRS: Row["attributes"] = {
   ...DECISION_ATTRS,
-  recordResult: { domain: "enum", values: ["found", "empty", "recorded", "already-recorded", "refused"] },
+  recordResult: { domain: "enum", values: ["recorded", "already-recorded", "refused"] },
   sequenceBucket: { domain: "bucketed", values: ["genesis", "1-10", "11-100", "101-1000", "over-1000"] },
-  verificationResult: {
-    domain: "enum",
-    values: ["verified", "not-found", "empty-chain", "truncated-read", "authorization", "sequence", "envelope", "source", "link", "tail", "time"],
-  },
 };
 const row = (
   id: OpKey,
@@ -174,33 +160,13 @@ const REGISTRY: readonly Row[] = [
   row(
     "access.authenticate",
     "module-operation",
-    [
-      "entry",
-      "route.households",
-      "route.household-workspace",
-      "route.policy",
-      "route.decision",
-      "route.decision-compare",
-      "route.conformance",
-      "route.decision-records",
-      "route.decision-chain-verify",
-    ],
+    ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare", "route.conformance"],
     "enterAccessAuthenticate",
   ),
   row(
     "access.authorize",
     "module-operation",
-    [
-      "entry",
-      "route.households",
-      "route.household-workspace",
-      "route.policy",
-      "route.decision",
-      "route.decision-compare",
-      "route.conformance",
-      "route.decision-records",
-      "route.decision-chain-verify",
-    ],
+    ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare", "route.conformance"],
     "enterAccessAuthorize",
   ),
   row("access.withTenant", "module-operation", ["route.households", "route.household-workspace", "route.decision", "route.decision-compare"], "enterAccessWithTenant"),
@@ -239,35 +205,14 @@ const REGISTRY: readonly Row[] = [
   row("conformance.runner", "module-operation", ["entry"], "enterConformanceRunner", "Product", 5),
   row("conformance.readSignedCase", "module-operation", ["conformance.runner"], "enterConformanceReadSignedCase", "Product", 5),
   row("conformance.grade", "flow-step", ["conformance.runner"], "enterConformanceGrade", "Product", 5, "DecisionCorrelation"),
-  // Slice 6 records and examines decisions. List and head resolution happen before a real dov.v1
-  // identity is known, so they remain request-correlated. Record, load and verify start only after
-  // the sealed DecisionId factory has resolved that identity from exact outcome bytes.
-  row("route.decision-records", "use-case", ["entry"], "enterRouteDecisionRecords", "Record", 6),
-  row("decisionRecord.list", "module-operation", ["entry", "route.decision-records"], "enterDecisionRecordList", "Record", 6),
-  row("decisionRecord.listForTenant", "store", ["decisionRecord.list"], "enterDecisionRecordListForTenant", "Record", 6),
-  row("route.decision-chain-verify", "use-case", ["entry"], "enterRouteDecisionChainVerify", "Record", 6),
-  row("decisionRecord.resolveHead", "store", ["route.decision-chain-verify"], "enterDecisionRecordResolveHead", "Record", 6),
-  row("route.decision-record", "use-case", ["entry"], "enterRouteDecisionRecord", "Record", 6, "DecisionCorrelation"),
-  row("decisionRecord.record", "module-operation", ["route.decision", "route.decision-record"], "enterDecisionRecordRecord", "Record", 6, "DecisionCorrelation"),
+  // PR-6a-i adds only atomic recording. The call is reachable from the decision route after dov.v1
+  // mints a real DecisionCorrelation. Request-scoped examiner reads arrive in PR-6a-ii.
+  row("decisionRecord.record", "module-operation", ["route.decision"], "enterDecisionRecordRecord", "Record", 6, "DecisionCorrelation"),
   row("decisionRecord.append", "store", ["decisionRecord.record"], "enterDecisionRecordAppend", "Record", 6, "DecisionCorrelation"),
-  row("decisionRecord.load", "module-operation", ["route.decision-record"], "enterDecisionRecordLoad", "Record", 6, "DecisionCorrelation"),
-  row("decisionRecord.loadById", "store", ["decisionRecord.load"], "enterDecisionRecordLoadById", "Record", 6, "DecisionCorrelation"),
-  row("decisionRecord.verify", "module-operation", ["route.decision-record", "route.decision-chain-verify"], "enterDecisionRecordVerify", "Record", 6, "DecisionCorrelation"),
-  row("decisionRecord.readChain", "store", ["decisionRecord.verify"], "enterDecisionRecordReadChain", "Record", 6, "DecisionCorrelation"),
 ];
 const PROMPT6_CORRELATIONS: Readonly<Record<string, Row["correlation"]>> = {
-  "route.decision-records": "RequestCorrelation",
-  "decisionRecord.list": "RequestCorrelation",
-  "decisionRecord.listForTenant": "RequestCorrelation",
-  "route.decision-chain-verify": "RequestCorrelation",
-  "decisionRecord.resolveHead": "RequestCorrelation",
-  "route.decision-record": "DecisionCorrelation",
   "decisionRecord.record": "DecisionCorrelation",
   "decisionRecord.append": "DecisionCorrelation",
-  "decisionRecord.load": "DecisionCorrelation",
-  "decisionRecord.loadById": "DecisionCorrelation",
-  "decisionRecord.verify": "DecisionCorrelation",
-  "decisionRecord.readChain": "DecisionCorrelation",
 };
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
@@ -409,59 +354,12 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
     transactionClass: "tenant-statement-deadline-from-p1-p2",
     authorityClass: "tenant",
   },
-  "decisionRecord.listForTenant": {
-    kind: "prepared-query",
-    statementName: "decision_record_list_for_tenant_v1",
-    canonicalSql:
-      "SELECT p.decision_id, p.seq::int, p.replay_manifest_id, p.request_ref, p.household_slug, p.disposition, p.recorded_at, p.record_origin, encode(o.bytes, 'base64') AS outcome_base64 FROM decision_record_projection p JOIN decision_record_source o ON o.org_id = p.org_id AND o.source_kind = 'outcome' AND o.identity = ('dov.v1:' || substring(p.decision_id from 2)) WHERE p.org_id = $1 ORDER BY p.seq DESC LIMIT 201",
-    parameters: [{ name: "orgId", type: "uuid" }],
-    resultValidator: "decisionRecordListRows.v1",
-    cardinality: "many",
-    transactionClass: "tenant-guc-from-p1",
-    authorityClass: "tenant",
-  },
-  "decisionRecord.resolveHead": {
-    kind: "prepared-query",
-    statementName: "decision_record_resolve_head_v1",
-    canonicalSql:
-      "SELECT a.head_decision_id, a.entry_count::int, a.max_seq::int, a.head_hash, encode(o.bytes, 'base64') AS outcome_base64 FROM decision_chain_anchor a LEFT JOIN decision_record_source o ON o.org_id = a.org_id AND o.source_kind = 'outcome' AND o.identity = ('dov.v1:' || substring(a.head_decision_id from 2)) WHERE a.org_id = $1",
-    parameters: [{ name: "orgId", type: "uuid" }],
-    resultValidator: "decisionRecordHead.v1",
-    cardinality: "at-most-one",
-    transactionClass: "tenant-guc-from-p1",
-    authorityClass: "tenant",
-  },
   "decisionRecord.append": {
     kind: "closed-store-command",
     command: "decision-record-append.v1",
     inputValidator: "decisionRecordAppendInput.v1",
     resultValidator: "decisionRecordAppendResult.v1",
     transactionClass: "tenant-decision-append-from-p1",
-    authorityClass: "tenant",
-  },
-  "decisionRecord.loadById": {
-    kind: "prepared-query",
-    statementName: "decision_record_load_by_id_v1",
-    canonicalSql:
-      "SELECT p.decision_id, p.seq::int, p.replay_manifest_id, p.request_ref, p.household_slug, p.disposition, p.recorded_at, p.record_origin, l.entry_id, l.prev_hash, l.entry_hash, encode(l.envelope_bytes, 'base64') AS envelope_base64, encode(o.bytes, 'base64') AS outcome_base64, encode(m.bytes, 'base64') AS manifest_base64, o.producer_kind, o.producer_id, o.produced_at FROM decision_record_projection p JOIN decision_ledger l ON l.org_id = p.org_id AND l.seq = p.seq JOIN decision_record_source o ON o.org_id = p.org_id AND o.source_kind = 'outcome' AND o.identity = ('dov.v1:' || substring(p.decision_id from 2)) JOIN decision_record_source m ON m.org_id = p.org_id AND m.source_kind = 'replay-manifest' AND m.identity = p.replay_manifest_id WHERE p.org_id = $1 AND p.decision_id = $2 LIMIT 1",
-    parameters: [
-      { name: "orgId", type: "uuid" },
-      { name: "decisionId", type: "text" },
-    ],
-    resultValidator: "decisionRecordDetail.v1",
-    cardinality: "at-most-one",
-    transactionClass: "tenant-guc-from-p1",
-    authorityClass: "tenant",
-  },
-  "decisionRecord.readChain": {
-    kind: "prepared-query",
-    statementName: "decision_record_read_chain_v1",
-    canonicalSql:
-      "SELECT (SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY e.seq), '[]'::jsonb) FROM (SELECT seq::int, entry_id, decision_id, replay_manifest_id, encode(envelope_bytes, 'base64') AS envelope_base64, prev_hash, entry_hash, recorded_at, producer_kind, producer_id, produced_at, record_origin FROM decision_ledger WHERE org_id = $1 ORDER BY seq LIMIT 1002) e) AS entries, (SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s.source_kind, s.identity), '[]'::jsonb) FROM (SELECT source_kind, identity, encode(bytes, 'base64') AS bytes_base64, producer_kind, producer_id, produced_at, record_origin FROM decision_record_source WHERE org_id = $1 ORDER BY source_kind, identity LIMIT 6002) s) AS sources, (SELECT to_jsonb(a) FROM (SELECT entry_count::int, max_seq::int, head_hash, head_decision_id, updated_at FROM decision_chain_anchor WHERE org_id = $1) a) AS anchor, (SELECT COALESCE(jsonb_agg(to_jsonb(c) ORDER BY c.authorized_at), '[]'::jsonb) FROM (SELECT lcm_digest, encode(manifest_bytes, 'base64') AS manifest_base64, encode(signature_bytes, 'base64') AS signature_base64, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin FROM decision_continuity_authorization WHERE org_id = $1 ORDER BY authorized_at LIMIT 3) c) AS authorizations",
-    parameters: [{ name: "orgId", type: "uuid" }],
-    resultValidator: "decisionRecordChain.v1",
-    cardinality: "exactly-one",
-    transactionClass: "tenant-guc-from-p1",
     authorityClass: "tenant",
   },
 };
@@ -632,34 +530,6 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       authorityClass: "tenant",
     },
   },
-  "decisionRecord.listForTenant": {
-    gatewayEntry: "enterDecisionRecordListForTenant",
-    constructedDefinition: {
-      kind: "prepared-query",
-      statementName: "decision_record_list_for_tenant_v1",
-      canonicalSql:
-        "SELECT p.decision_id, p.seq::int, p.replay_manifest_id, p.request_ref, p.household_slug, p.disposition, p.recorded_at, p.record_origin, encode(o.bytes, 'base64') AS outcome_base64 FROM decision_record_projection p JOIN decision_record_source o ON o.org_id = p.org_id AND o.source_kind = 'outcome' AND o.identity = ('dov.v1:' || substring(p.decision_id from 2)) WHERE p.org_id = $1 ORDER BY p.seq DESC LIMIT 201",
-      parameters: [{ name: "orgId", type: "uuid" }],
-      resultValidator: "decisionRecordListRows.v1",
-      cardinality: "many",
-      transactionClass: "tenant-guc-from-p1",
-      authorityClass: "tenant",
-    },
-  },
-  "decisionRecord.resolveHead": {
-    gatewayEntry: "enterDecisionRecordResolveHead",
-    constructedDefinition: {
-      kind: "prepared-query",
-      statementName: "decision_record_resolve_head_v1",
-      canonicalSql:
-        "SELECT a.head_decision_id, a.entry_count::int, a.max_seq::int, a.head_hash, encode(o.bytes, 'base64') AS outcome_base64 FROM decision_chain_anchor a LEFT JOIN decision_record_source o ON o.org_id = a.org_id AND o.source_kind = 'outcome' AND o.identity = ('dov.v1:' || substring(a.head_decision_id from 2)) WHERE a.org_id = $1",
-      parameters: [{ name: "orgId", type: "uuid" }],
-      resultValidator: "decisionRecordHead.v1",
-      cardinality: "at-most-one",
-      transactionClass: "tenant-guc-from-p1",
-      authorityClass: "tenant",
-    },
-  },
   "decisionRecord.append": {
     gatewayEntry: "enterDecisionRecordAppend",
     constructedDefinition: {
@@ -668,37 +538,6 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       inputValidator: "decisionRecordAppendInput.v1",
       resultValidator: "decisionRecordAppendResult.v1",
       transactionClass: "tenant-decision-append-from-p1",
-      authorityClass: "tenant",
-    },
-  },
-  "decisionRecord.loadById": {
-    gatewayEntry: "enterDecisionRecordLoadById",
-    constructedDefinition: {
-      kind: "prepared-query",
-      statementName: "decision_record_load_by_id_v1",
-      canonicalSql:
-        "SELECT p.decision_id, p.seq::int, p.replay_manifest_id, p.request_ref, p.household_slug, p.disposition, p.recorded_at, p.record_origin, l.entry_id, l.prev_hash, l.entry_hash, encode(l.envelope_bytes, 'base64') AS envelope_base64, encode(o.bytes, 'base64') AS outcome_base64, encode(m.bytes, 'base64') AS manifest_base64, o.producer_kind, o.producer_id, o.produced_at FROM decision_record_projection p JOIN decision_ledger l ON l.org_id = p.org_id AND l.seq = p.seq JOIN decision_record_source o ON o.org_id = p.org_id AND o.source_kind = 'outcome' AND o.identity = ('dov.v1:' || substring(p.decision_id from 2)) JOIN decision_record_source m ON m.org_id = p.org_id AND m.source_kind = 'replay-manifest' AND m.identity = p.replay_manifest_id WHERE p.org_id = $1 AND p.decision_id = $2 LIMIT 1",
-      parameters: [
-        { name: "orgId", type: "uuid" },
-        { name: "decisionId", type: "text" },
-      ],
-      resultValidator: "decisionRecordDetail.v1",
-      cardinality: "at-most-one",
-      transactionClass: "tenant-guc-from-p1",
-      authorityClass: "tenant",
-    },
-  },
-  "decisionRecord.readChain": {
-    gatewayEntry: "enterDecisionRecordReadChain",
-    constructedDefinition: {
-      kind: "prepared-query",
-      statementName: "decision_record_read_chain_v1",
-      canonicalSql:
-        "SELECT (SELECT COALESCE(jsonb_agg(to_jsonb(e) ORDER BY e.seq), '[]'::jsonb) FROM (SELECT seq::int, entry_id, decision_id, replay_manifest_id, encode(envelope_bytes, 'base64') AS envelope_base64, prev_hash, entry_hash, recorded_at, producer_kind, producer_id, produced_at, record_origin FROM decision_ledger WHERE org_id = $1 ORDER BY seq LIMIT 1002) e) AS entries, (SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY s.source_kind, s.identity), '[]'::jsonb) FROM (SELECT source_kind, identity, encode(bytes, 'base64') AS bytes_base64, producer_kind, producer_id, produced_at, record_origin FROM decision_record_source WHERE org_id = $1 ORDER BY source_kind, identity LIMIT 6002) s) AS sources, (SELECT to_jsonb(a) FROM (SELECT entry_count::int, max_seq::int, head_hash, head_decision_id, updated_at FROM decision_chain_anchor WHERE org_id = $1) a) AS anchor, (SELECT COALESCE(jsonb_agg(to_jsonb(c) ORDER BY c.authorized_at), '[]'::jsonb) FROM (SELECT lcm_digest, encode(manifest_bytes, 'base64') AS manifest_base64, encode(signature_bytes, 'base64') AS signature_base64, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin FROM decision_continuity_authorization WHERE org_id = $1 ORDER BY authorized_at LIMIT 3) c) AS authorizations",
-      parameters: [{ name: "orgId", type: "uuid" }],
-      resultValidator: "decisionRecordChain.v1",
-      cardinality: "exactly-one",
-      transactionClass: "tenant-guc-from-p1",
       authorityClass: "tenant",
     },
   },
@@ -772,18 +611,8 @@ export type Gateway = {
   enterConformanceRunner: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterConformanceReadSignedCase: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterConformanceGrade: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
-  enterRouteDecisionRecords: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
-  enterDecisionRecordList: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
-  enterDecisionRecordListForTenant: (c: RequestCorrelation, v: { orgId: string }) => Promise<unknown>;
-  enterRouteDecisionChainVerify: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
-  enterDecisionRecordResolveHead: (c: RequestCorrelation, v: { orgId: string }) => Promise<unknown>;
-  enterRouteDecisionRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterDecisionRecordRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterDecisionRecordAppend: (c: DecisionCorrelation, input: DecisionRecordAppendInput) => Promise<DecisionRecordAppendResult>;
-  enterDecisionRecordLoad: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
-  enterDecisionRecordLoadById: (c: DecisionCorrelation, v: { orgId: string; decisionId: string }) => Promise<unknown>;
-  enterDecisionRecordVerify: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
-  enterDecisionRecordReadChain: (c: DecisionCorrelation, v: { orgId: string }) => Promise<unknown>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -821,58 +650,6 @@ const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
     ),
   "policyVersionRow.v1": (r) => atMostOne(r, z.strictObject({ seq: z.number().int(), published_at: z.date(), bytes: z.instanceof(Uint8Array), record_origin: z.string() })),
   "policyVersionRows.v1": (r) => r.rows.map((x) => z.strictObject({ seq: z.number().int(), digest: z.string(), published_at: z.date(), record_origin: z.string() }).parse(x)),
-  "decisionRecordListRows.v1": (r) =>
-    r.rows.map((x) =>
-      z
-        .strictObject({
-          decision_id: z.string(),
-          seq: z.number().int(),
-          replay_manifest_id: z.string(),
-          request_ref: z.string(),
-          household_slug: z.string(),
-          disposition: z.enum(["proceed", "blocked", "prohibited"]),
-          recorded_at: z.date(),
-          record_origin: z.string(),
-          outcome_base64: z.string(),
-        })
-        .parse(x),
-    ),
-  "decisionRecordHead.v1": (r) =>
-    atMostOne(r, z.strictObject({ head_decision_id: z.string().nullable(), entry_count: z.number().int(), max_seq: z.number().int(), head_hash: z.string(), outcome_base64: z.string().nullable() })),
-  "decisionRecordDetail.v1": (r) =>
-    atMostOne(
-      r,
-      z.strictObject({
-        decision_id: z.string(),
-        seq: z.number().int(),
-        replay_manifest_id: z.string(),
-        request_ref: z.string(),
-        household_slug: z.string(),
-        disposition: z.enum(["proceed", "blocked", "prohibited"]),
-        recorded_at: z.date(),
-        record_origin: z.string(),
-        entry_id: z.string(),
-        prev_hash: z.string(),
-        entry_hash: z.string(),
-        envelope_base64: z.string(),
-        outcome_base64: z.string(),
-        manifest_base64: z.string(),
-        producer_kind: z.string(),
-        producer_id: z.string(),
-        produced_at: z.date(),
-      }),
-    ),
-  "decisionRecordChain.v1": (r) => {
-    if (r.rows.length !== 1) throw new Error("cardinality exactly-one violated");
-    return z
-      .strictObject({
-        entries: z.array(z.record(z.string(), z.unknown())),
-        sources: z.array(z.record(z.string(), z.unknown())),
-        anchor: z.record(z.string(), z.unknown()).nullable(),
-        authorizations: z.array(z.record(z.string(), z.unknown())),
-      })
-      .parse(r.rows[0]);
-  },
 };
 
 // The one-per-process slot lives on globalThis, not a module-local variable: the framework bundles
@@ -1055,23 +832,27 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       const fx = deriveEffect(def);
       if (def["command"] !== "decision-record-append.v1" || def["transactionClass"] !== "tenant-decision-append-from-p1")
         throw new Error("the closed decisionRecord.append command shape is not the ratified one");
+      rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
         await client.query("SELECT set_config('verin.org_id', $1, true)", [input.orgId]);
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [input.orgId]);
-        const existing = await client.query("SELECT l.seq::int, l.entry_id, l.entry_hash, l.replay_manifest_id FROM decision_ledger l WHERE l.org_id = $1 AND l.decision_id = $2", [
+        const existing = await client.query("SELECT l.seq::int, l.entry_id, l.entry_hash, l.replay_manifest_id, l.envelope_bytes FROM decision_ledger l WHERE l.org_id = $1 AND l.decision_id = $2", [
           input.orgId,
           input.decisionId,
         ]);
         if (existing.rows.length > 1) throw new Error("decisionRecord.append refuses a fork: one DecisionId has multiple ledger entries");
         if (existing.rows.length === 1) {
-          const found = z.strictObject({ seq: z.number().int(), entry_id: z.string(), entry_hash: z.string(), replay_manifest_id: z.string() }).parse(existing.rows[0]);
+          const found = z
+            .strictObject({ seq: z.number().int(), entry_id: z.string(), entry_hash: z.string(), replay_manifest_id: z.string(), envelope_bytes: z.instanceof(Uint8Array) })
+            .parse(existing.rows[0]);
           if (found.replay_manifest_id !== input.manifest.identity)
             throw new Error(`decisionRecord.append refuses idempotency conflict: ${input.decisionId} already cites ${found.replay_manifest_id}, not ${input.manifest.identity}`);
+          if (!Buffer.from(found.envelope_bytes).equals(Buffer.from(decisionEnvelope(input, found.seq))))
+            throw new Error(`decisionRecord.append refuses idempotency conflict: ${input.decisionId} was retried with different envelope bytes`);
           const result = { entryId: found.entry_id, sequence: found.seq, chainHash: found.entry_hash, replayManifestId: found.replay_manifest_id, alreadyRecorded: true };
           await client.query("COMMIT");
-          rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
           return result;
         }
 
@@ -1174,7 +955,6 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
         );
         if (moved.rowCount !== 1) throw new Error("decisionRecord.append refuses an anchor that moved outside the tenant append lock");
         await client.query("COMMIT");
-        rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
         return { entryId: nextEntryId, sequence, chainHash: nextHash, replayManifestId: input.manifest.identity, alreadyRecorded: false };
       } catch (e) {
         await client.query("ROLLBACK").catch(() => undefined);
@@ -1217,18 +997,8 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterConformanceRunner: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("conformance.runner", c, fn),
     enterConformanceReadSignedCase: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("conformance.readSignedCase", c, fn),
     enterConformanceGrade: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("conformance.grade", c, fn),
-    enterRouteDecisionRecords: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.decision-records", c, fn),
-    enterDecisionRecordList: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("decisionRecord.list", c, fn),
-    enterDecisionRecordListForTenant: (c: RequestCorrelation, v: { orgId: string }) => runStore("decisionRecord.listForTenant", c, v),
-    enterRouteDecisionChainVerify: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.decision-chain-verify", c, fn),
-    enterDecisionRecordResolveHead: (c: RequestCorrelation, v: { orgId: string }) => runStore("decisionRecord.resolveHead", c, v),
-    enterRouteDecisionRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("route.decision-record", c, fn),
     enterDecisionRecordRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decisionRecord.record", c, fn),
     enterDecisionRecordAppend: (c: DecisionCorrelation, input: DecisionRecordAppendInput) => runDecisionRecordAppend(c, input),
-    enterDecisionRecordLoad: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decisionRecord.load", c, fn),
-    enterDecisionRecordLoadById: (c: DecisionCorrelation, v: { orgId: string; decisionId: string }) => runStore("decisionRecord.loadById", c, v),
-    enterDecisionRecordVerify: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decisionRecord.verify", c, fn),
-    enterDecisionRecordReadChain: (c: DecisionCorrelation, v: { orgId: string }) => runStore("decisionRecord.readChain", c, v),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");

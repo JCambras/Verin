@@ -106,7 +106,7 @@ test("a household with nothing observed renders typed absence with next steps, n
   await page.screenshot({ path: "test-results/pr3b-okonkwo.png" });
 });
 
-test("the decision surface computes a real LIVE proceed: stages, key, citations, figures, honesty lines", async ({ page }) => {
+test("the decision surface computes and atomically records a real LIVE proceed", async ({ page }) => {
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   // Pin the in-force version for this proof deterministically on any shelf state (unique bytes per
   // run; both amounts below sit on the same side of any threshold this document can carry).
@@ -120,7 +120,8 @@ test("the decision surface computes a real LIVE proceed: stages, key, citations,
   await expect(page.getByTestId("verin-workspace-loaded")).toBeVisible();
   await page.getByRole("link", { name: "Decide a distribution" }).click();
   await expect(page.getByTestId("verin-decide-loaded")).toBeVisible();
-  await expect(page.getByText("recorded nowhere until prompt 6", { exact: false })).toBeVisible();
+  await expect(page.getByText(/Recorded atomically at sequence \d+/)).toBeVisible();
+  await expect(page.getByText(/The append created entry dle\.v1:[0-9a-f]{64}/)).toBeVisible();
   await expect(page.getByText("a changed world yields a new decision", { exact: false })).toBeVisible(); // both honesty lines
   await expect(page.locator('[data-disposition="proceed"]')).toBeVisible();
   await expect(page.getByText("Stage 1: operations-dual-approval", { exact: false })).toBeVisible(); // derived from the STATED block, never an answer key
@@ -132,7 +133,7 @@ test("the decision surface computes a real LIVE proceed: stages, key, citations,
   await expect(page.getByRole("list", { name: "Every rule evaluated, in precedence order" }).getByText("Cash reserve")).toBeVisible();
   await expect(page.getByText("demonstration - not a compliance record").first()).toBeVisible();
   expect((await settledAxe(page)).violations).toEqual([]);
-  await page.screenshot({ path: "test-results/pr5a2-decide-proceed.png" });
+  await page.screenshot({ path: "test-results/pr6a-i-decide-recorded.png" });
 });
 
 test("the decision surface blocks a breach with the arithmetic shown and a real resolving step", async ({ page }) => {

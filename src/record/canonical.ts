@@ -122,8 +122,34 @@ function validateAppendInput(raw: unknown): DecisionRecordAppendInput {
   for (const [name, identity] of Object.entries(expected))
     if (manifest[name as keyof typeof expected] !== identity) throw new Error(`decisionRecord.append refuses replay manifest citation '${name}': exact source identity differs`);
   if (identityFor("drm.v1", input.manifest.bytes) !== input.manifest.identity) throw new Error("decisionRecord.append refuses replay manifest identity: exact bytes differ");
-  if (manifest.decisionAsOf !== input.recordedAt && Date.parse(manifest.decisionAsOf) > Date.parse(input.recordedAt))
-    throw new Error("decisionRecord.append refuses time order: decision asOf is after recordedAt");
+  if (!input.sources.outcome.bytes.startsWith("dov.v1|")) throw new Error("decisionRecord.append refuses outcome bytes outside dov.v1");
+  let outcome: unknown;
+  try {
+    outcome = JSON.parse(input.sources.outcome.bytes.slice("dov.v1|".length));
+  } catch {
+    throw new Error("decisionRecord.append refuses outcome bytes that are not canonical JSON");
+  }
+  const indexed = z
+    .object({
+      version: z.literal("dov.v1"),
+      disposition: z.enum(["proceed", "blocked", "prohibited"]),
+      citations: z.object({ request: z.string(), evidenceBundle: z.string(), policy: z.string(), asOf: z.string().regex(INSTANT) }),
+      request: z.object({ requestRef: z.string(), householdSlug: z.string() }),
+    })
+    .passthrough()
+    .parse(outcome);
+  if (`dov.v1|${canonical(outcome)}` !== input.sources.outcome.bytes) throw new Error("decisionRecord.append refuses non-canonical outcome bytes");
+  if (
+    indexed.citations.request !== manifest.request ||
+    indexed.citations.evidenceBundle !== manifest.evidence ||
+    indexed.citations.policy !== manifest.policy ||
+    indexed.citations.asOf !== manifest.decisionAsOf
+  )
+    throw new Error("decisionRecord.append refuses source substitution: outcome citations differ from the replay manifest");
+  if (indexed.request.requestRef !== input.projection.requestRef || indexed.request.householdSlug !== input.projection.householdSlug || indexed.disposition !== input.projection.disposition)
+    throw new Error("decisionRecord.append refuses projection fields that differ from exact outcome bytes");
+  if (Date.parse(manifest.decisionAsOf) > Date.parse(input.recordedAt) || Date.parse(input.producer.producedAt) > Date.parse(input.recordedAt))
+    throw new Error("decisionRecord.append refuses time order: decision asOf or producer time is after recordedAt");
   return input;
 }
 

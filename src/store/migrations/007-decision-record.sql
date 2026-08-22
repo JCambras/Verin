@@ -72,7 +72,7 @@ ALTER TABLE decision_record_source ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SE
 ALTER TABLE decision_ledger ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
 ALTER TABLE decision_chain_anchor ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
 ALTER TABLE decision_record_projection ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
-CREATE POLICY decision_continuity_tenant ON decision_continuity_authorization FOR SELECT USING (org_id::text = current_setting('verin.org_id', true));
+CREATE POLICY decision_continuity_tenant ON decision_continuity_authorization FOR ALL USING (org_id::text = current_setting('verin.org_id', true)) WITH CHECK (org_id::text = current_setting('verin.org_id', true));
 CREATE POLICY decision_source_tenant ON decision_record_source FOR ALL USING (org_id::text = current_setting('verin.org_id', true)) WITH CHECK (org_id::text = current_setting('verin.org_id', true));
 CREATE POLICY decision_ledger_tenant ON decision_ledger FOR ALL USING (org_id::text = current_setting('verin.org_id', true)) WITH CHECK (org_id::text = current_setting('verin.org_id', true));
 CREATE POLICY decision_anchor_tenant ON decision_chain_anchor FOR ALL USING (org_id::text = current_setting('verin.org_id', true)) WITH CHECK (org_id::text = current_setting('verin.org_id', true));
