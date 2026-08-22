@@ -518,15 +518,25 @@ product path: a firm's policy change is a published version at zero repository d
 - The bundle index marks the first missing-super-URL control and the first statistics expression
   HISTORICAL. Neither is cited as evidence; the named operative replacements above carry the claims.
 
-## PR-6a-iii proofs (the verifier-proof corrective unit; raw transcripts: docs/evidence/pr6aiii-transcripts.tar, sha256 14ac4db2...; product head 997ec1ea - the final head adds only this evidence record)
+## PR-6a-iii proofs (the verifier-proof corrective unit; raw transcripts: docs/evidence/pr6aiii-transcripts.tar, sha256 17084eef...; corrected product head 9dc3b35e - the final head adds only this evidence record)
 
 - The separately invocable `corepack pnpm test:decision-record-verifier` command builds its own real
-  record fixture, damages the sequence-1 envelope bytes, and calls public `DecisionRecord.verify()`.
-  The exact command passes on the clean committed tree before each arm.
+  tooling-produced record fixture and calls public `DecisionRecord.verify()`. Its first damage rewrites
+  the genesis lcm.v1 continuity citation to a same-length value that remains valid JSON; the public seam
+  returns `payload-rewritten` at sequence 0. Its second damage changes only the stored genesis chain
+  hash; the public seam returns `entry-hash-mismatch` at sequence 0.
 - Replacing public `verify()` with the recorded exact `ok: true` bytes fails the command on the expected
   `payload-rewritten` refusal; restoring the exact bytes passes again.
 - Inserting the recorded total early return ahead of the intact verifier body fails the same behavioral
   command on the same refusal; restoring the exact bytes passes again. The source-text assertion remains
   a cheap third check and carries neither required behavioral jaw.
-- All 22 browser tests pass. Axe is asserted while the examiner loaded state is still present, and the
-  refreshed full-page capture shows the demonstration watermark aligned to its content width.
+- The independent pass's exact citation-blind-digest, test-producer-only-integrity and
+  deleted-content-binding bytes each fail the corrected public command. Every arm has a passing clean
+  control before injection, the exact changed bytes, a nonzero assertion transcript, an exact restore
+  and a second passing clean control.
+- The workflow runs the verifier command as its own blocking step between `corepack pnpm test` and the
+  closure proof. The local workflow-slice control passes 65 instrumented tests, the one verifier test
+  and five closure tests with an empty porcelain status at both ends.
+- At evidence head 7aa733c5, the committed format rule, lint, capability-denied build and all 22 browser
+  tests pass from a clean tree. The examiner test runs Axe while its loaded state is present. The first
+  overbroad Markdown format attempt is marked HISTORICAL in the bundle and is not cited as a control.

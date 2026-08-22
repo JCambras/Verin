@@ -191,9 +191,11 @@ downward-only hard ceiling; review convenience cannot waive a measured stop.
 
 **What:** PR-6a-iii is a dedicated corrective unit after PR-6a-ii and before PR-6b. It adds a second
 behavioral jaw, independently invocable through `pnpm test:decision-record-verifier`, which exercises
-the public `DecisionRecord.verify()` seam against a known-damaged chain. The earlier source-text check
-remains only a cheap third check. The unit also proves Axe on the examiner loaded state and corrects the
-demonstration watermark's flex alignment.
+the public `DecisionRecord.verify()` seam against a same-length, valid-JSON rewrite of the genesis
+continuity citation and a separate stored-hash rewrite. The command is its own blocking workflow step,
+between the instrumented suite and the closure proof, so test-discovery drift cannot remove it. The
+earlier source-text check remains only a cheap third check. The unit also proves Axe on the examiner
+loaded state and corrects the demonstration watermark's flex alignment.
 
 **UNIT COUNT CHANGE - 38 -> 39:** The ordered stack is PR-6-pre, PR-6a-i, PR-6a-ii, PR-6a-iii, PR-6b,
 PR-6c. Across six units, the per-PR row-set sums to H 3,600 preferred / 5,400 hard; files 84 / 120;
@@ -203,7 +205,8 @@ preferred and 84 files / 60 MB hard. The aggregate review formula is 474 preferr
 hard minutes; summing the table's individually rounded hard rows reports 720 minutes.
 
 **Why:** A total early return could leave the previous text companion's searched verifier body present
-as dead code. The ratified stop condition requires two behavioral checks to fail under a stub, so the
-corrective protection lands before any replay code can depend on it.
+as dead code. A second pass then proved that identically malformed-byte damage did not reach the
+entry-identity or chain-hash bindings. The corrected jaw covers both named failures, rejects the three
+exact content-binding hollowings, and runs in the blocking gate before any replay code can depend on it.
 **Revert path:** only after a replacement independently invocable behavioral check proves the same
 public-seam damaged-chain refusal under both recorded stubs.
