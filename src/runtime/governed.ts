@@ -15,6 +15,7 @@ import { MeterProvider, PeriodicExportingMetricReader, InMemoryMetricExporter, A
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { refuseAccountReferences } from "../evidence/pii";
+import { GENESIS_PREV_HASH, chainHash, decisionEnvelope, entryId, genesisEnvelope, validateAppendInput, type DecisionRecordAppendInput, type DecisionRecordAppendResult } from "../record/canonical";
 
 declare const sealed: unique symbol;
 export type RequestId = { readonly [sealed]: "RequestId"; readonly value: string; readonly purpose: "requestId" };
@@ -108,24 +109,31 @@ export type OpKey =
   | "route.conformance"
   | "conformance.runner"
   | "conformance.readSignedCase"
-  | "conformance.grade";
-type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum"; values: readonly string[] };
+  | "conformance.grade"
+  | "decisionRecord.record"
+  | "decisionRecord.append";
+type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum" | "bucketed"; values: readonly string[] };
 type Row = {
   id: GovernedOperationId;
   class: "use-case" | "module-operation" | "store" | "flow-step";
-  owner: "Access" | "Evidence" | "Configuration" | "Product";
+  owner: "Access" | "Evidence" | "Configuration" | "Product" | "Record";
   correlation: "RequestCorrelation" | "DecisionCorrelation";
   metric: "count";
   attributes: Readonly<Record<string, AttributeDomain>>;
   permittedParents: readonly (OpKey | "entry")[];
   gatewayEntry: string;
-  slice: 2 | 3 | 4 | 5;
+  slice: 2 | 3 | 4 | 5 | 6;
 };
 const ATTRS: Row["attributes"] = { requestId: { domain: "digest" }, outcome: { domain: "enum", values: ["ok", "refused", "error"] } };
 // Slice 4's declared domains: the BARE 64-hex digest and the NotFound reason's closed enum.
 const POLICY_ATTRS: Row["attributes"] = { ...ATTRS, documentDigest: { domain: "digest" }, refusalReason: { domain: "enum", values: ["version-not-found", "no-version-in-force"] } };
 // Slice 5's declared domain: the bare 64-hex decision digest under its own attribute (GD-003 unwidened).
 const DECISION_ATTRS: Row["attributes"] = { ...ATTRS, decisionId: { domain: "digest" } };
+const RECORD_ATTRS: Row["attributes"] = {
+  ...DECISION_ATTRS,
+  recordResult: { domain: "enum", values: ["recorded", "already-recorded", "refused"] },
+  sequenceBucket: { domain: "bucketed", values: ["genesis", "1-10", "11-100", "101-1000", "over-1000"] },
+};
 const row = (
   id: OpKey,
   cls: Row["class"],
@@ -140,7 +148,7 @@ const row = (
   owner,
   correlation,
   metric: "count",
-  attributes: correlation === "DecisionCorrelation" ? DECISION_ATTRS : cls === "module-operation" && id.startsWith("policy.") ? POLICY_ATTRS : ATTRS,
+  attributes: slice === 6 ? RECORD_ATTRS : correlation === "DecisionCorrelation" ? DECISION_ATTRS : cls === "module-operation" && id.startsWith("policy.") ? POLICY_ATTRS : ATTRS,
   permittedParents,
   gatewayEntry,
   slice,
@@ -197,7 +205,15 @@ const REGISTRY: readonly Row[] = [
   row("conformance.runner", "module-operation", ["entry"], "enterConformanceRunner", "Product", 5),
   row("conformance.readSignedCase", "module-operation", ["conformance.runner"], "enterConformanceReadSignedCase", "Product", 5),
   row("conformance.grade", "flow-step", ["conformance.runner"], "enterConformanceGrade", "Product", 5, "DecisionCorrelation"),
+  // PR-6a-i adds only atomic recording. The call is reachable from the decision route after dov.v1
+  // mints a real DecisionCorrelation. Request-scoped examiner reads arrive in PR-6a-ii.
+  row("decisionRecord.record", "module-operation", ["route.decision"], "enterDecisionRecordRecord", "Record", 6, "DecisionCorrelation"),
+  row("decisionRecord.append", "store", ["decisionRecord.record"], "enterDecisionRecordAppend", "Record", 6, "DecisionCorrelation"),
 ];
+const PROMPT6_CORRELATIONS: Readonly<Record<string, Row["correlation"]>> = {
+  "decisionRecord.record": "DecisionCorrelation",
+  "decisionRecord.append": "DecisionCorrelation",
+};
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
 // what makes the semantic-effect-smuggling mutation fail on the exact digest comparison.
@@ -336,6 +352,14 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
     resultValidator: "policyVersionRows.v1",
     cardinality: "many",
     transactionClass: "tenant-statement-deadline-from-p1-p2",
+    authorityClass: "tenant",
+  },
+  "decisionRecord.append": {
+    kind: "closed-store-command",
+    command: "decision-record-append.v1",
+    inputValidator: "decisionRecordAppendInput.v1",
+    resultValidator: "decisionRecordAppendResult.v1",
+    transactionClass: "tenant-decision-append-from-p1",
     authorityClass: "tenant",
   },
 };
@@ -506,12 +530,26 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       authorityClass: "tenant",
     },
   },
+  "decisionRecord.append": {
+    gatewayEntry: "enterDecisionRecordAppend",
+    constructedDefinition: {
+      kind: "closed-store-command",
+      command: "decision-record-append.v1",
+      inputValidator: "decisionRecordAppendInput.v1",
+      resultValidator: "decisionRecordAppendResult.v1",
+      transactionClass: "tenant-decision-append-from-p1",
+      authorityClass: "tenant",
+    },
+  },
 };
 
 export const NAMING_PATTERN = "verin.op.{id}";
 const opName = (id: string) => `verin.op.${id}`;
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
-const QUERY_SHAPE = ["statementName", "canonicalSql", "parameters", "resultValidator", "cardinality", "transactionClass", "authorityClass"];
+const EFFECT_SHAPES: Record<string, readonly string[]> = {
+  "prepared-query": ["statementName", "canonicalSql", "parameters", "resultValidator", "cardinality", "transactionClass", "authorityClass"],
+  "closed-store-command": ["command", "inputValidator", "resultValidator", "transactionClass", "authorityClass"],
+};
 function canonicalize(x: unknown, path: string, problems: string[]): string {
   if (typeof x === "string") {
     if (x === "") problems.push(`${path} is empty`);
@@ -531,9 +569,10 @@ function canonicalize(x: unknown, path: string, problems: string[]): string {
 }
 function deriveEffect(def: Record<string, unknown>): { id: string; bytes: string } {
   const problems: string[] = [];
-  if (def["kind"] !== "prepared-query") problems.push(`kind '${String(def["kind"])}' is not an admitted effect kind in this slice`);
-  for (const f of QUERY_SHAPE) if (!(f in def)) problems.push(`required field '${f}' is missing`);
-  for (const f of Object.keys(def)) if (f !== "kind" && !QUERY_SHAPE.includes(f)) problems.push(`unknown field '${f}'`);
+  const shape = EFFECT_SHAPES[String(def["kind"])] ?? null;
+  if (!shape) problems.push(`kind '${String(def["kind"])}' is not an admitted effect kind`);
+  for (const f of shape ?? []) if (!(f in def)) problems.push(`required field '${f}' is missing`);
+  for (const f of Object.keys(def)) if (f !== "kind" && !(shape ?? []).includes(f)) problems.push(`unknown field '${f}'`);
   const bytes = "semfx.v1|" + canonicalize(def, "definition", problems);
   if (problems.length) throw new Error(`semantic-effect definition refused before construction: ${problems.join("; ")}`);
   return { id: "semfx.v1:" + sha256(bytes), bytes };
@@ -572,6 +611,8 @@ export type Gateway = {
   enterConformanceRunner: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterConformanceReadSignedCase: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterConformanceGrade: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionRecordRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionRecordAppend: (c: DecisionCorrelation, input: DecisionRecordAppendInput) => Promise<DecisionRecordAppendResult>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -648,6 +689,8 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       if (a.id !== b.id) throw new Error(`refusing construction: registry digest ${a.id} != constructed digest ${b.id} for '${r.id.id}'`);
       derived.set(r.id.id, a);
     } else if (reg || adm) throw new Error(`non-effect operation '${r.id.id}' may not carry a semantic-effect definition`);
+    if (r.slice === 6 && PROMPT6_CORRELATIONS[r.id.id] !== r.correlation)
+      throw new Error(`prompt 6 correlation table declares '${PROMPT6_CORRELATIONS[r.id.id]}' but registry row '${r.id.id}' declares '${r.correlation}'`);
   }
   const resource = resourceFromAttributes({ [ATTR_SERVICE_NAME]: "verin", "verin.runtime.role": role });
   const spanExporter = new InMemorySpanExporter();
@@ -674,7 +717,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       const ok =
         dom.domain === "boolean"
           ? typeof value === "boolean"
-          : dom.domain === "enum"
+          : dom.domain === "enum" || dom.domain === "bucketed"
             ? typeof value === "string" && dom.values.includes(value)
             : typeof value === "string" && /^[0-9a-f]{16,64}$/.test(value);
       if (!ok) throw new Error(`attribute '${key}' on '${store.op}' is outside its declared ${dom.domain} domain; refusing on cardinality`);
@@ -739,7 +782,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       process.stdout.write(JSON.stringify(rec) + "\n");
     }
   }
-  async function runStore(id: OpKey, c: RequestCorrelation, values: StoreValues): Promise<unknown> {
+  async function runStore(id: OpKey, c: RequestCorrelation | DecisionCorrelation, values: StoreValues): Promise<unknown> {
     invocations.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: derived.get(id)!.id });
     return enter(id, c, async () => {
       // The admitted definition is canonicalised AGAIN at raw execution; the captured id is recomputed.
@@ -771,6 +814,148 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
         const out = VALIDATORS[String(def["resultValidator"])](res);
         await client.query("COMMIT");
         return out;
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw e;
+      } finally {
+        client.release();
+      }
+    });
+  }
+  async function runDecisionRecordAppend(c: DecisionCorrelation, raw: DecisionRecordAppendInput): Promise<DecisionRecordAppendResult> {
+    const id: OpKey = "decisionRecord.append";
+    invocations.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: derived.get(id)!.id });
+    return enter(id, c, async () => {
+      const input = validateAppendInput(raw);
+      if (c.fields.decisionId.value !== input.decisionId.slice(1)) throw new Error("decisionRecord.append refuses a correlation whose real dov.v1 identity differs from the record input");
+      const def = ADMITTED[id].constructedDefinition;
+      const fx = deriveEffect(def);
+      if (def["command"] !== "decision-record-append.v1" || def["transactionClass"] !== "tenant-decision-append-from-p1")
+        throw new Error("the closed decisionRecord.append command shape is not the ratified one");
+      rawExecutions.push({ op: id, gatewayEntry: rows.get(id)!.gatewayEntry, semanticEffectId: fx.id, canonicalBytes: fx.bytes });
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('verin.org_id', $1, true)", [input.orgId]);
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [input.orgId]);
+        const existing = await client.query("SELECT l.seq::int, l.entry_id, l.entry_hash, l.replay_manifest_id, l.envelope_bytes FROM decision_ledger l WHERE l.org_id = $1 AND l.decision_id = $2", [
+          input.orgId,
+          input.decisionId,
+        ]);
+        if (existing.rows.length > 1) throw new Error("decisionRecord.append refuses a fork: one DecisionId has multiple ledger entries");
+        if (existing.rows.length === 1) {
+          const found = z
+            .strictObject({ seq: z.number().int(), entry_id: z.string(), entry_hash: z.string(), replay_manifest_id: z.string(), envelope_bytes: z.instanceof(Uint8Array) })
+            .parse(existing.rows[0]);
+          if (found.replay_manifest_id !== input.manifest.identity)
+            throw new Error(`decisionRecord.append refuses idempotency conflict: ${input.decisionId} already cites ${found.replay_manifest_id}, not ${input.manifest.identity}`);
+          if (!Buffer.from(found.envelope_bytes).equals(Buffer.from(decisionEnvelope(input, found.seq))))
+            throw new Error(`decisionRecord.append refuses idempotency conflict: ${input.decisionId} was retried with different envelope bytes`);
+          const result = { entryId: found.entry_id, sequence: found.seq, chainHash: found.entry_hash, replayManifestId: found.replay_manifest_id, alreadyRecorded: true };
+          await client.query("COMMIT");
+          return result;
+        }
+
+        const anchorResult = await client.query("SELECT entry_count::int, max_seq::int, head_hash, head_decision_id FROM decision_chain_anchor WHERE org_id = $1 FOR UPDATE", [input.orgId]);
+        if (anchorResult.rows.length > 1) throw new Error("decisionRecord.append refuses multiple chain anchors for one tenant");
+        let anchor = anchorResult.rows.length
+          ? z.strictObject({ entry_count: z.number().int(), max_seq: z.number().int(), head_hash: z.string(), head_decision_id: z.string().nullable() }).parse(anchorResult.rows[0])
+          : null;
+        if (anchor && anchor.entry_count !== anchor.max_seq + 1) throw new Error("decisionRecord.append refuses an anchor whose count and maximum sequence disagree");
+        if (!anchor) {
+          const anyLedger = await client.query("SELECT seq FROM decision_ledger WHERE org_id = $1 LIMIT 1", [input.orgId]);
+          if (anyLedger.rows.length) throw new Error("decisionRecord.append refuses a chain with ledger rows but no anchor");
+          const authorization = await client.query("SELECT lcm_digest FROM decision_continuity_authorization WHERE org_id = $1 ORDER BY authorized_at LIMIT 2", [input.orgId]);
+          if (authorization.rows.length === 0) throw new Error("continuity-boundary-not-authorized: no lcm.v1 authorization exists for this tenant");
+          if (authorization.rows.length !== 1) throw new Error("continuity-boundary-ambiguous: more than one lcm.v1 authorization exists for this tenant");
+          const lcmDigest = z.strictObject({ lcm_digest: z.string().regex(/^lcm\.v1:[0-9a-f]{64}$/) }).parse(authorization.rows[0]).lcm_digest;
+          const envelope = genesisEnvelope(input.orgId, lcmDigest, input.recordedAt, input.producer);
+          const genesisEntryId = entryId(envelope);
+          const genesisHash = chainHash(envelope, GENESIS_PREV_HASH);
+          await client.query(
+            "INSERT INTO decision_ledger (org_id, seq, entry_id, decision_id, replay_manifest_id, envelope_bytes, prev_hash, entry_hash, recorded_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, 0, $2, NULL, NULL, $3, $4, $5, $6, $7, $8, $9, $10)",
+            [
+              input.orgId,
+              genesisEntryId,
+              Buffer.from(envelope),
+              GENESIS_PREV_HASH,
+              genesisHash,
+              input.recordedAt,
+              input.producer.kind,
+              input.producer.id,
+              input.producer.producedAt,
+              input.recordOrigin,
+            ],
+          );
+          await client.query("INSERT INTO decision_chain_anchor (org_id, entry_count, max_seq, head_hash, head_decision_id, updated_at) VALUES ($1, 1, 0, $2, NULL, $3)", [
+            input.orgId,
+            genesisHash,
+            input.recordedAt,
+          ]);
+          anchor = { entry_count: 1, max_seq: 0, head_hash: genesisHash, head_decision_id: null };
+        }
+
+        const sourceRows = [
+          input.sources.request,
+          input.sources.evidence,
+          input.sources.policy,
+          input.sources.engine,
+          input.sources.outcome,
+          { kind: "replay-manifest" as const, identity: input.manifest.identity, bytes: input.manifest.bytes },
+        ];
+        for (const source of sourceRows) {
+          await client.query(
+            "INSERT INTO decision_record_source (org_id, source_kind, identity, bytes, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (org_id, source_kind, identity) DO NOTHING",
+            [input.orgId, source.kind, source.identity, Buffer.from(source.bytes), input.producer.kind, input.producer.id, input.producer.producedAt, input.recordOrigin],
+          );
+          const stored = await client.query("SELECT bytes FROM decision_record_source WHERE org_id = $1 AND source_kind = $2 AND identity = $3", [input.orgId, source.kind, source.identity]);
+          if (stored.rows.length !== 1 || !Buffer.from(z.strictObject({ bytes: z.instanceof(Uint8Array) }).parse(stored.rows[0]).bytes).equals(Buffer.from(source.bytes)))
+            throw new Error(`decisionRecord.append refuses source collision for '${source.kind}' identity ${source.identity}: stored bytes differ`);
+        }
+
+        const sequence = anchor.max_seq + 1;
+        const envelope = decisionEnvelope(input, sequence);
+        const nextEntryId = entryId(envelope);
+        const nextHash = chainHash(envelope, anchor.head_hash);
+        await client.query(
+          "INSERT INTO decision_ledger (org_id, seq, entry_id, decision_id, replay_manifest_id, envelope_bytes, prev_hash, entry_hash, recorded_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+          [
+            input.orgId,
+            sequence,
+            nextEntryId,
+            input.decisionId,
+            input.manifest.identity,
+            Buffer.from(envelope),
+            anchor.head_hash,
+            nextHash,
+            input.recordedAt,
+            input.producer.kind,
+            input.producer.id,
+            input.producer.producedAt,
+            input.recordOrigin,
+          ],
+        );
+        await client.query(
+          "INSERT INTO decision_record_projection (org_id, decision_id, seq, replay_manifest_id, request_ref, household_slug, disposition, recorded_at, record_origin) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+          [
+            input.orgId,
+            input.decisionId,
+            sequence,
+            input.manifest.identity,
+            input.projection.requestRef,
+            input.projection.householdSlug,
+            input.projection.disposition,
+            input.recordedAt,
+            input.recordOrigin,
+          ],
+        );
+        const moved = await client.query(
+          "UPDATE decision_chain_anchor SET entry_count = $2, max_seq = $3, head_hash = $4, head_decision_id = $5, updated_at = $6 WHERE org_id = $1 AND entry_count = $7 AND max_seq = $8 AND head_hash = $9",
+          [input.orgId, anchor.entry_count + 1, sequence, nextHash, input.decisionId, input.recordedAt, anchor.entry_count, anchor.max_seq, anchor.head_hash],
+        );
+        if (moved.rowCount !== 1) throw new Error("decisionRecord.append refuses an anchor that moved outside the tenant append lock");
+        await client.query("COMMIT");
+        return { entryId: nextEntryId, sequence, chainHash: nextHash, replayManifestId: input.manifest.identity, alreadyRecorded: false };
       } catch (e) {
         await client.query("ROLLBACK").catch(() => undefined);
         throw e;
@@ -812,6 +997,8 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterConformanceRunner: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("conformance.runner", c, fn),
     enterConformanceReadSignedCase: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("conformance.readSignedCase", c, fn),
     enterConformanceGrade: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("conformance.grade", c, fn),
+    enterDecisionRecordRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decisionRecord.record", c, fn),
+    enterDecisionRecordAppend: (c: DecisionCorrelation, input: DecisionRecordAppendInput) => runDecisionRecordAppend(c, input),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");
@@ -853,7 +1040,7 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
       invocations,
       rawExecutions,
       emissions: { spans, metrics: metricsOut, logs },
-      correlationTable: Object.fromEntries(REGISTRY.map((r) => [r.id.id, r.correlation])),
+      correlationTable: Object.fromEntries(REGISTRY.map((r) => [r.id.id, PROMPT6_CORRELATIONS[r.id.id] ?? r.correlation])),
       mintedCorrelationIds: [...MINTED_IDS],
       namingPattern: NAMING_PATTERN,
     };

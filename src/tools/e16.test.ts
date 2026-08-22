@@ -25,7 +25,9 @@ import { NOT_STATED as POLICY_NOT_STATED, POLICY_OPERATION_DEADLINE_MS, assertSe
 import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } from "../evidence/bundle";
 import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
 import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
-import { NOT_STATED as DECISION_NOT_STATED, REFERENCE_FORMS, evaluate, outcomeDigest } from "../decision/outcome";
+import { NOT_STATED as DECISION_NOT_STATED, REFERENCE_FORMS, evaluate, outcomeDigest, serializeOutcome, serializeRequest } from "../decision/outcome";
+import { createDecisionRecord } from "../record/decision-record";
+import { buildReplayManifest, exactBytesIdentity, renderDecisionIdFromOutcomeBytes, type ReplaySourceSet } from "../record/canonical";
 import { SAMPLE_INPUTS } from "./decision-samples";
 import { COMPARISON_ARCHETYPES } from "../decision/comparison-archetypes";
 import { engineIdentity } from "./decision-engine-identity";
@@ -257,6 +259,7 @@ describe("session lifecycle: renewal and rotation happen only on the cookie-writ
 });
 
 const SUPER_URL = process.env.VERIN_SUPER_DATABASE_URL?.replace(/\/postgres$/, "/verin") ?? "postgresql://postgres:postgres@localhost:5432/verin";
+const APP_URL = process.env.VERIN_APP_DATABASE_URL ?? "postgresql://verin_app:verin-app-local@localhost:5432/verin";
 async function superQuery(sql: string, params: unknown[] = []) {
   const su = new PgClient({ connectionString: SUPER_URL });
   await su.connect();
@@ -579,11 +582,11 @@ describe("database-enforced isolation (5B.2, section 6 core; the full battery re
   });
 });
 
-describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () => {
+describe("the decision and atomic-record slices, exercised end to end", () => {
   // Each flow pins its policy by CONTENT ADDRESS (the seed's own firm documents, resolved by hash).
   const SEED_FIRM_A_POLICY = `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":25000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
   const SEED_FIRM_B_POLICY = `{"reserveHorizonMonths":12,"dualApproval":{"thresholdUsd":100000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"not-stated","requesterRule":"not-stated"},"bankInstructionChange":"block-until-independently-verified","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
-  const decide = async (cookie: string, householdName: string, amountUsd: number, policyDoc: string) => {
+  const decide = async (cookie: string, householdName: string, amountUsd: number, policyDoc: string, recordTimes = 0, conflictingRetry = false) => {
     const requestId = mintRequestId();
     const c = requestCorrelation(requestId);
     const access = createAccessContext();
@@ -612,9 +615,160 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
       });
       // The first moment a decision identity CAN exist: after evaluate returns, from the outcome's own digest.
       const minted = decisionIdFromOutcomeDigest(outcomeDigest(produced));
-      return getGateway().enterDecisionRenderOutcome(decisionCorrelation(requestId, minted), async () => ({ outcome: produced, decisionId: minted, bundle: evidence }));
+      const dc = decisionCorrelation(requestId, minted);
+      const rendered = await getGateway().enterDecisionRenderOutcome(dc, async () => ({ outcome: produced, decisionId: minted, bundle: evidence }));
+      const records = [];
+      if (recordTimes) {
+        const recordGrant = (await access.authorize(c, p!, "decision.record"))!;
+        const recordedAt = new Date().toISOString();
+        const record = createDecisionRecord(dc, recordGrant);
+        const material = {
+          outcome: produced,
+          evidence,
+          policy: version,
+          recordedAt,
+          producer: { kind: "test" as const, id: "itest-suite", producedAt: recordedAt },
+          recordOrigin: "test-fixture" as const,
+        };
+        for (let i = 0; i < recordTimes; i++) records.push(await record.record(material));
+        if (conflictingRetry) {
+          const shifted = new Date(Date.parse(recordedAt) + 1_000).toISOString();
+          await record.record({ ...material, recordedAt: shifted, producer: { ...material.producer, producedAt: shifted } });
+        }
+      }
+      return { ...rendered, records };
     });
   };
+  it("records one exact decision atomically, refuses an unauthorized genesis, retries idempotently, and serializes concurrent appends", async () => {
+    await expect(decide(cookieValue, "Henderson Family", 71_001, SEED_FIRM_A_POLICY, 1)).rejects.toThrow(/continuity-boundary-not-authorized/);
+    const orgId = principal.tenant.orgId;
+    const instant = new Date().toISOString();
+    await superQuery(
+      "INSERT INTO decision_continuity_authorization (org_id, lcm_digest, manifest_bytes, signature_bytes, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, $2, $3, $4, 'test-fixture', $5, 'test', 'itest-suite', $5, 'test-fixture')",
+      [orgId, `lcm.v1:${"1".repeat(64)}`, Buffer.from("test-only-continuity-manifest"), Buffer.from("test-only-not-a-product-signature"), instant],
+    );
+    const exact = await decide(cookieValue, "Henderson Family", 71_002, SEED_FIRM_A_POLICY, 2);
+    expect(exact.records).toHaveLength(2);
+    expect(exact.records[0].alreadyRecorded).toBe(false);
+    expect(exact.records[1]).toEqual({ ...exact.records[0], alreadyRecorded: true });
+    await expect(decide(cookieValue, "Henderson Family", 71_005, SEED_FIRM_A_POLICY, 1, true)).rejects.toThrow(/idempotency conflict/);
+    const raced = await Promise.all([decide(cookieValue, "Henderson Family", 71_003, SEED_FIRM_A_POLICY, 1), decide(cookieValue, "Henderson Family", 71_004, SEED_FIRM_A_POLICY, 1)]);
+    const sequences = raced.map((x) => x.records[0].sequence).sort((a, b) => a - b);
+    expect(sequences[1]).toBe(sequences[0] + 1);
+    const ledger = (await superQuery("SELECT seq::int, prev_hash, entry_hash FROM decision_ledger WHERE org_id = $1 ORDER BY seq", [orgId])).rows as {
+      seq: number;
+      prev_hash: string;
+      entry_hash: string;
+    }[];
+    expect(ledger.map((x) => x.seq)).toEqual(ledger.map((_, i) => i));
+    expect(ledger[0].prev_hash).toBe("dlh.v1:GENESIS");
+    for (let i = 1; i < ledger.length; i++) expect(ledger[i].prev_hash).toBe(ledger[i - 1].entry_hash);
+  });
+  it("rolls every internal append stage back and enforces immutability for the application role and table owner", async () => {
+    const otherSession = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-b.example", "harbor-quartz-42");
+    const access = createAccessContext();
+    const otherPrincipal = await access.authenticate(requestCorrelation(mintRequestId()), otherSession!.cookieValue);
+    const orgId = otherPrincipal!.tenant.orgId;
+    const instant = new Date().toISOString();
+    await superQuery(
+      "INSERT INTO decision_continuity_authorization (org_id, lcm_digest, manifest_bytes, signature_bytes, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, $2, $3, $4, 'test-fixture', $5, 'test', 'itest-suite', $5, 'test-fixture')",
+      [orgId, `lcm.v1:${"2".repeat(64)}`, Buffer.from("test-only-second-continuity-manifest"), Buffer.from("test-only-not-a-product-signature"), instant],
+    );
+    const counts = async () =>
+      (
+        await superQuery(
+          "SELECT (SELECT count(*)::int FROM decision_record_source WHERE org_id = $1) sources, (SELECT count(*)::int FROM decision_ledger WHERE org_id = $1) entries, (SELECT count(*)::int FROM decision_record_projection WHERE org_id = $1) projections, (SELECT count(*)::int FROM decision_chain_anchor WHERE org_id = $1) anchors",
+          [orgId],
+        )
+      ).rows[0];
+    await superQuery("CREATE OR REPLACE FUNCTION p6_test_abort() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'p6 injected stage failure'; END $$");
+    const stages = [
+      ["source insert after anchor creation", "INSERT", "decision_record_source", ""],
+      ["genesis insert after source insertion", "INSERT", "decision_ledger", "WHEN (NEW.seq = 0)"],
+      ["decision insert after genesis", "INSERT", "decision_ledger", "WHEN (NEW.seq > 0)"],
+      ["anchor update after decision insertion", "UPDATE", "decision_chain_anchor", ""],
+      ["projection insert after anchor update", "INSERT", "decision_record_projection", ""],
+    ] as const;
+    try {
+      for (let i = 0; i < stages.length; i++) {
+        const [stage, operation, table, predicate] = stages[i];
+        const before = await counts();
+        await superQuery(`CREATE TRIGGER p6_test_abort_stage BEFORE ${operation} ON ${table} FOR EACH ROW ${predicate} EXECUTE FUNCTION p6_test_abort()`);
+        try {
+          await expect(decide(otherSession!.cookieValue, "Vance Household", 72_000 + i, SEED_FIRM_B_POLICY, 1)).rejects.toThrow(/p6 injected stage failure/);
+        } finally {
+          await superQuery(`DROP TRIGGER p6_test_abort_stage ON ${table}`);
+        }
+        expect(await counts(), `${stage} failure left partial decision-record rows`).toEqual(before);
+      }
+    } finally {
+      await superQuery("DROP FUNCTION p6_test_abort() ");
+    }
+    const app = new PgClient({ connectionString: APP_URL });
+    await app.connect();
+    try {
+      await app.query("SELECT set_config('verin.org_id', $1, false)", [principal.tenant.orgId]);
+      for (const table of ["decision_record_source", "decision_ledger"]) {
+        await expect(app.query(`UPDATE ${table} SET record_origin = record_origin WHERE org_id = $1`, [principal.tenant.orgId])).rejects.toThrow(/permission denied/);
+        await expect(app.query(`DELETE FROM ${table} WHERE org_id = $1`, [principal.tenant.orgId])).rejects.toThrow(/permission denied/);
+      }
+    } finally {
+      await app.end();
+    }
+    for (const table of ["decision_continuity_authorization", "decision_record_source", "decision_ledger"]) {
+      const scoped = `SET ROLE verin_migrator; SELECT set_config('verin.org_id', '${principal.tenant.orgId}', false);`;
+      await expect(superQuery(`${scoped} UPDATE ${table} SET record_origin = record_origin WHERE org_id = '${principal.tenant.orgId}'`)).rejects.toThrow(
+        new RegExp(`${table} is append-only: UPDATE is forbidden`),
+      );
+      await expect(superQuery(`${scoped} DELETE FROM ${table} WHERE org_id = '${principal.tenant.orgId}'`)).rejects.toThrow(new RegExp(`${table} is append-only: DELETE is forbidden`));
+      await expect(superQuery(`SET ROLE verin_migrator; TRUNCATE ${table}`)).rejects.toThrow(new RegExp(`${table} is append-only: TRUNCATE is forbidden`));
+    }
+  });
+  it("refuses a same-identity source collision before any chain append", async () => {
+    const outcome = evaluate(SAMPLE_INPUTS[0].input);
+    const bytes = {
+      request: serializeRequest(outcome.request),
+      evidence: serializeBundle(SAMPLE_INPUTS[0].input.evidenceBundle),
+      policy: SEED_FIRM_A_POLICY,
+      engine: engineIdentity().bytes,
+      outcome: serializeOutcome(outcome),
+    };
+    const sources = Object.fromEntries(
+      (Object.keys(bytes) as (keyof typeof bytes)[]).map((kind) => [kind, { kind, identity: exactBytesIdentity(kind, bytes[kind]), bytes: bytes[kind] }]),
+    ) as ReplaySourceSet;
+    const manifest = buildReplayManifest(sources, SAMPLE_INPUTS[0].input.evidenceBundle.vocabulary, outcome.citations.asOf);
+    const decisionId = renderDecisionIdFromOutcomeBytes(sources.outcome.bytes);
+    const orgId = principal.tenant.orgId;
+    await superQuery(
+      "INSERT INTO decision_record_source (org_id, source_kind, identity, bytes, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, 'request', $2, $3, 'test', 'itest-suite', $4, 'test-fixture')",
+      [orgId, sources.request.identity, Buffer.from("wrong-bytes-under-declared-identity"), "2026-08-21T12:00:00.000Z"],
+    );
+    const requestId = mintRequestId();
+    const rc = requestCorrelation(requestId);
+    const dc = decisionCorrelation(requestId, decisionIdFromOutcomeDigest(sources.outcome.identity));
+    try {
+      await expect(
+        getGateway().enterRouteDecision(rc, () =>
+          getGateway().enterDecisionRecordRecord(dc, () =>
+            getGateway().enterDecisionRecordAppend(dc, {
+              orgId,
+              decisionId,
+              sources,
+              manifest,
+              recordedAt: outcome.citations.asOf,
+              producer: { kind: "test", id: "itest-suite", producedAt: outcome.citations.asOf },
+              recordOrigin: "test-fixture",
+              projection: { requestRef: outcome.request.requestRef, householdSlug: outcome.request.householdSlug, disposition: outcome.disposition },
+            }),
+          ),
+        ),
+      ).rejects.toThrow(/source collision for 'request'/);
+    } finally {
+      await superQuery("ALTER TABLE decision_record_source DISABLE TRIGGER decision_source_immutable");
+      await superQuery("DELETE FROM decision_record_source WHERE org_id = $1 AND source_kind = 'request' AND identity = $2", [orgId, sources.request.identity]);
+      await superQuery("ALTER TABLE decision_record_source ENABLE TRIGGER decision_source_immutable");
+    }
+  });
   it("computes a LIVE proceed through the governed route: stages from the STATED block, the CD-4d key, the CD-4e ordering, every citation", async () => {
     const { outcome, decisionId, bundle } = await decide(cookieValue, "Henderson Family", 75_000, SEED_FIRM_A_POLICY);
     if (outcome.disposition !== "proceed") throw new Error(`Henderson at 75000 must proceed, got ${outcome.disposition}`);
