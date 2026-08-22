@@ -494,7 +494,7 @@ product path: a firm's policy change is a published version at zero repository d
 - M-J is pinned with NO exceptions list: re-adding GC-10 as a ghost pre-signature exception fails the committed grammar test - the signed key now conforms, and the test refuses an exceptions list that names a divergence which no longer exists.
 - The restored green run (green-restored.txt): 59 unit tests at the moved pins; the pin registry and the conformance file both regenerate byte-identically at the SIGNING commit 5542c999.
 
-## PR-6-pre proofs (the typed-input prerequisite correction; raw transcripts: docs/evidence/pr6pre-transcripts.tar, sha256 6d01cc9f...; battery head 2c6da91c - the PR head differs only by this evidence commit)
+## PR-6-pre proofs (the typed-input prerequisite correction; raw transcripts: docs/evidence/pr6pre-transcripts.tar, sha256 6d01cc9f...; battery head 2c6da91c - the final PR head adds only the evidence commit and the independent pass's standing-instruction correction)
 
 - The signed-case schema no longer admits summary prose, and its source contains no regular-expression
   literal or matching call. All 119 signed typed rows are consumed exactly once into the sixteen

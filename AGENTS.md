@@ -8,7 +8,11 @@ This file is the project's committed home for project-intrinsic agent knowledge:
   objects and never edits, copies, or silently reinterprets them.
 - Regenerate signed decision artifacts only through the commands registered in `package.json`, then
   byte-compare the output with the committed artifact. The signed-case reader takes engine inputs only
-  from signed `typedQuantities`; summary prose is a display cross-check, never an input source.
+  from signed `typedQuantities`; summary prose is not admitted by the input schema and is not an engine
+  input.
+- Later-unit note: `src/decision/outcome.ts` interprets those typed values after the reader serializes
+  them into the string-valued evidence body, using bounded fail-closed patterns. This is outside CD-4c;
+  assess a typed evidence body in a later unit.
 - Recorded mutation evidence requires the exact check command to pass on a clean committed tree before
   the exact injected bytes are applied and the same command is observed failing.
 
