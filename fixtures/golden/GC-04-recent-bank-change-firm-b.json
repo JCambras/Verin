@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. The block is resolvable: independent verification of the bank instruction clears it and the request re-enters evaluation."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. The block is resolvable: independent verification of the bank instruction clears it and the request re-enters evaluation. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c, CD-4b); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -57,7 +57,9 @@
   "policyVersions": {
     "domainConfigVersionId": "money-movement@2026.07.0",
     "firmPolicyVersionId": "firm-b-policy@2026.07.1",
-    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "householdInstructionVersionIds": [
+      "smiths-destination-restriction@v2"
+    ],
     "regulatoryVersionId": null
   },
   "householdInstructions": [
@@ -65,6 +67,50 @@
       "instructionKind": "destination-restriction",
       "versionId": "smiths-destination-restriction@v2",
       "summary": "Distributions may only be sent to household-titled bank instructions."
+    }
+  ],
+  "typedQuantities": [
+    {
+      "ref": "bank-instruction:smiths-primary",
+      "field": "ChangedAt",
+      "value": "2026-07-22",
+      "fromAssertedParse": "(?:changed(?: on)?|unchanged since) (\\d{4}-\\d{2}-\\d{2})"
+    },
+    {
+      "ref": "bank-instruction:smiths-primary",
+      "field": "Verified",
+      "value": false,
+      "fromAssertedParse": "negative verification phrase"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "Sufficiency",
+      "value": "attested-sufficient",
+      "fromAssertedParse": "attestation phrase"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "RegistrationClass",
+      "value": "taxable",
+      "fromAssertedParse": "subjectRef/summary names taxable"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "canonical-request reference -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "canonical-request",
+      "value": "home-renovation|2026-08-15",
+      "fromAssertedParse": "the $75,000 request -> canonical purpose/deadline"
     }
   ],
   "expectedDisposition": "blocked",
@@ -85,17 +131,47 @@
       "code": "bank-instruction-change-unverified",
       "explanation": "The destination bank instruction changed recently and Firm B requires independent verification before any execution.",
       "resolvingEvidence": [
-        { "evidenceKind": "bank-instruction-independent-verification", "subjectRef": "bank-instruction:smiths-primary", "suppliableBy": ["operations", "external"] }
+        {
+          "evidenceKind": "bank-instruction-independent-verification",
+          "subjectRef": "bank-instruction:smiths-primary",
+          "suppliableBy": [
+            "operations",
+            "external"
+          ]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "recent-bank-change-detected", "summary": "The destination bank instruction changed within the recency window (2026-07-22)." },
-    { "code": "firm-b-blocks-until-verified", "summary": "Firm B handling for a recent bank-instruction change is to block execution until the instruction is independently verified - the resolving affordance is the verification, shown to the user." }
+    {
+      "code": "source-account-selected",
+      "summary": "A taxable source account was selected; a retirement account is never chosen silently."
+    },
+    {
+      "code": "recent-bank-change-detected",
+      "summary": "The destination bank instruction changed within the recency window (2026-07-22)."
+    },
+    {
+      "code": "blocked-until-independently-verified",
+      "summary": "This firm blocks execution until the changed instruction is independently verified."
+    }
   ],
+  "commentaryNodes": [
+    {
+      "code": "firm-b-blocks-until-verified",
+      "summary": "Firm B handling for a recent bank-instruction change is to block execution until the instruction is independently verified - the resolving affordance is the verification, shown to the user."
+    }
+  ],
+  "commentaryNote": "Demoted from the binding explanation set to non-binding commentary by the captain's CD-4b ruling (2026-08-21). Retained as signed intent; describes lifecycle behavior outside the prompt-5 decision engine or comparative context the engine does not emit.",
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Bank-instruction snapshot showing the recent, unverified change is pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Blocked decision recording the resolvable blocker and its resolving evidence; no authority, no execution plan." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "Bank-instruction snapshot showing the recent, unverified change is pinned into the bundle."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Blocked decision recording the resolvable blocker and its resolving evidence; no authority, no execution plan."
+    }
   ],
   "expectedVerificationState": {
     "reached": false,

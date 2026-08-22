@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft treats reserve insufficiency as a RESOLVABLE block (funds can arrive, pending activity can settle, the amount can shrink), not a prohibition."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft treats reserve insufficiency as a RESOLVABLE block (funds can arrive, pending activity can settle, the amount can shrink), not a prohibition. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c, CD-4b); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -67,7 +67,10 @@
   "policyVersions": {
     "domainConfigVersionId": "money-movement@2026.07.0",
     "firmPolicyVersionId": "firm-b-policy@2026.07.1",
-    "householdInstructionVersionIds": ["smiths-destination-restriction@v2", "smiths-liquidity-preference@v1"],
+    "householdInstructionVersionIds": [
+      "smiths-destination-restriction@v2",
+      "smiths-liquidity-preference@v1"
+    ],
     "regulatoryVersionId": null
   },
   "householdInstructions": [
@@ -80,6 +83,56 @@
       "instructionKind": "liquidity-preference",
       "versionId": "smiths-liquidity-preference@v1",
       "summary": "Prefer taxable sources over retirement accounts - which is why the IRA is not offered as an automatic fallback."
+    }
+  ],
+  "typedQuantities": [
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "AvailableUsd",
+      "value": 160000,
+      "fromAssertedParse": "(?:available balance|[Bb]alance)(?: still shows)? (\\d{1,7}) USD"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "RegistrationClass",
+      "value": "taxable",
+      "fromAssertedParse": "subjectRef/summary names taxable"
+    },
+    {
+      "ref": "subject:smiths-household",
+      "field": "PendingTotalUsd",
+      "value": 20000,
+      "fromAssertedParse": "[Pp]ending approved distribution of (\\d{1,7}) USD"
+    },
+    {
+      "ref": "subject:smiths-household",
+      "field": "MonthlyUsd",
+      "value": 8000,
+      "fromAssertedParse": "withdrawals (\\d{1,7}) USD\\/month"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "canonical-request reference -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "purpose",
+      "value": "home-renovation",
+      "fromAssertedParse": "for ([a-z][a-z-]*)"
+    },
+    {
+      "ref": "trigger",
+      "field": "canonical-request",
+      "value": "home-renovation|2026-08-15",
+      "fromAssertedParse": "the $75,000 request -> canonical purpose/deadline"
     }
   ],
   "expectedDisposition": "blocked",
@@ -100,19 +153,53 @@
       "code": "cash-reserve-breach",
       "explanation": "The movement would leave less than twelve months of planned withdrawals in cash.",
       "resolvingEvidence": [
-        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-joint-taxable", "suppliableBy": ["external"] },
-        { "evidenceKind": "pending-actions", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations"] }
+        {
+          "evidenceKind": "account-balance",
+          "subjectRef": "subject:smiths-joint-taxable",
+          "suppliableBy": [
+            "external"
+          ]
+        },
+        {
+          "evidenceKind": "pending-actions",
+          "subjectRef": "subject:smiths-household",
+          "suppliableBy": [
+            "operations"
+          ]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "effective-liquidity-computed", "summary": "Available 160000 USD minus the pending approved 20000 USD distribution = 140000 USD effective liquidity; pending activity counts against the household (demo-contract household shape)." },
-    { "code": "cash-reserve-breach", "summary": "After the 75000 USD movement only 65000 USD would remain, below Firm B's 96000 USD (twelve-month) reserve - the request blocks with the arithmetic shown." },
-    { "code": "firm-divergence-noted", "summary": "Under Firm A's six-month reserve (48000 USD) the identical facts proceed - the block exists because Firm B's policy version differs, not because the code differs." }
+    {
+      "code": "source-account-selected",
+      "summary": "A taxable source account was selected; a retirement account is never chosen silently."
+    },
+    {
+      "code": "effective-liquidity-computed",
+      "summary": "Available 160000 USD minus the pending approved 20000 USD distribution = 140000 USD effective liquidity; pending activity counts against the household (demo-contract household shape)."
+    },
+    {
+      "code": "cash-reserve-breach",
+      "summary": "After the 75000 USD movement only 65000 USD would remain, below Firm B's 96000 USD (twelve-month) reserve - the request blocks with the arithmetic shown."
+    }
   ],
+  "commentaryNodes": [
+    {
+      "code": "firm-divergence-noted",
+      "summary": "Under Firm A's six-month reserve (48000 USD) the identical facts proceed - the block exists because Firm B's policy version differs, not because the code differs."
+    }
+  ],
+  "commentaryNote": "Demoted from the binding explanation set to non-binding commentary by the captain's CD-4b ruling (2026-08-21). Retained as signed intent; describes lifecycle behavior outside the prompt-5 decision engine or comparative context the engine does not emit.",
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Balance, pending-action, and planned-withdrawal snapshots pinned into the bundle - the pending 20000 USD activity is part of the recorded basis." },
-    { "type": "DecisionRecorded", "note": "Blocked decision recording the cash-reserve-breach blocker and its resolving evidence; no authority, no execution plan." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "Balance, pending-action, and planned-withdrawal snapshots pinned into the bundle - the pending 20000 USD activity is part of the recorded basis."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Blocked decision recording the cash-reserve-breach blocker and its resolving evidence; no authority, no execution plan."
+    }
   ],
   "expectedVerificationState": {
     "reached": false,

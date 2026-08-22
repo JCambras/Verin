@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules the loser BLOCKS at decision time (the sibling reservation is visible pending activity) rather than failing later at execution - the joint violation is prevented before any authority is requested."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft rules the loser BLOCKS at decision time (the sibling reservation is visible pending activity) rather than failing later at execution - the joint violation is prevented before any authority is requested. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c, CD-4b); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -67,7 +67,10 @@
   "policyVersions": {
     "domainConfigVersionId": "money-movement@2026.07.0",
     "firmPolicyVersionId": "firm-a-policy@2026.07.1",
-    "householdInstructionVersionIds": ["smiths-destination-restriction@v2", "smiths-liquidity-preference@v1"],
+    "householdInstructionVersionIds": [
+      "smiths-destination-restriction@v2",
+      "smiths-liquidity-preference@v1"
+    ],
     "regulatoryVersionId": null
   },
   "householdInstructions": [
@@ -80,6 +83,62 @@
       "instructionKind": "liquidity-preference",
       "versionId": "smiths-liquidity-preference@v1",
       "summary": "Taxable source preferred; the constraint is the sibling reservation, not the source choice."
+    }
+  ],
+  "typedQuantities": [
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "AvailableUsd",
+      "value": 160000,
+      "fromAssertedParse": "(?:available balance|[Bb]alance)(?: still shows)? (\\d{1,7}) USD"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "RegistrationClass",
+      "value": "taxable",
+      "fromAssertedParse": "subjectRef/summary names taxable"
+    },
+    {
+      "ref": "subject:smiths-household",
+      "field": "SiblingReservationUsd",
+      "value": 75000,
+      "fromAssertedParse": "[Aa]ctive reservation (?:res:[A-Za-z0-9:-]+) \\((\\d{1,7}) USD"
+    },
+    {
+      "ref": "subject:smiths-household",
+      "field": "SiblingRef",
+      "value": "res:GC-10:liquidity",
+      "fromAssertedParse": "[Aa]ctive reservation (res:[A-Za-z0-9:-]+)"
+    },
+    {
+      "ref": "subject:smiths-household",
+      "field": "MonthlyUsd(total/months)",
+      "value": 48000,
+      "fromAssertedParse": "reserve \\(?=? ?(\\d{1,7}) USD\\)?"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "the Smiths -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "purpose",
+      "value": "property-closing",
+      "fromAssertedParse": "for ([a-z][a-z-]*)"
+    },
+    {
+      "ref": "trigger",
+      "field": "deadline",
+      "value": "2026-08-20",
+      "fromAssertedParse": "by/on <Month> <day>, year from asOf"
     }
   ],
   "expectedDisposition": "blocked",
@@ -100,18 +159,50 @@
       "code": "liquidity-reserved-by-sibling",
       "explanation": "An active reservation for 75000 USD against the same household liquidity means this movement would jointly violate the cash-reserve policy.",
       "resolvingEvidence": [
-        { "evidenceKind": "pending-actions", "subjectRef": "subject:smiths-household", "suppliableBy": ["operations"] },
-        { "evidenceKind": "account-balance", "subjectRef": "subject:smiths-joint-taxable", "suppliableBy": ["external"] }
+        {
+          "evidenceKind": "pending-actions",
+          "subjectRef": "subject:smiths-household",
+          "suppliableBy": [
+            "operations"
+          ]
+        },
+        {
+          "evidenceKind": "account-balance",
+          "subjectRef": "subject:smiths-joint-taxable",
+          "suppliableBy": [
+            "external"
+          ]
+        }
       ]
     }
   ],
   "expectedExplanationNodes": [
-    { "code": "individually-valid-jointly-overcommitted", "summary": "Alone this request satisfies the reserve; together with the reserved sibling movement it leaves 10000 USD against a 48000 USD requirement - the arithmetic is shown, citing the sibling reservation." },
-    { "code": "reservation-prevents-joint-violation", "summary": "The block resolves if the sibling reservation is released (rejection, expiry, or cancellation) or new funds arrive - both paths are shown as resolving affordances." }
+    {
+      "code": "source-account-selected",
+      "summary": "A taxable source account was selected; a retirement account is never chosen silently."
+    },
+    {
+      "code": "effective-liquidity-computed",
+      "summary": "Pending approved activity counts against the household, so effective liquidity sits below the raw balance."
+    },
+    {
+      "code": "individually-valid-jointly-overcommitted",
+      "summary": "Alone this request satisfies the reserve; together with the reserved sibling movement it leaves 10000 USD against a 48000 USD requirement - the arithmetic is shown, citing the sibling reservation."
+    },
+    {
+      "code": "reservation-prevents-joint-violation",
+      "summary": "The block resolves if the sibling reservation is released (rejection, expiry, or cancellation) or new funds arrive - both paths are shown as resolving affordances."
+    }
   ],
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Pending-actions snapshot showing res:GC-10:liquidity is pinned - the sibling reservation is part of this decision's recorded basis." },
-    { "type": "DecisionRecorded", "note": "Blocked decision citing the sibling reservation; no authority, no execution plan, no second reservation created." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "Pending-actions snapshot showing res:GC-10:liquidity is pinned - the sibling reservation is part of this decision's recorded basis."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Blocked decision citing the sibling reservation; no authority, no execution plan, no second reservation created."
+    }
   ],
   "expectedVerificationState": {
     "reached": false,

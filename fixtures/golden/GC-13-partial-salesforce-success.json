@@ -11,8 +11,8 @@
     "status": "signed",
     "authority": "captain",
     "signedBy": "captain",
-    "signedAt": "2026-07-26",
-    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the partial split as instruction-created (completed) vs disbursement-scheduled (incomplete); the captain confirms the part taxonomy once managed-package archaeology (prompt 27) reveals the real seams. Case expectations hold against fakes NOW; realness is deferred-pending-sandbox."
+    "signedAt": "2026-08-21",
+    "note": "Expected outcomes are product truth subject to captain signoff. Draft models the partial split as instruction-created (completed) vs disbursement-scheduled (incomplete); the captain confirms the part taxonomy once managed-package archaeology (prompt 27) reveals the real seams. Case expectations hold against fakes NOW; realness is deferred-pending-sandbox. Re-signed 2026-08-21 under the prompt-5 signature sitting (rulings CD-4c, CD-4b); amendment machine-derived from the generation-4 engine's own evaluation and approved by the captain's merge of the amendment PR."
   },
   "trigger": {
     "kind": "human_request",
@@ -57,7 +57,9 @@
   "policyVersions": {
     "domainConfigVersionId": "money-movement@2026.07.0",
     "firmPolicyVersionId": "firm-a-policy@2026.07.1",
-    "householdInstructionVersionIds": ["smiths-destination-restriction@v2"],
+    "householdInstructionVersionIds": [
+      "smiths-destination-restriction@v2"
+    ],
     "regulatoryVersionId": null
   },
   "householdInstructions": [
@@ -65,6 +67,44 @@
       "instructionKind": "destination-restriction",
       "versionId": "smiths-destination-restriction@v2",
       "summary": "Destination on-list; satisfied."
+    }
+  ],
+  "typedQuantities": [
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "Sufficiency",
+      "value": "attested-sufficient",
+      "fromAssertedParse": "attestation phrase"
+    },
+    {
+      "ref": "subject:smiths-joint-taxable",
+      "field": "RegistrationClass",
+      "value": "taxable",
+      "fromAssertedParse": "subjectRef/summary names taxable"
+    },
+    {
+      "ref": "subject:smiths-household",
+      "field": "Sufficiency",
+      "value": "attested-sufficient",
+      "fromAssertedParse": "attestation phrase"
+    },
+    {
+      "ref": "trigger",
+      "field": "amountUsd",
+      "value": 75000,
+      "fromAssertedParse": "distribute (\\d{1,7}) USD"
+    },
+    {
+      "ref": "trigger",
+      "field": "householdSlug",
+      "value": "smiths",
+      "fromAssertedParse": "canonical-request reference -> smiths"
+    },
+    {
+      "ref": "trigger",
+      "field": "canonical-request",
+      "value": "home-renovation|2026-08-15",
+      "fromAssertedParse": "the $75,000 request -> canonical purpose/deadline"
     }
   ],
   "expectedDisposition": "proceed",
@@ -75,13 +115,21 @@
         "stageId": "ops-dual-approval",
         "order": 1,
         "executionMode": "parallel",
-        "eligibleRoleIds": ["operations"],
+        "eligibleRoleIds": [
+          "operations"
+        ],
         "approvalsRequired": 2,
         "distinctActorsRequired": true,
         "requesterMayApprove": false,
         "expiresAfter": "P3D",
         "escalationPath": [
-          { "after": "P1D", "roleIds": ["operations-manager"], "reasonCode": "approval-stage-idle" }
+          {
+            "after": "P1D",
+            "roleIds": [
+              "operations-manager"
+            ],
+            "reasonCode": "approval-stage-idle"
+          }
         ]
       }
     ],
@@ -92,26 +140,82 @@
     "reason": "Approvals recorded and revalidation passed - execution legitimately started; the partial outcome is discovered from the external receipt, not predicted.",
     "idempotencyKey": "idem:GC-13:smiths-75000-2026-08-15",
     "reservations": [
-      { "reservationId": "res:GC-13:liquidity", "conflictKeys": ["conflict:smiths-liquidity"], "expiresAfter": "PT30M" }
+      {
+        "reservationId": "res:GC-13:liquidity",
+        "conflictKeys": [
+          "conflict:smiths-liquidity"
+        ],
+        "expiresAfter": "PT30M"
+      }
     ],
     "preconditions": [
-      { "code": "material-evidence-fresh-at-execution", "requiredEvidence": ["subject:smiths-joint-taxable"], "mustStillHoldAtExecution": true }
+      {
+        "code": "material-evidence-fresh-at-execution",
+        "requiredEvidence": [
+          "subject:smiths-joint-taxable"
+        ],
+        "mustStillHoldAtExecution": true
+      }
     ]
   },
   "expectedExplanationNodes": [
-    { "code": "partial-outcome-recorded", "summary": "The external receipt reports completed part 'instruction-created' and incomplete part 'disbursement-scheduled' - both lists are displayed verbatim with the exact source status; nothing is rounded up to success." },
-    { "code": "exception-requires-judgment", "summary": "A partial movement is neither done nor safely retryable as a whole, so policy requires a derived exception decision (complete the remainder, compensate, or hold) instead of an automatic retry - the failure never disappears into logs (v3 invariant 24)." }
+    {
+      "code": "source-account-selected",
+      "summary": "A taxable source account was selected; a retirement account is never chosen silently."
+    },
+    {
+      "code": "dual-approval-required",
+      "summary": "The amount exceeds the firm's dual-approval threshold, so distinct approvers are required before execution."
+    }
   ],
+  "commentaryNodes": [
+    {
+      "code": "partial-outcome-recorded",
+      "summary": "The external receipt reports completed part 'instruction-created' and incomplete part 'disbursement-scheduled' - both lists are displayed verbatim with the exact source status; nothing is rounded up to success."
+    },
+    {
+      "code": "exception-requires-judgment",
+      "summary": "A partial movement is neither done nor safely retryable as a whole, so policy requires a derived exception decision (complete the remainder, compensate, or hold) instead of an automatic retry - the failure never disappears into logs (v3 invariant 24)."
+    }
+  ],
+  "commentaryNote": "Demoted from the binding explanation set to non-binding commentary by the captain's CD-4b ruling (2026-08-21). Retained as signed intent; describes lifecycle behavior outside the prompt-5 decision engine or comparative context the engine does not emit.",
   "expectedLedgerEvents": [
-    { "type": "EvidenceSnapshotRecorded", "note": "Evaluation snapshots pinned into the bundle." },
-    { "type": "DecisionRecorded", "note": "Proceed decision with dual-approval authority and execution plan." },
-    { "type": "ReservationCreated", "note": "Liquidity reservation created before execution; NOT released while parts remain incomplete." },
-    { "type": "ApprovalRecorded", "note": "First operations approver approves." },
-    { "type": "ApprovalRecorded", "note": "Second, distinct operations approver approves." },
-    { "type": "ExecutionStarted", "note": "Single external instruction started under the stable idempotency key." },
-    { "type": "ExecutionPartiallySucceeded", "note": "Receipt records completedParts=[instruction-created], incompleteParts=[disbursement-scheduled], with the exact sourceStatus string." },
-    { "type": "StatusObserved", "note": "Polled status maps to Unknown - the source cannot yet prove the disbursement leg's state; the raw sourceStatus is preserved alongside." },
-    { "type": "ExceptionDecisionRequested", "note": "The partial outcome derives a new decision request referencing the prior decision and the triggering ledger entry (reason: partial-execution)." }
+    {
+      "type": "EvidenceSnapshotRecorded",
+      "note": "Evaluation snapshots pinned into the bundle."
+    },
+    {
+      "type": "DecisionRecorded",
+      "note": "Proceed decision with dual-approval authority and execution plan."
+    },
+    {
+      "type": "ReservationCreated",
+      "note": "Liquidity reservation created before execution; NOT released while parts remain incomplete."
+    },
+    {
+      "type": "ApprovalRecorded",
+      "note": "First operations approver approves."
+    },
+    {
+      "type": "ApprovalRecorded",
+      "note": "Second, distinct operations approver approves."
+    },
+    {
+      "type": "ExecutionStarted",
+      "note": "Single external instruction started under the stable idempotency key."
+    },
+    {
+      "type": "ExecutionPartiallySucceeded",
+      "note": "Receipt records completedParts=[instruction-created], incompleteParts=[disbursement-scheduled], with the exact sourceStatus string."
+    },
+    {
+      "type": "StatusObserved",
+      "note": "Polled status maps to Unknown - the source cannot yet prove the disbursement leg's state; the raw sourceStatus is preserved alongside."
+    },
+    {
+      "type": "ExceptionDecisionRequested",
+      "note": "The partial outcome derives a new decision request referencing the prior decision and the triggering ledger entry (reason: partial-execution)."
+    }
   ],
   "expectedVerificationState": {
     "reached": true,
