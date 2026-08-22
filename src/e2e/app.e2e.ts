@@ -121,8 +121,8 @@ test("the decision surface computes and atomically records a real LIVE proceed",
   await page.getByRole("link", { name: "Decide a distribution" }).click();
   await expect(page.getByTestId("verin-decide-loaded")).toBeVisible();
   await expect(page.getByText(/Recorded atomically at sequence \d+/)).toBeVisible();
-  await expect(page.getByText(/The append created entry dle\.v1:[0-9a-f]{64}/)).toBeVisible();
-  await expect(page.getByText("a changed world yields a new decision", { exact: false })).toBeVisible(); // both honesty lines
+  await expect(page.getByText(/(?:The append created|The exact retry reused) entry dle\.v1:[0-9a-f]{64}/)).toBeVisible();
+  await expect(page.getByText("a re-render with a changed world yields a new identity", { exact: false })).toBeVisible();
   await expect(page.locator('[data-disposition="proceed"]')).toBeVisible();
   await expect(page.getByText("Stage 1: operations-dual-approval", { exact: false })).toBeVisible(); // derived from the STATED block, never an answer key
   await expect(page.getByText(/idem:r[0-9a-f]{15}:henderson-family-50000-2026-12-31/)).toBeVisible(); // the CD-4d grammar from request properties alone
