@@ -493,3 +493,27 @@ product path: a firm's policy change is a published version at zero repository d
 - M-D proves the convergence in BOTH directions: one CONVERGED entry restored to the ledger (GC-10's CD-4d key) fails as stale ("it cannot rot into an excuse; delete it") - the convergence cannot be understated; one LIVE CD-4e entry deleted (GC-01's reservation ordering) fails as unledgered ("a new difference is recorded, never absorbed") - the convergence cannot be overstated. Exactly the 27 converged entries are gone and exactly the 4 CD-4e entries remain.
 - M-J is pinned with NO exceptions list: re-adding GC-10 as a ghost pre-signature exception fails the committed grammar test - the signed key now conforms, and the test refuses an exceptions list that names a divergence which no longer exists.
 - The restored green run (green-restored.txt): 59 unit tests at the moved pins; the pin registry and the conformance file both regenerate byte-identically at the SIGNING commit 5542c999.
+
+## PR-6-pre proofs (the typed-input prerequisite correction; raw transcripts: docs/evidence/pr6pre-transcripts.tar, sha256 6d01cc9f...; battery head 2c6da91c - the PR head differs only by this evidence commit)
+
+- The signed-case schema no longer admits summary prose, and its source contains no regular-expression
+  literal or matching call. All 119 signed typed rows are consumed exactly once into the sixteen
+  `DecisionInput` values. Permanent cases refuse a missing, duplicate, or wrong-kind row naming the
+  case, reference, and field; unused rows fail at reader completion.
+- CLEAN-TREE CONTROL: the exact full-file command
+  `corepack pnpm exec vitest run src/tools/e16.test.ts` passes 55/55 on the clean committed battery
+  head. The exact injected bytes then change only GC-01's typed `trigger.amountUsd` value from 75,000
+  to 76,000. The same command fails 4/55, first naming signed
+  `idem:GC-01:smiths-75000-2026-08-15` against produced
+  `idem:GC-01:smiths-76000-2026-08-15`; replay identity, conformance, and the no-exception grammar
+  check also fail. Reverting the exact bytes restores the clean tree and the same command to 55/55.
+- Both registered artifacts reproduce from the clean tree: conformance SHA-256
+  `714625944c6550d8c289f479128ddfec834e7e0ceefba6a76a7f628b380c631d` with totals 210/4/28,
+  four ledger entries, sixteen cases and 119 typed quantities; replay-manifest SHA-256
+  `f961119ccb9e99e31a2e10923e3d3273ecaaa326a56256cfa4e16fc64a7d664d`, byte-identical to the
+  pre-correction artifact.
+- The restored CI-ordered run records the pinned scanner, frozen install, lint, format, twice-run
+  migration, seed, full 60-test suite, explicit five-test closure suite, capability-denied build and
+  21/21 browser tests. Its full-page capture shows all sixteen cases and the direct signed-row label.
+- The bundle index marks the first missing-super-URL control and the first statistics expression
+  HISTORICAL. Neither is cited as evidence; the named operative replacements above carry the claims.
