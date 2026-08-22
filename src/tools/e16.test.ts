@@ -582,7 +582,7 @@ describe("database-enforced isolation (5B.2, section 6 core; the full battery re
   });
 });
 
-describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () => {
+describe("the decision and atomic-record slices, exercised end to end", () => {
   // Each flow pins its policy by CONTENT ADDRESS (the seed's own firm documents, resolved by hash).
   const SEED_FIRM_A_POLICY = `{"reserveHorizonMonths":6,"dualApproval":{"thresholdUsd":25000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"operations","requesterRule":"may-not-satisfy-both-approvals"},"bankInstructionChange":"specialist-review","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
   const SEED_FIRM_B_POLICY = `{"reserveHorizonMonths":12,"dualApproval":{"thresholdUsd":100000,"approvalsRequired":2,"distinctActorsRequired":true,"eligibleApproverRole":"not-stated","requesterRule":"not-stated"},"bankInstructionChange":"block-until-independently-verified","approvalStages":"not-stated","reservationWindowDays":"not-stated"}`;
@@ -665,7 +665,15 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
     for (let i = 1; i < ledger.length; i++) expect(ledger[i].prev_hash).toBe(ledger[i - 1].entry_hash);
   });
   it("rolls every internal append stage back and enforces immutability for the application role and table owner", async () => {
-    const orgId = principal.tenant.orgId;
+    const otherSession = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-b.example", "harbor-quartz-42");
+    const access = createAccessContext();
+    const otherPrincipal = await access.authenticate(requestCorrelation(mintRequestId()), otherSession!.cookieValue);
+    const orgId = otherPrincipal!.tenant.orgId;
+    const instant = new Date().toISOString();
+    await superQuery(
+      "INSERT INTO decision_continuity_authorization (org_id, lcm_digest, manifest_bytes, signature_bytes, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, $2, $3, $4, 'test-fixture', $5, 'test', 'itest-suite', $5, 'test-fixture')",
+      [orgId, `lcm.v1:${"2".repeat(64)}`, Buffer.from("test-only-second-continuity-manifest"), Buffer.from("test-only-not-a-product-signature"), instant],
+    );
     const counts = async () =>
       (
         await superQuery(
@@ -675,22 +683,23 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
       ).rows[0];
     await superQuery("CREATE OR REPLACE FUNCTION p6_test_abort() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'p6 injected stage failure'; END $$");
     const stages = [
-      ["decision_record_source", "INSERT"],
-      ["decision_ledger", "INSERT"],
-      ["decision_record_projection", "INSERT"],
-      ["decision_chain_anchor", "UPDATE"],
+      ["source insert after anchor creation", "INSERT", "decision_record_source", ""],
+      ["genesis insert after source insertion", "INSERT", "decision_ledger", "WHEN (NEW.seq = 0)"],
+      ["decision insert after genesis", "INSERT", "decision_ledger", "WHEN (NEW.seq > 0)"],
+      ["anchor update after decision insertion", "UPDATE", "decision_chain_anchor", ""],
+      ["projection insert after anchor update", "INSERT", "decision_record_projection", ""],
     ] as const;
     try {
       for (let i = 0; i < stages.length; i++) {
-        const [table, operation] = stages[i];
+        const [stage, operation, table, predicate] = stages[i];
         const before = await counts();
-        await superQuery(`CREATE TRIGGER p6_test_abort_stage BEFORE ${operation} ON ${table} FOR EACH ROW EXECUTE FUNCTION p6_test_abort()`);
+        await superQuery(`CREATE TRIGGER p6_test_abort_stage BEFORE ${operation} ON ${table} FOR EACH ROW ${predicate} EXECUTE FUNCTION p6_test_abort()`);
         try {
-          await expect(decide(cookieValue, "Henderson Family", 72_000 + i, SEED_FIRM_A_POLICY, 1)).rejects.toThrow(/p6 injected stage failure/);
+          await expect(decide(otherSession!.cookieValue, "Vance Household", 72_000 + i, SEED_FIRM_B_POLICY, 1)).rejects.toThrow(/p6 injected stage failure/);
         } finally {
           await superQuery(`DROP TRIGGER p6_test_abort_stage ON ${table}`);
         }
-        expect(await counts(), `${table} failure left partial decision-record rows`).toEqual(before);
+        expect(await counts(), `${stage} failure left partial decision-record rows`).toEqual(before);
       }
     } finally {
       await superQuery("DROP FUNCTION p6_test_abort() ");
@@ -698,18 +707,20 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
     const app = new PgClient({ connectionString: APP_URL });
     await app.connect();
     try {
-      await app.query("SELECT set_config('verin.org_id', $1, false)", [orgId]);
+      await app.query("SELECT set_config('verin.org_id', $1, false)", [principal.tenant.orgId]);
       for (const table of ["decision_record_source", "decision_ledger"]) {
-        await expect(app.query(`UPDATE ${table} SET record_origin = record_origin WHERE org_id = $1`, [orgId])).rejects.toThrow(/permission denied/);
-        await expect(app.query(`DELETE FROM ${table} WHERE org_id = $1`, [orgId])).rejects.toThrow(/permission denied/);
+        await expect(app.query(`UPDATE ${table} SET record_origin = record_origin WHERE org_id = $1`, [principal.tenant.orgId])).rejects.toThrow(/permission denied/);
+        await expect(app.query(`DELETE FROM ${table} WHERE org_id = $1`, [principal.tenant.orgId])).rejects.toThrow(/permission denied/);
       }
     } finally {
       await app.end();
     }
     for (const table of ["decision_continuity_authorization", "decision_record_source", "decision_ledger"]) {
-      const scoped = `SET ROLE verin_migrator; SELECT set_config('verin.org_id', '${orgId}', false);`;
-      await expect(superQuery(`${scoped} UPDATE ${table} SET record_origin = record_origin WHERE org_id = '${orgId}'`)).rejects.toThrow(new RegExp(`${table} is append-only: UPDATE is forbidden`));
-      await expect(superQuery(`${scoped} DELETE FROM ${table} WHERE org_id = '${orgId}'`)).rejects.toThrow(new RegExp(`${table} is append-only: DELETE is forbidden`));
+      const scoped = `SET ROLE verin_migrator; SELECT set_config('verin.org_id', '${principal.tenant.orgId}', false);`;
+      await expect(superQuery(`${scoped} UPDATE ${table} SET record_origin = record_origin WHERE org_id = '${principal.tenant.orgId}'`)).rejects.toThrow(
+        new RegExp(`${table} is append-only: UPDATE is forbidden`),
+      );
+      await expect(superQuery(`${scoped} DELETE FROM ${table} WHERE org_id = '${principal.tenant.orgId}'`)).rejects.toThrow(new RegExp(`${table} is append-only: DELETE is forbidden`));
       await expect(superQuery(`SET ROLE verin_migrator; TRUNCATE ${table}`)).rejects.toThrow(new RegExp(`${table} is append-only: TRUNCATE is forbidden`));
     }
   });
