@@ -339,6 +339,8 @@ test("the conformance register: all sixteen signed cases, every binding field, t
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   await page.goto("/conformance");
   await expect(page.getByTestId("verin-conformance-loaded")).toBeVisible();
+  await expect(page.getByText(/load-bearing quantities read directly from signed typed rows/)).toHaveCount(16);
+  await expect(page.getByText(/Summary prose is not an input/)).toHaveCount(16);
   await expect(page.getByRole("heading", { name: /GC-01-firm-a-happy-path/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: /GC-16-specialist-review-expiration - re-derived disposition: proceed/ })).toBeVisible(); // all sixteen render, each naming its re-derived disposition
   await expect(page.locator('[data-verdict="MATCHED"]')).toHaveCount(210); // post-signature: the ten re-signed explanation sets, sixteen typed-quantity tables and GC-10's key all converged

@@ -10,7 +10,7 @@
     {
       "caseId": "GC-01-firm-a-happy-path",
       "disposition": "proceed",
-      "parseCount": 13,
+      "typedQuantityCount": 13,
       "verdicts": [
         {
           "field": "disposition",
@@ -78,7 +78,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -86,7 +86,7 @@
     {
       "caseId": "GC-02-firm-b-happy-path",
       "disposition": "proceed",
-      "parseCount": 11,
+      "typedQuantityCount": 11,
       "verdicts": [
         {
           "field": "disposition",
@@ -147,7 +147,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -155,7 +155,7 @@
     {
       "caseId": "GC-03-recent-bank-change-firm-a",
       "disposition": "proceed",
-      "parseCount": 9,
+      "typedQuantityCount": 9,
       "verdicts": [
         {
           "field": "disposition",
@@ -224,7 +224,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -232,7 +232,7 @@
     {
       "caseId": "GC-04-recent-bank-change-firm-b",
       "disposition": "blocked",
-      "parseCount": 7,
+      "typedQuantityCount": 7,
       "verdicts": [
         {
           "field": "disposition",
@@ -288,7 +288,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -296,7 +296,7 @@
     {
       "caseId": "GC-05-insufficient-liquidity",
       "disposition": "blocked",
-      "parseCount": 8,
+      "typedQuantityCount": 8,
       "verdicts": [
         {
           "field": "disposition",
@@ -352,7 +352,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -360,7 +360,7 @@
     {
       "caseId": "GC-06-household-restriction",
       "disposition": "prohibited",
-      "parseCount": 7,
+      "typedQuantityCount": 7,
       "verdicts": [
         {
           "field": "disposition",
@@ -416,7 +416,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -424,7 +424,7 @@
     {
       "caseId": "GC-07-regulatory-prohibition",
       "disposition": "prohibited",
-      "parseCount": 6,
+      "typedQuantityCount": 6,
       "verdicts": [
         {
           "field": "disposition",
@@ -480,7 +480,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -488,7 +488,7 @@
     {
       "caseId": "GC-08-ambiguous-household",
       "disposition": "blocked",
-      "parseCount": 5,
+      "typedQuantityCount": 5,
       "verdicts": [
         {
           "field": "disposition",
@@ -544,7 +544,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -552,7 +552,7 @@
     {
       "caseId": "GC-09-stale-evidence",
       "disposition": "blocked",
-      "parseCount": 4,
+      "typedQuantityCount": 4,
       "verdicts": [
         {
           "field": "disposition",
@@ -608,7 +608,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -616,7 +616,7 @@
     {
       "caseId": "GC-10-simultaneous-distributions-first",
       "disposition": "proceed",
-      "parseCount": 8,
+      "typedQuantityCount": 8,
       "verdicts": [
         {
           "field": "disposition",
@@ -684,7 +684,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -692,7 +692,7 @@
     {
       "caseId": "GC-11-simultaneous-distributions-second",
       "disposition": "blocked",
-      "parseCount": 9,
+      "typedQuantityCount": 9,
       "verdicts": [
         {
           "field": "disposition",
@@ -748,7 +748,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -756,7 +756,7 @@
     {
       "caseId": "GC-12-duplicate-retry",
       "disposition": "proceed",
-      "parseCount": 6,
+      "typedQuantityCount": 6,
       "verdicts": [
         {
           "field": "disposition",
@@ -824,7 +824,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -832,7 +832,7 @@
     {
       "caseId": "GC-13-partial-salesforce-success",
       "disposition": "proceed",
-      "parseCount": 6,
+      "typedQuantityCount": 6,
       "verdicts": [
         {
           "field": "disposition",
@@ -900,7 +900,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -908,7 +908,7 @@
     {
       "caseId": "GC-14-delayed-nigo",
       "disposition": "proceed",
-      "parseCount": 7,
+      "typedQuantityCount": 7,
       "verdicts": [
         {
           "field": "disposition",
@@ -969,7 +969,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -977,7 +977,7 @@
     {
       "caseId": "GC-15-approval-invalidation",
       "disposition": "proceed",
-      "parseCount": 7,
+      "typedQuantityCount": 7,
       "verdicts": [
         {
           "field": "disposition",
@@ -1042,7 +1042,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]
@@ -1050,7 +1050,7 @@
     {
       "caseId": "GC-16-specialist-review-expiration",
       "disposition": "proceed",
-      "parseCount": 6,
+      "typedQuantityCount": 6,
       "verdicts": [
         {
           "field": "disposition",
@@ -1122,7 +1122,7 @@
           "verdict": "MATCHED"
         },
         {
-          "field": "inputs.proseQuantities",
+          "field": "inputs.typedQuantities",
           "verdict": "MATCHED"
         }
       ]

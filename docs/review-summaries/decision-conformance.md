@@ -1,10 +1,10 @@
 # decision-conformance.json (bucket-G diff summary)
 
 The per-case, per-binding-field grade of the pure engine against the sixteen signed cases at the
-pinned oracle head - now the captain's signing commit 5542c999 (the 2026-08-21 signature-sitting
+pinned oracle head - the product owner's signing commit 5542c999 (the 2026-08-21 signature-sitting
 amendment, rulings CD-4b/CD-4c/CD-4d applied). Three-valued verdicts: MATCHED (210 - up from 183:
-the ten re-signed explanation sets, the sixteen typed-quantity tables mirroring the reader's
-asserted parses one-for-one, and GC-10's converged idempotency key), DIFFERS (4 - exactly the
+the ten re-signed explanation sets, the sixteen signed typed-quantity inputs, and GC-10's converged
+idempotency key), DIFFERS (4 - exactly the
 CD-4e reservation orderings of GC-01/10/12/13, which the oracle keeps unedited by the recorded
 ruling; each carries its entry in docs/decision-reconciliation-ledger.json), and
 NOT-YET-PRODUCIBLE (28 - execution-tail fields naming prompts 6-7, verification state naming

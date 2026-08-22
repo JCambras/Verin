@@ -30,7 +30,7 @@ import { SAMPLE_INPUTS } from "./decision-samples";
 import { COMPARISON_ARCHETYPES } from "../decision/comparison-archetypes";
 import { engineIdentity } from "./decision-engine-identity";
 import { computeManifestRows } from "./decision-replay-manifest";
-import { loadSignedCaseInputs } from "./signed-cases";
+import { createSignedQuantityReader, loadSignedCaseInputs, type TypedQuantity } from "./signed-cases";
 import { compareProducibleBindingFields, loadSignedCaseExpectations } from "./signed-expectations";
 import { KNOWN_KEY_DIVERGENCES_BEFORE_SIGNATURE, gradeAllCases, keyGrammarViolations, reconcile, runConformance } from "./signed-truth-conformance";
 
@@ -659,14 +659,27 @@ describe("the decision slice, exercised end to end (prompt 5, PR-5a-i/-ii)", () 
     expect(silent.outcome.blockers.map((x) => x.code)).toEqual(["approval-authority-not-stated"]);
     expect(silent.outcome.blockers[0].resolvingEvidence).toEqual([]); // resolved by a policy version stating the value, never by evidence
   });
+  it("CD-4c reads all 119 load-bearing values only from signed typed rows and fails closed on missing, ambiguous or wrongly typed rows", () => {
+    const source = project.getSourceFileOrThrow("src/tools/signed-cases.ts");
+    expect(source.getDescendantsOfKind(SyntaxKind.RegularExpressionLiteral), "the input reader executes no prose pattern").toEqual([]);
+    expect(source.getText()).not.toMatch(/\.match(?:All)?\(|\.exec\(|\.test\(/);
+    const inputs = loadSignedCaseInputs();
+    expect(inputs.reduce((total, input) => total + input.typedQuantityCount, 0)).toBe(119);
+    const row = (value: TypedQuantity["value"]): TypedQuantity => ({ ref: "trigger", field: "amountUsd", value, fromAssertedParse: "historical metadata only" });
+    expect(() => createSignedQuantityReader("GC-test", []).number("trigger", "amountUsd")).toThrow(/missing signed typed quantity GC-test trigger\.amountUsd/);
+    expect(() => createSignedQuantityReader("GC-test", [row(75_000), row(75_000)])).toThrow(/ambiguous signed typed quantity GC-test trigger\.amountUsd: found 2 rows/);
+    expect(() => createSignedQuantityReader("GC-test", [row("75000")]).number("trigger", "amountUsd")).toThrow(
+      /invalid signed typed quantity GC-test trigger\.amountUsd: expected number, received string/,
+    );
+  });
   it("the FOUR canonical cases match the signed truth EXACTLY on every producible binding field, through the recorded comparison vocabulary", () => {
     const canonical = ["GC-01-firm-a-happy-path", "GC-02-firm-b-happy-path", "GC-03-recent-bank-change-firm-a", "GC-04-recent-bank-change-firm-b"];
     const inputs = loadSignedCaseInputs().filter((x) => canonical.includes(x.caseId)); // PR-5c-i widened the reader to all sixteen; the exact-match bar stays on the canonical four
     const exps = loadSignedCaseExpectations();
     expect(inputs.map((x) => x.caseId)).toEqual(canonical);
-    for (const { caseId, input, parseTable } of inputs) {
+    for (const { caseId, input, typedQuantityCount } of inputs) {
       const produced = evaluate(input);
-      expect(parseTable.length, `${caseId} records its prose parses (CD-4c: read by asserted patterns, and paid for)`).toBeGreaterThan(0);
+      expect(typedQuantityCount, `${caseId} consumes its signed typed inputs directly`).toBeGreaterThan(0);
       const mismatches = compareProducibleBindingFields(
         exps.find((e) => e.caseId === caseId)!,
         produced,
