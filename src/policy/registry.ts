@@ -19,6 +19,7 @@ type PublishedPolicyVersion = {
   readonly sequence: number;
   readonly publishedAt: string; // ISO-8601 UTC
   readonly origin: PolicyRecordOrigin;
+  readonly bytes: Uint8Array;
   readonly policy: FirmPolicy;
 };
 
@@ -140,7 +141,7 @@ function createPolicyVersionRegistry(): PolicyVersionRegistry {
         const stored = sha256hex(row.bytes);
         if (stored !== id.digest)
           throw new Error(`refusing to parse ${renderPolicyVersionId(id)}: the version's bytes were edited in place (declared digest ${id.digest}, stored bytes digest ${stored})`);
-        return { kind: "policy-version", id, sequence: row.seq, publishedAt: row.published_at.toISOString(), origin: row.record_origin, policy: parseFirmPolicy(row.bytes) };
+        return { kind: "policy-version", id, sequence: row.seq, publishedAt: row.published_at.toISOString(), origin: row.record_origin, bytes: row.bytes, policy: parseFirmPolicy(row.bytes) };
       });
     },
     async resolveInForce(c, grant, at, deadline) {

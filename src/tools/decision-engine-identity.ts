@@ -7,14 +7,12 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { CLOSURE_ALLOWLIST } from "./decision-closure-allowlist";
 
-export function engineIdentity(): { engine: string; closure: readonly string[] } {
-  const hash = createHash("sha256");
+export function engineIdentity(): { engine: string; closure: readonly string[]; bytes: string } {
+  let bytes = "";
   for (const path of [...CLOSURE_ALLOWLIST].sort()) {
-    hash.update(`${path}\n`);
-    hash.update(readFileSync(path));
-    hash.update("\n");
+    bytes += `${path}\n${readFileSync(path, "utf8")}\n`;
   }
-  return { engine: `den.v1:${hash.digest("hex")}`, closure: [...CLOSURE_ALLOWLIST].sort() };
+  return { engine: `den.v1:${createHash("sha256").update(bytes).digest("hex")}`, closure: [...CLOSURE_ALLOWLIST].sort(), bytes };
 }
 
 if (process.argv[1]?.endsWith("decision-engine-identity.ts")) {
