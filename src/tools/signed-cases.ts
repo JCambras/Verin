@@ -41,7 +41,12 @@ function readSignedBytes(path: string): Buffer {
 // Input-side fields ONLY. zod strips unknown keys, so the answer-key sections never enter this
 // module's values; the M-A battery greps this path for answer-key reads and asserts zero.
 const evidenceRow = z.object({ evidenceKind: z.string(), subjectRef: z.string(), observedAt: z.string(), retrievedAt: z.string(), summary: z.string(), source: z.string() });
+// The CD-4c amendment's typed-quantity table: one row per asserted parse, mirroring the reader's
+// parse table one-for-one. Input-side data (typed values OF the inputs), never an expected* field.
+const typedQuantityRow = z.object({ ref: z.string(), field: z.string(), value: z.union([z.number(), z.string(), z.boolean()]), fromAssertedParse: z.string() });
+export type TypedQuantity = z.infer<typeof typedQuantityRow>;
 const fixtureInputs = z.object({
+  typedQuantities: z.array(typedQuantityRow).optional(),
   caseId: z.string(),
   firm: z.string(),
   trigger: z.object({ kind: z.string(), description: z.string(), requesterRole: z.string(), requestRef: z.string(), maskedRequestSummary: z.string(), asOf: z.string() }),
@@ -267,13 +272,13 @@ function toInput(f: FixtureInputs, t: ParseRecord[]): DecisionInput {
   };
 }
 
-export type SignedCaseInput = { caseId: string; input: DecisionInput; parseTable: ParseRecord[] };
+export type SignedCaseInput = { caseId: string; input: DecisionInput; parseTable: ParseRecord[]; typedQuantities: TypedQuantity[] };
 export function loadSignedCaseInput(caseId: string): SignedCaseInput {
   const bytes = readSignedBytes(`fixtures/golden/${caseId}.json`);
   const f = fixtureInputs.parse(JSON.parse(bytes.toString("utf8")));
   if (f.caseId !== caseId) throw new Error(`fixture ${caseId} names itself '${f.caseId}'; refusing`);
   const parseTable: ParseRecord[] = [];
-  return { caseId, input: toInput(f, parseTable), parseTable };
+  return { caseId, input: toInput(f, parseTable), parseTable, typedQuantities: f.typedQuantities ?? [] };
 }
 export const loadSignedCaseInputs = (): SignedCaseInput[] => SCOPE.map(loadSignedCaseInput);
 export { SCOPE as SIGNED_CASE_SCOPE, readSignedBytes };

@@ -341,10 +341,11 @@ test("the conformance register: all sixteen signed cases, every binding field, t
   await expect(page.getByTestId("verin-conformance-loaded")).toBeVisible();
   await expect(page.getByRole("heading", { name: /GC-01-firm-a-happy-path/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: /GC-16-specialist-review-expiration - re-derived disposition: proceed/ })).toBeVisible(); // all sixteen render, each naming its re-derived disposition
-  await expect(page.locator('[data-verdict="MATCHED"]')).toHaveCount(183);
-  await expect(page.locator('[data-verdict="DIFFERS"]')).toHaveCount(31); // the differing fields stay VISIBLE until the captain's sitting - never absorbed
+  await expect(page.locator('[data-verdict="MATCHED"]')).toHaveCount(210); // post-signature: the ten re-signed explanation sets, sixteen typed-quantity tables and GC-10's key all converged
+  await expect(page.locator('[data-verdict="DIFFERS"]')).toHaveCount(4); // exactly the CD-4e reservation orderings - the oracle stands unedited by the recorded ruling, still visible, never absorbed
   await expect(page.locator('[data-verdict="NOT-YET-PRODUCIBLE"]')).toHaveCount(28);
-  await expect(page.getByText("differs · ruling CD-4d")).toBeVisible(); // GC-10's idempotency key, the named pre-signature divergence
+  await expect(page.getByText("differs · ruling CD-4e").first()).toBeVisible(); // the four remaining ruled differences, on screen
+  await expect(page.getByText("differs · ruling CD-4d")).toHaveCount(0); // the pre-signature divergence is GONE - converged at the captain's amendment
   await expect(page.getByText("differs · ruling missing")).toHaveCount(0); // no unruled difference reaches the screen
   expect((await settledAxe(page)).violations).toEqual([]);
   await page.screenshot({ path: "test-results/pr5c1-conformance.png", fullPage: true });

@@ -120,3 +120,21 @@ stale entry both fail. The replay manifest widens with the reader to eighteen ro
 signed disposition from evidence and configuration alone, and every field-level difference is
 public, ruled, and awaiting the captain's signature sitting - never absorbed.
 **Revert path:** a captain re-ruling; the register retires only with the slice.
+
+### GD-010 - 2026-08-21 - PR-5c-ii: the pin move to the captain's signing commit
+
+**What:** `oracleHead` moves from 644938fd to 5542c999 - the captain's ONE amendment PR (#63) of
+the 2026-08-21 signature sitting, rulings CD-4b/CD-4c/CD-4d applied - and the seventeen pins
+regenerate byte-identically via the registered command. The grader consumes the amendment's
+typedQuantities tables: the CD-4c verdict is now a real one-for-one comparison of the signed typed
+table against the reader's asserted parse table (booleans admitted in the value union), MATCHED on
+exact agreement. `KNOWN_KEY_DIVERGENCES_BEFORE_SIGNATURE` empties - M-J passes with no exceptions
+list and pins the convergence. Exactly the 27 converged reconciliation-ledger entries are deleted
+(10 CD-4b, 16 CD-4c, 1 CD-4d); the 4 CD-4e reservation-ordering entries remain, the oracle
+standing unedited by the recorded ruling. Conformance totals move 183/31/28 to 210/4/28. The
+replay manifest is byte-unchanged - the amendment added typed tables without touching prose, so
+every parsed input, evidence digest and outcome digest is identical. This commit closes the
+deliberate E10-red window; no signed byte was ever touched from generation-4.
+**Why:** Prompt 5 section 5C steps 5-6 under the ratified protocol; M-D's two-directional rule is
+the proof of convergence - the suite fails until exactly the right entries are gone.
+**Revert path:** a captain re-ruling; the pins only ever move forward with a signing act.
