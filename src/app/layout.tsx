@@ -18,6 +18,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <nav aria-label="Primary" style={{ display: "flex", gap: "1rem" }}>
             <a href="/">Households</a>
             <a href="/policy">Firm policy</a>
+            <a href="/records">Decision records</a>
             <a href="/conformance">Conformance</a>
           </nav>
         </header>

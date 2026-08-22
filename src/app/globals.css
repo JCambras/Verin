@@ -55,3 +55,4 @@ h1 { font-size: 1.5rem; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+@media print { .chrome, a { display: none; } main { max-width: none; padding: 0; zoom: 0.72; } .stack { gap: 0.5rem; } .register li { padding: 0.35rem 0.5rem; } }

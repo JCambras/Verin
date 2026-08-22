@@ -41,6 +41,37 @@ type DecisionRecordAppendInput = {
   readonly projection: { readonly requestRef: string; readonly householdSlug: string; readonly disposition: "proceed" | "blocked" | "prohibited" };
 };
 type DecisionRecordAppendResult = { readonly entryId: string; readonly sequence: number; readonly chainHash: string; readonly replayManifestId: string; readonly alreadyRecorded: boolean };
+type LedgerEnvelope =
+  | {
+      readonly version: "dle.v1";
+      readonly kind: "genesis";
+      readonly tenant: string;
+      readonly sequence: 0;
+      readonly continuityManifest: string;
+      readonly recordedAt: string;
+      readonly producer: ProducerProvenance;
+    }
+  | {
+      readonly version: "dle.v1";
+      readonly kind: "decision";
+      readonly tenant: string;
+      readonly sequence: number;
+      readonly decisionId: string;
+      readonly replayManifest: string;
+      readonly outcomeBytes: string;
+      readonly recordedAt: string;
+      readonly producer: ProducerProvenance;
+    };
+type ProjectionValue = {
+  readonly decisionId: string;
+  readonly sequence: number;
+  readonly replayManifestId: string;
+  readonly requestRef: string;
+  readonly householdSlug: string;
+  readonly disposition: "proceed" | "blocked" | "prohibited";
+  readonly recordedAt: string;
+  readonly recordOrigin: RecordOrigin;
+};
 
 function canonical(value: unknown, path = "value"): string {
   if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
@@ -176,11 +207,51 @@ function genesisEnvelope(orgId: string, lcmDigest: string, recordedAt: string, p
 function decisionEnvelope(input: DecisionRecordAppendInput, sequence: number): string {
   return `dle.v1|${canonical({ version: "dle.v1", kind: "decision", tenant: input.orgId, sequence, decisionId: input.decisionId, replayManifest: input.manifest.identity, outcomeBytes: input.sources.outcome.bytes, recordedAt: input.recordedAt, producer: input.producer })}`;
 }
+function parseLedgerEnvelope(bytes: string): LedgerEnvelope {
+  if (!bytes.startsWith("dle.v1|")) throw new Error("ledger envelope bytes do not start with dle.v1");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(bytes.slice("dle.v1|".length));
+  } catch {
+    throw new Error("ledger envelope bytes are not canonical JSON");
+  }
+  const common = { version: z.literal("dle.v1"), tenant: z.uuid(), recordedAt: z.string().regex(INSTANT), producer: producerSchema };
+  const parsed = z
+    .discriminatedUnion("kind", [
+      z.strictObject({ ...common, kind: z.literal("genesis"), sequence: z.literal(0), continuityManifest: z.string().regex(/^lcm\.v1:[0-9a-f]{64}$/) }),
+      z.strictObject({
+        ...common,
+        kind: z.literal("decision"),
+        sequence: z.number().int().positive(),
+        decisionId: z.string().regex(/^d[0-9a-f]{64}$/),
+        replayManifest: z.string().regex(/^drm\.v1:[0-9a-f]{64}$/),
+        outcomeBytes: z.string().min(1),
+      }),
+    ])
+    .parse(raw) as LedgerEnvelope;
+  if (`dle.v1|${canonical(parsed)}` !== bytes) throw new Error("ledger envelope bytes are not canonical");
+  return parsed;
+}
+function projectionFromOutcomeBytes(decisionId: string, sequence: number, replayManifestId: string, outcomeBytes: string, recordedAt: string, recordOrigin: RecordOrigin): ProjectionValue {
+  if (!outcomeBytes.startsWith("dov.v1|")) throw new Error("outcome bytes do not start with dov.v1");
+  let raw: unknown;
+  try {
+    raw = JSON.parse(outcomeBytes.slice("dov.v1|".length));
+  } catch {
+    throw new Error("outcome bytes are not canonical JSON");
+  }
+  const outcome = z
+    .object({ version: z.literal("dov.v1"), disposition: z.enum(["proceed", "blocked", "prohibited"]), request: z.object({ requestRef: z.string(), householdSlug: z.string() }) })
+    .passthrough()
+    .parse(raw);
+  if (`dov.v1|${canonical(raw)}` !== outcomeBytes) throw new Error("outcome bytes are not canonical");
+  return { decisionId, sequence, replayManifestId, requestRef: outcome.request.requestRef, householdSlug: outcome.request.householdSlug, disposition: outcome.disposition, recordedAt, recordOrigin };
+}
 const entryId = (envelopeBytes: string) => identityFor("dle.v1", envelopeBytes);
 const chainHash = (envelopeBytes: string, previousHash: string) => identityFor("dlh.v1", `dlh.v1|${envelopeBytes}|${previousHash}`);
 const GENESIS_PREV_HASH = "dlh.v1:GENESIS" as const;
 
-export type { DecisionRecordAppendInput, DecisionRecordAppendResult, ExactSource, ProducerProvenance, RecordOrigin, ReplayManifest, ReplaySourceSet, SourceKind };
+export type { DecisionRecordAppendInput, DecisionRecordAppendResult, ExactSource, LedgerEnvelope, ProducerProvenance, ProjectionValue, RecordOrigin, ReplayManifest, ReplaySourceSet, SourceKind };
 export {
   GENESIS_PREV_HASH,
   SHA,
@@ -195,6 +266,8 @@ export {
   hash,
   identityFor,
   parseReplayManifest,
+  parseLedgerEnvelope,
+  projectionFromOutcomeBytes,
   renderDecisionIdFromOutcomeBytes,
   validateAppendInput,
 };

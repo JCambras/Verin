@@ -41,6 +41,18 @@ async function signInAs(page: Page, email: string, phrase: string) {
   await expect(page.getByTestId("verin-register-loaded")).toBeVisible();
   expect(page.url()).toBe("http://localhost:3000/households");
 }
+async function authorizeTestContinuity() {
+  const su = new PgClient({ connectionString: SUPER_URL });
+  await su.connect();
+  try {
+    await su.query(
+      "INSERT INTO decision_continuity_authorization (org_id, lcm_digest, manifest_bytes, signature_bytes, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin) SELECT o.id, $1, $2, $3, 'browser-fixture', now(), 'test', 'playwright', now(), 'test-fixture' FROM org o WHERE NOT EXISTS (SELECT 1 FROM decision_continuity_authorization a WHERE a.org_id = o.id) ON CONFLICT DO NOTHING",
+      [`lcm.v1:${"1".repeat(64)}`, Buffer.from("browser-only-continuity-fixture"), Buffer.from("browser-only-non-product-signature")],
+    );
+  } finally {
+    await su.end();
+  }
+}
 
 test("an advisor signs in and sees their own firm's households, and no other firm's", async ({ page }) => {
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
@@ -108,6 +120,7 @@ test("a household with nothing observed renders typed absence with next steps, n
 });
 
 test("the decision surface computes and atomically records a real LIVE proceed", async ({ page }) => {
+  await authorizeTestContinuity(); // explicit browser fixture: this proof never depends on the Vitest battery running first
   await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
   // Pin the in-force version for this proof deterministically on any shelf state (unique bytes per
   // run; both amounts below sit on the same side of any threshold this document can carry).
@@ -135,6 +148,28 @@ test("the decision surface computes and atomically records a real LIVE proceed",
   await expect(page.getByText("demonstration - not a compliance record").first()).toBeVisible();
   expect((await settledAxe(page)).violations).toEqual([]);
   await page.screenshot({ path: "test-results/pr6a-i-decide-recorded.png" });
+});
+
+test("the examiner loads only a whole-chain-verified, tenant-owned record and states the tamper-evidence limit", async ({ page, context }) => {
+  await signInAs(page, "advisor@firm-a.example", "meridian-slate-88");
+  await page.goto("/records");
+  await expect(page.getByTestId("verin-records-loaded")).toBeVisible();
+  await page.getByRole("list", { name: "Your firm's decision records" }).getByRole("link").first().click();
+  const otherFirmRecord = page.url();
+  await expect(page.getByRole("heading", { name: /Examiner record/ })).toBeVisible();
+  await expect(page.getByText(/Whole chain verified through d[0-9a-f]{64}/)).toBeVisible();
+  await expect(page.getByText(/Evidence provenance: house-record-store/)).toBeVisible();
+  await page.screenshot({ path: "test-results/pr6a-ii-examiner.png", fullPage: true });
+  await page.emulateMedia({ media: "print" });
+  await page.pdf({ path: "test-results/pr6a-ii-examiner-print.pdf", format: "Letter", printBackground: true });
+  await page.emulateMedia({ media: "screen" });
+  await page.goto("/records?verify=head");
+  await expect(page.getByTestId("verin-chain-verification-loaded")).toBeVisible();
+  await expect(page.getByText(/fully compromised database administrator/)).toBeVisible();
+  expect((await settledAxe(page)).violations).toEqual([]);
+  // prettier-ignore
+  await context.clearCookies().then(() => signInAs(page, "advisor@firm-b.example", "harbor-quartz-42")).then(() => page.goto(otherFirmRecord));
+  await expect(page.getByText("That decision is not on your firm's verified record.")).toBeVisible();
 });
 
 test("the decision surface blocks a breach with the arithmetic shown and a real resolving step", async ({ page }) => {
@@ -314,10 +349,7 @@ test("an advisor stays signed in through a long sitting - the session slides and
 
 test("the whole journey is completable from the keyboard alone", async ({ page }) => {
   await page.goto("/");
-  await page.keyboard.press("Tab"); // the chrome's Households link
-  await page.keyboard.press("Tab"); // the chrome's Firm policy link (slice 4)
-  await page.keyboard.press("Tab"); // the chrome's Conformance link (slice 5)
-  await page.keyboard.press("Tab");
+  for (let i = 0; i < 5; i++) await page.keyboard.press("Tab"); // four chrome links, then page content
   await expect(page.getByLabel("Work email")).toBeFocused();
   await page.keyboard.type("advisor@firm-a.example");
   await page.keyboard.press("Tab");

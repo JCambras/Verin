@@ -26,7 +26,7 @@ import { assembleEvidence, bundleDigest, renderableBundle, serializeBundle } fro
 import { ACCOUNT_REFERENCE_FORMS, OUTBOUND_PROJECTION_MODULES, maskAccountReference, refuseAccountReferences } from "../evidence/pii";
 import { evidenceRetrievalConformance, type EvidenceRetrieval } from "./conformance";
 import { NOT_STATED as DECISION_NOT_STATED, REFERENCE_FORMS, evaluate, outcomeDigest, serializeOutcome, serializeRequest } from "../decision/outcome";
-import { createDecisionRecord } from "../record/decision-record";
+import { createDecisionRecord, listDecisionRecords, resolveDecisionRecordHead } from "../record/decision-record";
 import { buildReplayManifest, exactBytesIdentity, renderDecisionIdFromOutcomeBytes, type ReplaySourceSet } from "../record/canonical";
 import { SAMPLE_INPUTS } from "./decision-samples";
 import { COMPARISON_ARCHETYPES } from "../decision/comparison-archetypes";
@@ -426,6 +426,16 @@ async function replicaWrite(sql: string, params: unknown[]) {
   }
 }
 
+async function resetDecisionRecordFixture() {
+  for (const table of ["decision_continuity_authorization", "decision_record_source", "decision_ledger"]) await superQuery(`ALTER TABLE ${table} DISABLE TRIGGER USER`);
+  try {
+    for (const table of ["decision_record_projection", "decision_ledger", "decision_record_source", "decision_chain_anchor", "decision_continuity_authorization"])
+      await superQuery(`DELETE FROM ${table}`);
+  } finally {
+    for (const table of ["decision_continuity_authorization", "decision_record_source", "decision_ledger"]) await superQuery(`ALTER TABLE ${table} ENABLE TRIGGER USER`);
+  }
+}
+
 describe("the policy version registry (prompt 4, PR-4a): content-addressed, immutable, fail-closed", () => {
   const appUrl = process.env.VERIN_APP_DATABASE_URL ?? "postgresql://verin_app:verin-app-local@localhost:5432/verin";
   it("publishes through the governed path, resolves byte-exactly by content address, and refuses a duplicate identity", async () => {
@@ -639,10 +649,33 @@ describe("the decision and atomic-record slices, exercised end to end", () => {
       return { ...rendered, records };
     });
   };
+  const verifyHead = async (cookie: string) => {
+    const requestId = mintRequestId();
+    const c = requestCorrelation(requestId);
+    const access = createAccessContext();
+    return getGateway().enterRouteDecisionChainVerify(c, async () => {
+      const p = (await access.authenticate(c, cookie))!;
+      const grant = (await access.authorize(c, p, "decision.read"))!;
+      const head = await resolveDecisionRecordHead(c, grant);
+      if (head.kind === "refused") return head;
+      const dc = decisionCorrelation(requestId, decisionIdFromOutcomeDigest(head.outcomeIdentity));
+      return createDecisionRecord(dc, grant).verify();
+    });
+  };
   it("records one exact decision atomically, refuses an unauthorized genesis, retries idempotently, and serializes concurrent appends", async () => {
+    await resetDecisionRecordFixture(); // explicit scratch-store precondition: this suite is rerunnable, and leaves the browser no hidden authorization dependency
     await expect(decide(cookieValue, "Henderson Family", 71_001, SEED_FIRM_A_POLICY, 1)).rejects.toThrow(/continuity-boundary-not-authorized/);
     const orgId = principal.tenant.orgId;
     const instant = new Date().toISOString();
+    expect(await verifyHead(cookieValue)).toEqual({ kind: "refused", failure: "empty-chain" });
+    await superQuery("INSERT INTO decision_chain_anchor (org_id, entry_count, max_seq, head_hash, head_decision_id, updated_at) VALUES ($1, 1, 0, $2, NULL, $3)", [
+      orgId,
+      `dlh.v1:${"0".repeat(64)}`,
+      instant,
+    ]);
+    expect(await verifyHead(cookieValue)).toEqual({ kind: "refused", failure: "anchor-present-ledger-empty" });
+    await expect(decide(cookieValue, "Henderson Family", 71_001, SEED_FIRM_A_POLICY, 1)).rejects.toThrow(/anchor-present-ledger-empty/);
+    await superQuery("DELETE FROM decision_chain_anchor WHERE org_id = $1", [orgId]);
     await superQuery(
       "INSERT INTO decision_continuity_authorization (org_id, lcm_digest, manifest_bytes, signature_bytes, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, $2, $3, $4, 'test-fixture', $5, 'test', 'itest-suite', $5, 'test-fixture')",
       [orgId, `lcm.v1:${"1".repeat(64)}`, Buffer.from("test-only-continuity-manifest"), Buffer.from("test-only-not-a-product-signature"), instant],
@@ -663,7 +696,99 @@ describe("the decision and atomic-record slices, exercised end to end", () => {
     expect(ledger.map((x) => x.seq)).toEqual(ledger.map((_, i) => i));
     expect(ledger[0].prev_hash).toBe("dlh.v1:GENESIS");
     for (let i = 1; i < ledger.length; i++) expect(ledger[i].prev_hash).toBe(ledger[i - 1].entry_hash);
+    const requestId = mintRequestId();
+    const c = requestCorrelation(requestId);
+    const access = createAccessContext();
+    const readGrant = (await access.authorize(c, principal, "decision.read"))!;
+    const listed = await getGateway().enterRouteDecisionRecords(c, () => listDecisionRecords(c, readGrant));
+    const selected = listed[0];
+    const dc = decisionCorrelation(requestId, decisionIdFromOutcomeDigest(exactBytesIdentity("outcome", selected.outcomeBytes)));
+    const loaded = await getGateway().enterRouteDecisionRecord(dc, () => createDecisionRecord(dc, readGrant).load());
+    expect(loaded?.summary.decisionId).toBe(selected.decisionId);
+    expect(loaded?.summary.recordedAt).toMatch(/\.\d{3}Z$/);
+    expect(new Date(loaded!.summary.recordedAt).toISOString()).toBe(loaded!.summary.recordedAt);
+    expect(await verifyHead(cookieValue)).toMatchObject({ ok: true, through: selected.decisionId });
+    expect(loaded?.verification.rebuiltProjection).toContainEqual(loaded!.summary);
   });
+  it("whole-chain verification names rewrite, broken-link and gap sequence failures, with an independent incomplete-verifier check", async () => {
+    const orgId = principal.tenant.orgId;
+    const row = (await superQuery("SELECT envelope_bytes, prev_hash FROM decision_ledger WHERE org_id = $1 AND seq = 2", [orgId])).rows[0] as { envelope_bytes: Uint8Array; prev_hash: string };
+    const arms = [
+      [
+        "payload-rewritten",
+        () => superQuery("UPDATE decision_ledger SET envelope_bytes = set_byte(envelope_bytes, octet_length(envelope_bytes) - 1, 123) WHERE org_id = $1 AND seq = 2", [orgId]),
+        () => superQuery("UPDATE decision_ledger SET envelope_bytes = $2 WHERE org_id = $1 AND seq = 2", [orgId, row.envelope_bytes]),
+      ],
+      [
+        "broken-link",
+        () => superQuery("UPDATE decision_ledger SET prev_hash = $2 WHERE org_id = $1 AND seq = 2", [orgId, `dlh.v1:${"f".repeat(64)}`]),
+        () => superQuery("UPDATE decision_ledger SET prev_hash = $2 WHERE org_id = $1 AND seq = 2", [orgId, row.prev_hash]),
+      ],
+      [
+        "sequence-gap",
+        () => superQuery("UPDATE decision_ledger SET seq = 99 WHERE org_id = $1 AND seq = 2", [orgId]),
+        () => superQuery("UPDATE decision_ledger SET seq = 2 WHERE org_id = $1 AND seq = 99", [orgId]),
+      ],
+    ] as const;
+    await superQuery("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_immutable");
+    try {
+      for (const [name, mutate, restore] of arms) {
+        await mutate();
+        try {
+          expect(await verifyHead(cookieValue)).toMatchObject({ ok: false, failure: name, sequence: 2 });
+        } finally {
+          await restore();
+        }
+      }
+      const tail = (await superQuery("SELECT * FROM decision_ledger WHERE org_id = $1 ORDER BY seq DESC LIMIT 1", [orgId])).rows[0] as Record<string, unknown>;
+      await superQuery("DELETE FROM decision_ledger WHERE org_id = $1 AND seq = $2", [orgId, tail["seq"]]);
+      try {
+        expect(await verifyHead(cookieValue)).toEqual({ kind: "refused", failure: "anchor-max-sequence-mismatch" });
+      } finally {
+        await superQuery(
+          "INSERT INTO decision_ledger (org_id, seq, entry_id, decision_id, replay_manifest_id, envelope_bytes, prev_hash, entry_hash, recorded_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
+          [
+            "org_id",
+            "seq",
+            "entry_id",
+            "decision_id",
+            "replay_manifest_id",
+            "envelope_bytes",
+            "prev_hash",
+            "entry_hash",
+            "recorded_at",
+            "producer_kind",
+            "producer_id",
+            "produced_at",
+            "record_origin",
+          ].map((key) => tail[key]),
+        );
+      }
+    } finally {
+      await superQuery("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_immutable");
+    }
+    await superQuery("ALTER TABLE decision_record_source DISABLE TRIGGER decision_source_immutable");
+    try {
+      // prettier-ignore
+      for (const source of (await superQuery("SELECT DISTINCT ON (source_kind) source_kind, identity, bytes FROM decision_record_source WHERE org_id = $1 ORDER BY source_kind, (source_kind = 'outcome' AND identity = (SELECT 'dov.v1:' || substring(head_decision_id from 2) FROM decision_chain_anchor WHERE org_id = $1)), identity", [orgId])).rows as { source_kind: string; identity: string; bytes: Uint8Array }[]) {
+        await superQuery("UPDATE decision_record_source SET bytes = bytes || decode('00', 'hex') WHERE org_id = $1 AND source_kind = $2 AND identity = $3", [
+          orgId,
+          source.source_kind,
+          source.identity,
+        ]);
+        try {
+          expect(await verifyHead(cookieValue)).toMatchObject({ ok: false, failure: "source-identity-mismatch", identityClass: source.source_kind, identity: source.identity });
+        } finally {
+          await superQuery("UPDATE decision_record_source SET bytes = $4 WHERE org_id = $1 AND source_kind = $2 AND identity = $3", [orgId, source.source_kind, source.identity, source.bytes]);
+        }
+      }
+    } finally {
+      await superQuery("ALTER TABLE decision_record_source ENABLE TRIGGER decision_source_immutable");
+    }
+    expect(await verifyHead(cookieValue)).toMatchObject({ ok: true });
+  });
+  // prettier-ignore
+  it("the structurally independent incomplete-verifier companion refuses a stub", () => { const verifier = project.getSourceFileOrThrow("src/record/decision-record.ts").getFunctionOrThrow("verifyStoredChain").getText(); for (const required of ["parseLedgerEnvelope(", "chainHash(", "exactBytesIdentity(", 'failure("anchor-present-ledger-empty"']) expect(verifier).toContain(required); });
   it("rolls every internal append stage back and enforces immutability for the application role and table owner", async () => {
     const otherSession = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-b.example", "harbor-quartz-42");
     const access = createAccessContext();
