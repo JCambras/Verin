@@ -10,6 +10,7 @@ const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]
 // Env-overridable like the suite's other connections (the PR-3b falsification pass's note 2).
 const SUPER_URL = process.env.VERIN_SUPER_DATABASE_URL?.replace(/\/postgres$/, "/verin") ?? "postgresql://postgres:postgres@localhost:5432/verin";
 async function settledAxe(page: Page) {
+  await expect(page).toHaveTitle("Verin");
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)).then(() => undefined));
   return new AxeBuilder({ page }).withTags(TAGS).analyze();
 }
