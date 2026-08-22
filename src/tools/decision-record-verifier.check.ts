@@ -35,7 +35,7 @@ async function resetRecordFixture() {
 
 beforeAll(() => createGovernedRuntime("tooling"));
 
-it("the independent public verifier refuses a known-damaged chain", async () => {
+it("the independent public verifier binds a valid genesis payload and its stored chain hash", async () => {
   const session = await signIn(requestCorrelation(mintRequestId()), "advisor@firm-a.example", "meridian-slate-88");
   if (!session) throw new Error("the verifier fixture requires the seeded Firm A advisor");
   const access = createAccessContext();
@@ -45,7 +45,7 @@ it("the independent public verifier refuses a known-damaged chain", async () => 
   await resetRecordFixture();
   const now = new Date().toISOString();
   await superQuery(
-    "INSERT INTO decision_continuity_authorization (org_id, lcm_digest, manifest_bytes, signature_bytes, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, $2, $3, $4, 'test-fixture', $5, 'test', 'verifier-companion', $5, 'test-fixture')",
+    "INSERT INTO decision_continuity_authorization (org_id, lcm_digest, manifest_bytes, signature_bytes, authorizing_actor, authorized_at, producer_kind, producer_id, produced_at, record_origin) VALUES ($1, $2, $3, $4, 'test-fixture', $5, 'tooling', 'verifier-companion', $5, 'test-fixture')",
     [principal.tenant.orgId, `lcm.v1:${"3".repeat(64)}`, Buffer.from("test-only-verifier-continuity"), Buffer.from("test-only-not-a-product-signature"), now],
   );
 
@@ -80,19 +80,28 @@ it("the independent public verifier refuses a known-damaged chain", async () => 
       evidence,
       policy,
       recordedAt: now,
-      producer: { kind: "test", id: "verifier-companion", producedAt: now },
+      producer: { kind: "tooling", id: "verifier-companion", producedAt: now },
       recordOrigin: "test-fixture",
     });
   });
   expect(recorded.sequence).toBe(1);
 
-  const saved = (await superQuery("SELECT envelope_bytes FROM decision_ledger WHERE org_id = $1 AND seq = 1", [principal.tenant.orgId])).rows[0] as { envelope_bytes: Uint8Array };
-  await superQuery("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_immutable");
-  try {
-    await superQuery("UPDATE decision_ledger SET envelope_bytes = set_byte(envelope_bytes, octet_length(envelope_bytes) - 1, 123) WHERE org_id = $1 AND seq = 1", [principal.tenant.orgId]);
+  const genesis = (await superQuery("SELECT envelope_bytes, entry_hash FROM decision_ledger WHERE org_id = $1 AND seq = 0", [principal.tenant.orgId])).rows[0] as {
+    envelope_bytes: Uint8Array;
+    entry_hash: string;
+  };
+  const originalManifest = `lcm.v1:${"3".repeat(64)}`;
+  const rewrittenManifest = `lcm.v1:${"4".repeat(64)}`;
+  const originalEnvelope = new TextDecoder("utf-8", { fatal: true }).decode(genesis.envelope_bytes);
+  expect(originalEnvelope.split(originalManifest)).toHaveLength(2);
+  const rewrittenEnvelope = originalEnvelope.replace(originalManifest, rewrittenManifest);
+  expect(Buffer.byteLength(rewrittenEnvelope)).toBe(genesis.envelope_bytes.byteLength);
+  expect(JSON.parse(rewrittenEnvelope.slice("dle.v1|".length))).toMatchObject({ continuityManifest: rewrittenManifest, sequence: 0 });
+
+  const verifyPublicChain = async () => {
     const verifyRequestId = mintRequestId();
     const verifyCorrelation = requestCorrelation(verifyRequestId);
-    const verification = await getGateway().enterRouteDecisionChainVerify(verifyCorrelation, async () => {
+    return getGateway().enterRouteDecisionChainVerify(verifyCorrelation, async () => {
       const readGrant = await access.authorize(verifyCorrelation, principal, "decision.read");
       if (!readGrant) throw new Error("the verifier fixture requires a decision.read grant");
       const head = await resolveDecisionRecordHead(verifyCorrelation, readGrant);
@@ -100,9 +109,17 @@ it("the independent public verifier refuses a known-damaged chain", async () => 
       const dc = decisionCorrelation(verifyRequestId, decisionIdFromOutcomeDigest(head.outcomeIdentity));
       return createDecisionRecord(dc, readGrant).verify();
     });
-    expect(verification).toEqual({ ok: false, failure: "payload-rewritten", sequence: 1 });
+  };
+
+  await superQuery("ALTER TABLE decision_ledger DISABLE TRIGGER decision_ledger_immutable");
+  try {
+    await superQuery("UPDATE decision_ledger SET envelope_bytes = $2 WHERE org_id = $1 AND seq = 0", [principal.tenant.orgId, Buffer.from(rewrittenEnvelope)]);
+    expect(await verifyPublicChain()).toEqual({ ok: false, failure: "payload-rewritten", sequence: 0 });
+
+    await superQuery("UPDATE decision_ledger SET envelope_bytes = $2, entry_hash = $3 WHERE org_id = $1 AND seq = 0", [principal.tenant.orgId, genesis.envelope_bytes, `dlh.v1:${"0".repeat(64)}`]);
+    expect(await verifyPublicChain()).toEqual({ ok: false, failure: "entry-hash-mismatch", sequence: 0 });
   } finally {
-    await superQuery("UPDATE decision_ledger SET envelope_bytes = $2 WHERE org_id = $1 AND seq = 1", [principal.tenant.orgId, saved.envelope_bytes]);
+    await superQuery("UPDATE decision_ledger SET envelope_bytes = $2, entry_hash = $3 WHERE org_id = $1 AND seq = 0", [principal.tenant.orgId, genesis.envelope_bytes, genesis.entry_hash]);
     await superQuery("ALTER TABLE decision_ledger ENABLE TRIGGER decision_ledger_immutable");
   }
 });
