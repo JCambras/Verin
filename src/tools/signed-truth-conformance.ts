@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { evaluate, idempotencyKeyFor, outcomeDigest, type DecisionOutcome } from "../decision/outcome";
 import { decisionCorrelation, decisionIdFromOutcomeDigest, getGateway, requestCorrelation, type RequestId } from "../runtime/governed";
-import { SIGNED_CASE_SCOPE, loadSignedCaseInput, loadSignedCaseInputs } from "./signed-cases";
+import { SIGNED_CASE_SCOPE, loadSignedCaseInput, loadSignedCaseInputs, type TypedQuantity } from "./signed-cases";
 import { COMPARISON_VOCABULARY, loadSignedCaseExpectations, type SignedCaseExpectations } from "./signed-expectations";
 
 type Ruling = "CD-4a" | "CD-4b" | "CD-4c" | "CD-4d" | "CD-4e";
@@ -29,7 +29,22 @@ const signedOrderingViolation = (events: readonly { type: string }[]): boolean =
   return firstReservation >= 0 && events.some((e, i) => e.type === "ApprovalRecorded" && i > firstReservation);
 };
 
-export function gradeCase(exp: SignedCaseExpectations, produced: DecisionOutcome, parseCount: number): CaseGrade {
+// The CD-4c convergence comparator: the signed typed-quantity table must mirror the reader's
+// asserted parse table ONE-FOR-ONE - same rows, same source refs, same asserted patterns, same
+// values (typed on the signed side, string-parsed on the reader side). Any drift is a CD-4c DIFFERS.
+const quantityTablesAgree = (typed: readonly TypedQuantity[], parses: readonly { ref: string; field: string; pattern: string; value: string }[]): boolean => {
+  const a = typed.map((t) => `${t.ref}|${t.field}|${t.fromAssertedParse}|${String(t.value)}`).sort();
+  const b = parses.map((p) => `${p.ref}|${p.field}|${p.pattern}|${p.value}`).sort();
+  return a.length === b.length && a.join("\n") === b.join("\n");
+};
+
+export function gradeCase(
+  exp: SignedCaseExpectations,
+  produced: DecisionOutcome,
+  parseTable: { ref: string; field: string; pattern: string; value: string }[],
+  typedQuantities: TypedQuantity[],
+): CaseGrade {
+  const parseCount = parseTable.length;
   const v: Verdict[] = [];
   const eq = (field: string, signed: unknown, mine: unknown, ruling: Ruling | null = null) =>
     v.push(JSON.stringify(signed) === JSON.stringify(mine) ? { field, verdict: "MATCHED" } : { field, verdict: "DIFFERS", ruling, signed, produced: mine });
@@ -78,13 +93,23 @@ export function gradeCase(exp: SignedCaseExpectations, produced: DecisionOutcome
   );
   nyp("ledger.eventSequence", 6);
   eq("explanations.codes", [...exp.expectedExplanationNodes.map((e) => e.code)].sort(), [...produced.explanations.map((e) => e.code)].sort(), "CD-4b");
-  v.push({
-    field: "inputs.proseQuantities",
-    verdict: "DIFFERS",
-    ruling: "CD-4c",
-    signed: "load-bearing quantities live in summary prose",
-    produced: `${parseCount} asserted parses recorded (typed fields pending the CD-4c re-signature)`,
-  });
+  if (typedQuantities.length && quantityTablesAgree(typedQuantities, parseTable)) v.push({ field: "inputs.proseQuantities", verdict: "MATCHED" });
+  else if (typedQuantities.length === 0)
+    v.push({
+      field: "inputs.proseQuantities",
+      verdict: "DIFFERS",
+      ruling: "CD-4c",
+      signed: "load-bearing quantities live in summary prose",
+      produced: `${parseCount} asserted parses recorded (typed fields pending the CD-4c re-signature)`,
+    });
+  else
+    v.push({
+      field: "inputs.proseQuantities",
+      verdict: "DIFFERS",
+      ruling: "CD-4c",
+      signed: `${typedQuantities.length} typed rows`,
+      produced: `${parseCount} asserted parses; the tables do not mirror one-for-one`,
+    });
   return { caseId: exp.caseId, disposition: produced.disposition, parseCount, verdicts: v };
 }
 
@@ -104,7 +129,7 @@ const refuseEmptyScope = (n: number) => {
 export function gradeAllCases(): CaseGrade[] {
   const inputs = loadSignedCaseInputs();
   refuseEmptyScope(inputs.length);
-  return inputs.map(({ caseId, input, parseTable }) => finishGrade(gradeCase(expectationFor(caseId), evaluate(input), parseTable.length)));
+  return inputs.map(({ caseId, input, parseTable, typedQuantities }) => finishGrade(gradeCase(expectationFor(caseId), evaluate(input), parseTable, typedQuantities)));
 }
 
 // The GOVERNED run (registry rows conformance.runner / conformance.readSignedCase /
@@ -120,10 +145,10 @@ export async function runConformance(requestId: RequestId): Promise<CaseGrade[]>
     refuseEmptyScope(SIGNED_CASE_SCOPE.length);
     const grades: CaseGrade[] = [];
     for (const caseId of SIGNED_CASE_SCOPE) {
-      const { input, parseTable } = await gw.enterConformanceReadSignedCase(c, async () => loadSignedCaseInput(caseId));
+      const { input, parseTable, typedQuantities } = await gw.enterConformanceReadSignedCase(c, async () => loadSignedCaseInput(caseId));
       const produced = evaluate(input);
       const dc = decisionCorrelation(requestId, decisionIdFromOutcomeDigest(outcomeDigest(produced)));
-      grades.push(await gw.enterConformanceGrade(dc, async () => finishGrade(gradeCase(expectationFor(caseId), produced, parseTable.length))));
+      grades.push(await gw.enterConformanceGrade(dc, async () => finishGrade(gradeCase(expectationFor(caseId), produced, parseTable, typedQuantities))));
     }
     return grades;
   });
@@ -150,7 +175,7 @@ export function reconcile(grades: CaseGrade[], ledger: LedgerEntry[]): string[] 
 // The CD-4d grammar regression (M-J): every PRODUCED key conforms; among the SIGNED keys exactly
 // the named pre-signature divergence may deviate, and after the pin moves the exceptions list must
 // be empty for the test to keep passing.
-export const KNOWN_KEY_DIVERGENCES_BEFORE_SIGNATURE = ["GC-10-simultaneous-distributions-first"];
+export const KNOWN_KEY_DIVERGENCES_BEFORE_SIGNATURE: string[] = []; // emptied by the pin move (PR-5c-ii): GC-10's signed key converged at the captain's amendment; any future divergence fails M-J outright
 export function keyGrammarViolations(): { produced: string[]; signedDivergent: string[] } {
   const inputs = loadSignedCaseInputs();
   const exps = loadSignedCaseExpectations();

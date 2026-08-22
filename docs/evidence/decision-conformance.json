@@ -1,11 +1,11 @@
 {
-  "oracleHead": "644938fd628e7bdd5842c5b7941b0aba0b1d69ab",
+  "oracleHead": "5542c99989fc7cec0b6e94851797b6ca3ad490a9",
   "totals": {
-    "MATCHED": 183,
-    "DIFFERS": 31,
+    "MATCHED": 210,
+    "DIFFERS": 4,
     "NOT-YET-PRODUCIBLE": 28
   },
-  "ledgerEntries": 31,
+  "ledgerEntries": 4,
   "cases": [
     {
       "caseId": "GC-01-firm-a-happy-path",
@@ -79,10 +79,7 @@
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "13 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -151,10 +148,7 @@
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "11 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -227,27 +221,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "dual-approval-required",
-            "recent-bank-change-detected",
-            "specialist-review-required"
-          ],
-          "produced": [
-            "cash-reserve-preserved",
-            "dual-approval-required",
-            "recent-bank-change-detected",
-            "source-account-selected",
-            "specialist-review-required"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "9 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -307,24 +285,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "firm-b-blocks-until-verified",
-            "recent-bank-change-detected"
-          ],
-          "produced": [
-            "blocked-until-independently-verified",
-            "recent-bank-change-detected",
-            "source-account-selected"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "7 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -384,25 +349,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "cash-reserve-breach",
-            "effective-liquidity-computed",
-            "firm-divergence-noted"
-          ],
-          "produced": [
-            "cash-reserve-breach",
-            "effective-liquidity-computed",
-            "source-account-selected"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "8 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -466,10 +417,7 @@
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "7 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -533,10 +481,7 @@
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "6 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -600,10 +545,7 @@
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "5 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -667,10 +609,7 @@
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "4 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -717,10 +656,7 @@
         },
         {
           "field": "execution.idempotencyKey",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4d",
-          "signed": "idem:GC-10:smiths-75000-renovation",
-          "produced": "idem:GC-10:smiths-75000-2026-08-15"
+          "verdict": "MATCHED"
         },
         {
           "field": "execution.reservations",
@@ -745,25 +681,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "individually-valid",
-            "reservation-acquired"
-          ],
-          "produced": [
-            "cash-reserve-preserved",
-            "dual-approval-required",
-            "individually-valid",
-            "source-account-selected"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "8 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -823,25 +745,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "individually-valid-jointly-overcommitted",
-            "reservation-prevents-joint-violation"
-          ],
-          "produced": [
-            "effective-liquidity-computed",
-            "individually-valid-jointly-overcommitted",
-            "reservation-prevents-joint-violation",
-            "source-account-selected"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "9 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -913,24 +821,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "duplicate-suppressed",
-            "stable-idempotency-key"
-          ],
-          "produced": [
-            "cash-reserve-preserved",
-            "dual-approval-required",
-            "source-account-selected"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "6 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -1002,23 +897,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "exception-requires-judgment",
-            "partial-outcome-recorded"
-          ],
-          "produced": [
-            "dual-approval-required",
-            "source-account-selected"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "6 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -1083,23 +966,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "delayed-nigo-ingested",
-            "submitted-not-settled-vindicated"
-          ],
-          "produced": [
-            "dual-approval-not-required",
-            "source-account-selected"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "7 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -1168,26 +1039,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "approval-bound-to-hash",
-            "material-change-detected",
-            "re-approval-on-new-bundle"
-          ],
-          "produced": [
-            "cash-reserve-preserved",
-            "dual-approval-required",
-            "individually-valid",
-            "source-account-selected"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "7 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     },
@@ -1263,25 +1119,11 @@
         },
         {
           "field": "explanations.codes",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4b",
-          "signed": [
-            "specialist-review-required",
-            "stage-expired-escalated"
-          ],
-          "produced": [
-            "dual-approval-required",
-            "recent-bank-change-detected",
-            "source-account-selected",
-            "specialist-review-required"
-          ]
+          "verdict": "MATCHED"
         },
         {
           "field": "inputs.proseQuantities",
-          "verdict": "DIFFERS",
-          "ruling": "CD-4c",
-          "signed": "load-bearing quantities live in summary prose",
-          "produced": "6 asserted parses recorded (typed fields pending the CD-4c re-signature)"
+          "verdict": "MATCHED"
         }
       ]
     }
