@@ -110,8 +110,18 @@ export type OpKey =
   | "conformance.runner"
   | "conformance.readSignedCase"
   | "conformance.grade"
+  | "route.decision-records"
+  | "decisionRecord.list"
+  | "decisionRecord.listForTenant"
+  | "route.decision-record"
   | "decisionRecord.record"
-  | "decisionRecord.append";
+  | "decisionRecord.append"
+  | "decisionRecord.load"
+  | "decisionRecord.loadById"
+  | "route.decision-chain-verify"
+  | "decisionRecord.resolveHead"
+  | "decisionRecord.verify"
+  | "decisionRecord.readChain";
 type AttributeDomain = { domain: "digest" } | { domain: "boolean" } | { domain: "enum" | "bucketed"; values: readonly string[] };
 type Row = {
   id: GovernedOperationId;
@@ -132,6 +142,7 @@ const DECISION_ATTRS: Row["attributes"] = { ...ATTRS, decisionId: { domain: "dig
 const RECORD_ATTRS: Row["attributes"] = {
   ...DECISION_ATTRS,
   recordResult: { domain: "enum", values: ["recorded", "already-recorded", "refused"] },
+  verificationResult: { domain: "enum", values: ["verified", "refused"] },
   sequenceBucket: { domain: "bucketed", values: ["genesis", "1-10", "11-100", "101-1000", "over-1000"] },
 };
 const row = (
@@ -160,13 +171,33 @@ const REGISTRY: readonly Row[] = [
   row(
     "access.authenticate",
     "module-operation",
-    ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare", "route.conformance"],
+    [
+      "entry",
+      "route.households",
+      "route.household-workspace",
+      "route.policy",
+      "route.decision",
+      "route.decision-compare",
+      "route.conformance",
+      "route.decision-records",
+      "route.decision-chain-verify",
+    ],
     "enterAccessAuthenticate",
   ),
   row(
     "access.authorize",
     "module-operation",
-    ["entry", "route.households", "route.household-workspace", "route.policy", "route.decision", "route.decision-compare", "route.conformance"],
+    [
+      "entry",
+      "route.households",
+      "route.household-workspace",
+      "route.policy",
+      "route.decision",
+      "route.decision-compare",
+      "route.conformance",
+      "route.decision-records",
+      "route.decision-chain-verify",
+    ],
     "enterAccessAuthorize",
   ),
   row("access.withTenant", "module-operation", ["route.households", "route.household-workspace", "route.decision", "route.decision-compare"], "enterAccessWithTenant"),
@@ -205,18 +236,46 @@ const REGISTRY: readonly Row[] = [
   row("conformance.runner", "module-operation", ["entry"], "enterConformanceRunner", "Product", 5),
   row("conformance.readSignedCase", "module-operation", ["conformance.runner"], "enterConformanceReadSignedCase", "Product", 5),
   row("conformance.grade", "flow-step", ["conformance.runner"], "enterConformanceGrade", "Product", 5, "DecisionCorrelation"),
-  // PR-6a-i adds only atomic recording. The call is reachable from the decision route after dov.v1
-  // mints a real DecisionCorrelation. Request-scoped examiner reads arrive in PR-6a-ii.
+  row("route.decision-records", "use-case", ["entry"], "enterRouteDecisionRecords", "Record", 6),
+  row("decisionRecord.list", "module-operation", ["route.decision-records"], "enterDecisionRecordList", "Record", 6),
+  row("decisionRecord.listForTenant", "store", ["decisionRecord.list"], "enterDecisionRecordListForTenant", "Record", 6),
+  row("route.decision-record", "use-case", ["entry"], "enterRouteDecisionRecord", "Record", 6, "DecisionCorrelation"),
   row("decisionRecord.record", "module-operation", ["route.decision"], "enterDecisionRecordRecord", "Record", 6, "DecisionCorrelation"),
   row("decisionRecord.append", "store", ["decisionRecord.record"], "enterDecisionRecordAppend", "Record", 6, "DecisionCorrelation"),
+  row("decisionRecord.load", "module-operation", ["route.decision-record"], "enterDecisionRecordLoad", "Record", 6, "DecisionCorrelation"),
+  row("decisionRecord.loadById", "store", ["decisionRecord.load"], "enterDecisionRecordLoadById", "Record", 6, "DecisionCorrelation"),
+  row("route.decision-chain-verify", "use-case", ["entry"], "enterRouteDecisionChainVerify", "Record", 6),
+  row("decisionRecord.resolveHead", "store", ["route.decision-chain-verify"], "enterDecisionRecordResolveHead", "Record", 6),
+  row("decisionRecord.verify", "module-operation", ["route.decision-chain-verify", "decisionRecord.load"], "enterDecisionRecordVerify", "Record", 6, "DecisionCorrelation"),
+  row("decisionRecord.readChain", "store", ["decisionRecord.verify"], "enterDecisionRecordReadChain", "Record", 6, "DecisionCorrelation"),
 ];
 const PROMPT6_CORRELATIONS: Readonly<Record<string, Row["correlation"]>> = {
+  "route.decision-records": "RequestCorrelation",
+  "decisionRecord.list": "RequestCorrelation",
+  "decisionRecord.listForTenant": "RequestCorrelation",
+  "route.decision-record": "DecisionCorrelation",
   "decisionRecord.record": "DecisionCorrelation",
   "decisionRecord.append": "DecisionCorrelation",
+  "decisionRecord.load": "DecisionCorrelation",
+  "decisionRecord.loadById": "DecisionCorrelation",
+  "route.decision-chain-verify": "RequestCorrelation",
+  "decisionRecord.resolveHead": "RequestCorrelation",
+  "decisionRecord.verify": "DecisionCorrelation",
+  "decisionRecord.readChain": "DecisionCorrelation",
 };
 // Registry-side semantic-effect declarations. The admission table below declares its own copies
 // independently; construction refuses unless both canonicalise to the same SemanticEffectId, which is
 // what makes the semantic-effect-smuggling mutation fail on the exact digest comparison.
+const recordReadEffect = (statementName: string, canonicalSql: string, names: readonly string[], resultValidator: string, cardinality: "many" | "at-most-one", transactionClass: string) => ({
+  kind: "prepared-query",
+  statementName,
+  canonicalSql,
+  parameters: names.map((name) => ({ name, type: name === "orgId" ? "uuid" : "text" })),
+  resultValidator,
+  cardinality,
+  transactionClass,
+  authorityClass: "tenant",
+});
 const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
   "identity.lookupForLogin": {
     kind: "prepared-query",
@@ -354,6 +413,38 @@ const REGISTRY_EFFECTS: Record<string, Record<string, unknown>> = {
     transactionClass: "tenant-statement-deadline-from-p1-p2",
     authorityClass: "tenant",
   },
+  "decisionRecord.listForTenant": recordReadEffect(
+    "decision_record_list_for_tenant_v1",
+    "SELECT p.decision_id, p.seq::int, p.replay_manifest_id, p.request_ref, p.household_slug, p.disposition, p.recorded_at, p.record_origin, s.bytes AS outcome_bytes FROM decision_record_projection p JOIN decision_record_source s ON s.org_id = p.org_id AND s.source_kind = 'outcome' AND s.identity = 'dov.v1:' || substring(p.decision_id from 2) WHERE p.org_id = $1 ORDER BY p.seq DESC LIMIT 101",
+    ["orgId", "statementTimeoutMs"],
+    "decisionRecordList.v1",
+    "many",
+    "tenant-statement-deadline-from-p1-p2",
+  ),
+  "decisionRecord.loadById": recordReadEffect(
+    "decision_record_load_by_id_v1",
+    "SELECT decision_id, seq::int, replay_manifest_id, request_ref, household_slug, disposition, recorded_at, record_origin FROM decision_record_projection WHERE org_id = $1 AND decision_id = $2 LIMIT 2",
+    ["orgId", "decisionId", "statementTimeoutMs"],
+    "decisionRecordProjection.v1",
+    "at-most-one",
+    "tenant-statement-deadline-from-p1-p3",
+  ),
+  "decisionRecord.resolveHead": recordReadEffect(
+    "decision_record_resolve_head_v1",
+    "SELECT a.entry_count::int, a.max_seq::int, a.head_hash, a.head_decision_id, (SELECT count(*)::int FROM decision_ledger x WHERE x.org_id = a.org_id) AS ledger_count, l.envelope_bytes, s.identity AS outcome_identity, s.bytes AS outcome_bytes FROM decision_chain_anchor a LEFT JOIN decision_ledger l ON l.org_id = a.org_id AND l.seq = a.max_seq LEFT JOIN decision_record_source s ON s.org_id = a.org_id AND s.source_kind = 'outcome' AND s.identity = 'dov.v1:' || substring(a.head_decision_id from 2) WHERE a.org_id = $1 LIMIT 2",
+    ["orgId", "statementTimeoutMs"],
+    "decisionRecordHead.v1",
+    "at-most-one",
+    "tenant-statement-deadline-from-p1-p2",
+  ),
+  "decisionRecord.readChain": recordReadEffect(
+    "decision_record_read_chain_v1",
+    "SELECT a.entry_count::int, a.max_seq::int, a.head_hash, a.head_decision_id, a.updated_at, COALESCE((SELECT jsonb_agg(jsonb_build_object('seq', l.seq::int, 'entryId', l.entry_id, 'decisionId', l.decision_id, 'replayManifestId', l.replay_manifest_id, 'envelopeBytes', encode(l.envelope_bytes, 'base64'), 'prevHash', l.prev_hash, 'entryHash', l.entry_hash, 'recordedAt', l.recorded_at, 'producerKind', l.producer_kind, 'producerId', l.producer_id, 'producedAt', l.produced_at, 'recordOrigin', l.record_origin) ORDER BY l.seq) FROM decision_ledger l WHERE l.org_id = $1), '[]'::jsonb) AS entries, COALESCE((SELECT jsonb_agg(jsonb_build_object('kind', s.source_kind, 'identity', s.identity, 'bytes', encode(s.bytes, 'base64'), 'producerKind', s.producer_kind, 'producerId', s.producer_id, 'producedAt', s.produced_at, 'recordOrigin', s.record_origin) ORDER BY s.source_kind, s.identity) FROM decision_record_source s WHERE s.org_id = $1), '[]'::jsonb) AS sources, COALESCE((SELECT jsonb_agg(jsonb_build_object('decisionId', p.decision_id, 'sequence', p.seq::int, 'replayManifestId', p.replay_manifest_id, 'requestRef', p.request_ref, 'householdSlug', p.household_slug, 'disposition', p.disposition, 'recordedAt', p.recorded_at, 'recordOrigin', p.record_origin) ORDER BY p.seq) FROM decision_record_projection p WHERE p.org_id = $1), '[]'::jsonb) AS projections FROM (SELECT 1) seed LEFT JOIN decision_chain_anchor a ON a.org_id = $1 LIMIT 2",
+    ["orgId", "statementTimeoutMs"],
+    "decisionRecordChain.v1",
+    "at-most-one",
+    "tenant-statement-deadline-from-p1-p2",
+  ),
   "decisionRecord.append": {
     kind: "closed-store-command",
     command: "decision-record-append.v1",
@@ -530,6 +621,50 @@ const ADMITTED: Record<string, { gatewayEntry: string; constructedDefinition: Re
       authorityClass: "tenant",
     },
   },
+  "decisionRecord.listForTenant": {
+    gatewayEntry: "enterDecisionRecordListForTenant",
+    constructedDefinition: recordReadEffect(
+      "decision_record_list_for_tenant_v1",
+      "SELECT p.decision_id, p.seq::int, p.replay_manifest_id, p.request_ref, p.household_slug, p.disposition, p.recorded_at, p.record_origin, s.bytes AS outcome_bytes FROM decision_record_projection p JOIN decision_record_source s ON s.org_id = p.org_id AND s.source_kind = 'outcome' AND s.identity = 'dov.v1:' || substring(p.decision_id from 2) WHERE p.org_id = $1 ORDER BY p.seq DESC LIMIT 101",
+      ["orgId", "statementTimeoutMs"],
+      "decisionRecordList.v1",
+      "many",
+      "tenant-statement-deadline-from-p1-p2",
+    ),
+  },
+  "decisionRecord.loadById": {
+    gatewayEntry: "enterDecisionRecordLoadById",
+    constructedDefinition: recordReadEffect(
+      "decision_record_load_by_id_v1",
+      "SELECT decision_id, seq::int, replay_manifest_id, request_ref, household_slug, disposition, recorded_at, record_origin FROM decision_record_projection WHERE org_id = $1 AND decision_id = $2 LIMIT 2",
+      ["orgId", "decisionId", "statementTimeoutMs"],
+      "decisionRecordProjection.v1",
+      "at-most-one",
+      "tenant-statement-deadline-from-p1-p3",
+    ),
+  },
+  "decisionRecord.resolveHead": {
+    gatewayEntry: "enterDecisionRecordResolveHead",
+    constructedDefinition: recordReadEffect(
+      "decision_record_resolve_head_v1",
+      "SELECT a.entry_count::int, a.max_seq::int, a.head_hash, a.head_decision_id, (SELECT count(*)::int FROM decision_ledger x WHERE x.org_id = a.org_id) AS ledger_count, l.envelope_bytes, s.identity AS outcome_identity, s.bytes AS outcome_bytes FROM decision_chain_anchor a LEFT JOIN decision_ledger l ON l.org_id = a.org_id AND l.seq = a.max_seq LEFT JOIN decision_record_source s ON s.org_id = a.org_id AND s.source_kind = 'outcome' AND s.identity = 'dov.v1:' || substring(a.head_decision_id from 2) WHERE a.org_id = $1 LIMIT 2",
+      ["orgId", "statementTimeoutMs"],
+      "decisionRecordHead.v1",
+      "at-most-one",
+      "tenant-statement-deadline-from-p1-p2",
+    ),
+  },
+  "decisionRecord.readChain": {
+    gatewayEntry: "enterDecisionRecordReadChain",
+    constructedDefinition: recordReadEffect(
+      "decision_record_read_chain_v1",
+      "SELECT a.entry_count::int, a.max_seq::int, a.head_hash, a.head_decision_id, a.updated_at, COALESCE((SELECT jsonb_agg(jsonb_build_object('seq', l.seq::int, 'entryId', l.entry_id, 'decisionId', l.decision_id, 'replayManifestId', l.replay_manifest_id, 'envelopeBytes', encode(l.envelope_bytes, 'base64'), 'prevHash', l.prev_hash, 'entryHash', l.entry_hash, 'recordedAt', l.recorded_at, 'producerKind', l.producer_kind, 'producerId', l.producer_id, 'producedAt', l.produced_at, 'recordOrigin', l.record_origin) ORDER BY l.seq) FROM decision_ledger l WHERE l.org_id = $1), '[]'::jsonb) AS entries, COALESCE((SELECT jsonb_agg(jsonb_build_object('kind', s.source_kind, 'identity', s.identity, 'bytes', encode(s.bytes, 'base64'), 'producerKind', s.producer_kind, 'producerId', s.producer_id, 'producedAt', s.produced_at, 'recordOrigin', s.record_origin) ORDER BY s.source_kind, s.identity) FROM decision_record_source s WHERE s.org_id = $1), '[]'::jsonb) AS sources, COALESCE((SELECT jsonb_agg(jsonb_build_object('decisionId', p.decision_id, 'sequence', p.seq::int, 'replayManifestId', p.replay_manifest_id, 'requestRef', p.request_ref, 'householdSlug', p.household_slug, 'disposition', p.disposition, 'recordedAt', p.recorded_at, 'recordOrigin', p.record_origin) ORDER BY p.seq) FROM decision_record_projection p WHERE p.org_id = $1), '[]'::jsonb) AS projections FROM (SELECT 1) seed LEFT JOIN decision_chain_anchor a ON a.org_id = $1 LIMIT 2",
+      ["orgId", "statementTimeoutMs"],
+      "decisionRecordChain.v1",
+      "at-most-one",
+      "tenant-statement-deadline-from-p1-p2",
+    ),
+  },
   "decisionRecord.append": {
     gatewayEntry: "enterDecisionRecordAppend",
     constructedDefinition: {
@@ -611,8 +746,18 @@ export type Gateway = {
   enterConformanceRunner: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterConformanceReadSignedCase: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterConformanceGrade: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterRouteDecisionRecords: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionRecordList: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionRecordListForTenant: (c: RequestCorrelation, v: { orgId: string; statementTimeoutMs: string }) => Promise<unknown>;
+  enterRouteDecisionRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterDecisionRecordRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
   enterDecisionRecordAppend: (c: DecisionCorrelation, input: DecisionRecordAppendInput) => Promise<DecisionRecordAppendResult>;
+  enterDecisionRecordLoad: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionRecordLoadById: (c: DecisionCorrelation, v: { orgId: string; decisionId: string; statementTimeoutMs: string }) => Promise<unknown>;
+  enterRouteDecisionChainVerify: <T>(c: RequestCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionRecordResolveHead: (c: RequestCorrelation, v: { orgId: string; statementTimeoutMs: string }) => Promise<unknown>;
+  enterDecisionRecordVerify: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => Promise<T>;
+  enterDecisionRecordReadChain: (c: DecisionCorrelation, v: { orgId: string; statementTimeoutMs: string }) => Promise<unknown>;
   sealCookieValue: (token: string) => string;
   openCookieValue: (cookieValue: string) => string | null;
   secureCookies: boolean;
@@ -622,6 +767,30 @@ const atMostOne = (r: QueryResult, schema: z.ZodType) => {
   if (r.rows.length > 1) throw new Error("cardinality at-most-one violated");
   return r.rows.length ? schema.parse(r.rows[0]) : null;
 };
+const canonicalInstant = (value: unknown): string => {
+  const date = value instanceof Date ? value : new Date(z.string().parse(value));
+  if (!Number.isFinite(date.valueOf())) throw new Error("decision-record read returned an invalid temporal value");
+  return date.toISOString();
+};
+const projectionRow = z.strictObject({
+  decision_id: z.string(),
+  seq: z.number().int(),
+  replay_manifest_id: z.string(),
+  request_ref: z.string(),
+  household_slug: z.string(),
+  disposition: z.enum(["proceed", "blocked", "prohibited"]),
+  recorded_at: z.union([z.date(), z.string()]),
+  record_origin: z.string(),
+});
+const normalizeProjection = (raw: unknown) => {
+  const x = projectionRow.parse(raw);
+  return { ...x, recorded_at: canonicalInstant(x.recorded_at) };
+};
+const normalizeJsonRows = (raw: unknown, temporalKeys: readonly string[]) =>
+  z
+    .array(z.record(z.string(), z.unknown()))
+    .parse(raw)
+    .map((row) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, temporalKeys.includes(key) ? canonicalInstant(value) : value])));
 const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
   "identityLoginRow.v1": (r) =>
     atMostOne(r, z.strictObject({ id: z.string(), org_id: z.string(), display_name: z.string(), role: z.string(), credential_hash: z.string(), credential_salt: z.string() })),
@@ -650,6 +819,53 @@ const VALIDATORS: Record<string, (r: QueryResult) => unknown> = {
     ),
   "policyVersionRow.v1": (r) => atMostOne(r, z.strictObject({ seq: z.number().int(), published_at: z.date(), bytes: z.instanceof(Uint8Array), record_origin: z.string() })),
   "policyVersionRows.v1": (r) => r.rows.map((x) => z.strictObject({ seq: z.number().int(), digest: z.string(), published_at: z.date(), record_origin: z.string() }).parse(x)),
+  "decisionRecordList.v1": (r) =>
+    r.rows.map((raw) => {
+      const x = projectionRow.extend({ outcome_bytes: z.instanceof(Uint8Array) }).parse(raw);
+      return { ...x, recorded_at: canonicalInstant(x.recorded_at) };
+    }),
+  "decisionRecordProjection.v1": (r) => {
+    if (r.rows.length > 1) throw new Error("cardinality at-most-one violated");
+    return r.rows.length ? normalizeProjection(r.rows[0]) : null;
+  },
+  "decisionRecordHead.v1": (r) => {
+    const x = atMostOne(
+      r,
+      z.strictObject({
+        entry_count: z.number().int(),
+        max_seq: z.number().int(),
+        head_hash: z.string(),
+        head_decision_id: z.string().nullable(),
+        ledger_count: z.number().int(),
+        envelope_bytes: z.instanceof(Uint8Array).nullable(),
+        outcome_identity: z.string().nullable(),
+        outcome_bytes: z.instanceof(Uint8Array).nullable(),
+      }),
+    );
+    return x;
+  },
+  "decisionRecordChain.v1": (r) => {
+    const x = atMostOne(
+      r,
+      z.strictObject({
+        entry_count: z.number().int().nullable(),
+        max_seq: z.number().int().nullable(),
+        head_hash: z.string().nullable(),
+        head_decision_id: z.string().nullable(),
+        updated_at: z.union([z.date(), z.string()]).nullable(),
+        entries: z.unknown(),
+        sources: z.unknown(),
+        projections: z.unknown(),
+      }),
+    ) as Record<string, unknown>;
+    return {
+      ...x,
+      updated_at: x["updated_at"] === null ? null : canonicalInstant(x["updated_at"]),
+      entries: normalizeJsonRows(x["entries"], ["recordedAt", "producedAt"]),
+      sources: normalizeJsonRows(x["sources"], ["producedAt"]),
+      projections: normalizeJsonRows(x["projections"], ["recordedAt"]),
+    };
+  },
 };
 
 // The one-per-process slot lives on globalThis, not a module-local variable: the framework bundles
@@ -838,30 +1054,28 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
         await client.query("BEGIN");
         await client.query("SELECT set_config('verin.org_id', $1, true)", [input.orgId]);
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [input.orgId]);
-        const existing = await client.query("SELECT l.seq::int, l.entry_id, l.entry_hash, l.replay_manifest_id, l.envelope_bytes FROM decision_ledger l WHERE l.org_id = $1 AND l.decision_id = $2", [
-          input.orgId,
-          input.decisionId,
-        ]);
-        if (existing.rows.length > 1) throw new Error("decisionRecord.append refuses a fork: one DecisionId has multiple ledger entries");
-        if (existing.rows.length === 1) {
-          const found = z
-            .strictObject({ seq: z.number().int(), entry_id: z.string(), entry_hash: z.string(), replay_manifest_id: z.string(), envelope_bytes: z.instanceof(Uint8Array) })
-            .parse(existing.rows[0]);
-          if (found.replay_manifest_id !== input.manifest.identity)
-            throw new Error(`decisionRecord.append refuses idempotency conflict: ${input.decisionId} already cites ${found.replay_manifest_id}, not ${input.manifest.identity}`);
-          if (!Buffer.from(found.envelope_bytes).equals(Buffer.from(decisionEnvelope(input, found.seq))))
-            throw new Error(`decisionRecord.append refuses idempotency conflict: ${input.decisionId} was retried with different envelope bytes`);
-          const result = { entryId: found.entry_id, sequence: found.seq, chainHash: found.entry_hash, replayManifestId: found.replay_manifest_id, alreadyRecorded: true };
-          await client.query("COMMIT");
-          return result;
-        }
-
         const anchorResult = await client.query("SELECT entry_count::int, max_seq::int, head_hash, head_decision_id FROM decision_chain_anchor WHERE org_id = $1 FOR UPDATE", [input.orgId]);
         if (anchorResult.rows.length > 1) throw new Error("decisionRecord.append refuses multiple chain anchors for one tenant");
         let anchor = anchorResult.rows.length
           ? z.strictObject({ entry_count: z.number().int(), max_seq: z.number().int(), head_hash: z.string(), head_decision_id: z.string().nullable() }).parse(anchorResult.rows[0])
           : null;
         if (anchor && anchor.entry_count !== anchor.max_seq + 1) throw new Error("decisionRecord.append refuses an anchor whose count and maximum sequence disagree");
+        if (anchor) {
+          const head = await client.query("SELECT entry_hash FROM decision_ledger WHERE org_id = $1 AND seq = $2 LIMIT 2", [input.orgId, anchor.max_seq]);
+          if (head.rows.length === 0) {
+            const any = await client.query("SELECT 1 FROM decision_ledger WHERE org_id = $1 LIMIT 1", [input.orgId]);
+            throw new Error(
+              any.rows.length
+                ? "anchor-max-sequence-missing: decisionRecord.append refuses an anchor whose maximum ledger row is absent"
+                : "anchor-present-ledger-empty: decisionRecord.append refuses an anchor over an empty ledger",
+            );
+          }
+          if (head.rows.length !== 1) throw new Error("anchor-max-sequence-ambiguous: decisionRecord.append refuses multiple rows at the anchor maximum");
+          if (z.strictObject({ entry_hash: z.string() }).parse(head.rows[0]).entry_hash !== anchor.head_hash)
+            throw new Error("anchor-head-hash-mismatch: decisionRecord.append refuses an anchor whose head hash differs from its maximum ledger row");
+          const genesis = await client.query("SELECT 1 FROM decision_ledger WHERE org_id = $1 AND seq = 0 LIMIT 2", [input.orgId]);
+          if (genesis.rows.length !== 1) throw new Error("anchor-genesis-missing: decisionRecord.append refuses an anchored chain without exactly one sequence-zero genesis");
+        }
         if (!anchor) {
           const anyLedger = await client.query("SELECT seq FROM decision_ledger WHERE org_id = $1 LIMIT 1", [input.orgId]);
           if (anyLedger.rows.length) throw new Error("decisionRecord.append refuses a chain with ledger rows but no anchor");
@@ -893,6 +1107,24 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
             input.recordedAt,
           ]);
           anchor = { entry_count: 1, max_seq: 0, head_hash: genesisHash, head_decision_id: null };
+        }
+
+        const existing = await client.query("SELECT l.seq::int, l.entry_id, l.entry_hash, l.replay_manifest_id, l.envelope_bytes FROM decision_ledger l WHERE l.org_id = $1 AND l.decision_id = $2", [
+          input.orgId,
+          input.decisionId,
+        ]);
+        if (existing.rows.length > 1) throw new Error("decisionRecord.append refuses a fork: one DecisionId has multiple ledger entries");
+        if (existing.rows.length === 1) {
+          const found = z
+            .strictObject({ seq: z.number().int(), entry_id: z.string(), entry_hash: z.string(), replay_manifest_id: z.string(), envelope_bytes: z.instanceof(Uint8Array) })
+            .parse(existing.rows[0]);
+          if (found.replay_manifest_id !== input.manifest.identity)
+            throw new Error(`decisionRecord.append refuses idempotency conflict: ${input.decisionId} already cites ${found.replay_manifest_id}, not ${input.manifest.identity}`);
+          if (!Buffer.from(found.envelope_bytes).equals(Buffer.from(decisionEnvelope(input, found.seq))))
+            throw new Error(`decisionRecord.append refuses idempotency conflict: ${input.decisionId} was retried with different envelope bytes`);
+          const result = { entryId: found.entry_id, sequence: found.seq, chainHash: found.entry_hash, replayManifestId: found.replay_manifest_id, alreadyRecorded: true };
+          await client.query("COMMIT");
+          return result;
         }
 
         const sourceRows = [
@@ -997,8 +1229,18 @@ export function createGovernedRuntime(role: "web" | "tooling"): Gateway {
     enterConformanceRunner: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("conformance.runner", c, fn),
     enterConformanceReadSignedCase: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("conformance.readSignedCase", c, fn),
     enterConformanceGrade: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("conformance.grade", c, fn),
+    enterRouteDecisionRecords: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.decision-records", c, fn),
+    enterDecisionRecordList: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("decisionRecord.list", c, fn),
+    enterDecisionRecordListForTenant: (c: RequestCorrelation, v: Parameters<Gateway["enterDecisionRecordListForTenant"]>[1]) => runStore("decisionRecord.listForTenant", c, v),
+    enterRouteDecisionRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("route.decision-record", c, fn),
     enterDecisionRecordRecord: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decisionRecord.record", c, fn),
     enterDecisionRecordAppend: (c: DecisionCorrelation, input: DecisionRecordAppendInput) => runDecisionRecordAppend(c, input),
+    enterDecisionRecordLoad: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decisionRecord.load", c, fn),
+    enterDecisionRecordLoadById: (c: DecisionCorrelation, v: Parameters<Gateway["enterDecisionRecordLoadById"]>[1]) => runStore("decisionRecord.loadById", c, v),
+    enterRouteDecisionChainVerify: <T>(c: RequestCorrelation, fn: () => Promise<T>) => enter("route.decision-chain-verify", c, fn),
+    enterDecisionRecordResolveHead: (c: RequestCorrelation, v: Parameters<Gateway["enterDecisionRecordResolveHead"]>[1]) => runStore("decisionRecord.resolveHead", c, v),
+    enterDecisionRecordVerify: <T>(c: DecisionCorrelation, fn: () => Promise<T>) => enter("decisionRecord.verify", c, fn),
+    enterDecisionRecordReadChain: (c: DecisionCorrelation, v: Parameters<Gateway["enterDecisionRecordReadChain"]>[1]) => runStore("decisionRecord.readChain", c, v),
     sealCookieValue: (token: string) => `${token}.${hmac(token)}`,
     openCookieValue: (v: string) => {
       const dot = v.lastIndexOf(".");
