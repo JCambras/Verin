@@ -159,7 +159,8 @@ test("the examiner loads only a whole-chain-verified, tenant-owned record and st
   await expect(page.getByRole("heading", { name: /Examiner record/ })).toBeVisible();
   await expect(page.getByText(/Whole chain verified through d[0-9a-f]{64}/)).toBeVisible();
   await expect(page.getByText(/Evidence provenance: house-record-store/)).toBeVisible();
-  await page.screenshot({ path: "test-results/pr6a-ii-examiner.png", fullPage: true });
+  expect((await settledAxe(page)).violations).toEqual([]); // the examiner loaded state itself, before navigation to the chain report
+  await page.screenshot({ path: "test-results/pr6a-iii-examiner.png", fullPage: true });
   await page.emulateMedia({ media: "print" });
   await page.pdf({ path: "test-results/pr6a-ii-examiner-print.pdf", format: "Letter", printBackground: true });
   await page.emulateMedia({ media: "screen" });

@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:decision-record-verifier": "vitest run --config vitest.verifier.config.mjs",
     "e2e": "playwright test",
     "db": "tsx src/tools/cli.ts",
     "amp": "tsx src/tools/amplification.ts",
