@@ -14287,3 +14287,106 @@ reopening the store applies it.
 **Reverted:** all three injections restored; `Tests 19 passed`.
 
 **Date:** 2026-08-12 (review round fourteen, ADR-0057).
+
+## PF-291 · Prompt 11c: tooling budgets and Gate B stay honest · `src/__tests__/fitness/{line-budget,max-file-size,v3-gate-ordering,v3-invariants,charter-drift}.test.ts`
+
+**Invariant:** executable tooling under `scripts/**` is measured by the same repository-wide line and
+physical-size fences as shipped source, a disappeared tooling tree fails rather than passing at zero,
+and the Gate B registry credits only delivered Prompt 11a proof. Prompt 11c activates zero invariants.
+Gate B still waits on Prompt 10 and Prompt 11b.
+
+**Injection A - aggregate tooling overage.** Added a 40-line TypeScript script at
+`scripts/_prompt11c-budget-overage.ts`, which crossed the measured 14,350-line tooling ceiling.
+
+**Observed failure (`pnpm exec vitest run src/__tests__/fitness/line-budget.test.ts`):**
+```
+tooling: 14358 lines exceed ceiling 14350
+Tests  2 failed | 8 passed (10)
+```
+
+**Injection B - physical script overage.** Added `scripts/_prompt11c-oversized.ts` with 502 physical
+lines.
+
+**Observed failure (`pnpm exec vitest run src/__tests__/fitness/max-file-size.test.ts`):**
+```
+scripts/_prompt11c-oversized.ts: 502 > 500
+Tests  1 failed | 3 passed (4)
+```
+
+**Injection C - false invariant activation.** Changed invariant 3 from `not-yet-active` to `active`
+without adding a runnable mechanism.
+
+**Observed failure (`pnpm v3:invariants`):**
+```
+invariant 3: ACTIVE but maps to no runnable fitness mechanism
+active invariant ids must exactly match the shipped mechanism ratchet
+```
+
+**Injection D - false Gate B readiness.** Removed the Prompt 11b materialization evidence requirement
+while leaving Prompt 11a's corpus CI requirement present.
+
+**Observed failure (`pnpm exec vitest run src/__tests__/fitness/v3-gate-ordering.test.ts`):**
+```
+complete typed gate requirements drifted from the ADR-0055 ratchet
+holds Gate B below green until Prompt 11b materializes the signed truth:
+expected not-yet-verifiable, received green
+Tests  5 failed | 64 passed (69)
+```
+
+**Injection E - charter ownership drift.** Removed the maximum-file-size fence from charter #1 while
+leaving its Prompt 11c ratchet tuple intact.
+
+**Observed failure (`pnpm exec vitest run src/__tests__/fitness/charter-drift.test.ts`):**
+```
+ratcheted enforced mechanism missing: ["1","fitness","src/__tests__/fitness/max-file-size.test.ts","","enforced"]
+Tests  1 failed | 17 passed (18)
+```
+
+**Executable companions (run on every build):** the line-budget suite measures a planted aggregate
+script overage and an actually empty temporary tooling root through the production measurement path;
+the maximum-file-size suite plants a 502-line script beside a passing sibling; the invariant suite
+injects Prompt 11 activation and asserts the shipped active-id ratchet rejects it; the gate suite
+removes the Prompt 11b requirement and proves readiness would otherwise become falsely green; and the
+charter-drift tuple ratchet binds both extended fences to charter #1 and #10.
+
+**Reverted:** all five injections restored. The focused five-file suite passed 119 tests, then
+`pnpm v3:invariants` reported `7 active-pass`, `0 active-fail`, and `23 not-yet-active`.
+
+**Date:** 2026-08-12 (ADR-0058, D-220).
+
+## PF-292 · Prompt 11c review corrections preserve aggregation and signed-fixture stability · `src/__tests__/fitness/{line-budget,v3-gate-ordering}.test.ts`
+
+**Invariant:** the tooling ceiling is enforced over the sum of all discovered scripts independently of
+the per-file ceiling, and Gate B retains Prompt 11's complete signed-case stability contract: immutable
+fixtures, deterministic seeds, expected hashes, same-seed byte-identical regeneration, and references
+validated against Prompt 10 domain configuration and policy versions.
+
+**Injection A - replace aggregation with largest-file measurement.** Changed `measureToolingLines` to
+return the largest discovered script's line count. The earlier one-file companion passed this regression;
+the corrected companion plants 32 separate 450-line scripts whose combined 14,400 lines cross the
+14,350 ceiling.
+
+**Observed failure (`pnpm exec vitest run --project fitness src/__tests__/fitness/line-budget.test.ts`):**
+```
+multiple sub-500-line scripts whose sum exceeds the tooling ceiling fail the aggregate check
+AssertionError: expected 450 to be 14400
+Tests  1 failed | 9 passed (10)
+```
+
+**Injection B - narrow the registry and ratchet together.** Replaced the complete Prompt 11b evidence
+clause in both `v3-invariants.json` and `GATE_REQUIREMENTS_RATCHET` with materialization plus domain
+configuration validation only, dropping immutability, deterministic seeds, expected hashes,
+byte-identical regeneration, and policy-version validation.
+
+**Observed failure (`pnpm exec vitest run --project fitness src/__tests__/fitness/v3-gate-ordering.test.ts`):**
+```
+enforces: Gate B credits Prompt 11a but still waits on Prompt 10 and Prompt 11b
+holds Gate B below green until Prompt 11b proves signed fixture stability
+Expected: "not-yet-verifiable"
+Received: "green"
+Tests  2 failed | 67 passed (69)
+```
+
+**Reverted:** both injections restored. The focused two-file suite passed 79 tests.
+
+**Date:** 2026-08-13 (ADR-0058, D-220 review correction).

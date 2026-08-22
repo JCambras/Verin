@@ -147,6 +147,28 @@ describe("v3 gate-ordering fence", () => {
     }
   });
 
+  it("enforces: Gate B credits Prompt 11a but still waits on Prompt 10 and Prompt 11b", () => {
+    expect(registry.gates.B?.requires).toContainEqual({
+      kind: "ci-gate",
+      ref: "corpus",
+      command: "pnpm exec tsx scripts/corpus-validate.ts",
+      prompt: 11,
+      note: expect.stringContaining("PROMPT 11A DELIVERED"),
+    });
+    expect(registry.gates.B?.requires).toContainEqual({
+      kind: "evidence",
+      ref: "captain-signed golden cases are materialized as immutable replay fixtures with deterministic seeds and expected hashes; the same seed reproduces a byte-identical case bundle; every reference validates against the prompt-10 domain configuration and policy versions",
+      prompt: 11,
+      note: expect.stringContaining("Prompt 11b has not landed"),
+    });
+    expect(
+      registry.gates.B?.requires.some(
+        (requirement) =>
+          requirement.kind === "evidence" && requirement.prompt === 10,
+      ),
+    ).toBe(true);
+  });
+
   it("enforces (ratchet): the ratified activation-ownership map of all 30 invariants", () => {
     expect(ownershipOf(registry)).toEqual(GATE_ASSIGNMENT_RATCHET);
   });
@@ -1392,6 +1414,47 @@ describe("v3 gate-ordering fence", () => {
       reg.gates.B!.requires = reg.gates.B!.requires.filter((requirement) => requirement.kind !== "evidence");
       expect(gateReadiness(reg, deps)[0]!.state).toBe("green");
       expect(requirementsOf(reg)).not.toEqual(GATE_REQUIREMENTS_RATCHET);
+    });
+
+    it("holds Gate B below green until Prompt 11b proves signed fixture stability", () => {
+      const signedFixtureStability =
+        "captain-signed golden cases are materialized as immutable replay fixtures with deterministic seeds and expected hashes; the same seed reproduces a byte-identical case bundle; every reference validates against the prompt-10 domain configuration and policy versions";
+      const reg = clone(registry);
+      reg.gates = {
+        B: {
+          ...reg.gates.B!,
+          entryGates: [],
+          entryCondition: "None.",
+          requires: reg.gates.B!.requires.filter(
+            (requirement) =>
+              requirement.ref === signedFixtureStability ||
+              (requirement.kind === "ci-gate" &&
+                requirement.ref === "corpus"),
+          ),
+        },
+      };
+      const deps = {
+        invariantState: () => "active-pass",
+        exists: () => true,
+        ciRuns: () => true,
+        fitnessPassed: () => true,
+      };
+      expect(gateReadiness(reg, deps)[0]!.state).toBe(
+        "not-yet-verifiable",
+      );
+
+      const falsified = clone(registry);
+      falsified.gates.B!.requires = falsified.gates.B!.requires.filter(
+        (requirement) => requirement.ref !== signedFixtureStability,
+      );
+      expect(requirementsOf(falsified)).not.toEqual(
+        GATE_REQUIREMENTS_RATCHET,
+      );
+      expect(
+        gateConstitutionProblems(falsified, () => true).some((problem) =>
+          problem.includes("complete typed gate requirements drifted"),
+        ),
+      ).toBe(true);
     });
 
     it("holds Gate D below green until prompt-17 evaluator property tests independently prove invariants 7-9", () => {

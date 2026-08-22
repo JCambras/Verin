@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import {
   shippedSourceFiles,
@@ -15,9 +15,10 @@ import { relative, join } from "node:path";
  * known-larger files that ONLY SHRINKS — lower a ceiling when you split a file;
  * never raise one or add an entry without an architecture-review note.
  *
- * EXTENDED to `scripts/**` by ADR-0052 (v3 prompt 11): build-time tooling was
- * invisible to this fence, so a 2,000-line generator could have landed there
- * unnoticed. Tooling is held to the same per-file ceiling as shipped source.
+ * EXTENDED to `scripts/**` by ADR-0052 and ratified as the Prompt 11c slice by
+ * ADR-0058: build-time tooling was invisible to this fence, so a 2,000-line
+ * generator could have landed there unnoticed. Tooling is held to the same
+ * per-file ceiling as shipped source.
  */
 const DEFAULT_CEILING = 500;
 const CEILINGS: Record<string, number> = {
@@ -78,16 +79,20 @@ describe("max-file-size fence", () => {
   });
 
   describe("detects (companion): an over-ceiling file is caught", () => {
-    it("flags a real file above the default ceiling; a small file passes", () => {
+    it("flags a planted oversized script while a small sibling passes", () => {
       const dir = mkdtempSync(join(tmpdir(), "verin-fence-"));
-      const big = join(dir, "big.mjs");
-      const small = join(dir, "small.ts");
+      const scripts = join(dir, "scripts");
+      const big = join(scripts, "oversized.mjs");
+      const small = join(scripts, "small.ts");
       try {
+        mkdirSync(scripts);
         writeFileSync(big, "// x\n".repeat(DEFAULT_CEILING + 1));
         writeFileSync(small, "// x\n".repeat(10));
-        const discovered = toolingSourceFiles(dir);
+        const discovered = toolingSourceFiles(scripts);
         expect(discovered).toEqual(expect.arrayContaining([big, small]));
-        expect(detectOversizedFiles(discovered).length).toBe(1);
+        expect(detectOversizedFiles(discovered)).toEqual([
+          expect.stringContaining("oversized.mjs: 502 > 500"),
+        ]);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

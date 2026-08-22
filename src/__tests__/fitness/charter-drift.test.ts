@@ -119,6 +119,9 @@ type EnforcedMechanismTuple = readonly [
 
 const RATCHETED_ENFORCED_MECHANISMS = [
   ["1", "procedure", "docs/fences/proof-log.md", "", "enforced"],
+  ["1", "adr", "docs/adr/0058-tooling-budget-and-gate-b-registry.md", "", "enforced"],
+  ["1", "fitness", "src/__tests__/fitness/line-budget.test.ts", "", "enforced"],
+  ["1", "fitness", "src/__tests__/fitness/max-file-size.test.ts", "", "enforced"],
   ["1", "fitness", "src/__tests__/fitness/no-bare-throw.test.ts", "", "enforced"],
   ["2", "fitness", "src/__tests__/fitness/provenance-required.test.ts", "", "enforced"],
   ["3", "fitness", "src/__tests__/fitness/no-unlabeled-synthetic.test.ts", "", "enforced"],
@@ -163,6 +166,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["9", "ci-gate", "e2e", "pnpm exec playwright test", "enforced"],
   ["9", "fitness", "src/__tests__/fitness/axe-required.test.ts", "", "enforced"],
   ["10", "adr", "docs/adr/0012-presentation-tier-and-budgets.md", "", "enforced"],
+  ["10", "adr", "docs/adr/0058-tooling-budget-and-gate-b-registry.md", "", "enforced"],
   ["10", "fitness", "src/__tests__/fitness/line-budget.test.ts", "", "enforced"],
   ["10", "fitness", "src/__tests__/fitness/max-file-size.test.ts", "", "enforced"],
   ["10", "fitness", "src/__tests__/fitness/presentation-primitives.test.ts", "", "enforced"],
@@ -207,6 +211,7 @@ const RATCHETED_ENFORCED_MECHANISMS = [
   ["v3-invariants-phase-gated", "fitness", "src/__tests__/fitness/v3-invariants.test.ts", "", "enforced"],
   ["v3-invariants-phase-gated", "ci-gate", "v3-invariants", "pnpm exec tsx scripts/v3-invariants.ts", "enforced"],
   ["v3-gate-ordering", "adr", "docs/adr/0055-gate-a-invariant-ordering.md", "", "enforced"],
+  ["v3-gate-ordering", "adr", "docs/adr/0058-tooling-budget-and-gate-b-registry.md", "", "enforced"],
   ["v3-gate-ordering", "config", "v3-invariants.json", "", "enforced"],
   ["v3-gate-ordering", "file", "scripts/v3-gates.lib.ts", "", "enforced"],
   ["v3-gate-ordering", "fitness", "src/__tests__/fitness/v3-gate-ordering.test.ts", "", "enforced"],

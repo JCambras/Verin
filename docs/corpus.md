@@ -366,7 +366,10 @@ artifact values, and the generator can emit only into `synthetic/`.
 
 ## 10. What this corpus does NOT claim
 
-- **Not Gate B.** Gate B also requires prompt 10's money-movement and account-opening configuration.
+- **Not Gate B.** This corpus supplies Gate B's delivered Prompt 11a CI proof. Gate B still requires
+  prompt 10's money-movement and account-opening configuration plus Prompt 11b's immutable signed-case
+  replay materialization, deterministic seeds and expected hashes, byte-identical regeneration, and
+  reference validation against the domain configuration and policy versions (ADR-0058).
 - **No v3 invariant is activated by prompt 11.**
 - **No detection rate**, and no figure of any kind until the corpus is signed and a detector exists.
 - **Not "the labeled replay corpus"** of demo contract §7 - it is the synthetic half of it.

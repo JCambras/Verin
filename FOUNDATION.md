@@ -127,20 +127,20 @@ The build-failing fences in `src/__tests__/fitness/` are inventoried below. **Ea
 `describe("detects …")` companion** that feeds it a synthetic violation and asserts it is caught (charter
 #4) — so a green fence can never be vacuous; the `detection-not-verification` meta-fence fails the build if
 any fence lacks one. Adversarial real-tree injection proofs are in
-[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-290, with the titled ADR-0052 corpus
-and ADR-0053 policy rounds interleaved among them; every PF id names exactly one proof — the prompt-6 and prompt-11 entries were
+[`docs/fences/proof-log.md`](./docs/fences/proof-log.md) (PF-001..PF-292, with the titled ADR-0052 corpus
+and ADR-0053 policy rounds interleaved among them; every PF id names exactly one proof - the prompt-6 and prompt-11 entries were
 renumbered on rebase, see the numbering notes in the log; the prompt-7 entries carry a separate
 `(D-1xx)` citation drift the log records at its own tail).
 
 | Fence | Enforces (charter) | Proof |
 |---|---|---|
-| `charter-drift` | the constitution enforces its own enforcement | PF-001 |
+| `charter-drift` | the constitution enforces its own enforcement | PF-001 + PF-291 |
 | `dependency-rule` (ts-morph: TypeScript-resolved aliases/baseUrl/package mappings, static+relative+dynamic+CommonJS+createRequire+import-type+import-equals+source-declarations+triple-slash+implicit JSX runtime; fail-closed local paths, ambient declarations, and ES-only platform surface; Zod-only external allowlist in `contracts/`) | layer boundary (#1) | PF-002 + extensions + companions |
 | `no-process-env` (content scan) | env only in config (#7) | PF-003 |
 | `no-bare-throw` | typed errors in domain/infra (#1) | PF-004 |
 | `no-console` (all server-side layers incl. `src/app/`; leading `"use client"` files exempt) | PII-safe logging only (#14) | PF-005 + PF-020 |
 | `no-secret-fallback` / no-live-org-domain / placeholder-.env / `SecretValue` containment | config hygiene + secret containment (#7, v3 §15.4) | PF-006, PF-034 |
-| `line-budget` (platform ratchet + separate presentation + the `tooling` envelope over `scripts/**`, ADR-0052) / `max-file-size` (walks `scripts/**` under the same per-file ceiling) | budgets (#1,#10) | companions |
+| `line-budget` (platform ratchet + separate presentation + the `tooling` envelope over `scripts/**`, ADR-0052/0058) / `max-file-size` (walks the same `scripts/**` scope under the 500-line default) | budgets (#1,#10) | PF-291, PF-292 + companions |
 | `detection-not-verification` (meta) | every fence has a companion (#4) | PF-META |
 | `provenance-required` | every field has provenance (#2) | PF-007 |
 | `no-unlabeled-synthetic` | synthetic can't feed compliance (#3) | PF-008 |
@@ -156,7 +156,8 @@ renumbered on rebase, see the numbering notes in the log; the prompt-7 entries c
 | `no-pii-in-audit-store` | PII scrubbed from the audit trail (#3,#13) | PF-016 |
 | `bounded-request-body` | no unbounded body reader — json/text/formData/arrayBuffer/blob (DoS) (#11/#14) | PF-017 + companions |
 | `arch-version` (SHA-256 pins on the ratified documents registered in `v3-invariants.json`; the fence iterates that registry, never the `docs/v3/` directory - D-099) | build work never targets a stale or edited architecture copy (ADR-0023) | PF-023 + companions |
-| `v3-invariants` (registry integrity + activation ratchet) | the 30 v3 invariants stay activation-only, mapped to live fences, never fake green (ADR-0023) | PF-024 + companions |
+| `v3-invariants` (registry integrity + activation ratchet) | the 30 v3 invariants stay activation-only, mapped to live fences, never fake green (ADR-0023) | PF-024, PF-291 + companions |
+| `v3-gate-ordering` (typed requirements, proof points, complete gate ratchets, and readiness) | Gate B credits Prompt 11a's exact blocking corpus command, still requires Prompt 10 and Prompt 11b, and cannot become green by deleting an undecidable requirement (ADR-0055/0058) | PF-237, PF-291, PF-292 + companions |
 | `demo-scenarios-contract` | the scenario matrix stays inert data (no executable YAML), id-stable (append-only), and internally consistent (D-034) | PF-025 + companions |
 | `golden-cases` | the golden truth set stays complete, vocabulary-aligned, structurally consistent, and captain-signoff-gated (#1/#4, v3 prompt 2, D-035) | PF-026 + companions |
 | `demo-skeleton-honesty` | skeleton branch data stays equal to the scenario contract and presentation surfaces cannot recompute decisions (#4/#5, ADR-0027, D-036) | proof-log section + companions |
@@ -183,33 +184,21 @@ renumbered on rebase, see the numbering notes in the log; the prompt-7 entries c
 | `world-provenance` (every world record labeled `source: "fixture"` and refused by `canFeedComplianceDecision`; no generated health field; holdings reconcile; the account, instrument-reach and cross-household-prose rules `validateWorld` holds BOTH authors to) | the largest body of synthetic data in the repo is labeled mechanically, and its health figure is computed rather than typed (#3/#4, ADR-0022, ADR-0057) | PF-254, PF-263, PF-269, PF-274 + companions |
 | `clean-slate` (the swept table list DERIVED from the shipped DDL and read three ways that share no code, plus the store's own catalog; fail-closed on an empty sweep or a provenance-bearing table with no origin column) | a production instance carries zero demonstration-origin rows, counted on the ROW's origin rather than its value provenance, and a check that verifies nothing never reports clean (#3/#4/#7, ADR-0057, D-201/D-217/D-218/D-219) | PF-255 through PF-257, PF-260/261, PF-266 through PF-268, PF-273, PF-281, PF-284, PF-288 through PF-290 |
 
-**Current prompt-11 line-budget PR evidence:** contracts 6,064/6,110 (46
-headroom), domain 1,581/1,650 (69), infrastructure 7,786/7,840 (54), and
-presentation 928/6,000 (5,072) - this PR adds ZERO lines to any platform layer,
-so those are ADR-0051's ceilings measured with the fence's own algorithm on the
-tree as it lands. The presentation tier has since grown with the canonical
-primitive library and re-measures at 2,240/6,000 (3,760 headroom) with that same
-algorithm (D-192 through D-202); its ceiling is unchanged, because ADR-0012 grows
-it only by an ADR bump and this work adds no platform lines either. The three
-PLATFORM figures above are left exactly as that prompt-11 PR measured them and
-are deliberately NOT re-taken here: this branch touches no platform layer, and a
-measurement of a layer a diff never opened does not belong in it. Two of them
-have gone stale since - ADR-0054 replaced the contracts and domain ceilings
-quoted here - as has the infrastructure figure recorded in
-`line-budget.test.ts`'s own header, and each is named for re-measurement against
-its authoritative current ceiling under follow-up key
-`fu-platform-budget-remeasure` (D-203, §4), to be taken in the platform-budget
-work that next changes that layer. Two files
-carry a `max-file-size` pin instead of the 500-line default:
+**Current line-budget evidence:** contracts 6,602/6,650 (48 headroom), domain
+5,093/5,150 (57), infrastructure 8,489/8,600 (111), presentation 2,240/6,000
+(3,760), and tooling 14,317/14,350 (33). The platform and presentation figures
+were re-taken by the changes that last touched those layers (ADR-0054, ADR-0057,
+D-202, D-214, and D-219). ADR-0058 / D-220 re-measures the complete `scripts/**`
+tree with the fence's own algorithm without moving its ceiling; the remaining 33
+lines are correction room, not Prompt 11b capacity. The largest script is 468
+lines under the unchanged 500-line default. Two shipped files carry a
+`max-file-size` pin instead of that default:
 `migrations.ts` (510/560, ADR-0049) and the ledger's sole write
 chokepoint `ledger-store.ts` (502/550, ADR-0050). ADR-0052 adds the `tooling`
-envelope over `scripts/**` and tracks its re-measurements in that ADR's
-amendment section, most recently D-177: 9,053 measured against a ceiling raised
-to 9,300, which is where the trunk's own 366 lines of ledger tooling are charged
-for the first time. No useful implementation or documentation was removed or
-compressed - the rule that a ceiling is never paid for by deleting prose
-(ADR-0048) or by folding readable code onto fewer lines (ADR-0050) is itself an
-ADR now.
+envelope over `scripts/**`; ADR-0058 ratifies its Prompt 11c current-tree scope
+and measurement. No useful implementation or documentation was removed or
+compressed - a ceiling is never paid for by deleting prose (ADR-0048) or by
+folding readable code onto fewer lines (ADR-0050).
 
 `charter-map.json` maps all 16 non-negotiables to an **enforced** mechanism; the charter-drift fence fails
 the build if any enforced CI gate is not declared in the BLOCKING `ci.yml`, any enforced fence/file is
@@ -288,8 +277,7 @@ date/trigger), never omitted:
 | Alerting rules as code | CC7.2 | founder | deploy-target selection |
 | Managed-Postgres (`node-postgres`) store adapter | — | founder | production deploy (D-006; PGlite is dev/CI) |
 | Mutation-testing harness for fence efficacy (Vale V9) | CC5 | founder | add a check that a gutted fence fails |
-| `src/__tests__/**` sits in no line-budget bucket while `scripts/**` now does (ADR-0052 amendment; D-172/D-173, follow-up `fu-corpus-test-tree-budget`) | CC5 | founder | the next structural test-tree work (a fence-file split, a shared-fixture extraction, any move of fence code between trees) |
-| Recorded platform line-budget figures have gone stale: `FOUNDATION.md` §2's prompt-11 snapshot (contracts 6,064/6,110, domain 1,581/1,650) predates ADR-0054's ceilings, and `line-budget.test.ts`'s header records infrastructure 7,780 against 7,786 measured (D-203, follow-up `fu-platform-budget-remeasure`) | CC5 | founder | the next commit that changes `src/contracts/**`, `src/domain/**`, or `src/infrastructure/**` re-measures that layer and re-takes its figure in both places |
+| `src/__tests__/**` sits in no line-budget bucket while `scripts/**` now does (ADR-0052/0058; D-172/D-173/D-220, follow-up `fu-corpus-test-tree-budget`) | CC5 | founder | the next structural test-tree work (a fence-file split, a shared-fixture extraction, any move of fence code between trees) |
 | A presentation primitive's named deferral expires by REVIEW, not by a fence - nothing fails the build if a named prompt lands without retiring its row (ADR-0056; D-203, follow-up `fu-primitive-deferral-expiry-fence`) | CC5 | founder | the first expiry (prompt 3, `Tooltip`) - the first retirement a fence can be proven against |
 | Dead-export exemption for `domain/schema` vocabulary (Vale V11 / D-013) | CC5 | founder | remove when entities gain runtime consumers / a 2nd source lands |
 | Displayed-metric→source provenance trace (Vale V12) — **CLOSED** (Wave-1 prereq: ADR-0022, `metric-provenance` + `derived-provenance` fences in the `provenance-trace` gate; D-025/D-026) | #3 | — | done |

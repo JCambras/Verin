@@ -2,7 +2,7 @@
 
 **Status: RATIFIED DIRECTION FOR CURRENT VERIN** (captain, 2026-07-26; scoped for the fourth
 generation by ADR-0060), implemented into this repo's charter machinery by
-**ADR-0023 through ADR-0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, and ADR-0055** (`docs/adr/`). The ratified documents in the table below are committed
+**ADR-0023 through ADR-0029, ADR-0039, ADR-0041, ADR-0052, ADR-0053, ADR-0055, and ADR-0058** (`docs/adr/`). The ratified documents in the table below are committed
 **verbatim** from the ratified sources; the arch-version fence
 (`src/__tests__/fitness/arch-version.test.ts`) checks the documents **registered in**
 [`v3-invariants.json`](../../v3-invariants.json) against their SHA-256 pins, so build work can never
@@ -56,9 +56,10 @@ on its own and is subordinate to the ratified documents below.
 | [0029](../adr/0029-decision-core-contracts.md) | Prompt 5 landed: the §5 decision-core contracts as Zod strict schemas in `src/contracts/decision-core/`; contracts ceiling re-baselined 600→3500 (amends ADR-0018); invariants 7-9 active |
 | [0039](../adr/0039-primitive-vocabulary.md) | Prompt 8 landed: the decision-primitive vocabulary as a versioned, provisional, falsification-tested six-primitive catalog in `src/contracts/primitives/` (v3's `src/primitives/catalog.ts` re-baselined per marriage-map C6), mirrored by the root registry `primitive-set-version.json`; contracts ceiling re-baselined 4,050→5,460 by [ADR-0040](../adr/0040-line-budget-primitive-vocabulary.md) (amends ADR-0035) |
 | [0041](../adr/0041-sibling-decision-ledger.md) | Prompt 7 landed: the append-only `decision_ledger` as a SIBLING of the operational `audit_log` (never an extension of it), with immutable replay sources, the vocabulary frozen at 16 event types (v3's 14 plus `ApprovalStageExpired`/`ApprovalStageEscalated`), deterministic projections, and the read-only register at `/app/ledger`; amends ADR-0007, ADR-0018, and ADR-0019, and is itself amended by ADR-0042, ADR-0044, ADR-0046, and ADR-0047 (with the rest of the ADR-0042..0051 series carrying the line budgets); invariant 5's mechanisms and invariant 2's tenancy notes extended, while invariants 4 and 23 gain substrate mechanisms and stay not-yet-active |
-| [0052](../adr/0052-synthetic-corpus-and-provenance-split.md) | Prompt 11 landed: the §2.4 replay corpus as a deterministic synthetic substrate in `fixtures/corpus/` + `scripts/corpus/`, with a fenced provenance split, an honestly empty real-derived partition (deferred, no `detectionRate`), and digest-bound per-version captain signoff; `scripts/**` becomes a measured `tooling` budget (amends ADR-0018); no invariant is activated |
+| [0052](../adr/0052-synthetic-corpus-and-provenance-split.md) | Prompt 11a landed the §2.4 replay-corpus substrate in `fixtures/corpus/` + `scripts/corpus/`, with a fenced provenance split, an honestly empty real-derived partition (deferred, no `detectionRate`), and digest-bound per-version captain signoff; it did not materialize the signed golden cases and activated no invariant |
 | [0053](../adr/0053-policy-ast-and-interpreter.md) | Prompt 9 landed: the §6.1 constrained policy AST as a CLOSED grammar in `src/contracts/decision-core/policy.ts` (grammar 1.0.0 active; 1.1.0 adds only the reserved `elapsed` op, refused by the loader as grammar-only) plus the pure deterministic interpreter `src/domain/policy/` (seven-check loader, conservative effect-conflict rejection, four-phase fail-closed evaluator); invariant 16 activates; contracts and domain ceilings re-baselined by [ADR-0054](../adr/0054-line-budget-policy-ast.md) (amends ADR-0041 and ADR-0051) |
 | [0055](../adr/0055-gate-a-invariant-ordering.md) | Gate A owns invariants 1, 2, 4, and 5 and requires prompt-5 guarantees 7, 8, and 9; invariant 3 is gated at **B** (its prerequisite is prompt 10) |
+| [0058](../adr/0058-tooling-budget-and-gate-b-registry.md) | Prompt 11c ratifies `scripts/**` under the existing aggregate and physical budget fences, credits Prompt 11a through the blocking corpus command, and keeps Gate B non-green on Prompt 10 and Prompt 11b; zero invariants activate |
 
 ## The 30 invariants, phase-gated
 
@@ -79,9 +80,10 @@ that gate closes.
 
 The complete rule set - the ordering rule, the five ratchets, the CI-evidence grammar (what makes a
 `ci-gate` command blocking evidence and what neutralizes it), gate readiness, and the
-registry-structural validation - is owned by [ADR-0055](../adr/0055-gate-a-invariant-ordering.md)
-(including its amendment log and "Revisit When" triggers) and implemented ONCE in the shared modules
-under `scripts/v3-gates/`, reached through `scripts/v3-gates.lib.ts` and enforced by BOTH the
+registry-structural validation - is owned by [ADR-0055](../adr/0055-gate-a-invariant-ordering.md), as
+amended for Prompt 11c by [ADR-0058](../adr/0058-tooling-budget-and-gate-b-registry.md), and implemented
+ONCE in the shared modules under `scripts/v3-gates/`, reached through `scripts/v3-gates.lib.ts` and
+enforced by BOTH the
 gate-ordering fence (`src/__tests__/fitness/v3-gate-ordering.test.ts`) and the blocking runner
 (`scripts/v3-invariants.ts`), so the two cannot drift and this index does not restate them. The
 charter-drift fence reads CI through the same `parseCiJobs` authority. The Gate 0

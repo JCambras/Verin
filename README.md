@@ -13,8 +13,9 @@ architecture experiments until the separate captain decision required by F8.]
    boundary lands.
 2. **[`AGENTS.md`](./AGENTS.md)** — how to work in this repo (every session).
 3. **[`docs/v3/README.md`](./docs/v3/README.md)** - current Verin's ratified v3 architecture direction
-   and fourth-generation oracle evidence, not a selected replacement architecture (ADRs 0023-0029, 0055,
-   and 0060; the ratified documents registered in [`v3-invariants.json`](./v3-invariants.json) are
+   and fourth-generation oracle evidence, not a selected replacement architecture (ADRs 0023-0029,
+   0039, 0041, 0052, 0053, 0055, 0058, and 0060; the ratified documents registered in
+   [`v3-invariants.json`](./v3-invariants.json) are
    SHA-256-pinned by the arch-version fence, which covers that registry rather than the whole directory -
    the index page is not registered, and originates nothing normative, only restating registered
    documents, ADRs, the charter, and `DECISIONS.md` entries, D-099).
@@ -35,9 +36,11 @@ architecture experiments until the separate captain decision required by F8.]
 10. **[`docs/golden-cases.md`](./docs/golden-cases.md)** - the captain-signed golden-case truth set
     (D-035), machine-mirrored in `fixtures/golden/` and gated by `pnpm golden:validate`.
 11. **[`docs/corpus.md`](./docs/corpus.md)** - the normative replay-corpus specification (ADR-0052),
-    generated into `fixtures/corpus/` and gated by `pnpm corpus:validate`. Its real-derived partition
-    ships empty behind [`docs/corpus-scrub-procedure.md`](./docs/corpus-scrub-procedure.md), so no
-    detection rate is reported.
+    generated into `fixtures/corpus/` and gated by `pnpm corpus:validate`. That is Gate B's delivered
+    Prompt 11a proof; Prompt 11b signed-case replay materialization remains outstanding. The corpus's
+    real-derived partition ships empty behind
+    [`docs/corpus-scrub-procedure.md`](./docs/corpus-scrub-procedure.md), so no detection rate is
+    reported.
 12. **[`docs/world.md`](./docs/world.md)** - the normative specification of the populated world
     (ADR-0057): a hundred named households generated into `fixtures/world/`, served as evidence behind
     a port, and held to a clean-slate guarantee that is COUNTED (`pnpm world:validate`,

@@ -10,6 +10,9 @@ contract as data), D-035 (golden-case truth set)
 **Informed by:** `docs/v3/verin-architecture-v3.md` §2.4, `docs/demo-contract.md` §7,
 `docs/v3/verin-prompt-sequence-v3.md` (prompt 11)
 
+**Current Gate B reading:** ADR-0058 credits this Prompt 11a corpus through the blocking validation
+command and keeps Prompt 11b signed-case replay materialization explicitly outstanding.
+
 ## Context
 
 Prompt 11 exists to produce the labeled defect corpus behind the demo's headline measured claim.
@@ -39,8 +42,9 @@ against them is exactly the circularity §2.4 warns about.
 ### 2. Generation is build-time tooling, path-keyed and deterministic
 
 The generator lives in `scripts/corpus/`, beside `golden-cases.lib.ts`, `v3-invariants.ts` and
-`load-smoke.ts`. **Prompt 11 adds zero lines to `contracts`, `domain`, `infrastructure` or
-`presentation`**; a corpus type enters `src/` only when a runtime surface consumes it (charter #5).
+`load-smoke.ts`. **This Prompt 11a corpus slice adds zero lines to `contracts`, `domain`,
+`infrastructure` or `presentation`**; a corpus type enters `src/` only when a runtime surface consumes
+it (charter #5).
 That move is honest only because it is measured: this PR adds the `tooling` bucket to the line-budget
 fence and extends the per-file ceiling to walk `scripts/**` (see ADR-0018 amendment below).
 
@@ -370,8 +374,10 @@ verbatim. That gap is DEFERRED, not exempted: it is recorded in D-172 under foll
 
 ## What this PR explicitly does NOT claim
 
-- **Not Gate B.** Gate B requires money movement *and account opening* expressible as data - prompt
-  10's deliverable - plus a stable corpus. This delivers the second half only.
+- **Not Gate B.** This delivers Prompt 11a's deterministic corpus proof. Gate B also requires prompt
+  10's money-movement and account-opening configuration and Prompt 11b's immutable signed-case replay
+  materialization with deterministic seeds, expected hashes, byte-identical regeneration, and validated
+  domain-configuration and policy-version references (ADR-0058).
 - **Zero v3 invariants are activated.** No `activatesWhen` in `v3-invariants.json` names prompt 11.
 - **No detection rate, and no number of any kind today.** The corpus is unsigned and no detector
   exists, so every figure is `null` with a reason code.

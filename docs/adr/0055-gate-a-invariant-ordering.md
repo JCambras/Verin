@@ -1,6 +1,7 @@
 # ADR-0055: Gate A owns invariants 1, 2, 4, and 5; invariant 3 is gated at B
 
 **Status:** Accepted (amends ADR-0023); amended in place 2026-07-28, 2026-07-29, and 2026-08-05 by review rulings `gatea-opus-review-1`, `gatea-fix-review-2`, `gatea-review-3`, `gatea-fix-review-3`, the captain-approved outcome-completeness review, the captain-approved earliest-proof/completeness review, the captain-approved enforcement-completeness review, the captain-approved false-green boundary review, the captain-approved execution-reachability review, the captain-approved executable-evidence review, the captain-approved enforcement-integrity review, the captain-approved runner-and-alias review, the captain-approved control-flow, artifact, mechanism, and matrix review, the captain-approved route-and-capture-integrity review, the captain-approved active-ratchet, TestInfo, wrapper, and ratified-surface review, the captain-approved reachability and delivery review, the captain-approved callable-provenance and Gate 0 route-graph review, the captain-approved callback, assertion, renderer-ID, and runner-ratchet review, the captain-approved indirect-call, page-integrity, hook-isolation, and approval-binding review, the captain-approved shared-ratchet, reflective-call, Vitest-registration, and route-inventory review, the captain-approved fitness-inventory and execution-provenance review, the captain-approved recursive-inventory and bound-reflection review, the captain-approved gate-local evaluator proof and single-run fitness review, the captain-approved cross-gate proof and imported Axe-graph review, the captain-approved complete fitness, CommonJS, graph-root, and Vitest-global review, the captain-approved registration-option, declarative-route, and precedence review, the captain-approved callable-member, helper-syntax, and parameterized-registration review, the captain-approved registration-input, computed-member, login, builtin-loader, and container-environment review, the captain-approved CI provenance, imported-registration, query-helper, and shared-hook review, the captain-approved identity, reflection, and result-ownership review, the captain-approved composite-callable and executable-workflow review, the captain-approved intrinsic-alias, higher-order, and workflow-schema review, the captain-approved cross-module, CI-grammar, and route-binding review, the captain-approved trigger, constructor, and descriptor-provenance review, and the captain-ruled consolidated wrap-up review (`g8-relight-askuser`, 2026-08-10: rule-set decomposition, shared registry validation, and the measured tooling envelope)
+**Prompt 11c amendment:** ADR-0058 replaces Gate B's stale corpus evidence with the blocking corpus command and retains Prompt 11b as explicit non-green evidence.
 **Date:** 2026-07-28
 **Deciders:** captain (durable ruling, decision key `gate-a-ordering`, 2026-07-28; subsequent review findings approved through 2026-08-05), founding architect
 **Relates to:** ADR-0023 (v3 adoption - §17 becomes phase-gated commitments); ADR-0010 (generic workflow engine); ADR-0025 (money movement as configuration, never a core module); ADR-0026 (fences land in the wave that creates their subject); charter #1 (fence every invariant in the same PR that states it), #4 (detection is not verification), #5 (nothing built-but-not-shipped / no fake green)
@@ -81,12 +82,13 @@ gate closes**. A gate declaring no machine-checkable requirement is rejected out
 set would read green the moment it was registered - empty sets never prove readiness.
 
 **Every declared outcome is represented by a typed requirement.** Invariants alone did not cover Gate
-B's prompt-11 stable corpus, Gate F's prompt-26 verification reconciler, or Gate H's seven-minute timing,
-measured-results, and cold-review clauses. Those clauses now remain explicit `evidence` requirements
-until their prompt-owned mechanisms land. They keep the gate non-green and preserve the full outcomes
-instead of narrowing the outcomes to whatever the current invariant list happens to prove. Invariant
-23's proof point now includes prompt 26 because its subject includes status occurrences, not execution
-events alone.
+B's prompt-11 corpus outcome, Gate F's prompt-26 verification reconciler, or Gate H's seven-minute
+timing, measured-results, and cold-review clauses. ADR-0058 splits the first one honestly: Prompt 11a's
+deterministic corpus is credited by the exact blocking `corpus` command, while Prompt 11b's complete
+signed-case stability contract remains an explicit `evidence` requirement. The still-unmechanized
+clauses keep their gates non-green and preserve the full outcomes instead of narrowing those outcomes
+to whatever the current invariant list happens to prove. Invariant 23's proof point now includes prompt
+26 because its subject includes status occurrences, not execution events alone.
 
 Gate B also carries a prompt-10 `evidence` requirement that both domain YAML files parse against the
 domain schema and bind through the shared engine without domain-specific core branches. The two artifact
@@ -477,7 +479,8 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
 - Gate A owns invariants `{1, 2, 4, 5}` and additionally requires the prompt-5 structural guarantees
   `{7, 8, 9}` without moving their Gate D activation ownership. Gate B requires invariants 3 and 16,
   prompt 10's two `config/domains/*.yaml` artifacts, prompt 10's schema-and-shared-engine binding
-  evidence, and prompt 11's stable-corpus evidence. Gate C requires
+  evidence, Prompt 11a's exact blocking corpus command, and Prompt 11b's complete signed-case stability
+  evidence. Gate C requires
   invariants 1 and 11. Gate D requires 6-13 plus 18 and 19; Gate E still requires 14-17; Gate F still
   requires 18-25 plus prompt 26 verification-reconciler evidence. The merged `G/H` becomes Gate G
   (26, 28, 30) and Gate H (27, 29) plus timing, measured-results, and cold-review evidence. Beyond that split, no
@@ -659,6 +662,24 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   from 9,300 to **12,400**, 261 lines of named correction headroom, recorded here as the measured ADR
   amendment the fence header requires. Any further raise re-measures on the tree as it lands.
 
+### Amendment (2026-08-12, ADR-0058): Prompt 11c credits corpus proof without claiming Gate B
+
+- Gate B's obsolete Prompt 11 evidence, which said no corpus mechanism existed, is replaced by the
+  typed `ci-gate` requirement `corpus` running `pnpm exec tsx scripts/corpus-validate.ts`. Prompt 11a's
+  deterministic regeneration and byte comparison are now credited by the mechanism that actually owns
+  them.
+- Prompt 11b remains a separate `evidence` requirement: the captain-signed golden cases must be
+  materialized as immutable replay fixtures with deterministic seeds and expected hashes, the same seed
+  must reproduce a byte-identical case bundle, and every reference must validate against Prompt 10's
+  domain configuration and policy versions. No mechanism decides that clause today, so Gate B remains
+  below green.
+- Prompt 10's artifacts, shared-engine evidence, invariant 3 activation prerequisites, and Gate A entry
+  condition are unchanged. This amendment activates zero invariants and leaves the active mechanism
+  ratchet exactly `{1, 2, 5, 7, 8, 9, 16}`.
+- The complete Gate B requirement ratchet changes with the registry, and focused companions reject both
+  a false invariant-3 activation and deletion of the complete Prompt 11b stability blocker. This is the
+  current-tree form of the rule that a registry edit alone never changes readiness.
+
 ## Revisit When
 
 - A future invariant's activation prerequisite legitimately spans two waves (activation begins in one,
@@ -672,7 +693,7 @@ weakened, waived, or deferred without a trigger - it is required, in full, at Ga
   both reject an unratcheted activation. If the fence cannot be written without domain-named exceptions,
   the primitive vocabulary is overfit and ADR-0025's revisit trigger fires first.
 - A mechanism lands that decides an `evidence` requirement (gate B's domain-schema/shared-engine
-  binding or stable-corpus clauses, gate C's validated-bundle, Gate D's prompt-17 evaluator property-test
+  binding or Prompt 11b materialization clauses, gate C's validated-bundle, Gate D's prompt-17 evaluator property-test
   clause, gate F's verification-reconciler clause, Gate H's timing/measurement/cold-review clauses, or gate I's severity verdict): replace that entry with the
   `invariant` / `fitness` / `artifact` requirement that decides it, in the same PR. An `evidence` entry
   is a named gap, never a permanent excuse.
